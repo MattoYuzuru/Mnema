@@ -1,259 +1,292 @@
-<!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
+
 <a id="readme-top"></a>
-<!--
-*** Thanks for checking out the Best-README-Template. If you have a suggestion
-*** that would make this better, please fork the repo and create a pull request
-*** or simply open an issue with the tag "enhancement".
-*** Don't forget to give the project a star!
-*** Thanks again! Now go create something AMAZING! :D
--->
 
-
-
-<!-- PROJECT SHIELDS -->
-<!--
-*** I'm using markdown "reference style" links for readability.
-*** Reference links are enclosed in brackets [ ] instead of parentheses ( ).
-*** See the bottom of this document for the declaration of the reference variables
-*** for contributors-url, forks-url, etc. This is an optional, concise syntax you may use.
-*** https://www.markdownguide.org/basic-syntax/#reference-style-links
--->
-[![Contributors][contributors-shield]][contributors-url]
-[![Forks][forks-shield]][forks-url]
-[![Stargazers][stars-shield]][stars-url]
-[![Issues][issues-shield]][issues-url]
-[![project_license][license-shield]][license-url]
-[![LinkedIn][linkedin-shield]][linkedin-url]
-
-
-
-<!-- PROJECT LOGO -->
-<br />
 <div align="center">
-  <a href="https://github.com/github_username/repo_name">
-    <img src="images/logo.png" alt="Logo" width="80" height="80">
-  </a>
+  <!-- Заглушка под логотип -->
+  <img src="images/logo.png" alt="Mnema Logo" width="96" height="96">
+  <h1>Mnema</h1>
+  <p>Веб-приложение для эффективного запоминания информации с помощью интерактивных карт.</p>
 
-<h3 align="center">project_title</h3>
+  <!-- Короткие ссылки -->
 
-  <p align="center">
-    project_description
-    <br />
-    <a href="https://github.com/github_username/repo_name"><strong>Explore the docs »</strong></a>
-    <br />
-    <br />
-    <a href="https://github.com/github_username/repo_name">View Demo</a>
+  <p>
+    <a href="https://mnema.app">Демо</a>
     &middot;
-    <a href="https://github.com/github_username/repo_name/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
+    <a href="https://github.com/MattoYuzuru/Mnema">Репозиторий</a>
     &middot;
-    <a href="https://github.com/github_username/repo_name/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
+    <a href="#архитектура">Архитектура</a>
+    &middot;
+    <a href="#развёртывание-в-k3s">Деплой</a>
+  </p>
+
+  <!-- Мини-бейджи -->
+
+  <p>
+    <a href="https://github.com/MattoYuzuru/Mnema/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
+    <a href="https://github.com/MattoYuzuru/Mnema/actions"><img alt="CI" src="https://img.shields.io/badge/CI-GitHub%20Actions-informational"></a>
+    <img alt="i18n" src="https://img.shields.io/badge/i18n-ru%20%7C%20en-brightgreen">
   </p>
 </div>
 
+---
 
+## Содержание
 
-<!-- TABLE OF CONTENTS -->
-<details>
-  <summary>Table of Contents</summary>
-  <ol>
-    <li>
-      <a href="#about-the-project">About The Project</a>
-      <ul>
-        <li><a href="#built-with">Built With</a></li>
-      </ul>
-    </li>
-    <li>
-      <a href="#getting-started">Getting Started</a>
-      <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#installation">Installation</a></li>
-      </ul>
-    </li>
-    <li><a href="#usage">Usage</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
-    <li><a href="#contributing">Contributing</a></li>
-    <li><a href="#license">License</a></li>
-    <li><a href="#contact">Contact</a></li>
-    <li><a href="#acknowledgments">Acknowledgments</a></li>
-  </ol>
-</details>
+* [О проекте](#о-проекте)
+* [Технологии](#технологии)
+* [Структура репозитория](#структура-репозитория)
+* [Локальная разработка](#локальная-разработка)
+* [Развёртывание в k3s](#развёртывание-в-k3s)
+* [CI/CD](#cicd)
+* [Конфигурация и секреты](#конфигурация-и-секреты)
+* [Авторизация и безопасность](#авторизация-и-безопасность)
+* [Наблюдаемость](#наблюдаемость)
+* [Алгоритмы обучения](#алгоритмы-обучения)
+* [API и документация](#api-и-документация)
+* [Архитектура](#архитектура)
+* [Дорожная карта](#дорожная-карта)
+* [Как поучаствовать](#как-поучаствовать)
+* [Лицензия](#лицензия)
+* [Контакты](#контакты)
 
+---
 
+## О проекте
 
-<!-- ABOUT THE PROJECT -->
-## About The Project
+**Mnema** — веб-приложение для запоминания через интерактивные карты и гибкие алгоритмы интервального повторения. Проект учебный, но инженерно-ориентированный: упор на архитектуру, функциональность и продовые практики (контейнеризация, k3s, observability, CI/CD).
 
-[![Product Name Screen Shot][product-screenshot]](https://example.com)
+**Демо:** [https://mnema.app](https://mnema.app)
+**Код:** [https://github.com/MattoYuzuru/Mnema](https://github.com/MattoYuzuru/Mnema)
 
-Here's a blank template to get started. To avoid retyping too much info, do a search and replace with your text editor for the following: `github_username`, `repo_name`, `twitter_handle`, `linkedin_username`, `email_client`, `email`, `project_title`, `project_description`, `project_license`
+> 💡 **Логотип**: положи файл по пути `images/logo.png`. Рекомендованные размеры: квадрат 512×512 (источник), экспорт для README — 96×96 (как в шапке).
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+---
 
+## Технологии
 
+* **Backend:** Spring Boot (Kotlin, JDK — *LTS/последний стабильный*), тесты: Mockito + JUnit 6
+* **Frontend:** Angular (*актуальный LTS/последний стабильный*), i18n: ru/en
+* **Хранилище:** PostgreSQL 18, Redis 8 (кеш/сессии), S3-совместимый провайдер в проде — Yandex Cloud
+* **DevOps:** Docker, k8s (k3s, одна нода), Nginx (Ingress), GitHub Actions (CI/CD)
+* **Observability:** Grafana + Prometheus + Loki (логи/метрики/трейсы по мере готовности)
 
-### Built With
+> Версии будут уточняться по мере развития — в репозитории укажем фиксированные теги образов/артефактов.
 
-* [![Next][Next.js]][Next-url]
-* [![React][React.js]][React-url]
-* [![Vue][Vue.js]][Vue-url]
-* [![Angular][Angular.io]][Angular-url]
-* [![Svelte][Svelte.dev]][Svelte-url]
-* [![Laravel][Laravel.com]][Laravel-url]
-* [![Bootstrap][Bootstrap.com]][Bootstrap-url]
-* [![JQuery][JQuery.com]][JQuery-url]
+---
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+## Структура репозитория
 
+Монорепозиторий:
 
+```
+Mnema/
+├─ backend/                # Spring Boot (Kotlin)
+│  ├─ src/                 # код, ресурсы
+│  ├─ build.gradle.kts     # или pom.xml — в зависимости от билда
+│  └─ Dockerfile
+├─ frontend/               # Angular
+│  ├─ src/
+│  ├─ angular.json
+│  └─ Dockerfile
+├─ deploy/                 # k8s-манифесты и/или Helm/kustomize
+│  ├─ base/
+│  ├─ overlays/
+│  └─ ingress/
+├─ .github/
+│  └─ workflows/           # GitHub Actions (CI/CD)
+├─ docs/                   # схемы, C4/Structurizr DSL, ADR и т. п.
+├─ images/                 # логотипы/скриншоты
+└─ LICENSE
+```
 
-<!-- GETTING STARTED -->
-## Getting Started
+---
 
-This is an example of how you may give instructions on setting up your project locally.
-To get a local copy up and running follow these simple example steps.
+## Локальная разработка
 
-### Prerequisites
+> Минимальный сценарий, без docker-compose (по желанию добавим позже).
 
-This is an example of how to list things you need to use the software and how to install them.
-* npm
-  ```sh
-  npm install npm@latest -g
-  ```
+### Предпосылки
 
-### Installation
+* JDK (LTS), Kotlin toolchain
+* Node.js + npm (актуальные стабильные)
+* Локальные PostgreSQL 18 и Redis 8 (или используйте контейнеры)
 
-1. Get a free API Key at [https://example.com](https://example.com)
-2. Clone the repo
-   ```sh
-   git clone https://github.com/github_username/repo_name.git
-   ```
-3. Install NPM packages
-   ```sh
-   npm install
-   ```
-4. Enter your API in `config.js`
-   ```js
-   const API_KEY = 'ENTER YOUR API';
-   ```
-5. Change git remote url to avoid accidental pushes to base project
-   ```sh
-   git remote set-url origin github_username/repo_name
-   git remote -v # confirm the changes
-   ```
+### Быстрый старт
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+Backend:
 
+```bash
+cd backend
+# Настрой нужные ENV (см. раздел "Конфигурация и секреты")
+./gradlew bootRun
+```
 
+Frontend:
 
-<!-- USAGE EXAMPLES -->
-## Usage
+```bash
+cd frontend
+npm ci
+npm start
+```
 
-Use this space to show useful examples of how a project can be used. Additional screenshots, code examples and demos work well in this space. You may also link to more resources.
+По умолчанию фронт проксирует API на адрес backend (укажи в `environment.*.ts`).
 
-_For more examples, please refer to the [Documentation](https://example.com)_
+---
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+## Развёртывание в k3s
 
+> Базовые шаги для одной ноды (VPS). Ресурсы уточняются позже — оставлено место под спецификацию.
 
+1. **Сборка и публикация образов**
 
-<!-- ROADMAP -->
-## Roadmap
+```bash
+# Пример: ghcr.io/MattoYuzuru/mnema-backend:TAG
+#         ghcr.io/MattoYuzuru/mnema-frontend:TAG
+docker build -t ghcr.io/MattoYuzuru/mnema-backend:TAG ./backend
+docker build -t ghcr.io/MattoYuzuru/mnema-frontend:TAG ./frontend
+docker push ghcr.io/MattoYuzuru/mnema-backend:TAG
+docker push ghcr.io/MattoYuzuru/mnema-frontend:TAG
+```
 
-- [ ] Feature 1
-- [ ] Feature 2
-- [ ] Feature 3
-    - [ ] Nested Feature
+2. **Secret’ы и ConfigMap’ы**
+   Создай Kubernetes Secret’ы для:
 
-See the [open issues](https://github.com/github_username/repo_name/issues) for a full list of proposed features (and known issues).
+* `POSTGRES_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
+* `REDIS_URL`
+* `JWT_SECRET`
+* `OAUTH_{GITHUB,GOOGLE,YANDEX}_{CLIENT_ID,CLIENT_SECRET}`, `OAUTH_REDIRECT_URI`
+* `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` *(в проде — Yandex Cloud)*
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+3. **Применение манифестов**
 
+```bash
+# Если используется kustomize:
+kubectl apply -k deploy/overlays/prod
+# или напрямую:
+kubectl apply -f deploy/base/
+kubectl apply -f deploy/ingress/
+```
 
+4. **Ingress + TLS**
 
-<!-- CONTRIBUTING -->
-## Contributing
+* Ingress контроллер: Nginx
+* Домены: `mnema.app` (+ поддомены при необходимости)
+* TLS: cert-manager + Let’s Encrypt (Issuer/ClusterIssuer)
+  *(включи манифесты при готовности; секцию оставили как заглушку)*
 
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+---
 
-If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
-Don't forget to give the project a star! Thanks again!
+## CI/CD
 
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the Branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
+**GitHub Actions**:
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+* **CI:** линт/сборка/тесты (backend+frontend), публикация Docker-образов в GHCR с тегами (`sha`, `latest`, релизные)
+* **CD:** деплой в k3s через `kubectl`/`kustomize`/Helm (на выбор). Рекомендуется:
 
-### Top contributors:
+    * окружения `dev`/`prod` (Environments)
+    * защитные правила на `prod` (manual approval)
+    * отдельные `secrets`/`vars` на окружение
 
-<a href="https://github.com/github_username/repo_name/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=github_username/repo_name" alt="contrib.rocks image" />
-</a>
+Пайплайн (в общих чертах):
 
+```
+push -> CI build & test -> build docker images -> push GHCR -> deploy job -> kubectl apply (prod/dev)
+```
 
+---
 
-<!-- LICENSE -->
-## License
+## Конфигурация и секреты
 
-Distributed under the project_license. See `LICENSE.txt` for more information.
+* **ENV-переменные** централизуем в одном месте (`deploy/` + README).
+* Секреты **не коммитим**. Для GitHub Actions:
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+    * `Repository/Environment Secrets`
+    * опционально OIDC + хранилище секретов провайдера (в проде)
+* Для локалки добавим позже `env.example` при необходимости.
 
+---
 
+## Авторизация и безопасность
 
-<!-- CONTACT -->
-## Contact
+* **JWT** для пользовательских сессий.
+* **OAuth 2.0 провайдеры:** GitHub, Google, Yandex.
+* Рекомендуем:
 
-Your Name - [@twitter_handle](https://twitter.com/twitter_handle) - email@email_client.com
+    * короткоживущие access-токены + refresh-ритуал
+    * HTTP-only cookies (если фронт/бек на одном домене), CSRF-защита где требуется
+    * строгая CORS-политика (origin: `https://mnema.app`)
+    * секреты только из Secret’ов k8s; RBAC для CI/CD
 
-Project Link: [https://github.com/github_username/repo_name](https://github.com/github_username/repo_name)
+---
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+## Наблюдаемость
 
+* **Prometheus** — метрики (включая Spring Actuator/экспортеры), **Grafana** — дашборды, **Loki** — логи.
+* Инструкции по установке (Helm, values) добавим позже; в коде — метрики/лейблы по мере интеграции.
 
+---
 
-<!-- ACKNOWLEDGMENTS -->
-## Acknowledgments
+## Алгоритмы обучения
 
-* []()
-* []()
-* []()
+* Первый реализуемый алгоритм интервального повторения — **FSRS**.
+* Коротко: модель оптимизирует интервалы повторений на основе обратной связи от пользователя, повышая эффективность запоминания при ограниченном времени. Детали и математика будут описаны в документации алгоритмов (`docs/algorithms/fsrs.md`).
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
+---
 
+## API и документация
 
+* **OpenAPI/Swagger** будет доступен (путь уточняется; ожидаемо `/_/swagger` или `/swagger-ui`).
+* Контракты публикуем вместе с релизами (генерация из backend-сервисов).
 
-<!-- MARKDOWN LINKS & IMAGES -->
-<!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/github_username/repo_name.svg?style=for-the-badge
-[contributors-url]: https://github.com/github_username/repo_name/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/github_username/repo_name.svg?style=for-the-badge
-[forks-url]: https://github.com/github_username/repo_name/network/members
-[stars-shield]: https://img.shields.io/github/stars/github_username/repo_name.svg?style=for-the-badge
-[stars-url]: https://github.com/github_username/repo_name/stargazers
-[issues-shield]: https://img.shields.io/github/issues/github_username/repo_name.svg?style=for-the-badge
-[issues-url]: https://github.com/github_username/repo_name/issues
-[license-shield]: https://img.shields.io/github/license/github_username/repo_name.svg?style=for-the-badge
-[license-url]: https://github.com/github_username/repo_name/blob/master/LICENSE.txt
-[linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
-[linkedin-url]: https://linkedin.com/in/linkedin_username
-[product-screenshot]: images/screenshot.png
-<!-- Shields.io badges. You can a comprehensive list with many more badges at: https://github.com/inttter/md-badges -->
-[Next.js]: https://img.shields.io/badge/next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white
-[Next-url]: https://nextjs.org/
-[React.js]: https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB
-[React-url]: https://reactjs.org/
-[Vue.js]: https://img.shields.io/badge/Vue.js-35495E?style=for-the-badge&logo=vuedotjs&logoColor=4FC08D
-[Vue-url]: https://vuejs.org/
-[Angular.io]: https://img.shields.io/badge/Angular-DD0031?style=for-the-badge&logo=angular&logoColor=white
-[Angular-url]: https://angular.io/
-[Svelte.dev]: https://img.shields.io/badge/Svelte-4A4A55?style=for-the-badge&logo=svelte&logoColor=FF3E00
-[Svelte-url]: https://svelte.dev/
-[Laravel.com]: https://img.shields.io/badge/Laravel-FF2D20?style=for-the-badge&logo=laravel&logoColor=white
-[Laravel-url]: https://laravel.com
-[Bootstrap.com]: https://img.shields.io/badge/Bootstrap-563D7C?style=for-the-badge&logo=bootstrap&logoColor=white
-[Bootstrap-url]: https://getbootstrap.com
-[JQuery.com]: https://img.shields.io/badge/jQuery-0769AD?style=for-the-badge&logo=jquery&logoColor=white
-[JQuery-url]: https://jquery.com 
+---
+
+## Архитектура
+
+> Диаграммы ты добавишь сам — ниже заглушки под C4/Structurizr DSL.
+
+* **HLD (C4: System/Container):** `docs/architecture/c4/hld.dsl` *(заглушка)*
+* **LLD (C4: Component/Code):** `docs/architecture/c4/lld.dsl` *(заглушка)*
+* **ADR (Architecture Decision Records):** `docs/adr/` *(по ключевым решениям — БД, кеш, OAuth, деплой, observability)*
+
+---
+
+## Дорожная карта
+
+Роадмапа будет позднее. Ближайшие ориентиры:
+
+* [ ] Базовый CRUD по карточкам/колодам
+* [ ] FSRS: первый проход
+* [ ] OAuth 2.0 (GitHub/Google/Yandex)
+* [ ] Публичный Ingress + TLS на `mnema.app`
+* [ ] CI/CD на прод в k3s
+
+*(Фактический трекинг — GitHub Projects/Board.)*
+
+---
+
+## Как поучаствовать
+
+Пока внешних контрибьюторов не ожидается, но любой фидбек полезен:
+
+1. Открой issue с предложением или багом.
+2. Для PR: форк → ветка `feature/*` → PR в `main`.
+3. Соблюдай код-стайл (Kotlin/Angular), прогони тесты.
+
+Состояние задач: GitHub Projects (канбан) в этом репозитории.
+
+---
+
+## Лицензия
+
+Проект распространяется по лицензии **Apache 2.0**. См. файл [`LICENSE`](LICENSE).
+
+---
+
+## Контакты
+
+Автор: Матвей Рябушкин
+Telegram: [@Keyko_Mi](https://t.me/Keyko_Mi)
+Email: [matveyryabushkin@gmail.com](mailto:matveyryabushkin@gmail.com)
+Репозиторий: [https://github.com/MattoYuzuru/Mnema](https://github.com/MattoYuzuru/Mnema)
+
+<p align="right">(<a href="#readme-top">наверх</a>)</p>
