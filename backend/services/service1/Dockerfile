@@ -1,4 +1,9 @@
-FROM busybox:latest
-LABEL authors="mattoyudzuru"
+FROM busybox:1.36
 
-CMD ["sh", "-c", "echo Mnema service 2 CI OK && sleep 10"]
+WORKDIR /www
+
+RUN sh -c 'echo "<h1>Mnema svc1: CI OK</h1>" > index.html'
+
+EXPOSE 8080
+
+CMD ["sh","-c","httpd -f -p 8080 -h /www"]

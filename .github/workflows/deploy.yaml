@@ -27,7 +27,7 @@ jobs:
       - name: Build & push svc1
         uses: docker/build-push-action@v6
         with:
-          context: ./backend/service1   # путь к Dockerfile svc1
+          context: ./backend/services/service1   # путь к Dockerfile svc1
           push: true
           tags: |
             ${{ env.IMAGE_SVC1 }}:${{ env.GIT_SHA }}
@@ -36,7 +36,7 @@ jobs:
       - name: Build & push svc2
         uses: docker/build-push-action@v6
         with:
-          context: ./backend/service2   # путь к Dockerfile svc2
+          context: ./backend/services/service2   # путь к Dockerfile svc2
           push: true
           tags: |
             ${{ env.IMAGE_SVC2 }}:${{ env.GIT_SHA }}
