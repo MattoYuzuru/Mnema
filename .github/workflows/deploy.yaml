@@ -53,7 +53,7 @@ jobs:
           file: ./backend/services/service1/Dockerfile
           tags: |
             ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service1:${{ steps.meta.outputs.TAG }}
-            ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service2:latest
+            ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service1:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -75,36 +75,30 @@ jobs:
     env:
       KUBECONFIG: ${{ github.workspace }}/kubeconfig
       K8S_NAMESPACE: prod
-      K8S_DEPLOYMENT: mnema
+      DEPLOYMENT: mnema
+      CONTAINER: mnema
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
+      - uses: azure/setup-kubectl@v4
 
       - name: Write kubeconfig
-        run: |
-          echo "${KUBECONFIG_B64}" | base64 -d > kubeconfig
+        run: echo "${KUBECONFIG_B64}" | base64 -d > kubeconfig
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+
+      - name: Set up lowercase owner name
+        id: repo-slug
+        run: echo "IMAGE_REPOSITORY=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
 
       - name: Set image tag
         id: meta
         run: echo "TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
-      # Обновляем образ прямо в деплойменте
-      - name: Set image for service1
+      - name: Set image (mnema -> service1)
         run: |
-          kubectl -n "$K8S_NAMESPACE" set image deployment/"$K8S_DEPLOYMENT-service1" \
-            service1=ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service1:${{ steps.meta.outputs.TAG }}
-
-        # Update image for service2
-      - name: Set image for service2
-        run: |
-          kubectl -n "$K8S_NAMESPACE" set image deployment/"$K8S_DEPLOYMENT-service2" \
-          service2=ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service2:${{ steps.meta.outputs.TAG }}
+          kubectl -n "$K8S_NAMESPACE" set image deployment/"$DEPLOYMENT" \
+            "$CONTAINER"=ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service1:${{ steps.meta.outputs.TAG }}
 
       - name: Wait for rollout
-        run: |
-          kubectl -n "$K8S_NAMESPACE" rollout status deployment/"$K8S_DEPLOYMENT-service1" --timeout=180s
-          kubectl -n "$K8S_NAMESPACE" rollout status deployment/"$K8S_DEPLOYMENT-service2" --timeout=180s
+        run: kubectl -n "$K8S_NAMESPACE" rollout status deployment/"$DEPLOYMENT" --timeout=180s
+
