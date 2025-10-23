@@ -49,9 +49,23 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
+          context: ./Mnema/backend/services/service1
+          file: ./Mnema/backend/services/service1/Dockerfile
           tags: |
             ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}:${{ steps.meta.outputs.TAG }}
             ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build and push image for service2
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          context: ./Mnema/backend/services/service2
+          file: ./Mnema/backend/services/service2/Dockerfile
+          tags: |
+            ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service2:${{ steps.meta.outputs.TAG }}
+            ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service2:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
@@ -79,11 +93,18 @@ jobs:
         run: echo "TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
       # Обновляем образ прямо в деплойменте
-      - name: Set image
+      - name: Set image for service1
         run: |
-          kubectl -n "$K8S_NAMESPACE" set image deployment/"$K8S_DEPLOYMENT" \
-            mnema=ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.TAG }}
+          kubectl -n "$K8S_NAMESPACE" set image deployment/"$K8S_DEPLOYMENT-service1" \
+            service1=ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service1:${{ steps.meta.outputs.TAG }}
+
+        # Update image for service2
+      - name: Set image for service2
+        run: |
+          kubectl -n "$K8S_NAMESPACE" set image deployment/"$K8S_DEPLOYMENT-service2" \
+          service2=ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service2:${{ steps.meta.outputs.TAG }}
 
       - name: Wait for rollout
         run: |
-          kubectl -n "$K8S_NAMESPACE" rollout status deployment/"$K8S_DEPLOYMENT" --timeout=180s
+          kubectl -n "$K8S_NAMESPACE" rollout status deployment/"$K8S_DEPLOYMENT-service1" --timeout=180s
+          kubectl -n "$K8S_NAMESPACE" rollout status deployment/"$K8S_DEPLOYMENT-service2" --timeout=180s
