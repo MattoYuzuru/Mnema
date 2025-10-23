@@ -1,68 +1,81 @@
-name: Build & Deploy (test)
+name: CI-CD
+
 on:
   push:
-    branches: [ "main" ]
-
-permissions:
-  contents: read
-  packages: write
-
-env:
-  REGISTRY: ghcr.io
-  IMAGE_SVC1: ghcr.io/mattoyuzuru/mnema/svc1
-  IMAGE_SVC2: ghcr.io/mattoyuzuru/mnema/svc2
-  GIT_SHA: ${{ github.sha }}
+    branches: [ main ]
 
 jobs:
-  build-and-push:
+  test-build-push:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Login to GHCR
+      # Линт/тесты (пример для Java; подставь свой стек)
+#      - name: Set up Java
+#        uses: actions/setup-java@v4
+#        with:
+#          distribution: temurin
+#          java-version: '21'
+#      - name: Lint
+#        run: ./gradlew check
+#      - name: Test
+#        run: ./gradlew test
+
+      # GHCR login
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build & push svc1
-        uses: docker/build-push-action@v6
-        with:
-          context: ./backend/services/service1
-          push: true
-          tags: |
-            ${{ env.IMAGE_SVC1 }}:${{ env.GIT_SHA }}
-            ${{ env.IMAGE_SVC1 }}:latest
+      - name: Compute tag
+        id: meta
+        run: echo "TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
-      - name: Build & push svc2
+      - name: Build and push image
         uses: docker/build-push-action@v6
         with:
-          context: ./backend/services/service2
           push: true
           tags: |
-            ${{ env.IMAGE_SVC2 }}:${{ env.GIT_SHA }}
-            ${{ env.IMAGE_SVC2 }}:latest
+            ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.TAG }}
+            ghcr.io/${{ github.repository }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
   deploy:
+    needs: test-build-push
     runs-on: ubuntu-latest
-    needs: build-and-push
+    env:
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig
+      K8S_NAMESPACE: prod
+      K8S_DEPLOYMENT: mnema
     steps:
       - uses: actions/checkout@v4
 
-      - name: Prepare kubeconfig from secret
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Write kubeconfig
+        run: |
+          echo "${KUBECONFIG_B64}" | base64 -d > kubeconfig
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
-        run: |
-          echo "$KUBECONFIG_B64" | base64 -d > kubeconfig
 
-      - name: Inject image tags
-        env:
-          GIT_SHA: ${{ github.sha }}
-        run: |
-          find infra/k8s/base -type f -name "*.yaml" -print0 \
-            | xargs -0 sed -i "s|{{GIT_SHA}}|$GIT_SHA|g"
+      - name: Set image tag
+        id: meta
+        run: echo "TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
-      - name: Apply manifests
+      # Обновляем образ прямо в деплойменте
+      - name: Set image
         run: |
-          KUBECONFIG=$PWD/kubeconfig kubectl apply -f infra/k8s/base
+          kubectl -n "$K8S_NAMESPACE" set image deployment/"$K8S_DEPLOYMENT" \
+            mnema=ghcr.io/${{ github.repository }}:${{ steps.meta.outputs.TAG }}
+
+      - name: Wait for rollout
+        run: |
+          kubectl -n "$K8S_NAMESPACE" rollout status deployment/"$K8S_DEPLOYMENT" --timeout=180s
