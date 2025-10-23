@@ -45,15 +45,15 @@ jobs:
         id: meta
         run: echo "TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
-      - name: Build and push image
+      - name: Build and push image for service1
         uses: docker/build-push-action@v6
         with:
           push: true
           context: ./backend/services/service1
           file: ./backend/services/service1/Dockerfile
           tags: |
-            ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}:${{ steps.meta.outputs.TAG }}
-            ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}:latest
+            ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service1:${{ steps.meta.outputs.TAG }}
+            ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service2:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
