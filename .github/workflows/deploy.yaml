@@ -49,8 +49,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
-          context: ./Mnema/backend/services/service1
-          file: ./Mnema/backend/services/service1/Dockerfile
+          context: ./backend/services/service1
+          file: ./backend/services/service1/Dockerfile
           tags: |
             ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}:${{ steps.meta.outputs.TAG }}
             ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}:latest
@@ -61,8 +61,8 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: true
-          context: ./Mnema/backend/services/service2
-          file: ./Mnema/backend/services/service2/Dockerfile
+          context: ./backend/services/service2
+          file: ./backend/services/service2/Dockerfile
           tags: |
             ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service2:${{ steps.meta.outputs.TAG }}
             ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service2:latest
