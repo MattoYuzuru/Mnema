@@ -1,5 +1,6 @@
 plugins {
     id("org.springframework.boot")
+    id("io.spring.dependency-management")
     kotlin("jvm")
     kotlin("plugin.spring")
     kotlin("plugin.jpa")
@@ -14,11 +15,4 @@ dependencies {
     runtimeOnly("org.postgresql:postgresql")
 
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0")
-
-    testImplementation("org.testcontainers:postgresql:1.20.+")
-}
-allOpen {
-    annotation("jakarta.persistence.Entity")
-    annotation("jakarta.persistence.MappedSuperclass")
-    annotation("jakarta.persistence.Embeddable")
 }

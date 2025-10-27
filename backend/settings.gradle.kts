@@ -1,7 +1,7 @@
 pluginManagement {
     repositories {
-        mavenCentral()
         gradlePluginPortal()
+        mavenCentral()
     }
     plugins {
         id("org.springframework.boot") version "3.5.7"
@@ -11,5 +11,6 @@ pluginManagement {
         kotlin("plugin.jpa") version "2.1.10"
     }
 }
+
 rootProject.name = "mnema"
 include("services:auth", "services:user")
