@@ -1,9 +1,10 @@
-FROM busybox:1.36
+FROM gradle:8.10.2-jdk21 AS build
+WORKDIR /workspace
+COPY . .
+RUN ./gradlew :services:auth:bootJar --no-daemon
 
-WORKDIR /www
-
-RUN sh -c 'echo "<h1>Mnema svc1: CI OK</h1>" > index.html'
-
+FROM eclipse-temurin:21-jre
+WORKDIR /app
+COPY --from=build /workspace/services/auth/build/libs/*.jar app.jar
 EXPOSE 8080
-
-CMD ["sh","-c","httpd -f -p 8080 -h /www"]
+ENTRYPOINT ["java","-jar","/app/app.jar"]
