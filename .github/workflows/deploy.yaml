@@ -22,10 +22,10 @@ jobs:
             context: ./frontend
             dockerfile: ./frontend/Dockerfile
           - name: auth
-            context: ./backend/services/auth
+            context: ./backend
             dockerfile: ./backend/services/auth/Dockerfile
           - name: user
-            context: ./backend/services/user
+            context: ./backend
             dockerfile: ./backend/services/user/Dockerfile
     steps:
       - name: Checkout
