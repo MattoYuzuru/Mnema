@@ -24,6 +24,9 @@ jobs:
           - name: auth
             context: ./backend/services/auth
             dockerfile: ./backend/services/auth/Dockerfile
+          - name: user
+            context: ./backend/services/user
+            dockerfile: ./backend/services/user/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -93,6 +96,9 @@ jobs:
           - name: auth
             k8sDeployment: mnema-auth
             k8sContainer: auth
+          - name: user
+            k8sDeployment: mnema-user
+            k8sContainer: user
     env:
       KUBECONFIG: ${{ github.workspace }}/kubeconfig
       NS: prod
