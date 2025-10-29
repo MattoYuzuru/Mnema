@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mnema-user
+  namespace: prod
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: mnema-user } }
+  template:
+    metadata: { labels: { app: mnema-user } }
+    spec:
+      # если GHCR приватный — добавь imagePullSecrets (см. примечания ниже)
+      containers:
+        - name: user
+          image: ghcr.io/mattoyuzuru/mnema/user:latest
+          ports: [ { containerPort: 8080 } ]
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://postgres.prod.svc.cluster.local:5432/mnema
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_USER } }
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_PASSWORD } }
+            - name: GOOGLE_CLIENT_ID
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: GOOGLE_CLIENT_ID } }
+            - name: GOOGLE_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: GOOGLE_CLIENT_SECRET } }
+            - name: SPRING_PROFILES_ACTIVE
+              value: prod
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: 8080 }
+            initialDelaySeconds: 15
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mnema-user
+  namespace: prod
+spec:
+  selector: { app: mnema-user }
+  ports:
+    - port: 80
+      targetPort: 8080
