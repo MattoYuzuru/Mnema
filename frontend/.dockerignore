@@ -1,4 +1,7 @@
 node_modules
 dist
 .git
-package-lock.json
+.gitignore
+Dockerfile
+docker-compose.yml
+*.log

@@ -1,17 +1,25 @@
 # --- build stage ---
-FROM node:18-alpine AS build
+FROM node:20-alpine AS build
 WORKDIR /app
 
-# Копируем только package.json и ставим зависимости (создаст lock внутри образа)
+# Берём только package.json, NPM сам создаст lock внутри образа
 COPY package.json ./
 RUN npm install --no-audit --fund=false
 
-# Теперь копируем исходники (lock с хоста НЕ попадёт внутрь из-за .dockerignore)
+# Теперь исходники
 COPY . .
-RUN npm run build
+
+# Сборка Angular (без кастомного output-path)
+RUN npx -y -p @angular/cli@18 ng build --configuration production
 
 # --- serve stage ---
 FROM nginx:alpine
-COPY --from=build /app/dist/mnema-frontend/browser /usr/share/nginx/html
+
+# SPA-фолбэк, чтобы роутинг работал при F5
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Копируем стандартный выход Angular 18: dist/<projectName>
+COPY --from=build /app/dist/mnema-frontend /usr/share/nginx/html
+
 EXPOSE 80
 CMD ["nginx", "-g", "daemon off;"]
