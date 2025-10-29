@@ -70,11 +70,12 @@ jobs:
 
       - name: Write kubeconfig
         run: echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
-        env: { KUBECONFIG_B64: ${ { secrets.KUBECONFIG_B64 } } }
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
 
       - name: Create/Update secret (mnema-secrets)
         run: |
-          cat <<'YAML' | kubectl apply -f -
+          cat <<YAML | kubectl apply -f -
           apiVersion: v1
           kind: Namespace
           metadata: { name: ${NS} }
@@ -115,7 +116,8 @@ jobs:
 
       - name: Write kubeconfig
         run: echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
-        env: { KUBECONFIG_B64: ${ { secrets.KUBECONFIG_B64 } } }
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
 
       - name: Repo slug (lowercase)
         id: repo
