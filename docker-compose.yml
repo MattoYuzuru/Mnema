@@ -14,6 +14,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    networks:
+      - mnema-net
 
   auth:
     build:
@@ -32,6 +34,8 @@ services:
         condition: service_healthy
     ports:
       - "8083:8080"
+    networks:
+      - mnema-net
 
   user:
     build:
@@ -50,6 +54,18 @@ services:
         condition: service_healthy
     ports:
       - "8084:8080"
+    networks:
+      - mnema-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3005:80"
+    restart: unless-stopped
+    networks:
+      - mnema-net
 
 networks:
   default:
