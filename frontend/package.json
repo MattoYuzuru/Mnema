@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "build": "npx -y -p @angular/cli@18 ng build --configuration production"
+    "build": "npx -y -p @angular/cli@18 ng build --configuration production --output-path=dist"
   },
   "dependencies": {
     "@angular/animations": "18.2.14",

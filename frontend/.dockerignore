@@ -1,4 +1,4 @@
 node_modules
 dist
 .git
-.gitignore
+package-lock.json

@@ -1,12 +1,12 @@
 # --- build stage ---
-FROM node:20-alpine AS build
+FROM node:18-alpine AS build
 WORKDIR /app
 
-# сначала только манифесты — кэш установки зависимостей
-COPY package.json package-lock.json ./
-RUN npm ci
+# Копируем только package.json и ставим зависимости (создаст lock внутри образа)
+COPY package.json ./
+RUN npm install --no-audit --fund=false
 
-# теперь исходники
+# Теперь копируем исходники (lock с хоста НЕ попадёт внутрь из-за .dockerignore)
 COPY . .
 RUN npm run build
 
