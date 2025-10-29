@@ -15,5 +15,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
     runtimeOnly("org.postgresql:postgresql")
 
+    implementation("org.springframework.boot:spring-boot-starter-actuator")
+
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0")
 }
