@@ -9,12 +9,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # === Build & push images to GHCR ===
   build-and-push:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
+    permissions: { contents: read, packages: write }
     strategy:
       matrix:
         include:
@@ -61,58 +58,64 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # === Apply manifests once ===
   apply-manifests:
     needs: build-and-push
     runs-on: ubuntu-latest
     env:
-      KUBECONFIG: ${{ github.workspace }}/kubeconfig
       NS: prod
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
 
       - name: Write kubeconfig
-        run: echo "${KUBECONFIG_B64}" | base64 -d > kubeconfig
+        run: echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
+        env: { KUBECONFIG_B64: ${ { secrets.KUBECONFIG_B64 } } }
+
+      - name: Create/Update secret (mnema-secrets)
+        run: |
+          cat <<'YAML' | kubectl apply -f -
+          apiVersion: v1
+          kind: Namespace
+          metadata: { name: ${NS} }
+          ---
+          apiVersion: v1
+          kind: Secret
+          metadata: { name: mnema-secrets, namespace: ${NS} }
+          type: Opaque
+          stringData:
+            GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
+            GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
+            POSTGRES_USER: "${POSTGRES_USER}"
+            POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+            POSTGRES_DB: "${POSTGRES_DB}"
+          YAML
         env:
-          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
 
-      - name: Apply Kubernetes manifests
-        run: kubectl -n "$NS" apply -f k8s/
+      - name: Apply manifests
+        run: |
+          # Для наглядности
+          echo "Workspace:" && ls -la && echo && ls -la k8s || true
+          kubectl -n "$NS" apply -f k8s/
 
-  # === Deploy per service (rollout, zero-downtime) ===
   deploy:
     needs: apply-manifests
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - name: frontend
-            k8sDeployment: mnema-frontend
-            k8sContainer: frontend
-          - name: auth
-            k8sDeployment: mnema-auth
-            k8sContainer: auth
-          - name: user
-            k8sDeployment: mnema-user
-            k8sContainer: user
     env:
-      KUBECONFIG: ${{ github.workspace }}/kubeconfig
       NS: prod
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install kubectl
-        uses: azure/setup-kubectl@v4
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
 
       - name: Write kubeconfig
-        run: echo "${KUBECONFIG_B64}" | base64 -d > kubeconfig
-        env:
-          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+        run: echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
+        env: { KUBECONFIG_B64: ${ { secrets.KUBECONFIG_B64 } } }
 
       - name: Repo slug (lowercase)
         id: repo
@@ -122,10 +125,14 @@ jobs:
         id: meta
         run: echo "TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
-      - name: Set image ${{ matrix.name }}
+      - name: Set images
         run: |
-          kubectl -n "$NS" set image deployment/${{ matrix.k8sDeployment }} \
-            ${{ matrix.k8sContainer }}=ghcr.io/${{ steps.repo.outputs.REPO }}/${{ matrix.name }}:${{ steps.meta.outputs.TAG }}
+          kubectl -n "$NS" set image deploy/mnema-frontend frontend=ghcr.io/${{ steps.repo.outputs.REPO }}/frontend:${{ steps.meta.outputs.TAG }}
+          kubectl -n "$NS" set image deploy/mnema-auth     auth=ghcr.io/${{ steps.repo.outputs.REPO }}/auth:${{ steps.meta.outputs.TAG }}
+          kubectl -n "$NS" set image deploy/mnema-user     user=ghcr.io/${{ steps.repo.outputs.REPO }}/user:${{ steps.meta.outputs.TAG }}
 
-      - name: Wait for rollout ${{ matrix.k8sDeployment }}
-        run: kubectl -n "$NS" rollout status deployment/${{ matrix.k8sDeployment }} --timeout=240s
+      - name: Wait for rollouts
+        run: |
+          kubectl -n "$NS" rollout status deploy/mnema-frontend --timeout=240s
+          kubectl -n "$NS" rollout status deploy/mnema-auth     --timeout=240s
+          kubectl -n "$NS" rollout status deploy/mnema-user     --timeout=240s
