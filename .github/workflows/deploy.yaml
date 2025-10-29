@@ -4,28 +4,30 @@ on:
   push:
     branches: [ main ]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test-build-push:
+  # === Build & push images to GHCR ===
+  build-and-push:
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-      id-token: write
+    strategy:
+      matrix:
+        include:
+          - name: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+          - name: auth
+            context: ./backend/services/auth
+            dockerfile: ./backend/services/auth/Dockerfile
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      # Линт/тесты (пример для Java; подставь свой стек)
-      #      - name: Set up Java
-      #        uses: actions/setup-java@v4
-      #        with:
-      #          distribution: temurin
-      #          java-version: '21'
-      #      - name: Lint
-      #        run: ./gradlew check
-      #      - name: Test
-      #        run: ./gradlew test
-
-      # GHCR login
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -36,69 +38,88 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Set up lowercase owner name
-        id: repo-slug
-        run: |
-          echo "IMAGE_REPOSITORY=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
+      - name: Repo slug (lowercase)
+        id: repo
+        run: echo "REPO=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
 
-      - name: Compute tag
+      - name: Compute image tag
         id: meta
         run: echo "TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
-      - name: Build and push image for service1
+      - name: Build & push ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
           push: true
-          context: ./backend/services/service1
-          file: ./backend/services/service1/Dockerfile
           tags: |
-            ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service1:${{ steps.meta.outputs.TAG }}
-            ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service1:latest
+            ghcr.io/${{ steps.repo.outputs.REPO }}/${{ matrix.name }}:${{ steps.meta.outputs.TAG }}
+            ghcr.io/${{ steps.repo.outputs.REPO }}/${{ matrix.name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Build and push image for service2
-        uses: docker/build-push-action@v6
-        with:
-          push: true
-          context: ./backend/services/service2
-          file: ./backend/services/service2/Dockerfile
-          tags: |
-            ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service2:${{ steps.meta.outputs.TAG }}
-            ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service2:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-  deploy:
-    needs: test-build-push
+  # === Apply manifests once ===
+  apply-manifests:
+    needs: build-and-push
     runs-on: ubuntu-latest
     env:
       KUBECONFIG: ${{ github.workspace }}/kubeconfig
-      K8S_NAMESPACE: prod
-      DEPLOYMENT: mnema
-      CONTAINER: mnema
+      NS: prod
     steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-kubectl@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
 
       - name: Write kubeconfig
         run: echo "${KUBECONFIG_B64}" | base64 -d > kubeconfig
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
 
-      - name: Set up lowercase owner name
-        id: repo-slug
-        run: echo "IMAGE_REPOSITORY=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
+      - name: Apply Kubernetes manifests
+        run: kubectl -n "$NS" apply -f k8s/
 
-      - name: Set image tag
+  # === Deploy per service (rollout, zero-downtime) ===
+  deploy:
+    needs: apply-manifests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: frontend
+            k8sDeployment: mnema-frontend
+            k8sContainer: frontend
+          - name: auth
+            k8sDeployment: mnema-auth
+            k8sContainer: auth
+    env:
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig
+      NS: prod
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Write kubeconfig
+        run: echo "${KUBECONFIG_B64}" | base64 -d > kubeconfig
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+
+      - name: Repo slug (lowercase)
+        id: repo
+        run: echo "REPO=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
+
+      - name: Compute image tag
         id: meta
         run: echo "TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
-      - name: Set image (mnema -> service1)
+      - name: Set image ${{ matrix.name }}
         run: |
-          kubectl -n "$K8S_NAMESPACE" set image deployment/"$DEPLOYMENT" \
-            "$CONTAINER"=ghcr.io/${{ steps.repo-slug.outputs.IMAGE_REPOSITORY }}/service1:${{ steps.meta.outputs.TAG }}
+          kubectl -n "$NS" set image deployment/${{ matrix.k8sDeployment }} \
+            ${{ matrix.k8sContainer }}=ghcr.io/${{ steps.repo.outputs.REPO }}/${{ matrix.name }}:${{ steps.meta.outputs.TAG }}
 
-      - name: Wait for rollout
-        run: kubectl -n "$K8S_NAMESPACE" rollout status deployment/"$DEPLOYMENT" --timeout=180s
-
+      - name: Wait for rollout ${{ matrix.k8sDeployment }}
+        run: kubectl -n "$NS" rollout status deployment/${{ matrix.k8sDeployment }} --timeout=240s
