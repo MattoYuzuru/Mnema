@@ -11,6 +11,7 @@ concurrency:
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    environment: prod
     permissions: { contents: read, packages: write }
     strategy:
       matrix:
