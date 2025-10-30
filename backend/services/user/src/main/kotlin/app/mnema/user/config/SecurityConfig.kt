@@ -1,5 +1,6 @@
 package app.mnema.user.config
 
+import org.springframework.boot.actuate.autoconfigure.security.servlet.EndpointRequest
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -14,13 +15,14 @@ class SecurityConfig {
             .authorizeHttpRequests {
                 it
                     .requestMatchers(
-                        "/api/user/actuator/health",
-                        "/api/user/actuator/health/**",
-                        "/api/user/actuator/info"
+                        "/actuator/health",
+                        "/actuator/health/**",
+                        "/actuator/info"
                     ).permitAll()
+                    .requestMatchers(EndpointRequest.to("health", "info")).permitAll()
                     .anyRequest().authenticated()
             }
-            .oauth2ResourceServer { it.jwt {} } // оставляем JWT для остальных эндпоинтов
+            .oauth2ResourceServer { it.jwt {} }
         return http.build()
     }
 }
