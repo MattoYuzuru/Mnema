@@ -37,13 +37,17 @@ spec:
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: GOOGLE_CLIENT_SECRET } }
             - name: SPRING_PROFILES_ACTIVE
               value: prod
+          startupProbe:
+            httpGet: { path: /api/user/actuator/health, port: 8080 }
+            periodSeconds: 2
+            failureThreshold: 30
           readinessProbe:
-            httpGet: { path: /actuator/health/readiness, port: 8080 }
+            httpGet: { path: /api/user/actuator/health, port: 8080 }
             initialDelaySeconds: 5
             periodSeconds: 5
           livenessProbe:
-            httpGet: { path: /actuator/health/liveness, port: 8080 }
-            initialDelaySeconds: 15
+            httpGet: { path: /api/user/actuator/health, port: 8080 }
+            initialDelaySeconds: 30
             periodSeconds: 10
 ---
 apiVersion: v1
