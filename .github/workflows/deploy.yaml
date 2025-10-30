@@ -136,6 +136,6 @@ jobs:
 
       - name: Wait for rollouts
         run: |
-          kubectl -n "$NS" rollout status deploy/mnema-frontend --timeout=240s
-          kubectl -n "$NS" rollout status deploy/mnema-auth     --timeout=240s
-          kubectl -n "$NS" rollout status deploy/mnema-user     --timeout=240s
+          kubectl -n "$NS" rollout status deploy/mnema-frontend --timeout=300s
+          kubectl -n "$NS" rollout status deploy/mnema-auth     --timeout=600s
+          kubectl -n "$NS" rollout status deploy/mnema-user     --timeout=600s

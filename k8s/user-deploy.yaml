@@ -9,7 +9,17 @@ spec:
   template:
     metadata: { labels: { app: mnema-user } }
     spec:
-      # если GHCR приватный — добавь imagePullSecrets (см. примечания ниже)
+
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:18
+          command: [ 'sh','-c','until pg_isready -h postgres.prod.svc.cluster.local -p 5432 -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do echo waiting for postgres; sleep 2; done' ]
+          env:
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_USER } }
+            - name: POSTGRES_DB
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_DB } }
+
       containers:
         - name: user
           image: ghcr.io/mattoyuzuru/mnema/user:latest
