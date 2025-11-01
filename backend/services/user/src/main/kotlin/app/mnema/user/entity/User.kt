@@ -1,14 +1,15 @@
-package app.mnema.user.Entity
+package app.mnema.user.entity
 
 import jakarta.persistence.Column
 import jakarta.persistence.Entity
 import jakarta.persistence.Id
 import jakarta.persistence.Table
 import jakarta.validation.constraints.Email
+import java.time.Instant
 import java.util.UUID
 
 @Entity
-@Table(name = "users", schema = "app_users")
+@Table(name = "users", schema = "app_user")
 data class User(
     @Id
     @Column(columnDefinition = "uuid")
@@ -18,11 +19,21 @@ data class User(
     @Column(nullable = false, unique = true)
     val email: String,
 
-    @Column(nullable = false, unique = true)
-    val handle: String,
+    @Column(nullable = false, name = "username", unique = true)
+    val username: String,
 
-    @Column(name = "display_name")
-    val displayName: String? = null,
+    @Column(name = "bio")
+    val bio: String? = null,
 
-    val bio: String? = null
+    @Column(nullable = false, name = "is_admin")
+    val isAdmin: Boolean = false,
+
+    @Column(name = "avatar_url")
+    val avatarUrl: String? = null,
+
+    @Column(name = "created_at", nullable = false)
+    val createdAt: Instant? = Instant.now(),
+
+    @Column(name = "updated_at", nullable = false)
+    val updatedAt: Instant? = Instant.now()
 )
