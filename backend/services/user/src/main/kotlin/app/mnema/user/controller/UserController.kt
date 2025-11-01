@@ -5,7 +5,8 @@ import app.mnema.user.repository.UserRepository
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
 import org.springframework.web.bind.annotation.*
-import java.time.Instant
+import org.springframework.web.server.ResponseStatusException
+import org.springframework.transaction.annotation.Transactional
 import java.util.*
 
 @RestController
@@ -27,13 +28,18 @@ class UserController(private val repo: UserRepository) {
     )
 
     @GetMapping("/{id}")
-    fun get(@PathVariable id: UUID): User = repo.findById(id)
-        .orElseThrow { NoSuchElementException("User not found") }
+    fun get(@PathVariable id: UUID): User =
+        repo.findById(id).orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     fun create(@Valid @RequestBody req: CreateUserReq): User {
-        require(!repo.existsByUsername(req.username)) { "Username already taken" }
+        if (repo.existsByUsernameIgnoreCase(req.username)) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Username already taken")
+        }
+        if (repo.existsByEmailIgnoreCase(req.email)) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Email already in use")
+        }
         return repo.save(
             User(
                 email = req.email,
@@ -45,18 +51,58 @@ class UserController(private val repo: UserRepository) {
     }
 
     @PatchMapping("/{id}")
-    @ResponseStatus(HttpStatus.PARTIAL_CONTENT)
-    fun partialUpdate(@PathVariable id: UUID, @Valid @RequestBody req: UpdateUserReq) {
-        require(!repo.existsByUsername(req.username)) { "There is no such user" }
+    @Transactional
+    fun partialUpdate(@PathVariable id: UUID, @Valid @RequestBody req: UpdateUserReq): User {
+        val user = repo.findById(id)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
+
+        req.username?.let { newUsername ->
+            if (repo.existsByUsernameIgnoreCaseAndIdNot(newUsername, id)) {
+                throw ResponseStatusException(HttpStatus.CONFLICT, "Username already taken")
+            }
+            user.username = newUsername
+        }
+
+        req.email?.let { newEmail ->
+            if (repo.existsByEmailIgnoreCaseAndIdNot(newEmail, id)) {
+                throw ResponseStatusException(HttpStatus.CONFLICT, "Email already in use")
+            }
+            user.email = newEmail
+        }
+
+        req.bio?.let { user.bio = it }
+        req.avatarUrl?.let { user.avatarUrl = it }
+
+        return user
     }
 
     @PutMapping("/{id}")
-    @ResponseStatus(HttpStatus.RESET_CONTENT)
-    fun fullUpdate(@PathVariable id: UUID, @Valid @RequestBody req: CreateUserReq) {
-        require(repo.existsByUsername(req.username)) { "There is no such user" }
+    @Transactional
+    fun fullUpdate(@PathVariable id: UUID, @Valid @RequestBody req: CreateUserReq): User {
+        val user = repo.findById(id)
+            .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
+
+        if (repo.existsByUsernameIgnoreCaseAndIdNot(req.username, id)) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Username already taken")
+        }
+        if (repo.existsByEmailIgnoreCaseAndIdNot(req.email, id)) {
+            throw ResponseStatusException(HttpStatus.CONFLICT, "Email already in use")
+        }
+
+        user.username = req.username
+        user.email = req.email
+        user.bio = req.bio
+        user.avatarUrl = req.avatarUrl
+
+        return user
     }
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
-    fun delete(@PathVariable id: UUID) = repo.deleteById(id)
+    fun delete(@PathVariable id: UUID) {
+        if (!repo.existsById(id)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
+        }
+        repo.deleteById(id)
+    }
 }
