@@ -10,7 +10,7 @@ import java.util.*
 data class User(
     @Id
     @Column(columnDefinition = "uuid")
-    var id: UUID = UUID.randomUUID(),
+    var id: UUID = UUID.randomUUID(), // TODO: delete UUID generation in code, use postgres
 
     @field:Email
     @Column(nullable = false, unique = true)

@@ -1,4 +1,4 @@
-package app.mnema.auth
+package app.mnema.user.config
 
 import io.swagger.v3.oas.annotations.OpenAPIDefinition
 import io.swagger.v3.oas.annotations.enums.SecuritySchemeType
