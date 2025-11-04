@@ -22,6 +22,7 @@ import org.springframework.security.oauth2.server.authorization.settings.Authori
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings
 import org.springframework.security.web.SecurityFilterChain
+import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.interfaces.RSAPrivateKey
@@ -46,6 +47,7 @@ class AuthServerConfig(
             .csrf { it.ignoringRequestMatchers(endpointsMatcher) }
             .with(asConfigurer) { asCfg -> asCfg.oidc(Customizer.withDefaults()) }
             .oauth2ResourceServer { it.jwt(Customizer.withDefaults()) }
+            .exceptionHandling { it.authenticationEntryPoint(LoginUrlAuthenticationEntryPoint("/login")) }
 
         return http.build()
     }
@@ -59,22 +61,7 @@ class AuthServerConfig(
                 it.requestMatchers("/actuator/**").permitAll()
                 it.anyRequest().authenticated()
             }
-            .oauth2Login { login ->
-                login.userInfoEndpoint { userInfo ->
-                    userInfo.oidcUserService { req ->
-                        // Создаём/обновляем локальный аккаунт после Google-login
-                        val user =
-                            org.springframework.security.oauth2.client.oidc.userinfo.OidcUserService().loadUser(req)
-                        accountService.upsertGoogleAccount(
-                            providerSub = user.subject,
-                            email = user.email,
-                            name = user.fullName ?: user.givenName ?: user.preferredUsername,
-                            picture = user.picture
-                        )
-                        user
-                    }
-                }
-            }
+            .oauth2Login(Customizer.withDefaults())
             .formLogin(Customizer.withDefaults())
             .csrf { it.disable() }
 
