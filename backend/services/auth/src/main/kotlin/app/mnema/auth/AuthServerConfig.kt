@@ -121,7 +121,7 @@ class AuthServerConfig(
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                .redirectUri("http://localhost:8084/swagger-ui/oauth2-redirect.html")
+                .redirectUri("http://localhost:8084/api/user/swagger-ui/oauth2-redirect.html")
                 .scope("openid")
                 .scope("user.read")
                 .scope("user.write")
