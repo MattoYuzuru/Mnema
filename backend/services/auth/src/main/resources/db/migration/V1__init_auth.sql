@@ -1,7 +1,4 @@
 CREATE SCHEMA IF NOT EXISTS auth;
-CREATE EXTENSION IF NOT EXISTS pgcrypto; -- gen_random_uuid()
-CREATE EXTENSION IF NOT EXISTS citext;
--- case-insensitive email
 
 -- Таблица аккаунтов (маппинг внешнего провайдера на локального пользователя)
 CREATE TABLE IF NOT EXISTS auth.accounts
@@ -9,7 +6,7 @@ CREATE TABLE IF NOT EXISTS auth.accounts
     id             UUID PRIMARY KEY     DEFAULT gen_random_uuid(),
     provider       VARCHAR     NOT NULL,
     provider_sub   VARCHAR     NOT NULL,
-    email          CITEXT      NOT NULL,
+    email          TEXT NOT NULL,
     email_verified BOOLEAN              DEFAULT FALSE,
     name           VARCHAR     NOT NULL,
     picture_url    VARCHAR,
