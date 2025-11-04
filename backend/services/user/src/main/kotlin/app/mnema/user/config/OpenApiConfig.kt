@@ -20,8 +20,8 @@ import org.springframework.context.annotation.Configuration
     type = SecuritySchemeType.OAUTH2,
     flows = OAuthFlows(
         authorizationCode = OAuthFlow(
-            authorizationUrl = "http://localhost:8083/oauth2/authorize",
-            tokenUrl = "http://localhost:8083/oauth2/token",
+            authorizationUrl = "http://localhost:8083/api/auth/oauth2/authorize",
+            tokenUrl = "http://localhost:8083/api/auth/oauth2/token",
             scopes = [
                 OAuthScope(name = "user.read", description = "Read users"),
                 OAuthScope(name = "user.write", description = "Write users"),
