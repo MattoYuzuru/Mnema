@@ -20,8 +20,9 @@ import org.springframework.context.annotation.Configuration
     type = SecuritySchemeType.OAUTH2,
     flows = OAuthFlows(
         authorizationCode = OAuthFlow(
-            authorizationUrl = "http://localhost:8083/api/auth/oauth2/authorize",
-            tokenUrl = "http://localhost:8083/api/auth/oauth2/token",
+            // TODO: add dev/prod envs
+            authorizationUrl = "https://auth.mnema.app/api/auth/oauth2/authorize", // http://localhost:8083/api/auth/oauth2/authorize
+            tokenUrl = "https://auth.mnema.app/api/auth/oauth2/token", // http://localhost:8083/api/auth/oauth2/token
             scopes = [
                 OAuthScope(name = "user.read", description = "Read users"),
                 OAuthScope(name = "user.write", description = "Write users"),

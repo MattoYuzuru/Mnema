@@ -48,6 +48,7 @@ class AuthServerConfig(
             .with(asConfigurer) { asCfg -> asCfg.oidc(Customizer.withDefaults()) }
             .oauth2ResourceServer { it.jwt(Customizer.withDefaults()) }
             .exceptionHandling { it.authenticationEntryPoint(LoginUrlAuthenticationEntryPoint("/login")) }
+            .cors {}
 
         return http.build()
     }
@@ -64,6 +65,7 @@ class AuthServerConfig(
             .oauth2Login(Customizer.withDefaults())
             .formLogin(Customizer.withDefaults())
             .csrf { it.disable() }
+            .cors {}
 
         return http.build()
     }
@@ -109,6 +111,7 @@ class AuthServerConfig(
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
                 .redirectUri("http://localhost:8084/api/user/swagger-ui/oauth2-redirect.html")
+                .redirectUri("https://mnema.app/api/user/swagger-ui/oauth2-redirect.html")
                 .scope("openid")
                 .scope("user.read")
                 .scope("user.write")
