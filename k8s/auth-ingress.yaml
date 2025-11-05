@@ -1,30 +1,23 @@
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  name: mnema
+  name: mnema-auth
   namespace: prod
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: traefik
   tls:
-    - hosts: [ mnema.app ]
-      secretName: mnema-app-tls
+    - hosts: [ auth.mnema.app ]
+      secretName: auth-mnema-app-tls
   rules:
-    - host: mnema.app
+    - host: auth.mnema.app
       http:
         paths:
           - path: /
             pathType: Prefix
             backend:
               service:
-                name: mnema-frontend
-                port:
-                  number: 80
-          - path: /api/user
-            pathType: Prefix
-            backend:
-              service:
-                name: mnema-user
+                name: mnema-auth
                 port:
                   number: 80
