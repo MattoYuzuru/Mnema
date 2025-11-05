@@ -1,0 +1,7 @@
+server.servlet.context-path: /api/user
+
+# CORS (prod)
+app:
+  cors:
+    origins:
+      - https://mnema.app

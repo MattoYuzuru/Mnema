@@ -1,0 +1,11 @@
+springdoc.swagger-ui.oauth.client-id: swagger-ui
+springdoc.swagger-ui.oauth.client-secret: secret
+springdoc.swagger-ui.oauth.use-pkce-with-authorization-code-grant: true
+
+server.servlet.context-path: /api/user
+
+# CORS (dev)
+app:
+  cors:
+    origins:
+      - http://localhost:3005

@@ -1,0 +1,16 @@
+auth:
+  issuer: http://localhost:8083
+
+management:
+  endpoints.web.exposure.include: health,info
+
+server:
+  forward-headers-strategy: native
+
+logging.level.org.springframework.security: DEBUG
+
+# CORS (dev)
+app:
+  cors:
+    origins:
+      - http://localhost:3005

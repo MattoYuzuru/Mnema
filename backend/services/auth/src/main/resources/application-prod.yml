@@ -1,0 +1,14 @@
+auth:
+  issuer: https://auth.mnema.app
+
+management:
+  endpoints.web.exposure.include: health,info
+
+server:
+  forward-headers-strategy: native
+
+# CORS (prod)
+app:
+  cors:
+    origins:
+      - https://mnema.app
