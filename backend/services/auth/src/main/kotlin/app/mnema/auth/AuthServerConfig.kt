@@ -9,6 +9,7 @@ import org.springframework.boot.CommandLineRunner
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.annotation.Order
+import org.springframework.http.HttpMethod
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.config.Customizer
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -43,9 +44,12 @@ class AuthServerConfig(
 
         http
             .securityMatcher(endpointsMatcher)
-            .authorizeHttpRequests { it.anyRequest().authenticated() }
+            .authorizeHttpRequests {
+                it.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
+                it.anyRequest().authenticated()
+            }
             .csrf { it.ignoringRequestMatchers(endpointsMatcher) }
-            .with(asConfigurer) { asCfg -> asCfg.oidc(Customizer.withDefaults()) }
+            .with(asConfigurer) { cfg -> cfg.oidc(Customizer.withDefaults()) }
             .oauth2ResourceServer { it.jwt(Customizer.withDefaults()) }
             .exceptionHandling { it.authenticationEntryPoint(LoginUrlAuthenticationEntryPoint("/login")) }
             .cors {}

@@ -10,17 +10,19 @@ import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 class CorsConfig {
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {
-        val cfg = CorsConfiguration()
-        cfg.allowedOrigins = listOf(
-            "http://localhost:8084",
-            "https://mnema.app"
-        )
-        cfg.allowedMethods = listOf("GET", "POST", "OPTIONS")
-        cfg.allowedHeaders = listOf("Authorization", "Content-Type")
-        cfg.allowCredentials = true
-
-        val source = UrlBasedCorsConfigurationSource()
-        source.registerCorsConfiguration("/**", cfg)
-        return source
+        val cfg = CorsConfiguration().apply {
+            allowedOrigins = listOf(
+                "https://mnema.app",
+                "http://localhost:8084"
+            )
+            allowedMethods = listOf("GET", "POST", "OPTIONS")
+            allowedHeaders = listOf("*")
+            exposedHeaders = listOf("Authorization", "Content-Type")
+            allowCredentials = true
+            maxAge = 3600
+        }
+        return UrlBasedCorsConfigurationSource().also {
+            it.registerCorsConfiguration("/**", cfg)
+        }
     }
 }
