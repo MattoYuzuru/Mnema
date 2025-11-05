@@ -4,12 +4,11 @@ metadata:
   name: mnema-user
   namespace: prod
 spec:
-  replicas: 2
+  replicas: 1
   selector: { matchLabels: { app: mnema-user } }
   template:
     metadata: { labels: { app: mnema-user } }
     spec:
-
       initContainers:
         - name: wait-for-postgres
           image: postgres:18
@@ -35,6 +34,8 @@ spec:
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: GOOGLE_CLIENT_ID } }
             - name: GOOGLE_CLIENT_SECRET
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: GOOGLE_CLIENT_SECRET } }
+            - name: AUTH_ISSUER_URI
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: AUTH_ISSUER_URI } }
             - name: SPRING_PROFILES_ACTIVE
               value: prod
           startupProbe:

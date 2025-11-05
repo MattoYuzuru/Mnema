@@ -4,7 +4,7 @@ metadata:
   name: mnema-auth
   namespace: prod
 spec:
-  replicas: 2
+  replicas: 1
   selector: { matchLabels: { app: mnema-auth } }
   template:
     metadata: { labels: { app: mnema-auth } }
@@ -38,15 +38,15 @@ spec:
             - name: SPRING_PROFILES_ACTIVE
               value: prod
           startupProbe:
-            httpGet: { path: /api/auth/actuator/health, port: 8080 }
+            httpGet: { path: /actuator/health, port: 8080 }
             periodSeconds: 2
             failureThreshold: 30
           readinessProbe:
-            httpGet: { path: /api/auth/actuator/health, port: 8080 }
+            httpGet: { path: /actuator/health, port: 8080 }
             initialDelaySeconds: 5
             periodSeconds: 5
           livenessProbe:
-            httpGet: { path: /api/auth/actuator/health, port: 8080 }
+            httpGet: { path: /actuator/health, port: 8080 }
             initialDelaySeconds: 30
             periodSeconds: 10
 ---
