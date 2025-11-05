@@ -9,3 +9,4 @@ app:
   cors:
     origins:
       - http://localhost:3005
+      - http://localhost:8084

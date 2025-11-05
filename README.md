@@ -133,7 +133,27 @@ Mnema/
 
 ## Локальная разработка
 
-> Минимальный сценарий, добавлю позже.
+1. Создать `.env` файл, такого формата
+```env
+# --- DB ---
+POSTGRES_DB=
+POSTGRES_USER=
+POSTGRES_PASSWORD=
+POSTGRES_PORT=
+
+# --- Issuer ---
+AUTH_ISSUER=http://localhost:8083
+AUTH_ISSUER_URI=http://localhost:8083
+
+# Google OAuth
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# Локальные переменные для dev
+SPRING_DATASOURCE_USERNAME=
+SPRING_DATASOURCE_PASSWORD=
+```
+2. `docker compose up -d --build`
 
 ### Предпосылки
 

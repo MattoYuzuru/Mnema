@@ -1,4 +1,4 @@
-package app.mnema.auth
+package app.mnema.auth.config
 
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.context.annotation.Bean
@@ -8,13 +8,13 @@ import org.springframework.web.cors.CorsConfigurationSource
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource
 
 @Configuration
-class CorsConfig(
-    @Value("\${app.cors.origins}") private val origins: List<String>
-) {
+class CorsConfig(private val props: CorsProps) {
     @Bean
     fun corsConfigurationSource(): CorsConfigurationSource {
         val cfg = CorsConfiguration().apply {
-            allowedOrigins = origins
+            allowedOrigins = props.origins.ifEmpty {
+                listOf("https://mnema.app", "http://localhost:3005")
+            }
             allowedMethods = listOf("GET", "POST", "OPTIONS")
             allowedHeaders = listOf("*")
             exposedHeaders = listOf("Authorization", "Content-Type")
