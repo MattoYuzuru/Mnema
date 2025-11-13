@@ -13,8 +13,11 @@ import org.springframework.http.HttpMethod
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.config.Customizer
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
+import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken
 import org.springframework.security.oauth2.core.AuthorizationGrantType
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod
+import org.springframework.security.oauth2.core.oidc.user.OidcUser
+import org.springframework.security.oauth2.server.authorization.OAuth2TokenType
 import org.springframework.security.oauth2.server.authorization.client.JdbcRegisteredClientRepository
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClientRepository
@@ -22,6 +25,8 @@ import org.springframework.security.oauth2.server.authorization.config.annotatio
 import org.springframework.security.oauth2.server.authorization.settings.AuthorizationServerSettings
 import org.springframework.security.oauth2.server.authorization.settings.ClientSettings
 import org.springframework.security.oauth2.server.authorization.settings.TokenSettings
+import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext
+import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint
 import java.security.KeyPair
@@ -136,4 +141,27 @@ class AuthServerConfig(
             repo.save(client)
         }
     }
+
+    @Bean
+    fun jwtCustomizer(): OAuth2TokenCustomizer<JwtEncodingContext> =
+        OAuth2TokenCustomizer { context ->
+            if (OAuth2TokenType.ACCESS_TOKEN != context.tokenType) return@OAuth2TokenCustomizer
+
+            val principal = context.getPrincipal<OAuth2AuthenticationToken>()
+            if (principal is OAuth2AuthenticationToken) {
+                val oidcUser = principal.principal as? OidcUser ?: return@OAuth2TokenCustomizer
+
+                val account = accountService.upsertGoogleAccount(
+                    providerSub = oidcUser.subject,
+                    email = oidcUser.email,
+                    name = oidcUser.fullName ?: oidcUser.preferredUsername ?: oidcUser.givenName,
+                    picture = oidcUser.picture
+                )
+
+                context.claims.claim("user_id", account.id.toString())
+                context.claims.claim("email", account.email)
+                account.name?.let { context.claims.claim("name", it) }
+                account.pictureUrl?.let { context.claims.claim("picture", it) }
+            }
+        }
 }

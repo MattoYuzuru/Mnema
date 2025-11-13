@@ -14,7 +14,7 @@ class AccountService(
         email: String?,
         name: String?,
         picture: String?
-    ) {
+    ): Account {
         val acc = repo.findByProviderAndProviderSub("google", providerSub)
             .orElseGet {
                 Account(
@@ -24,11 +24,12 @@ class AccountService(
                     emailVerified = false
                 )
             }
+
         acc.email = email ?: acc.email
         acc.name = name ?: acc.name
         acc.pictureUrl = picture ?: acc.pictureUrl
         acc.lastLoginAt = Instant.now()
-        if (acc.id == null) acc.createdAt = Instant.now()
-        repo.save(acc)
+
+        return repo.save(acc)
     }
 }
