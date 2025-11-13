@@ -9,7 +9,7 @@ import org.springframework.boot.CommandLineRunner
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.core.annotation.Order
-import org.springframework.http.HttpMethod
+import org.springframework.http.MediaType
 import org.springframework.jdbc.core.JdbcTemplate
 import org.springframework.security.config.Customizer
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
@@ -28,7 +28,10 @@ import org.springframework.security.oauth2.server.authorization.settings.TokenSe
 import org.springframework.security.oauth2.server.authorization.token.JwtEncodingContext
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer
 import org.springframework.security.web.SecurityFilterChain
+import org.springframework.security.web.authentication.AuthenticationSuccessHandler
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint
+import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler
+import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.interfaces.RSAPrivateKey
@@ -37,46 +40,82 @@ import java.time.Duration
 import java.util.*
 
 @Configuration
-class AuthServerConfig(
+class SecurityConfig(
     private val accountService: AccountService
 ) {
-    /** Chain #1: эндпоинты Authorization Server */
+    /** Chain #1: Authorization Server эндпоинты (/oauth2/authorize, /oauth2/token, .well-known и т.д.) */
     @Bean
     @Order(1)
-    fun authServerSecurityFilterChain(http: HttpSecurity): SecurityFilterChain {
-        val asConfigurer = OAuth2AuthorizationServerConfigurer()
+    fun authorizationServerSecurityFilterChain(http: HttpSecurity): SecurityFilterChain {
+        val asConfigurer = OAuth2AuthorizationServerConfigurer.authorizationServer()
         val endpointsMatcher = asConfigurer.endpointsMatcher
 
         http
             .securityMatcher(endpointsMatcher)
-            .authorizeHttpRequests {
-                it.requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
-                it.anyRequest().authenticated()
+            .with(asConfigurer) { server ->
+                server.oidc(Customizer.withDefaults())
             }
-            .csrf { it.ignoringRequestMatchers(endpointsMatcher) }
-            .with(asConfigurer) { cfg -> cfg.oidc(Customizer.withDefaults()) }
-            .oauth2ResourceServer { it.jwt(Customizer.withDefaults()) }
-            .exceptionHandling { it.authenticationEntryPoint(LoginUrlAuthenticationEntryPoint("/login")) }
+            .authorizeHttpRequests { auth ->
+                auth.anyRequest().authenticated()
+            }
+            .csrf { csrf -> csrf.ignoringRequestMatchers(endpointsMatcher) }
+            .exceptionHandling { exceptions ->
+                // Если неавторизован при обращении к /oauth2/authorize - кидаем сразу на Google
+                exceptions.defaultAuthenticationEntryPointFor(
+                    LoginUrlAuthenticationEntryPoint("/oauth2/authorization/google"),
+                    MediaTypeRequestMatcher(MediaType.TEXT_HTML)
+                )
+            }
             .cors {}
 
         return http.build()
     }
 
-    /** Chain #2: обычная веб-безопасность */
+    /** Chain #2: обычные веб-эндпоинты самого auth-сервиса */
     @Bean
     @Order(2)
     fun appSecurityFilterChain(http: HttpSecurity): SecurityFilterChain {
         http
-            .authorizeHttpRequests {
-                it.requestMatchers("/actuator/**").permitAll()
-                it.anyRequest().authenticated()
+            .authorizeHttpRequests { auth ->
+                auth
+                    .requestMatchers("/actuator/**").permitAll()
+                    .anyRequest().authenticated()
             }
-            .oauth2Login(Customizer.withDefaults())
-            .formLogin(Customizer.withDefaults())
+            .oauth2Login { oauth2 ->
+                oauth2.successHandler(federatedSuccessHandler())
+            }
             .csrf { it.disable() }
             .cors {}
 
         return http.build()
+    }
+
+    /**
+     * SuccessHandler в духе официального FederatedIdentityAuthenticationSuccessHandler:
+     *  - достаём OidcUser от Google
+     *  - upsert в нашу таблицу accounts
+     *  - а потом ДЕЛЕГИРУЕМ дальше стандартному SavedRequestAwareAuthenticationSuccessHandler,
+     *    чтобы всё корректно вернулось к /oauth2/authorize и продолжилось до redirect_uri.
+     */
+    @Bean
+    fun federatedSuccessHandler(): AuthenticationSuccessHandler {
+        val delegate = SavedRequestAwareAuthenticationSuccessHandler()
+
+        return AuthenticationSuccessHandler { request, response, authentication ->
+            val oauth2 = authentication as? OAuth2AuthenticationToken
+            val oidcUser = oauth2?.principal as? OidcUser
+
+            if (oidcUser != null) {
+                accountService.upsertGoogleAccount(
+                    providerSub = oidcUser.subject,
+                    email = oidcUser.email,
+                    name = oidcUser.fullName ?: oidcUser.givenName,
+                    picture = oidcUser.picture
+                )
+            }
+
+            delegate.onAuthenticationSuccess(request, response, authentication)
+        }
     }
 
     /** Issuer - ДОЛЖЕН совпадать с iss в токенах */
@@ -108,14 +147,13 @@ class AuthServerConfig(
     fun registeredClientRepository(jdbcTemplate: JdbcTemplate): RegisteredClientRepository =
         JdbcRegisteredClientRepository(jdbcTemplate)
 
-    /** Засеять dev-клиента для Swagger в user-сервисе */
     @Bean
-    fun seedClient(repo: RegisteredClientRepository) = CommandLineRunner {
-        val clientId = "swagger-ui"
-        if (repo.findByClientId(clientId) == null) {
-            val client = RegisteredClient.withId(UUID.randomUUID().toString())
-                .clientId(clientId)
-                .clientSecret("{noop}secret") // dev only
+    fun seedClients(repo: RegisteredClientRepository) = CommandLineRunner {
+        // 1) swagger-ui как было
+        if (repo.findByClientId("swagger-ui") == null) {
+            val swaggerClient = RegisteredClient.withId(UUID.randomUUID().toString())
+                .clientId("swagger-ui")
+                .clientSecret("{noop}secret")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
@@ -133,12 +171,47 @@ class AuthServerConfig(
                 )
                 .clientSettings(
                     ClientSettings.builder()
-                        .requireProofKey(true)       // PKCE
+                        .requireProofKey(true)
                         .requireAuthorizationConsent(false)
                         .build()
                 )
                 .build()
-            repo.save(client)
+
+            repo.save(swaggerClient)
+        }
+
+        // 2) публичный фронтовый клиент mnema-web
+        if (repo.findByClientId("mnema-web") == null) {
+            val webClient = RegisteredClient.withId(UUID.randomUUID().toString())
+                .clientId("mnema-web")
+                // public client -> без секрета
+                .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
+                .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
+                .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
+                // !!! redirect_uri ДОЛЖЕН 1-в-1 совпадать с фронтом !!!
+                .redirectUri("http://localhost:3005/")
+                .redirectUri("https://mnema.app/")
+                .scope("openid")
+                .scope("profile")
+                .scope("email")
+                .scope("user.read")
+                .scope("user.write")
+                .clientSettings(
+                    ClientSettings.builder()
+                        .requireProofKey(true)            // PKCE
+                        .requireAuthorizationConsent(false)
+                        .build()
+                )
+                .tokenSettings(
+                    TokenSettings.builder()
+                        .accessTokenTimeToLive(Duration.ofHours(1))
+                        .refreshTokenTimeToLive(Duration.ofDays(30))
+                        .reuseRefreshTokens(false)
+                        .build()
+                )
+                .build()
+
+            repo.save(webClient)
         }
     }
 
@@ -147,21 +220,19 @@ class AuthServerConfig(
         OAuth2TokenCustomizer { context ->
             if (OAuth2TokenType.ACCESS_TOKEN != context.tokenType) return@OAuth2TokenCustomizer
 
-            val principal = context.getPrincipal<OAuth2AuthenticationToken>()
-            if (principal is OAuth2AuthenticationToken) {
-                val oidcUser = principal.principal as? OidcUser ?: return@OAuth2TokenCustomizer
+            val principal = context.getPrincipal() as? OAuth2AuthenticationToken ?: return@OAuth2TokenCustomizer
+            val oidcUser = principal.principal as? OidcUser ?: return@OAuth2TokenCustomizer
 
-                val account = accountService.upsertGoogleAccount(
-                    providerSub = oidcUser.subject,
-                    email = oidcUser.email,
-                    name = oidcUser.fullName ?: oidcUser.preferredUsername ?: oidcUser.givenName,
-                    picture = oidcUser.picture
-                )
+            val account = accountService.upsertGoogleAccount(
+                providerSub = oidcUser.subject,
+                email = oidcUser.email,
+                name = oidcUser.fullName ?: oidcUser.preferredUsername ?: oidcUser.givenName,
+                picture = oidcUser.picture
+            )
 
-                context.claims.claim("user_id", account.id.toString())
-                context.claims.claim("email", account.email)
-                account.name?.let { context.claims.claim("name", it) }
-                account.pictureUrl?.let { context.claims.claim("picture", it) }
-            }
+            context.claims.claim("user_id", account.id.toString())
+            context.claims.claim("email", account.email)
+            account.name?.let { context.claims.claim("name", it) }
+            account.pictureUrl?.let { context.claims.claim("picture", it) }
         }
 }
