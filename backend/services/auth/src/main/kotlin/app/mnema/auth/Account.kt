@@ -1,16 +1,15 @@
 package app.mnema.auth
 
-import jakarta.persistence.Column
-import jakarta.persistence.Entity
-import jakarta.persistence.Id
-import jakarta.persistence.Table
+import jakarta.persistence.*
 import java.time.Instant
-import java.util.UUID
+import java.util.*
+import org.hibernate.annotations.UuidGenerator
 
 @Entity
 @Table(name = "accounts", schema = "auth")
 class Account(
     @Id
+    @UuidGenerator
     @Column(columnDefinition = "uuid")
     var id: UUID? = null,
 

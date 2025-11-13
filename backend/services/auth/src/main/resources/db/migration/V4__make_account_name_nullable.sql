@@ -1,0 +1,2 @@
+ALTER TABLE auth.accounts
+    ALTER COLUMN name DROP NOT NULL;
