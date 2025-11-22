@@ -25,6 +25,9 @@ jobs:
           - name: user
             context: ./backend
             dockerfile: ./backend/services/user/Dockerfile
+          - name: core
+            context: ./backend
+            dockerfile: ./backend/services/core/Dockerfile
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -137,9 +140,11 @@ jobs:
           kubectl -n "$NS" set image deploy/mnema-frontend frontend=ghcr.io/${{ steps.repo.outputs.REPO }}/frontend:${{ steps.meta.outputs.TAG }}
           kubectl -n "$NS" set image deploy/mnema-auth     auth=ghcr.io/${{ steps.repo.outputs.REPO }}/auth:${{ steps.meta.outputs.TAG }}
           kubectl -n "$NS" set image deploy/mnema-user     user=ghcr.io/${{ steps.repo.outputs.REPO }}/user:${{ steps.meta.outputs.TAG }}
+          kubectl -n "$NS" set image deploy/mnema-core     core=ghcr.io/${{ steps.repo.outputs.REPO }}/core:${{ steps.meta.outputs.TAG }}
 
       - name: Wait for rollouts
         run: |
           kubectl -n "$NS" rollout status deploy/mnema-frontend --timeout=300s
           kubectl -n "$NS" rollout status deploy/mnema-auth     --timeout=600s
           kubectl -n "$NS" rollout status deploy/mnema-user     --timeout=600s
+          kubectl -n "$NS" rollout status deploy/mnema-core     --timeout=600s
