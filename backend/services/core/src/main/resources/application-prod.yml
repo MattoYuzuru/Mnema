@@ -1,0 +1,13 @@
+spring:
+  profiles:
+    active: prod
+
+server:
+  servlet:
+    context-path: /api/core
+
+# CORS (prod)
+app:
+  cors:
+    origins:
+      - https://mnema.app
