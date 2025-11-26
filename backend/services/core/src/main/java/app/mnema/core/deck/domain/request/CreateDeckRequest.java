@@ -1,4 +1,11 @@
 package app.mnema.core.deck.domain.request;
 
-public record CreateDeckRequest() {
+import com.fasterxml.jackson.databind.JsonNode;
+
+public record CreateDeckRequest(
+        String displayName,
+        String displayDescription,
+        String algorithmId,
+        JsonNode algorithmParams
+) {
 }
