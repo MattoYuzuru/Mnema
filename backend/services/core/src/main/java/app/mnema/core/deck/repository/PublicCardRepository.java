@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 
 @Repository
 public interface PublicCardRepository extends JpaRepository<PublicCardEntity, PublicCardId> {
@@ -24,4 +25,6 @@ public interface PublicCardRepository extends JpaRepository<PublicCardEntity, Pu
             Integer deckVersion,
             Pageable pageable
     );
+    
+    Optional<PublicCardEntity> findByCardId(UUID cardId);
 }
