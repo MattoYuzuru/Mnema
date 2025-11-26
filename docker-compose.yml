@@ -45,6 +45,21 @@ services:
       postgres: { condition: service_healthy }
     ports: ["8084:8080"]
 
+  core:
+    build:
+      context: ./backend
+      dockerfile: services/core/Dockerfile
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER}}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD}}
+      SPRING_FLYWAY_ENABLED: "true"
+      AUTH_ISSUER_URI: http://auth:8080
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports: [ "8085:8080" ]  # TODO: do same in k8s
+
   frontend:
     build:
       context: ./frontend

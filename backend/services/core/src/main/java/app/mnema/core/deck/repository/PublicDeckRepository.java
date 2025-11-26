@@ -13,5 +13,5 @@ import java.util.List;
 public interface PublicDeckRepository extends JpaRepository<PublicDeckEntity, PublicDeckId> {
     List<PublicDeckEntity> findByAuthorId(UUID authorId);
 
-    List<PublicDeckEntity> findByPublicFlagAndListedTrue(); // TODO: check if needed
+//    List<PublicDeckEntity> findByPublicFlagAndListedTrue(); // TODO: check if needed
 }

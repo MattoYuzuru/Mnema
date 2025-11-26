@@ -61,22 +61,21 @@ public class UserCardEntity {
     public UserCardEntity() {
     }
 
-    public UserCardEntity(UUID userCardId,
-                          UUID userId,
-                          UserDeckEntity userDeck,
-                          UUID publicCardId,
-                          boolean custom,
-                          boolean deleted,
-                          String personalNote,
-                          JsonNode contentOverride,
-                          Instant createdAt,
-                          Instant updatedAt,
-                          Instant lastReviewAt,
-                          Instant nextReviewAt,
-                          int reviewCount,
-                          boolean suspended
+    public UserCardEntity(
+            UUID userId,
+            UserDeckEntity userDeck,
+            UUID publicCardId,
+            boolean custom,
+            boolean deleted,
+            String personalNote,
+            JsonNode contentOverride,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant lastReviewAt,
+            Instant nextReviewAt,
+            int reviewCount,
+            boolean suspended
     ) {
-        this.userCardId = userCardId;
         this.userId = userId;
         this.userDeck = userDeck;
         this.publicCardId = publicCardId;
