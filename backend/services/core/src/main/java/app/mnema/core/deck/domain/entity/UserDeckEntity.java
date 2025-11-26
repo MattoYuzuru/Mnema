@@ -13,6 +13,7 @@ import java.util.UUID;
 public class UserDeckEntity {
 
     @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "user_deck_id", nullable = false)
     private UUID userDeckId;
 
@@ -32,7 +33,7 @@ public class UserDeckEntity {
     private boolean autoUpdate;
 
     @Column(name = "algorithm_id")
-    private String algorithmId; // FK -> sr_algorithms.algorithm_id
+    private String algorithmId;
 
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "algorithm_params", columnDefinition = "jsonb")
@@ -53,11 +54,23 @@ public class UserDeckEntity {
     @Column(name = "is_archived", nullable = false)
     private boolean archived;
 
-    public UserDeckEntity() {
+    protected UserDeckEntity() {
     }
 
-    public UserDeckEntity(UUID userDeckId, UUID userId, UUID publicDeckId, Integer subscribedVersion, Integer currentVersion, boolean autoUpdate, String algorithmId, JsonNode algorithmParams, String displayName, String displayDescription, Instant createdAt, Instant lastSyncedAt, boolean archived) {
-        this.userDeckId = userDeckId;
+    public UserDeckEntity(
+            UUID userId,
+            UUID publicDeckId,
+            Integer subscribedVersion,
+            Integer currentVersion,
+            boolean autoUpdate,
+            String algorithmId,
+            JsonNode algorithmParams,
+            String displayName,
+            String displayDescription,
+            Instant createdAt,
+            Instant lastSyncedAt,
+            boolean archived
+    ) {
         this.userId = userId;
         this.publicDeckId = publicDeckId;
         this.subscribedVersion = subscribedVersion;
@@ -72,107 +85,56 @@ public class UserDeckEntity {
         this.archived = archived;
     }
 
+    // только геттеры (или доменные методы типа archive())
     public UUID getUserDeckId() {
         return userDeckId;
-    }
-
-    public void setUserDeckId(UUID userDeckId) {
-        this.userDeckId = userDeckId;
     }
 
     public UUID getUserId() {
         return userId;
     }
 
-    public void setUserId(UUID userId) {
-        this.userId = userId;
-    }
-
     public UUID getPublicDeckId() {
         return publicDeckId;
-    }
-
-    public void setPublicDeckId(UUID publicDeckId) {
-        this.publicDeckId = publicDeckId;
     }
 
     public Integer getSubscribedVersion() {
         return subscribedVersion;
     }
 
-    public void setSubscribedVersion(Integer subscribedVersion) {
-        this.subscribedVersion = subscribedVersion;
-    }
-
     public Integer getCurrentVersion() {
         return currentVersion;
-    }
-
-    public void setCurrentVersion(Integer currentVersion) {
-        this.currentVersion = currentVersion;
     }
 
     public boolean isAutoUpdate() {
         return autoUpdate;
     }
 
-    public void setAutoUpdate(boolean autoUpdate) {
-        this.autoUpdate = autoUpdate;
-    }
-
     public String getAlgorithmId() {
         return algorithmId;
-    }
-
-    public void setAlgorithmId(String algorithmId) {
-        this.algorithmId = algorithmId;
     }
 
     public JsonNode getAlgorithmParams() {
         return algorithmParams;
     }
 
-    public void setAlgorithmParams(JsonNode algorithmParams) {
-        this.algorithmParams = algorithmParams;
-    }
-
     public String getDisplayName() {
         return displayName;
-    }
-
-    public void setDisplayName(String displayName) {
-        this.displayName = displayName;
     }
 
     public String getDisplayDescription() {
         return displayDescription;
     }
 
-    public void setDisplayDescription(String displayDescription) {
-        this.displayDescription = displayDescription;
-    }
-
     public Instant getCreatedAt() {
         return createdAt;
-    }
-
-    public void setCreatedAt(Instant createdAt) {
-        this.createdAt = createdAt;
     }
 
     public Instant getLastSyncedAt() {
         return lastSyncedAt;
     }
 
-    public void setLastSyncedAt(Instant lastSyncedAt) {
-        this.lastSyncedAt = lastSyncedAt;
-    }
-
     public boolean isArchived() {
         return archived;
-    }
-
-    public void setArchived(boolean archived) {
-        this.archived = archived;
     }
 }
