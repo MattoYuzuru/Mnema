@@ -13,7 +13,7 @@ public record UserCardDTO(
         boolean isDeleted,
         boolean isSuspended,
         String personalNote,
-        JsonNode effectiveContent, // merged: public.content + override
+        JsonNode effectiveContent,
         Instant lastReviewAt,
         Instant nextReviewAt,
         int reviewCount

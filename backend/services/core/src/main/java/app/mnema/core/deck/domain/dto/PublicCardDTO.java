@@ -7,11 +7,11 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record PublicCardDTO(
+        UUID deckId,
         Integer deckVersion,
         UUID cardId,
-        PublicDeckEntity deck,
         JsonNode content,
-        int orderIndex,
+        Integer orderIndex,
         String[] tags,
         Instant createdAt,
         Instant updatedAt,
