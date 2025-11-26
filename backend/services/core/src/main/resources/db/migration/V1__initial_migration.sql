@@ -10,7 +10,7 @@ DO
 $$
     BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'language_tag') THEN
-            CREATE TYPE language_tag AS ENUM ('ru', 'en');
+            CREATE TYPE language_tag AS ENUM ('ru', 'en', 'jp', 'sp');
         END IF;
     END
 $$ LANGUAGE plpgsql;
@@ -21,14 +21,14 @@ $$
     BEGIN
         IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'card_field_type') THEN
             CREATE TYPE card_field_type AS ENUM (
-                'text',        -- простой текст
-                'rich_text',   -- форматированный текст / markdown
-                'cloze',       -- cloze-deletion
-                'image',       -- ссылка на картинку
-                'audio',       -- ссылка на аудио
-                'video',       -- ссылка на видео
-                'tags',        -- список тегов
-                'boolean'      -- чекбокс / флаг
+                'text', -- простой текст
+                'rich_text', -- форматированный текст / markdown
+                'cloze', -- cloze-deletion
+                'image', -- ссылка на картинку
+                'audio', -- ссылка на аудио
+                'video', -- ссылка на видео
+                'tags', -- список тегов
+                'bool' -- чекбокс / флаг
                 );
         END IF;
     END
@@ -43,7 +43,6 @@ $$
                 'web',
                 'mobile',
                 'api',
-                'import',
                 'other'
                 );
         END IF;
@@ -102,36 +101,36 @@ CREATE TABLE IF NOT EXISTS app_core.public_decks
     PRIMARY KEY (deck_id, version)
 );
 
-COMMENT ON TABLE  app_core.public_decks                      IS 'Иммутабельные версии публичных колод, доступных для шаринга.';
-COMMENT ON COLUMN app_core.public_decks.deck_id              IS 'Идентификатор колоды (общий для всех версий одной логической колоды).';
-COMMENT ON COLUMN app_core.public_decks.version              IS 'Номер версии колоды (1,2,3...). Вместе с deck_id образует PK.';
-COMMENT ON COLUMN app_core.public_decks.author_id            IS 'Автор (user_id) колоды.';
-COMMENT ON COLUMN app_core.public_decks.name                 IS 'Название колоды, отображаемое в UI.';
-COMMENT ON COLUMN app_core.public_decks.description          IS 'Описание колоды.';
-COMMENT ON COLUMN app_core.public_decks.template_id          IS 'Ссылка на шаблон карт (card_templates.template_id).';
-COMMENT ON COLUMN app_core.public_decks.is_public            IS 'Флаг: true, если колоду можно открыть по прямой ссылке.';
-COMMENT ON COLUMN app_core.public_decks.is_listed            IS 'Флаг: true, если колода отображается в общем каталоге.';
-COMMENT ON COLUMN app_core.public_decks.language_code        IS 'Язык колоды (ENUM language_tag).';
-COMMENT ON COLUMN app_core.public_decks.tags                 IS 'Теги колоды, используются для фильтрации и поиска.';
-COMMENT ON COLUMN app_core.public_decks.created_at           IS 'Дата и время создания записи колоды.';
-COMMENT ON COLUMN app_core.public_decks.updated_at           IS 'Дата и время последнего изменения записи этой версии.';
-COMMENT ON COLUMN app_core.public_decks.published_at         IS 'Дата и время публикации этой версии колоды.';
-COMMENT ON COLUMN app_core.public_decks.forked_from_deck     IS 'deck_id исходной колоды, если это форк. Версия не фиксируется.';
+COMMENT ON TABLE app_core.public_decks IS 'Иммутабельные версии публичных колод, доступных для шаринга.';
+COMMENT ON COLUMN app_core.public_decks.deck_id IS 'Идентификатор колоды (общий для всех версий одной логической колоды).';
+COMMENT ON COLUMN app_core.public_decks.version IS 'Номер версии колоды (1,2,3...). Вместе с deck_id образует PK.';
+COMMENT ON COLUMN app_core.public_decks.author_id IS 'Автор (user_id) колоды.';
+COMMENT ON COLUMN app_core.public_decks.name IS 'Название колоды, отображаемое в UI.';
+COMMENT ON COLUMN app_core.public_decks.description IS 'Описание колоды.';
+COMMENT ON COLUMN app_core.public_decks.template_id IS 'Ссылка на шаблон карт (card_templates.template_id).';
+COMMENT ON COLUMN app_core.public_decks.is_public IS 'Флаг: true, если колоду можно открыть по прямой ссылке.';
+COMMENT ON COLUMN app_core.public_decks.is_listed IS 'Флаг: true, если колода отображается в общем каталоге.';
+COMMENT ON COLUMN app_core.public_decks.language_code IS 'Язык колоды (ENUM language_tag).';
+COMMENT ON COLUMN app_core.public_decks.tags IS 'Теги колоды, используются для фильтрации и поиска.';
+COMMENT ON COLUMN app_core.public_decks.created_at IS 'Дата и время создания записи колоды.';
+COMMENT ON COLUMN app_core.public_decks.updated_at IS 'Дата и время последнего изменения записи этой версии.';
+COMMENT ON COLUMN app_core.public_decks.published_at IS 'Дата и время публикации этой версии колоды.';
+COMMENT ON COLUMN app_core.public_decks.forked_from_deck IS 'deck_id исходной колоды, если это форк. Версия не фиксируется.';
 
 
 -- Публичные карты внутри версий колод
 CREATE TABLE IF NOT EXISTS app_core.public_cards
 (
-    deck_id      UUID      NOT NULL,
+    deck_id      UUID        NOT NULL,
     -- Идентификатор колоды, к которой принадлежит карта
 
-    deck_version INT       NOT NULL DEFAULT 1,
+    deck_version INT         NOT NULL DEFAULT 1,
     -- Версия колоды, в рамках которой существует эта карта
 
-    card_id      UUID      NOT NULL DEFAULT gen_random_uuid(),
+    card_id      UUID        NOT NULL DEFAULT gen_random_uuid(),
     -- Идентификатор карты внутри публичной части
 
-    content      JSONB     NOT NULL,
+    content      JSONB       NOT NULL,
     -- Контент карты по шаблону (fields/media/meta и т.д.)
 
     order_index  INT,
@@ -146,7 +145,7 @@ CREATE TABLE IF NOT EXISTS app_core.public_cards
     updated_at   TIMESTAMPTZ,
     -- Время последнего обновления контента карты
 
-    is_active    BOOLEAN   NOT NULL DEFAULT true,
+    is_active    BOOLEAN     NOT NULL DEFAULT true,
     -- Флаг активности карты (можно скрыть карту в новой версии, но не удалять физически)
 
     checksum     TEXT,
@@ -155,17 +154,17 @@ CREATE TABLE IF NOT EXISTS app_core.public_cards
     PRIMARY KEY (deck_id, deck_version, card_id)
 );
 
-COMMENT ON TABLE  app_core.public_cards                      IS 'Карты внутри конкретных версий публичных колод.';
-COMMENT ON COLUMN app_core.public_cards.deck_id              IS 'Идентификатор колоды, которой принадлежит карта.';
-COMMENT ON COLUMN app_core.public_cards.deck_version         IS 'Номер версии колоды, в которой определена эта карта.';
-COMMENT ON COLUMN app_core.public_cards.card_id              IS 'Идентификатор карты внутри колоды и версии.';
-COMMENT ON COLUMN app_core.public_cards.content              IS 'JSONB-контент карты по шаблону (fields/media/meta).';
-COMMENT ON COLUMN app_core.public_cards.order_index          IS 'Порядковый номер карты внутри колоды.';
-COMMENT ON COLUMN app_core.public_cards.tags                 IS 'Произвольные теги карты.';
-COMMENT ON COLUMN app_core.public_cards.created_at           IS 'Дата и время создания карты.';
-COMMENT ON COLUMN app_core.public_cards.updated_at           IS 'Дата и время последнего обновления карты.';
-COMMENT ON COLUMN app_core.public_cards.is_active            IS 'Флаг активности карты (soft-hide для новых версий).';
-COMMENT ON COLUMN app_core.public_cards.checksum             IS 'Хэш содержимого карты (для сравнения и синка).';
+COMMENT ON TABLE app_core.public_cards IS 'Карты внутри конкретных версий публичных колод.';
+COMMENT ON COLUMN app_core.public_cards.deck_id IS 'Идентификатор колоды, которой принадлежит карта.';
+COMMENT ON COLUMN app_core.public_cards.deck_version IS 'Номер версии колоды, в которой определена эта карта.';
+COMMENT ON COLUMN app_core.public_cards.card_id IS 'Идентификатор карты внутри колоды и версии.';
+COMMENT ON COLUMN app_core.public_cards.content IS 'JSONB-контент карты по шаблону (fields/media/meta).';
+COMMENT ON COLUMN app_core.public_cards.order_index IS 'Порядковый номер карты внутри колоды.';
+COMMENT ON COLUMN app_core.public_cards.tags IS 'Произвольные теги карты.';
+COMMENT ON COLUMN app_core.public_cards.created_at IS 'Дата и время создания карты.';
+COMMENT ON COLUMN app_core.public_cards.updated_at IS 'Дата и время последнего обновления карты.';
+COMMENT ON COLUMN app_core.public_cards.is_active IS 'Флаг активности карты (soft-hide для новых версий).';
+COMMENT ON COLUMN app_core.public_cards.checksum IS 'Хэш содержимого карты (для сравнения и синка).';
 
 
 -- Подписки пользователя на публичные колоды / локальные колоды пользователя
@@ -213,20 +212,20 @@ CREATE TABLE IF NOT EXISTS app_core.user_decks
     PRIMARY KEY (user_deck_id)
 );
 
-COMMENT ON TABLE  app_core.user_decks                             IS 'Пользовательские колоды: подписки на публичные и локальные колоды.';
-COMMENT ON COLUMN app_core.user_decks.user_deck_id                IS 'Идентификатор пользовательской колоды/подписки.';
-COMMENT ON COLUMN app_core.user_decks.user_id                     IS 'Пользователь, владелец колоды.';
-COMMENT ON COLUMN app_core.user_decks.public_deck_id              IS 'deck_id публичной колоды (NULL для локальных колод).';
-COMMENT ON COLUMN app_core.user_decks.subscribed_version          IS 'Версия публичной колоды, на которую пользователю подписался изначально.';
-COMMENT ON COLUMN app_core.user_decks.current_version             IS 'Текущая версия публичной колоды, которая сейчас используется.';
-COMMENT ON COLUMN app_core.user_decks.auto_update                 IS 'Флаг: при true колода автоматически обновляется до новых версий.';
-COMMENT ON COLUMN app_core.user_decks.algorithm_id                IS 'Выбранный алгоритм SRS для этой колоды.';
-COMMENT ON COLUMN app_core.user_decks.algorithm_params            IS 'Конфигурация алгоритма SRS для этой колоды (JSONB).';
-COMMENT ON COLUMN app_core.user_decks.display_name                IS 'Локальное имя колоды, которое видит пользователь.';
-COMMENT ON COLUMN app_core.user_decks.display_description         IS 'Локальное описание колоды.';
-COMMENT ON COLUMN app_core.user_decks.created_at                  IS 'Дата и время создания пользовательской колоды/подписки.';
-COMMENT ON COLUMN app_core.user_decks.last_synced_at              IS 'Дата и время последней синхронизации с публичной колодой.';
-COMMENT ON COLUMN app_core.user_decks.is_archived                 IS 'Флаг архивации: true, если колода скрыта/в архиве.';
+COMMENT ON TABLE app_core.user_decks IS 'Пользовательские колоды: подписки на публичные и локальные колоды.';
+COMMENT ON COLUMN app_core.user_decks.user_deck_id IS 'Идентификатор пользовательской колоды/подписки.';
+COMMENT ON COLUMN app_core.user_decks.user_id IS 'Пользователь, владелец колоды.';
+COMMENT ON COLUMN app_core.user_decks.public_deck_id IS 'deck_id публичной колоды (NULL для локальных колод).';
+COMMENT ON COLUMN app_core.user_decks.subscribed_version IS 'Версия публичной колоды, на которую пользователю подписался изначально.';
+COMMENT ON COLUMN app_core.user_decks.current_version IS 'Текущая версия публичной колоды, которая сейчас используется.';
+COMMENT ON COLUMN app_core.user_decks.auto_update IS 'Флаг: при true колода автоматически обновляется до новых версий.';
+COMMENT ON COLUMN app_core.user_decks.algorithm_id IS 'Выбранный алгоритм SRS для этой колоды.';
+COMMENT ON COLUMN app_core.user_decks.algorithm_params IS 'Конфигурация алгоритма SRS для этой колоды (JSONB).';
+COMMENT ON COLUMN app_core.user_decks.display_name IS 'Локальное имя колоды, которое видит пользователь.';
+COMMENT ON COLUMN app_core.user_decks.display_description IS 'Локальное описание колоды.';
+COMMENT ON COLUMN app_core.user_decks.created_at IS 'Дата и время создания пользовательской колоды/подписки.';
+COMMENT ON COLUMN app_core.user_decks.last_synced_at IS 'Дата и время последней синхронизации с публичной колодой.';
+COMMENT ON COLUMN app_core.user_decks.is_archived IS 'Флаг архивации: true, если колода скрыта/в архиве.';
 
 
 -- Карты в пользовательской колоде (прогресс, кастомные карты)
@@ -277,21 +276,21 @@ CREATE TABLE IF NOT EXISTS app_core.user_cards
     PRIMARY KEY (user_card_id)
 );
 
-COMMENT ON TABLE  app_core.user_cards                           IS 'Карты в пользовательских колодах с прогрессом и локальными модификациями.';
-COMMENT ON COLUMN app_core.user_cards.user_card_id              IS 'Уникальный идентификатор пользовательской карты.';
-COMMENT ON COLUMN app_core.user_cards.user_id                   IS 'Владелец карты.';
-COMMENT ON COLUMN app_core.user_cards.subscription_id           IS 'Ссылка на пользовательскую колоду (user_decks.user_deck_id).';
-COMMENT ON COLUMN app_core.user_cards.public_card_id            IS 'Ссылка на карту в публичной колоде (public_cards.card_id), NULL для локальных карт.';
-COMMENT ON COLUMN app_core.user_cards.is_custom                 IS 'Флаг: true, если карта создана пользователем, а не пришла из публичной колоды.';
-COMMENT ON COLUMN app_core.user_cards.is_deleted                IS 'Флаг soft delete: карта скрыта у пользователя, но используется для синхронизации.';
-COMMENT ON COLUMN app_core.user_cards.personal_note             IS 'Персональная заметка к карте.';
-COMMENT ON COLUMN app_core.user_cards.content_override          IS 'Локальное переопределение контента карты (JSONB).';
-COMMENT ON COLUMN app_core.user_cards.created_at                IS 'Дата и время создания пользовательской карты.';
-COMMENT ON COLUMN app_core.user_cards.updated_at                IS 'Дата и время последнего обновления пользовательской карты.';
-COMMENT ON COLUMN app_core.user_cards.last_review_at            IS 'Дата и время последнего ревью.';
-COMMENT ON COLUMN app_core.user_cards.next_review_at            IS 'Дата и время следующего ревью (кэш).';
-COMMENT ON COLUMN app_core.user_cards.review_count              IS 'Общее количество ревью по этой карте.';
-COMMENT ON COLUMN app_core.user_cards.is_suspended              IS 'Флаг: карта временно исключена из расписания ревью.';
+COMMENT ON TABLE app_core.user_cards IS 'Карты в пользовательских колодах с прогрессом и локальными модификациями.';
+COMMENT ON COLUMN app_core.user_cards.user_card_id IS 'Уникальный идентификатор пользовательской карты.';
+COMMENT ON COLUMN app_core.user_cards.user_id IS 'Владелец карты.';
+COMMENT ON COLUMN app_core.user_cards.subscription_id IS 'Ссылка на пользовательскую колоду (user_decks.user_deck_id).';
+COMMENT ON COLUMN app_core.user_cards.public_card_id IS 'Ссылка на карту в публичной колоде (public_cards.card_id), NULL для локальных карт.';
+COMMENT ON COLUMN app_core.user_cards.is_custom IS 'Флаг: true, если карта создана пользователем, а не пришла из публичной колоды.';
+COMMENT ON COLUMN app_core.user_cards.is_deleted IS 'Флаг soft delete: карта скрыта у пользователя, но используется для синхронизации.';
+COMMENT ON COLUMN app_core.user_cards.personal_note IS 'Персональная заметка к карте.';
+COMMENT ON COLUMN app_core.user_cards.content_override IS 'Локальное переопределение контента карты (JSONB).';
+COMMENT ON COLUMN app_core.user_cards.created_at IS 'Дата и время создания пользовательской карты.';
+COMMENT ON COLUMN app_core.user_cards.updated_at IS 'Дата и время последнего обновления пользовательской карты.';
+COMMENT ON COLUMN app_core.user_cards.last_review_at IS 'Дата и время последнего ревью.';
+COMMENT ON COLUMN app_core.user_cards.next_review_at IS 'Дата и время следующего ревью (кэш).';
+COMMENT ON COLUMN app_core.user_cards.review_count IS 'Общее количество ревью по этой карте.';
+COMMENT ON COLUMN app_core.user_cards.is_suspended IS 'Флаг: карта временно исключена из расписания ревью.';
 
 
 -- Шаблоны карт (каркас полей/лейаута/AI-профиля)
@@ -330,17 +329,17 @@ CREATE TABLE IF NOT EXISTS app_core.card_templates
     PRIMARY KEY (template_id)
 );
 
-COMMENT ON TABLE  app_core.card_templates                     IS 'Шаблоны карт: набор полей, лейаут и AI-профиль.';
-COMMENT ON COLUMN app_core.card_templates.template_id         IS 'Идентификатор шаблона карты.';
-COMMENT ON COLUMN app_core.card_templates.owner_id            IS 'Создатель шаблона (user_id или системный).';
-COMMENT ON COLUMN app_core.card_templates.name                IS 'Название шаблона.';
-COMMENT ON COLUMN app_core.card_templates.description         IS 'Описание шаблона и сценариев использования.';
-COMMENT ON COLUMN app_core.card_templates.is_public           IS 'Флаг: доступен ли шаблон другим пользователям.';
-COMMENT ON COLUMN app_core.card_templates.created_at          IS 'Дата и время создания шаблона.';
-COMMENT ON COLUMN app_core.card_templates.updated_at          IS 'Дата и время последнего обновления шаблона.';
-COMMENT ON COLUMN app_core.card_templates.layout              IS 'JSONB-описание лейаута (front/back, блоки, условия).';
-COMMENT ON COLUMN app_core.card_templates.ai_profile          IS 'JSONB-профиль для AI-генерации карт по шаблону.';
-COMMENT ON COLUMN app_core.card_templates.icon_url            IS 'URL иконки шаблона.';
+COMMENT ON TABLE app_core.card_templates IS 'Шаблоны карт: набор полей, лейаут и AI-профиль.';
+COMMENT ON COLUMN app_core.card_templates.template_id IS 'Идентификатор шаблона карты.';
+COMMENT ON COLUMN app_core.card_templates.owner_id IS 'Создатель шаблона (user_id или системный).';
+COMMENT ON COLUMN app_core.card_templates.name IS 'Название шаблона.';
+COMMENT ON COLUMN app_core.card_templates.description IS 'Описание шаблона и сценариев использования.';
+COMMENT ON COLUMN app_core.card_templates.is_public IS 'Флаг: доступен ли шаблон другим пользователям.';
+COMMENT ON COLUMN app_core.card_templates.created_at IS 'Дата и время создания шаблона.';
+COMMENT ON COLUMN app_core.card_templates.updated_at IS 'Дата и время последнего обновления шаблона.';
+COMMENT ON COLUMN app_core.card_templates.layout IS 'JSONB-описание лейаута (front/back, блоки, условия).';
+COMMENT ON COLUMN app_core.card_templates.ai_profile IS 'JSONB-профиль для AI-генерации карт по шаблону.';
+COMMENT ON COLUMN app_core.card_templates.icon_url IS 'URL иконки шаблона.';
 
 
 -- Поля шаблона карты (структура контента)
@@ -379,17 +378,17 @@ CREATE TABLE IF NOT EXISTS app_core.field_templates
     PRIMARY KEY (field_id)
 );
 
-COMMENT ON TABLE  app_core.field_templates                     IS 'Описания полей для шаблонов карт.';
-COMMENT ON COLUMN app_core.field_templates.field_id            IS 'Идентификатор поля шаблона.';
-COMMENT ON COLUMN app_core.field_templates.template_id         IS 'Ссылка на шаблон (card_templates.template_id).';
-COMMENT ON COLUMN app_core.field_templates.name                IS 'Машинное имя поля (ключ в JSON контента).';
-COMMENT ON COLUMN app_core.field_templates.label               IS 'Человеческий лейбл поля в UI.';
-COMMENT ON COLUMN app_core.field_templates.field_type          IS 'Тип поля (ENUM card_field_type).';
-COMMENT ON COLUMN app_core.field_templates.is_required         IS 'Флаг обязательности поля.';
-COMMENT ON COLUMN app_core.field_templates.is_on_front         IS 'Флаг: участвует ли поле в фронте карты.';
-COMMENT ON COLUMN app_core.field_templates.order_index         IS 'Порядок отображения поля в форме.';
-COMMENT ON COLUMN app_core.field_templates.default_value       IS 'Дефолтное значение поля.';
-COMMENT ON COLUMN app_core.field_templates.help_text           IS 'Подсказка по заполнению поля.';
+COMMENT ON TABLE app_core.field_templates IS 'Описания полей для шаблонов карт.';
+COMMENT ON COLUMN app_core.field_templates.field_id IS 'Идентификатор поля шаблона.';
+COMMENT ON COLUMN app_core.field_templates.template_id IS 'Ссылка на шаблон (card_templates.template_id).';
+COMMENT ON COLUMN app_core.field_templates.name IS 'Машинное имя поля (ключ в JSON контента).';
+COMMENT ON COLUMN app_core.field_templates.label IS 'Человеческий лейбл поля в UI.';
+COMMENT ON COLUMN app_core.field_templates.field_type IS 'Тип поля (ENUM card_field_type).';
+COMMENT ON COLUMN app_core.field_templates.is_required IS 'Флаг обязательности поля.';
+COMMENT ON COLUMN app_core.field_templates.is_on_front IS 'Флаг: участвует ли поле в фронте карты.';
+COMMENT ON COLUMN app_core.field_templates.order_index IS 'Порядок отображения поля в форме.';
+COMMENT ON COLUMN app_core.field_templates.default_value IS 'Дефолтное значение поля.';
+COMMENT ON COLUMN app_core.field_templates.help_text IS 'Подсказка по заполнению поля.';
 
 
 -- Алгоритмы SRS
@@ -419,26 +418,26 @@ CREATE TABLE IF NOT EXISTS app_core.sr_algorithms
     PRIMARY KEY (algorithm_id)
 );
 
-COMMENT ON TABLE  app_core.sr_algorithms                       IS 'Реализованные в системе алгоритмы spaced repetition.';
-COMMENT ON COLUMN app_core.sr_algorithms.algorithm_id          IS 'Машинный идентификатор алгоритма (используется в ссылках).';
-COMMENT ON COLUMN app_core.sr_algorithms.name                  IS 'Отображаемое название алгоритма.';
-COMMENT ON COLUMN app_core.sr_algorithms.description           IS 'Описание алгоритма.';
-COMMENT ON COLUMN app_core.sr_algorithms.version               IS 'Версия реализации алгоритма.';
-COMMENT ON COLUMN app_core.sr_algorithms.config_schema         IS 'JSON-схема возможных настроек алгоритма.';
-COMMENT ON COLUMN app_core.sr_algorithms.default_config        IS 'Конфигурация алгоритма по умолчанию.';
-COMMENT ON COLUMN app_core.sr_algorithms.created_at            IS 'Дата и время создания записи об алгоритме.';
+COMMENT ON TABLE app_core.sr_algorithms IS 'Реализованные в системе алгоритмы spaced repetition.';
+COMMENT ON COLUMN app_core.sr_algorithms.algorithm_id IS 'Машинный идентификатор алгоритма (используется в ссылках).';
+COMMENT ON COLUMN app_core.sr_algorithms.name IS 'Отображаемое название алгоритма.';
+COMMENT ON COLUMN app_core.sr_algorithms.description IS 'Описание алгоритма.';
+COMMENT ON COLUMN app_core.sr_algorithms.version IS 'Версия реализации алгоритма.';
+COMMENT ON COLUMN app_core.sr_algorithms.config_schema IS 'JSON-схема возможных настроек алгоритма.';
+COMMENT ON COLUMN app_core.sr_algorithms.default_config IS 'Конфигурация алгоритма по умолчанию.';
+COMMENT ON COLUMN app_core.sr_algorithms.created_at IS 'Дата и время создания записи об алгоритме.';
 
 
 -- Текущее состояние алгоритма по каждой пользовательской карте
 CREATE TABLE IF NOT EXISTS app_core.sr_card_states
 (
-    user_card_id   UUID        NOT NULL,
+    user_card_id   UUID  NOT NULL,
     -- Ссылка на пользовательскую карту (user_cards.user_card_id)
 
-    algorithm_id   TEXT        NOT NULL,
+    algorithm_id   TEXT  NOT NULL,
     -- Алгоритм, по которому сейчас считается эта карта
 
-    state          JSONB       NOT NULL,
+    state          JSONB NOT NULL,
     -- Произвольное состояние алгоритма (stability, difficulty, ...)
 
     last_review_at TIMESTAMPTZ,
@@ -447,34 +446,34 @@ CREATE TABLE IF NOT EXISTS app_core.sr_card_states
     next_review_at TIMESTAMPTZ,
     -- Дата и время следующего ревью (вычислено алгоритмом)
 
-    review_count   INT         NOT NULL DEFAULT 0,
+    review_count   INT   NOT NULL DEFAULT 0,
     -- Количество ревью, прошедших через этот алгоритм
 
     PRIMARY KEY (user_card_id)
 );
 
-COMMENT ON TABLE  app_core.sr_card_states                      IS 'Текущее состояние алгоритма SRS для каждой пользовательской карты.';
-COMMENT ON COLUMN app_core.sr_card_states.user_card_id         IS 'Ссылка на пользовательскую карту (user_cards.user_card_id).';
-COMMENT ON COLUMN app_core.sr_card_states.algorithm_id         IS 'Алгоритм, по которому ведётся состояние.';
-COMMENT ON COLUMN app_core.sr_card_states.state                IS 'JSONB-состояние карты для алгоритма (например, поля FSRS).';
-COMMENT ON COLUMN app_core.sr_card_states.last_review_at       IS 'Дата и время последнего ревью для алгоритма.';
-COMMENT ON COLUMN app_core.sr_card_states.next_review_at       IS 'Дата и время следующего ревью (из алгоритма).';
-COMMENT ON COLUMN app_core.sr_card_states.review_count         IS 'Общее количество ревью, учтённых в состоянии.';
+COMMENT ON TABLE app_core.sr_card_states IS 'Текущее состояние алгоритма SRS для каждой пользовательской карты.';
+COMMENT ON COLUMN app_core.sr_card_states.user_card_id IS 'Ссылка на пользовательскую карту (user_cards.user_card_id).';
+COMMENT ON COLUMN app_core.sr_card_states.algorithm_id IS 'Алгоритм, по которому ведётся состояние.';
+COMMENT ON COLUMN app_core.sr_card_states.state IS 'JSONB-состояние карты для алгоритма (например, поля FSRS).';
+COMMENT ON COLUMN app_core.sr_card_states.last_review_at IS 'Дата и время последнего ревью для алгоритма.';
+COMMENT ON COLUMN app_core.sr_card_states.next_review_at IS 'Дата и время следующего ревью (из алгоритма).';
+COMMENT ON COLUMN app_core.sr_card_states.review_count IS 'Общее количество ревью, учтённых в состоянии.';
 
 
 -- Лог всех ревью (для реконструкции состояния и анализа)
 CREATE TABLE IF NOT EXISTS app_core.sr_review_logs
 (
-    id           BIGSERIAL     PRIMARY KEY,
+    id           BIGSERIAL PRIMARY KEY,
     -- Уникальный идентификатор записи логов
 
-    user_card_id UUID          NOT NULL,
+    user_card_id UUID        NOT NULL,
     -- Пользовательская карта, по которой было ревью
 
-    algorithm_id TEXT          NOT NULL,
+    algorithm_id TEXT        NOT NULL,
     -- Алгоритм, который использовался при этом ревью
 
-    reviewed_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    reviewed_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     -- Время ревью
 
     rating       SMALLINT,
@@ -495,16 +494,16 @@ CREATE TABLE IF NOT EXISTS app_core.sr_review_logs
     CHECK (rating IS NULL OR rating >= 0)
 );
 
-COMMENT ON TABLE  app_core.sr_review_logs                      IS 'Лог всех ревью по пользовательским картам.';
-COMMENT ON COLUMN app_core.sr_review_logs.id                   IS 'Уникальный идентификатор записи ревью.';
-COMMENT ON COLUMN app_core.sr_review_logs.user_card_id         IS 'Пользовательская карта, по которой было ревью.';
-COMMENT ON COLUMN app_core.sr_review_logs.algorithm_id         IS 'Алгоритм, применённый при этом ревью.';
-COMMENT ON COLUMN app_core.sr_review_logs.reviewed_at          IS 'Дата и время ревью.';
-COMMENT ON COLUMN app_core.sr_review_logs.rating               IS 'Оценка ответа пользователя (интерпретация зависит от алгоритма).';
-COMMENT ON COLUMN app_core.sr_review_logs.response_ms          IS 'Время ответа пользователя в миллисекундах.';
-COMMENT ON COLUMN app_core.sr_review_logs.state_before         IS 'Состояние алгоритма до применения ревью.';
-COMMENT ON COLUMN app_core.sr_review_logs.state_after          IS 'Состояние алгоритма после применения ревью.';
-COMMENT ON COLUMN app_core.sr_review_logs.source               IS 'Источник ревью (web/mobile/api/import/other).';
+COMMENT ON TABLE app_core.sr_review_logs IS 'Лог всех ревью по пользовательским картам.';
+COMMENT ON COLUMN app_core.sr_review_logs.id IS 'Уникальный идентификатор записи ревью.';
+COMMENT ON COLUMN app_core.sr_review_logs.user_card_id IS 'Пользовательская карта, по которой было ревью.';
+COMMENT ON COLUMN app_core.sr_review_logs.algorithm_id IS 'Алгоритм, применённый при этом ревью.';
+COMMENT ON COLUMN app_core.sr_review_logs.reviewed_at IS 'Дата и время ревью.';
+COMMENT ON COLUMN app_core.sr_review_logs.rating IS 'Оценка ответа пользователя (интерпретация зависит от алгоритма).';
+COMMENT ON COLUMN app_core.sr_review_logs.response_ms IS 'Время ответа пользователя в миллисекундах.';
+COMMENT ON COLUMN app_core.sr_review_logs.state_before IS 'Состояние алгоритма до применения ревью.';
+COMMENT ON COLUMN app_core.sr_review_logs.state_after IS 'Состояние алгоритма после применения ревью.';
+COMMENT ON COLUMN app_core.sr_review_logs.source IS 'Источник ревью (web/mobile/api/import/other).';
 
 
 -- =========================
