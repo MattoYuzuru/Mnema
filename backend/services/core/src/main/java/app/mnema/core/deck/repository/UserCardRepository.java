@@ -1,6 +1,7 @@
 package app.mnema.core.deck.repository;
 
 import app.mnema.core.deck.domain.entity.UserCardEntity;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
@@ -11,10 +12,13 @@ import java.util.UUID;
 
 @Repository
 public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> {
-    List<UserCardEntity> findByUserDeck_UserDeckId(UUID userDeckId);
+    List<UserCardEntity> findByUserDeck_UserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc(
+            UUID userDeckId,
+            Pageable pageable
+    );
 
     @Query("""
-            select c 
+            select c
             from UserCardEntity c
             join SrCardStateEntity s on s.userCardId = c.userCardId
             where c.userDeck.userDeckId = :deckId
