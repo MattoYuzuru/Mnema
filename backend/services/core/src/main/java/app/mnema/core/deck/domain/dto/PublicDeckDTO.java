@@ -1,15 +1,24 @@
 package app.mnema.core.deck.domain.dto;
 
+import app.mnema.core.deck.domain.type.LanguageTag;
+
+import java.time.Instant;
 import java.util.UUID;
 
-public record PublicDeckSummaryDTO(
-        UUID deckId,
-        int version,
+public record PublicDeckDTO(
+//        UUID deckId,
+        Integer version,
+        UUID authorId,
         String name,
         String description,
-        String language,
-        String[] tags,
+        UUID templateId,
         boolean isPublic,
-        boolean isListed
+        boolean isListed,
+        LanguageTag language,
+        String[] tags,
+        Instant createdAt,
+        Instant updatedAt,
+        Instant publishedAt,
+        UUID forkedFromDeck
 ) {
 }

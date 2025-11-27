@@ -6,6 +6,7 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
+import java.util.Objects;
 import java.util.UUID;
 
 @Entity
@@ -136,5 +137,17 @@ public class UserDeckEntity {
 
     public boolean isArchived() {
         return archived;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (o == null || getClass() != o.getClass()) return false;
+        UserDeckEntity that = (UserDeckEntity) o;
+        return Objects.equals(userDeckId, that.userDeckId) && Objects.equals(userId, that.userId) && Objects.equals(publicDeckId, that.publicDeckId);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(userDeckId, userId, publicDeckId);
     }
 }

@@ -43,7 +43,8 @@ public class PublicDeckEntity {
     private boolean listed;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "language_code", nullable = false)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "language_code", columnDefinition = "language_tag", nullable = false)
     private LanguageTag languageCode;
 
     @JdbcTypeCode(SqlTypes.ARRAY)
@@ -69,7 +70,7 @@ public class PublicDeckEntity {
     }
 
     public PublicDeckEntity(
-            UUID deckId,
+//            UUID deckId,
             Integer version,
             UUID authorId,
             String name,
@@ -84,7 +85,7 @@ public class PublicDeckEntity {
             Instant publishedAt,
             UUID forkedFromDeck
     ) {
-        this.deckId = deckId;
+//        this.deckId = deckId;
         this.version = version;
         this.authorId = authorId;
         this.name = name;
