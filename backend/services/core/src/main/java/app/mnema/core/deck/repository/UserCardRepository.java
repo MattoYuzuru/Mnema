@@ -13,7 +13,7 @@ import java.util.UUID;
 
 @Repository
 public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> {
-    Page<UserCardEntity> findByUserDeck_UserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc(
+    Page<UserCardEntity> findByUserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc(
             UUID userDeckId,
             Pageable pageable
     );
@@ -22,11 +22,12 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
             select c
             from UserCardEntity c
             join SrCardStateEntity s on s.userCardId = c.userCardId
-            where c.userDeck.userDeckId = :deckId
+            where c.userDeckId = :deckId
                 and c.deleted = false
                 and c.suspended = false
-                and c.nextReviewAt <= :now
+                and s.nextReviewAt <= :now
             order by s.nextReviewAt asc
             """)
+
     List<UserCardEntity> findDueCardsForDeck(UUID deckId, Instant now);
 }

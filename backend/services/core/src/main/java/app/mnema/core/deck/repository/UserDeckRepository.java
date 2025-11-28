@@ -7,11 +7,14 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.UUID;
+import java.util.Optional;
 
 @Repository
 public interface UserDeckRepository extends JpaRepository<UserDeckEntity, UUID> {
 
     Page<UserDeckEntity> findByUserIdAndArchivedFalse(UUID userId, Pageable pageable);
+
+    Optional<UserDeckEntity> findByUserIdAndPublicDeckId(UUID userId, UUID publicDeckId);
 
     // findByUserDeckId можно оставить, но есть findById()
     UserDeckEntity findByUserDeckId(UUID userDeckId);

@@ -6,7 +6,7 @@ import java.time.Instant;
 import java.util.UUID;
 
 public record PublicDeckDTO(
-//        UUID deckId,
+        UUID deckId,
         Integer version,
         UUID authorId,
         String name,

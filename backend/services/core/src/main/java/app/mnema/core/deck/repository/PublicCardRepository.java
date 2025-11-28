@@ -15,16 +15,14 @@ import java.util.Optional;
 @Repository
 public interface PublicCardRepository extends JpaRepository<PublicCardEntity, PublicCardId> {
 
-    List<PublicCardEntity> findByDeckIdAndDeckVersionOrderByOrderIndex(
-            UUID deckId,
-            Integer deckVersion
-    );
+    List<PublicCardEntity> findByDeckIdAndDeckVersion(UUID deckId, Integer deckVersion);
 
     Page<PublicCardEntity> findByDeckIdAndDeckVersionOrderByOrderIndex(
             UUID deckId,
             Integer deckVersion,
             Pageable pageable
     );
-    
+
     Optional<PublicCardEntity> findByCardId(UUID cardId);
+
 }

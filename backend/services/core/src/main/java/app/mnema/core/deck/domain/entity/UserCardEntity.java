@@ -20,9 +20,9 @@ public class UserCardEntity {
     @Column(name = "user_id", nullable = false)
     private UUID userId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "subscription_id", nullable = false)
-    private UserDeckEntity userDeck;
+//    @ManyToOne(fetch = FetchType.LAZY)
+    @Column(name = "subscription_id", nullable = false)
+    private UUID userDeckId;
 
     @Column(name = "public_card_id")
     private UUID publicCardId; // NULL для кастомных карт
@@ -63,7 +63,7 @@ public class UserCardEntity {
 
     public UserCardEntity(
             UUID userId,
-            UserDeckEntity userDeck,
+            UUID userDeckId,
             UUID publicCardId,
             boolean custom,
             boolean deleted,
@@ -77,7 +77,7 @@ public class UserCardEntity {
             boolean suspended
     ) {
         this.userId = userId;
-        this.userDeck = userDeck;
+        this.userDeckId = userDeckId;
         this.publicCardId = publicCardId;
         this.custom = custom;
         this.deleted = deleted;
@@ -107,12 +107,12 @@ public class UserCardEntity {
         this.userId = userId;
     }
 
-    public UserDeckEntity getUserDeck() {
-        return userDeck;
+    public UUID getUserDeckId() {
+        return userDeckId;
     }
 
-    public void setUserDeck(UserDeckEntity userDeck) {
-        this.userDeck = userDeck;
+    public void setUserDeck(UUID userDeckId) {
+        this.userDeckId = userDeckId;
     }
 
     public UUID getPublicCardId() {
