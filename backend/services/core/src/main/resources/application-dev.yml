@@ -1,6 +1,6 @@
-server:
-  servlet:
-    context-path: /api/core
+#server:
+#  servlet:
+#    context-path: /api/core
 
 # CORS (dev)
 app:
