@@ -3,41 +3,48 @@ package app.mnema.core.deck.controller;
 import app.mnema.core.deck.domain.dto.UserCardDTO;
 import app.mnema.core.deck.domain.request.CreateCardRequest;
 import app.mnema.core.deck.service.DeckService;
+import app.mnema.core.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.UUID;
 
 @RestController
-@RequestMapping("/core/decks/{userDeckId}/cards")
+@RequestMapping("/decks/{userDeckId}/cards")
 public class CardController {
 
     private final DeckService deckService;
+    private final CurrentUserProvider currentUserProvider;
 
-    public CardController(DeckService deckService) {
+    public CardController(DeckService deckService, CurrentUserProvider currentUserProvider) {
         this.deckService = deckService;
+        this.currentUserProvider = currentUserProvider;
     }
 
-    // GET /core/decks/{userDeckId}/cards?page=1&limit=50
+    // GET /api/core/decks/{userDeckId}/cards?page=1&limit=50
     @GetMapping
     public Page<UserCardDTO> getCards(
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID userDeckId,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "50") int limit
     ) {
-        return deckService.getUserCardsByDeck(userDeckId, page, limit);
+        var userId = currentUserProvider.getUserId(jwt);
+        return deckService.getUserCardsByDeck(userId, userDeckId, page, limit);
     }
 
-    // POST /core/decks/{userDeckId}/cards?userId=...
+    // POST /api/core/decks/{userDeckId}/cards
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public UserCardDTO addCard(
+            @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID userDeckId,
-            @RequestParam UUID userId,
             @RequestBody CreateCardRequest request
     ) {
-
+        var userId = currentUserProvider.getUserId(jwt);
         return deckService.addNewCardToDeck(userId, userDeckId, request);
     }
 }
