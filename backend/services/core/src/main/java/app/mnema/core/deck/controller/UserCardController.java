@@ -14,17 +14,17 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/decks/{userDeckId}/cards")
-public class CardController {
+public class UserCardController {
 
     private final DeckService deckService;
     private final CurrentUserProvider currentUserProvider;
 
-    public CardController(DeckService deckService, CurrentUserProvider currentUserProvider) {
+    public UserCardController(DeckService deckService, CurrentUserProvider currentUserProvider) {
         this.deckService = deckService;
         this.currentUserProvider = currentUserProvider;
     }
 
-    // GET /api/core/decks/{userDeckId}/cards?page=1&limit=50
+    // GET /api/core/decks/{userDeckId}/cards?page=1&limit=50 - мои карты в колоде
     @GetMapping
     public Page<UserCardDTO> getCards(
             @AuthenticationPrincipal Jwt jwt,
@@ -36,7 +36,7 @@ public class CardController {
         return deckService.getUserCardsByDeck(userId, userDeckId, page, limit);
     }
 
-    // POST /api/core/decks/{userDeckId}/cards
+    // POST /api/core/decks/{userDeckId}/cards - добавить карту
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public UserCardDTO addCard(

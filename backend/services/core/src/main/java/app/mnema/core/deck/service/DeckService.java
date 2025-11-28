@@ -19,10 +19,13 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -35,28 +38,51 @@ public class DeckService {
 
     public DeckService(UserDeckRepository userDeckRepository,
                        UserCardRepository userCardRepository,
-                       PublicCardRepository publicCardRepository, PublicDeckRepository publicDeckRepository) {
+                       PublicCardRepository publicCardRepository,
+                       PublicDeckRepository publicDeckRepository) {
         this.userDeckRepository = userDeckRepository;
         this.userCardRepository = userCardRepository;
         this.publicCardRepository = publicCardRepository;
         this.publicDeckRepository = publicDeckRepository;
     }
 
+    // Просмотр всех публичных колод
+    public Page<PublicDeckDTO> getPublicDecksByPage(int page, int limit) {
+        Pageable pageable = PageRequest.of(page - 1, limit);
+
+        return publicDeckRepository
+                .findByPublicFlagTrueAndListedTrue(pageable)
+                .map(this::toPublicDeckDTO);
+    }
+
     // Просмотр всех пользовательских колод постранично
-    public Page<UserDeckDTO> getUserDecksByPage(UUID userId, int page, int limit) {
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('SCOPE_user.read')")
+    public Page<UserDeckDTO> getUserDecksByPage(UUID currentUserId, int page, int limit) {
         Pageable pageable = PageRequest.of(page - 1, limit);
         return userDeckRepository
-                .findByUserIdAndArchivedFalse(userId, pageable)
+                .findByUserIdAndArchivedFalse(currentUserId, pageable)
                 .map(this::toUserDeckDTO);
     }
 
     // Просмотр всех карт в пользовательской колоде
-    public Page<UserCardDTO> getUserCardsByDeck(UUID userDeckId, int page, int limit) {
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAnyAuthority('SCOPE_user.read')")
+    public Page<UserCardDTO> getUserCardsByDeck(UUID currentUserId, UUID userDeckId, int page, int limit) {
+
+        UserDeckEntity deck = userDeckRepository.findById(userDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+
+        if (!deck.getUserId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to deck " + userDeckId);
+        }
+
         Pageable pageable = PageRequest.of(page - 1, limit);
 
         return userCardRepository
-                .findByUserDeck_UserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc(userDeckId, pageable)
+                .findByUserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc(userDeckId, pageable)
                 .map(this::toUserCardDTO);
+
     }
 
     // Просмотр публичных карт колоды по deck_id + version
@@ -79,15 +105,16 @@ public class DeckService {
     Юзеры работают с юзер-колодой, с комментариями и тд
     Юзер колоды позволяют оставить версионирование пуб колод
     */
-//    @Transactional
-    public UserDeckDTO createNewDeck(UUID userId, PublicDeckDTO publicDeckDTO) {
+    @Transactional
+    @PreAuthorize("hasAnyAuthority('SCOPE_user.write')")
+    public UserDeckDTO createNewDeck(UUID currentUserId, PublicDeckDTO publicDeckDTO) {
         // Создаём и сохраняем публичную деку
-        PublicDeckEntity publicDeckEntity = toPublicDeckEntityForCreate(userId, publicDeckDTO);
+        PublicDeckEntity publicDeckEntity = toPublicDeckEntityForCreate(currentUserId, publicDeckDTO);
         PublicDeckEntity savedPublicDeck = publicDeckRepository.save(publicDeckEntity);
 
         // Создаём пустую юзер деку с дефолтами, ссылаемся на публичную
         UserDeckEntity userDeck = new UserDeckEntity(
-                userId,
+                currentUserId,
                 savedPublicDeck.getDeckId(),
                 savedPublicDeck.getVersion(),
                 savedPublicDeck.getVersion(),
@@ -106,13 +133,17 @@ public class DeckService {
     }
 
     // Добавление карты в пользовательскую колоду
-    public UserCardDTO addNewCardToDeck(UUID userId,
+    @Transactional
+    @PreAuthorize("hasAnyAuthority('SCOPE_user.write')")
+    public UserCardDTO addNewCardToDeck(UUID currentUserId,
                                         UUID userDeckId,
                                         CreateCardRequest request) {
 
-        UserDeckEntity userDeck = userDeckRepository.findByUserDeckId(userDeckId);
-        if (userDeck == null) {
-            throw new IllegalArgumentException("User deck not found: " + userDeckId);
+        UserDeckEntity userDeck = userDeckRepository.findById(userDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+
+        if (!userDeck.getUserId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to deck " + userDeckId);
         }
 
         PublicDeckEntity publicDeck = publicDeckRepository
@@ -122,9 +153,8 @@ public class DeckService {
                                 ", version=" + userDeck.getCurrentVersion()
                 ));
 
-        if (publicDeck.getAuthorId().equals(userId)) {
+        if (publicDeck.getAuthorId().equals(currentUserId)) {
             // TODO: Я не особо обновляю версию, нужно как-то это решить
-
 
             PublicCardEntity publicCard = new PublicCardEntity(
                     publicDeck.getDeckId(),
@@ -142,8 +172,8 @@ public class DeckService {
             PublicCardEntity savedPublicCard = publicCardRepository.save(publicCard);
 
             UserCardEntity userCard = new UserCardEntity(
-                    userId,
-                    userDeck,
+                    currentUserId,
+                    userDeckId,
                     savedPublicCard.getCardId(),
                     true,
                     false,
@@ -162,8 +192,8 @@ public class DeckService {
         } else {
 
             UserCardEntity userCard = new UserCardEntity(
-                    userId,
-                    userDeck,
+                    currentUserId,
+                    userDeckId,
                     null, // кастомная карта
                     true,
                     false,
@@ -180,6 +210,78 @@ public class DeckService {
             return toUserCardDTO(userCardRepository.save(userCard));
 
         }
+    }
+
+    @Transactional
+    @PreAuthorize("hasAnyAuthority('SCOPE_user.write')")
+    public UserDeckDTO forkFromPublicDeck(UUID currentUserId, UUID publicDeckId) {
+
+        // Проверка: уже есть форк / подписка
+        var existing = userDeckRepository.findByUserIdAndPublicDeckId(currentUserId, publicDeckId);
+        if (existing.isPresent()) {
+            // можно просто вернуть существующую юзер-дека
+            return toUserDeckDTO(existing.get());
+        }
+
+        // Находим последнюю версию колоды
+        PublicDeckEntity publicDeck = publicDeckRepository
+                .findTopByDeckIdOrderByVersionDesc(publicDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + publicDeckId));
+
+        // Запрещаем форкать свою же колоду (или возвращаем уже существующую)
+        // TODO: сделать новый метод для выдачи колод без колод залогиненого юзера
+        if (publicDeck.getAuthorId().equals(currentUserId)) {
+            throw new IllegalStateException("Author cannot fork own deck");
+        }
+
+        // Делаем пустую форкнутую юзер-колоду
+        UserDeckDTO userDeckDTO = new UserDeckDTO(
+                null,
+                currentUserId,
+                publicDeckId,
+                publicDeck.getVersion(),
+                publicDeck.getVersion(),
+                true,
+                SrAlgorithm.sm2.toString(),
+                null,
+                publicDeck.getName(),
+                publicDeck.getDescription(),
+                Instant.now(),
+                Instant.now(),
+                false
+        );
+
+        UserDeckEntity userDeckEntity = userDeckRepository.save(toUserDeckEntityForFork(userDeckDTO));
+
+        // Заполняем юзер-колоду юзер-картами с маппингом публичных-карт
+        List<PublicCardEntity> publicCardEntities = publicCardRepository
+                .findByDeckIdAndDeckVersion(publicDeckId, publicDeck.getVersion());
+
+        List<UserCardEntity> userCardEntities = new ArrayList<>();
+
+        for (var publicCard : publicCardEntities) {
+            UserCardEntity userCard = new UserCardEntity(
+                    currentUserId,                         // владелец — тот, кто форкает
+                    userDeckEntity.getUserDeckId(), // subscription_id -> user_decks.user_deck_id
+                    publicCard.getCardId(),
+                    false,
+                    false,
+                    null,
+                    null,
+                    Instant.now(),
+                    null,
+                    null,
+                    null,
+                    0,
+                    false
+            );
+
+            userCardEntities.add(userCard);
+        }
+
+        userCardRepository.saveAll(userCardEntities);
+
+        return toUserDeckDTO(userDeckEntity);
     }
 
     //  Utils and mappers
@@ -202,6 +304,23 @@ public class DeckService {
         );
     }
 
+    private UserDeckEntity toUserDeckEntityForFork(UserDeckDTO userDeckDTO) {
+        return new UserDeckEntity(
+                userDeckDTO.userId(),
+                userDeckDTO.publicDeckId(),
+                userDeckDTO.subscribedVersion(),
+                userDeckDTO.currentVersion(),
+                userDeckDTO.autoUpdate(),
+                userDeckDTO.algorithmId(),
+                userDeckDTO.algorithmParams(),
+                userDeckDTO.displayName(),
+                userDeckDTO.displayDescription(),
+                userDeckDTO.createdAt(),
+                userDeckDTO.lastSyncedAt(),
+                userDeckDTO.archived()
+        );
+    }
+
     private UserDeckDTO toUserDeckDTO(UserDeckEntity e) {
         return new UserDeckDTO(
                 e.getUserDeckId(),
@@ -217,6 +336,25 @@ public class DeckService {
                 e.getCreatedAt(),
                 e.getLastSyncedAt(),
                 e.isArchived()
+        );
+    }
+
+    private PublicDeckDTO toPublicDeckDTO(PublicDeckEntity e) {
+        return new PublicDeckDTO(
+                e.getDeckId(),
+                e.getVersion(),
+                e.getAuthorId(),
+                e.getName(),
+                e.getDescription(),
+                e.getTemplateId(),
+                e.isPublicFlag(),
+                e.isListed(),
+                e.getLanguageCode(),
+                e.getTags(),
+                e.getCreatedAt(),
+                e.getUpdatedAt(),
+                e.getPublishedAt(),
+                e.getForkedFromDeck()
         );
     }
 
