@@ -1,5 +1,6 @@
 package app.mnema.core.deck.controller;
 
+import app.mnema.core.deck.domain.dto.PublicCardDTO;
 import app.mnema.core.deck.domain.dto.PublicDeckDTO;
 import app.mnema.core.deck.domain.dto.UserDeckDTO;
 import app.mnema.core.deck.service.DeckService;
@@ -32,8 +33,16 @@ public class PublicDeckController {
         return deckService.getPublicDecksByPage(page, limit);
     }
 
-    // GET /decks/public/{deckId}/cards
-    // TODO
+    // GET /api/core/decks/public/{deckId}/cards?version=...&page=1&limit=50
+    @GetMapping("/{deckId}/cards")
+    public Page<PublicCardDTO> getPublicDeckCards(
+            @PathVariable UUID deckId,
+            @RequestParam(required = false) Integer version,
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int limit
+    ) {
+        return deckService.getPublicCards(deckId, version, page, limit);
+    }
 
 
     // POST /decks/public/{deckId}/fork

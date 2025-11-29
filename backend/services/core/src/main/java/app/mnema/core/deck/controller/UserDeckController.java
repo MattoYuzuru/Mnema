@@ -32,7 +32,7 @@ public class UserDeckController {
         return deckService.getUserDecksByPage(userId, page, limit);
     }
 
-    // POST /api/core/decks/mine
+    // POST /api/core/decks
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public UserDeckDTO createDeck(

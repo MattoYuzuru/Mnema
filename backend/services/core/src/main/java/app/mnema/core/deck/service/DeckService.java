@@ -57,7 +57,7 @@ public class DeckService {
 
     // Просмотр всех пользовательских колод постранично
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAnyAuthority('SCOPE_user.read')")
+    @PreAuthorize("hasAuthority('SCOPE_user.read')")
     public Page<UserDeckDTO> getUserDecksByPage(UUID currentUserId, int page, int limit) {
         Pageable pageable = PageRequest.of(page - 1, limit);
         return userDeckRepository
@@ -67,7 +67,7 @@ public class DeckService {
 
     // Просмотр всех карт в пользовательской колоде
     @Transactional(readOnly = true)
-    @PreAuthorize("hasAnyAuthority('SCOPE_user.read')")
+    @PreAuthorize("hasAuthority('SCOPE_user.read')")
     public Page<UserCardDTO> getUserCardsByDeck(UUID currentUserId, UUID userDeckId, int page, int limit) {
 
         UserDeckEntity deck = userDeckRepository.findById(userDeckId)
@@ -86,10 +86,34 @@ public class DeckService {
     }
 
     // Просмотр публичных карт колоды по deck_id + version
+    @Transactional(readOnly = true)
     public Page<PublicCardDTO> getPublicCards(UUID deckId, Integer deckVersion, int page, int limit) {
+        if (page < 1 || limit < 1) {
+            throw new IllegalArgumentException("page and limit must be >= 1");
+        }
+
         Pageable pageable = PageRequest.of(page - 1, limit);
+
+        // Определяем версию и проверяем, что колода публичная
+        PublicDeckEntity deck;
+        if (deckVersion == null) {
+            deck = publicDeckRepository
+                    .findTopByDeckIdOrderByVersionDesc(deckId)
+                    .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + deckId));
+        } else {
+            deck = publicDeckRepository
+                    .findByDeckIdAndVersion(deckId, deckVersion)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Public deck not found: deckId=" + deckId + ", version=" + deckVersion
+                    ));
+        }
+
+        if (!deck.isPublicFlag()) {
+            throw new SecurityException("Deck is not public: " + deckId);
+        }
+
         return publicCardRepository
-                .findByDeckIdAndDeckVersionOrderByOrderIndex(deckId, deckVersion, pageable)
+                .findByDeckIdAndDeckVersionOrderByOrderIndex(deck.getDeckId(), deck.getVersion(), pageable)
                 .map(this::toPublicCardDTO);
     }
 
@@ -106,7 +130,7 @@ public class DeckService {
     Юзер колоды позволяют оставить версионирование пуб колод
     */
     @Transactional
-    @PreAuthorize("hasAnyAuthority('SCOPE_user.write')")
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
     public UserDeckDTO createNewDeck(UUID currentUserId, PublicDeckDTO publicDeckDTO) {
         // Создаём и сохраняем публичную деку
         PublicDeckEntity publicDeckEntity = toPublicDeckEntityForCreate(currentUserId, publicDeckDTO);
@@ -134,7 +158,7 @@ public class DeckService {
 
     // Добавление карты в пользовательскую колоду
     @Transactional
-    @PreAuthorize("hasAnyAuthority('SCOPE_user.write')")
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
     public UserCardDTO addNewCardToDeck(UUID currentUserId,
                                         UUID userDeckId,
                                         CreateCardRequest request) {
@@ -213,7 +237,7 @@ public class DeckService {
     }
 
     @Transactional
-    @PreAuthorize("hasAnyAuthority('SCOPE_user.write')")
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
     public UserDeckDTO forkFromPublicDeck(UUID currentUserId, UUID publicDeckId) {
 
         // Проверка: уже есть форк / подписка
