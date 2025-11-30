@@ -9,7 +9,44 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  test-core:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: mnema
+          POSTGRES_PASSWORD: mnema
+          POSTGRES_DB: mnema
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U mnema"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Run core tests
+        working-directory: backend/services/core
+        env:
+          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5432/mnema
+          SPRING_DATASOURCE_USERNAME: mnema
+          SPRING_DATASOURCE_PASSWORD: mnema
+          SPRING_PROFILES_ACTIVE: test
+        run: ./gradlew test
+
   build-and-push:
+    needs: test-core
     runs-on: ubuntu-latest
     environment: prod
     permissions: { contents: read, packages: write }

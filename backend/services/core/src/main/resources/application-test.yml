@@ -1,0 +1,36 @@
+spring:
+  datasource:
+    # тесты ходят в отдельную БД mnema_test в том же postgres
+    # подставляем те же креды, что и в docker compose
+    # но с дефолтами на случай локального запуска без env
+    url: jdbc:postgresql://localhost:5433/mnema_test
+    username: ${SPRING_DATASOURCE_USERNAME:${POSTGRES_USER:mnema}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${POSTGRES_PASSWORD:mnema}}
+    hikari:
+      schema: app_core
+      connectionInitSql: SET search_path TO app_core
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        default_schema: app_core
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    # те же настройки, что и в обычном application.properties
+    default-schema: app_core
+    schemas: app_core
+    baseline-on-migrate: false
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # в тестах можно оставить тот же issuer, jwt всё равно подменяется через spring-security-test
+          issuer-uri: ${AUTH_ISSUER_URI:http://localhost:8083}

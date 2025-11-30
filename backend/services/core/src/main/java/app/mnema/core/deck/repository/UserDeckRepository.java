@@ -16,6 +16,4 @@ public interface UserDeckRepository extends JpaRepository<UserDeckEntity, UUID> 
 
     Optional<UserDeckEntity> findByUserIdAndPublicDeckId(UUID userId, UUID publicDeckId);
 
-    // findByUserDeckId можно оставить, но есть findById()
-    UserDeckEntity findByUserDeckId(UUID userDeckId);
 }

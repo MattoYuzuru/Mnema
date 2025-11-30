@@ -55,7 +55,7 @@ public class UserDeckEntity {
     @Column(name = "is_archived", nullable = false)
     private boolean archived;
 
-    protected UserDeckEntity() {
+    public UserDeckEntity() {
     }
 
     public UserDeckEntity(
@@ -86,7 +86,6 @@ public class UserDeckEntity {
         this.archived = archived;
     }
 
-    // только геттеры (или доменные методы типа archive())
     public UUID getUserDeckId() {
         return userDeckId;
     }
@@ -137,6 +136,34 @@ public class UserDeckEntity {
 
     public boolean isArchived() {
         return archived;
+    }
+
+    public void setUserDeckId(UUID userDeckId) {
+        this.userDeckId = userDeckId;
+    }
+
+    public void setUserId(UUID userId) {
+        this.userId = userId;
+    }
+
+    public void setPublicDeckId(UUID publicDeckId) {
+        this.publicDeckId = publicDeckId;
+    }
+
+    public void setAutoUpdate(boolean autoUpdate) {
+        this.autoUpdate = autoUpdate;
+    }
+
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName;
+    }
+
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
+    }
+
+    public void setArchived(boolean archived) {
+        this.archived = archived;
     }
 
     @Override
