@@ -9,6 +9,7 @@ import app.mnema.core.deck.domain.type.SrAlgorithm;
 import app.mnema.core.deck.repository.PublicDeckRepository;
 import app.mnema.core.deck.repository.UserCardRepository;
 import app.mnema.core.deck.repository.UserDeckRepository;
+import app.mnema.core.deck.service.CardService;
 import app.mnema.core.deck.service.DeckService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -34,6 +35,9 @@ class DeckFlowIT {
 
     @Autowired
     DeckService deckService;
+
+    @Autowired
+    CardService cardService;
 
     @Autowired
     UserDeckRepository userDeckRepository;
@@ -140,7 +144,7 @@ class DeckFlowIT {
                 "checksum-123"
         );
 
-        UserCardDTO createdCard = deckService.addNewCardToDeck(
+        UserCardDTO createdCard = cardService.addNewCardToDeck(
                 userId,
                 createdDeck.userDeckId(),
                 cardRequest
@@ -159,7 +163,7 @@ class DeckFlowIT {
         assertThat(storedCard.getUserDeckId()).isEqualTo(createdDeck.userDeckId());
 
         // 3. Через сервис достаём пагинированный список карт и убеждаемся, что она там
-        var page = deckService.getUserCardsByDeck(userId, createdDeck.userDeckId(), 1, 50);
+        var page = cardService.getUserCardsByDeck(userId, createdDeck.userDeckId(), 1, 50);
         assertThat(page.getTotalElements()).isEqualTo(1);
         assertThat(page.getContent().getFirst().userCardId()).isEqualTo(createdCard.userCardId());
         assertThat(page.getContent().getFirst().personalNote()).isEqualTo("note");

@@ -2,7 +2,7 @@ package app.mnema.core.deck.controller;
 
 import app.mnema.core.deck.domain.dto.UserCardDTO;
 import app.mnema.core.deck.domain.request.CreateCardRequest;
-import app.mnema.core.deck.service.DeckService;
+import app.mnema.core.deck.service.CardService;
 import app.mnema.core.security.CurrentUserProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -39,7 +39,7 @@ class UserCardControllerWebMvcTest {
     MockMvc mockMvc;
 
     @MockitoBean
-    DeckService deckService;
+    CardService cardService;
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;
@@ -75,7 +75,7 @@ class UserCardControllerWebMvcTest {
         );
 
         when(currentUserProvider.getUserId(any(Jwt.class))).thenReturn(userId);
-        when(deckService.getUserCardsByDeck(userId, userDeckId, 1, 50)).thenReturn(page);
+        when(cardService.getUserCardsByDeck(userId, userDeckId, 1, 50)).thenReturn(page);
 
         mockMvc.perform(get("/decks/{userDeckId}/cards", userDeckId)
                         .with(jwt().jwt(j -> j.claim("sub", "user-123")))
@@ -109,7 +109,7 @@ class UserCardControllerWebMvcTest {
         );
 
         when(currentUserProvider.getUserId(any(Jwt.class))).thenReturn(userId);
-        when(deckService.addNewCardToDeck(eq(userId), eq(userDeckId), any(CreateCardRequest.class)))
+        when(cardService.addNewCardToDeck(eq(userId), eq(userDeckId), any(CreateCardRequest.class)))
                 .thenReturn(responseDto);
 
         String requestBody = """

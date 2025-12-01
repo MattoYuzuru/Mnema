@@ -3,6 +3,7 @@ package app.mnema.core.deck.controller;
 import app.mnema.core.deck.domain.dto.PublicCardDTO;
 import app.mnema.core.deck.domain.dto.PublicDeckDTO;
 import app.mnema.core.deck.domain.dto.UserDeckDTO;
+import app.mnema.core.deck.service.CardService;
 import app.mnema.core.deck.service.DeckService;
 import app.mnema.core.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
@@ -18,10 +19,12 @@ public class PublicDeckController {
 
     private final DeckService deckService;
     private final CurrentUserProvider currentUserProvider;
+    private final CardService cardService;
 
-    public PublicDeckController(DeckService deckService, CurrentUserProvider currentUserProvider) {
+    public PublicDeckController(DeckService deckService, CurrentUserProvider currentUserProvider, CardService cardService) {
         this.deckService = deckService;
         this.currentUserProvider = currentUserProvider;
+        this.cardService = cardService;
     }
 
     // GET /api/core/decks/public?page=1&limit=10
@@ -41,7 +44,7 @@ public class PublicDeckController {
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "50") int limit
     ) {
-        return deckService.getPublicCards(deckId, version, page, limit);
+        return cardService.getPublicCards(deckId, version, page, limit);
     }
 
 

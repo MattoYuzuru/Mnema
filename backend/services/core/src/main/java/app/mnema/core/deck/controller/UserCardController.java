@@ -2,6 +2,7 @@ package app.mnema.core.deck.controller;
 
 import app.mnema.core.deck.domain.dto.UserCardDTO;
 import app.mnema.core.deck.domain.request.CreateCardRequest;
+import app.mnema.core.deck.service.CardService;
 import app.mnema.core.deck.service.DeckService;
 import app.mnema.core.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
@@ -16,12 +17,12 @@ import java.util.UUID;
 @RequestMapping("/decks/{userDeckId}/cards")
 public class UserCardController {
 
-    private final DeckService deckService;
     private final CurrentUserProvider currentUserProvider;
+    private final CardService cardService;
 
-    public UserCardController(DeckService deckService, CurrentUserProvider currentUserProvider) {
-        this.deckService = deckService;
+    public UserCardController(DeckService deckService, CurrentUserProvider currentUserProvider, CardService cardService) {
         this.currentUserProvider = currentUserProvider;
+        this.cardService = cardService;
     }
 
     // GET /api/core/decks/{userDeckId}/cards?page=1&limit=50 - мои карты в колоде
@@ -33,7 +34,7 @@ public class UserCardController {
             @RequestParam(defaultValue = "50") int limit
     ) {
         var userId = currentUserProvider.getUserId(jwt);
-        return deckService.getUserCardsByDeck(userId, userDeckId, page, limit);
+        return cardService.getUserCardsByDeck(userId, userDeckId, page, limit);
     }
 
     // POST /api/core/decks/{userDeckId}/cards - добавить карту
@@ -45,6 +46,6 @@ public class UserCardController {
             @RequestBody CreateCardRequest request
     ) {
         var userId = currentUserProvider.getUserId(jwt);
-        return deckService.addNewCardToDeck(userId, userDeckId, request);
+        return cardService.addNewCardToDeck(userId, userDeckId, request);
     }
 }

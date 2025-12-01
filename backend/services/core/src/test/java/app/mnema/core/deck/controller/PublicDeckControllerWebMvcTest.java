@@ -4,6 +4,7 @@ import app.mnema.core.deck.domain.dto.PublicCardDTO;
 import app.mnema.core.deck.domain.dto.PublicDeckDTO;
 import app.mnema.core.deck.domain.dto.UserDeckDTO;
 import app.mnema.core.deck.domain.type.LanguageTag;
+import app.mnema.core.deck.service.CardService;
 import app.mnema.core.deck.service.DeckService;
 import app.mnema.core.security.CurrentUserProvider;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -40,6 +41,9 @@ class PublicDeckControllerWebMvcTest {
 
     @MockitoBean
     DeckService deckService;
+
+    @MockitoBean
+    CardService cardService;
 
     @MockitoBean
     CurrentUserProvider currentUserProvider;
@@ -110,7 +114,7 @@ class PublicDeckControllerWebMvcTest {
                 1
         );
 
-        when(deckService.getPublicCards(deckId, 2, 1, 50)).thenReturn(page);
+        when(cardService.getPublicCards(deckId, 2, 1, 50)).thenReturn(page);
 
         mockMvc.perform(get("/decks/public/{deckId}/cards", deckId)
                         .with(jwt().jwt(j -> j.claim("sub", "user-123")))
