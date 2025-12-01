@@ -153,7 +153,7 @@ class DeckServiceTest {
         UserCardEntity cardEntity = new UserCardEntity(
                 userId,
                 deckId,
-                null,
+                null,          // publicCardId == null, репозиторий publicCardRepository не трогаем
                 true,
                 false,
                 "note",
@@ -176,8 +176,6 @@ class DeckServiceTest {
         when(userCardRepository
                 .findByUserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc(eq(deckId), any(Pageable.class)))
                 .thenReturn(repoPage);
-        // чтобы buildEffectiveContent не падал
-        when(publicCardRepository.findByCardId(any())).thenReturn(Optional.empty());
 
         Page<UserCardDTO> result = deckService.getUserCardsByDeck(userId, deckId, 1, 50);
 

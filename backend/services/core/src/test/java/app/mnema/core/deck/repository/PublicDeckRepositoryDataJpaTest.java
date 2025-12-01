@@ -6,8 +6,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.time.Instant;
@@ -24,17 +26,50 @@ class PublicDeckRepositoryDataJpaTest {
     @Autowired
     private PublicDeckRepository publicDeckRepository;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    /**
+     * Возвращает любой валидный template_id из card_templates.
+     * Если записей нет – создаёт минимально валидную запись.
+     */
+    private UUID anyTemplateId() {
+        UUID existing = null;
+        try {
+            existing = jdbcTemplate.query(
+                    "select template_id from card_templates limit 1",
+                    rs -> rs.next() ? (UUID) rs.getObject(1) : null
+            );
+        } catch (DataAccessException ignored) {
+            // если таблицы нет/другая ошибка – создадим запись
+        }
+        if (existing != null) {
+            return existing;
+        }
+
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+
+        jdbcTemplate.update(
+                "insert into card_templates (template_id, owner_id) values (?, ?)",
+                id, ownerId
+        );
+
+        return id;
+    }
+
     @Test
     void findByAuthorId_returnsOnlyDecksForAuthor() {
         UUID author1 = UUID.randomUUID();
         UUID author2 = UUID.randomUUID();
+        UUID templateId = anyTemplateId();
 
         PublicDeckEntity deck1 = new PublicDeckEntity(
                 1,
                 author1,
                 "Deck 1",
                 "Desc 1",
-                UUID.randomUUID(),
+                templateId,
                 true,
                 true,
                 LanguageTag.en,
@@ -50,7 +85,7 @@ class PublicDeckRepositoryDataJpaTest {
                 author2,
                 "Deck 2",
                 "Desc 2",
-                UUID.randomUUID(),
+                templateId,
                 true,
                 true,
                 LanguageTag.en,
@@ -73,13 +108,14 @@ class PublicDeckRepositoryDataJpaTest {
     @Test
     void findByDeckIdAndVersion_returnsExactVersion() {
         UUID author = UUID.randomUUID();
+        UUID templateId = anyTemplateId();
 
         PublicDeckEntity v1 = new PublicDeckEntity(
                 1,
                 author,
                 "Deck v1",
                 "Desc v1",
-                UUID.randomUUID(),
+                templateId,
                 true,
                 true,
                 LanguageTag.en,
@@ -96,7 +132,7 @@ class PublicDeckRepositoryDataJpaTest {
                 author,
                 "Deck v2",
                 "Desc v2",
-                savedV1.getTemplateId(),
+                templateId,
                 true,
                 true,
                 LanguageTag.en,
@@ -106,7 +142,7 @@ class PublicDeckRepositoryDataJpaTest {
                 null,
                 null
         );
-        // сохраняем вторую версию с тем же deck_id
+        // та же deck_id, другая версия
         try {
             var deckIdField = PublicDeckEntity.class.getDeclaredField("deckId");
             deckIdField.setAccessible(true);
@@ -128,13 +164,14 @@ class PublicDeckRepositoryDataJpaTest {
     @Test
     void findTopByDeckIdOrderByVersionDesc_returnsLatestVersion() {
         UUID author = UUID.randomUUID();
+        UUID templateId = anyTemplateId();
 
         PublicDeckEntity v1 = new PublicDeckEntity(
                 1,
                 author,
                 "Deck v1",
                 "Desc v1",
-                UUID.randomUUID(),
+                templateId,
                 true,
                 true,
                 LanguageTag.en,
@@ -151,7 +188,7 @@ class PublicDeckRepositoryDataJpaTest {
                 author,
                 "Deck v2",
                 "Desc v2",
-                savedV1.getTemplateId(),
+                templateId,
                 true,
                 true,
                 LanguageTag.en,
@@ -182,13 +219,14 @@ class PublicDeckRepositoryDataJpaTest {
     @Test
     void findByPublicFlagTrueAndListedTrue_returnsOnlyPublicAndListedDecks() {
         UUID author = UUID.randomUUID();
+        UUID templateId = anyTemplateId();
 
         PublicDeckEntity publicAndListed = new PublicDeckEntity(
                 1,
                 author,
                 "Public listed",
                 "Desc",
-                UUID.randomUUID(),
+                templateId,
                 true,
                 true,
                 LanguageTag.en,
@@ -204,7 +242,7 @@ class PublicDeckRepositoryDataJpaTest {
                 author,
                 "Not public",
                 "Desc",
-                UUID.randomUUID(),
+                templateId,
                 false,
                 true,
                 LanguageTag.en,
@@ -220,7 +258,7 @@ class PublicDeckRepositoryDataJpaTest {
                 author,
                 "Not listed",
                 "Desc",
-                UUID.randomUUID(),
+                templateId,
                 true,
                 false,
                 LanguageTag.en,

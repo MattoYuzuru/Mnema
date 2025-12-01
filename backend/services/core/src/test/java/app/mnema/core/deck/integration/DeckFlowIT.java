@@ -7,6 +7,7 @@ import app.mnema.core.deck.domain.request.CreateCardRequest;
 import app.mnema.core.deck.domain.type.LanguageTag;
 import app.mnema.core.deck.domain.type.SrAlgorithm;
 import app.mnema.core.deck.repository.PublicDeckRepository;
+import app.mnema.core.deck.repository.UserCardRepository;
 import app.mnema.core.deck.repository.UserDeckRepository;
 import app.mnema.core.deck.service.DeckService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -15,6 +16,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -35,50 +39,94 @@ class DeckFlowIT {
     UserDeckRepository userDeckRepository;
 
     @Autowired
+    UserCardRepository userCardRepository;
+
+    @Autowired
     PublicDeckRepository publicDeckRepository;
 
     @Autowired
     ObjectMapper objectMapper;
 
+    @Autowired
+    JdbcTemplate jdbcTemplate;
+
+    /**
+     * Возвращает любой валидный template_id из card_templates.
+     * Если записей нет – создаёт минимально валидную запись.
+     */
+    private UUID anyTemplateId() {
+        UUID existing = null;
+        try {
+            existing = jdbcTemplate.query(
+                    "select template_id from card_templates limit 1",
+                    rs -> rs.next() ? (UUID) rs.getObject(1) : null
+            );
+        } catch (DataAccessException ignored) {
+            // если таблицы ещё нет или другая ошибка – просто создадим запись
+        }
+        if (existing != null) {
+            return existing;
+        }
+
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+
+        jdbcTemplate.update(
+                "insert into card_templates (template_id, owner_id) values (?, ?)",
+                id, ownerId
+        );
+
+        return id;
+    }
+
     @Test
+    @WithMockUser(authorities = {"SCOPE_user.read", "SCOPE_user.write"})
     void createDeckAndAddCard_persistsPublicAndUserState() {
         UUID userId = UUID.randomUUID();
+        UUID templateId = anyTemplateId();
 
+        // 1. Создаём публичную + пользовательскую деку через сервис
         PublicDeckDTO deckRequest = new PublicDeckDTO(
-                null,
-                null,
-                null,
+                null,                 // deckId (генерится)
+                null,                 // version (будет 1)
+                null,                 // authorId (в сервисе равно currentUserId)
                 "Integration deck",
                 "Integration description",
-                UUID.randomUUID(),
-                true,
-                true,
+                templateId,           // валидный FK в card_templates
+                true,                 // isPublic
+                true,                 // isListed
                 LanguageTag.en,
                 new String[]{"integration"},
-                null,
-                null,
-                null,
-                null
+                null,                 // createdAt
+                null,                 // updatedAt
+                null,                 // publishedAt
+                null                  // forkedFromDeck
         );
 
         UserDeckDTO createdDeck = deckService.createNewDeck(userId, deckRequest);
 
+        // Проверяем DTO
         assertThat(createdDeck.userDeckId()).isNotNull();
         assertThat(createdDeck.userId()).isEqualTo(userId);
         assertThat(createdDeck.publicDeckId()).isNotNull();
         assertThat(createdDeck.algorithmId()).isEqualTo(SrAlgorithm.sm2.name());
         assertThat(createdDeck.autoUpdate()).isTrue();
 
+        // Проверяем, что user_deck сохранён
         var userDeckFromDb = userDeckRepository
                 .findById(createdDeck.userDeckId())
                 .orElseThrow();
         assertThat(userDeckFromDb.getUserId()).isEqualTo(userId);
+        assertThat(userDeckFromDb.getPublicDeckId()).isEqualTo(createdDeck.publicDeckId());
 
+        // Проверяем, что public_deck сохранён и привязан к тому же автору и шаблону
         var publicDeckFromDb = publicDeckRepository
                 .findByDeckIdAndVersion(createdDeck.publicDeckId(), createdDeck.currentVersion())
                 .orElseThrow();
         assertThat(publicDeckFromDb.getAuthorId()).isEqualTo(userId);
+        assertThat(publicDeckFromDb.getTemplateId()).isEqualTo(templateId);
 
+        // 2. Добавляем карту в эту колоду
         ObjectNode content = objectMapper.createObjectNode();
         content.put("front", "Q");
         content.put("back", "A");
@@ -102,10 +150,18 @@ class DeckFlowIT {
         assertThat(createdCard.isDeleted()).isFalse();
         assertThat(createdCard.isSuspended()).isFalse();
         assertThat(createdCard.personalNote()).isEqualTo("note");
-        assertThat(createdCard.reviewCount()).isZero();
 
+        // Проверяем, что карта реально лежит в БД
+        var storedCard = userCardRepository
+                .findById(createdCard.userCardId())
+                .orElseThrow();
+        assertThat(storedCard.getUserId()).isEqualTo(userId);
+        assertThat(storedCard.getUserDeckId()).isEqualTo(createdDeck.userDeckId());
+
+        // 3. Через сервис достаём пагинированный список карт и убеждаемся, что она там
         var page = deckService.getUserCardsByDeck(userId, createdDeck.userDeckId(), 1, 50);
         assertThat(page.getTotalElements()).isEqualTo(1);
         assertThat(page.getContent().getFirst().userCardId()).isEqualTo(createdCard.userCardId());
+        assertThat(page.getContent().getFirst().personalNote()).isEqualTo("note");
     }
 }

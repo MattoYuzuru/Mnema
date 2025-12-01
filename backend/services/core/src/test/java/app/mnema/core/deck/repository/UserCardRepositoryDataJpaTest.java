@@ -1,6 +1,7 @@
 package app.mnema.core.deck.repository;
 
 import app.mnema.core.deck.domain.entity.UserCardEntity;
+import app.mnema.core.deck.domain.entity.UserDeckEntity;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
@@ -24,13 +25,26 @@ class UserCardRepositoryDataJpaTest {
     @Autowired
     private UserCardRepository userCardRepository;
 
+    @Autowired
+    private UserDeckRepository userDeckRepository;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
     void findByUserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc_filtersAndSortsCorrectly() {
         UUID userId = UUID.randomUUID();
-        UUID deckId = UUID.randomUUID();
         Instant now = Instant.now();
+
+        // сначала создаём user_deck, чтобы пройти FK
+        UserDeckEntity deck = new UserDeckEntity();
+        deck.setUserId(userId);
+        deck.setArchived(false);
+        deck.setDisplayName("Test deck");
+        deck.setAutoUpdate(true);
+        deck.setCreatedAt(now);
+
+        deck = userDeckRepository.save(deck);
+        UUID deckId = deck.getUserDeckId();
 
         ObjectNode content = objectMapper.createObjectNode();
         content.put("front", "Q");

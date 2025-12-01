@@ -9,8 +9,10 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
+import org.springframework.dao.DataAccessException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.time.Instant;
@@ -32,13 +34,45 @@ class PublicCardRepositoryDataJpaTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
+    /**
+     * Возвращает любой валидный template_id из card_templates.
+     * Если записей нет – создаёт минимально валидную запись.
+     */
+    private UUID anyTemplateId() {
+        UUID existing = null;
+        try {
+            existing = jdbcTemplate.query(
+                    "select template_id from card_templates limit 1",
+                    rs -> rs.next() ? (UUID) rs.getObject(1) : null
+            );
+        } catch (DataAccessException ignored) {
+            // если таблицы нет/другая ошибка – создадим запись
+        }
+        if (existing != null) {
+            return existing;
+        }
+
+        UUID id = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+
+        jdbcTemplate.update(
+                "insert into card_templates (template_id, owner_id) values (?, ?)",
+                id, ownerId
+        );
+
+        return id;
+    }
+
     private PublicDeckEntity createDeck() {
         PublicDeckEntity deck = new PublicDeckEntity(
                 1,
                 UUID.randomUUID(),
                 "Test deck",
                 "Desc",
-                UUID.randomUUID(),
+                anyTemplateId(),
                 true,
                 true,
                 LanguageTag.en,
