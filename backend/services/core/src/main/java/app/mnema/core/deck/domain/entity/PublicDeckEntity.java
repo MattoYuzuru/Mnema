@@ -70,7 +70,7 @@ public class PublicDeckEntity {
     }
 
     public PublicDeckEntity(
-//            UUID deckId,
+            UUID deckId,
             Integer version,
             UUID authorId,
             String name,
@@ -85,7 +85,7 @@ public class PublicDeckEntity {
             Instant publishedAt,
             UUID forkedFromDeck
     ) {
-//        this.deckId = deckId;
+        this.deckId = deckId;
         this.version = version;
         this.authorId = authorId;
         this.name = name;
@@ -100,8 +100,6 @@ public class PublicDeckEntity {
         this.publishedAt = publishedAt;
         this.forkedFromDeck = forkedFromDeck;
     }
-
-    // геттеры
 
     public UUID getDeckId() {
         return deckId;
@@ -161,5 +159,37 @@ public class PublicDeckEntity {
 
     public List<PublicCardEntity> getCards() {
         return cards;
+    }
+
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    public void setDescription(String description) {
+        this.description = description;
+    }
+
+    public void setPublicFlag(boolean publicFlag) {
+        this.publicFlag = publicFlag;
+    }
+
+    public void setListed(boolean listed) {
+        this.listed = listed;
+    }
+
+    public void setLanguageCode(LanguageTag languageCode) {
+        this.languageCode = languageCode;
+    }
+
+    public void setTags(String[] tags) {
+        this.tags = tags;
+    }
+
+    public void setUpdatedAt(Instant updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
+    public void setPublishedAt(Instant publishedAt) {
+        this.publishedAt = publishedAt;
     }
 }

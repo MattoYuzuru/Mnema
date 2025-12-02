@@ -1,6 +1,5 @@
 package app.mnema.core.deck.service;
 
-
 import app.mnema.core.deck.domain.dto.PublicCardDTO;
 import app.mnema.core.deck.domain.dto.UserCardDTO;
 import app.mnema.core.deck.domain.entity.PublicCardEntity;
@@ -22,6 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 @Service
@@ -32,7 +33,10 @@ public class CardService {
     private final PublicCardRepository publicCardRepository;
     private final PublicDeckRepository publicDeckRepository;
 
-    public CardService(UserDeckRepository userDeckRepository, UserCardRepository userCardRepository, PublicCardRepository publicCardRepository, PublicDeckRepository publicDeckRepository) {
+    public CardService(UserDeckRepository userDeckRepository,
+                       UserCardRepository userCardRepository,
+                       PublicCardRepository publicCardRepository,
+                       PublicDeckRepository publicDeckRepository) {
         this.userDeckRepository = userDeckRepository;
         this.userCardRepository = userCardRepository;
         this.publicCardRepository = publicCardRepository;
@@ -56,10 +60,23 @@ public class CardService {
         return userCardRepository
                 .findByUserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc(userDeckId, pageable)
                 .map(this::toUserCardDTO);
-
     }
 
-    // Просмотр публичных карт колоды по deck_id + version
+    // Получить одну карту юзера
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('SCOPE_user.read')")
+    public UserCardDTO getUserCard(UUID currentUserId, UUID userDeckId, UUID userCardId) {
+        UserCardEntity card = userCardRepository.findById(userCardId)
+                .orElseThrow(() -> new IllegalArgumentException("User card not found: " + userCardId));
+
+        if (!card.getUserDeckId().equals(userDeckId) || !card.getUserId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to card " + userCardId);
+        }
+
+        return toUserCardDTO(card);
+    }
+
+    // Просмотр публичных карт колоды по deck_id + version (если version null, берём последнюю)
     @Transactional(readOnly = true)
     public Page<PublicCardDTO> getPublicCards(UUID deckId, Integer deckVersion, int page, int limit) {
         if (page < 1 || limit < 1) {
@@ -68,11 +85,10 @@ public class CardService {
 
         Pageable pageable = PageRequest.of(page - 1, limit);
 
-        // Определяем версию и проверяем, что колода публичная
         PublicDeckEntity deck;
         if (deckVersion == null) {
             deck = publicDeckRepository
-                    .findTopByDeckIdOrderByVersionDesc(deckId)
+                    .findLatestByDeckId(deckId)
                     .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + deckId));
         } else {
             deck = publicDeckRepository
@@ -91,12 +107,27 @@ public class CardService {
                 .map(this::toPublicCardDTO);
     }
 
-    // Добавление карты в пользовательскую колоду
+    // Добавление одной карты в пользовательскую колоду (обёртка над батчем)
     @Transactional
     @PreAuthorize("hasAuthority('SCOPE_user.write')")
     public UserCardDTO addNewCardToDeck(UUID currentUserId,
                                         UUID userDeckId,
                                         CreateCardRequest request) {
+        List<UserCardDTO> created = addNewCardsToDeckBatch(currentUserId, userDeckId, List.of(request));
+        return created.getFirst();
+    }
+
+    // Добавление батча карт в пользовательскую колоду.
+    // Для автора публичной колоды: создаётся НОВАЯ версия public_decks,
+    // копируются старые карты и добавляются новые, версия увеличивается на 1.
+    @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
+    public List<UserCardDTO> addNewCardsToDeckBatch(UUID currentUserId,
+                                                    UUID userDeckId,
+                                                    List<CreateCardRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return List.of();
+        }
 
         UserDeckEntity userDeck = userDeckRepository.findById(userDeckId)
                 .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
@@ -105,70 +136,217 @@ public class CardService {
             throw new SecurityException("Access denied to deck " + userDeckId);
         }
 
-        PublicDeckEntity publicDeck = publicDeckRepository
-                .findByDeckIdAndVersion(userDeck.getPublicDeckId(), userDeck.getCurrentVersion())
-                .orElseThrow(() -> new IllegalArgumentException(
-                        "Public deck not found: deckId=" + userDeck.getPublicDeckId() +
-                                ", version=" + userDeck.getCurrentVersion()
-                ));
+        List<UserCardDTO> result = new ArrayList<>();
 
-        if (publicDeck.getAuthorId().equals(currentUserId)) {
-            // TODO: Я не особо обновляю версию, нужно как-то это решить
+        // Локальная колода без привязки к public_decks
+        if (userDeck.getPublicDeckId() == null) {
+            for (CreateCardRequest request : requests) {
+                JsonNode content = request.contentOverride() != null
+                        ? request.contentOverride()
+                        : request.content();
 
-            PublicCardEntity publicCard = new PublicCardEntity(
-                    publicDeck.getDeckId(),
-                    publicDeck.getVersion(),
-                    publicDeck,
+                UserCardEntity userCard = new UserCardEntity(
+                        currentUserId,
+                        userDeckId,
+                        null,
+                        true,               // кастомная карта
+                        false,
+                        request.personalNote(),
+                        content,
+                        Instant.now(),
+                        null,
+                        null,
+                        null,
+                        0,
+                        false
+                );
+
+                UserCardEntity saved = userCardRepository.save(userCard);
+                result.add(toUserCardDTO(saved));
+            }
+
+            return result;
+        }
+
+        // Колода с привязкой к публичной
+        UUID publicDeckId = userDeck.getPublicDeckId();
+
+        // Берём последнюю версию публичной колоды
+        PublicDeckEntity latestDeck = publicDeckRepository
+                .findLatestByDeckId(publicDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + publicDeckId));
+
+        // Если текущий юзер не автор – просто кастомные карты без публичной части
+        if (!latestDeck.getAuthorId().equals(currentUserId)) {
+            for (CreateCardRequest request : requests) {
+                JsonNode content = request.contentOverride() != null
+                        ? request.contentOverride()
+                        : request.content();
+
+                UserCardEntity userCard = new UserCardEntity(
+                        currentUserId,
+                        userDeckId,
+                        null,
+                        true,
+                        false,
+                        request.personalNote(),
+                        content,
+                        Instant.now(),
+                        null,
+                        null,
+                        null,
+                        0,
+                        false
+                );
+
+                UserCardEntity saved = userCardRepository.save(userCard);
+                result.add(toUserCardDTO(saved));
+            }
+
+            return result;
+        }
+
+        // Автор публичной колоды – создаём новую версию public_decks
+        int newVersion = latestDeck.getVersion() + 1;
+        Instant now = Instant.now();
+
+        PublicDeckEntity newDeckVersion = new PublicDeckEntity(
+                latestDeck.getDeckId(),     // тот же deck_id
+                newVersion,
+                latestDeck.getAuthorId(),
+                latestDeck.getName(),
+                latestDeck.getDescription(),
+                latestDeck.getTemplateId(),
+                latestDeck.isPublicFlag(),
+                latestDeck.isListed(),
+                latestDeck.getLanguageCode(),
+                latestDeck.getTags(),
+                now,
+                now,
+                now,
+                latestDeck.getForkedFromDeck()
+        );
+
+        PublicDeckEntity savedNewDeck = publicDeckRepository.save(newDeckVersion);
+
+        // Копируем карты из предыдущей версии в новую
+        List<PublicCardEntity> oldCards = publicCardRepository
+                .findByDeckIdAndDeckVersion(latestDeck.getDeckId(), latestDeck.getVersion());
+
+        List<PublicCardEntity> clonedOldCards = new ArrayList<>();
+        for (PublicCardEntity old : oldCards) {
+            PublicCardEntity clone = new PublicCardEntity(
+                    savedNewDeck.getDeckId(),
+                    savedNewDeck.getVersion(),
+                    savedNewDeck,
+                    old.getContent(),
+                    old.getOrderIndex(),
+                    old.getTags(),
+                    old.getCreatedAt(),
+                    old.getUpdatedAt(),
+                    old.isActive(),
+                    old.getChecksum()
+            );
+            clonedOldCards.add(clone);
+        }
+        if (!clonedOldCards.isEmpty()) {
+            publicCardRepository.saveAll(clonedOldCards);
+        }
+
+        // Добавляем НОВЫЕ публичные карты для новой версии
+        List<PublicCardEntity> newPublicCards = new ArrayList<>();
+        for (CreateCardRequest request : requests) {
+            PublicCardEntity pc = new PublicCardEntity(
+                    savedNewDeck.getDeckId(),
+                    savedNewDeck.getVersion(),
+                    savedNewDeck,
                     request.content(),
                     request.orderIndex(),
                     request.tags(),
-                    Instant.now(),
+                    now,
                     null,
                     true,
                     request.checksum()
             );
-
-            PublicCardEntity savedPublicCard = publicCardRepository.save(publicCard);
-
-            UserCardEntity userCard = new UserCardEntity(
-                    currentUserId,
-                    userDeckId,
-                    savedPublicCard.getCardId(),
-                    true,
-                    false,
-                    request.personalNote(),
-                    request.contentOverride(),
-                    Instant.now(),
-                    null,
-                    null,
-                    null,
-                    0,
-                    false
-            );
-
-            return toUserCardDTO(userCardRepository.save(userCard));
-
-        } else {
-
-            UserCardEntity userCard = new UserCardEntity(
-                    currentUserId,
-                    userDeckId,
-                    null, // кастомная карта
-                    true,
-                    false,
-                    request.personalNote(),
-                    request.contentOverride(),
-                    Instant.now(),
-                    null,
-                    null,
-                    null,
-                    0,
-                    false
-            );
-
-            return toUserCardDTO(userCardRepository.save(userCard));
-
+            newPublicCards.add(pc);
         }
+
+        List<PublicCardEntity> savedNewPublicCards =
+                newPublicCards.isEmpty() ? List.of() : publicCardRepository.saveAll(newPublicCards);
+
+        // Обновляем версию в юзер-колоде автора (остальные будут синкаться вручную)
+        userDeck.setCurrentVersion(savedNewDeck.getVersion());
+        userDeck.setLastSyncedAt(now);
+        userDeckRepository.save(userDeck);
+
+        // Создаём юзер-карты для новых публичных карт (старые юзер-карты остаются как есть)
+        for (int i = 0; i < savedNewPublicCards.size(); i++) {
+            PublicCardEntity publicCard = savedNewPublicCards.get(i);
+            CreateCardRequest request = requests.get(i);
+
+            UserCardEntity userCard = new UserCardEntity(
+                    currentUserId,
+                    userDeckId,
+                    publicCard.getCardId(),
+                    false,                 // не кастомная, а каноническая для автора
+                    false,
+                    request.personalNote(),
+                    request.contentOverride(),
+                    now,
+                    null,
+                    null,
+                    null,
+                    0,
+                    false
+            );
+
+            UserCardEntity savedUserCard = userCardRepository.save(userCard);
+            result.add(toUserCardDTO(savedUserCard));
+        }
+
+        return result;
+    }
+
+    // Обновление юзер карты (без SR логики)
+    @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
+    public UserCardDTO updateUserCard(UUID currentUserId,
+                                      UUID userDeckId,
+                                      UUID userCardId,
+                                      UserCardDTO dto) {
+
+        UserCardEntity card = userCardRepository.findById(userCardId)
+                .orElseThrow(() -> new IllegalArgumentException("User card not found: " + userCardId));
+
+        if (!card.getUserDeckId().equals(userDeckId) || !card.getUserId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to card " + userCardId);
+        }
+
+        card.setPersonalNote(dto.personalNote());
+        // Для простоты считаем, что effectiveContent, присланный с фронта, и есть новый override
+        card.setContentOverride(dto.effectiveContent());
+        card.setSuspended(dto.isSuspended());
+        card.setDeleted(dto.isDeleted());
+        card.setUpdatedAt(Instant.now());
+
+        UserCardEntity saved = userCardRepository.save(card);
+        return toUserCardDTO(saved);
+    }
+
+    // Логическое удаление юзер карты
+    @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
+    public void deleteUserCard(UUID currentUserId, UUID userDeckId, UUID userCardId) {
+        UserCardEntity card = userCardRepository.findById(userCardId)
+                .orElseThrow(() -> new IllegalArgumentException("User card not found: " + userCardId));
+
+        if (!card.getUserDeckId().equals(userDeckId) || !card.getUserId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to card " + userCardId);
+        }
+
+        card.setDeleted(true);
+        card.setUpdatedAt(Instant.now());
+        userCardRepository.save(card);
     }
 
     private UserCardDTO toUserCardDTO(UserCardEntity c) {

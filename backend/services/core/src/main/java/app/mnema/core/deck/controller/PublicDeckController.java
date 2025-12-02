@@ -21,13 +21,15 @@ public class PublicDeckController {
     private final CurrentUserProvider currentUserProvider;
     private final CardService cardService;
 
-    public PublicDeckController(DeckService deckService, CurrentUserProvider currentUserProvider, CardService cardService) {
+    public PublicDeckController(DeckService deckService,
+                                CurrentUserProvider currentUserProvider,
+                                CardService cardService) {
         this.deckService = deckService;
         this.currentUserProvider = currentUserProvider;
         this.cardService = cardService;
     }
 
-    // GET /api/core/decks/public?page=1&limit=10
+    // GET /decks/public?page=1&limit=10
     @GetMapping
     public Page<PublicDeckDTO> getPublicDecksPaginated(
             @RequestParam(defaultValue = "1") int page,
@@ -36,7 +38,16 @@ public class PublicDeckController {
         return deckService.getPublicDecksByPage(page, limit);
     }
 
-    // GET /api/core/decks/public/{deckId}/cards?version=...&page=1&limit=50
+    // GET /decks/public/{deckId}?version=...
+    @GetMapping("/{deckId}")
+    public PublicDeckDTO getPublicDeck(
+            @PathVariable UUID deckId,
+            @RequestParam(required = false) Integer version
+    ) {
+        return deckService.getPublicDeck(deckId, version);
+    }
+
+    // GET /decks/public/{deckId}/cards?version=...&page=1&limit=50
     @GetMapping("/{deckId}/cards")
     public Page<PublicCardDTO> getPublicDeckCards(
             @PathVariable UUID deckId,
@@ -47,6 +58,17 @@ public class PublicDeckController {
         return cardService.getPublicCards(deckId, version, page, limit);
     }
 
+    // PATCH /decks/public/{deckId}?version=...
+    @PatchMapping("/{deckId}")
+    public PublicDeckDTO updatePublicDeck(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID deckId,
+            @RequestParam(required = false) Integer version,
+            @RequestBody PublicDeckDTO dto
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        return deckService.updatePublicDeckMeta(userId, deckId, version, dto);
+    }
 
     // POST /decks/public/{deckId}/fork
     @PostMapping("/{deckId}/fork")

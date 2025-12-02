@@ -22,7 +22,7 @@ public class UserDeckEntity {
     private UUID userId;
 
     @Column(name = "public_deck_id")
-    private UUID publicDeckId; // NULL для локальных колод
+    private UUID publicDeckId;
 
     @Column(name = "subscribed_version")
     private Integer subscribedVersion;
@@ -150,16 +150,40 @@ public class UserDeckEntity {
         this.publicDeckId = publicDeckId;
     }
 
+    public void setSubscribedVersion(Integer subscribedVersion) {
+        this.subscribedVersion = subscribedVersion;
+    }
+
+    public void setCurrentVersion(Integer currentVersion) {
+        this.currentVersion = currentVersion;
+    }
+
     public void setAutoUpdate(boolean autoUpdate) {
         this.autoUpdate = autoUpdate;
+    }
+
+    public void setAlgorithmId(String algorithmId) {
+        this.algorithmId = algorithmId;
+    }
+
+    public void setAlgorithmParams(JsonNode algorithmParams) {
+        this.algorithmParams = algorithmParams;
     }
 
     public void setDisplayName(String displayName) {
         this.displayName = displayName;
     }
 
+    public void setDisplayDescription(String displayDescription) {
+        this.displayDescription = displayDescription;
+    }
+
     public void setCreatedAt(Instant createdAt) {
         this.createdAt = createdAt;
+    }
+
+    public void setLastSyncedAt(Instant lastSyncedAt) {
+        this.lastSyncedAt = lastSyncedAt;
     }
 
     public void setArchived(boolean archived) {
@@ -170,7 +194,9 @@ public class UserDeckEntity {
     public boolean equals(Object o) {
         if (o == null || getClass() != o.getClass()) return false;
         UserDeckEntity that = (UserDeckEntity) o;
-        return Objects.equals(userDeckId, that.userDeckId) && Objects.equals(userId, that.userId) && Objects.equals(publicDeckId, that.publicDeckId);
+        return Objects.equals(userDeckId, that.userDeckId)
+                && Objects.equals(userId, that.userId)
+                && Objects.equals(publicDeckId, that.publicDeckId);
     }
 
     @Override

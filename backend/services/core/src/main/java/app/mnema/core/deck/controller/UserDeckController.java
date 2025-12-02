@@ -10,9 +10,12 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.UUID;
+
 @RestController
 @RequestMapping("/decks")
 public class UserDeckController {
+
     private final DeckService deckService;
     private final CurrentUserProvider currentUserProvider;
 
@@ -21,7 +24,7 @@ public class UserDeckController {
         this.currentUserProvider = currentUserProvider;
     }
 
-    // GET /api/core/decks/mine?page=1&limit=10
+    // GET /decks/mine?page=1&limit=10
     @GetMapping("/mine")
     public Page<UserDeckDTO> getAllUserDecksByPage(
             @AuthenticationPrincipal Jwt jwt,
@@ -32,7 +35,17 @@ public class UserDeckController {
         return deckService.getUserDecksByPage(userId, page, limit);
     }
 
-    // POST /api/core/decks
+    // GET /decks/{userDeckId}
+    @GetMapping("/{userDeckId}")
+    public UserDeckDTO getDeckById(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID userDeckId
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        return deckService.getUserDeck(userId, userDeckId);
+    }
+
+    // POST /decks
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public UserDeckDTO createDeck(
@@ -41,5 +54,37 @@ public class UserDeckController {
     ) {
         var userId = currentUserProvider.getUserId(jwt);
         return deckService.createNewDeck(userId, deckDTO);
+    }
+
+    // PATCH /decks/{userDeckId}
+    @PatchMapping("/{userDeckId}")
+    public UserDeckDTO updateDeck(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID userDeckId,
+            @RequestBody UserDeckDTO dto
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        return deckService.updateUserDeckMeta(userId, userDeckId, dto);
+    }
+
+    // POST /decks/{userDeckId}/sync
+    @PostMapping("/{userDeckId}/sync")
+    public UserDeckDTO syncDeck(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID userDeckId
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        return deckService.syncUserDeckToLatestVersion(userId, userDeckId);
+    }
+
+    // DELETE /decks/{userDeckId}
+    @DeleteMapping("/{userDeckId}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteDeck(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID userDeckId
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        deckService.deleteUserDeck(userId, userDeckId);
     }
 }
