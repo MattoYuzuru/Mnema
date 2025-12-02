@@ -10,6 +10,7 @@ import java.util.UUID;
 @Entity
 @Table(name = "field_templates", schema = "app_core")
 public class FieldTemplateEntity {
+
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "field_id", nullable = false)
@@ -43,6 +44,31 @@ public class FieldTemplateEntity {
 
     @Column(name = "help_text")
     private String helpText;
+
+    protected FieldTemplateEntity() {
+    }
+
+    public FieldTemplateEntity(UUID fieldId,
+                               UUID templateId,
+                               String name,
+                               String label,
+                               CardFieldType fieldType,
+                               boolean isRequired,
+                               boolean isOnFront,
+                               Integer orderIndex,
+                               String defaultValue,
+                               String helpText) {
+        this.fieldId = fieldId;
+        this.templateId = templateId;
+        this.name = name;
+        this.label = label;
+        this.fieldType = fieldType;
+        this.isRequired = isRequired;
+        this.isOnFront = isOnFront;
+        this.orderIndex = orderIndex;
+        this.defaultValue = defaultValue;
+        this.helpText = helpText;
+    }
 
     public UUID getFieldId() {
         return fieldId;
@@ -84,30 +110,36 @@ public class FieldTemplateEntity {
         return helpText;
     }
 
-    protected FieldTemplateEntity() {
-
+    // сеттеры для PATCH
+    public void setName(String name) {
+        this.name = name;
     }
 
-    public FieldTemplateEntity(UUID fieldId,
-                               UUID templateId,
-                               String name,
-                               String label,
-                               CardFieldType fieldType,
-                               boolean isRequired,
-                               boolean isOnFront,
-                               Integer orderIndex,
-                               String defaultValue,
-                               String helpText) {
-        this.fieldId = fieldId;
-        this.templateId = templateId;
-        this.name = name;
+    public void setLabel(String label) {
         this.label = label;
+    }
+
+    public void setFieldType(CardFieldType fieldType) {
         this.fieldType = fieldType;
-        this.isRequired = isRequired;
-        this.isOnFront = isOnFront;
+    }
+
+    public void setRequired(boolean required) {
+        isRequired = required;
+    }
+
+    public void setOnFront(boolean onFront) {
+        isOnFront = onFront;
+    }
+
+    public void setOrderIndex(Integer orderIndex) {
         this.orderIndex = orderIndex;
+    }
+
+    public void setDefaultValue(String defaultValue) {
         this.defaultValue = defaultValue;
+    }
+
+    public void setHelpText(String helpText) {
         this.helpText = helpText;
     }
-
 }
