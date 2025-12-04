@@ -1,54 +1,265 @@
-// src/app/home-page.component.ts
-import { Component } from '@angular/core';
-import { NgIf } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { Component, OnInit } from '@angular/core';
+import { NgIf, NgFor } from '@angular/common';
+import { Router, RouterLink } from '@angular/router';
+import { forkJoin, of } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { AuthService } from './auth.service';
+import { PublicDeckApiService } from './core/services/public-deck-api.service';
+import { DeckApiService } from './core/services/deck-api.service';
+import { PublicDeckDTO } from './core/models/public-deck.models';
+import { UserDeckDTO } from './core/models/user-deck.models';
+import { DeckCardComponent } from './shared/components/deck-card.component';
+import { MemoryTipLoaderComponent } from './shared/components/memory-tip-loader.component';
+import { ButtonComponent } from './shared/components/button.component';
+import { EmptyStateComponent } from './shared/components/empty-state.component';
 
 @Component({
     standalone: true,
     selector: 'app-home-page',
-    imports: [NgIf, RouterLink],
+    imports: [NgIf, NgFor, RouterLink, DeckCardComponent, MemoryTipLoaderComponent, ButtonComponent, EmptyStateComponent],
     template: `
-    <section>
-      <h1>Mnema</h1>
-      <p>Главный экран приложения.</p>
+    <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
-      <button
-        *ngIf="auth.status() !== 'authenticated'; else goProfile"
-        class="btn primary"
-        type="button"
-        (click)="login()"
-      >
-        Войти через Google
-      </button>
+    <div *ngIf="!loading" class="home-page">
+      <section *ngIf="auth.status() === 'authenticated'" class="study-today">
+        <h2>Your Study Today</h2>
+        <div class="study-summary">
+          <div class="study-info">
+            <p class="study-message">{{ todayStats.due }} cards due · {{ todayStats.new }} new</p>
+            <app-button variant="primary" size="lg" routerLink="/decks">
+              Continue Learning
+            </app-button>
+          </div>
+        </div>
 
-      <ng-template #goProfile>
-        <a routerLink="/profile" class="btn primary">Открыть профиль</a>
-      </ng-template>
-    </section>
+        <div *ngIf="userDecks.length > 0" class="recent-decks">
+          <h3>Your Decks</h3>
+          <div class="deck-grid">
+            <app-deck-card
+              *ngFor="let deck of userDecks"
+              [userDeck]="deck"
+              [showLearn]="true"
+              [showBrowse]="true"
+              [stats]="getDeckStats(deck)"
+              (open)="openUserDeck(deck.userDeckId)"
+              (learn)="learnDeck(deck.userDeckId)"
+              (browse)="browseDeck(deck.userDeckId)"
+            ></app-deck-card>
+          </div>
+        </div>
+
+        <app-empty-state
+          *ngIf="userDecks.length === 0"
+          icon="📚"
+          title="No decks yet"
+          description="Create your first deck or fork a public deck to get started"
+          actionText="Browse Public Decks"
+          (action)="goToPublicDecks()"
+        ></app-empty-state>
+      </section>
+
+      <section class="public-decks">
+        <div class="section-header">
+          <h2>Top Public Decks</h2>
+          <a routerLink="/public-decks" class="view-all">View all →</a>
+        </div>
+
+        <div *ngIf="publicDecks.length > 0" class="deck-list">
+          <app-deck-card
+            *ngFor="let deck of publicDecks"
+            [publicDeck]="deck"
+            [showFork]="auth.status() === 'authenticated'"
+            [showBrowse]="true"
+            (open)="openPublicDeck(deck.deckId)"
+            (fork)="forkDeck(deck.deckId)"
+            (browse)="browsePublicDeck(deck.deckId)"
+          ></app-deck-card>
+        </div>
+
+        <app-empty-state
+          *ngIf="publicDecks.length === 0"
+          icon="🌐"
+          title="No public decks available"
+          description="Public decks will appear here once they are published"
+        ></app-empty-state>
+      </section>
+    </div>
   `,
     styles: [
         `
-      .btn.primary {
-        border-radius: 999px;
-        padding: 0.6rem 1.4rem;
-        border: none;
-        background: #111827;
-        color: #fff;
-        cursor: pointer;
-        text-decoration: none;
+      .home-page {
+        max-width: 72rem;
+        margin: 0 auto;
       }
 
-      .btn.primary:hover {
-        background: #000;
+      .study-today {
+        margin-bottom: var(--spacing-2xl);
+        padding: var(--spacing-xl);
+        background: var(--color-card-background);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-lg);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .study-today h2 {
+        font-size: 1.5rem;
+        margin-bottom: var(--spacing-lg);
+      }
+
+      .study-today h3 {
+        font-size: 1.25rem;
+        margin: var(--spacing-xl) 0 var(--spacing-md) 0;
+      }
+
+      .study-summary {
+        margin-bottom: var(--spacing-lg);
+      }
+
+      .study-info {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+      }
+
+      .study-message {
+        font-size: 1.1rem;
+        color: var(--color-text-muted);
+        margin: 0;
+      }
+
+      .recent-decks {
+        margin-top: var(--spacing-xl);
+        padding-top: var(--spacing-xl);
+        border-top: 1px solid var(--border-color);
+      }
+
+      .deck-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(20rem, 1fr));
+        gap: var(--spacing-md);
+      }
+
+      .public-decks {
+        margin-bottom: var(--spacing-2xl);
+      }
+
+      .section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--spacing-lg);
+      }
+
+      .section-header h2 {
+        font-size: 1.5rem;
+        margin: 0;
+      }
+
+      .view-all {
+        font-size: 0.95rem;
+        color: var(--color-primary-accent);
+        text-decoration: none;
+        font-weight: 500;
+        transition: opacity 0.2s ease;
+      }
+
+      .view-all:hover {
+        opacity: 0.8;
+      }
+
+      .deck-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
       }
     `
     ]
 })
-export class HomePageComponent {
-    constructor(public auth: AuthService) {}
+export class HomePageComponent implements OnInit {
+    loading = true;
+    publicDecks: PublicDeckDTO[] = [];
+    userDecks: UserDeckDTO[] = [];
+    todayStats = { due: 37, new: 6 };
 
-    login(): void {
-        void this.auth.beginLogin('/');
+    constructor(
+        public auth: AuthService,
+        private publicDeckApi: PublicDeckApiService,
+        private deckApi: DeckApiService,
+        private router: Router
+    ) {}
+
+    ngOnInit(): void {
+        this.loadData();
+    }
+
+    private loadData(): void {
+        const publicDecks$ = this.publicDeckApi.getPublicDecks(1, 5).pipe(
+            catchError(() => of({ content: [] as PublicDeckDTO[] }))
+        );
+
+        const userDecks$ = this.auth.status() === 'authenticated'
+            ? this.deckApi.getMyDecks(1, 3).pipe(
+                catchError(() => of({ content: [] as UserDeckDTO[] }))
+            )
+            : of({ content: [] as UserDeckDTO[] });
+
+        forkJoin({
+            publicDecks: publicDecks$,
+            userDecks: userDecks$
+        }).subscribe({
+            next: result => {
+                this.publicDecks = result.publicDecks.content;
+                this.userDecks = result.userDecks.content;
+                this.loading = false;
+            },
+            error: () => {
+                this.loading = false;
+            }
+        });
+    }
+
+    getDeckStats(deck: UserDeckDTO): { cardCount?: number; dueToday?: number } {
+        return {
+            cardCount: 0,
+            dueToday: Math.floor(Math.random() * 20)
+        };
+    }
+
+    openUserDeck(userDeckId: string): void {
+        void this.router.navigate(['/decks', userDeckId]);
+    }
+
+    openPublicDeck(deckId: string): void {
+        void this.router.navigate(['/public-decks', deckId, 'browse']);
+    }
+
+    learnDeck(userDeckId: string): void {
+        void this.router.navigate(['/decks', userDeckId, 'review']);
+    }
+
+    browseDeck(userDeckId: string): void {
+        void this.router.navigate(['/decks', userDeckId, 'browse']);
+    }
+
+    browsePublicDeck(deckId: string): void {
+        void this.router.navigate(['/public-decks', deckId, 'browse']);
+    }
+
+    forkDeck(deckId: string): void {
+        console.log('Forking deck:', deckId);
+        this.publicDeckApi.fork(deckId).subscribe({
+            next: userDeck => {
+                console.log('Deck forked successfully:', userDeck);
+                void this.router.navigate(['/decks', userDeck.userDeckId]);
+            },
+            error: err => {
+                console.error('Failed to fork deck:', err);
+            }
+        });
+    }
+
+    goToPublicDecks(): void {
+        void this.router.navigate(['/public-decks']);
     }
 }

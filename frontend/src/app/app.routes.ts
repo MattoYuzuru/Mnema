@@ -2,12 +2,28 @@ import { Routes } from '@angular/router';
 import { HomePageComponent } from './home-page.component';
 import { LoginPageComponent } from './login-page.component';
 import { ProfilePageComponent } from './profile-page.component';
+import { DecksListComponent } from './features/decks/decks-list.component';
+import { DeckProfileComponent } from './features/decks/deck-profile.component';
+import { CardBrowserComponent } from './features/decks/card-browser.component';
+import { ReviewSessionComponent } from './features/decks/review-session.component';
+import { PublicDecksCatalogComponent } from './features/public-decks/public-decks-catalog.component';
+import { PublicCardBrowserComponent } from './features/public-decks/public-card-browser.component';
+import { DeckWizardComponent } from './features/wizard/deck-wizard.component';
+import { SettingsComponent } from './features/settings/settings.component';
+import { authGuard } from './core/guards/auth.guard';
 
 export const appRoutes: Routes = [
     { path: '', component: HomePageComponent },
     { path: 'login', component: LoginPageComponent },
-    // при желании /register можно повесить на тот же компонент
     { path: 'register', component: LoginPageComponent },
-    { path: 'profile', component: ProfilePageComponent },
+    { path: 'profile', component: ProfilePageComponent, canActivate: [authGuard] },
+    { path: 'decks', component: DecksListComponent, canActivate: [authGuard] },
+    { path: 'decks/:userDeckId', component: DeckProfileComponent, canActivate: [authGuard] },
+    { path: 'decks/:userDeckId/browse', component: CardBrowserComponent, canActivate: [authGuard] },
+    { path: 'decks/:userDeckId/review', component: ReviewSessionComponent, canActivate: [authGuard] },
+    { path: 'create-deck', component: DeckWizardComponent, canActivate: [authGuard] },
+    { path: 'public-decks', component: PublicDecksCatalogComponent },
+    { path: 'public-decks/:deckId/browse', component: PublicCardBrowserComponent },
+    { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },
     { path: '**', redirectTo: '' }
 ];

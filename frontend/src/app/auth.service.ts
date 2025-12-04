@@ -1,4 +1,3 @@
-// src/app/auth.service.ts
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
@@ -48,7 +47,6 @@ export class AuthService {
         return this._accessToken;
     }
 
-    /** Вызываем один раз при старте приложения */
     initFromUrlAndStorage(): void {
         const params = new URLSearchParams(window.location.search);
         const code = params.get('code');
@@ -107,7 +105,6 @@ export class AuthService {
         const codeVerifier = window.sessionStorage.getItem('pkce_verifier');
         const redirectUri = `${window.location.origin}/`;
 
-        // убираем ?code=... из адресной строки
         window.history.replaceState(null, '', window.location.pathname);
 
         if (!codeVerifier || !expectedState || returnedState !== expectedState) {
