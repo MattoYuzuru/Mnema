@@ -16,12 +16,11 @@ import java.util.UUID;
 public class PublicDeckEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "deck_id", nullable = false)
+    @Column(name = "deck_id", nullable = false, updatable = false)
     private UUID deckId;
 
     @Id
-    @Column(name = "version", nullable = false)
+    @Column(name = "version", nullable = false, updatable = false)
     private Integer version;
 
     @Column(name = "author_id", nullable = false)

@@ -1,16 +1,11 @@
 package app.mnema.core.deck.service;
 
+import app.mnema.core.deck.domain.dto.FieldTemplateDTO;
 import app.mnema.core.deck.domain.dto.PublicCardDTO;
 import app.mnema.core.deck.domain.dto.UserCardDTO;
-import app.mnema.core.deck.domain.entity.PublicCardEntity;
-import app.mnema.core.deck.domain.entity.PublicDeckEntity;
-import app.mnema.core.deck.domain.entity.UserCardEntity;
-import app.mnema.core.deck.domain.entity.UserDeckEntity;
+import app.mnema.core.deck.domain.entity.*;
 import app.mnema.core.deck.domain.request.CreateCardRequest;
-import app.mnema.core.deck.repository.PublicCardRepository;
-import app.mnema.core.deck.repository.PublicDeckRepository;
-import app.mnema.core.deck.repository.UserCardRepository;
-import app.mnema.core.deck.repository.UserDeckRepository;
+import app.mnema.core.deck.repository.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.data.domain.Page;
@@ -32,15 +27,18 @@ public class CardService {
     private final UserCardRepository userCardRepository;
     private final PublicCardRepository publicCardRepository;
     private final PublicDeckRepository publicDeckRepository;
+    private final FieldTemplateRepository fieldTemplateRepository;
 
     public CardService(UserDeckRepository userDeckRepository,
                        UserCardRepository userCardRepository,
                        PublicCardRepository publicCardRepository,
-                       PublicDeckRepository publicDeckRepository) {
+                       PublicDeckRepository publicDeckRepository,
+                       FieldTemplateRepository fieldTemplateRepository) {
         this.userDeckRepository = userDeckRepository;
         this.userCardRepository = userCardRepository;
         this.publicCardRepository = publicCardRepository;
         this.publicDeckRepository = publicDeckRepository;
+        this.fieldTemplateRepository = fieldTemplateRepository;
     }
 
     // Просмотр всех карт в пользовательской колоде
@@ -53,6 +51,10 @@ public class CardService {
 
         if (!deck.getUserId().equals(currentUserId)) {
             throw new SecurityException("Access denied to deck " + userDeckId);
+        }
+
+        if (page < 1 || limit < 1) {
+            throw new IllegalArgumentException("page and limit must be >= 1");
         }
 
         Pageable pageable = PageRequest.of(page - 1, limit);
@@ -85,18 +87,7 @@ public class CardService {
 
         Pageable pageable = PageRequest.of(page - 1, limit);
 
-        PublicDeckEntity deck;
-        if (deckVersion == null) {
-            deck = publicDeckRepository
-                    .findLatestByDeckId(deckId)
-                    .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + deckId));
-        } else {
-            deck = publicDeckRepository
-                    .findByDeckIdAndVersion(deckId, deckVersion)
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "Public deck not found: deckId=" + deckId + ", version=" + deckVersion
-                    ));
-        }
+        PublicDeckEntity deck = resolvePublicDeck(deckId, deckVersion);
 
         if (!deck.isPublicFlag()) {
             throw new SecurityException("Deck is not public: " + deckId);
@@ -105,6 +96,60 @@ public class CardService {
         return publicCardRepository
                 .findByDeckIdAndDeckVersionOrderByOrderIndex(deck.getDeckId(), deck.getVersion(), pageable)
                 .map(this::toPublicCardDTO);
+    }
+
+    // Получить одну публичную карту по cardId
+    @Transactional(readOnly = true)
+    public PublicCardDTO getPublicCardById(UUID cardId) {
+        PublicCardEntity card = publicCardRepository.findByCardId(cardId)
+                .orElseThrow(() -> new IllegalArgumentException("Public card not found: " + cardId));
+
+        PublicDeckEntity deck = publicDeckRepository
+                .findByDeckIdAndVersion(card.getDeckId(), card.getDeckVersion())
+                .orElseThrow(() -> new IllegalStateException(
+                        "Public deck not found for card: deckId=" + card.getDeckId() + ", version=" + card.getDeckVersion()
+                ));
+
+        if (!deck.isPublicFlag()) {
+            throw new SecurityException("Deck is not public: " + card.getDeckId());
+        }
+
+        return toPublicCardDTO(card);
+    }
+
+    // Список полей шаблона для публичной колоды (для фронта, чтобы не дублировать template в каждой карте)
+    @Transactional(readOnly = true)
+    public List<FieldTemplateDTO> getFieldTemplatesForPublicDeck(UUID deckId, Integer deckVersion) {
+        PublicDeckEntity deck = resolvePublicDeck(deckId, deckVersion);
+
+        if (!deck.isPublicFlag()) {
+            throw new SecurityException("Deck is not public: " + deckId);
+        }
+
+        UUID templateId = deck.getTemplateId();
+        if (templateId == null) {
+            return List.of();
+        }
+
+        return fieldTemplateRepository
+                .findByTemplateIdOrderByOrderIndexAsc(templateId)
+                .stream()
+                .map(this::toFieldTemplateDTO)
+                .toList();
+    }
+
+    private PublicDeckEntity resolvePublicDeck(UUID deckId, Integer deckVersion) {
+        if (deckVersion == null) {
+            return publicDeckRepository
+                    .findLatestByDeckId(deckId)
+                    .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + deckId));
+        } else {
+            return publicDeckRepository
+                    .findByDeckIdAndVersion(deckId, deckVersion)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Public deck not found: deckId=" + deckId + ", version=" + deckVersion
+                    ));
+        }
     }
 
     // Добавление одной карты в пользовательскую колоду (обёртка над батчем)
@@ -254,6 +299,12 @@ public class CardService {
         }
 
         // Добавляем НОВЫЕ публичные карты для новой версии
+
+        int highestOrderIndex = oldCards.stream()
+                .mapToInt(PublicCardEntity::getOrderIndex)
+                .max()
+                .orElse(oldCards.size() + 1);
+
         List<PublicCardEntity> newPublicCards = new ArrayList<>();
         for (CreateCardRequest request : requests) {
             PublicCardEntity pc = new PublicCardEntity(
@@ -349,6 +400,8 @@ public class CardService {
         userCardRepository.save(card);
     }
 
+    // ==== Приватные мапперы и утилиты ==== //
+
     private UserCardDTO toUserCardDTO(UserCardEntity c) {
         JsonNode effective = buildEffectiveContent(c);
 
@@ -410,7 +463,6 @@ public class CardService {
 
         if (base instanceof ObjectNode baseObj && override instanceof ObjectNode overrideObj) {
             ObjectNode merged = baseObj.deepCopy();
-            // setAll из другого ObjectNode
             merged.setAll(overrideObj);
             return merged;
         }
@@ -419,4 +471,18 @@ public class CardService {
         return override;
     }
 
+    private FieldTemplateDTO toFieldTemplateDTO(FieldTemplateEntity entity) {
+        return new FieldTemplateDTO(
+                entity.getFieldId(),
+                entity.getTemplateId(),
+                entity.getName(),
+                entity.getLabel(),
+                entity.getFieldType(),
+                entity.isRequired(),
+                entity.isOnFront(),
+                entity.getOrderIndex(),
+                entity.getDefaultValue(),
+                entity.getHelpText()
+        );
+    }
 }

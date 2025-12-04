@@ -59,58 +59,13 @@ class PublicDeckRepositoryDataJpaTest {
     }
 
     @Test
-    void findByAuthorId_returnsOnlyDecksForAuthor() {
-        UUID author1 = UUID.randomUUID();
-        UUID author2 = UUID.randomUUID();
-        UUID templateId = anyTemplateId();
-
-        PublicDeckEntity deck1 = new PublicDeckEntity(
-                1,
-                author1,
-                "Deck 1",
-                "Desc 1",
-                templateId,
-                true,
-                true,
-                LanguageTag.en,
-                new String[]{"tag"},
-                Instant.now(),
-                null,
-                null,
-                null
-        );
-
-        PublicDeckEntity deck2 = new PublicDeckEntity(
-                1,
-                author2,
-                "Deck 2",
-                "Desc 2",
-                templateId,
-                true,
-                true,
-                LanguageTag.en,
-                new String[]{"tag"},
-                Instant.now(),
-                null,
-                null,
-                null
-        );
-
-        publicDeckRepository.saveAll(List.of(deck1, deck2));
-
-        List<PublicDeckEntity> result = publicDeckRepository.findByAuthorId(author1);
-
-        assertThat(result)
-                .hasSize(1)
-                .allMatch(d -> d.getAuthorId().equals(author1));
-    }
-
-    @Test
     void findByDeckIdAndVersion_returnsExactVersion() {
         UUID author = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
         UUID templateId = anyTemplateId();
 
         PublicDeckEntity v1 = new PublicDeckEntity(
+                publicDeckId,
                 1,
                 author,
                 "Deck v1",
@@ -128,6 +83,7 @@ class PublicDeckRepositoryDataJpaTest {
         PublicDeckEntity savedV1 = publicDeckRepository.save(v1);
 
         PublicDeckEntity v2 = new PublicDeckEntity(
+                publicDeckId,
                 2,
                 author,
                 "Deck v2",
@@ -164,9 +120,11 @@ class PublicDeckRepositoryDataJpaTest {
     @Test
     void findTopByDeckIdOrderByVersionDesc_returnsLatestVersion() {
         UUID author = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
         UUID templateId = anyTemplateId();
 
         PublicDeckEntity v1 = new PublicDeckEntity(
+                publicDeckId,
                 1,
                 author,
                 "Deck v1",
@@ -184,6 +142,7 @@ class PublicDeckRepositoryDataJpaTest {
         PublicDeckEntity savedV1 = publicDeckRepository.save(v1);
 
         PublicDeckEntity v2 = new PublicDeckEntity(
+                publicDeckId,
                 2,
                 author,
                 "Deck v2",
@@ -217,11 +176,14 @@ class PublicDeckRepositoryDataJpaTest {
     }
 
     @Test
-    void findByPublicFlagTrueAndListedTrue_returnsOnlyPublicAndListedDecks() {
+    void findLatestPublicVisibleDecks_returnsOnlyPublicAndListedDecks_latestVersions() {
         UUID author = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
         UUID templateId = anyTemplateId();
 
+
         PublicDeckEntity publicAndListed = new PublicDeckEntity(
+                publicDeckId,
                 1,
                 author,
                 "Public listed",
@@ -238,6 +200,7 @@ class PublicDeckRepositoryDataJpaTest {
         );
 
         PublicDeckEntity notPublic = new PublicDeckEntity(
+                publicDeckId,
                 1,
                 author,
                 "Not public",
@@ -254,6 +217,7 @@ class PublicDeckRepositoryDataJpaTest {
         );
 
         PublicDeckEntity notListed = new PublicDeckEntity(
+                publicDeckId,
                 1,
                 author,
                 "Not listed",
@@ -272,7 +236,7 @@ class PublicDeckRepositoryDataJpaTest {
         publicDeckRepository.saveAll(List.of(publicAndListed, notPublic, notListed));
 
         Page<PublicDeckEntity> page = publicDeckRepository
-                .findByPublicFlagTrueAndListedTrue(PageRequest.of(0, 10));
+                .findLatestPublicVisibleDecks(PageRequest.of(0, 10));
 
         assertThat(page.getContent())
                 .hasSize(1)

@@ -317,7 +317,7 @@ public class DeckService {
     private PublicDeckEntity toPublicDeckEntityForCreate(UUID authorId, PublicDeckDTO publicDeckDTO) {
         Instant now = Instant.now();
         return new PublicDeckEntity(
-                null,                   // deck_id сгенерится БД
+                UUID.randomUUID(),
                 1,
                 authorId,
                 publicDeckDTO.name(),

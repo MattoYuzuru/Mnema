@@ -17,6 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -111,7 +112,7 @@ class CardServiceTest {
         UserCardEntity cardEntity = new UserCardEntity(
                 userId,
                 deckId,
-                null,          // publicCardId == null, репозиторий publicCardRepository не трогаем
+                null,
                 true,
                 false,
                 "note",
@@ -139,6 +140,11 @@ class CardServiceTest {
 
         assertThat(result.getTotalElements()).isEqualTo(1);
         assertThat(result.getContent().getFirst().personalNote()).isEqualTo("note");
+
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(userCardRepository).findByUserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc(eq(deckId), pageableCaptor.capture());
+        assertThat(pageableCaptor.getValue().getPageNumber()).isEqualTo(0);
+        assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(50);
     }
 
     @Test
@@ -155,8 +161,10 @@ class CardServiceTest {
     @Test
     void getPublicCards_throwsSecurityExceptionWhenDeckIsNotPublic() {
         UUID deckId = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
 
         PublicDeckEntity deck = new PublicDeckEntity(
+                publicDeckId,
                 1,
                 UUID.randomUUID(),
                 "Deck",
@@ -172,7 +180,7 @@ class CardServiceTest {
                 null
         );
 
-        when(publicDeckRepository.findTopByDeckIdOrderByVersionDesc(deckId))
+        when(publicDeckRepository.findLatestByDeckId(deckId))
                 .thenReturn(Optional.of(deck));
 
         assertThatThrownBy(() -> cardService.getPublicCards(deckId, null, 1, 10))
@@ -183,8 +191,10 @@ class CardServiceTest {
     @Test
     void getPublicCards_usesLatestVersionWhenVersionIsNull() {
         UUID deckId = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
 
         PublicDeckEntity deck = new PublicDeckEntity(
+                publicDeckId,
                 3,
                 UUID.randomUUID(),
                 "Deck v3",
@@ -207,7 +217,7 @@ class CardServiceTest {
                 1
         );
 
-        when(publicDeckRepository.findTopByDeckIdOrderByVersionDesc(deckId))
+        when(publicDeckRepository.findLatestByDeckId(deckId))
                 .thenReturn(Optional.of(deck));
         when(publicCardRepository.findByDeckIdAndDeckVersionOrderByOrderIndex(
                 any(), anyInt(), any(Pageable.class)))
@@ -216,7 +226,7 @@ class CardServiceTest {
         Page<PublicCardDTO> result = cardService.getPublicCards(deckId, null, 1, 50);
 
         assertThat(result.getTotalElements()).isEqualTo(1);
-        verify(publicDeckRepository).findTopByDeckIdOrderByVersionDesc(deckId);
+        verify(publicDeckRepository).findLatestByDeckId(deckId);
         verify(publicCardRepository).findByDeckIdAndDeckVersionOrderByOrderIndex(
                 any(), eq(3), any(Pageable.class));
     }
@@ -281,6 +291,7 @@ class CardServiceTest {
         );
 
         PublicDeckEntity publicDeck = new PublicDeckEntity(
+                publicDeckId,
                 1,
                 userId,
                 "Deck",
@@ -310,27 +321,34 @@ class CardServiceTest {
         );
 
         when(userDeckRepository.findById(userDeckId)).thenReturn(Optional.of(userDeck));
-        when(publicDeckRepository.findByDeckIdAndVersion(publicDeckId, 1))
+        when(publicDeckRepository.findLatestByDeckId(publicDeckId))
                 .thenReturn(Optional.of(publicDeck));
 
-        AtomicReference<PublicCardEntity> savedPublicCardRef = new AtomicReference<>();
+        // Старые карты клонируем из пустого списка
+        when(publicCardRepository.findByDeckIdAndDeckVersion(any(UUID.class), anyInt()))
+                .thenReturn(List.of());
 
-        when(publicCardRepository.save(any(PublicCardEntity.class)))
+        AtomicReference<PublicCardEntity> lastSavedPublicCardRef = new AtomicReference<>();
+
+        when(publicCardRepository.saveAll(anyList()))
                 .thenAnswer(invocation -> {
-                    PublicCardEntity entity = invocation.getArgument(0);
-                    try {
-                        var field = PublicCardEntity.class.getDeclaredField("cardId");
-                        field.setAccessible(true);
-                        field.set(entity, UUID.randomUUID());
-                    } catch (Exception e) {
-                        throw new RuntimeException(e);
+                    @SuppressWarnings("unchecked")
+                    List<PublicCardEntity> entities = invocation.getArgument(0);
+                    for (PublicCardEntity entity : entities) {
+                        try {
+                            var field = PublicCardEntity.class.getDeclaredField("cardId");
+                            field.setAccessible(true);
+                            field.set(entity, UUID.randomUUID());
+                        } catch (Exception e) {
+                            throw new RuntimeException(e);
+                        }
+                        lastSavedPublicCardRef.set(entity);
                     }
-                    savedPublicCardRef.set(entity);
-                    return entity;
+                    return entities;
                 });
 
         when(publicCardRepository.findByCardId(any()))
-                .thenAnswer(invocation -> Optional.ofNullable(savedPublicCardRef.get()));
+                .thenAnswer(invocation -> Optional.ofNullable(lastSavedPublicCardRef.get()));
 
         UserCardEntity savedUserCard = new UserCardEntity(
                 userId,
@@ -357,7 +375,8 @@ class CardServiceTest {
         assertThat(result.isSuspended()).isFalse();
         assertThat(result.personalNote()).isEqualTo("note");
 
-        verify(publicCardRepository).save(any(PublicCardEntity.class));
+        verify(publicCardRepository).saveAll(anyList());
+        verify(userDeckRepository).save(any(UserDeckEntity.class));
         verify(userCardRepository).save(any(UserCardEntity.class));
     }
 }

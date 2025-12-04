@@ -67,7 +67,9 @@ class PublicCardRepositoryDataJpaTest {
     }
 
     private PublicDeckEntity createDeck() {
+        UUID publicDeckId = UUID.randomUUID();
         PublicDeckEntity deck = new PublicDeckEntity(
+                publicDeckId,
                 1,
                 UUID.randomUUID(),
                 "Test deck",

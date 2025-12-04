@@ -28,7 +28,7 @@ import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -51,7 +51,9 @@ class DeckServiceTest {
 
     @Test
     void getPublicDecksByPage_delegatesToRepositoryAndMaps() {
+        UUID publicDeckId = UUID.randomUUID();
         PublicDeckEntity entity = new PublicDeckEntity(
+                publicDeckId,
                 1,
                 UUID.randomUUID(),
                 "Deck 1",
@@ -72,7 +74,7 @@ class DeckServiceTest {
                 1
         );
 
-        when(publicDeckRepository.findByPublicFlagTrueAndListedTrue(any(Pageable.class)))
+        when(publicDeckRepository.findLatestPublicVisibleDecks(any(Pageable.class)))
                 .thenReturn(repoPage);
 
         Page<PublicDeckDTO> result = deckService.getPublicDecksByPage(1, 10);
@@ -83,7 +85,7 @@ class DeckServiceTest {
         assertThat(dto.language()).isEqualTo(LanguageTag.en);
 
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
-        verify(publicDeckRepository).findByPublicFlagTrueAndListedTrue(pageableCaptor.capture());
+        verify(publicDeckRepository).findLatestPublicVisibleDecks(pageableCaptor.capture());
         assertThat(pageableCaptor.getValue().getPageNumber()).isEqualTo(0);
         assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(10);
     }
@@ -131,6 +133,7 @@ class DeckServiceTest {
 
     @Test
     void createNewDeck_createsPublicAndUserDeck() {
+        UUID publicDeckId = UUID.randomUUID();
         UUID userId = UUID.randomUUID();
         UUID templateId = UUID.randomUUID();
 
@@ -152,6 +155,7 @@ class DeckServiceTest {
         );
 
         PublicDeckEntity savedPublicDeck = new PublicDeckEntity(
+                publicDeckId,
                 1,
                 userId,
                 "My deck",
@@ -227,7 +231,7 @@ class DeckServiceTest {
         UserDeckDTO result = deckService.forkFromPublicDeck(userId, publicDeckId);
 
         assertThat(result.displayName()).isEqualTo("Existing deck");
-        verify(publicDeckRepository, never()).findTopByDeckIdOrderByVersionDesc(any());
+        verify(publicDeckRepository, never()).findLatestByDeckId(any());
         verify(userCardRepository, never()).saveAll(any());
     }
 
@@ -240,6 +244,7 @@ class DeckServiceTest {
                 .thenReturn(Optional.empty());
 
         PublicDeckEntity publicDeck = new PublicDeckEntity(
+                publicDeckId,
                 1,
                 authorId,
                 "Author deck",
@@ -255,7 +260,7 @@ class DeckServiceTest {
                 null
         );
 
-        when(publicDeckRepository.findTopByDeckIdOrderByVersionDesc(publicDeckId))
+        when(publicDeckRepository.findLatestByDeckId(publicDeckId))
                 .thenReturn(Optional.of(publicDeck));
 
         assertThatThrownBy(() -> deckService.forkFromPublicDeck(authorId, publicDeckId))

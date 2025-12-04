@@ -1,5 +1,6 @@
 package app.mnema.core.deck.controller;
 
+import app.mnema.core.deck.domain.dto.FieldTemplateDTO;
 import app.mnema.core.deck.domain.dto.PublicCardDTO;
 import app.mnema.core.deck.domain.dto.PublicDeckDTO;
 import app.mnema.core.deck.domain.dto.UserDeckDTO;
@@ -11,6 +12,9 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @RestController
@@ -48,14 +52,38 @@ public class PublicDeckController {
     }
 
     // GET /decks/public/{deckId}/cards?version=...&page=1&limit=50
+    // {
+    //   "content": [ карты ],
+    //   "fields":  [ описания полей шаблона ],
+    //   поля пагинации Page
+    // }
     @GetMapping("/{deckId}/cards")
-    public Page<PublicCardDTO> getPublicDeckCards(
+    public Map<String, Object> getPublicDeckCards(
             @PathVariable UUID deckId,
             @RequestParam(required = false) Integer version,
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "50") int limit
     ) {
-        return cardService.getPublicCards(deckId, version, page, limit);
+        Page<PublicCardDTO> cardsPage = cardService.getPublicCards(deckId, version, page, limit);
+        List<FieldTemplateDTO> fields = cardService.getFieldTemplatesForPublicDeck(deckId, version);
+
+        Map<String, Object> response = new LinkedHashMap<>();
+
+        response.put("content", cardsPage.getContent());
+        response.put("fields", fields);
+
+        response.put("pageable", cardsPage.getPageable());
+        response.put("last", cardsPage.isLast());
+        response.put("totalElements", cardsPage.getTotalElements());
+        response.put("totalPages", cardsPage.getTotalPages());
+        response.put("size", cardsPage.getSize());
+        response.put("number", cardsPage.getNumber());
+        response.put("sort", cardsPage.getSort());
+        response.put("first", cardsPage.isFirst());
+        response.put("numberOfElements", cardsPage.getNumberOfElements());
+        response.put("empty", cardsPage.isEmpty());
+
+        return response;
     }
 
     // PATCH /decks/public/{deckId}?version=...

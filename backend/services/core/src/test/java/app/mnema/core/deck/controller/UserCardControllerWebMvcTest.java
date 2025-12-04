@@ -13,6 +13,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -77,8 +78,9 @@ class UserCardControllerWebMvcTest {
         when(currentUserProvider.getUserId(any(Jwt.class))).thenReturn(userId);
         when(cardService.getUserCardsByDeck(userId, userDeckId, 1, 50)).thenReturn(page);
 
-        mockMvc.perform(get("/decks/{userDeckId}/cards", userDeckId)
-                        .with(jwt().jwt(j -> j.claim("sub", "user-123")))
+        mockMvc.perform(get("/api/core/decks/{userDeckId}/cards", userDeckId)
+                        .with(jwt().jwt(j -> j.claim("sub", "user-123"))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_user.read")))
                         .param("page", "1")
                         .param("limit", "50"))
                 .andExpect(status().isOk())
@@ -126,8 +128,9 @@ class UserCardControllerWebMvcTest {
                 }
                 """;
 
-        mockMvc.perform(post("/decks/{userDeckId}/cards", userDeckId)
-                        .with(jwt().jwt(j -> j.claim("sub", "user-123")))
+        mockMvc.perform(post("/api/core/decks/{userDeckId}/cards", userDeckId)
+                        .with(jwt().jwt(j -> j.claim("sub", "user-123"))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_user.write")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody))
                 .andExpect(status().isCreated())

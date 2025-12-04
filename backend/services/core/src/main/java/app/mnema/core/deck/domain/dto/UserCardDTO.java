@@ -1,6 +1,5 @@
 package app.mnema.core.deck.domain.dto;
 
-
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.time.Instant;

@@ -15,6 +15,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -77,8 +78,9 @@ class PublicDeckControllerWebMvcTest {
 
         when(deckService.getPublicDecksByPage(1, 10)).thenReturn(page);
 
-        mockMvc.perform(get("/decks/public")
-                        .with(jwt().jwt(j -> j.claim("sub", "user-123")))
+        mockMvc.perform(get("/api/core/decks/public")
+                        .with(jwt().jwt(j -> j.claim("sub", "user-123"))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_user.read")))
                         .param("page", "1")
                         .param("limit", "10"))
                 .andExpect(status().isOk())
@@ -116,8 +118,9 @@ class PublicDeckControllerWebMvcTest {
 
         when(cardService.getPublicCards(deckId, 2, 1, 50)).thenReturn(page);
 
-        mockMvc.perform(get("/decks/public/{deckId}/cards", deckId)
-                        .with(jwt().jwt(j -> j.claim("sub", "user-123")))
+        mockMvc.perform(get("/api/core/decks/public/{deckId}/cards", deckId)
+                        .with(jwt().jwt(j -> j.claim("sub", "user-123"))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_user.read")))
                         .param("version", "2")
                         .param("page", "1")
                         .param("limit", "50"))
@@ -151,8 +154,9 @@ class PublicDeckControllerWebMvcTest {
         when(currentUserProvider.getUserId(any(Jwt.class))).thenReturn(userId);
         when(deckService.forkFromPublicDeck(userId, publicDeckId)).thenReturn(responseDto);
 
-        mockMvc.perform(post("/decks/public/{deckId}/fork", publicDeckId)
-                        .with(jwt().jwt(j -> j.claim("sub", "user-123"))))
+        mockMvc.perform(post("/api/core/decks/public/{deckId}/fork", publicDeckId)
+                        .with(jwt().jwt(j -> j.claim("sub", "user-123"))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_user.write"))))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.userId").value(userId.toString()))
                 .andExpect(jsonPath("$.publicDeckId").value(publicDeckId.toString()))

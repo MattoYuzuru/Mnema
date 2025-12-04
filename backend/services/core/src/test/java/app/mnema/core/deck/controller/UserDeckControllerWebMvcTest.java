@@ -2,6 +2,7 @@ package app.mnema.core.deck.controller;
 
 import app.mnema.core.deck.domain.dto.PublicDeckDTO;
 import app.mnema.core.deck.domain.dto.UserDeckDTO;
+import app.mnema.core.deck.domain.type.LanguageTag;
 import app.mnema.core.deck.service.DeckService;
 import app.mnema.core.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -71,8 +73,9 @@ class UserDeckControllerWebMvcTest {
         when(currentUserProvider.getUserId(any(Jwt.class))).thenReturn(userId);
         when(deckService.getUserDecksByPage(userId, 1, 10)).thenReturn(page);
 
-        mockMvc.perform(get("/decks/mine")
-                        .with(jwt().jwt(j -> j.claim("sub", "user-123")))
+        mockMvc.perform(get("/api/core/decks/mine")
+                        .with(jwt().jwt(j -> j.claim("sub", "user-123"))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_user.read")))
                         .param("page", "1")
                         .param("limit", "10"))
                 .andExpect(status().isOk())
@@ -108,12 +111,18 @@ class UserDeckControllerWebMvcTest {
         String requestBody = """
                 {
                   "name": "My deck",
-                  "description": "Description"
+                  "description": "Description",
+                  "templateId": "00000000-0000-0000-0000-000000000000",
+                  "isPublic": true,
+                  "isListed": true,
+                  "language": "%s",
+                  "tags": ["tag"]
                 }
-                """;
+                """.formatted(LanguageTag.en.name());
 
-        mockMvc.perform(post("/decks")
-                        .with(jwt().jwt(j -> j.claim("sub", "user-123")))
+        mockMvc.perform(post("/api/core/decks")
+                        .with(jwt().jwt(j -> j.claim("sub", "user-123"))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_user.write")))
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(requestBody))
                 .andExpect(status().isCreated())
