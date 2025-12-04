@@ -1,5 +1,6 @@
 package app.mnema.core.deck.service;
 
+import app.mnema.core.deck.domain.dto.DeckSizeDTO;
 import app.mnema.core.deck.domain.dto.PublicDeckDTO;
 import app.mnema.core.deck.domain.dto.UserDeckDTO;
 import app.mnema.core.deck.domain.entity.PublicCardEntity;
@@ -79,6 +80,43 @@ public class DeckService {
                 .findByUserIdAndArchivedFalse(currentUserId, pageable)
                 .map(this::toUserDeckDTO);
     }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('SCOPE_user.read')")
+    public DeckSizeDTO getUserDeckSize(UUID currentUserId, UUID userDeckId) {
+        UserDeckEntity deck = userDeckRepository.findById(userDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+
+        if (!deck.getUserId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to deck " + userDeckId);
+        }
+
+        long cardsCount = userCardRepository.countByUserDeckIdAndDeletedFalseAndSuspendedFalse(userDeckId);
+
+        return new DeckSizeDTO(userDeckId, cardsCount);
+    }
+
+    @Transactional(readOnly = true)
+    public DeckSizeDTO getPublicDeckSize(UUID deckId, Integer version) {
+        PublicDeckEntity deck;
+
+        if (version == null) {
+            deck = publicDeckRepository
+                    .findLatestByDeckId(deckId)
+                    .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + deckId));
+        } else {
+            deck = publicDeckRepository
+                    .findByDeckIdAndVersion(deckId, version)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Public deck not found: deckId=" + deckId + ", version=" + version
+                    ));
+        }
+
+        long cardsCount = publicCardRepository.countByDeckIdAndDeckVersion(deck.getDeckId(), deck.getVersion());
+
+        return new DeckSizeDTO(deck.getDeckId(), cardsCount);
+    }
+
 
     // Получить одну пользовательскую колоду
     @Transactional(readOnly = true)

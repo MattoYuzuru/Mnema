@@ -30,10 +30,10 @@ import { NgClass } from '@angular/common';
         align-items: center;
         justify-content: center;
         gap: var(--spacing-sm);
-        padding: var(--spacing-sm) var(--spacing-md);
-        border: 1px solid transparent;
-        border-radius: var(--border-radius-full);
-        font-size: 0.9rem;
+        padding: 0.625rem 1.25rem;
+        border: 2px solid transparent;
+        border-radius: var(--border-radius-md);
+        font-size: 0.95rem;
         font-weight: 500;
         cursor: pointer;
         transition: all 0.2s ease;
@@ -46,14 +46,14 @@ import { NgClass } from '@angular/common';
       }
 
       .btn-primary {
-        background: #111827;
-        color: #fff;
-        border-color: #111827;
+        background: var(--color-primary-accent);
+        color: #ffffff;
+        border-color: var(--color-primary-accent);
       }
 
       .btn-primary:hover:not(:disabled) {
-        background: #000;
-        border-color: #000;
+        opacity: 0.9;
+        transform: translateY(-1px);
       }
 
       .btn-secondary {
@@ -63,7 +63,7 @@ import { NgClass } from '@angular/common';
       }
 
       .btn-secondary:hover:not(:disabled) {
-        border-color: var(--border-color-hover);
+        border-color: var(--color-primary-accent);
         background: var(--color-background);
       }
 
@@ -75,21 +75,23 @@ import { NgClass } from '@angular/common';
 
       .btn-ghost:hover:not(:disabled) {
         background: var(--color-background);
+        border-color: var(--border-color-hover);
       }
 
       .btn-sm {
-        padding: var(--spacing-xs) var(--spacing-sm);
-        font-size: 0.85rem;
+        padding: 0.5rem 0.875rem;
+        font-size: 0.875rem;
       }
 
       .btn-md {
-        padding: var(--spacing-sm) var(--spacing-md);
-        font-size: 0.9rem;
+        padding: 0.625rem 1.25rem;
+        font-size: 0.95rem;
       }
 
       .btn-lg {
-        padding: var(--spacing-md) var(--spacing-lg);
-        font-size: 1rem;
+        padding: 0.75rem 1.5rem;
+        font-size: 1.05rem;
+        font-weight: 600;
       }
 
       .btn-full {

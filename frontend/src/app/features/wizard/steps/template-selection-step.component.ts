@@ -204,7 +204,8 @@ type TemplateFilter = 'mine' | 'public';
       .templates-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-        gap: var(--spacing-md);
+        gap: var(--spacing-lg);
+        margin-top: var(--spacing-lg);
       }
 
       .empty-state {

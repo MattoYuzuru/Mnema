@@ -90,6 +90,6 @@ export class MemoryTipLoaderComponent implements OnInit {
     constructor(private memoryTipsService: MemoryTipsService) {}
 
     ngOnInit(): void {
-        this.tip = this.memoryTipsService.getRandomTip(this.themeId);
+        this.tip = this.memoryTipsService.getRandomTip();
     }
 }

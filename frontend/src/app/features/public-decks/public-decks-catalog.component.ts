@@ -1,7 +1,10 @@
 import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
+import { catchError } from 'rxjs/operators';
+import { forkJoin, of } from 'rxjs';
 import { AuthService } from '../../auth.service';
+import { UserApiService } from '../../user-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
 import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { DeckCardComponent } from '../../shared/components/deck-card.component';
@@ -25,7 +28,7 @@ import { EmptyStateComponent } from '../../shared/components/empty-state.compone
         <app-deck-card
           *ngFor="let deck of decks"
           [publicDeck]="deck"
-          [showFork]="auth.status() === 'authenticated'"
+          [showFork]="canForkDeck(deck)"
           [showBrowse]="true"
           (open)="openDeck(deck.deckId)"
           (fork)="forkDeck(deck.deckId)"
@@ -72,9 +75,11 @@ import { EmptyStateComponent } from '../../shared/components/empty-state.compone
 export class PublicDecksCatalogComponent implements OnInit {
     loading = true;
     decks: PublicDeckDTO[] = [];
+    currentUserId: string | null = null;
 
     constructor(
         public auth: AuthService,
+        private userApi: UserApiService,
         private publicDeckApi: PublicDeckApiService,
         private router: Router
     ) {}
@@ -84,16 +89,28 @@ export class PublicDecksCatalogComponent implements OnInit {
     }
 
     private loadDecks(): void {
-        this.publicDeckApi.getPublicDecks(1, 50).subscribe({
-            next: page => {
-                this.decks = page.content;
+        const decks$ = this.publicDeckApi.getPublicDecks(1, 50).pipe(
+            catchError(() => of({ content: [] as PublicDeckDTO[] }))
+        );
+
+        const user$ = this.auth.status() === 'authenticated'
+            ? this.userApi.getMe().pipe(catchError(() => of(null)))
+            : of(null);
+
+        forkJoin({ decks: decks$, user: user$ }).subscribe({
+            next: result => {
+                this.decks = result.decks.content;
+                this.currentUserId = result.user?.id || null;
                 this.loading = false;
             },
-            error: err => {
-                console.error('Failed to load public decks:', err);
+            error: () => {
                 this.loading = false;
             }
         });
+    }
+
+    canForkDeck(deck: PublicDeckDTO): boolean {
+        return this.auth.status() === 'authenticated' && deck.authorId !== this.currentUserId;
     }
 
     openDeck(deckId: string): void {

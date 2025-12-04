@@ -1,5 +1,6 @@
 package app.mnema.core.deck.controller;
 
+import app.mnema.core.deck.domain.dto.DeckSizeDTO;
 import app.mnema.core.deck.domain.dto.PublicDeckDTO;
 import app.mnema.core.deck.domain.dto.UserDeckDTO;
 import app.mnema.core.deck.service.DeckService;
@@ -87,4 +88,15 @@ public class UserDeckController {
         var userId = currentUserProvider.getUserId(jwt);
         deckService.deleteUserDeck(userId, userDeckId);
     }
+
+    // GET /decks/{userDeckId}/size
+    @GetMapping("/{userDeckId}/size")
+    public DeckSizeDTO getDeckSize(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID userDeckId
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        return deckService.getUserDeckSize(userId, userDeckId);
+    }
+
 }

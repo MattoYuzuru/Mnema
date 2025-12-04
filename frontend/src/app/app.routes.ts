@@ -2,6 +2,8 @@ import { Routes } from '@angular/router';
 import { HomePageComponent } from './home-page.component';
 import { LoginPageComponent } from './login-page.component';
 import { ProfilePageComponent } from './profile-page.component';
+import { PrivacyPageComponent } from './privacy-page.component';
+import { TermsPageComponent } from './terms-page.component';
 import { DecksListComponent } from './features/decks/decks-list.component';
 import { DeckProfileComponent } from './features/decks/deck-profile.component';
 import { CardBrowserComponent } from './features/decks/card-browser.component';
@@ -25,5 +27,7 @@ export const appRoutes: Routes = [
     { path: 'public-decks', component: PublicDecksCatalogComponent },
     { path: 'public-decks/:deckId/browse', component: PublicCardBrowserComponent },
     { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },
+    { path: 'privacy', component: PrivacyPageComponent },
+    { path: 'terms', component: TermsPageComponent },
     { path: '**', redirectTo: '' }
 ];

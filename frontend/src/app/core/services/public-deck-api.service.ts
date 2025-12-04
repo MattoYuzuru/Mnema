@@ -61,4 +61,8 @@ export class PublicDeckApiService {
     fork(deckId: string): Observable<UserDeckDTO> {
         return this.http.post<UserDeckDTO>(`${this.baseUrl}/${deckId}/fork`, {});
     }
+
+    getPublicDeckSize(deckId: string): Observable<{ deckId: string; cardsQty: number }> {
+        return this.http.get<{ deckId: string; cardsQty: number }>(`${this.baseUrl}/${deckId}/size`);
+    }
 }

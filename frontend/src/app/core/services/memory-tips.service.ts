@@ -1,38 +1,32 @@
 import { Injectable } from '@angular/core';
-import { ThemeService } from './theme.service';
-import { MemoryTip } from '../models/theme.models';
+
+interface MemoryTip {
+    category: string;
+    content: string;
+}
+
+const MEMORY_TIPS: MemoryTip[] = [
+    { category: 'neuroscience', content: 'Active recall strengthens neural pathways more than passive review.' },
+    { category: 'productivity', content: 'Spaced repetition leverages the spacing effect for optimal retention.' },
+    { category: 'discipline', content: 'Consistency is the bridge between goals and accomplishment.' },
+    { category: 'method', content: 'Ancient orators memorized hours of speeches through structured technique.' },
+    { category: 'ritual', content: 'Daily practice, even for 5 minutes, compounds over time.' },
+    { category: 'wisdom', content: 'Memory is the treasury and guardian of all things.' },
+];
 
 @Injectable({ providedIn: 'root' })
 export class MemoryTipsService {
-    constructor(private themeService: ThemeService) {}
-
-    getRandomTip(themeId?: string): MemoryTip | null {
-        const targetThemeId = themeId || this.themeService.currentThemeId();
-        const theme = this.themeService.getAllThemes().find(t => t.id === targetThemeId);
-
-        if (!theme || !theme.memoryTips.length) {
-            return null;
-        }
-
-        const randomIndex = Math.floor(Math.random() * theme.memoryTips.length);
-        return theme.memoryTips[randomIndex];
+    getRandomTip(): MemoryTip | null {
+        if (!MEMORY_TIPS.length) return null;
+        const randomIndex = Math.floor(Math.random() * MEMORY_TIPS.length);
+        return MEMORY_TIPS[randomIndex];
     }
 
-    getTipsByCategory(category: string, themeId?: string): MemoryTip[] {
-        const targetThemeId = themeId || this.themeService.currentThemeId();
-        const theme = this.themeService.getAllThemes().find(t => t.id === targetThemeId);
-
-        if (!theme) {
-            return [];
-        }
-
-        return theme.memoryTips.filter(tip => tip.category === category);
+    getTipsByCategory(category: string): MemoryTip[] {
+        return MEMORY_TIPS.filter(tip => tip.category === category);
     }
 
-    getAllTips(themeId?: string): MemoryTip[] {
-        const targetThemeId = themeId || this.themeService.currentThemeId();
-        const theme = this.themeService.getAllThemes().find(t => t.id === targetThemeId);
-
-        return theme?.memoryTips || [];
+    getAllTips(): MemoryTip[] {
+        return MEMORY_TIPS;
     }
 }

@@ -1,9 +1,6 @@
 package app.mnema.core.deck.controller;
 
-import app.mnema.core.deck.domain.dto.FieldTemplateDTO;
-import app.mnema.core.deck.domain.dto.PublicCardDTO;
-import app.mnema.core.deck.domain.dto.PublicDeckDTO;
-import app.mnema.core.deck.domain.dto.UserDeckDTO;
+import app.mnema.core.deck.domain.dto.*;
 import app.mnema.core.deck.service.CardService;
 import app.mnema.core.deck.service.DeckService;
 import app.mnema.core.security.CurrentUserProvider;
@@ -106,6 +103,15 @@ public class PublicDeckController {
     ) {
         var userId = currentUserProvider.getUserId(jwt);
         return deckService.forkFromPublicDeck(userId, deckId);
+    }
+
+    // GET /decks/public/{deckId}/size?version=...
+    @GetMapping("/{deckId}/size")
+    public DeckSizeDTO getPublicDeckSize(
+            @PathVariable UUID deckId,
+            @RequestParam(required = false) Integer version
+    ) {
+        return deckService.getPublicDeckSize(deckId, version);
     }
 
 }

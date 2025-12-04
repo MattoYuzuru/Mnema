@@ -28,6 +28,7 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
                 and s.nextReviewAt <= :now
             order by s.nextReviewAt asc
             """)
-
     List<UserCardEntity> findDueCardsForDeck(UUID deckId, Instant now);
+
+    long countByUserDeckIdAndDeletedFalseAndSuspendedFalse(UUID userDeckId);
 }

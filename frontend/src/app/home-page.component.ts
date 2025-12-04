@@ -4,6 +4,7 @@ import { Router, RouterLink } from '@angular/router';
 import { forkJoin, of } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { AuthService } from './auth.service';
+import { UserApiService } from './user-api.service';
 import { PublicDeckApiService } from './core/services/public-deck-api.service';
 import { DeckApiService } from './core/services/deck-api.service';
 import { PublicDeckDTO } from './core/models/public-deck.models';
@@ -68,7 +69,7 @@ import { EmptyStateComponent } from './shared/components/empty-state.component';
           <app-deck-card
             *ngFor="let deck of publicDecks"
             [publicDeck]="deck"
-            [showFork]="auth.status() === 'authenticated'"
+            [showFork]="canForkDeck(deck)"
             [showBrowse]="true"
             (open)="openPublicDeck(deck.deckId)"
             (fork)="forkDeck(deck.deckId)"
@@ -181,9 +182,11 @@ export class HomePageComponent implements OnInit {
     publicDecks: PublicDeckDTO[] = [];
     userDecks: UserDeckDTO[] = [];
     todayStats = { due: 37, new: 6 };
+    currentUserId: string | null = null;
 
     constructor(
         public auth: AuthService,
+        private userApi: UserApiService,
         private publicDeckApi: PublicDeckApiService,
         private deckApi: DeckApiService,
         private router: Router
@@ -204,19 +207,31 @@ export class HomePageComponent implements OnInit {
             )
             : of({ content: [] as UserDeckDTO[] });
 
+        const user$ = this.auth.status() === 'authenticated'
+            ? this.userApi.getMe().pipe(
+                catchError(() => of(null))
+            )
+            : of(null);
+
         forkJoin({
             publicDecks: publicDecks$,
-            userDecks: userDecks$
+            userDecks: userDecks$,
+            user: user$
         }).subscribe({
             next: result => {
                 this.publicDecks = result.publicDecks.content;
                 this.userDecks = result.userDecks.content;
+                this.currentUserId = result.user?.id || null;
                 this.loading = false;
             },
             error: () => {
                 this.loading = false;
             }
         });
+    }
+
+    canForkDeck(deck: PublicDeckDTO): boolean {
+        return this.auth.status() === 'authenticated' && deck.authorId !== this.currentUserId;
     }
 
     getDeckStats(deck: UserDeckDTO): { cardCount?: number; dueToday?: number } {

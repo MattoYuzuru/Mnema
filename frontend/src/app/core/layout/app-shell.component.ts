@@ -15,7 +15,7 @@ import { ButtonComponent } from '../../shared/components/button.component';
       <header class="header">
         <div class="header-left">
           <a routerLink="/" class="logo">
-            <img [src]="logoUrl" alt="Mnema" class="logo-image" />
+            <span class="logo-text">Mnema</span>
           </a>
         </div>
 
@@ -101,12 +101,12 @@ import { ButtonComponent } from '../../shared/components/button.component';
         </div>
 
         <div class="footer-right">
-          <a href="https://github.com" target="_blank" rel="noopener" class="footer-link">
+          <a href="https://github.com/MattoYuzuru/Mnema" target="_blank" rel="noopener noreferrer" class="footer-link">
             GitHub
           </a>
-          <a href="#" class="footer-link">Docs</a>
-          <a href="#" class="footer-link">Privacy</a>
-          <a href="#" class="footer-link">Terms</a>
+          <a href="https://github.com/MattoYuzuru/Mnema/wiki" target="_blank" rel="noopener noreferrer" class="footer-link">Docs</a>
+          <a routerLink="/privacy" class="footer-link">Privacy</a>
+          <a routerLink="/terms" class="footer-link">Terms</a>
         </div>
       </footer>
     </div>
@@ -322,11 +322,6 @@ export class AppShellComponent implements OnInit {
         if (this.auth.status() === 'authenticated') {
             this.loadUserProfile();
         }
-    }
-
-    get logoUrl(): string {
-        const theme = this.themeService.getCurrentTheme();
-        return theme?.assets.logoUrl || 'assets/logo-neo.svg';
     }
 
     loadUserProfile(): void {
