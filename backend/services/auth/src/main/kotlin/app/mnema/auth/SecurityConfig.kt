@@ -164,7 +164,7 @@ class SecurityConfig(
                 .scope("user.write")
                 .tokenSettings(
                     TokenSettings.builder()
-                        .accessTokenTimeToLive(Duration.ofHours(1))
+                        .accessTokenTimeToLive(Duration.ofHours(8))
                         .refreshTokenTimeToLive(Duration.ofDays(30))
                         .reuseRefreshTokens(false)
                         .build()
@@ -204,7 +204,7 @@ class SecurityConfig(
                 )
                 .tokenSettings(
                     TokenSettings.builder()
-                        .accessTokenTimeToLive(Duration.ofHours(1))
+                        .accessTokenTimeToLive(Duration.ofHours(8))
                         .refreshTokenTimeToLive(Duration.ofDays(30))
                         .reuseRefreshTokens(false)
                         .build()
