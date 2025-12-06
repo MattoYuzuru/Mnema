@@ -1,4 +1,3 @@
-// src/app/login-page.component.ts
 import { Component } from '@angular/core';
 import { NgIf } from '@angular/common';
 import { RouterLink } from '@angular/router';

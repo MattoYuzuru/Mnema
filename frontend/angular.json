@@ -16,7 +16,7 @@
             "polyfills": [],
             "tsConfig": "tsconfig.json",
             "assets": ["src/favicon.ico", "src/assets"],
-            "styles": ["src/styles.css"]
+            "styles": ["src/global_styles.css"]
           },
           "configurations": {
             "production": {

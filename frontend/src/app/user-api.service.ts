@@ -1,4 +1,3 @@
-// src/app/user-api.service.ts
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { appConfig } from './app.config';
@@ -10,7 +9,9 @@ export interface UserProfile {
     username: string;
     bio?: string | null;
     avatarUrl?: string | null;
-    isAdmin: boolean;
+    admin: boolean;
+    createdAt: string;
+    updatedAt: string;
 }
 
 export interface MeUpdateRequest {

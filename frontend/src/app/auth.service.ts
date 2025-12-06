@@ -1,8 +1,7 @@
-// src/app/auth.service.ts
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
+import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
 import { appConfig } from './app.config';
 
 export interface AuthUser {
@@ -27,9 +26,12 @@ interface TokenResponse {
 export class AuthService {
     private readonly storageKey = 'mnema_tokens';
 
-    private _status: AuthStatus = 'anonymous';
-    private _user: AuthUser | null = null;
+    private _statusSubject = new BehaviorSubject<AuthStatus>('anonymous');
+    private _userSubject = new BehaviorSubject<AuthUser | null>(null);
     private _accessToken: string | null = null;
+
+    status$: Observable<AuthStatus> = this._statusSubject.asObservable();
+    user$: Observable<AuthUser | null> = this._userSubject.asObservable();
 
     constructor(
         private http: HttpClient,
@@ -37,18 +39,17 @@ export class AuthService {
     ) {}
 
     status(): AuthStatus {
-        return this._status;
+        return this._statusSubject.value;
     }
 
     user(): AuthUser | null {
-        return this._user;
+        return this._userSubject.value;
     }
 
     accessToken(): string | null {
         return this._accessToken;
     }
 
-    /** Вызываем один раз при старте приложения */
     initFromUrlAndStorage(): void {
         const params = new URLSearchParams(window.location.search);
         const code = params.get('code');
@@ -71,7 +72,7 @@ export class AuthService {
     }
 
     async beginLogin(returnTo: string = window.location.pathname): Promise<void> {
-        this._status = 'pending';
+        this._statusSubject.next('pending');
 
         const codeVerifier = this.randomString(64);
         const codeChallenge = await this.pkceChallengeFromVerifier(codeVerifier);
@@ -96,10 +97,13 @@ export class AuthService {
     }
 
     logout(): void {
-        this._status = 'anonymous';
-        this._user = null;
+        this._statusSubject.next('anonymous');
+        this._userSubject.next(null);
         this._accessToken = null;
         window.sessionStorage.removeItem(this.storageKey);
+
+        const redirectUrl = `${window.location.origin}/`;
+        window.location.href = `${appConfig.authServerUrl}/logout?redirect=${encodeURIComponent(redirectUrl)}`;
     }
 
     private async handleAuthCallback(code: string, returnedState: string | null): Promise<void> {
@@ -107,11 +111,10 @@ export class AuthService {
         const codeVerifier = window.sessionStorage.getItem('pkce_verifier');
         const redirectUri = `${window.location.origin}/`;
 
-        // убираем ?code=... из адресной строки
         window.history.replaceState(null, '', window.location.pathname);
 
         if (!codeVerifier || !expectedState || returnedState !== expectedState) {
-            this._status = 'error';
+            this._statusSubject.next('error');
             return;
         }
 
@@ -140,7 +143,7 @@ export class AuthService {
             await this.router.navigateByUrl(returnTo);
         } catch (e) {
             console.error('Token exchange failed', e);
-            this._status = 'error';
+            this._statusSubject.next('error');
         } finally {
             window.sessionStorage.removeItem('pkce_verifier');
             window.sessionStorage.removeItem('oauth_state');
@@ -149,15 +152,16 @@ export class AuthService {
 
     private applyTokens(tokens: TokenResponse): void {
         this._accessToken = tokens.access_token;
-        this._status = 'authenticated';
+        this._statusSubject.next('authenticated');
 
         if (tokens.id_token) {
             const payload = this.decodeJwt(tokens.id_token);
-            this._user = {
+            const user: AuthUser = {
                 email: (payload['email'] as string) ?? '',
                 name: (payload['name'] || payload['given_name']) as string | undefined,
                 picture: payload['picture'] as string | undefined
             };
+            this._userSubject.next(user);
         }
     }
 

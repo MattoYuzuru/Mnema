@@ -84,11 +84,24 @@ class SecurityConfig(
             .oauth2Login { oauth2 ->
                 oauth2.successHandler(federatedSuccessHandler())
             }
+            .logout { logout ->
+                logout
+                    .logoutUrl("/logout")
+                    .clearAuthentication(true)
+                    .invalidateHttpSession(true)
+                    .deleteCookies("JSESSIONID")
+                    .logoutSuccessHandler { request, response, authentication ->
+                        val redirect = request.getParameter("redirect")
+                            ?: "https://mnema.app/"
+                        response.sendRedirect(redirect)
+                    }
+            }
             .csrf { it.disable() }
             .cors {}
 
         return http.build()
     }
+
 
     /**
      * SuccessHandler в духе официального FederatedIdentityAuthenticationSuccessHandler:
@@ -164,7 +177,7 @@ class SecurityConfig(
                 .scope("user.write")
                 .tokenSettings(
                     TokenSettings.builder()
-                        .accessTokenTimeToLive(Duration.ofHours(1))
+                        .accessTokenTimeToLive(Duration.ofHours(8))
                         .refreshTokenTimeToLive(Duration.ofDays(30))
                         .reuseRefreshTokens(false)
                         .build()
@@ -204,7 +217,7 @@ class SecurityConfig(
                 )
                 .tokenSettings(
                     TokenSettings.builder()
-                        .accessTokenTimeToLive(Duration.ofHours(1))
+                        .accessTokenTimeToLive(Duration.ofHours(8))
                         .refreshTokenTimeToLive(Duration.ofDays(30))
                         .reuseRefreshTokens(false)
                         .build()
