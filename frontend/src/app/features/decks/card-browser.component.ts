@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, HostListener } from '@angular/core';
 import { ActivatedRoute } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
 import { forkJoin } from 'rxjs';
@@ -318,6 +318,27 @@ export class CardBrowserComponent implements OnInit {
         this.userDeckId = this.route.snapshot.paramMap.get('userDeckId') || '';
         if (this.userDeckId) {
             this.loadDeckData();
+        }
+    }
+
+    @HostListener('window:keydown', ['$event'])
+    handleKeyDown(event: KeyboardEvent): void {
+        if (this.viewMode !== 'cards') return;
+
+        const target = event.target as HTMLElement;
+        if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+            return;
+        }
+
+        if (event.key === ' ' || event.key === 'Space') {
+            event.preventDefault();
+            this.toggleFlip();
+        } else if (event.key === 'ArrowLeft') {
+            event.preventDefault();
+            this.previousCard();
+        } else if (event.key === 'ArrowRight') {
+            event.preventDefault();
+            this.nextCard();
         }
     }
 

@@ -36,7 +36,7 @@ import { ButtonComponent } from './button.component';
         <app-button
           *ngIf="showFork"
           variant="secondary"
-          size="sm"
+          size="md"
           (click)="fork.emit()"
         >
           Fork
@@ -45,7 +45,7 @@ import { ButtonComponent } from './button.component';
         <app-button
           *ngIf="showUpdate"
           variant="secondary"
-          size="sm"
+          size="md"
           (click)="update.emit()"
         >
           Update
@@ -54,7 +54,7 @@ import { ButtonComponent } from './button.component';
         <app-button
           *ngIf="showLearn"
           variant="primary"
-          size="sm"
+          size="md"
           (click)="learn.emit()"
         >
           Learn
@@ -63,7 +63,7 @@ import { ButtonComponent } from './button.component';
         <app-button
           *ngIf="showBrowse"
           variant="ghost"
-          size="sm"
+          size="md"
           (click)="browse.emit()"
         >
           Browse

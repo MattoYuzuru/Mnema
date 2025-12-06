@@ -38,6 +38,7 @@ import { NgClass } from '@angular/common';
         cursor: pointer;
         transition: all 0.2s ease;
         white-space: nowrap;
+        min-width: 5rem;
       }
 
       .btn:disabled {

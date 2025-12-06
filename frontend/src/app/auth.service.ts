@@ -98,6 +98,9 @@ export class AuthService {
         this._user = null;
         this._accessToken = null;
         window.sessionStorage.removeItem(this.storageKey);
+
+        const redirectUrl = `${window.location.origin}/`;
+        window.location.href = `${appConfig.authServerUrl}/logout?redirect=${encodeURIComponent(redirectUrl)}`;
     }
 
     private async handleAuthCallback(code: string, returnedState: string | null): Promise<void> {

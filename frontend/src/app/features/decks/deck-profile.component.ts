@@ -36,10 +36,10 @@ import { AddCardsModalComponent } from './add-cards-modal.component';
       </div>
 
       <div class="deck-actions">
-        <app-button variant="primary" size="lg" (click)="learn()">
+        <app-button variant="primary" size="md" (click)="learn()">
           Learn
         </app-button>
-        <app-button variant="secondary" (click)="browse()">
+        <app-button variant="secondary" size="md" (click)="browse()">
           Browse Cards
         </app-button>
         <app-button variant="secondary" (click)="openAddCards()">
