@@ -37,13 +37,13 @@ jobs:
           cache: gradle
 
       - name: Run core tests
-        working-directory: backend/services/core
+        working-directory: backend
         env:
           SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5433/mnema_test
           SPRING_DATASOURCE_USERNAME: mnema
           SPRING_DATASOURCE_PASSWORD: mnema
           SPRING_PROFILES_ACTIVE: test
-        run: ./gradlew test
+        run: ./gradlew :services:core:test
 
   build-and-push:
     needs: test-core
