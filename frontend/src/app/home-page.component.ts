@@ -1,9 +1,9 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { NgIf, NgFor } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
-import { forkJoin, of } from 'rxjs';
-import { catchError } from 'rxjs/operators';
-import { AuthService } from './auth.service';
+import { forkJoin, of, Subscription } from 'rxjs';
+import { catchError, filter } from 'rxjs/operators';
+import { AuthService, AuthStatus } from './auth.service';
 import { UserApiService } from './user-api.service';
 import { PublicDeckApiService } from './core/services/public-deck-api.service';
 import { DeckApiService } from './core/services/deck-api.service';
@@ -13,28 +13,29 @@ import { DeckCardComponent } from './shared/components/deck-card.component';
 import { MemoryTipLoaderComponent } from './shared/components/memory-tip-loader.component';
 import { ButtonComponent } from './shared/components/button.component';
 import { EmptyStateComponent } from './shared/components/empty-state.component';
+import { TranslatePipe } from './shared/pipes/translate.pipe';
 
 @Component({
     standalone: true,
     selector: 'app-home-page',
-    imports: [NgIf, NgFor, RouterLink, DeckCardComponent, MemoryTipLoaderComponent, ButtonComponent, EmptyStateComponent],
+    imports: [NgIf, NgFor, RouterLink, DeckCardComponent, MemoryTipLoaderComponent, ButtonComponent, EmptyStateComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
     <div *ngIf="!loading" class="home-page">
       <section *ngIf="auth.status() === 'authenticated'" class="study-today">
-        <h2>Your Study Today</h2>
+        <h2>{{ 'home.studyToday' | translate }}</h2>
         <div class="study-summary">
           <div class="study-info">
-            <p class="study-message">{{ todayStats.due }} cards due · {{ todayStats.new }} new</p>
+            <p class="study-message">{{ todayStats.due }} {{ 'home.cardsDue' | translate }} · {{ todayStats.new }} {{ 'home.new' | translate }}</p>
             <app-button variant="primary" size="lg" routerLink="/decks">
-              Continue Learning
+              {{ 'home.continueLearn' | translate }}
             </app-button>
           </div>
         </div>
 
         <div *ngIf="userDecks.length > 0" class="recent-decks">
-          <h3>Your Decks</h3>
+          <h3>{{ 'home.yourDecks' | translate }}</h3>
           <div class="deck-grid">
             <app-deck-card
               *ngFor="let deck of userDecks"
@@ -61,8 +62,8 @@ import { EmptyStateComponent } from './shared/components/empty-state.component';
 
       <section class="public-decks">
         <div class="section-header">
-          <h2>Top Public Decks</h2>
-          <a routerLink="/public-decks" class="view-all">View all →</a>
+          <h2>{{ 'home.topPublicDecks' | translate }}</h2>
+          <a routerLink="/public-decks" class="view-all">{{ 'home.viewAll' | translate }} →</a>
         </div>
 
         <div *ngIf="publicDecks.length > 0" class="deck-list">
@@ -177,12 +178,14 @@ import { EmptyStateComponent } from './shared/components/empty-state.component';
     `
     ]
 })
-export class HomePageComponent implements OnInit {
+export class HomePageComponent implements OnInit, OnDestroy {
     loading = true;
     publicDecks: PublicDeckDTO[] = [];
     userDecks: UserDeckDTO[] = [];
     todayStats = { due: 37, new: 6 };
     currentUserId: string | null = null;
+    private authSubscription?: Subscription;
+    private hasLoadedUserDecks = false;
 
     constructor(
         public auth: AuthService,
@@ -194,6 +197,17 @@ export class HomePageComponent implements OnInit {
 
     ngOnInit(): void {
         this.loadData();
+        this.authSubscription = this.auth.status$
+            .pipe(filter((status: AuthStatus) => status === 'authenticated'))
+            .subscribe(() => {
+                if (!this.hasLoadedUserDecks) {
+                    this.loadUserData();
+                }
+            });
+    }
+
+    ngOnDestroy(): void {
+        this.authSubscription?.unsubscribe();
     }
 
     private loadData(): void {
@@ -201,13 +215,14 @@ export class HomePageComponent implements OnInit {
             catchError(() => of({ content: [] as PublicDeckDTO[] }))
         );
 
-        const userDecks$ = this.auth.status() === 'authenticated'
+        const isAuthenticated = this.auth.status() === 'authenticated';
+        const userDecks$ = isAuthenticated
             ? this.deckApi.getMyDecks(1, 3).pipe(
                 catchError(() => of({ content: [] as UserDeckDTO[] }))
             )
             : of({ content: [] as UserDeckDTO[] });
 
-        const user$ = this.auth.status() === 'authenticated'
+        const user$ = isAuthenticated
             ? this.userApi.getMe().pipe(
                 catchError(() => of(null))
             )
@@ -222,10 +237,32 @@ export class HomePageComponent implements OnInit {
                 this.publicDecks = result.publicDecks.content;
                 this.userDecks = result.userDecks.content;
                 this.currentUserId = result.user?.id || null;
+                this.hasLoadedUserDecks = isAuthenticated;
                 this.loading = false;
             },
             error: () => {
                 this.loading = false;
+            }
+        });
+    }
+
+    private loadUserData(): void {
+        const userDecks$ = this.deckApi.getMyDecks(1, 3).pipe(
+            catchError(() => of({ content: [] as UserDeckDTO[] }))
+        );
+
+        const user$ = this.userApi.getMe().pipe(
+            catchError(() => of(null))
+        );
+
+        forkJoin({
+            userDecks: userDecks$,
+            user: user$
+        }).subscribe({
+            next: result => {
+                this.userDecks = result.userDecks.content;
+                this.currentUserId = result.user?.id || null;
+                this.hasLoadedUserDecks = true;
             }
         });
     }

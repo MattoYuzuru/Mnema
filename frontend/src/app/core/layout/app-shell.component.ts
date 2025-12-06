@@ -1,21 +1,24 @@
-import { Component, OnInit, signal } from '@angular/core';
+import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { Router, RouterOutlet, RouterLink } from '@angular/router';
 import { NgIf } from '@angular/common';
-import { AuthService } from '../../auth.service';
+import { Subscription } from 'rxjs';
+import { filter } from 'rxjs/operators';
+import { AuthService, AuthStatus } from '../../auth.service';
 import { ThemeService } from '../services/theme.service';
 import { UserApiService, UserProfile } from '../../user-api.service';
 import { ButtonComponent } from '../../shared/components/button.component';
+import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-shell',
     standalone: true,
-    imports: [RouterOutlet, RouterLink, NgIf, ButtonComponent],
+    imports: [RouterOutlet, RouterLink, NgIf, ButtonComponent, TranslatePipe],
     template: `
     <div class="app-shell">
       <header class="header">
         <div class="header-left">
           <a routerLink="/" class="logo">
-            <span class="logo-text">Mnema</span>
+            <span class="logo-text">{{ 'app.name' | translate }}</span>
           </a>
         </div>
 
@@ -33,7 +36,7 @@ import { ButtonComponent } from '../../shared/components/button.component';
             size="sm"
             routerLink="/decks"
           >
-            My Study
+            {{ 'nav.myStudy' | translate }}
           </app-button>
 
           <app-button
@@ -41,7 +44,7 @@ import { ButtonComponent } from '../../shared/components/button.component';
             size="sm"
             routerLink="/create-deck"
           >
-            Create Deck
+            {{ 'nav.createDeck' | translate }}
           </app-button>
 
           <div *ngIf="auth.status() === 'authenticated'; else loginBlock" class="user-menu">
@@ -59,14 +62,14 @@ import { ButtonComponent } from '../../shared/components/button.component';
                   <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
                   <circle cx="12" cy="7" r="4"/>
                 </svg>
-                Profile
+                {{ 'nav.profile' | translate }}
               </a>
               <a routerLink="/settings" class="menu-item" (click)="closeUserMenu()">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <circle cx="12" cy="12" r="3"/>
                   <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"/>
                 </svg>
-                Settings
+                {{ 'nav.settings' | translate }}
               </a>
               <button class="menu-item" type="button" (click)="logout()">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -74,7 +77,7 @@ import { ButtonComponent } from '../../shared/components/button.component';
                   <polyline points="16 17 21 12 16 7"/>
                   <line x1="21" y1="12" x2="9" y2="12"/>
                 </svg>
-                Logout
+                {{ 'nav.logout' | translate }}
               </button>
             </div>
           </div>
@@ -85,7 +88,7 @@ import { ButtonComponent } from '../../shared/components/button.component';
               size="sm"
               (click)="login()"
             >
-              Login
+              {{ 'nav.login' | translate }}
             </app-button>
           </ng-template>
         </div>
@@ -304,10 +307,11 @@ import { ButtonComponent } from '../../shared/components/button.component';
     `
     ]
 })
-export class AppShellComponent implements OnInit {
+export class AppShellComponent implements OnInit, OnDestroy {
     currentYear = new Date().getFullYear();
     userMenuOpen = signal(false);
     userProfile = signal<UserProfile | null>(null);
+    private authSubscription?: Subscription;
 
     constructor(
         public auth: AuthService,
@@ -322,6 +326,18 @@ export class AppShellComponent implements OnInit {
         if (this.auth.status() === 'authenticated') {
             this.loadUserProfile();
         }
+
+        this.authSubscription = this.auth.status$
+            .pipe(filter((status: AuthStatus) => status === 'authenticated'))
+            .subscribe(() => {
+                if (!this.userProfile()) {
+                    this.loadUserProfile();
+                }
+            });
+    }
+
+    ngOnDestroy(): void {
+        this.authSubscription?.unsubscribe();
     }
 
     loadUserProfile(): void {

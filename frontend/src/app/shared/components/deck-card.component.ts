@@ -4,19 +4,22 @@ import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { TagChipComponent } from './tag-chip.component';
 import { ButtonComponent } from './button.component';
+import { TranslatePipe } from '../pipes/translate.pipe';
 
 @Component({
     selector: 'app-deck-card',
     standalone: true,
-    imports: [NgIf, NgFor, TagChipComponent, ButtonComponent],
+    imports: [NgIf, NgFor, TagChipComponent, ButtonComponent, TranslatePipe],
     template: `
     <div class="deck-card">
-      <div class="deck-card-icon clickable" (click)="open.emit()">
-        <span class="deck-icon-placeholder">📚</span>
+      <div class="deck-card-header">
+        <div class="deck-card-icon clickable" (click)="open.emit()">
+          <span class="deck-icon-placeholder">📚</span>
+        </div>
+        <h3 class="deck-name clickable" (click)="open.emit()">{{ displayName }}</h3>
       </div>
 
-      <div class="deck-card-content">
-        <h3 class="deck-name clickable" (click)="open.emit()">{{ displayName }}</h3>
+      <div class="deck-card-body">
         <p class="deck-description">{{ displayDescription }}</p>
 
         <div *ngIf="tags.length > 0" class="deck-tags">
@@ -39,7 +42,7 @@ import { ButtonComponent } from './button.component';
           size="md"
           (click)="fork.emit()"
         >
-          Fork
+          {{ 'button.fork' | translate }}
         </app-button>
 
         <app-button
@@ -48,7 +51,7 @@ import { ButtonComponent } from './button.component';
           size="md"
           (click)="update.emit()"
         >
-          Update
+          {{ 'button.update' | translate }}
         </app-button>
 
         <app-button
@@ -57,7 +60,7 @@ import { ButtonComponent } from './button.component';
           size="md"
           (click)="learn.emit()"
         >
-          Learn
+          {{ 'button.learn' | translate }}
         </app-button>
 
         <app-button
@@ -66,7 +69,7 @@ import { ButtonComponent } from './button.component';
           size="md"
           (click)="browse.emit()"
         >
-          Browse
+          {{ 'button.browse' | translate }}
         </app-button>
       </div>
     </div>
@@ -75,13 +78,15 @@ import { ButtonComponent } from './button.component';
         `
       .deck-card {
         display: flex;
+        flex-direction: column;
         gap: var(--spacing-md);
-        padding: var(--spacing-md);
+        padding: var(--spacing-lg);
         background: var(--color-card-background);
         border: 1px solid var(--border-color);
         border-radius: var(--border-radius-lg);
         box-shadow: var(--shadow-sm);
         transition: all 0.2s ease;
+        min-height: 12rem;
       }
 
       .deck-card:hover {
@@ -98,10 +103,16 @@ import { ButtonComponent } from './button.component';
         opacity: 0.8;
       }
 
+      .deck-card-header {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
       .deck-card-icon {
         flex-shrink: 0;
-        width: 3rem;
-        height: 3rem;
+        width: 2.5rem;
+        height: 2.5rem;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -110,20 +121,21 @@ import { ButtonComponent } from './button.component';
       }
 
       .deck-icon-placeholder {
-        font-size: 1.5rem;
+        font-size: 1.25rem;
       }
 
-      .deck-card-content {
+      .deck-card-body {
         flex: 1;
         display: flex;
         flex-direction: column;
-        gap: var(--spacing-xs);
+        gap: var(--spacing-sm);
       }
 
       .deck-name {
         font-size: 1.1rem;
         font-weight: 600;
         margin: 0;
+        flex: 1;
       }
 
       .deck-description {
@@ -131,6 +143,10 @@ import { ButtonComponent } from './button.component';
         color: var(--color-text-muted);
         margin: 0;
         line-height: 1.4;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
       }
 
       .deck-tags {
@@ -155,9 +171,10 @@ import { ButtonComponent } from './button.component';
 
       .deck-card-actions {
         display: flex;
-        flex-direction: column;
-        gap: var(--spacing-xs);
-        justify-content: center;
+        gap: var(--spacing-sm);
+        justify-content: flex-end;
+        align-items: center;
+        margin-top: auto;
       }
     `
     ]

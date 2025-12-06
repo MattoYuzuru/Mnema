@@ -2,12 +2,14 @@ import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { NgFor, NgIf } from '@angular/common';
 import { ThemeService } from '../../core/services/theme.service';
+import { I18nService, Language } from '../../core/services/i18n.service';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { UserApiService } from '../../user-api.service';
 import { AuthService } from '../../auth.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
+import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 import { HttpClient } from '@angular/common/http';
 
 interface AppConfig {
@@ -21,13 +23,14 @@ const appConfig: AppConfig = {
 @Component({
     selector: 'app-settings',
     standalone: true,
-    imports: [NgFor, NgIf, ButtonComponent, ConfirmationDialogComponent],
+    imports: [NgFor, NgIf, ButtonComponent, ConfirmationDialogComponent, TranslatePipe],
     template: `
     <div class="settings-page">
-      <h1>Settings</h1>
+      <h1>{{ 'settings.title' | translate }}</h1>
 
       <section class="settings-section">
-        <h2>Theme</h2>
+        <h2>{{ 'settings.theme' | translate }}</h2>
+        <p class="section-description">{{ 'settings.themeDescription' | translate }}</p>
         <div class="theme-controls">
           <div class="control-group">
             <label class="control-label">Mode</label>
@@ -37,14 +40,14 @@ const appConfig: AppConfig = {
                 [class.active]="theme.mode() === 'light'"
                 (click)="theme.setMode('light')"
               >
-                Light
+                {{ 'theme.light' | translate }}
               </button>
               <button
                 class="option-btn"
                 [class.active]="theme.mode() === 'dark'"
                 (click)="theme.setMode('dark')"
               >
-                Dark
+                {{ 'theme.dark' | translate }}
               </button>
             </div>
           </div>
@@ -72,8 +75,31 @@ const appConfig: AppConfig = {
       </section>
 
       <section class="settings-section">
-        <h2>Archive</h2>
-        <p class="section-description">View and restore archived decks</p>
+        <h2>{{ 'settings.language' | translate }}</h2>
+        <p class="section-description">{{ 'settings.languageDescription' | translate }}</p>
+        <div class="control-group">
+          <div class="button-group">
+            <button
+              class="option-btn"
+              [class.active]="i18n.currentLanguage === 'en'"
+              (click)="i18n.setLanguage('en')"
+            >
+              {{ 'language.english' | translate }}
+            </button>
+            <button
+              class="option-btn"
+              [class.active]="i18n.currentLanguage === 'ru'"
+              (click)="i18n.setLanguage('ru')"
+            >
+              {{ 'language.russian' | translate }}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>{{ 'settings.archive' | translate }}</h2>
+        <p class="section-description">{{ 'settings.archiveDescription' | translate }}</p>
 
         <div *ngIf="loadingArchive" class="loading-state">Loading archived decks...</div>
 
@@ -100,11 +126,11 @@ const appConfig: AppConfig = {
       </section>
 
       <section class="settings-section danger-zone">
-        <h2>Danger Zone</h2>
-        <p class="section-description">This action will permanently delete your account and all your decks. This cannot be undone.</p>
+        <h2>{{ 'settings.dangerZone' | translate }}</h2>
+        <p class="section-description">{{ 'settings.deleteAccountWarning' | translate }}</p>
 
         <app-button variant="ghost" (click)="showDeleteConfirmation = true" class="delete-btn">
-          Delete Account
+          {{ 'settings.deleteAccount' | translate }}
         </app-button>
       </section>
     </div>
@@ -261,6 +287,7 @@ export class SettingsComponent implements OnInit {
 
     constructor(
         public theme: ThemeService,
+        public i18n: I18nService,
         private deckApi: DeckApiService,
         private userApi: UserApiService,
         private auth: AuthService,
