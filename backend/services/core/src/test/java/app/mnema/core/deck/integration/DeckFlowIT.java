@@ -66,7 +66,7 @@ class DeckFlowIT {
                     rs -> rs.next() ? (UUID) rs.getObject(1) : null
             );
         } catch (DataAccessException ignored) {
-            // если таблицы ещё нет или другая ошибка – просто создадим запись
+            // если таблицы ещё нет или другая ошибка – создадим запись ниже
         }
         if (existing != null) {
             return existing;
@@ -74,18 +74,47 @@ class DeckFlowIT {
 
         UUID id = UUID.randomUUID();
         UUID ownerId = UUID.randomUUID();
+        String name = "Integration template";
 
         jdbcTemplate.update(
-                "insert into card_templates (template_id, owner_id) values (?, ?)",
-                id, ownerId
+                "insert into card_templates (template_id, owner_id, name) values (?, ?, ?)",
+                id, ownerId, name
         );
 
         return id;
     }
 
+    /**
+     * Гарантирует, что в sr_algorithms есть запись для SrAlgorithm.sm2.
+     * Нужна из-за FK user_decks.algorithm_id -> sr_algorithms.algorithm_id.
+     */
+    private void ensureSm2AlgorithmExists() {
+        try {
+            Integer count = jdbcTemplate.queryForObject(
+                    "select count(*) from sr_algorithms where algorithm_id = ?",
+                    Integer.class,
+                    SrAlgorithm.sm2.name()
+            );
+            if (count != null && count > 0) {
+                return;
+            }
+        } catch (DataAccessException ignored) {
+            // если таблицы нет или другая ошибка — тест всё равно упадёт раньше,
+            // но для нормального случая sr_algorithms уже создан миграциями
+        }
+
+        jdbcTemplate.update(
+                "insert into sr_algorithms (algorithm_id, name) values (?, ?)",
+                SrAlgorithm.sm2.name(),
+                "SM-2 default"
+        );
+    }
+
     @Test
     @WithMockUser(authorities = {"SCOPE_user.read", "SCOPE_user.write"})
     void createDeckAndAddCard_persistsPublicAndUserState() {
+        // обеспечиваем наличие необходимых справочников
+        ensureSm2AlgorithmExists();
         UUID userId = UUID.randomUUID();
         UUID templateId = anyTemplateId();
 

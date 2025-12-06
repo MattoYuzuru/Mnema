@@ -49,10 +49,13 @@ class PublicDeckRepositoryDataJpaTest {
 
         UUID id = UUID.randomUUID();
         UUID ownerId = UUID.randomUUID();
+        String name = "Test template";
 
+        // В схеме card_templates колонка "name" NOT NULL,
+        // поэтому обязательно задаём её при вставке.
         jdbcTemplate.update(
-                "insert into card_templates (template_id, owner_id) values (?, ?)",
-                id, ownerId
+                "insert into card_templates (template_id, owner_id, name) values (?, ?, ?)",
+                id, ownerId, name
         );
 
         return id;
@@ -98,7 +101,7 @@ class PublicDeckRepositoryDataJpaTest {
                 null,
                 null
         );
-        // та же deck_id, другая версия
+        // на всякий случай синхронизируем deckId вручную, если JPA что-то прокрутит
         try {
             var deckIdField = PublicDeckEntity.class.getDeclaredField("deckId");
             deckIdField.setAccessible(true);
@@ -178,12 +181,14 @@ class PublicDeckRepositoryDataJpaTest {
     @Test
     void findLatestPublicVisibleDecks_returnsOnlyPublicAndListedDecks_latestVersions() {
         UUID author = UUID.randomUUID();
-        UUID publicDeckId = UUID.randomUUID();
         UUID templateId = anyTemplateId();
 
+        UUID publicListedDeckId = UUID.randomUUID();
+        UUID notPublicDeckId = UUID.randomUUID();
+        UUID notListedDeckId = UUID.randomUUID();
 
         PublicDeckEntity publicAndListed = new PublicDeckEntity(
-                publicDeckId,
+                publicListedDeckId,
                 1,
                 author,
                 "Public listed",
@@ -200,7 +205,7 @@ class PublicDeckRepositoryDataJpaTest {
         );
 
         PublicDeckEntity notPublic = new PublicDeckEntity(
-                publicDeckId,
+                notPublicDeckId,
                 1,
                 author,
                 "Not public",
@@ -217,7 +222,7 @@ class PublicDeckRepositoryDataJpaTest {
         );
 
         PublicDeckEntity notListed = new PublicDeckEntity(
-                publicDeckId,
+                notListedDeckId,
                 1,
                 author,
                 "Not listed",
@@ -240,6 +245,8 @@ class PublicDeckRepositoryDataJpaTest {
 
         assertThat(page.getContent())
                 .hasSize(1)
-                .allMatch(d -> d.isPublicFlag() && d.isListed());
+                .allMatch(d -> d.isPublicFlag() && d.isListed())
+                .allMatch(d -> d.getDeckId().equals(publicListedDeckId))
+                .allMatch(d -> d.getName().equals("Public listed"));
     }
 }

@@ -9,10 +9,7 @@ import app.mnema.core.deck.domain.entity.UserDeckEntity;
 import app.mnema.core.deck.domain.request.CreateCardRequest;
 import app.mnema.core.deck.domain.type.LanguageTag;
 import app.mnema.core.deck.domain.type.SrAlgorithm;
-import app.mnema.core.deck.repository.PublicCardRepository;
-import app.mnema.core.deck.repository.PublicDeckRepository;
-import app.mnema.core.deck.repository.UserCardRepository;
-import app.mnema.core.deck.repository.UserDeckRepository;
+import app.mnema.core.deck.repository.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
@@ -51,6 +48,9 @@ class CardServiceTest {
 
     @Mock
     PublicDeckRepository publicDeckRepository;
+
+    @Mock
+    FieldTemplateRepository fieldTemplateRepository;
 
     @InjectMocks
     CardService cardService;
@@ -324,6 +324,10 @@ class CardServiceTest {
         when(publicDeckRepository.findLatestByDeckId(publicDeckId))
                 .thenReturn(Optional.of(publicDeck));
 
+        // сохранение новой версии public_decks должно вернуть не null
+        when(publicDeckRepository.save(any(PublicDeckEntity.class)))
+                .thenAnswer(invocation -> invocation.getArgument(0));
+
         // Старые карты клонируем из пустого списка
         when(publicCardRepository.findByDeckIdAndDeckVersion(any(UUID.class), anyInt()))
                 .thenReturn(List.of());
@@ -350,27 +354,13 @@ class CardServiceTest {
         when(publicCardRepository.findByCardId(any()))
                 .thenAnswer(invocation -> Optional.ofNullable(lastSavedPublicCardRef.get()));
 
-        UserCardEntity savedUserCard = new UserCardEntity(
-                userId,
-                userDeckId,
-                UUID.randomUUID(),
-                true,
-                false,
-                "note",
-                null,
-                Instant.now(),
-                null,
-                null,
-                null,
-                0,
-                false
-        );
         when(userCardRepository.save(any(UserCardEntity.class)))
-                .thenReturn(savedUserCard);
+                .thenAnswer(invocation -> invocation.getArgument(0));
 
         UserCardDTO result = cardService.addNewCardToDeck(userId, userDeckId, request);
 
-        assertThat(result.isCustom()).isTrue();
+        // для автора публичной колоды карта должна быть не кастомной
+        assertThat(result.isCustom()).isFalse();
         assertThat(result.isDeleted()).isFalse();
         assertThat(result.isSuspended()).isFalse();
         assertThat(result.personalNote()).isEqualTo("note");

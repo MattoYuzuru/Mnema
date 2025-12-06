@@ -73,7 +73,7 @@ class UserDeckControllerWebMvcTest {
         when(currentUserProvider.getUserId(any(Jwt.class))).thenReturn(userId);
         when(deckService.getUserDecksByPage(userId, 1, 10)).thenReturn(page);
 
-        mockMvc.perform(get("/api/core/decks/mine")
+        mockMvc.perform(get("/decks/mine")
                         .with(jwt().jwt(j -> j.claim("sub", "user-123"))
                                 .authorities(new SimpleGrantedAuthority("SCOPE_user.read")))
                         .param("page", "1")
@@ -120,7 +120,7 @@ class UserDeckControllerWebMvcTest {
                 }
                 """.formatted(LanguageTag.en.name());
 
-        mockMvc.perform(post("/api/core/decks")
+        mockMvc.perform(post("/decks")
                         .with(jwt().jwt(j -> j.claim("sub", "user-123"))
                                 .authorities(new SimpleGrantedAuthority("SCOPE_user.write")))
                         .contentType(MediaType.APPLICATION_JSON)

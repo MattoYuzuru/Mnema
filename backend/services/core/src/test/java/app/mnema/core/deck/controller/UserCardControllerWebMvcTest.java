@@ -78,7 +78,7 @@ class UserCardControllerWebMvcTest {
         when(currentUserProvider.getUserId(any(Jwt.class))).thenReturn(userId);
         when(cardService.getUserCardsByDeck(userId, userDeckId, 1, 50)).thenReturn(page);
 
-        mockMvc.perform(get("/api/core/decks/{userDeckId}/cards", userDeckId)
+        mockMvc.perform(get("/decks/{userDeckId}/cards", userDeckId)
                         .with(jwt().jwt(j -> j.claim("sub", "user-123"))
                                 .authorities(new SimpleGrantedAuthority("SCOPE_user.read")))
                         .param("page", "1")
@@ -128,7 +128,7 @@ class UserCardControllerWebMvcTest {
                 }
                 """;
 
-        mockMvc.perform(post("/api/core/decks/{userDeckId}/cards", userDeckId)
+        mockMvc.perform(post("/decks/{userDeckId}/cards", userDeckId)
                         .with(jwt().jwt(j -> j.claim("sub", "user-123"))
                                 .authorities(new SimpleGrantedAuthority("SCOPE_user.write")))
                         .contentType(MediaType.APPLICATION_JSON)

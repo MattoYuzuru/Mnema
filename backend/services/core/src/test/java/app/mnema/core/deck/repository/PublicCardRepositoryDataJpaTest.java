@@ -49,7 +49,7 @@ class PublicCardRepositoryDataJpaTest {
                     rs -> rs.next() ? (UUID) rs.getObject(1) : null
             );
         } catch (DataAccessException ignored) {
-            // если таблицы нет/другая ошибка – создадим запись
+            // если таблицы нет/другая ошибка – создадим запись ниже
         }
         if (existing != null) {
             return existing;
@@ -57,10 +57,13 @@ class PublicCardRepositoryDataJpaTest {
 
         UUID id = UUID.randomUUID();
         UUID ownerId = UUID.randomUUID();
+        String name = "Test template";
 
+        // В схеме card_templates колонка "name" NOT NULL,
+        // поэтому обязательно задаём её при вставке.
         jdbcTemplate.update(
-                "insert into card_templates (template_id, owner_id) values (?, ?)",
-                id, ownerId
+                "insert into card_templates (template_id, owner_id, name) values (?, ?, ?)",
+                id, ownerId, name
         );
 
         return id;

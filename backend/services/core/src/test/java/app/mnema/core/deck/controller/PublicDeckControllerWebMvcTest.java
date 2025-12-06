@@ -78,7 +78,7 @@ class PublicDeckControllerWebMvcTest {
 
         when(deckService.getPublicDecksByPage(1, 10)).thenReturn(page);
 
-        mockMvc.perform(get("/api/core/decks/public")
+        mockMvc.perform(get("/decks/public")
                         .with(jwt().jwt(j -> j.claim("sub", "user-123"))
                                 .authorities(new SimpleGrantedAuthority("SCOPE_user.read")))
                         .param("page", "1")
@@ -118,7 +118,7 @@ class PublicDeckControllerWebMvcTest {
 
         when(cardService.getPublicCards(deckId, 2, 1, 50)).thenReturn(page);
 
-        mockMvc.perform(get("/api/core/decks/public/{deckId}/cards", deckId)
+        mockMvc.perform(get("/decks/public/{deckId}/cards", deckId)
                         .with(jwt().jwt(j -> j.claim("sub", "user-123"))
                                 .authorities(new SimpleGrantedAuthority("SCOPE_user.read")))
                         .param("version", "2")
@@ -154,7 +154,7 @@ class PublicDeckControllerWebMvcTest {
         when(currentUserProvider.getUserId(any(Jwt.class))).thenReturn(userId);
         when(deckService.forkFromPublicDeck(userId, publicDeckId)).thenReturn(responseDto);
 
-        mockMvc.perform(post("/api/core/decks/public/{deckId}/fork", publicDeckId)
+        mockMvc.perform(post("/decks/public/{deckId}/fork", publicDeckId)
                         .with(jwt().jwt(j -> j.claim("sub", "user-123"))
                                 .authorities(new SimpleGrantedAuthority("SCOPE_user.write"))))
                 .andExpect(status().isOk())
