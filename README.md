@@ -3,7 +3,7 @@
 
 <div align="center">
   <!-- Заглушка под логотип -->
-  <img src="images/logo.png" alt="Mnema Logo" width="96" height="96">
+  <img src="images/read-me-512x512.png" alt="Mnema Logo" width="96" height="96">
   <h1>Mnema</h1>
   <p>Веб-приложение для эффективного запоминания информации с помощью интерактивных карт.</p>
 
@@ -34,7 +34,6 @@
 
 * [О проекте](#о-проекте)
 * [Технологии](#технологии)
-* [Структура репозитория](#структура-репозитория)
 * [Локальная разработка](#локальная-разработка)
 * [Развёртывание в k3s](#развёртывание-в-k3s)
 * [CI/CD](#cicd)
@@ -62,74 +61,16 @@
 
 ## Технологии
 
-* **Backend:** Spring Boot (Kotlin, JDK — *LTS/последний стабильный*), тесты: Mockito + JUnit 6
-* **Frontend:** Angular (*актуальный LTS/последний стабильный*), i18n: ru/en
+* **Backend:** Spring Boot (Java, Kotlin, JDK 21), тесты: Mockito + JUnit 6
+* **Frontend:** Angular 18, i18n: en/ru
 * **Хранилище:** PostgreSQL 18, Redis 8 (кеш/сессии), S3-совместимый провайдер в проде — Yandex Cloud
-* **DevOps:** Docker, k8s (k3s, одна нода), Nginx (Ingress), GitHub Actions (CI/CD)
+* **DevOps:** Docker, k8s (k3s, одна нода), Traefik (Ingress), GitHub Actions (CI/CD)
 * **Observability:** Grafana + Prometheus + Loki (логи/метрики/трейсы по мере готовности)
 
-> Версии будут уточняться по мере развития — в репозитории укажу фиксированные теги образов/артефактов.
+> Инструменты и версии могут меняться по мере развития
 
 ---
 
-## Структура репозитория
-
-Монорепозиторий:
-
-```
-Mnema/
-├─ backend/
-│  ├─ services/
-│  │  ├─ service1/
-│  │  │  ├─ src/
-│  │  │  │  ├─ main/kotlin/...
-│  │  │  │  ├─ main/resources/
-│  │  │  │  └─ test/kotlin/...
-│  │  │  ├─ build.gradle.kts
-│  │  │  └─ Dockerfile
-│  │  ├─ service2/
-│  │  │  ├─ src/ (main/resources/test…)
-│  │  │  ├─ build.gradle.kts
-│  │  │  └─ Dockerfile
-│  │  ├─ service3/
-│  │  │  ├─ src/ (main/resources/test…)
-│  │  │  ├─ build.gradle.kts
-│  │  │  └─ Dockerfile
-│  │  └─ service4/
-│  │     ├─ src/
-│  │     ├─ build.gradle.kts
-│  │     └─ Dockerfile
-│  │
-│  ├─ libs/                            # общие библиотеки (без Dockerfile)
-│  │  ├─ common/                       # утилиты, доменные модели (без зависимостей на web)
-│  │  │  ├─ src/main/kotlin/...
-│  │  │  └─ build.gradle.kts
-│  │  ├─ persistence/                  # репозитории, flyway/liquibase helpers
-│  │  │  ├─ src/main/kotlin/...
-│  │  │  └─ build.gradle.kts
-│  │  └─ security/                     # общие фильтры, конфиги Spring Security
-│  │     ├─ src/main/kotlin/...
-│  │     └─ build.gradle.kts
-│  │
-│  ├─ build.gradle.kts                 # корневой gradle (version catalog, плагины)
-│  └─ settings.gradle.kts              # инклюды сабпроектов
-│
-├─ frontend/                           # Angular
-│  ├─ src/
-│  ├─ angular.json
-│  └─ Dockerfile
-├─ deploy/                             # k8s-манифесты и/или Helm/kustomize
-│  ├─ base/
-│  ├─ overlays/
-│  └─ ingress/
-├─ .github/
-│  └─ workflows/                       # GitHub Actions (CI/CD)
-├─ docs/                               # схемы, C4/Structurizr DSL, ADR и т. п.
-├─ images/                             # логотипы/скриншоты
-└─ LICENSE
-```
-
----
 
 ## Локальная разработка
 
@@ -145,7 +86,7 @@ POSTGRES_PORT=
 AUTH_ISSUER=http://localhost:8083
 AUTH_ISSUER_URI=http://localhost:8083
 
-# Google OAuth
+# Получить Google OAuth секреты для своего домена
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
 
@@ -153,74 +94,15 @@ GOOGLE_CLIENT_SECRET=
 SPRING_DATASOURCE_USERNAME=
 SPRING_DATASOURCE_PASSWORD=
 ```
-2. `docker compose up -d --build`
+2. `docker compose up -d --build` для запуска всех контейнеров.
 
-### Предпосылки
-
-* JDK (LTS), Kotlin toolchain
-* Node.js + npm (актуальные стабильные)
-* Локальные PostgreSQL 18 и Redis 8 (контейнеры)
-
-### Быстрый старт
-
-Backend:
-
-```bash
-cd backend
-# Настрой нужные ENV (см. раздел "Конфигурация и секреты")
-./gradlew bootRun
-```
-
-Frontend:
-
-```bash
-cd frontend
-npm ci
-npm start
-```
+3. Перейти на [сайт](http://localhost:3005)
 
 ---
 
 ## Развёртывание в k3s
 
-> Базовые шаги для одной ноды (VPS). Ресурсы уточняются позже — оставлено место под спецификацию.
-
-1. **Сборка и публикация образов**
-
-```bash
-# Пример: ghcr.io/MattoYuzuru/mnema-backend:TAG
-#         ghcr.io/MattoYuzuru/mnema-frontend:TAG
-docker build -t ghcr.io/MattoYuzuru/mnema-backend:TAG ./backend
-docker build -t ghcr.io/MattoYuzuru/mnema-frontend:TAG ./frontend
-docker push ghcr.io/MattoYuzuru/mnema-backend:TAG
-docker push ghcr.io/MattoYuzuru/mnema-frontend:TAG
-```
-
-2. **Secret’ы и ConfigMap’ы**
-   Создай Kubernetes Secret’ы для:
-
-* `POSTGRES_URL`, `POSTGRES_USER`, `POSTGRES_PASSWORD`
-* `REDIS_URL`
-* `JWT_SECRET`
-* `OAUTH_{GITHUB,GOOGLE,YANDEX}_{CLIENT_ID,CLIENT_SECRET}`, `OAUTH_REDIRECT_URI`
-* `S3_ENDPOINT`, `S3_BUCKET`, `S3_ACCESS_KEY`, `S3_SECRET_KEY` *(в проде — Yandex Cloud)*
-
-3. **Применение манифестов**
-
-```bash
-# Если используется kustomize:
-kubectl apply -k deploy/overlays/prod
-# или напрямую:
-kubectl apply -f deploy/base/
-kubectl apply -f deploy/ingress/
-```
-
-4. **Ingress + TLS**
-
-* Ingress контроллер: Nginx
-* Домены: `mnema.app` (+ поддомены при необходимости)
-* TLS: cert-manager + Let’s Encrypt (Issuer/ClusterIssuer)
-  *(включи манифесты при готовности; секцию оставили как заглушку)*
+Пока в работе, но в моем проекте все развертывается при деплое. 
 
 ---
 
@@ -243,85 +125,68 @@ push -> CI build & test -> build docker images -> push GHCR -> deploy job -> kub
 
 ---
 
-## Конфигурация и секреты
-
-* **ENV-переменные** централизуем в одном месте (`deploy/` + README).
-* Секреты **не коммитим**. Для GitHub Actions:
-
-    * `Repository/Environment Secrets`
-    * опционально OIDC + хранилище секретов провайдера (в проде)
-* Для локалки добавим позже `env.example` при необходимости.
-
----
 
 ## Авторизация и безопасность
 
-* **JWT** для пользовательских сессий.
+* **JWT** для пользовательских сессий (в разработке)
 * **OAuth 2.0 провайдеры:** GitHub, Google, Yandex.
-* Рекомендуем:
 
-    * короткоживущие access-токены + refresh-ритуал
-    * HTTP-only cookies (если фронт/бек на одном домене), CSRF-защита где требуется
-    * строгая CORS-политика (origin: `https://mnema.app`)
-    * секреты только из Secret’ов k8s; RBAC для CI/CD
+Несмотря на тесты, авторизацию и использование современных практик и версий инструментов, я не гарантирую сохранность продовой БД, ваших данных и постоянную работу сервиса.  
 
 ---
 
 ## Наблюдаемость
 
 * **Prometheus** — метрики (включая Spring Actuator/экспортеры), **Grafana** — дашборды, **Loki** — логи.
-* Инструкции по установке (Helm, values) добавим позже; в коде — метрики/лейблы по мере интеграции.
+
+Пока что даже не в планах реализации. 
 
 ---
 
 ## Алгоритмы обучения
 
-* Первый реализуемый алгоритм интервального повторения — **FSRS**.
-* Коротко: модель оптимизирует интервалы повторений на основе обратной связи от пользователя, повышая эффективность запоминания при ограниченном времени. Детали и математика будут описаны в документации алгоритмов (`docs/algorithms/fsrs.md`).
+* Первый реализуемый алгоритм интервального повторения — **SM2 или FSRSv5**.
+* Коротко: модель оптимизирует интервалы повторений на основе обратной связи от пользователя, повышая эффективность запоминания при ограниченном времени. Детали и математика будут описаны в Wiki на Github. 
 
 ---
 
 ## API и документация
 
-* **OpenAPI/Swagger** будет доступен (путь уточняется; ожидаемо `/_/swagger` или `/swagger-ui`).
-* Контракты публикуем вместе с релизами (генерация из backend-сервисов).
+* **OpenAPI/Swagger** будет доступен на `/swagger-ui`.
 
 ---
 
 ## Архитектура
 
-> Пока что заглушки, под C4/Structurizr DSL.
-
-* **HLD (C4: System/Container):** `docs/architecture/c4/hld.dsl` *(заглушка)*
-* **LLD (C4: Component/Code):** `docs/architecture/c4/lld.dsl` *(заглушка)*
-* **ADR (Architecture Decision Records):** `docs/adr/` *(по ключевым решениям — БД, кеш, OAuth, деплой, observability)*
+> Будет на вики в соответствующем разделе, финальная архитектура дорабатывается
 
 ---
 
 ## Дорожная карта
 
-Роадмапа будет позднее. Ближайшие ориентиры:
+Роадмапа постоянно меняется. Ближайшие ориентиры:
 
-* [ ] Конфиг для деплоя и CI/CD на тестовую машину
-* [ ] JWT Auth (Начало auth service)
-* [ ] OAuth 2.0 (GitHub/Google/Yandex)
-* [ ] User Service (CRUD)
-* [ ] Базовый CRUD по карточкам/колодам
-* [ ] FSRS: первый проход
+* [x] Деплой и CI/CD на тестовую машину
+* [x] Auth Service: OAuth 2.0 (Google)
+* [x] User Service (CRUD)
+* [x] Базовый CRUD по карточкам/колодам/шаблонам
+* [x] Покрытие тестами главных компонентов системы
+* [x] Реализовать фронтенд для базовых сервисов
+* [ ] SM2: начало сервиса повторений
 
-*(Фактический трекинг — GitHub Projects/Board.)*
+*(Фактический трекинг — GitHub Projects/Телеграм избранное XD/Obsidian)*
 
 ---
 
-## Как поучаствовать
+## Как поучаствовать, попользоваться
 
 Пока внешних контрибьюторов не ожидается, но любой фидбек полезен:
 
-1. Открой issue с предложением или багом.
-2. Для PR: форк → ветка `feature/*` → PR в `main`.
-3. Соблюдай код-стайл (Kotlin/Angular), прогони тесты.
+0. https://mnema.app должен работать, попробуйте.  
+1. Если вы нашли баг или уронили демо, или у вас есть идеи, откройте issue с предложением или багом.
+2. Я очень хочу сделать `Mnema` удобным для локального развертывания через **Docker**, без сервисов авторизации и части лишнего функционала, но это фича не первой важности.
 
-Состояние задач: GitHub Projects (канбан) в этом репозитории.
+Состояние задач: GitHub Projects (канбан) в этом репозитории, но можно уточнить у меня в личке тг.
 
 ---
 
