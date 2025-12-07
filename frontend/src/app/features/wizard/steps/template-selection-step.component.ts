@@ -9,7 +9,7 @@ import { ButtonComponent } from '../../../shared/components/button.component';
 import { TemplateCardComponent } from '../../../shared/components/template-card.component';
 import { TemplateCreatorModalComponent } from '../template-creator-modal.component';
 
-type TemplateMode = 'choose' | 'create' | 'browse';
+type TemplateMode = 'choose' | 'browse';
 type TemplateFilter = 'mine' | 'public';
 
 @Component({
@@ -22,7 +22,7 @@ type TemplateFilter = 'mine' | 'public';
       <p class="subtitle">{{ getSubtitle() }}</p>
 
       <div *ngIf="mode === 'choose'" class="choice-grid">
-        <div class="choice-card" (click)="mode = 'create'">
+        <div class="choice-card" (click)="openTemplateCreator()">
           <div class="choice-icon">+</div>
           <h3>Create New Template</h3>
           <p>Build a custom template from scratch</p>
@@ -32,16 +32,6 @@ type TemplateFilter = 'mine' | 'public';
           <div class="choice-icon">📚</div>
           <h3>Use Existing Template</h3>
           <p>Choose from available templates</p>
-        </div>
-      </div>
-
-      <div *ngIf="mode === 'create'">
-        <div class="info-box">
-          Click the button below to open the template creator.
-        </div>
-        <div class="step-actions">
-          <app-button variant="ghost" (click)="mode = 'choose'">Back</app-button>
-          <app-button variant="primary" (click)="openTemplateCreator()">Open Template Creator</app-button>
         </div>
       </div>
 
@@ -160,14 +150,6 @@ type TemplateFilter = 'mine' | 'public';
         margin: 0;
       }
 
-      .info-box {
-        padding: var(--spacing-lg);
-        background: var(--color-background);
-        border: 1px solid var(--border-color);
-        border-radius: var(--border-radius-md);
-        color: var(--color-text-secondary);
-      }
-
       .browse-content {
         display: flex;
         flex-direction: column;
@@ -266,7 +248,6 @@ export class TemplateSelectionStepComponent implements OnInit {
     getSubtitle(): string {
         switch (this.mode) {
             case 'choose': return 'How would you like to get started?';
-            case 'create': return 'Build your own custom template';
             case 'browse': return 'Select a template that matches your learning style';
             default: return '';
         }

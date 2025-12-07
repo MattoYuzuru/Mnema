@@ -1,6 +1,6 @@
 import { Component, Output, EventEmitter, OnInit } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormGroup } from '@angular/forms';
+import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { TemplateApiService } from '../../../core/services/template-api.service';
 import { CardApiService } from '../../../core/services/card-api.service';
 import { CardTemplateDTO } from '../../../core/models/template.models';
@@ -20,8 +20,16 @@ import { TextareaComponent } from '../../../shared/components/textarea.component
       <div *ngIf="loading">Loading template...</div>
       <div *ngIf="!loading">
         <form [formGroup]="cardForm" class="card-form">
-          <app-input *ngFor="let field of template?.fields" [label]="field.label" type="text" [formControlName]="field.name" [placeholder]="field.helpText || ''"></app-input>
-          <app-button variant="secondary" (click)="addCard()">Add Card</app-button>
+          <app-input
+            *ngFor="let field of template?.fields"
+            [label]="field.label + (field.isRequired ? ' *' : '')"
+            type="text"
+            [formControlName]="field.name"
+            [placeholder]="field.helpText || ''"
+            [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
+            [errorMessage]="'Required'"
+          ></app-input>
+          <app-button variant="secondary" [disabled]="cardForm.invalid" (click)="addCard()">Add Card</app-button>
         </form>
         <div *ngIf="pendingCards.length > 0" class="pending-cards">
           <h4>Pending Cards ({{ pendingCards.length }})</h4>
@@ -68,7 +76,9 @@ export class InitialContentStepComponent implements OnInit {
             next: template => {
                 this.template = template;
                 const controls: { [key: string]: any } = {};
-                template.fields?.forEach(field => { controls[field.name] = [''];});
+                template.fields?.forEach(field => {
+                    controls[field.name] = field.isRequired ? ['', Validators.required] : [''];
+                });
                 this.cardForm = this.fb.group(controls);
                 this.loading = false;
             },
@@ -77,6 +87,13 @@ export class InitialContentStepComponent implements OnInit {
     }
 
     addCard(): void {
+        if (this.cardForm.invalid) {
+            Object.keys(this.cardForm.controls).forEach(key => {
+                this.cardForm.get(key)?.markAsTouched();
+            });
+            return;
+        }
+
         const content = this.cardForm.value;
         if (Object.values(content).some(v => v && String(v).trim())) {
             this.pendingCards.push({ content });

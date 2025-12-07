@@ -1,6 +1,6 @@
 import { Component, Input, Output, EventEmitter, OnInit } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormGroup } from '@angular/forms';
+import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
 import { TemplateApiService } from '../../core/services/template-api.service';
@@ -33,15 +33,17 @@ interface PendingCard {
             <div *ngFor="let field of template.fields" class="field-group">
               <app-input
                 *ngIf="field.fieldType === 'text'"
-                [label]="field.label"
+                [label]="field.label + (field.isRequired ? ' *' : '')"
                 type="text"
                 [formControlName]="field.name"
                 [placeholder]="field.helpText || 'Enter ' + field.label"
+                [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
+                [errorMessage]="'Required'"
               ></app-input>
 
               <app-textarea
                 *ngIf="field.fieldType === 'long_text'"
-                [label]="field.label"
+                [label]="field.label + (field.isRequired ? ' *' : '')"
                 [formControlName]="field.name"
                 [placeholder]="field.helpText || 'Enter ' + field.label"
                 [rows]="4"
@@ -49,15 +51,17 @@ interface PendingCard {
 
               <app-input
                 *ngIf="field.fieldType === 'image' || field.fieldType === 'audio' || field.fieldType === 'video'"
-                [label]="field.label"
+                [label]="field.label + (field.isRequired ? ' *' : '')"
                 type="url"
                 [formControlName]="field.name"
                 [placeholder]="field.helpText || 'Enter URL'"
+                [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
+                [errorMessage]="'Required'"
               ></app-input>
             </div>
 
             <div class="form-actions">
-              <app-button variant="secondary" type="button" (click)="addCard()">
+              <app-button variant="secondary" type="button" [disabled]="cardForm.invalid" (click)="addCard()">
                 Add to List ({{ pendingCards.length }})
               </app-button>
             </div>
@@ -136,7 +140,7 @@ export class AddCardsModalComponent implements OnInit {
                         this.template = template;
                         const controls: { [key: string]: any } = {};
                         template.fields?.forEach(field => {
-                            controls[field.name] = [''];
+                            controls[field.name] = field.isRequired ? ['', Validators.required] : [''];
                         });
                         this.cardForm = this.fb.group(controls);
                         this.loading = false;
@@ -153,6 +157,13 @@ export class AddCardsModalComponent implements OnInit {
     }
 
     addCard(): void {
+        if (this.cardForm.invalid) {
+            Object.keys(this.cardForm.controls).forEach(key => {
+                this.cardForm.get(key)?.markAsTouched();
+            });
+            return;
+        }
+
         const content = this.cardForm.value;
         if (Object.values(content).some(v => v && String(v).trim())) {
             this.pendingCards.push({ content });

@@ -14,6 +14,7 @@ interface FieldFormValue {
     label: string;
     fieldType: string;
     isOnFront: boolean;
+    isRequired: boolean;
     orderIndex: number;
     helpText: string;
 }
@@ -32,7 +33,7 @@ interface FieldFormValue {
 
         <form [formGroup]="form" class="template-form">
           <app-input label="Template Name" type="text" formControlName="name" placeholder="e.g., Language Flashcard" [hasError]="form.get('name')?.invalid && form.get('name')?.touched || false" errorMessage="Required"></app-input>
-          <app-textarea label="Description" formControlName="description" placeholder="Describe this template" [rows]="3"></app-textarea>
+          <app-textarea label="Description (optional)" formControlName="description" placeholder="Describe this template" [rows]="3"></app-textarea>
 
           <div class="fields-section">
             <div class="fields-header">
@@ -44,7 +45,6 @@ interface FieldFormValue {
               <div *ngFor="let fieldForm of fieldsArray.controls; let i = index" [formGroupName]="i" class="field-item">
                 <div class="field-number">{{ i + 1 }}</div>
                 <div class="field-inputs">
-                  <app-input label="Name" type="text" formControlName="name" placeholder="e.g., front" [hasError]="fieldForm.get('name')?.invalid && fieldForm.get('name')?.touched || false" errorMessage="Required"></app-input>
                   <app-input label="Label" type="text" formControlName="label" placeholder="e.g., Front Side" [hasError]="fieldForm.get('label')?.invalid && fieldForm.get('label')?.touched || false" errorMessage="Required"></app-input>
                   <div class="field-row">
                     <div class="select-group">
@@ -58,6 +58,7 @@ interface FieldFormValue {
                       </select>
                     </div>
                     <label class="checkbox-label"><input type="checkbox" formControlName="isOnFront" /> Show on front</label>
+                    <label class="checkbox-label"><input type="checkbox" formControlName="isRequired" /> Required</label>
                   </div>
                   <app-input label="Help Text (optional)" type="text" formControlName="helpText" placeholder="Hint for users"></app-input>
                 </div>
@@ -65,11 +66,20 @@ interface FieldFormValue {
               </div>
             </div>
           </div>
+
+          <label class="checkbox-label template-public">
+            <input type="checkbox" formControlName="isPublic" />
+            Make this template public
+          </label>
+
+          <div *ngIf="validationMessage" class="validation-message">
+            {{ validationMessage }}
+          </div>
         </form>
 
         <div class="modal-actions">
           <app-button variant="ghost" (click)="onCancel()" [disabled]="saving">Cancel</app-button>
-          <app-button variant="primary" (click)="onCreate()" [disabled]="form.invalid || saving">{{ saving ? 'Creating...' : 'Create Template' }}</app-button>
+          <app-button variant="primary" (click)="onCreate()" [disabled]="form.invalid || !!validationMessage || saving">{{ saving ? 'Creating...' : 'Create Template' }}</app-button>
         </div>
       </div>
     </div>
@@ -93,6 +103,8 @@ interface FieldFormValue {
       .select-group label { font-size: 0.875rem; font-weight: 500; color: var(--color-text-primary); }
       .field-select { width: 100%; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background: var(--color-card-background); font-size: 0.9rem; }
       .checkbox-label { display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; font-size: 0.9rem; white-space: nowrap; }
+      .template-public { padding: var(--spacing-md); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); font-size: 0.95rem; }
+      .validation-message { padding: var(--spacing-md); background: #fee; border: 1px solid #fcc; border-radius: var(--border-radius-md); color: #c00; font-size: 0.9rem; }
       .modal-actions { display: flex; justify-content: flex-end; gap: var(--spacing-md); padding: var(--spacing-lg); border-top: 1px solid var(--border-color); }
     `]
 })
@@ -102,14 +114,28 @@ export class TemplateCreatorModalComponent {
 
     form: FormGroup;
     saving = false;
+    validationMessage = '';
+    private readonly draftKey = 'mnema_template_creator_draft';
 
     constructor(private fb: FormBuilder, private templateApi: TemplateApiService) {
         this.form = this.fb.group({
             name: ['', Validators.required],
             description: [''],
+            isPublic: [false],
             fields: this.fb.array([])
         });
-        this.addField();
+
+        this.loadDraft();
+
+        if (this.fieldsArray.length === 0) {
+            this.addField();
+            this.addField();
+        }
+
+        this.form.valueChanges.subscribe(() => {
+            this.saveDraft();
+            this.validateTemplate();
+        });
     }
 
     get fieldsArray(): FormArray {
@@ -118,10 +144,11 @@ export class TemplateCreatorModalComponent {
 
     addField(): void {
         const fieldGroup = this.fb.group({
-            name: ['', Validators.required],
+            name: [''],
             label: ['', Validators.required],
             fieldType: ['text'],
-            isOnFront: [true],
+            isOnFront: [this.fieldsArray.length === 0],
+            isRequired: [false],
             orderIndex: [this.fieldsArray.length],
             helpText: ['']
         });
@@ -137,12 +164,96 @@ export class TemplateCreatorModalComponent {
         }
     }
 
+    private generateFieldName(label: string, existingNames: string[]): string {
+        let base = label.trim().toLowerCase()
+            .replace(/\s+/g, '_')
+            .replace(/[^a-z0-9_]/g, '');
+
+        if (!base) {
+            base = 'field';
+        }
+
+        let name = base;
+        let counter = 2;
+        while (existingNames.includes(name)) {
+            name = `${base}_${counter}`;
+            counter++;
+        }
+
+        return name;
+    }
+
+    private validateTemplate(): void {
+        const fields: FieldFormValue[] = this.form.get('fields')?.value || [];
+
+        if (fields.length < 2) {
+            this.validationMessage = 'A template must have at least 2 fields.';
+            return;
+        }
+
+        const frontFields = fields.filter(f => f.isOnFront);
+        const backFields = fields.filter(f => !f.isOnFront);
+
+        if (frontFields.length === 0 || backFields.length === 0) {
+            this.validationMessage = 'A template must have at least one field on each side of the card.';
+            return;
+        }
+
+        this.validationMessage = '';
+    }
+
+    private saveDraft(): void {
+        const draft = this.form.getRawValue();
+        localStorage.setItem(this.draftKey, JSON.stringify(draft));
+    }
+
+    private loadDraft(): void {
+        const saved = localStorage.getItem(this.draftKey);
+        if (saved) {
+            try {
+                const draft = JSON.parse(saved);
+                this.form.patchValue({
+                    name: draft.name || '',
+                    description: draft.description || '',
+                    isPublic: draft.isPublic || false
+                });
+
+                if (draft.fields && Array.isArray(draft.fields)) {
+                    draft.fields.forEach((field: FieldFormValue) => {
+                        const fieldGroup = this.fb.group({
+                            name: [field.name || ''],
+                            label: [field.label || '', Validators.required],
+                            fieldType: [field.fieldType || 'text'],
+                            isOnFront: [field.isOnFront !== undefined ? field.isOnFront : true],
+                            isRequired: [field.isRequired || false],
+                            orderIndex: [field.orderIndex || 0],
+                            helpText: [field.helpText || '']
+                        });
+                        this.fieldsArray.push(fieldGroup);
+                    });
+                }
+            } catch (e) {
+                console.warn('Failed to load draft:', e);
+            }
+        }
+    }
+
+    private clearDraft(): void {
+        localStorage.removeItem(this.draftKey);
+    }
+
     onCreate(): void {
-        if (this.form.invalid) return;
+        if (this.form.invalid || this.validationMessage) return;
 
         this.saving = true;
         const formValue = this.form.value;
         const fields: FieldFormValue[] = formValue.fields;
+
+        const existingNames: string[] = [];
+        fields.forEach(field => {
+            field.name = this.generateFieldName(field.label, existingNames);
+            existingNames.push(field.name);
+        });
 
         const frontFields = fields.filter(f => f.isOnFront).sort((a, b) => a.orderIndex - b.orderIndex);
         const backFields = fields.filter(f => !f.isOnFront).sort((a, b) => a.orderIndex - b.orderIndex);
@@ -150,7 +261,7 @@ export class TemplateCreatorModalComponent {
         const templateDto = {
             name: formValue.name,
             description: formValue.description,
-            isPublic: false,
+            isPublic: formValue.isPublic || false,
             layout: {
                 front: frontFields.map(f => f.name),
                 back: backFields.map(f => f.name)
@@ -168,7 +279,7 @@ export class TemplateCreatorModalComponent {
                         name: field.name,
                         label: field.label,
                         fieldType: field.fieldType,
-                        isRequired: false,
+                        isRequired: field.isRequired || false,
                         isOnFront: field.isOnFront,
                         orderIndex: index,
                         defaultValue: '',
@@ -183,6 +294,7 @@ export class TemplateCreatorModalComponent {
         ).subscribe({
             next: template => {
                 this.saving = false;
+                this.clearDraft();
                 this.created.emit(template);
             },
             error: err => {

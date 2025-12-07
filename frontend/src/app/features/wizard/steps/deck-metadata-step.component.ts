@@ -17,7 +17,15 @@ import { TextareaComponent } from '../../../shared/components/textarea.component
       <form [formGroup]="form" class="form">
         <app-input label="Deck Name" type="text" formControlName="name" placeholder="e.g., Spanish Vocabulary" [hasError]="form.get('name')?.invalid && form.get('name')?.touched || false" errorMessage="Required"></app-input>
         <app-textarea label="Description" formControlName="description" placeholder="Describe what this deck is about" [rows]="4"></app-textarea>
-        <app-input label="Language" type="text" formControlName="language" placeholder="e.g., en, es, fr"></app-input>
+        <div class="form-group">
+          <label>Language</label>
+          <select formControlName="language" class="language-select">
+            <option value="en">English</option>
+            <option value="ru">Русский (Russian)</option>
+            <option value="jp">日本語 (Japanese)</option>
+            <option value="sp">Español (Spanish)</option>
+          </select>
+        </div>
         <div class="form-group">
           <label>Tags</label>
           <input type="text" class="tag-input" [(ngModel)]="tagInput" [ngModelOptions]="{standalone: true}" (keydown.enter)="addTag($event)" placeholder="Type and press Enter" />
@@ -38,6 +46,8 @@ import { TextareaComponent } from '../../../shared/components/textarea.component
       .step { display: flex; flex-direction: column; gap: var(--spacing-lg); }
       .form { display: flex; flex-direction: column; gap: var(--spacing-lg); }
       .form-group { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+      .form-group label { font-size: 0.875rem; font-weight: 500; color: var(--color-text-primary); }
+      .language-select { width: 100%; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); font-size: 0.9rem; background: var(--color-card-background); cursor: pointer; }
       .tag-input { width: 100%; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); font-size: 0.9rem; background: var(--color-card-background); }
       .tags-list { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); margin-top: var(--spacing-sm); }
       .tag-chip { display: inline-flex; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-full); font-size: 0.85rem; }
