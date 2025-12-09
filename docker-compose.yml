@@ -16,7 +16,10 @@ services:
   auth:
     build:
       context: ./backend
-      dockerfile: services/auth/Dockerfile
+      dockerfile: Dockerfile
+      target: auth-runtime
+      args:
+        SERVICE_NAME: auth
     environment:
       SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
@@ -33,7 +36,10 @@ services:
   user:
     build:
       context: ./backend
-      dockerfile: services/user/Dockerfile
+      dockerfile: Dockerfile
+      target: user-runtime
+      args:
+        SERVICE_NAME: user
     environment:
       SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
@@ -43,12 +49,15 @@ services:
       AUTH_ISSUER_URI: http://auth:8080
     depends_on:
       postgres: { condition: service_healthy }
-    ports: ["8084:8080"]
+    ports: [ "8084:8080" ]
 
   core:
     build:
       context: ./backend
-      dockerfile: services/core/Dockerfile
+      dockerfile: Dockerfile
+      target: core-runtime
+      args:
+        SERVICE_NAME: core
     environment:
       SPRING_PROFILES_ACTIVE: dev
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
@@ -58,13 +67,14 @@ services:
       AUTH_ISSUER_URI: http://auth:8080
     depends_on:
       postgres: { condition: service_healthy }
-    ports: [ "8085:8080" ]  # TODO: do same in k8s
+    ports: [ "8085:8080" ]
+
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    ports: ["3005:80"]
+    ports: [ "3005:80" ]
     restart: unless-stopped
 
 networks:
