@@ -1,8 +1,10 @@
 .git
 .github
 .idea
-k8s
-LICENSE
-README.md
-SECURITY.md
+.vscode
+*.iml
+.env
+.env.*
 docs
+images
+k8s

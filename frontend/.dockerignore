@@ -1,0 +1,27 @@
+# Node / Angular
+node_modules
+dist
+build
+.angular
+.npm
+.yarn
+
+# Env
+.env
+.env.*
+
+# Логи
+npm-debug.log*
+yarn-error.log*
+*.log
+
+# IDE/OS
+.idea
+.vscode
+*.iml
+.DS_Store
+
+# Git (если вдруг будет вложенный)
+**/.git
+**/.gitignore
+**/.gitattributes

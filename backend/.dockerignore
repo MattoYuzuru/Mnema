@@ -1,0 +1,20 @@
+# Gradle
+.gradle
+**/build
+out
+
+# IDE/OS
+.idea
+.vscode
+*.iml
+*.log
+.DS_Store
+
+# Git-метаданные внутри сабпроектов
+**/.git
+**/.gitignore
+**/.gitattributes
+
+# Разное
+*.swp
+*.tmp

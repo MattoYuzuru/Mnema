@@ -3,6 +3,7 @@
 FROM gradle:8.10.2-jdk21 AS build
 WORKDIR /workspace
 
+# 1. Копируем только gradle-конфиги для кэширования зависимостей
 COPY gradlew settings.gradle.kts build.gradle.kts ./
 COPY gradle ./gradle
 COPY services/auth/build.gradle.kts services/auth/
@@ -10,6 +11,7 @@ COPY services/user/build.gradle.kts services/user/
 COPY services/core/build.gradle.kts services/core/
 RUN chmod +x gradlew
 
+# 2. Прогреваем зависимости (используя кеш BuildKit)
 RUN --mount=type=cache,target=/home/gradle/.gradle \
     ./gradlew \
       :services:auth:dependencies \
@@ -17,6 +19,7 @@ RUN --mount=type=cache,target=/home/gradle/.gradle \
       :services:core:dependencies \
       --no-daemon
 
+# 3. Копируем исходники и собираем все bootJar одним прогоном
 COPY services ./services
 
 RUN --mount=type=cache,target=/home/gradle/.gradle \
@@ -25,6 +28,8 @@ RUN --mount=type=cache,target=/home/gradle/.gradle \
       :services:user:bootJar \
       :services:core:bootJar \
       --no-daemon -x test
+
+# 4. Runtime-образы
 
 FROM eclipse-temurin:21-jre AS auth-runtime
 WORKDIR /app
