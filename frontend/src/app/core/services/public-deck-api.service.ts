@@ -65,4 +65,8 @@ export class PublicDeckApiService {
     getPublicDeckSize(deckId: string): Observable<{ deckId: string; cardsQty: number }> {
         return this.http.get<{ deckId: string; cardsQty: number }>(`${this.baseUrl}/${deckId}/size`);
     }
+
+    deletePublicDeck(deckId: string): Observable<void> {
+        return this.http.delete<void>(`${this.baseUrl}/${deckId}`);
+    }
 }

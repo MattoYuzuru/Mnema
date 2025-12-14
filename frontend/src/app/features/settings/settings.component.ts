@@ -10,15 +10,6 @@ import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
-import { HttpClient } from '@angular/common/http';
-
-interface AppConfig {
-    apiBaseUrl: string;
-}
-
-const appConfig: AppConfig = {
-    apiBaseUrl: 'http://localhost:9090/api/core/users'
-};
 
 @Component({
     selector: 'app-settings',
@@ -104,7 +95,7 @@ const appConfig: AppConfig = {
         <div *ngIf="loadingArchive" class="loading-state">Loading archived decks...</div>
 
         <div *ngIf="!loadingArchive && archivedDecks.length === 0" class="empty-state">
-          No archived decks
+          {{ 'publicDecks.noArchivedDecks' | translate }}
         </div>
 
         <div *ngIf="!loadingArchive && archivedDecks.length > 0" class="archive-list">
@@ -118,7 +109,7 @@ const appConfig: AppConfig = {
                 Open
               </app-button>
               <app-button variant="secondary" size="sm" (click)="restoreDeck(deck.userDeckId)">
-                Restore
+                {{ 'settings.restore' | translate }}
               </app-button>
             </div>
           </div>
@@ -291,8 +282,7 @@ export class SettingsComponent implements OnInit {
         private deckApi: DeckApiService,
         private userApi: UserApiService,
         private auth: AuthService,
-        private router: Router,
-        private http: HttpClient
+        private router: Router
     ) {}
 
     ngOnInit(): void {
@@ -301,9 +291,9 @@ export class SettingsComponent implements OnInit {
 
     loadArchivedDecks(): void {
         this.loadingArchive = true;
-        this.deckApi.getMyDecks(1, 50).subscribe({
-            next: page => {
-                this.archivedDecks = page.content.filter(deck => deck.archived);
+        this.deckApi.getDeletedDecks().subscribe({
+            next: decks => {
+                this.archivedDecks = decks;
                 this.loadingArchive = false;
             },
             error: () => {
@@ -329,20 +319,13 @@ export class SettingsComponent implements OnInit {
 
     deleteAccount(): void {
         this.showDeleteConfirmation = false;
-        this.userApi.getMe().subscribe({
-            next: profile => {
-                this.http.delete(`${appConfig.apiBaseUrl}/${profile.id}`).subscribe({
-                    next: () => {
-                        this.auth.logout();
-                        void this.router.navigate(['/']);
-                    },
-                    error: err => {
-                        console.error('Failed to delete account:', err);
-                    }
-                });
+        this.userApi.deleteMe().subscribe({
+            next: () => {
+                this.auth.logout();
+                void this.router.navigate(['/']);
             },
             error: err => {
-                console.error('Failed to get profile:', err);
+                console.error('Failed to delete account:', err);
             }
         });
     }

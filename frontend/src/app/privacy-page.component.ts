@@ -1,41 +1,43 @@
 import { Component } from '@angular/core';
+import { TranslatePipe } from './shared/pipes/translate.pipe';
 
 @Component({
     standalone: true,
+    imports: [TranslatePipe],
     selector: 'app-privacy-page',
     template: `
     <div class="legal-page">
-      <h1>Privacy Policy</h1>
-      <p class="last-updated">Last updated: December 2025</p>
+      <h1>{{ 'privacy.title' | translate }}</h1>
+      <p class="last-updated">{{ 'privacy.lastUpdated' | translate }}</p>
 
       <section>
-        <h2>Information We Collect</h2>
-        <p>When you use Mnema, we collect information that you provide directly to us, including your email address, username, and the flashcard decks and content you create.</p>
+        <h2>{{ 'privacy.infoCollect' | translate }}</h2>
+        <p>{{ 'privacy.infoCollectText' | translate }}</p>
       </section>
 
       <section>
-        <h2>How We Use Your Information</h2>
-        <p>We use the information we collect to provide, maintain, and improve our services, including to process your flashcard study sessions and track your learning progress.</p>
+        <h2>{{ 'privacy.infoUse' | translate }}</h2>
+        <p>{{ 'privacy.infoUseText' | translate }}</p>
       </section>
 
       <section>
-        <h2>Information Sharing</h2>
-        <p>We do not sell or share your personal information with third parties except as necessary to provide our services or as required by law.</p>
+        <h2>{{ 'privacy.infoSharing' | translate }}</h2>
+        <p>{{ 'privacy.infoSharingText' | translate }}</p>
       </section>
 
       <section>
-        <h2>Data Security</h2>
-        <p>We implement appropriate security measures to protect your personal information against unauthorized access, alteration, or destruction.</p>
+        <h2>{{ 'privacy.dataSecurity' | translate }}</h2>
+        <p>{{ 'privacy.dataSecurityText' | translate }}</p>
       </section>
 
       <section>
-        <h2>Your Rights</h2>
-        <p>You have the right to access, update, or delete your personal information at any time through your account settings.</p>
+        <h2>{{ 'privacy.yourRights' | translate }}</h2>
+        <p>{{ 'privacy.yourRightsText' | translate }}</p>
       </section>
 
       <section>
-        <h2>Contact Us</h2>
-        <p>If you have any questions about this Privacy Policy, please contact us through our GitHub repository.</p>
+        <h2>{{ 'privacy.contact' | translate }}</h2>
+        <p>{{ 'privacy.contactText' | translate }}</p>
       </section>
     </div>
   `,

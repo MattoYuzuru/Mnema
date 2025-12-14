@@ -10,18 +10,19 @@ import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { DeckCardComponent } from '../../shared/components/deck-card.component';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
+import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-public-decks-catalog',
     standalone: true,
-    imports: [NgIf, NgFor, DeckCardComponent, MemoryTipLoaderComponent, EmptyStateComponent],
+    imports: [NgIf, NgFor, DeckCardComponent, MemoryTipLoaderComponent, EmptyStateComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
     <div *ngIf="!loading" class="public-decks-catalog">
       <header class="page-header">
-        <h1>Public Decks</h1>
-        <p class="subtitle">Discover and fork community-created flashcard decks</p>
+        <h1>{{ 'publicDecks.title' | translate }}</h1>
+        <p class="subtitle">{{ 'publicDecks.subtitle' | translate }}</p>
       </header>
 
       <div *ngIf="decks.length > 0" class="decks-list">
@@ -39,8 +40,8 @@ import { EmptyStateComponent } from '../../shared/components/empty-state.compone
       <app-empty-state
         *ngIf="decks.length === 0"
         icon="🌐"
-        title="No public decks available"
-        description="Public decks will appear here once they are published by the community"
+        [title]="'home.noPublicDecks' | translate"
+        [description]="'home.noPublicDecksDescription' | translate"
       ></app-empty-state>
     </div>
   `,

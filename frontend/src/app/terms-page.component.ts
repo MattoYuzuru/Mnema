@@ -1,51 +1,53 @@
 import { Component } from '@angular/core';
+import { TranslatePipe } from './shared/pipes/translate.pipe';
 
 @Component({
     standalone: true,
+    imports: [TranslatePipe],
     selector: 'app-terms-page',
     template: `
     <div class="legal-page">
-      <h1>Terms of Service</h1>
-      <p class="last-updated">Last updated: December 2025</p>
+      <h1>{{ 'terms.title' | translate }}</h1>
+      <p class="last-updated">{{ 'terms.lastUpdated' | translate }}</p>
 
       <section>
-        <h2>Acceptance of Terms</h2>
-        <p>By accessing and using Mnema, you accept and agree to be bound by the terms and provisions of this agreement.</p>
+        <h2>{{ 'terms.acceptance' | translate }}</h2>
+        <p>{{ 'terms.acceptanceText' | translate }}</p>
       </section>
 
       <section>
-        <h2>Use License</h2>
-        <p>Permission is granted to temporarily use Mnema for personal, non-commercial educational purposes. This is the grant of a license, not a transfer of title.</p>
+        <h2>{{ 'terms.useLicense' | translate }}</h2>
+        <p>{{ 'terms.useLicenseText' | translate }}</p>
       </section>
 
       <section>
-        <h2>User Content</h2>
-        <p>You retain all rights to the flashcard content you create. By making decks public, you grant other users the right to fork and use your content for their personal learning.</p>
+        <h2>{{ 'terms.userContent' | translate }}</h2>
+        <p>{{ 'terms.userContentText' | translate }}</p>
       </section>
 
       <section>
-        <h2>Prohibited Uses</h2>
-        <p>You may not use Mnema for any illegal purpose or to violate any laws. You may not attempt to gain unauthorized access to any portion of the service.</p>
+        <h2>{{ 'terms.prohibited' | translate }}</h2>
+        <p>{{ 'terms.prohibitedText' | translate }}</p>
       </section>
 
       <section>
-        <h2>Disclaimer</h2>
-        <p>Mnema is provided "as is" without any representations or warranties. We do not guarantee that the service will be uninterrupted or error-free.</p>
+        <h2>{{ 'terms.disclaimer' | translate }}</h2>
+        <p>{{ 'terms.disclaimerText' | translate }}</p>
       </section>
 
       <section>
-        <h2>Limitation of Liability</h2>
-        <p>In no event shall Mnema be liable for any damages arising out of the use or inability to use the service.</p>
+        <h2>{{ 'terms.liability' | translate }}</h2>
+        <p>{{ 'terms.liabilityText' | translate }}</p>
       </section>
 
       <section>
-        <h2>Changes to Terms</h2>
-        <p>We reserve the right to modify these terms at any time. Continued use of the service after changes constitutes acceptance of the new terms.</p>
+        <h2>{{ 'terms.changes' | translate }}</h2>
+        <p>{{ 'terms.changesText' | translate }}</p>
       </section>
 
       <section>
-        <h2>Contact</h2>
-        <p>For questions about these Terms of Service, please contact us through our GitHub repository.</p>
+        <h2>{{ 'terms.contact' | translate }}</h2>
+        <p>{{ 'terms.contactText' | translate }}</p>
       </section>
     </div>
   `,

@@ -1,10 +1,13 @@
 import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { NgIf } from '@angular/common';
+import { NgIf, NgFor } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { forkJoin } from 'rxjs';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
+import { UserApiService } from '../../user-api.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
+import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { AddCardsModalComponent } from './add-cards-modal.component';
@@ -15,7 +18,7 @@ import { TextareaComponent } from '../../shared/components/textarea.component';
 @Component({
     selector: 'app-deck-profile',
     standalone: true,
-    imports: [NgIf, ReactiveFormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, ConfirmationDialogComponent, InputComponent, TextareaComponent],
+    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, ConfirmationDialogComponent, InputComponent, TextareaComponent],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -99,11 +102,41 @@ import { TextareaComponent } from '../../shared/components/textarea.component';
                 Auto-update when new version is available
               </label>
             </div>
-            <div class="checkbox-group">
-              <label>
-                <input type="checkbox" formControlName="archived" />
-                Archive this deck
-              </label>
+
+            <div *ngIf="isAuthor" class="public-deck-section">
+              <h3 class="section-title">Public Deck Settings</h3>
+              <app-input
+                label="Public Deck Name *"
+                formControlName="publicName"
+                [hasError]="editForm.get('publicName')?.invalid && editForm.get('publicName')?.touched || false"
+                errorMessage="Public deck name is required"
+              ></app-input>
+              <app-textarea
+                label="Public Description"
+                formControlName="publicDescription"
+                [rows]="4"
+              ></app-textarea>
+              <app-input
+                label="Language"
+                formControlName="language"
+              ></app-input>
+              <app-input
+                label="Tags (comma-separated)"
+                formControlName="tags"
+                placeholder="e.g., language, vocabulary, spanish"
+              ></app-input>
+              <div class="checkbox-group">
+                <label>
+                  <input type="checkbox" formControlName="isPublic" />
+                  Make deck public
+                </label>
+              </div>
+              <div class="checkbox-group">
+                <label>
+                  <input type="checkbox" formControlName="isListed" />
+                  List in public catalog
+                </label>
+              </div>
             </div>
           </form>
         </div>
@@ -261,12 +294,27 @@ import { TextareaComponent } from '../../shared/components/textarea.component';
         padding: var(--spacing-lg);
         border-top: 1px solid var(--border-color);
       }
+
+      .public-deck-section {
+        margin-top: var(--spacing-xl);
+        padding-top: var(--spacing-xl);
+        border-top: 1px solid var(--border-color);
+      }
+
+      .section-title {
+        font-size: 1.1rem;
+        font-weight: 600;
+        margin: 0 0 var(--spacing-md) 0;
+      }
     `]
 })
 export class DeckProfileComponent implements OnInit {
     loading = true;
     deck: UserDeckDTO | null = null;
+    publicDeck: PublicDeckDTO | null = null;
     latestPublicVersion: number | null = null;
+    currentUserId: string | null = null;
+    isAuthor = false;
     userDeckId = '';
     showAddCards = false;
     showEditModal = false;
@@ -279,6 +327,7 @@ export class DeckProfileComponent implements OnInit {
         private router: Router,
         private deckApi: DeckApiService,
         private publicDeckApi: PublicDeckApiService,
+        private userApi: UserApiService,
         private fb: FormBuilder
     ) {}
 
@@ -290,11 +339,16 @@ export class DeckProfileComponent implements OnInit {
     }
 
     private loadDeck(): void {
-        this.deckApi.getUserDeck(this.userDeckId).subscribe({
-            next: deck => {
+        forkJoin({
+            deck: this.deckApi.getUserDeck(this.userDeckId),
+            user: this.userApi.getMe()
+        }).subscribe({
+            next: ({ deck, user }) => {
                 this.deck = deck;
+                this.currentUserId = user.id;
+
                 if (deck.publicDeckId) {
-                    this.loadLatestPublicVersion(deck.publicDeckId);
+                    this.loadPublicDeck(deck.publicDeckId);
                 } else {
                     this.loading = false;
                 }
@@ -306,14 +360,16 @@ export class DeckProfileComponent implements OnInit {
         });
     }
 
-    private loadLatestPublicVersion(publicDeckId: string): void {
+    private loadPublicDeck(publicDeckId: string): void {
         this.publicDeckApi.getPublicDeck(publicDeckId).subscribe({
             next: publicDeck => {
+                this.publicDeck = publicDeck;
                 this.latestPublicVersion = publicDeck.version;
+                this.isAuthor = publicDeck.authorId === this.currentUserId;
                 this.loading = false;
             },
             error: err => {
-                console.error('Failed to load public deck version:', err);
+                console.error('Failed to load public deck:', err);
                 this.loading = false;
             }
         });
@@ -351,7 +407,7 @@ export class DeckProfileComponent implements OnInit {
             next: updatedDeck => {
                 this.deck = updatedDeck;
                 if (updatedDeck.publicDeckId) {
-                    this.loadLatestPublicVersion(updatedDeck.publicDeckId);
+                    this.loadPublicDeck(updatedDeck.publicDeckId);
                 }
                 console.log('Deck synced successfully');
             },
@@ -363,12 +419,22 @@ export class DeckProfileComponent implements OnInit {
 
     openEditModal(): void {
         if (this.deck) {
-            this.editForm = this.fb.group({
+            const formConfig: any = {
                 displayName: [this.deck.displayName, Validators.required],
                 displayDescription: [this.deck.displayDescription],
-                autoUpdate: [this.deck.autoUpdate],
-                archived: [this.deck.archived]
-            });
+                autoUpdate: [this.deck.autoUpdate]
+            };
+
+            if (this.isAuthor && this.publicDeck) {
+                formConfig.publicName = [this.publicDeck.name, Validators.required];
+                formConfig.publicDescription = [this.publicDeck.description];
+                formConfig.isPublic = [this.publicDeck.isPublic];
+                formConfig.isListed = [this.publicDeck.isListed];
+                formConfig.language = [this.publicDeck.language];
+                formConfig.tags = [this.publicDeck.tags?.join(', ')];
+            }
+
+            this.editForm = this.fb.group(formConfig);
             this.showEditModal = true;
         }
     }
@@ -381,19 +447,52 @@ export class DeckProfileComponent implements OnInit {
         if (this.editForm.invalid) return;
 
         this.saving = true;
-        const updates = this.editForm.value;
+        const formValue = this.editForm.value;
 
-        this.deckApi.patchDeck(this.userDeckId, updates).subscribe({
-            next: updatedDeck => {
-                this.deck = updatedDeck;
-                this.saving = false;
-                this.showEditModal = false;
-            },
-            error: err => {
-                console.error('Failed to update deck:', err);
-                this.saving = false;
-            }
-        });
+        const userDeckUpdates: Partial<UserDeckDTO> = {
+            displayName: formValue.displayName,
+            displayDescription: formValue.displayDescription,
+            autoUpdate: formValue.autoUpdate
+        };
+
+        if (this.isAuthor && this.publicDeck) {
+            const publicDeckUpdates: Partial<PublicDeckDTO> = {
+                name: formValue.publicName,
+                description: formValue.publicDescription,
+                isPublic: formValue.isPublic,
+                isListed: formValue.isListed,
+                language: formValue.language,
+                tags: formValue.tags ? formValue.tags.split(',').map((t: string) => t.trim()).filter((t: string) => t) : []
+            };
+
+            forkJoin({
+                userDeck: this.deckApi.patchDeck(this.userDeckId, userDeckUpdates),
+                publicDeck: this.publicDeckApi.patchPublicDeck(this.publicDeck.deckId, publicDeckUpdates)
+            }).subscribe({
+                next: ({ userDeck, publicDeck }) => {
+                    this.deck = userDeck;
+                    this.publicDeck = publicDeck;
+                    this.saving = false;
+                    this.showEditModal = false;
+                },
+                error: err => {
+                    console.error('Failed to update decks:', err);
+                    this.saving = false;
+                }
+            });
+        } else {
+            this.deckApi.patchDeck(this.userDeckId, userDeckUpdates).subscribe({
+                next: updatedDeck => {
+                    this.deck = updatedDeck;
+                    this.saving = false;
+                    this.showEditModal = false;
+                },
+                error: err => {
+                    console.error('Failed to update deck:', err);
+                    this.saving = false;
+                }
+            });
+        }
     }
 
     openDeleteConfirm(): void {
@@ -405,15 +504,31 @@ export class DeckProfileComponent implements OnInit {
     }
 
     confirmDelete(): void {
-        this.deckApi.deleteDeck(this.userDeckId).subscribe({
-            next: () => {
-                this.showDeleteConfirm = false;
-                void this.router.navigate(['/decks']);
-            },
-            error: err => {
-                console.error('Failed to delete deck:', err);
-                this.showDeleteConfirm = false;
-            }
-        });
+        if (this.isAuthor && this.publicDeck) {
+            forkJoin({
+                publicDeck: this.publicDeckApi.deletePublicDeck(this.publicDeck.deckId),
+                userDeck: this.deckApi.deleteDeck(this.userDeckId)
+            }).subscribe({
+                next: () => {
+                    this.showDeleteConfirm = false;
+                    void this.router.navigate(['/decks']);
+                },
+                error: err => {
+                    console.error('Failed to delete decks:', err);
+                    this.showDeleteConfirm = false;
+                }
+            });
+        } else {
+            this.deckApi.deleteDeck(this.userDeckId).subscribe({
+                next: () => {
+                    this.showDeleteConfirm = false;
+                    void this.router.navigate(['/decks']);
+                },
+                error: err => {
+                    console.error('Failed to delete deck:', err);
+                    this.showDeleteConfirm = false;
+                }
+            });
+        }
     }
 }

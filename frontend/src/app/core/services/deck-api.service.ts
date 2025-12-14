@@ -42,4 +42,8 @@ export class DeckApiService {
     getUserDeckSize(userDeckId: string): Observable<{ deckId: string; cardsQty: number }> {
         return this.http.get<{ deckId: string; cardsQty: number }>(`${this.baseUrl}/${userDeckId}/size`);
     }
+
+    getDeletedDecks(): Observable<UserDeckDTO[]> {
+        return this.http.get<UserDeckDTO[]>(`${this.baseUrl}/deleted`);
+    }
 }

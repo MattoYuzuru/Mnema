@@ -16,11 +16,12 @@ import { FlashcardViewComponent } from '../../shared/components/flashcard-view.c
 import { ButtonComponent } from '../../shared/components/button.component';
 import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
+import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-card-browser',
     standalone: true,
-    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, InputComponent, TextareaComponent],
+    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -32,7 +33,7 @@ import { TextareaComponent } from '../../shared/components/textarea.component';
           </app-button>
           <div>
             <h1>Card Browser</h1>
-            <p class="card-count">{{ cards.length }} cards</p>
+            <p class="card-count">{{ cards.length }} {{ 'cardBrowser.cards' | translate }}</p>
           </div>
         </div>
         <div class="header-right">
@@ -42,14 +43,14 @@ import { TextareaComponent } from '../../shared/components/textarea.component';
               size="sm"
               (click)="setViewMode('list')"
             >
-              List
+              {{ 'cardBrowser.list' | translate }}
             </app-button>
             <app-button
               [variant]="viewMode === 'cards' ? 'primary' : 'ghost'"
               size="sm"
               (click)="setViewMode('cards')"
             >
-              Cards
+              {{ 'cardBrowser.cardsView' | translate }}
             </app-button>
           </div>
         </div>
@@ -57,7 +58,7 @@ import { TextareaComponent } from '../../shared/components/textarea.component';
 
       <div *ngIf="viewMode === 'list' && cards.length > 0" class="cards-table">
         <div class="card-row header-row">
-          <div class="card-col">Front Preview</div>
+          <div class="card-col">{{ 'cardBrowser.frontPreview' | translate }}</div>
           <div class="card-col">Reviews</div>
           <div class="card-col">Next Review</div>
           <div class="card-col">Status</div>
@@ -90,7 +91,7 @@ import { TextareaComponent } from '../../shared/components/textarea.component';
             (click)="previousCard()"
             [disabled]="currentCardIndex === 0"
           >
-            ← Previous
+            {{ 'cardBrowser.previous' | translate }}
           </app-button>
           <span class="card-counter">{{ currentCardIndex + 1 }} / {{ cards.length }}</span>
           <app-button
@@ -99,7 +100,7 @@ import { TextareaComponent } from '../../shared/components/textarea.component';
             (click)="nextCard()"
             [disabled]="currentCardIndex >= cards.length - 1"
           >
-            Next →
+            {{ 'cardBrowser.next' | translate }}
           </app-button>
         </div>
 
@@ -124,7 +125,7 @@ import { TextareaComponent } from '../../shared/components/textarea.component';
               </div>
             </div>
           </div>
-          <p class="flip-hint">Click card to flip</p>
+          <p class="flip-hint">{{ 'cardBrowser.clickToFlip' | translate }}</p>
         </div>
 
         <div class="card-actions">

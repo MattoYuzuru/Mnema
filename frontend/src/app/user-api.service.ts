@@ -31,4 +31,8 @@ export class UserApiService {
     updateMe(update: MeUpdateRequest): Observable<UserProfile> {
         return this.http.patch<UserProfile>(`${appConfig.apiBaseUrl}/me`, update);
     }
+
+    deleteMe(): Observable<void> {
+        return this.http.delete<void>(`${appConfig.apiBaseUrl}/me`);
+    }
 }
