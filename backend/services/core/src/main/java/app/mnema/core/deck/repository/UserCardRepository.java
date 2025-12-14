@@ -13,7 +13,7 @@ import java.util.UUID;
 
 @Repository
 public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> {
-    Page<UserCardEntity> findByUserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc(
+    Page<UserCardEntity> findByUserDeckIdAndDeletedFalseOrderByCreatedAtAsc(
             UUID userDeckId,
             Pageable pageable
     );
@@ -29,7 +29,7 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
             """)
     List<UserCardEntity> findDueCardsForDeck(UUID deckId, Instant now);
 
-    long countByUserDeckIdAndDeletedFalseAndSuspendedFalse(UUID userDeckId);
+    long countByUserDeckIdAndDeletedFalse(UUID userDeckId);
 
     List<UserCardEntity> findByUserDeckId(UUID userDeckId);
 }

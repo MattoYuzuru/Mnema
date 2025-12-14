@@ -61,12 +61,8 @@ class UserCardControllerWebMvcTest {
                 UUID.randomUUID(),
                 false,
                 false,
-                false,
                 "note",
-                content,
-                Instant.now(),
-                Instant.now(),
-                0
+                content
         );
 
         Page<UserCardDTO> page = new PageImpl<>(
@@ -102,12 +98,8 @@ class UserCardControllerWebMvcTest {
                 null,
                 true,
                 false,
-                false,
                 "my note",
-                effectiveContent,
-                null,
-                null,
-                0
+                effectiveContent
         );
 
         when(currentUserProvider.getUserId(any(Jwt.class))).thenReturn(userId);
@@ -135,7 +127,6 @@ class UserCardControllerWebMvcTest {
                         .content(requestBody))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.personalNote").value("my note"))
-                .andExpect(jsonPath("$.isDeleted").value(false))
-                .andExpect(jsonPath("$.isSuspended").value(false));
+                .andExpect(jsonPath("$.isDeleted").value(false));
     }
 }

@@ -99,7 +99,7 @@ public class DeckService {
             throw new SecurityException("Access denied to deck " + userDeckId);
         }
 
-        long cardsCount = userCardRepository.countByUserDeckIdAndDeletedFalseAndSuspendedFalse(userDeckId);
+        long cardsCount = userCardRepository.countByUserDeckIdAndDeletedFalse(userDeckId);
 
         return new DeckSizeDTO(userDeckId, cardsCount);
     }

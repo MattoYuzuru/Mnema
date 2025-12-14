@@ -70,7 +70,7 @@ public class CardService {
         Pageable pageable = PageRequest.of(page - 1, limit);
 
         return userCardRepository
-                .findByUserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc(userDeckId, pageable)
+                .findByUserDeckIdAndDeletedFalseOrderByCreatedAtAsc(userDeckId, pageable)
                 .map(this::toUserCardDTO);
     }
 

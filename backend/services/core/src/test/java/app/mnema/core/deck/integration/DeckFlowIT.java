@@ -181,7 +181,6 @@ class DeckFlowIT {
 
         assertThat(createdCard.userCardId()).isNotNull();
         assertThat(createdCard.isDeleted()).isFalse();
-        assertThat(createdCard.isSuspended()).isFalse();
         assertThat(createdCard.personalNote()).isEqualTo("note");
 
         // Проверяем, что карта реально лежит в БД

@@ -131,7 +131,7 @@ class CardServiceTest {
 
         when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(deck));
         when(userCardRepository
-                .findByUserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc(eq(deckId), any(Pageable.class)))
+                .findByUserDeckIdAndDeletedFalseOrderByCreatedAtAsc(eq(deckId), any(Pageable.class)))
                 .thenReturn(repoPage);
 
         Page<UserCardDTO> result = cardService.getUserCardsByDeck(userId, deckId, 1, 50);
@@ -140,7 +140,7 @@ class CardServiceTest {
         assertThat(result.getContent().getFirst().personalNote()).isEqualTo("note");
 
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
-        verify(userCardRepository).findByUserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc(eq(deckId), pageableCaptor.capture());
+        verify(userCardRepository).findByUserDeckIdAndDeletedFalseOrderByCreatedAtAsc(eq(deckId), pageableCaptor.capture());
         assertThat(pageableCaptor.getValue().getPageNumber()).isEqualTo(0);
         assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(50);
     }
@@ -360,7 +360,6 @@ class CardServiceTest {
         // для автора публичной колоды карта должна быть не кастомной
         assertThat(result.isCustom()).isFalse();
         assertThat(result.isDeleted()).isFalse();
-        assertThat(result.isSuspended()).isFalse();
         assertThat(result.personalNote()).isEqualTo("note");
 
         verify(publicCardRepository).saveAll(anyList());

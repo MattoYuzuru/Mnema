@@ -31,7 +31,7 @@ class UserCardRepositoryDataJpaTest {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void findByUserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc_filtersAndSortsCorrectly() {
+    void findByUserDeckIdAndDeletedFalseOrderByCreatedAtAsc_filtersAndSortsCorrectly() {
         UUID userId = UUID.randomUUID();
         Instant now = Instant.now();
 
@@ -89,26 +89,12 @@ class UserCardRepositoryDataJpaTest {
                 null
         );
 
-        // suspended
-        UserCardEntity suspended = new UserCardEntity(
-                userId,
-                deckId,
-                null,
-                true,
-                false,
-                "suspended",
-                content,
-                now.minusSeconds(10),
-                null
-        );
-
         userCardRepository.save(activeOlder);
         userCardRepository.save(activeNewer);
         userCardRepository.save(deleted);
-        userCardRepository.save(suspended);
 
         Page<UserCardEntity> page = userCardRepository
-                .findByUserDeckIdAndDeletedFalseAndSuspendedFalseOrderByCreatedAtAsc(
+                .findByUserDeckIdAndDeletedFalseOrderByCreatedAtAsc(
                         deckId,
                         PageRequest.of(0, 10)
                 );
