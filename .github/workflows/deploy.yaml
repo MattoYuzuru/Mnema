@@ -54,17 +54,28 @@ jobs:
       matrix:
         include:
           - name: frontend
+            kind: frontend
             context: ./frontend
             dockerfile: ./frontend/Dockerfile
+
           - name: auth
+            kind: backend
             context: ./backend
-            dockerfile: ./backend/services/auth/Dockerfile
+            dockerfile: ./backend/Dockerfile
+            target: auth-runtime
+
           - name: user
+            kind: backend
             context: ./backend
-            dockerfile: ./backend/services/user/Dockerfile
+            dockerfile: ./backend/Dockerfile
+            target: user-runtime
+
           - name: core
+            kind: backend
             context: ./backend
-            dockerfile: ./backend/services/core/Dockerfile
+            dockerfile: ./backend/Dockerfile
+            target: core-runtime
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -87,7 +98,8 @@ jobs:
         id: meta
         run: echo "TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
-      - name: Build & push ${{ matrix.name }}
+      - name: Build & push frontend
+        if: ${{ matrix.kind == 'frontend' }}
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
@@ -96,8 +108,22 @@ jobs:
           tags: |
             ghcr.io/${{ steps.repo.outputs.REPO }}/${{ matrix.name }}:${{ steps.meta.outputs.TAG }}
             ghcr.io/${{ steps.repo.outputs.REPO }}/${{ matrix.name }}:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+
+      - name: Build & push backend ${{ matrix.name }}
+        if: ${{ matrix.kind == 'backend' }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          target: ${{ matrix.target }}
+          push: true
+          tags: |
+            ghcr.io/${{ steps.repo.outputs.REPO }}/${{ matrix.name }}:${{ steps.meta.outputs.TAG }}
+            ghcr.io/${{ steps.repo.outputs.REPO }}/${{ matrix.name }}:latest
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
 
   apply-manifests:
     needs: build-and-push
