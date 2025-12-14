@@ -7,6 +7,9 @@ import app.mnema.core.deck.domain.entity.*;
 import app.mnema.core.deck.domain.request.CreateCardRequest;
 import app.mnema.core.deck.repository.*;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -15,10 +18,14 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @Service
 public class CardService {
@@ -28,17 +35,20 @@ public class CardService {
     private final PublicCardRepository publicCardRepository;
     private final PublicDeckRepository publicDeckRepository;
     private final FieldTemplateRepository fieldTemplateRepository;
+    private final ObjectMapper objectMapper;
 
     public CardService(UserDeckRepository userDeckRepository,
                        UserCardRepository userCardRepository,
                        PublicCardRepository publicCardRepository,
                        PublicDeckRepository publicDeckRepository,
-                       FieldTemplateRepository fieldTemplateRepository) {
+                       FieldTemplateRepository fieldTemplateRepository,
+                       ObjectMapper objectMapper) {
         this.userDeckRepository = userDeckRepository;
         this.userCardRepository = userCardRepository;
         this.publicCardRepository = publicCardRepository;
         this.publicDeckRepository = publicDeckRepository;
         this.fieldTemplateRepository = fieldTemplateRepository;
+        this.objectMapper = objectMapper;
     }
 
     // Просмотр всех карт в пользовательской колоде
@@ -181,52 +191,16 @@ public class CardService {
             throw new SecurityException("Access denied to deck " + userDeckId);
         }
 
+        Instant now = Instant.now();
         List<UserCardDTO> result = new ArrayList<>();
 
-        // Локальная колода без привязки к public_decks
+        // 1) Локальная колода
         if (userDeck.getPublicDeckId() == null) {
             for (CreateCardRequest request : requests) {
-                JsonNode content = request.contentOverride() != null
-                        ? request.contentOverride()
-                        : request.content();
-
-                UserCardEntity userCard = new UserCardEntity(
-                        currentUserId,
-                        userDeckId,
-                        null,
-                        true,               // кастомная карта
-                        false,
-                        request.personalNote(),
-                        content,
-                        Instant.now(),
-                        null,
-                        null,
-                        null,
-                        0,
-                        false
-                );
-
-                UserCardEntity saved = userCardRepository.save(userCard);
-                result.add(toUserCardDTO(saved));
-            }
-
-            return result;
-        }
-
-        // Колода с привязкой к публичной
-        UUID publicDeckId = userDeck.getPublicDeckId();
-
-        // Берём последнюю версию публичной колоды
-        PublicDeckEntity latestDeck = publicDeckRepository
-                .findLatestByDeckId(publicDeckId)
-                .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + publicDeckId));
-
-        // Если текущий юзер не автор – просто кастомные карты без публичной части
-        if (!latestDeck.getAuthorId().equals(currentUserId)) {
-            for (CreateCardRequest request : requests) {
-                JsonNode content = request.contentOverride() != null
-                        ? request.contentOverride()
-                        : request.content();
+                JsonNode content = request.contentOverride() != null ? request.contentOverride() : request.content();
+                if (content == null || content.isNull()) {
+                    throw new IllegalArgumentException("Card content must not be null");
+                }
 
                 UserCardEntity userCard = new UserCardEntity(
                         currentUserId,
@@ -236,7 +210,7 @@ public class CardService {
                         false,
                         request.personalNote(),
                         content,
-                        Instant.now(),
+                        now,
                         null,
                         null,
                         null,
@@ -244,19 +218,59 @@ public class CardService {
                         false
                 );
 
-                UserCardEntity saved = userCardRepository.save(userCard);
-                result.add(toUserCardDTO(saved));
+                result.add(toUserCardDTO(userCardRepository.save(userCard)));
             }
-
             return result;
         }
 
-        // Автор публичной колоды – создаём новую версию public_decks
+        UUID publicDeckId = userDeck.getPublicDeckId();
+
+        PublicDeckEntity latestDeck = publicDeckRepository
+                .findLatestByDeckId(publicDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + publicDeckId));
+
+        // 2) Не автор: добавляем только кастомные карты
+        if (!latestDeck.getAuthorId().equals(currentUserId)) {
+            for (CreateCardRequest request : requests) {
+                JsonNode content = request.contentOverride() != null ? request.contentOverride() : request.content();
+                if (content == null || content.isNull()) {
+                    throw new IllegalArgumentException("Card content must not be null");
+                }
+
+                UserCardEntity userCard = new UserCardEntity(
+                        currentUserId,
+                        userDeckId,
+                        null,
+                        true,
+                        false,
+                        request.personalNote(),
+                        content,
+                        now,
+                        null,
+                        null,
+                        null,
+                        0,
+                        false
+                );
+
+                result.add(toUserCardDTO(userCardRepository.save(userCard)));
+            }
+            return result;
+        }
+
+    /*
+      3) Автор публичной колоды: создаём новую версию public_decks как immutable snapshot.
+      Ключевые правила:
+      - created_at у public_decks должен отражать создание "логической колоды" и не меняться между версиями.
+      - public_cards в каждой версии содержат полный набор карт этой версии (snapshot).
+      - checksum обязателен для корректного sync и вычисляется на сервере по content.
+      - order_index для добавляемых карт выставляется в конец, чтобы не плодить коллизии 1/2, 1/2 и т.п.
+     */
+
         int newVersion = latestDeck.getVersion() + 1;
-        Instant now = Instant.now();
 
         PublicDeckEntity newDeckVersion = new PublicDeckEntity(
-                latestDeck.getDeckId(),     // тот же deck_id
+                latestDeck.getDeckId(),
                 newVersion,
                 latestDeck.getAuthorId(),
                 latestDeck.getName(),
@@ -266,20 +280,32 @@ public class CardService {
                 latestDeck.isListed(),
                 latestDeck.getLanguageCode(),
                 latestDeck.getTags(),
-                now,
-                now,
-                now,
+                latestDeck.getCreatedAt(), // важно: не now
+                now,                       // updated_at
+                now,                       // published_at
                 latestDeck.getForkedFromDeck()
         );
 
         PublicDeckEntity savedNewDeck = publicDeckRepository.save(newDeckVersion);
 
-        // Копируем карты из предыдущей версии в новую
+        // Клонируем карты из предыдущей версии
         List<PublicCardEntity> oldCards = publicCardRepository
                 .findByDeckIdAndDeckVersion(latestDeck.getDeckId(), latestDeck.getVersion());
 
-        List<PublicCardEntity> clonedOldCards = new ArrayList<>();
+        List<PublicCardEntity> clonedOldCards = new ArrayList<>(oldCards.size());
+        int maxOrderIndex = 0;
+
         for (PublicCardEntity old : oldCards) {
+            Integer oi = old.getOrderIndex();
+            if (oi != null && oi > maxOrderIndex) {
+                maxOrderIndex = oi;
+            }
+
+            String checksum = normalizeChecksum(old.getChecksum());
+            if (checksum == null) {
+                checksum = computeChecksum(old.getContent());
+            }
+
             PublicCardEntity clone = new PublicCardEntity(
                     savedNewDeck.getDeckId(),
                     savedNewDeck.getVersion(),
@@ -290,47 +316,51 @@ public class CardService {
                     old.getCreatedAt(),
                     old.getUpdatedAt(),
                     old.isActive(),
-                    old.getChecksum()
+                    checksum
             );
             clonedOldCards.add(clone);
         }
+
         if (!clonedOldCards.isEmpty()) {
             publicCardRepository.saveAll(clonedOldCards);
         }
 
-        // Добавляем НОВЫЕ публичные карты для новой версии
+        // Добавляем новые публичные карты в конец
+        int nextOrderIndex = maxOrderIndex + 1;
 
-        int highestOrderIndex = oldCards.stream()
-                .mapToInt(PublicCardEntity::getOrderIndex)
-                .max()
-                .orElse(oldCards.size() + 1);
-
-        List<PublicCardEntity> newPublicCards = new ArrayList<>();
+        List<PublicCardEntity> newPublicCards = new ArrayList<>(requests.size());
         for (CreateCardRequest request : requests) {
+            if (request.content() == null || request.content().isNull()) {
+                throw new IllegalArgumentException("Public card content must not be null");
+            }
+
+            String checksum = computeChecksum(request.content());
+
             PublicCardEntity pc = new PublicCardEntity(
                     savedNewDeck.getDeckId(),
                     savedNewDeck.getVersion(),
                     savedNewDeck,
                     request.content(),
-                    request.orderIndex(),
+                    nextOrderIndex++,
                     request.tags(),
                     now,
                     null,
                     true,
-                    request.checksum()
+                    checksum
             );
+
             newPublicCards.add(pc);
         }
 
         List<PublicCardEntity> savedNewPublicCards =
                 newPublicCards.isEmpty() ? List.of() : publicCardRepository.saveAll(newPublicCards);
 
-        // Обновляем версию в юзер-колоде автора (остальные будут синкаться вручную)
+        // Обновляем текущую версию в user_decks автора
         userDeck.setCurrentVersion(savedNewDeck.getVersion());
         userDeck.setLastSyncedAt(now);
         userDeckRepository.save(userDeck);
 
-        // Создаём юзер-карты для новых публичных карт (старые юзер-карты остаются как есть)
+        // Создаём user_cards для новых публичных карт (старые user_cards не трогаем)
         for (int i = 0; i < savedNewPublicCards.size(); i++) {
             PublicCardEntity publicCard = savedNewPublicCards.get(i);
             CreateCardRequest request = requests.get(i);
@@ -339,7 +369,7 @@ public class CardService {
                     currentUserId,
                     userDeckId,
                     publicCard.getCardId(),
-                    false,                 // не кастомная, а каноническая для автора
+                    false,
                     false,
                     request.personalNote(),
                     request.contentOverride(),
@@ -351,12 +381,83 @@ public class CardService {
                     false
             );
 
-            UserCardEntity savedUserCard = userCardRepository.save(userCard);
-            result.add(toUserCardDTO(savedUserCard));
+            result.add(toUserCardDTO(userCardRepository.save(userCard)));
         }
 
         return result;
     }
+
+    /*
+      Детерминированный checksum для JSON.
+      Мы каноникалим объект: сортируем ключи рекурсивно, массивы оставляем в порядке.
+      Это делает checksum стабильным при разных порядках полей.
+     */
+    private String computeChecksum(JsonNode content) {
+        if (content == null || content.isNull()) {
+            return null;
+        }
+
+        JsonNode canonical = canonicalizeJson(content);
+
+        byte[] bytes;
+        try {
+            bytes = objectMapper.writeValueAsBytes(canonical);
+        } catch (Exception e) {
+            throw new IllegalStateException("Failed to serialize card content for checksum", e);
+        }
+
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(bytes);
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) {
+                sb.append(String.format("%02x", b));
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            throw new IllegalStateException("SHA-256 not available", e);
+        }
+    }
+
+    private JsonNode canonicalizeJson(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return NullNode.getInstance();
+        }
+
+        if (node.isObject()) {
+            ObjectNode obj = (ObjectNode) node;
+            ObjectNode out = JsonNodeFactory.instance.objectNode();
+
+            List<String> names = new ArrayList<>();
+            obj.fieldNames().forEachRemaining(names::add);
+            Collections.sort(names);
+
+            for (String name : names) {
+                out.set(name, canonicalizeJson(obj.get(name)));
+            }
+            return out;
+        }
+
+        if (node.isArray()) {
+            ArrayNode arr = (ArrayNode) node;
+            ArrayNode out = JsonNodeFactory.instance.arrayNode();
+            for (JsonNode el : arr) {
+                out.add(canonicalizeJson(el));
+            }
+            return out;
+        }
+
+        return node;
+    }
+
+    private String normalizeChecksum(String checksum) {
+        if (checksum == null) {
+            return null;
+        }
+        String s = checksum.trim();
+        return s.isEmpty() ? null : s;
+    }
+
 
     // Обновление юзер карты (без SR логики)
     @Transactional

@@ -1,7 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { ReactiveFormsModule, FormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
@@ -14,11 +14,12 @@ import { AddCardsModalComponent } from './add-cards-modal.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
+import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-deck-profile',
     standalone: true,
-    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, ConfirmationDialogComponent, InputComponent, TextareaComponent],
+    imports: [NgIf, NgFor, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, ConfirmationDialogComponent, InputComponent, TextareaComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -30,41 +31,41 @@ import { TextareaComponent } from '../../shared/components/textarea.component';
 
       <div class="deck-meta">
         <div class="meta-item">
-          <span class="meta-label">Algorithm:</span>
+          <span class="meta-label">{{ 'deckProfile.algorithm' | translate }}:</span>
           <span class="meta-value">{{ deck.algorithmId }}</span>
         </div>
         <div class="meta-item">
-          <span class="meta-label">Auto-update:</span>
-          <span class="meta-value">{{ deck.autoUpdate ? 'Yes' : 'No' }}</span>
+          <span class="meta-label">{{ 'deckProfile.autoUpdate' | translate }}:</span>
+          <span class="meta-value">{{ deck.autoUpdate ? ('deckProfile.yes' | translate) : ('deckProfile.no' | translate) }}</span>
         </div>
         <div class="meta-item" *ngIf="deck.publicDeckId">
-          <span class="meta-label">Version:</span>
+          <span class="meta-label">{{ 'deckProfile.version' | translate }}:</span>
           <span class="meta-value">{{ deck.currentVersion }}<span *ngIf="latestPublicVersion !== null"> / {{ latestPublicVersion }}</span></span>
         </div>
         <div class="meta-item" *ngIf="!deck.publicDeckId">
-          <span class="meta-label">Version:</span>
+          <span class="meta-label">{{ 'deckProfile.version' | translate }}:</span>
           <span class="meta-value">{{ deck.currentVersion }}</span>
         </div>
       </div>
 
       <div class="deck-actions">
         <app-button variant="primary" size="md" (click)="learn()">
-          Learn
+          {{ 'deckProfile.learn' | translate }}
         </app-button>
         <app-button variant="secondary" size="md" (click)="browse()">
-          Browse Cards
+          {{ 'deckProfile.browseCards' | translate }}
         </app-button>
         <app-button variant="secondary" (click)="openAddCards()">
-          Add Cards
+          {{ 'deckProfile.addCards' | translate }}
         </app-button>
         <app-button variant="ghost" (click)="sync()" *ngIf="needsUpdate()">
-          Sync to Latest
+          {{ 'deckProfile.sync' | translate }}
         </app-button>
         <app-button variant="secondary" (click)="openEditModal()">
-          Edit
+          {{ 'deckProfile.edit' | translate }}
         </app-button>
         <app-button variant="ghost" (click)="openDeleteConfirm()">
-          Delete
+          {{ 'deckProfile.delete' | translate }}
         </app-button>
       </div>
     </div>
@@ -80,70 +81,77 @@ import { TextareaComponent } from '../../shared/components/textarea.component';
     <div *ngIf="showEditModal && deck" class="modal-overlay" (click)="closeEditModal()">
       <div class="modal-content" (click)="$event.stopPropagation()">
         <div class="modal-header">
-          <h2>Edit Deck</h2>
+          <h2>{{ 'deckProfile.editDeck' | translate }}</h2>
           <button class="close-btn" (click)="closeEditModal()">&times;</button>
         </div>
         <div class="modal-body">
           <form [formGroup]="editForm" class="edit-form">
             <app-input
-              label="Display Name *"
+              [label]="('deckProfile.displayName' | translate) + ' *'"
               formControlName="displayName"
               [hasError]="editForm.get('displayName')?.invalid && editForm.get('displayName')?.touched || false"
-              errorMessage="Name is required"
+              [errorMessage]="'deckProfile.required' | translate"
             ></app-input>
             <app-textarea
-              label="Description"
+              [label]="'deckProfile.description' | translate"
               formControlName="displayDescription"
               [rows]="4"
             ></app-textarea>
             <div class="checkbox-group">
               <label>
                 <input type="checkbox" formControlName="autoUpdate" />
-                Auto-update when new version is available
+                {{ 'deckProfile.autoUpdateLabel' | translate }}
               </label>
             </div>
 
             <div *ngIf="isAuthor" class="public-deck-section">
-              <h3 class="section-title">Public Deck Settings</h3>
+              <h3 class="section-title">{{ 'deckProfile.publicDeckSettings' | translate }}</h3>
               <app-input
-                label="Public Deck Name *"
+                [label]="('deckProfile.publicDeckName' | translate) + ' *'"
                 formControlName="publicName"
                 [hasError]="editForm.get('publicName')?.invalid && editForm.get('publicName')?.touched || false"
-                errorMessage="Public deck name is required"
+                [errorMessage]="'deckProfile.required' | translate"
               ></app-input>
               <app-textarea
-                label="Public Description"
+                [label]="'deckProfile.publicDescription' | translate"
                 formControlName="publicDescription"
                 [rows]="4"
               ></app-textarea>
-              <app-input
-                label="Language"
-                formControlName="language"
-              ></app-input>
-              <app-input
-                label="Tags (comma-separated)"
-                formControlName="tags"
-                placeholder="e.g., language, vocabulary, spanish"
-              ></app-input>
+              <div class="form-group">
+                <label>{{ 'deckProfile.language' | translate }}</label>
+                <select formControlName="language" class="language-select">
+                  <option value="en">English</option>
+                  <option value="ru">Русский (Russian)</option>
+                  <option value="jp">日本語 (Japanese)</option>
+                  <option value="sp">Español (Spanish)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>{{ 'deckProfile.tags' | translate }}</label>
+                <input type="text" class="tag-input" [(ngModel)]="tagInput" [ngModelOptions]="{standalone: true}" (keydown.enter)="addTag($event)" [placeholder]="'deckProfile.tagsPlaceholder' | translate" />
+                <div *ngIf="tags.length > 0" class="tags-list">
+                  <span *ngFor="let tag of tags; let i = index" class="tag-chip">{{ tag }} <button type="button" (click)="removeTag(i)">×</button></span>
+                </div>
+              </div>
               <div class="checkbox-group">
                 <label>
                   <input type="checkbox" formControlName="isPublic" />
-                  Make deck public
+                  {{ 'deckProfile.makePublic' | translate }}
                 </label>
               </div>
               <div class="checkbox-group">
                 <label>
                   <input type="checkbox" formControlName="isListed" />
-                  List in public catalog
+                  {{ 'deckProfile.listInCatalog' | translate }}
                 </label>
               </div>
             </div>
           </form>
         </div>
         <div class="modal-footer">
-          <app-button variant="ghost" (click)="closeEditModal()" [disabled]="saving">Cancel</app-button>
+          <app-button variant="ghost" (click)="closeEditModal()" [disabled]="saving">{{ 'deckProfile.cancel' | translate }}</app-button>
           <app-button variant="primary" (click)="saveEdit()" [disabled]="editForm.invalid || saving">
-            {{ saving ? 'Saving...' : 'Save' }}
+            {{ saving ? ('deckProfile.saving' | translate) : ('deckProfile.save' | translate) }}
           </app-button>
         </div>
       </div>
@@ -151,10 +159,10 @@ import { TextareaComponent } from '../../shared/components/textarea.component';
 
     <app-confirmation-dialog
       [open]="showDeleteConfirm"
-      title="Delete Deck"
-      message="Are you sure you want to delete this deck? This will archive it and it can be restored later."
-      confirmText="Delete"
-      cancelText="Cancel"
+      [title]="'deckProfile.deleteDeck' | translate"
+      [message]="'deckProfile.deleteDeckMessage' | translate"
+      [confirmText]="'deckProfile.confirmDelete' | translate"
+      [cancelText]="'deckProfile.cancel' | translate"
       (confirm)="confirmDelete()"
       (cancel)="closeDeleteConfirm()"
     ></app-confirmation-dialog>
@@ -306,6 +314,64 @@ import { TextareaComponent } from '../../shared/components/textarea.component';
         font-weight: 600;
         margin: 0 0 var(--spacing-md) 0;
       }
+
+      .form-group {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+      }
+
+      .form-group label {
+        font-size: 0.875rem;
+        font-weight: 500;
+        color: var(--color-text-primary);
+      }
+
+      .language-select {
+        width: 100%;
+        padding: var(--spacing-sm) var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+        font-size: 0.9rem;
+        background: var(--color-card-background);
+        cursor: pointer;
+      }
+
+      .tag-input {
+        width: 100%;
+        padding: var(--spacing-sm) var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+        font-size: 0.9rem;
+        background: var(--color-card-background);
+      }
+
+      .tags-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+        margin-top: var(--spacing-sm);
+      }
+
+      .tag-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        padding: var(--spacing-xs) var(--spacing-sm);
+        background: var(--color-background);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-full);
+        font-size: 0.85rem;
+      }
+
+      .tag-chip button {
+        background: none;
+        border: none;
+        cursor: pointer;
+        font-size: 1.2rem;
+        line-height: 1;
+        padding: 0;
+      }
     `]
 })
 export class DeckProfileComponent implements OnInit {
@@ -321,6 +387,8 @@ export class DeckProfileComponent implements OnInit {
     showDeleteConfirm = false;
     saving = false;
     editForm!: FormGroup;
+    tagInput = '';
+    tags: string[] = [];
 
     constructor(
         private route: ActivatedRoute,
@@ -431,12 +499,28 @@ export class DeckProfileComponent implements OnInit {
                 formConfig.isPublic = [this.publicDeck.isPublic];
                 formConfig.isListed = [this.publicDeck.isListed];
                 formConfig.language = [this.publicDeck.language];
-                formConfig.tags = [this.publicDeck.tags?.join(', ')];
+                this.tags = [...(this.publicDeck.tags || [])];
+            } else {
+                this.tags = [];
             }
 
+            this.tagInput = '';
             this.editForm = this.fb.group(formConfig);
             this.showEditModal = true;
         }
+    }
+
+    addTag(event: Event): void {
+        event.preventDefault();
+        const tag = this.tagInput.trim();
+        if (tag && !this.tags.includes(tag)) {
+            this.tags.push(tag);
+            this.tagInput = '';
+        }
+    }
+
+    removeTag(index: number): void {
+        this.tags.splice(index, 1);
     }
 
     closeEditModal(): void {
@@ -462,7 +546,7 @@ export class DeckProfileComponent implements OnInit {
                 isPublic: formValue.isPublic,
                 isListed: formValue.isListed,
                 language: formValue.language,
-                tags: formValue.tags ? formValue.tags.split(',').map((t: string) => t.trim()).filter((t: string) => t) : []
+                tags: this.tags
             };
 
             forkJoin({

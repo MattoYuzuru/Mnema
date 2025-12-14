@@ -26,7 +26,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           <input
             type="search"
             class="global-search"
-            placeholder="Search public decks..."
+            [placeholder]="'publicDecks.searchPlaceholder' | translate"
           />
         </div>
 

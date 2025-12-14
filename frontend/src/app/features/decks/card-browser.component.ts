@@ -29,10 +29,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       <header class="page-header">
         <div class="header-left">
           <app-button variant="ghost" size="sm" (click)="backToDeck()">
-            ← Back to Deck
+            {{ 'cardBrowser.backToDeck' | translate }}
           </app-button>
           <div>
-            <h1>Card Browser</h1>
+            <h1>{{ 'cardBrowser.title' | translate }}</h1>
             <p class="card-count">{{ cards.length }} {{ 'cardBrowser.cards' | translate }}</p>
           </div>
         </div>
@@ -59,18 +59,18 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       <div *ngIf="viewMode === 'list' && cards.length > 0" class="cards-table">
         <div class="card-row header-row">
           <div class="card-col">{{ 'cardBrowser.frontPreview' | translate }}</div>
-          <div class="card-col">Reviews</div>
-          <div class="card-col">Next Review</div>
-          <div class="card-col">Status</div>
-          <div class="card-col-actions">Actions</div>
+          <div class="card-col">{{ 'cardBrowser.reviews' | translate }}</div>
+          <div class="card-col">{{ 'cardBrowser.nextReview' | translate }}</div>
+          <div class="card-col">{{ 'cardBrowser.status' | translate }}</div>
+          <div class="card-col-actions">{{ 'cardBrowser.actions' | translate }}</div>
         </div>
         <div *ngFor="let card of cards" class="card-row">
           <div class="card-col">{{ getFrontPreview(card) }}</div>
           <div class="card-col">{{ card.reviewCount }}</div>
           <div class="card-col">{{ formatDate(card.nextReviewAt) }}</div>
           <div class="card-col">
-            <span *ngIf="card.isSuspended" class="status-badge suspended">Suspended</span>
-            <span *ngIf="!card.isSuspended" class="status-badge active">Active</span>
+            <span *ngIf="card.isSuspended" class="status-badge suspended">{{ 'cardBrowser.suspended' | translate }}</span>
+            <span *ngIf="!card.isSuspended" class="status-badge active">{{ 'cardBrowser.active' | translate }}</span>
           </div>
           <div class="card-col-actions">
             <button class="icon-btn" (click)="openEditModal(card)" title="Edit card">
@@ -125,7 +125,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               </div>
             </div>
           </div>
-          <p class="flip-hint">{{ 'cardBrowser.clickToFlip' | translate }}</p>
+          <p class="flip-hint">{{ 'cardBrowser.clickToFlip' | translate }} • {{ 'cardBrowser.keyboardHint' | translate }}</p>
         </div>
 
         <div class="card-actions">
@@ -134,12 +134,12 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
               <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
             </svg>
-            Edit Card
+            {{ 'cardBrowser.editCard' | translate }}
           </app-button>
         </div>
 
         <div *ngIf="currentCard?.personalNote" class="personal-note">
-          <h3>Personal Note</h3>
+          <h3>{{ 'cardBrowser.personalNote' | translate }}</h3>
           <p>{{ currentCard?.personalNote }}</p>
         </div>
       </div>
@@ -155,7 +155,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
     <div *ngIf="showEditModal && editingCard && template" class="modal-overlay" (click)="closeEditModal()">
       <div class="modal-content" (click)="$event.stopPropagation()">
         <div class="modal-header">
-          <h2>Edit Card</h2>
+          <h2>{{ 'cardBrowser.editCard' | translate }}</h2>
           <button class="close-btn" (click)="closeEditModal()">&times;</button>
         </div>
         <div class="modal-body">
@@ -184,7 +184,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               ></app-input>
             </div>
             <app-textarea
-              label="Personal Note"
+              [label]="'cardBrowser.personalNote' | translate"
               formControlName="personalNote"
               [rows]="3"
               placeholder="Add a personal note (optional)"
@@ -192,15 +192,15 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             <div class="checkbox-group">
               <label>
                 <input type="checkbox" formControlName="isSuspended" />
-                Suspend this card (temporarily hide from reviews)
+                {{ 'cardBrowser.suspendCard' | translate }}
               </label>
             </div>
           </form>
         </div>
         <div class="modal-footer">
-          <app-button variant="ghost" (click)="closeEditModal()" [disabled]="saving">Cancel</app-button>
+          <app-button variant="ghost" (click)="closeEditModal()" [disabled]="saving">{{ 'cardBrowser.cancel' | translate }}</app-button>
           <app-button variant="primary" (click)="saveEdit()" [disabled]="editForm.invalid || saving">
-            {{ saving ? 'Saving...' : 'Save' }}
+            {{ saving ? ('cardBrowser.saving' | translate) : ('cardBrowser.save' | translate) }}
           </app-button>
         </div>
       </div>

@@ -248,6 +248,34 @@ public class DeckService {
             throw new IllegalStateException("Local deck has no public source");
         }
 
+    /*
+      Документация sync (как и почему это работает)
+
+      Модель данных:
+      - public_decks хранит immutable версии колоды.
+      - public_cards хранит snapshot карт внутри каждой версии.
+      - card_id в public_cards генерируется заново при клонировании в новую версию и глобально уникален.
+      - user_cards ссылаются на public_cards через public_card_id = card_id и не знают deck_version.
+
+      Проблема:
+      - При выходе новой версии те же логические карты получают новые card_id.
+      - Если при sync просто "добавить карты последней версии", будут дубли: старые user_cards останутся, новые добавятся.
+
+      Решение:
+      - Используем public_cards.checksum как стабильный идентификатор "логической карты" между версиями.
+      - При sync делаем две фазы:
+        1) Rewire: если checksum user-старой public-card совпадает с checksum публичной карты в latest версии,
+           обновляем user_cards.public_card_id на card_id из latest версии.
+           Так сохраняется SR прогресс и локальные override, так как user_card_id остаётся прежним.
+        2) Add missing: добавляем новые user_cards только для тех checksum latest версии, которых у пользователя ещё не было.
+           Это предотвращает рост user_cards при каждом обновлении.
+
+      Ограничение:
+      - checksum должен быть заполнен и детерминирован (на сервере).
+      - Внутри одной версии checksum должен быть уникальным, иначе маппинг неоднозначен.
+        При обнаружении дублей checksum мы не делаем rewire для таких checksum (fail-safe).
+     */
+
         UUID publicDeckId = deck.getPublicDeckId();
 
         PublicDeckEntity latestDeck = publicDeckRepository
@@ -257,14 +285,27 @@ public class DeckService {
         int latestVersion = latestDeck.getVersion();
         Instant now = Instant.now();
 
-        // 1) Последние публичные карты
-        List<PublicCardEntity> latestPublicCards =
+        // Если уже на последней версии, просто обновляем last_synced_at
+        if (Objects.equals(deck.getCurrentVersion(), latestVersion)) {
+            deck.setLastSyncedAt(now);
+            return toUserDeckDTO(userDeckRepository.save(deck));
+        }
+
+        // 1) Последние публичные карты (берём только active)
+        List<PublicCardEntity> latestPublicCardsAll =
                 publicCardRepository.findByDeckIdAndDeckVersion(publicDeckId, latestVersion);
 
-        // 2) Все юзер-карты колоды (включая deleted/suspended), чтобы не воскрешать удалённое
+        List<PublicCardEntity> latestPublicCards = new ArrayList<>();
+        for (PublicCardEntity pc : latestPublicCardsAll) {
+            if (pc.isActive()) {
+                latestPublicCards.add(pc);
+            }
+        }
+
+        // 2) Все user-cards колоды (включая deleted/suspended), чтобы не "воскрешать" скрытые карты
         List<UserCardEntity> userCards = userCardRepository.findByUserDeckId(userDeckId);
 
-        // 3) Собираем publicCardId из юзер-карт и подтягиваем соответствующие public-карты батчем
+        // 3) Собираем publicCardId из user-cards и подтягиваем соответствующие public-cards (чтобы получить их checksum)
         List<UUID> linkedPublicCardIds = new ArrayList<>();
         for (UserCardEntity uc : userCards) {
             if (uc.getPublicCardId() != null) {
@@ -276,15 +317,15 @@ public class DeckService {
                 ? List.of()
                 : publicCardRepository.findByCardIdIn(linkedPublicCardIds);
 
-        // cardId -> publicCard (для старых привязок)
         Map<UUID, PublicCardEntity> linkedByCardId = new HashMap<>();
         for (PublicCardEntity pc : linkedPublicCards) {
             linkedByCardId.putIfAbsent(pc.getCardId(), pc);
         }
 
-        // checksum -> publicCard (для последней версии)
+        // checksum -> publicCard для latest версии (только уникальные checksum)
         Map<String, PublicCardEntity> latestByChecksum = new HashMap<>();
         Set<String> duplicateChecksums = new HashSet<>();
+
         for (PublicCardEntity pc : latestPublicCards) {
             String chk = normalizeChecksum(pc.getChecksum());
             if (chk == null) {
@@ -295,18 +336,17 @@ public class DeckService {
                 duplicateChecksums.add(chk);
             }
         }
-        // если checksum не уникален в последней версии, не делаем rewire по нему (слишком рискованно)
         for (String dup : duplicateChecksums) {
             latestByChecksum.remove(dup);
         }
 
-        // чтобы не создавать дубликаты по publicCardId
+        // Все public_card_id, которые уже есть у пользователя
         Set<UUID> existingLinkedPublicCardIds = new HashSet<>(linkedPublicCardIds);
 
-        // чтобы понимать, какие checksum уже присутствуют у пользователя (включая deleted)
+        // checksum, которые уже присутствуют у пользователя (включая deleted)
         Set<String> knownChecksums = new HashSet<>();
 
-        // 4) Rewire: если у юзер-карты checksum совпал с последней версией, меняем publicCardId на новый cardId
+        // 4) Rewire
         List<UserCardEntity> toUpdate = new ArrayList<>();
         for (UserCardEntity uc : userCards) {
             UUID oldPublicCardId = uc.getPublicCardId();
@@ -340,7 +380,6 @@ public class DeckService {
                 continue;
             }
 
-            // защита от коллизий: если уже есть юзер-карта с таким publicCardId, не трогаем
             if (existingLinkedPublicCardIds.contains(newPublicCardId)) {
                 continue;
             }
@@ -358,12 +397,11 @@ public class DeckService {
             userCardRepository.saveAll(toUpdate);
         }
 
-        // 5) Add missing: добавляем юзер-карты для новых public-карт, которых нет по checksum
+        // 5) Add missing (только активные latest карты)
         List<UserCardEntity> toInsert = new ArrayList<>();
         for (PublicCardEntity pc : latestPublicCards) {
             String chk = normalizeChecksum(pc.getChecksum());
 
-            // если checksum уже был в колоде пользователя, считаем, что карта уже есть
             if (chk != null && knownChecksums.contains(chk)) {
                 continue;
             }
@@ -397,14 +435,8 @@ public class DeckService {
             userCardRepository.saveAll(toInsert);
         }
 
-        // 6) Обновляем версию колоды
-        boolean versionChanged = !Objects.equals(deck.getCurrentVersion(), latestVersion)
-                || !Objects.equals(deck.getSubscribedVersion(), latestVersion);
-
-        if (versionChanged) {
-            deck.setCurrentVersion(latestVersion);
-            deck.setSubscribedVersion(latestVersion);
-        }
+        // 6) Обновляем только current_version, subscribed_version не трогаем
+        deck.setCurrentVersion(latestVersion);
         deck.setLastSyncedAt(now);
 
         deck = userDeckRepository.save(deck);
@@ -484,6 +516,8 @@ public class DeckService {
             throw new IllegalStateException("Author cannot fork own deck");
         }
 
+        Instant now = Instant.now();
+
         UserDeckDTO userDeckDTO = new UserDeckDTO(
                 null,
                 currentUserId,
@@ -495,8 +529,8 @@ public class DeckService {
                 null,
                 publicDeck.getName(),
                 publicDeck.getDescription(),
-                Instant.now(),
-                Instant.now(),
+                now,
+                now,
                 false
         );
 
@@ -508,6 +542,10 @@ public class DeckService {
         List<UserCardEntity> userCardEntities = new ArrayList<>();
 
         for (PublicCardEntity publicCard : publicCardEntities) {
+            if (!publicCard.isActive()) {
+                continue;
+            }
+
             UserCardEntity userCard = new UserCardEntity(
                     currentUserId,
                     userDeckEntity.getUserDeckId(),
@@ -516,7 +554,7 @@ public class DeckService {
                     false,
                     null,
                     null,
-                    Instant.now(),
+                    now,
                     null,
                     null,
                     null,

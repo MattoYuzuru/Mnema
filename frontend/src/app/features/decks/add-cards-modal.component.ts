@@ -9,6 +9,7 @@ import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.mo
 import { ButtonComponent } from '../../shared/components/button.component';
 import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
+import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 interface PendingCard {
     content: { [key: string]: string };
@@ -17,16 +18,16 @@ interface PendingCard {
 @Component({
     selector: 'app-add-cards-modal',
     standalone: true,
-    imports: [ReactiveFormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent],
+    imports: [ReactiveFormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe],
     template: `
     <div class="modal-overlay" (click)="onCancel()">
       <div class="modal-content" (click)="$event.stopPropagation()">
         <div class="modal-header">
-          <h2>Add Cards</h2>
+          <h2>{{ 'addCards.title' | translate }}</h2>
           <button class="close-btn" (click)="onCancel()">&times;</button>
         </div>
 
-        <div *ngIf="loading" class="loading-section">Loading template...</div>
+        <div *ngIf="loading" class="loading-section">{{ 'addCards.loadingTemplate' | translate }}</div>
 
         <div *ngIf="!loading && template" class="modal-body">
           <form [formGroup]="cardForm" class="card-form">
@@ -38,7 +39,7 @@ interface PendingCard {
                 [formControlName]="field.name"
                 [placeholder]="field.helpText || 'Enter ' + field.label"
                 [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
-                [errorMessage]="'Required'"
+                [errorMessage]="'wizard.required' | translate"
               ></app-input>
 
               <app-textarea
@@ -56,19 +57,19 @@ interface PendingCard {
                 [formControlName]="field.name"
                 [placeholder]="field.helpText || 'Enter URL'"
                 [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
-                [errorMessage]="'Required'"
+                [errorMessage]="'wizard.required' | translate"
               ></app-input>
             </div>
 
             <div class="form-actions">
               <app-button variant="secondary" type="button" [disabled]="cardForm.invalid" (click)="addCard()">
-                Add to List ({{ pendingCards.length }})
+                {{ 'addCards.addToList' | translate }} ({{ pendingCards.length }})
               </app-button>
             </div>
           </form>
 
           <div *ngIf="pendingCards.length > 0" class="pending-cards">
-            <h3>Cards to Add ({{ pendingCards.length }})</h3>
+            <h3>{{ 'addCards.cardsToAdd' | translate }} ({{ pendingCards.length }})</h3>
             <div class="card-list">
               <div *ngFor="let card of pendingCards; let i = index" class="card-item">
                 <span class="card-preview">{{ getCardPreview(card) }}</span>
@@ -79,9 +80,9 @@ interface PendingCard {
         </div>
 
         <div class="modal-footer">
-          <app-button variant="ghost" (click)="onCancel()" [disabled]="saving">Cancel</app-button>
+          <app-button variant="ghost" (click)="onCancel()" [disabled]="saving">{{ 'addCards.cancel' | translate }}</app-button>
           <app-button variant="primary" (click)="saveCards()" [disabled]="pendingCards.length === 0 || saving">
-            {{ saving ? 'Saving...' : 'Save ' + pendingCards.length + ' Cards' }}
+            {{ saving ? ('addCards.saving' | translate) : (('addCards.saveCards' | translate).replace('{{count}}', pendingCards.length.toString())) }}
           </app-button>
         </div>
       </div>
