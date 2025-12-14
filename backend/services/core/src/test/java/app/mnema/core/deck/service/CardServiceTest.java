@@ -120,11 +120,7 @@ class CardServiceTest {
                 "note",
                 content,
                 Instant.now(),
-                null,
-                null,
-                null,
-                0,
-                false
+                null
         );
 
         Page<UserCardEntity> repoPage = new PageImpl<>(

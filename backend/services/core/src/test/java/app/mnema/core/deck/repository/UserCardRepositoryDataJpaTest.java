@@ -60,11 +60,7 @@ class UserCardRepositoryDataJpaTest {
                 "older",
                 content,
                 now.minusSeconds(60),
-                null,
-                null,
-                null,
-                0,
-                false
+                null
         );
 
         // active newer
@@ -77,11 +73,7 @@ class UserCardRepositoryDataJpaTest {
                 "newer",
                 content,
                 now,
-                null,
-                null,
-                null,
-                0,
-                false
+                null
         );
 
         // deleted
@@ -94,11 +86,7 @@ class UserCardRepositoryDataJpaTest {
                 "deleted",
                 content,
                 now.minusSeconds(30),
-                null,
-                null,
-                null,
-                0,
-                false
+                null
         );
 
         // suspended
@@ -111,11 +99,7 @@ class UserCardRepositoryDataJpaTest {
                 "suspended",
                 content,
                 now.minusSeconds(10),
-                null,
-                null,
-                null,
-                0,
-                true
+                null
         );
 
         userCardRepository.save(activeOlder);

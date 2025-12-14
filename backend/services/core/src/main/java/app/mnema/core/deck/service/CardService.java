@@ -211,11 +211,7 @@ public class CardService {
                         request.personalNote(),
                         content,
                         now,
-                        null,
-                        null,
-                        null,
-                        0,
-                        false
+                        null
                 );
 
                 result.add(toUserCardDTO(userCardRepository.save(userCard)));
@@ -246,11 +242,7 @@ public class CardService {
                         request.personalNote(),
                         content,
                         now,
-                        null,
-                        null,
-                        null,
-                        0,
-                        false
+                        null
                 );
 
                 result.add(toUserCardDTO(userCardRepository.save(userCard)));
@@ -374,11 +366,7 @@ public class CardService {
                     request.personalNote(),
                     request.contentOverride(),
                     now,
-                    null,
-                    null,
-                    null,
-                    0,
-                    false
+                    null
             );
 
             result.add(toUserCardDTO(userCardRepository.save(userCard)));
@@ -477,7 +465,6 @@ public class CardService {
         card.setPersonalNote(dto.personalNote());
         // Для простоты считаем, что effectiveContent, присланный с фронта, и есть новый override
         card.setContentOverride(dto.effectiveContent());
-        card.setSuspended(dto.isSuspended());
         card.setDeleted(dto.isDeleted());
         card.setUpdatedAt(Instant.now());
 
@@ -511,12 +498,8 @@ public class CardService {
                 c.getPublicCardId(),
                 c.isCustom(),
                 c.isDeleted(),
-                c.isSuspended(),
                 c.getPersonalNote(),
-                effective,
-                c.getLastReviewAt(),
-                c.getNextReviewAt(),
-                c.getReviewCount()
+                effective
         );
     }
 

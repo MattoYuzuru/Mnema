@@ -46,18 +46,6 @@ public class UserCardEntity {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
-    @Column(name = "last_review_at")
-    private Instant lastReviewAt;
-
-    @Column(name = "next_review_at")
-    private Instant nextReviewAt;
-
-    @Column(name = "review_count", nullable = false)
-    private int reviewCount;
-
-    @Column(name = "is_suspended", nullable = false)
-    private boolean suspended;
-
     public UserCardEntity() {
     }
 
@@ -70,11 +58,7 @@ public class UserCardEntity {
             String personalNote,
             JsonNode contentOverride,
             Instant createdAt,
-            Instant updatedAt,
-            Instant lastReviewAt,
-            Instant nextReviewAt,
-            int reviewCount,
-            boolean suspended
+            Instant updatedAt
     ) {
         this.userId = userId;
         this.userDeckId = userDeckId;
@@ -85,10 +69,6 @@ public class UserCardEntity {
         this.contentOverride = contentOverride;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
-        this.lastReviewAt = lastReviewAt;
-        this.nextReviewAt = nextReviewAt;
-        this.reviewCount = reviewCount;
-        this.suspended = suspended;
     }
 
     public UUID getUserCardId() {
@@ -169,37 +149,5 @@ public class UserCardEntity {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
-    }
-
-    public Instant getLastReviewAt() {
-        return lastReviewAt;
-    }
-
-    public void setLastReviewAt(Instant lastReviewAt) {
-        this.lastReviewAt = lastReviewAt;
-    }
-
-    public Instant getNextReviewAt() {
-        return nextReviewAt;
-    }
-
-    public void setNextReviewAt(Instant nextReviewAt) {
-        this.nextReviewAt = nextReviewAt;
-    }
-
-    public int getReviewCount() {
-        return reviewCount;
-    }
-
-    public void setReviewCount(int reviewCount) {
-        this.reviewCount = reviewCount;
-    }
-
-    public boolean isSuspended() {
-        return suspended;
-    }
-
-    public void setSuspended(boolean suspended) {
-        this.suspended = suspended;
     }
 }

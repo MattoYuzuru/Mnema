@@ -24,7 +24,6 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
             join SrCardStateEntity s on s.userCardId = c.userCardId
             where c.userDeckId = :deckId
                 and c.deleted = false
-                and c.suspended = false
                 and s.nextReviewAt <= :now
             order by s.nextReviewAt asc
             """)

@@ -420,11 +420,7 @@ public class DeckService {
                     null,
                     null,
                     now,
-                    null,
-                    null,
-                    null,
-                    0,
-                    false
+                    null
             );
 
             toInsert.add(newUserCard);
@@ -555,11 +551,7 @@ public class DeckService {
                     null,
                     null,
                     now,
-                    null,
-                    null,
-                    null,
-                    0,
-                    false
+                    null
             );
             userCardEntities.add(userCard);
         }

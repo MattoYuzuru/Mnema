@@ -10,11 +10,7 @@ public record UserCardDTO(
         UUID publicCardId,
         boolean isCustom,
         boolean isDeleted,
-        boolean isSuspended,
         String personalNote,
-        JsonNode effectiveContent,
-        Instant lastReviewAt,
-        Instant nextReviewAt,
-        int reviewCount
+        JsonNode effectiveContent
 ) {
 }
