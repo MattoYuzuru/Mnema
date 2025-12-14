@@ -11,6 +11,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -44,6 +45,15 @@ public class UserDeckController {
     ) {
         var userId = currentUserProvider.getUserId(jwt);
         return deckService.getUserDeck(userId, userDeckId);
+    }
+
+    // GET /decks/deleted
+    @GetMapping("/deleted")
+    public List<UserDeckDTO> getDeletedDecks(
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        return deckService.getDeletedUserDecks(userId);
     }
 
     // POST /decks

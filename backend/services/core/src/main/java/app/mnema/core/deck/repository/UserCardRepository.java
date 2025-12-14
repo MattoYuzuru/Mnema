@@ -31,4 +31,6 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
     List<UserCardEntity> findDueCardsForDeck(UUID deckId, Instant now);
 
     long countByUserDeckIdAndDeletedFalseAndSuspendedFalse(UUID userDeckId);
+
+    List<UserCardEntity> findByUserDeckId(UUID userDeckId);
 }

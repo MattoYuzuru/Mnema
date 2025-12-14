@@ -26,4 +26,6 @@ public interface PublicCardRepository extends JpaRepository<PublicCardEntity, Pu
     Optional<PublicCardEntity> findByCardId(UUID cardId);
 
     long countByDeckIdAndDeckVersion(UUID deckId, Integer deckVersion);
+
+    List<PublicCardEntity> findByCardIdIn(List<UUID> cardIds);
 }

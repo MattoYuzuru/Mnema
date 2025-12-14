@@ -114,4 +114,14 @@ public class PublicDeckController {
         return deckService.getPublicDeckSize(deckId, version);
     }
 
+    // DELETE /decks/public/{deckId}
+    @DeleteMapping("/{deckId}")
+    public void hidePublicDeck(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID deckId
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        deckService.deletePublicDeck(userId, deckId);
+    }
+
 }

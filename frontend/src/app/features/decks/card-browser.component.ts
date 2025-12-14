@@ -1,6 +1,7 @@
 import { Component, OnInit, HostListener } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
+import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { CardApiService } from '../../core/services/card-api.service';
 import { DeckApiService } from '../../core/services/deck-api.service';
@@ -13,19 +14,26 @@ import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loa
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
 import { FlashcardViewComponent } from '../../shared/components/flashcard-view.component';
 import { ButtonComponent } from '../../shared/components/button.component';
+import { InputComponent } from '../../shared/components/input.component';
+import { TextareaComponent } from '../../shared/components/textarea.component';
 
 @Component({
     selector: 'app-card-browser',
     standalone: true,
-    imports: [NgIf, NgFor, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent],
+    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, InputComponent, TextareaComponent],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
     <div *ngIf="!loading" class="card-browser">
       <header class="page-header">
         <div class="header-left">
-          <h1>Card Browser</h1>
-          <p class="card-count">{{ cards.length }} cards</p>
+          <app-button variant="ghost" size="sm" (click)="backToDeck()">
+            ← Back to Deck
+          </app-button>
+          <div>
+            <h1>Card Browser</h1>
+            <p class="card-count">{{ cards.length }} cards</p>
+          </div>
         </div>
         <div class="header-right">
           <div class="view-mode-toggle">
@@ -53,6 +61,7 @@ import { ButtonComponent } from '../../shared/components/button.component';
           <div class="card-col">Reviews</div>
           <div class="card-col">Next Review</div>
           <div class="card-col">Status</div>
+          <div class="card-col-actions">Actions</div>
         </div>
         <div *ngFor="let card of cards" class="card-row">
           <div class="card-col">{{ getFrontPreview(card) }}</div>
@@ -61,6 +70,14 @@ import { ButtonComponent } from '../../shared/components/button.component';
           <div class="card-col">
             <span *ngIf="card.isSuspended" class="status-badge suspended">Suspended</span>
             <span *ngIf="!card.isSuspended" class="status-badge active">Active</span>
+          </div>
+          <div class="card-col-actions">
+            <button class="icon-btn" (click)="openEditModal(card)" title="Edit card">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </button>
           </div>
         </div>
       </div>
@@ -110,6 +127,16 @@ import { ButtonComponent } from '../../shared/components/button.component';
           <p class="flip-hint">Click card to flip</p>
         </div>
 
+        <div class="card-actions">
+          <app-button variant="secondary" size="sm" (click)="openEditModal(currentCard!)" *ngIf="currentCard">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+            Edit Card
+          </app-button>
+        </div>
+
         <div *ngIf="currentCard?.personalNote" class="personal-note">
           <h3>Personal Note</h3>
           <p>{{ currentCard?.personalNote }}</p>
@@ -123,6 +150,60 @@ import { ButtonComponent } from '../../shared/components/button.component';
         description="Add cards to this deck to start learning"
       ></app-empty-state>
     </div>
+
+    <div *ngIf="showEditModal && editingCard && template" class="modal-overlay" (click)="closeEditModal()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>Edit Card</h2>
+          <button class="close-btn" (click)="closeEditModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <form [formGroup]="editForm" class="edit-form">
+            <div *ngFor="let field of template.fields" class="field-group">
+              <app-input
+                *ngIf="field.fieldType === 'text'"
+                [label]="field.label + (field.isRequired ? ' *' : '')"
+                type="text"
+                [formControlName]="field.name"
+                [placeholder]="field.helpText || 'Enter ' + field.label"
+              ></app-input>
+              <app-textarea
+                *ngIf="field.fieldType === 'long_text'"
+                [label]="field.label + (field.isRequired ? ' *' : '')"
+                [formControlName]="field.name"
+                [placeholder]="field.helpText || 'Enter ' + field.label"
+                [rows]="4"
+              ></app-textarea>
+              <app-input
+                *ngIf="field.fieldType === 'image' || field.fieldType === 'audio' || field.fieldType === 'video'"
+                [label]="field.label + (field.isRequired ? ' *' : '')"
+                type="url"
+                [formControlName]="field.name"
+                [placeholder]="field.helpText || 'Enter URL'"
+              ></app-input>
+            </div>
+            <app-textarea
+              label="Personal Note"
+              formControlName="personalNote"
+              [rows]="3"
+              placeholder="Add a personal note (optional)"
+            ></app-textarea>
+            <div class="checkbox-group">
+              <label>
+                <input type="checkbox" formControlName="isSuspended" />
+                Suspend this card (temporarily hide from reviews)
+              </label>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <app-button variant="ghost" (click)="closeEditModal()" [disabled]="saving">Cancel</app-button>
+          <app-button variant="primary" (click)="saveEdit()" [disabled]="editForm.invalid || saving">
+            {{ saving ? 'Saving...' : 'Save' }}
+          </app-button>
+        </div>
+      </div>
+    </div>
   `,
     styles: [`
       .card-browser {
@@ -135,6 +216,12 @@ import { ButtonComponent } from '../../shared/components/button.component';
         align-items: center;
         justify-content: space-between;
         margin-bottom: var(--spacing-xl);
+      }
+
+      .header-left {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
       }
 
       .header-left h1 {
@@ -162,7 +249,7 @@ import { ButtonComponent } from '../../shared/components/button.component';
 
       .card-row {
         display: grid;
-        grid-template-columns: 3fr 1fr 1.5fr 1fr;
+        grid-template-columns: 3fr 1fr 1.5fr 1fr 80px;
         gap: var(--spacing-md);
         padding: var(--spacing-md);
         border-bottom: 1px solid var(--border-color);
@@ -294,6 +381,127 @@ import { ButtonComponent } from '../../shared/components/button.component';
         margin: 0;
         color: var(--color-text-primary);
       }
+
+      .card-col-actions {
+        text-align: center;
+      }
+
+      .icon-btn {
+        background: none;
+        border: none;
+        cursor: pointer;
+        padding: var(--spacing-xs);
+        color: var(--color-text-secondary);
+        transition: color 0.2s ease;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .icon-btn:hover {
+        color: var(--color-primary-accent);
+      }
+
+      .card-actions {
+        display: flex;
+        justify-content: center;
+        margin-top: var(--spacing-lg);
+      }
+
+      .modal-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+      }
+
+      .modal-content {
+        background: var(--color-card-background);
+        border-radius: var(--border-radius-lg);
+        max-width: 800px;
+        width: 90%;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+      }
+
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: var(--spacing-lg);
+        border-bottom: 1px solid var(--border-color);
+        flex-shrink: 0;
+      }
+
+      .modal-header h2 {
+        margin: 0;
+        font-size: 1.5rem;
+        font-weight: 600;
+      }
+
+      .close-btn {
+        background: none;
+        border: none;
+        font-size: 2rem;
+        cursor: pointer;
+        color: var(--color-text-secondary);
+        line-height: 1;
+        padding: 0;
+      }
+
+      .modal-body {
+        padding: var(--spacing-lg);
+        overflow-y: auto;
+        flex: 1;
+      }
+
+      .edit-form {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+      }
+
+      .field-group {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .checkbox-group {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
+      .checkbox-group label {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        font-size: 0.9rem;
+        cursor: pointer;
+      }
+
+      .checkbox-group input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+      }
+
+      .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--spacing-md);
+        padding: var(--spacing-lg);
+        border-top: 1px solid var(--border-color);
+        flex-shrink: 0;
+      }
     `]
 })
 export class CardBrowserComponent implements OnInit {
@@ -305,13 +513,19 @@ export class CardBrowserComponent implements OnInit {
     viewMode: 'list' | 'cards' = 'list';
     currentCardIndex = 0;
     isFlipped = false;
+    showEditModal = false;
+    editingCard: UserCardDTO | null = null;
+    editForm!: FormGroup;
+    saving = false;
 
     constructor(
         private route: ActivatedRoute,
+        private router: Router,
         private cardApi: CardApiService,
         private deckApi: DeckApiService,
         private publicDeckApi: PublicDeckApiService,
-        private templateApi: TemplateApiService
+        private templateApi: TemplateApiService,
+        private fb: FormBuilder
     ) {}
 
     ngOnInit(): void {
@@ -426,5 +640,58 @@ export class CardBrowserComponent implements OnInit {
     formatDate(date: string | null | undefined): string {
         if (!date) return 'N/A';
         return new Date(date).toLocaleDateString();
+    }
+
+    backToDeck(): void {
+        void this.router.navigate(['/decks', this.userDeckId]);
+    }
+
+    openEditModal(card: UserCardDTO): void {
+        this.editingCard = card;
+        if (this.template) {
+            const controls: { [key: string]: any } = {};
+            this.template.fields?.forEach(field => {
+                controls[field.name] = [card.effectiveContent[field.name] || '', field.isRequired ? Validators.required : []];
+            });
+            controls['personalNote'] = [card.personalNote || ''];
+            controls['isSuspended'] = [card.isSuspended];
+            this.editForm = this.fb.group(controls);
+            this.showEditModal = true;
+        }
+    }
+
+    closeEditModal(): void {
+        this.showEditModal = false;
+        this.editingCard = null;
+    }
+
+    saveEdit(): void {
+        if (this.editForm.invalid || !this.editingCard) return;
+
+        this.saving = true;
+        const formValue = this.editForm.value;
+        const { personalNote, isSuspended, ...content } = formValue;
+
+        const updates: Partial<UserCardDTO> = {
+            effectiveContent: content,
+            personalNote: personalNote || null,
+            isSuspended: isSuspended
+        };
+
+        this.cardApi.patchUserCard(this.userDeckId, this.editingCard.userCardId, updates).subscribe({
+            next: updatedCard => {
+                const index = this.cards.findIndex(c => c.userCardId === updatedCard.userCardId);
+                if (index !== -1) {
+                    this.cards[index] = updatedCard;
+                }
+                this.saving = false;
+                this.showEditModal = false;
+                this.editingCard = null;
+            },
+            error: err => {
+                console.error('Failed to update card:', err);
+                this.saving = false;
+            }
+        });
     }
 }
