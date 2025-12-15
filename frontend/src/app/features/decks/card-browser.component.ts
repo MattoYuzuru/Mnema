@@ -59,19 +59,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       <div *ngIf="viewMode === 'list' && cards.length > 0" class="cards-table">
         <div class="card-row header-row">
           <div class="card-col">{{ 'cardBrowser.frontPreview' | translate }}</div>
-          <div class="card-col">{{ 'cardBrowser.reviews' | translate }}</div>
-          <div class="card-col">{{ 'cardBrowser.nextReview' | translate }}</div>
-          <div class="card-col">{{ 'cardBrowser.status' | translate }}</div>
           <div class="card-col-actions">{{ 'cardBrowser.actions' | translate }}</div>
         </div>
         <div *ngFor="let card of cards" class="card-row">
           <div class="card-col">{{ getFrontPreview(card) }}</div>
-          <div class="card-col">{{ card.reviewCount }}</div>
-          <div class="card-col">{{ formatDate(card.nextReviewAt) }}</div>
-          <div class="card-col">
-            <span *ngIf="card.isSuspended" class="status-badge suspended">{{ 'cardBrowser.suspended' | translate }}</span>
-            <span *ngIf="!card.isSuspended" class="status-badge active">{{ 'cardBrowser.active' | translate }}</span>
-          </div>
           <div class="card-col-actions">
             <button class="icon-btn" (click)="openEditModal(card)" title="Edit card">
               <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -189,12 +180,6 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               [rows]="3"
               placeholder="Add a personal note (optional)"
             ></app-textarea>
-            <div class="checkbox-group">
-              <label>
-                <input type="checkbox" formControlName="isSuspended" />
-                {{ 'cardBrowser.suspendCard' | translate }}
-              </label>
-            </div>
           </form>
         </div>
         <div class="modal-footer">
@@ -250,7 +235,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
       .card-row {
         display: grid;
-        grid-template-columns: 3fr 1fr 1.5fr 1fr 80px;
+        grid-template-columns: 1fr 80px;
         gap: var(--spacing-md);
         padding: var(--spacing-md);
         border-bottom: 1px solid var(--border-color);
@@ -269,24 +254,6 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-      }
-
-      .status-badge {
-        display: inline-block;
-        padding: var(--spacing-xs) var(--spacing-sm);
-        border-radius: var(--border-radius-full);
-        font-size: 0.75rem;
-        font-weight: 600;
-      }
-
-      .status-badge.active {
-        background: #dcfce7;
-        color: #166534;
-      }
-
-      .status-badge.suspended {
-        background: #fee2e2;
-        color: #991b1b;
       }
 
       .card-view-mode {
@@ -638,11 +605,6 @@ export class CardBrowserComponent implements OnInit {
         return values.length > 80 ? values.substring(0, 80) + '...' : values;
     }
 
-    formatDate(date: string | null | undefined): string {
-        if (!date) return 'N/A';
-        return new Date(date).toLocaleDateString();
-    }
-
     backToDeck(): void {
         void this.router.navigate(['/decks', this.userDeckId]);
     }
@@ -655,7 +617,6 @@ export class CardBrowserComponent implements OnInit {
                 controls[field.name] = [card.effectiveContent[field.name] || '', field.isRequired ? Validators.required : []];
             });
             controls['personalNote'] = [card.personalNote || ''];
-            controls['isSuspended'] = [card.isSuspended];
             this.editForm = this.fb.group(controls);
             this.showEditModal = true;
         }
@@ -671,12 +632,11 @@ export class CardBrowserComponent implements OnInit {
 
         this.saving = true;
         const formValue = this.editForm.value;
-        const { personalNote, isSuspended, ...content } = formValue;
+        const { personalNote, ...content } = formValue;
 
         const updates: Partial<UserCardDTO> = {
             effectiveContent: content,
-            personalNote: personalNote || null,
-            isSuspended: isSuspended
+            personalNote: personalNote || null
         };
 
         this.cardApi.patchUserCard(this.userDeckId, this.editingCard.userCardId, updates).subscribe({
