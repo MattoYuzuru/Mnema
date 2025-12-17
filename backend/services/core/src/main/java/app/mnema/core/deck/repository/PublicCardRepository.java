@@ -8,6 +8,7 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
 import java.util.Optional;
@@ -28,4 +29,6 @@ public interface PublicCardRepository extends JpaRepository<PublicCardEntity, Pu
     long countByDeckIdAndDeckVersion(UUID deckId, Integer deckVersion);
 
     List<PublicCardEntity> findByCardIdIn(List<UUID> cardIds);
+
+    List<PublicCardEntity> findAllByCardIdIn(Collection<UUID> cardIds);
 }
