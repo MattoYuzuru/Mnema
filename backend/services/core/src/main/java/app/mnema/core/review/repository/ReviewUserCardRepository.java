@@ -4,11 +4,14 @@ import app.mnema.core.review.entity.ReviewUserCardEntity;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.stereotype.Repository;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
+@Repository
 public interface ReviewUserCardRepository extends JpaRepository<ReviewUserCardEntity, UUID> {
 
     @Query("""
@@ -40,4 +43,6 @@ public interface ReviewUserCardRepository extends JpaRepository<ReviewUserCardEn
     List<UUID> findNewCardIds(@Param("userId") UUID userId,
                               @Param("deckId") UUID deckId,
                               org.springframework.data.domain.Pageable pageable);
+
+    Optional<ReviewUserCardEntity> findByUserCardIdAndUserId(UUID userCardId, UUID userId);
 }

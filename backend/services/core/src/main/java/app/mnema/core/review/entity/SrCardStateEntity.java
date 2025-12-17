@@ -35,6 +35,10 @@ public class SrCardStateEntity {
     @Column(name = "is_suspended", nullable = false)
     private boolean suspended;
 
+    @Version
+    @Column(name = "row_version", nullable = false)
+    private long rowVersion;
+
     public UUID getUserCardId() {
         return userCardId;
     }
@@ -90,4 +94,9 @@ public class SrCardStateEntity {
     public void setSuspended(boolean suspended) {
         this.suspended = suspended;
     }
+
+    public long getRowVersion() {
+        return rowVersion;
+    }
+
 }
