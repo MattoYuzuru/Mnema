@@ -1,233 +1,150 @@
 package app.mnema.core.review.service;
 
-import app.mnema.core.review.api.DeckAlgorithmConfig;
-import app.mnema.core.review.algorithm.CanonicalProgress;
+import app.mnema.core.review.algorithm.AlgorithmRegistry;
 import app.mnema.core.review.algorithm.SrsAlgorithm;
 import app.mnema.core.review.api.CardViewPort;
 import app.mnema.core.review.api.DeckAlgorithmPort;
-import app.mnema.core.review.controller.dto.ReviewAnswerResponse;
 import app.mnema.core.review.controller.dto.ReviewNextCardResponse;
 import app.mnema.core.review.domain.Rating;
-import app.mnema.core.review.entity.ReviewUserCardEntity;
-import app.mnema.core.review.entity.SrCardStateEntity;
 import app.mnema.core.review.repository.ReviewUserCardRepository;
-import app.mnema.core.review.repository.SrAlgorithmRepository;
 import app.mnema.core.review.repository.SrCardStateRepository;
-import app.mnema.core.review.util.JsonConfigMerger;
-import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.*;
+import java.util.EnumMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
 
 @Service
 public class ReviewService {
 
     private final ReviewUserCardRepository userCardRepo;
     private final SrCardStateRepository stateRepo;
-    private final SrAlgorithmRepository algorithmRepo;
-    private final app.mnema.core.review.algorithm.AlgorithmRegistry registry;
+    private final AlgorithmRegistry registry;
     private final CardViewPort cardViewPort;
     private final DeckAlgorithmPort deckAlgorithmPort;
-    private final JsonConfigMerger configMerger;
 
     public ReviewService(ReviewUserCardRepository userCardRepo,
                          SrCardStateRepository stateRepo,
-                         SrAlgorithmRepository algorithmRepo,
-                         app.mnema.core.review.algorithm.AlgorithmRegistry registry,
+                         AlgorithmRegistry registry,
                          CardViewPort cardViewPort,
-                         DeckAlgorithmPort deckAlgorithmPort,
-                         JsonConfigMerger configMerger) {
+                         DeckAlgorithmPort deckAlgorithmPort) {
         this.userCardRepo = userCardRepo;
         this.stateRepo = stateRepo;
-        this.algorithmRepo = algorithmRepo;
         this.registry = registry;
         this.cardViewPort = cardViewPort;
         this.deckAlgorithmPort = deckAlgorithmPort;
-        this.configMerger = configMerger;
     }
 
     @Transactional(readOnly = true)
-    public ReviewNextCardResponse nextCard(UUID userId, UUID userDeckId) {
-        return nextCardInternal(userId, userDeckId, Instant.now());
-    }
-
-    @Transactional
-    public ReviewAnswerResponse answer(UUID userId, UUID userDeckId, UUID userCardId, Rating rating) {
+    public ReviewNextCardResponse next(UUID userId, UUID userDeckId) {
         Instant now = Instant.now();
 
-        ReviewUserCardEntity owned = userCardRepo.findByUserCardIdAndUserId(userCardId, userId)
-                .orElseThrow(() -> new SecurityException("Access denied to card " + userCardId));
+        long dueCount = userCardRepo.countDue(userId, userDeckId, now);
+        long newCount = userCardRepo.countNew(userId, userDeckId);
 
-        if (!userDeckId.equals(owned.getUserDeckId())) {
-            throw new SecurityException("Card " + userCardId + " is not in deck " + userDeckId);
-        }
-        if (owned.isDeleted()) {
-            throw new IllegalStateException("Card is deleted: " + userCardId);
-        }
-
-        EffectiveAlgo eff = effectiveAlgo(userId, userDeckId);
-        SrsAlgorithm algo = registry.require(eff.algorithmId);
-
-        SrCardStateEntity state = stateRepo.findByIdForUpdate(userCardId)
-                .orElseGet(() -> {
-                    SrCardStateEntity s = new SrCardStateEntity();
-                    s.setUserCardId(userCardId);
-                    s.setAlgorithmId(eff.algorithmId);
-                    s.setState(algo.initialState(eff.effectiveConfig));
-                    s.setReviewCount(0);
-                    s.setSuspended(false);
-                    return s;
-                });
-
-        if (state.isSuspended()) {
-            throw new IllegalStateException("Card is suspended: " + userCardId);
-        }
-
-        if (!eff.algorithmId.equals(state.getAlgorithmId())) {
-            migrateState(state, eff, now);
-        }
-
-        SrsAlgorithm.ReviewInput input = new SrsAlgorithm.ReviewInput(
-                state.getState(),
-                state.getLastReviewAt(),
-                state.getReviewCount()
+        var queue = new ReviewNextCardResponse.QueueSummary(
+                dueCount,
+                newCount,
+                dueCount + newCount
         );
 
-        SrsAlgorithm.ReviewComputation result = algo.apply(input, rating, now, eff.effectiveConfig);
+        // Настройки алгоритма на колоду
+        var deckAlgo = deckAlgorithmPort.getDeckAlgorithm(userId, userDeckId);
+        String algorithmId = deckAlgo.algorithmId();
+        var algo = registry.require(algorithmId);
+        var effectiveConfig = deckAlgo.algorithmParams();
 
-        state.setAlgorithmId(eff.algorithmId);
-        state.setState(result.newState());
-        state.setLastReviewAt(result.lastReviewAt());
-        state.setNextReviewAt(result.nextReviewAt());
-        state.setReviewCount(state.getReviewCount() + result.reviewCountDelta());
+        // 1) due, 2) new
+        UUID nextCardId = null;
+        boolean due = false;
 
-        stateRepo.save(state);
-
-        ReviewNextCardResponse next = nextCardInternal(userId, userDeckId, now);
-
-        return new ReviewAnswerResponse(
-                userCardId,
-                rating,
-                state.getNextReviewAt(),
-                next
-        );
-    }
-
-    private ReviewNextCardResponse nextCardInternal(UUID userId, UUID userDeckId, Instant now) {
-        EffectiveAlgo eff = effectiveAlgo(userId, userDeckId);
-        SrsAlgorithm algo = registry.require(eff.algorithmId);
-
-        List<UUID> due = userCardRepo.findDueCardIds(userId, userDeckId, now, PageRequest.of(0, 1));
-        List<UUID> ids = !due.isEmpty()
-                ? due
-                : userCardRepo.findNewCardIds(userId, userDeckId, PageRequest.of(0, 1));
-
-        if (ids.isEmpty()) {
-            return null;
-        }
-
-        UUID userCardId = ids.getFirst();
-        CardViewPort.CardView view = cardViewPort.getCardViews(userId, ids).getFirst();
-
-        SrCardStateEntity state = stateRepo.findById(userCardId).orElse(null);
-
-        SrsAlgorithm.ReviewInput input;
-        String stateAlgorithmId = eff.algorithmId;
-
-        Instant dueAt = null;
-        boolean isDue = false;
-
-        if (state == null) {
-            input = new SrsAlgorithm.ReviewInput(algo.initialState(eff.effectiveConfig), null, 0);
+        var dueIds = userCardRepo.findDueCardIds(userId, userDeckId, now, PageRequest.of(0, 1));
+        if (!dueIds.isEmpty()) {
+            nextCardId = dueIds.getFirst();
+            due = true;
         } else {
-            dueAt = state.getNextReviewAt();
-            isDue = (dueAt != null && !dueAt.isAfter(now));
-
-            if (eff.algorithmId.equals(state.getAlgorithmId())) {
-                input = new SrsAlgorithm.ReviewInput(state.getState(), state.getLastReviewAt(), state.getReviewCount());
-            } else {
-                input = new SrsAlgorithm.ReviewInput(migrateJsonForPreview(state, eff), state.getLastReviewAt(), state.getReviewCount());
+            var newIds = userCardRepo.findNewCardIds(userId, userDeckId, PageRequest.of(0, 1));
+            if (!newIds.isEmpty()) {
+                nextCardId = newIds.getFirst();
             }
         }
 
-        Map<Rating, String> intervals = new EnumMap<>(Rating.class);
-        Map<Rating, Instant> preview = algo.previewNextReviewAt(input, now, eff.effectiveConfig);
-        for (Rating r : Rating.values()) {
-            intervals.put(r, humanize(Duration.between(now, preview.get(r))));
+        if (nextCardId == null) {
+            return new ReviewNextCardResponse(
+                    userDeckId,
+                    algorithmId,
+                    null,
+                    null,
+                    false,
+                    null,
+                    Map.of(),
+                    null,
+                    false,
+                    queue
+            );
         }
+
+        // Контент карточки (public/custom + override)
+        var views = cardViewPort.getCardViews(userId, List.of(nextCardId));
+        if (views.isEmpty()) {
+            throw new IllegalStateException("CardViewPort returned empty for userCardId=" + nextCardId);
+        }
+        var view = views.getFirst();
+
+        // Состояние SRS (может отсутствовать для new-card)
+        var stateOpt = stateRepo.findById(nextCardId);
+
+        SrsAlgorithm.ReviewInput input;
+        Instant dueAt = null;
+
+        if (stateOpt.isPresent()) {
+            var s = stateOpt.get();
+            input = new SrsAlgorithm.ReviewInput(
+                    s.getState(),
+                    s.getLastReviewAt(),
+                    s.getReviewCount()
+            );
+            dueAt = s.getNextReviewAt();
+        } else {
+            input = new SrsAlgorithm.ReviewInput(
+                    algo.initialState(effectiveConfig),
+                    null,
+                    0
+            );
+        }
+
+        // Preview интервалов под 4 кнопки
+        Map<Rating, Instant> nextAt = algo.previewNextReviewAt(input, now, effectiveConfig);
+        Map<Rating, ReviewNextCardResponse.IntervalPreview> intervals = toIntervalPreview(nextAt, now);
 
         return new ReviewNextCardResponse(
                 userDeckId,
-                eff.algorithmId,
+                algorithmId,
                 view.userCardId(),
                 view.publicCardId(),
                 view.isCustom(),
                 view.effectiveContent(),
                 intervals,
                 dueAt,
-                isDue
+                due,
+                queue
         );
     }
 
-    private EffectiveAlgo effectiveAlgo(UUID userId, UUID userDeckId) {
-        DeckAlgorithmConfig deck = deckAlgorithmPort.getDeckAlgorithm(userId, userDeckId);
-
-        String algorithmId = (deck.algorithmId() == null || deck.algorithmId().isBlank()) ? "sm2" : deck.algorithmId();
-
-        var algoEntity = algorithmRepo.findById(algorithmId)
-                .orElseThrow(() -> new IllegalArgumentException("Algorithm not found in DB: " + algorithmId));
-
-        JsonNode effective = configMerger.merge(algoEntity.getDefaultConfig(), deck.algorithmParams());
-
-        return new EffectiveAlgo(algorithmId, effective);
-    }
-
-    private void migrateState(SrCardStateEntity state, EffectiveAlgo eff, Instant now) {
-        SrsAlgorithm toAlgo = registry.require(eff.algorithmId);
-
-        SrsAlgorithm fromAlgo;
-        try {
-            fromAlgo = registry.require(state.getAlgorithmId());
-        } catch (Exception ignored) {
-            fromAlgo = null;
+    private static Map<Rating, ReviewNextCardResponse.IntervalPreview> toIntervalPreview(Map<Rating, Instant> nextAt,
+                                                                                         Instant now) {
+        var out = new EnumMap<Rating, ReviewNextCardResponse.IntervalPreview>(Rating.class);
+        for (var e : nextAt.entrySet()) {
+            Instant at = e.getValue();
+            String display = at == null ? null : humanize(Duration.between(now, at));
+            out.put(e.getKey(), new ReviewNextCardResponse.IntervalPreview(at, display));
         }
-
-        JsonNode newState;
-        if (fromAlgo == null) {
-            newState = toAlgo.initialState(eff.effectiveConfig);
-        } else {
-            CanonicalProgress p = fromAlgo.toCanonical(state.getState());
-            newState = toAlgo.fromCanonical(p, eff.effectiveConfig);
-        }
-
-        state.setAlgorithmId(eff.algorithmId);
-        state.setState(newState);
-
-        if (state.getNextReviewAt() == null) {
-            state.setNextReviewAt(now);
-        }
-    }
-
-    private JsonNode migrateJsonForPreview(SrCardStateEntity state, EffectiveAlgo eff) {
-        SrsAlgorithm toAlgo = registry.require(eff.algorithmId);
-
-        SrsAlgorithm fromAlgo;
-        try {
-            fromAlgo = registry.require(state.getAlgorithmId());
-        } catch (Exception ignored) {
-            fromAlgo = null;
-        }
-
-        if (fromAlgo == null) {
-            return toAlgo.initialState(eff.effectiveConfig);
-        }
-
-        CanonicalProgress p = fromAlgo.toCanonical(state.getState());
-        return toAlgo.fromCanonical(p, eff.effectiveConfig);
+        return out;
     }
 
     private static String humanize(Duration d) {
@@ -235,8 +152,5 @@ public class ReviewService {
         if (s < 3600) return (s / 60) + "m";
         if (s < 86400) return (s / 3600) + "h";
         return (s / 86400) + "d";
-    }
-
-    private record EffectiveAlgo(String algorithmId, JsonNode effectiveConfig) {
     }
 }

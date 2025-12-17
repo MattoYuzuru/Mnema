@@ -14,8 +14,12 @@ public record ReviewNextCardResponse(
         UUID publicCardId,
         boolean isCustom,
         JsonNode effectiveContent,
-        Map<Rating, String> intervals,
+        Map<Rating, IntervalPreview> intervals,
         Instant dueAt,
-        boolean due
+        boolean due,
+        QueueSummary queue
 ) {
+    public record IntervalPreview(Instant at, String display) {}
+
+    public record QueueSummary(long dueCount, long newCount, long totalRemaining) {}
 }

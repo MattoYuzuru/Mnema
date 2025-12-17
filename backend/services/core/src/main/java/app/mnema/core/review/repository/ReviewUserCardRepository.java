@@ -44,5 +44,32 @@ public interface ReviewUserCardRepository extends JpaRepository<ReviewUserCardEn
                               @Param("deckId") UUID deckId,
                               org.springframework.data.domain.Pageable pageable);
 
+    @Query("""
+        select count(c.userCardId)
+        from ReviewUserCardEntity c
+        join SrCardStateEntity s on s.userCardId = c.userCardId
+        where c.userDeckId = :deckId
+          and c.userId = :userId
+          and c.deleted = false
+          and s.suspended = false
+          and s.nextReviewAt <= :now
+        """)
+    long countDue(@Param("userId") UUID userId,
+                  @Param("deckId") UUID deckId,
+                  @Param("now") Instant now);
+
+    @Query("""
+        select count(c.userCardId)
+        from ReviewUserCardEntity c
+        left join SrCardStateEntity s on s.userCardId = c.userCardId
+        where c.userDeckId = :deckId
+          and c.userId = :userId
+          and c.deleted = false
+          and s.userCardId is null
+        """)
+    long countNew(@Param("userId") UUID userId,
+                  @Param("deckId") UUID deckId);
+
+
     Optional<ReviewUserCardEntity> findByUserCardIdAndUserId(UUID userCardId, UUID userId);
 }
