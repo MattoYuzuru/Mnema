@@ -2,7 +2,9 @@ package app.mnema.core.review.controller;
 
 import app.mnema.core.review.controller.dto.AnswerCardRequest;
 import app.mnema.core.review.controller.dto.ReviewAnswerResponse;
+import app.mnema.core.review.controller.dto.ReviewDeckAlgorithmResponse;
 import app.mnema.core.review.controller.dto.ReviewNextCardResponse;
+import app.mnema.core.review.controller.dto.UpdateAlgorithmRequest;
 import app.mnema.core.review.domain.Rating;
 import app.mnema.core.review.service.ReviewService;
 import app.mnema.core.security.CurrentUserProvider;
@@ -39,5 +41,20 @@ public class ReviewController {
         UUID userId = currentUserProvider.getUserId(jwt);
         Rating rating = Rating.fromString(req.rating());
         return reviewService.answer(userId, userDeckId, userCardId, rating);
+    }
+
+    @GetMapping("/{userDeckId}/algorithm")
+    public ReviewDeckAlgorithmResponse getAlgorithm(@AuthenticationPrincipal Jwt jwt,
+                                                    @PathVariable UUID userDeckId) {
+        UUID userId = currentUserProvider.getUserId(jwt);
+        return reviewService.getDeckAlgorithm(userId, userDeckId);
+    }
+
+    @PutMapping("/{userDeckId}/algorithm")
+    public ReviewDeckAlgorithmResponse updateAlgorithm(@AuthenticationPrincipal Jwt jwt,
+                                                       @PathVariable UUID userDeckId,
+                                                       @RequestBody UpdateAlgorithmRequest req) {
+        UUID userId = currentUserProvider.getUserId(jwt);
+        return reviewService.updateDeckAlgorithm(userId, userDeckId, req.algorithmId(), req.algorithmParams());
     }
 }

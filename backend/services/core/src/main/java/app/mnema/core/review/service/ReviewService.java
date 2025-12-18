@@ -7,6 +7,7 @@ import app.mnema.core.review.api.CardViewPort;
 import app.mnema.core.review.api.DeckAlgorithmConfig;
 import app.mnema.core.review.api.DeckAlgorithmPort;
 import app.mnema.core.review.controller.dto.ReviewAnswerResponse;
+import app.mnema.core.review.controller.dto.ReviewDeckAlgorithmResponse;
 import app.mnema.core.review.controller.dto.ReviewNextCardResponse;
 import app.mnema.core.review.domain.Rating;
 import app.mnema.core.review.entity.ReviewUserCardEntity;
@@ -52,6 +53,29 @@ public class ReviewService {
         this.cardViewPort = cardViewPort;
         this.deckAlgorithmPort = deckAlgorithmPort;
         this.configMerger = configMerger;
+    }
+
+    @Transactional(readOnly = true)
+    public ReviewDeckAlgorithmResponse getDeckAlgorithm(UUID userId, UUID userDeckId) {
+        AlgorithmContext ctx = resolveAlgorithmContext(userId, userDeckId);
+        AlgorithmStats stats = computeAlgorithmStats(userId, userDeckId, ctx.algorithmId());
+        return buildAlgorithmResponse(userDeckId, ctx, stats);
+    }
+
+    @Transactional
+    public ReviewDeckAlgorithmResponse updateDeckAlgorithm(UUID userId,
+                                                           UUID userDeckId,
+                                                           String algorithmId,
+                                                           JsonNode algorithmParams) {
+        if (algorithmId == null || algorithmId.isBlank()) {
+            throw new IllegalArgumentException("Algorithm id is required");
+        }
+
+        registry.require(algorithmId);
+        DeckAlgorithmConfig updated = deckAlgorithmPort.updateDeckAlgorithm(userId, userDeckId, algorithmId, algorithmParams);
+        AlgorithmContext ctx = buildAlgorithmContext(updated.algorithmId(), updated.algorithmParams());
+        AlgorithmStats stats = computeAlgorithmStats(userId, userDeckId, ctx.algorithmId());
+        return buildAlgorithmResponse(userDeckId, ctx, stats);
     }
 
     @Transactional
@@ -178,15 +202,17 @@ public class ReviewService {
 
     private AlgorithmContext resolveAlgorithmContext(UUID userId, UUID userDeckId) {
         DeckAlgorithmConfig deckAlgo = deckAlgorithmPort.getDeckAlgorithm(userId, userDeckId);
-        String algorithmId = deckAlgo.algorithmId();
-        SrsAlgorithm algorithm = registry.require(algorithmId);
+        return buildAlgorithmContext(deckAlgo.algorithmId(), deckAlgo.algorithmParams());
+    }
 
+    private AlgorithmContext buildAlgorithmContext(String algorithmId, JsonNode deckConfig) {
+        SrsAlgorithm algorithm = registry.require(algorithmId);
         JsonNode defaultConfig = algorithmRepo.findById(algorithmId)
                 .map(app.mnema.core.review.entity.SrAlgorithmEntity::getDefaultConfig)
                 .orElse(null);
 
-        JsonNode effective = configMerger.merge(defaultConfig, deckAlgo.algorithmParams());
-        return new AlgorithmContext(algorithmId, algorithm, effective);
+        JsonNode effective = configMerger.merge(defaultConfig, deckConfig);
+        return new AlgorithmContext(algorithmId, algorithm, effective, deckConfig);
     }
 
     private SrsAlgorithm.ReviewInput buildReviewInput(SrCardStateEntity state, AlgorithmContext ctx) {
@@ -230,6 +256,33 @@ public class ReviewService {
         return (s / 86400) + "d";
     }
 
-    private record AlgorithmContext(String algorithmId, SrsAlgorithm algorithm, JsonNode effectiveConfig) {
+    private ReviewDeckAlgorithmResponse buildAlgorithmResponse(UUID userDeckId,
+                                                               AlgorithmContext ctx,
+                                                               AlgorithmStats stats) {
+        return new ReviewDeckAlgorithmResponse(
+                userDeckId,
+                ctx.algorithmId(),
+                ctx.deckConfig(),
+                ctx.effectiveConfig(),
+                stats.activeCards(),
+                stats.trackedCards(),
+                stats.pendingMigrationCards()
+        );
+    }
+
+    private AlgorithmStats computeAlgorithmStats(UUID userId, UUID userDeckId, String algorithmId) {
+        long active = userCardRepo.countActive(userId, userDeckId);
+        long tracked = stateRepo.countTrackedCards(userId, userDeckId);
+        long pending = stateRepo.countPendingMigration(userId, userDeckId, algorithmId);
+        return new AlgorithmStats(active, tracked, pending);
+    }
+
+    private record AlgorithmContext(String algorithmId,
+                                    SrsAlgorithm algorithm,
+                                    JsonNode effectiveConfig,
+                                    JsonNode deckConfig) {
+    }
+
+    private record AlgorithmStats(long activeCards, long trackedCards, long pendingMigrationCards) {
     }
 }
