@@ -3,6 +3,7 @@ import { Router } from '@angular/router';
 import { NgFor, NgIf } from '@angular/common';
 import { ThemeService } from '../../core/services/theme.service';
 import { I18nService, Language } from '../../core/services/i18n.service';
+import { PreferencesService } from '../../core/services/preferences.service';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { UserApiService } from '../../user-api.service';
 import { AuthService } from '../../auth.service';
@@ -85,6 +86,21 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               {{ 'language.russian' | translate }}
             </button>
           </div>
+        </div>
+      </section>
+
+      <section class="settings-section">
+        <h2>{{ 'settings.cardAppearance' | translate }}</h2>
+        <p class="section-description">{{ 'settings.cardAppearanceDescription' | translate }}</p>
+        <div class="checkbox-group">
+          <label class="checkbox-label">
+            <input
+              type="checkbox"
+              [checked]="preferences.hideFieldLabels"
+              (change)="preferences.setHideFieldLabels($any($event.target).checked)"
+            />
+            <span>{{ 'settings.hideFieldLabels' | translate }}</span>
+          </label>
         </div>
       </section>
 
@@ -209,6 +225,26 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         color: #ffffff;
       }
 
+      .checkbox-group {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+      }
+
+      .checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        cursor: pointer;
+        font-size: 0.95rem;
+      }
+
+      .checkbox-label input[type="checkbox"] {
+        width: 18px;
+        height: 18px;
+        cursor: pointer;
+      }
+
       .loading-state, .empty-state {
         padding: var(--spacing-lg);
         text-align: center;
@@ -279,6 +315,7 @@ export class SettingsComponent implements OnInit {
     constructor(
         public theme: ThemeService,
         public i18n: I18nService,
+        public preferences: PreferencesService,
         private deckApi: DeckApiService,
         private userApi: UserApiService,
         private auth: AuthService,
@@ -307,8 +344,7 @@ export class SettingsComponent implements OnInit {
             next: () => {
                 this.archivedDecks = this.archivedDecks.filter(d => d.userDeckId !== userDeckId);
             },
-            error: err => {
-                console.error('Failed to restore deck:', err);
+            error: () => {
             }
         });
     }
@@ -324,8 +360,7 @@ export class SettingsComponent implements OnInit {
                 this.auth.logout();
                 void this.router.navigate(['/']);
             },
-            error: err => {
-                console.error('Failed to delete account:', err);
+            error: () => {
             }
         });
     }

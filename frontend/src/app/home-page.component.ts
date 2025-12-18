@@ -182,7 +182,7 @@ export class HomePageComponent implements OnInit, OnDestroy {
     loading = true;
     publicDecks: PublicDeckDTO[] = [];
     userDecks: UserDeckDTO[] = [];
-    todayStats = { due: 37, new: 6 };
+    todayStats = { due: 0, new: 0 };
     currentUserId: string | null = null;
     private authSubscription?: Subscription;
     private hasLoadedUserDecks = false;
@@ -274,7 +274,7 @@ export class HomePageComponent implements OnInit, OnDestroy {
     getDeckStats(deck: UserDeckDTO): { cardCount?: number; dueToday?: number } {
         return {
             cardCount: 0,
-            dueToday: Math.floor(Math.random() * 20)
+            dueToday: undefined
         };
     }
 

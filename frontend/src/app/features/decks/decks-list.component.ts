@@ -104,7 +104,7 @@ export class DecksListComponent implements OnInit {
     getDeckStats(deck: UserDeckDTO): { cardCount?: number; dueToday?: number } {
         return {
             cardCount: 0,
-            dueToday: Math.floor(Math.random() * 20)
+            dueToday: undefined
         };
     }
 

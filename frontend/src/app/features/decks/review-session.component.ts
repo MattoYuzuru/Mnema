@@ -1,52 +1,102 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NgIf } from '@angular/common';
+import { forkJoin } from 'rxjs';
 import { DeckApiService } from '../../core/services/deck-api.service';
+import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
+import { TemplateApiService } from '../../core/services/template-api.service';
+import { ReviewApiService } from '../../core/services/review-api.service';
+import { PreferencesService } from '../../core/services/preferences.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
+import { CardTemplateDTO } from '../../core/models/template.models';
+import { ReviewNextCardResponse, ReviewQueueDTO } from '../../core/models/review.models';
 import { ButtonComponent } from '../../shared/components/button.component';
+import { FlashcardViewComponent } from '../../shared/components/flashcard-view.component';
+import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-review-session',
     standalone: true,
-    imports: [NgIf, ButtonComponent],
+    imports: [NgIf, ButtonComponent, FlashcardViewComponent, TranslatePipe],
     template: `
     <div class="review-session">
-      <header class="review-header">
-        <h2 *ngIf="deck">{{ deck.displayName }}</h2>
-        <div class="progress-bar">
-          <div class="progress" [style.width.%]="progress"></div>
+      <div *ngIf="sessionComplete" class="session-complete">
+        <div class="complete-message">
+          <h2>{{ 'review.sessionComplete' | translate }}</h2>
+          <p>{{ 'review.allCardsReviewed' | translate }}</p>
+          <app-button variant="primary" size="lg" (click)="backToDeck()">
+            {{ 'review.backToDeck' | translate }}
+          </app-button>
         </div>
-        <p class="progress-text">{{ currentCard }} / {{ totalCards }} cards</p>
-      </header>
+      </div>
 
-      <div class="card-container">
-        <div class="flashcard">
-          <div class="flashcard-content">
-            <p class="card-text">Sample card front content</p>
-            <p class="card-hint">Click to reveal answer</p>
+      <div *ngIf="!sessionComplete && currentCard">
+        <header class="review-header">
+          <h2 *ngIf="deck">{{ deck.displayName }}</h2>
+          <div class="progress-info">
+            <div class="progress-bar">
+              <div class="progress" [style.width.%]="progressPercent"></div>
+            </div>
+            <p class="progress-text">
+              <span class="count-new">{{ 'review.new' | translate }}: {{ queue.newCount }}</span>
+              <span class="count-separator">·</span>
+              <span class="count-due">{{ 'review.due' | translate }}: {{ queue.dueCount }}</span>
+            </p>
+          </div>
+        </header>
+
+        <div class="card-container">
+          <div class="flashcard">
+            <app-flashcard-view
+              *ngIf="template && currentCard && !revealed"
+              [template]="template"
+              [content]="currentCard.effectiveContent"
+              [side]="'front'"
+              [hideLabels]="preferences.hideFieldLabels"
+            ></app-flashcard-view>
+            <div *ngIf="revealed && template && currentCard" class="revealed-content">
+              <app-flashcard-view
+                [template]="template"
+                [content]="currentCard.effectiveContent"
+                [side]="'front'"
+                [hideLabels]="preferences.hideFieldLabels"
+              ></app-flashcard-view>
+              <div class="divider"></div>
+              <app-flashcard-view
+                [template]="template"
+                [content]="currentCard.effectiveContent"
+                [side]="'back'"
+                [hideLabels]="preferences.hideFieldLabels"
+              ></app-flashcard-view>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div class="answer-buttons">
-        <app-button variant="ghost" (click)="answerCard('again')">
-          Again
-        </app-button>
-        <app-button variant="secondary" (click)="answerCard('hard')">
-          Hard
-        </app-button>
-        <app-button variant="primary" (click)="answerCard('good')">
-          Good
-        </app-button>
-        <app-button variant="primary" (click)="answerCard('easy')">
-          Easy
-        </app-button>
-      </div>
+        <div *ngIf="!revealed" class="show-answer-container">
+          <app-button variant="primary" size="lg" (click)="revealAnswer()">
+            {{ 'review.showAnswer' | translate }}
+          </app-button>
+          <p class="keyboard-hint">{{ 'review.spaceToReveal' | translate }}</p>
+        </div>
 
-      <div class="review-actions">
-        <app-button variant="ghost" size="sm" (click)="exitReview()">
-          Exit Review
-        </app-button>
+        <div *ngIf="revealed" class="answer-buttons">
+          <app-button variant="ghost" (click)="answer('AGAIN')">
+            {{ 'review.again' | translate }}{{ formatInterval('AGAIN') }}
+          </app-button>
+          <app-button variant="secondary" (click)="answer('HARD')">
+            {{ 'review.hard' | translate }}{{ formatInterval('HARD') }}
+          </app-button>
+          <app-button variant="primary" (click)="answer('GOOD')">
+            {{ 'review.good' | translate }}{{ formatInterval('GOOD') }}
+          </app-button>
+          <app-button variant="primary" (click)="answer('EASY')">
+            {{ 'review.easy' | translate }}{{ formatInterval('EASY') }}
+          </app-button>
+        </div>
+
+        <div *ngIf="revealed" class="keyboard-hint">
+          <p>{{ 'review.keyboardShortcuts' | translate }}</p>
+        </div>
       </div>
     </div>
   `,
@@ -60,13 +110,42 @@ import { ButtonComponent } from '../../shared/components/button.component';
         padding-top: var(--spacing-xl);
       }
 
+      .session-complete {
+        min-height: 24rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .complete-message {
+        text-align: center;
+        padding: var(--spacing-2xl);
+      }
+
+      .complete-message h2 {
+        font-size: 1.75rem;
+        margin: 0 0 var(--spacing-md) 0;
+      }
+
+      .complete-message p {
+        font-size: 1.1rem;
+        color: var(--color-text-muted);
+        margin: 0 0 var(--spacing-xl) 0;
+      }
+
       .review-header {
         text-align: center;
       }
 
       .review-header h2 {
         font-size: 1.5rem;
-        margin: 0 0 var(--spacing-md) 0;
+        margin: 0 0 var(--spacing-lg) 0;
+      }
+
+      .progress-info {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
       }
 
       .progress-bar {
@@ -74,7 +153,6 @@ import { ButtonComponent } from '../../shared/components/button.component';
         background: var(--border-color);
         border-radius: var(--border-radius-full);
         overflow: hidden;
-        margin-bottom: var(--spacing-sm);
       }
 
       .progress {
@@ -84,9 +162,27 @@ import { ButtonComponent } from '../../shared/components/button.component';
       }
 
       .progress-text {
-        font-size: 0.9rem;
+        font-size: 0.95rem;
         color: var(--color-text-muted);
         margin: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--spacing-xs);
+      }
+
+      .count-new {
+        color: var(--color-primary-accent);
+        font-weight: 500;
+      }
+
+      .count-due {
+        color: var(--color-text-secondary);
+        font-weight: 500;
+      }
+
+      .count-separator {
+        color: var(--color-text-tertiary);
       }
 
       .card-container {
@@ -94,11 +190,12 @@ import { ButtonComponent } from '../../shared/components/button.component';
         display: flex;
         align-items: center;
         justify-content: center;
+        padding: var(--spacing-lg) 0;
       }
 
       .flashcard {
         width: 100%;
-        max-width: 32rem;
+        max-width: 36rem;
         min-height: 16rem;
         padding: var(--spacing-2xl);
         background: var(--color-card-background);
@@ -110,77 +207,198 @@ import { ButtonComponent } from '../../shared/components/button.component';
         justify-content: center;
       }
 
-      .flashcard-content {
-        text-align: center;
-      }
-
-      .card-text {
-        font-size: 1.5rem;
-        margin: 0 0 var(--spacing-md) 0;
-      }
-
-      .card-hint {
-        font-size: 0.9rem;
-        color: var(--color-text-muted);
-        margin: 0;
-      }
-
       .answer-buttons {
         display: flex;
         justify-content: center;
         gap: var(--spacing-md);
+        flex-wrap: wrap;
       }
 
-      .review-actions {
+      .show-answer-container {
         display: flex;
-        justify-content: center;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--spacing-md);
+      }
+
+      .revealed-content {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-lg);
+      }
+
+      .divider {
+        height: 1px;
+        background: var(--border-color);
+        margin: var(--spacing-md) 0;
+      }
+
+      .keyboard-hint {
+        text-align: center;
+        margin-top: var(--spacing-md);
+      }
+
+      .keyboard-hint p {
+        font-size: 0.85rem;
+        color: var(--color-text-tertiary);
+        margin: 0;
       }
     `]
 })
-export class ReviewSessionComponent implements OnInit {
+export class ReviewSessionComponent implements OnInit, OnDestroy {
     deck: UserDeckDTO | null = null;
-    currentCard = 1;
-    totalCards = 10;
+    template: CardTemplateDTO | null = null;
+    currentCard: ReviewNextCardResponse | null = null;
+    queue: ReviewQueueDTO = { newCount: 0, dueCount: 0 };
+    initialTotalRemaining = 0;
+    sessionComplete = false;
+    revealed = false;
+    cardShownTime = 0;
+    private userDeckId = '';
 
     constructor(
         private route: ActivatedRoute,
         private router: Router,
-        private deckApi: DeckApiService
+        private deckApi: DeckApiService,
+        private publicDeckApi: PublicDeckApiService,
+        private templateApi: TemplateApiService,
+        private reviewApi: ReviewApiService,
+        public preferences: PreferencesService
     ) {}
 
     ngOnInit(): void {
-        const userDeckId = this.route.snapshot.paramMap.get('userDeckId') || '';
-        if (userDeckId) {
-            this.loadDeck(userDeckId);
+        this.userDeckId = this.route.snapshot.paramMap.get('userDeckId') || '';
+        if (this.userDeckId) {
+            this.loadDeckAndStart();
         }
     }
 
-    private loadDeck(userDeckId: string): void {
-        this.deckApi.getUserDeck(userDeckId).subscribe({
-            next: deck => {
-                this.deck = deck;
+    ngOnDestroy(): void {
+    }
+
+    @HostListener('window:keydown', ['$event'])
+    handleKeyDown(event: KeyboardEvent): void {
+        const target = event.target as HTMLElement;
+        const isInputField = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable;
+
+        if (isInputField || this.sessionComplete || !this.currentCard) {
+            return;
+        }
+
+        if (event.key === ' ' || event.key === 'Space') {
+            event.preventDefault();
+            if (!this.revealed) {
+                this.revealAnswer();
+            }
+            return;
+        }
+
+        if (!this.revealed) {
+            return;
+        }
+
+        if (event.key === '1') {
+            event.preventDefault();
+            this.answer('AGAIN');
+        } else if (event.key === '2') {
+            event.preventDefault();
+            this.answer('HARD');
+        } else if (event.key === '3') {
+            event.preventDefault();
+            this.answer('GOOD');
+        } else if (event.key === '4') {
+            event.preventDefault();
+            this.answer('EASY');
+        }
+    }
+
+    revealAnswer(): void {
+        this.revealed = true;
+    }
+
+    private loadDeckAndStart(): void {
+        const deck$ = this.deckApi.getUserDeck(this.userDeckId);
+        const nextCard$ = this.reviewApi.getNextCard(this.userDeckId);
+
+        forkJoin({ deck: deck$, nextCard: nextCard$ }).subscribe({
+            next: result => {
+                this.deck = result.deck;
+                this.handleNextCard(result.nextCard);
+                if (this.deck.publicDeckId && !this.sessionComplete) {
+                    this.publicDeckApi.getPublicDeck(this.deck.publicDeckId).subscribe({
+                        next: publicDeck => {
+                            this.templateApi.getTemplate(publicDeck.templateId).subscribe({
+                                next: (template: CardTemplateDTO) => {
+                                    this.template = template;
+                                }
+                            });
+                        }
+                    });
+                }
             },
-            error: err => {
-                console.error('Failed to load deck:', err);
+            error: () => {
+                this.backToDeck();
             }
         });
     }
 
-    get progress(): number {
-        return (this.currentCard / this.totalCards) * 100;
-    }
+    private handleNextCard(nextCard: ReviewNextCardResponse): void {
+        this.queue = nextCard.queue;
 
-    answerCard(quality: string): void {
-        console.log('Answered:', quality);
-        this.currentCard++;
-        if (this.currentCard > this.totalCards) {
-            alert('Review session complete!');
-            this.exitReview();
+        if (this.initialTotalRemaining === 0) {
+            this.initialTotalRemaining = this.queue.totalRemaining ?? (this.queue.newCount + this.queue.dueCount);
         }
+
+        if (nextCard.userCardId === null) {
+            this.sessionComplete = true;
+            setTimeout(() => this.backToDeck(), 2000);
+            return;
+        }
+
+        this.currentCard = nextCard;
+        this.revealed = false;
+        this.cardShownTime = performance.now();
     }
 
-    exitReview(): void {
-        const userDeckId = this.route.snapshot.paramMap.get('userDeckId') || '';
-        void this.router.navigate(['/decks', userDeckId]);
+    get progressPercent(): number {
+        if (this.initialTotalRemaining === 0) {
+            return 100;
+        }
+        const currentRemaining = this.queue.totalRemaining ?? (this.queue.newCount + this.queue.dueCount);
+        return Math.max(0, Math.min(100, (1 - currentRemaining / this.initialTotalRemaining) * 100));
+    }
+
+    formatInterval(rating: string): string {
+        if (!this.currentCard?.intervals) {
+            return '';
+        }
+        const interval = this.currentCard.intervals[rating];
+        return interval?.display ? ` · ${interval.display}` : '';
+    }
+
+    answer(rating: 'AGAIN' | 'HARD' | 'GOOD' | 'EASY'): void {
+        if (!this.currentCard || !this.currentCard.userCardId) {
+            return;
+        }
+
+        const responseMs = Math.round(performance.now() - this.cardShownTime);
+
+        this.reviewApi.answerCard(this.userDeckId, this.currentCard.userCardId, {
+            rating,
+            responseMs,
+            source: 'web'
+        }).subscribe({
+            next: response => {
+                this.handleNextCard(response.next);
+            },
+            error: () => {
+                this.backToDeck();
+            }
+        });
+    }
+
+    backToDeck(): void {
+        void this.router.navigate(['/decks', this.userDeckId]);
     }
 }

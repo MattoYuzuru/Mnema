@@ -10,34 +10,35 @@ import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loa
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
 import { FlashcardViewComponent } from '../../shared/components/flashcard-view.component';
 import { ButtonComponent } from '../../shared/components/button.component';
+import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-public-card-browser',
     standalone: true,
-    imports: [NgIf, NgFor, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent],
+    imports: [NgIf, NgFor, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
     <div *ngIf="!loading" class="public-card-browser">
       <header class="page-header">
         <div class="header-left">
-          <h1>{{ deck?.name || 'Public Deck' }}</h1>
+          <h1>{{ deck?.name || ('publicCardBrowser.publicDeck' | translate) }}</h1>
           <p class="deck-description">{{ deck?.description }}</p>
-          <p class="card-count">{{ cards.length }} cards</p>
+          <p class="card-count">{{ cards.length }} {{ 'publicCardBrowser.cards' | translate }}</p>
         </div>
         <div class="header-right">
-          <app-button variant="primary" size="md" (click)="forkDeck()">Fork Deck</app-button>
+          <app-button variant="primary" size="md" (click)="forkDeck()">{{ 'button.fork' | translate }}</app-button>
           <div class="view-mode-toggle">
-            <app-button [variant]="viewMode === 'list' ? 'primary' : 'ghost'" size="sm" (click)="setViewMode('list')">List</app-button>
-            <app-button [variant]="viewMode === 'cards' ? 'primary' : 'ghost'" size="sm" (click)="setViewMode('cards')">Cards</app-button>
+            <app-button [variant]="viewMode === 'list' ? 'primary' : 'ghost'" size="sm" (click)="setViewMode('list')">{{ 'cardBrowser.list' | translate }}</app-button>
+            <app-button [variant]="viewMode === 'cards' ? 'primary' : 'ghost'" size="sm" (click)="setViewMode('cards')">{{ 'cardBrowser.cardsView' | translate }}</app-button>
           </div>
         </div>
       </header>
 
       <div *ngIf="viewMode === 'list' && cards.length > 0" class="cards-table">
         <div class="card-row header-row">
-          <div class="card-col">Front Preview</div>
-          <div class="card-col">Tags</div>
+          <div class="card-col">{{ 'publicCardBrowser.frontPreview' | translate }}</div>
+          <div class="card-col">{{ 'cardBrowser.tags' | translate }}</div>
         </div>
         <div *ngFor="let card of cards" class="card-row">
           <div class="card-col">{{ getFrontPreview(card) }}</div>
@@ -49,9 +50,9 @@ import { ButtonComponent } from '../../shared/components/button.component';
 
       <div *ngIf="viewMode === 'cards' && cards.length > 0" class="card-view-mode">
         <div class="card-navigation">
-          <app-button variant="ghost" size="sm" (click)="previousCard()" [disabled]="currentCardIndex === 0">← Previous</app-button>
+          <app-button variant="ghost" size="sm" (click)="previousCard()" [disabled]="currentCardIndex === 0">{{ 'cardBrowser.previous' | translate }}</app-button>
           <span class="card-counter">{{ currentCardIndex + 1 }} / {{ cards.length }}</span>
-          <app-button variant="ghost" size="sm" (click)="nextCard()" [disabled]="currentCardIndex >= cards.length - 1">Next →</app-button>
+          <app-button variant="ghost" size="sm" (click)="nextCard()" [disabled]="currentCardIndex >= cards.length - 1">{{ 'cardBrowser.next' | translate }}</app-button>
         </div>
 
         <div class="flashcard-container">
@@ -65,11 +66,14 @@ import { ButtonComponent } from '../../shared/components/button.component';
               </div>
             </div>
           </div>
-          <p class="flip-hint">Click card to flip</p>
+          <div class="flip-hint">
+            <p>{{ 'cardBrowser.clickToFlip' | translate }}</p>
+            <p>{{ 'cardBrowser.keyboardHint' | translate }}</p>
+          </div>
         </div>
       </div>
 
-      <app-empty-state *ngIf="cards.length === 0" icon="📝" title="No cards in this deck" description="This public deck doesn't have any cards yet"></app-empty-state>
+      <app-empty-state *ngIf="cards.length === 0" icon="📝" [title]="'publicCardBrowser.noCards' | translate" [description]="'publicCardBrowser.noCardsDescription' | translate"></app-empty-state>
     </div>
   `,
     styles: [`

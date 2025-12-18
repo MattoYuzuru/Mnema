@@ -1,4 +1,4 @@
-package app.mnema.core.deck.domain.entity;
+package app.mnema.core.review.entity;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.*;
@@ -16,10 +16,6 @@ public class SrCardStateEntity {
     @Column(name = "user_card_id")
     private UUID userCardId;
 
-    @OneToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_card_id", insertable = false, updatable = false)
-    private UserCardEntity userCard;
-
     @Column(name = "algorithm_id", nullable = false)
     private String algorithmId;
 
@@ -36,20 +32,19 @@ public class SrCardStateEntity {
     @Column(name = "review_count", nullable = false)
     private int reviewCount;
 
+    @Column(name = "is_suspended", nullable = false)
+    private boolean suspended;
+
+    @Version
+    @Column(name = "row_version", nullable = false)
+    private long rowVersion;
+
     public UUID getUserCardId() {
         return userCardId;
     }
 
     public void setUserCardId(UUID userCardId) {
         this.userCardId = userCardId;
-    }
-
-    public UserCardEntity getUserCard() {
-        return userCard;
-    }
-
-    public void setUserCard(UserCardEntity userCard) {
-        this.userCard = userCard;
     }
 
     public String getAlgorithmId() {
@@ -91,4 +86,17 @@ public class SrCardStateEntity {
     public void setReviewCount(int reviewCount) {
         this.reviewCount = reviewCount;
     }
+
+    public boolean isSuspended() {
+        return suspended;
+    }
+
+    public void setSuspended(boolean suspended) {
+        this.suspended = suspended;
+    }
+
+    public long getRowVersion() {
+        return rowVersion;
+    }
+
 }
