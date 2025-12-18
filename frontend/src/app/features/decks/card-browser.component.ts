@@ -166,10 +166,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                 [placeholder]="field.helpText || 'Enter ' + field.label"
               ></app-input>
               <app-textarea
-                *ngIf="field.fieldType === 'long_text'"
+                *ngIf="field.fieldType === 'long_text' || field.fieldType === 'markdown'"
                 [label]="field.label + (field.isRequired ? ' *' : '')"
                 [formControlName]="field.name"
-                [placeholder]="field.helpText || 'Enter ' + field.label"
+                [placeholder]="field.fieldType === 'markdown' ? 'Use **bold**, *italic*, inline code' : (field.helpText || 'Enter ' + field.label)"
                 [rows]="4"
               ></app-textarea>
               <app-input
@@ -475,6 +475,59 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         padding: var(--spacing-lg);
         border-top: 1px solid var(--border-color);
         flex-shrink: 0;
+      }
+
+      @media (max-width: 768px) {
+        .card-browser {
+          padding: 0 var(--spacing-md);
+        }
+
+        .page-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: var(--spacing-md);
+        }
+
+        .page-header h1 {
+          font-size: 1.5rem;
+        }
+
+        .header-actions {
+          width: 100%;
+          flex-direction: column;
+        }
+
+        .cards-table {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        .card-row {
+          min-width: 600px;
+        }
+
+        .flashcard {
+          min-height: 300px;
+        }
+
+        .card-actions {
+          flex-direction: column;
+          width: 100%;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .card-browser {
+          padding: 0 var(--spacing-sm);
+        }
+
+        .page-header h1 {
+          font-size: 1.25rem;
+        }
+
+        .flashcard {
+          min-height: 250px;
+        }
       }
     `]
 })

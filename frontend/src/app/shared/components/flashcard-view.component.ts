@@ -1,6 +1,7 @@
 import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { NgFor, NgIf, NgClass } from '@angular/common';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
+import { markdownToHtml } from '../utils/markdown.util';
 
 interface RenderedField {
     field: FieldTemplateDTO;
@@ -27,7 +28,7 @@ interface RenderedField {
               <video controls [src]="rf.value" class="field-video"></video>
             </ng-container>
             <ng-container *ngIf="rf.field.fieldType !== 'image' && rf.field.fieldType !== 'audio' && rf.field.fieldType !== 'video'">
-              <div [innerHTML]="formatValue(rf.value)"></div>
+              <div [innerHTML]="formatValue(rf.value, rf.field.fieldType)"></div>
             </ng-container>
           </div>
         </div>
@@ -47,7 +48,7 @@ interface RenderedField {
               <video controls [src]="rf.value" class="field-video"></video>
             </ng-container>
             <ng-container *ngIf="rf.field.fieldType !== 'image' && rf.field.fieldType !== 'audio' && rf.field.fieldType !== 'video'">
-              <div [innerHTML]="formatValue(rf.value)"></div>
+              <div [innerHTML]="formatValue(rf.value, rf.field.fieldType)"></div>
             </ng-container>
           </div>
         </div>
@@ -160,9 +161,12 @@ export class FlashcardViewComponent implements OnChanges {
         return String(value);
     }
 
-    formatValue(value: string | null): string {
+    formatValue(value: string | null, fieldType: string = 'text'): string {
         if (!value) {
             return '<span style="color: var(--color-text-tertiary); font-style: italic;">No content</span>';
+        }
+        if (fieldType === 'markdown') {
+            return markdownToHtml(value);
         }
         return value.replace(/\n/g, '<br>');
     }

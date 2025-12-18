@@ -37,4 +37,49 @@ body {
     background-color: var(--color-background);
     color: var(--color-text-primary);
     line-height: 1.5;
+    overflow-x: hidden;
+}
+
+@media (max-width: 768px) {
+    :root {
+        --spacing-xl: 1.5rem;
+        --spacing-2xl: 2rem;
+    }
+
+    body {
+        font-size: 14px;
+    }
+
+    .modal-content, .wizard-content {
+        max-height: 90vh !important;
+        overflow-y: auto !important;
+        margin: var(--spacing-sm) !important;
+        width: calc(100vw - 2 * var(--spacing-sm)) !important;
+        max-width: calc(100vw - 2 * var(--spacing-sm)) !important;
+    }
+
+    .modal-header, .wizard-header {
+        padding: var(--spacing-md) !important;
+    }
+
+    .modal-body, .wizard-body {
+        padding: var(--spacing-md) !important;
+    }
+
+    .modal-footer, .wizard-footer {
+        padding: var(--spacing-md) !important;
+        flex-wrap: wrap;
+    }
+}
+
+@media (max-width: 480px) {
+    body {
+        font-size: 13px;
+    }
+
+    .modal-content, .wizard-content {
+        margin: var(--spacing-xs) !important;
+        width: calc(100vw - 2 * var(--spacing-xs)) !important;
+        max-width: calc(100vw - 2 * var(--spacing-xs)) !important;
+    }
 }

@@ -43,10 +43,10 @@ interface PendingCard {
               ></app-input>
 
               <app-textarea
-                *ngIf="field.fieldType === 'long_text'"
+                *ngIf="field.fieldType === 'long_text' || field.fieldType === 'markdown'"
                 [label]="field.label + (field.isRequired ? ' *' : '')"
                 [formControlName]="field.name"
-                [placeholder]="field.helpText || 'Enter ' + field.label"
+                [placeholder]="field.helpText || (field.fieldType === 'markdown' ? 'Use **bold**, *italic*, inline code' : 'Enter ' + field.label)"
                 [rows]="4"
               ></app-textarea>
 

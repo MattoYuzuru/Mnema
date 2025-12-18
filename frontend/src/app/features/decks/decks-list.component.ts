@@ -72,6 +72,22 @@ import { ButtonComponent } from '../../shared/components/button.component';
         flex-direction: column;
         gap: var(--spacing-md);
       }
+
+      @media (max-width: 768px) {
+        .decks-list-page {
+          padding: 0 var(--spacing-md);
+        }
+
+        .page-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: var(--spacing-md);
+        }
+
+        .page-header h1 {
+          font-size: 1.5rem;
+        }
+      }
     `
     ]
 })

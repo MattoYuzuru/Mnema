@@ -244,6 +244,49 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         color: var(--color-text-tertiary);
         margin: 0;
       }
+
+      @media (max-width: 768px) {
+        .review-session {
+          padding-top: var(--spacing-md);
+        }
+
+        .review-header h2 {
+          font-size: 1.25rem;
+        }
+
+        .card-container {
+          min-height: 16rem;
+        }
+
+        .flashcard {
+          min-height: 16rem;
+          padding: var(--spacing-lg);
+        }
+
+        .answer-buttons {
+          gap: var(--spacing-sm);
+        }
+
+        .show-answer-container {
+          gap: var(--spacing-sm);
+        }
+      }
+
+      @media (max-width: 480px) {
+        .card-container {
+          min-height: 14rem;
+        }
+
+        .flashcard {
+          min-height: 14rem;
+          padding: var(--spacing-md);
+        }
+
+        .answer-buttons {
+          flex-direction: column;
+          width: 100%;
+        }
+      }
     `]
 })
 export class ReviewSessionComponent implements OnInit, OnDestroy {

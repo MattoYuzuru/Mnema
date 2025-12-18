@@ -175,6 +175,48 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
         flex-direction: column;
         gap: var(--spacing-md);
       }
+
+      @media (max-width: 768px) {
+        .home-page {
+          padding: 0 var(--spacing-md);
+        }
+
+        .hero h1 {
+          font-size: 2rem;
+        }
+
+        .hero p {
+          font-size: 1rem;
+        }
+
+        .section-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: var(--spacing-sm);
+        }
+
+        .section-header h2 {
+          font-size: 1.25rem;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .home-page {
+          padding: 0 var(--spacing-sm);
+        }
+
+        .hero {
+          padding: var(--spacing-lg) 0;
+        }
+
+        .hero h1 {
+          font-size: 1.5rem;
+        }
+
+        .hero p {
+          font-size: 0.9rem;
+        }
+      }
     `
     ]
 })

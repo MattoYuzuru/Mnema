@@ -304,6 +304,50 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       .footer-link:hover {
         color: var(--color-text-primary);
       }
+
+      @media (max-width: 768px) {
+        .header {
+          padding: var(--spacing-sm) var(--spacing-md);
+          gap: var(--spacing-sm);
+        }
+
+        .header-center {
+          display: none;
+        }
+
+        .user-name {
+          display: none;
+        }
+
+        .footer {
+          flex-direction: column;
+          gap: var(--spacing-sm);
+          text-align: center;
+        }
+
+        .footer-left, .footer-right {
+          justify-content: center;
+        }
+
+        .footer-right {
+          flex-wrap: wrap;
+          gap: var(--spacing-md);
+        }
+      }
+
+      @media (max-width: 480px) {
+        .header {
+          padding: var(--spacing-xs) var(--spacing-sm);
+        }
+
+        .logo {
+          font-size: 1rem;
+        }
+
+        .logo-image {
+          height: 1.5rem;
+        }
+      }
     `
     ]
 })

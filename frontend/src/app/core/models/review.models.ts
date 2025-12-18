@@ -29,14 +29,21 @@ export interface ReviewAnswerResponse {
     next: ReviewNextCardResponse;
 }
 
+export interface ReviewPreferencesDTO {
+    dailyNewLimit: number | null;
+    learningHorizonHours: number | null;
+}
+
 export interface ReviewDeckAlgorithmResponse {
     algorithmId: string;
     algorithmParams: Record<string, unknown> | null;
     effectiveAlgorithmParams?: Record<string, unknown> | null;
     pendingMigrationCards: number;
+    reviewPreferences?: ReviewPreferencesDTO;
 }
 
 export interface UpdateAlgorithmRequest {
     algorithmId: string;
     algorithmParams: Record<string, unknown> | null;
+    reviewPreferences?: ReviewPreferencesDTO;
 }

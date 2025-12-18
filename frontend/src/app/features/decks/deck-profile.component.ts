@@ -117,14 +117,14 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               </p>
             </div>
 
-            <div *ngIf="hasReviewPreferences" class="review-preferences-section">
+            <div class="review-preferences-section">
               <h4 class="subsection-title">{{ 'deckProfile.reviewPreferences' | translate }}</h4>
-              <div *ngIf="hasPreference('dailyNewLimit')" class="form-group">
+              <div class="form-group">
                 <label>{{ 'deckProfile.dailyNewLimit' | translate }}</label>
                 <input type="number" formControlName="dailyNewLimit" class="number-input" min="0" />
                 <p class="field-help">{{ 'deckProfile.dailyNewLimitHelp' | translate }}</p>
               </div>
-              <div *ngIf="hasPreference('learningHorizonHours')" class="form-group">
+              <div class="form-group">
                 <label>{{ 'deckProfile.learningHorizonHours' | translate }}</label>
                 <input type="number" formControlName="learningHorizonHours" class="number-input" min="1" max="168" />
                 <p class="field-help">{{ 'deckProfile.learningHorizonHelp' | translate }}</p>
@@ -433,6 +433,41 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         line-height: 1;
         padding: 0;
       }
+
+      @media (max-width: 768px) {
+        .deck-profile {
+          padding: 0 var(--spacing-md);
+        }
+
+        .deck-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: var(--spacing-md);
+        }
+
+        .header-content h1 {
+          font-size: 1.5rem;
+        }
+
+        .header-actions {
+          width: 100%;
+          flex-direction: column;
+        }
+
+        .deck-stats {
+          flex-direction: column;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .deck-profile {
+          padding: 0 var(--spacing-sm);
+        }
+
+        .header-content h1 {
+          font-size: 1.25rem;
+        }
+      }
     `]
 })
 export class DeckProfileComponent implements OnInit {
@@ -452,7 +487,6 @@ export class DeckProfileComponent implements OnInit {
     tags: string[] = [];
     currentAlgorithm: ReviewDeckAlgorithmResponse | null = null;
     originalAlgorithmId = '';
-    availablePreferenceKeys: string[] = [];
 
     constructor(
         private route: ActivatedRoute,
@@ -557,22 +591,16 @@ export class DeckProfileComponent implements OnInit {
                     this.currentAlgorithm = algorithmData;
                     this.originalAlgorithmId = algorithmData.algorithmId;
 
-                    const effectiveParams = algorithmData.effectiveAlgorithmParams || algorithmData.algorithmParams || {};
-                    this.availablePreferenceKeys = Object.keys(effectiveParams);
+                    const preferences = algorithmData.reviewPreferences;
 
                     const formConfig: any = {
                         displayName: [this.deck!.displayName, Validators.required],
                         displayDescription: [this.deck!.displayDescription],
                         autoUpdate: [this.deck!.autoUpdate],
-                        algorithmId: [algorithmData.algorithmId, Validators.required]
+                        algorithmId: [algorithmData.algorithmId, Validators.required],
+                        dailyNewLimit: [preferences?.dailyNewLimit ?? 20],
+                        learningHorizonHours: [preferences?.learningHorizonHours ?? 24]
                     };
-
-                    if (this.availablePreferenceKeys.includes('dailyNewLimit')) {
-                        formConfig.dailyNewLimit = [effectiveParams['dailyNewLimit'] || 20];
-                    }
-                    if (this.availablePreferenceKeys.includes('learningHorizonHours')) {
-                        formConfig.learningHorizonHours = [effectiveParams['learningHorizonHours'] || 24];
-                    }
 
                     if (this.isAuthor && this.publicDeck) {
                         formConfig.publicName = [this.publicDeck.name, Validators.required];
@@ -591,16 +619,6 @@ export class DeckProfileComponent implements OnInit {
                 }
             });
         }
-    }
-
-    get hasReviewPreferences(): boolean {
-        return this.availablePreferenceKeys.length > 0 &&
-               (this.availablePreferenceKeys.includes('dailyNewLimit') ||
-                this.availablePreferenceKeys.includes('learningHorizonHours'));
-    }
-
-    hasPreference(key: string): boolean {
-        return this.availablePreferenceKeys.includes(key);
     }
 
     addTag(event: Event): void {
@@ -633,25 +651,22 @@ export class DeckProfileComponent implements OnInit {
         };
 
         const algorithmChanged = formValue.algorithmId !== this.originalAlgorithmId;
-        const hasPreferenceChanges = this.availablePreferenceKeys.length > 0;
+        const hasPreferenceValues = formValue.dailyNewLimit !== undefined || formValue.learningHorizonHours !== undefined;
 
         const requests: any = {
             userDeck: this.deckApi.patchDeck(this.userDeckId, userDeckUpdates)
         };
 
-        if (algorithmChanged || hasPreferenceChanges) {
-            const algorithmParams: Record<string, unknown> = {};
-
-            if (this.availablePreferenceKeys.includes('dailyNewLimit') && formValue.dailyNewLimit !== undefined) {
-                algorithmParams['dailyNewLimit'] = Number(formValue.dailyNewLimit);
-            }
-            if (this.availablePreferenceKeys.includes('learningHorizonHours') && formValue.learningHorizonHours !== undefined) {
-                algorithmParams['learningHorizonHours'] = Number(formValue.learningHorizonHours);
-            }
+        if (algorithmChanged || hasPreferenceValues) {
+            const reviewPreferences = {
+                dailyNewLimit: formValue.dailyNewLimit !== undefined ? Number(formValue.dailyNewLimit) : null,
+                learningHorizonHours: formValue.learningHorizonHours !== undefined ? Number(formValue.learningHorizonHours) : null
+            };
 
             requests.algorithm = this.reviewApi.updateDeckAlgorithm(this.userDeckId, {
                 algorithmId: formValue.algorithmId,
-                algorithmParams: Object.keys(algorithmParams).length > 0 ? algorithmParams : null
+                algorithmParams: null,
+                reviewPreferences: reviewPreferences
             });
         }
 

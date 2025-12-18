@@ -71,6 +71,26 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         flex-direction: column;
         gap: var(--spacing-md);
       }
+
+      @media (max-width: 768px) {
+        .catalog-page {
+          padding: 0 var(--spacing-md);
+        }
+
+        .page-header h1 {
+          font-size: 1.5rem;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .catalog-page {
+          padding: 0 var(--spacing-sm);
+        }
+
+        .page-header h1 {
+          font-size: 1.25rem;
+        }
+      }
     `]
 })
 export class PublicDecksCatalogComponent implements OnInit {
