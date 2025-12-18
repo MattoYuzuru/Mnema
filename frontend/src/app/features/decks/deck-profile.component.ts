@@ -117,6 +117,20 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               </p>
             </div>
 
+            <div *ngIf="hasReviewPreferences" class="review-preferences-section">
+              <h4 class="subsection-title">{{ 'deckProfile.reviewPreferences' | translate }}</h4>
+              <div *ngIf="hasPreference('dailyNewLimit')" class="form-group">
+                <label>{{ 'deckProfile.dailyNewLimit' | translate }}</label>
+                <input type="number" formControlName="dailyNewLimit" class="number-input" min="0" />
+                <p class="field-help">{{ 'deckProfile.dailyNewLimitHelp' | translate }}</p>
+              </div>
+              <div *ngIf="hasPreference('learningHorizonHours')" class="form-group">
+                <label>{{ 'deckProfile.learningHorizonHours' | translate }}</label>
+                <input type="number" formControlName="learningHorizonHours" class="number-input" min="1" max="168" />
+                <p class="field-help">{{ 'deckProfile.learningHorizonHelp' | translate }}</p>
+              </div>
+            </div>
+
             <div *ngIf="isAuthor" class="public-deck-section">
               <h3 class="section-title">{{ 'deckProfile.publicDeckSettings' | translate }}</h3>
               <app-input
@@ -357,6 +371,33 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         font-style: italic;
       }
 
+      .review-preferences-section {
+        margin-top: var(--spacing-lg);
+        padding-top: var(--spacing-lg);
+        border-top: 1px solid var(--border-color);
+      }
+
+      .subsection-title {
+        font-size: 1rem;
+        font-weight: 600;
+        margin: 0 0 var(--spacing-md) 0;
+      }
+
+      .number-input {
+        width: 100%;
+        padding: var(--spacing-sm) var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+        font-size: 0.9rem;
+        background: var(--color-card-background);
+      }
+
+      .field-help {
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+        margin: var(--spacing-xs) 0 0 0;
+      }
+
       .tag-input {
         width: 100%;
         padding: var(--spacing-sm) var(--spacing-md);
@@ -411,6 +452,7 @@ export class DeckProfileComponent implements OnInit {
     tags: string[] = [];
     currentAlgorithm: ReviewDeckAlgorithmResponse | null = null;
     originalAlgorithmId = '';
+    availablePreferenceKeys: string[] = [];
 
     constructor(
         private route: ActivatedRoute,
@@ -515,12 +557,22 @@ export class DeckProfileComponent implements OnInit {
                     this.currentAlgorithm = algorithmData;
                     this.originalAlgorithmId = algorithmData.algorithmId;
 
+                    const effectiveParams = algorithmData.effectiveAlgorithmParams || algorithmData.algorithmParams || {};
+                    this.availablePreferenceKeys = Object.keys(effectiveParams);
+
                     const formConfig: any = {
                         displayName: [this.deck!.displayName, Validators.required],
                         displayDescription: [this.deck!.displayDescription],
                         autoUpdate: [this.deck!.autoUpdate],
                         algorithmId: [algorithmData.algorithmId, Validators.required]
                     };
+
+                    if (this.availablePreferenceKeys.includes('dailyNewLimit')) {
+                        formConfig.dailyNewLimit = [effectiveParams['dailyNewLimit'] || 20];
+                    }
+                    if (this.availablePreferenceKeys.includes('learningHorizonHours')) {
+                        formConfig.learningHorizonHours = [effectiveParams['learningHorizonHours'] || 24];
+                    }
 
                     if (this.isAuthor && this.publicDeck) {
                         formConfig.publicName = [this.publicDeck.name, Validators.required];
@@ -539,6 +591,16 @@ export class DeckProfileComponent implements OnInit {
                 }
             });
         }
+    }
+
+    get hasReviewPreferences(): boolean {
+        return this.availablePreferenceKeys.length > 0 &&
+               (this.availablePreferenceKeys.includes('dailyNewLimit') ||
+                this.availablePreferenceKeys.includes('learningHorizonHours'));
+    }
+
+    hasPreference(key: string): boolean {
+        return this.availablePreferenceKeys.includes(key);
     }
 
     addTag(event: Event): void {
@@ -571,15 +633,25 @@ export class DeckProfileComponent implements OnInit {
         };
 
         const algorithmChanged = formValue.algorithmId !== this.originalAlgorithmId;
+        const hasPreferenceChanges = this.availablePreferenceKeys.length > 0;
 
         const requests: any = {
             userDeck: this.deckApi.patchDeck(this.userDeckId, userDeckUpdates)
         };
 
-        if (algorithmChanged) {
+        if (algorithmChanged || hasPreferenceChanges) {
+            const algorithmParams: Record<string, unknown> = {};
+
+            if (this.availablePreferenceKeys.includes('dailyNewLimit') && formValue.dailyNewLimit !== undefined) {
+                algorithmParams['dailyNewLimit'] = Number(formValue.dailyNewLimit);
+            }
+            if (this.availablePreferenceKeys.includes('learningHorizonHours') && formValue.learningHorizonHours !== undefined) {
+                algorithmParams['learningHorizonHours'] = Number(formValue.learningHorizonHours);
+            }
+
             requests.algorithm = this.reviewApi.updateDeckAlgorithm(this.userDeckId, {
                 algorithmId: formValue.algorithmId,
-                algorithmParams: null
+                algorithmParams: Object.keys(algorithmParams).length > 0 ? algorithmParams : null
             });
         }
 
@@ -604,7 +676,7 @@ export class DeckProfileComponent implements OnInit {
                 this.saving = false;
                 this.showEditModal = false;
             },
-            error: err => {
+            error: () => {
                 this.saving = false;
             }
         });

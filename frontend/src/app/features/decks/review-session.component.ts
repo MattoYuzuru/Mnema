@@ -9,7 +9,7 @@ import { ReviewApiService } from '../../core/services/review-api.service';
 import { PreferencesService } from '../../core/services/preferences.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { CardTemplateDTO } from '../../core/models/template.models';
-import { ReviewNextCardResponse } from '../../core/models/review.models';
+import { ReviewNextCardResponse, ReviewQueueDTO } from '../../core/models/review.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { FlashcardViewComponent } from '../../shared/components/flashcard-view.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
@@ -48,16 +48,38 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         <div class="card-container">
           <div class="flashcard">
             <app-flashcard-view
-              *ngIf="template && currentCard"
+              *ngIf="template && currentCard && !revealed"
               [template]="template"
               [content]="currentCard.effectiveContent"
               [side]="'front'"
               [hideLabels]="preferences.hideFieldLabels"
             ></app-flashcard-view>
+            <div *ngIf="revealed && template && currentCard" class="revealed-content">
+              <app-flashcard-view
+                [template]="template"
+                [content]="currentCard.effectiveContent"
+                [side]="'front'"
+                [hideLabels]="preferences.hideFieldLabels"
+              ></app-flashcard-view>
+              <div class="divider"></div>
+              <app-flashcard-view
+                [template]="template"
+                [content]="currentCard.effectiveContent"
+                [side]="'back'"
+                [hideLabels]="preferences.hideFieldLabels"
+              ></app-flashcard-view>
+            </div>
           </div>
         </div>
 
-        <div class="answer-buttons">
+        <div *ngIf="!revealed" class="show-answer-container">
+          <app-button variant="primary" size="lg" (click)="revealAnswer()">
+            {{ 'review.showAnswer' | translate }}
+          </app-button>
+          <p class="keyboard-hint">{{ 'review.spaceToReveal' | translate }}</p>
+        </div>
+
+        <div *ngIf="revealed" class="answer-buttons">
           <app-button variant="ghost" (click)="answer('AGAIN')">
             {{ 'review.again' | translate }}{{ formatInterval('AGAIN') }}
           </app-button>
@@ -72,7 +94,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           </app-button>
         </div>
 
-        <div class="keyboard-hint">
+        <div *ngIf="revealed" class="keyboard-hint">
           <p>{{ 'review.keyboardShortcuts' | translate }}</p>
         </div>
       </div>
@@ -192,6 +214,26 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         flex-wrap: wrap;
       }
 
+      .show-answer-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--spacing-md);
+      }
+
+      .revealed-content {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-lg);
+      }
+
+      .divider {
+        height: 1px;
+        background: var(--border-color);
+        margin: var(--spacing-md) 0;
+      }
+
       .keyboard-hint {
         text-align: center;
         margin-top: var(--spacing-md);
@@ -208,9 +250,10 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
     deck: UserDeckDTO | null = null;
     template: CardTemplateDTO | null = null;
     currentCard: ReviewNextCardResponse | null = null;
-    queue = { newCount: 0, dueCount: 0 };
-    initialTotal = 0;
+    queue: ReviewQueueDTO = { newCount: 0, dueCount: 0 };
+    initialTotalRemaining = 0;
     sessionComplete = false;
+    revealed = false;
     cardShownTime = 0;
     private userDeckId = '';
 
@@ -243,6 +286,18 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
             return;
         }
 
+        if (event.key === ' ' || event.key === 'Space') {
+            event.preventDefault();
+            if (!this.revealed) {
+                this.revealAnswer();
+            }
+            return;
+        }
+
+        if (!this.revealed) {
+            return;
+        }
+
         if (event.key === '1') {
             event.preventDefault();
             this.answer('AGAIN');
@@ -256,6 +311,10 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
             event.preventDefault();
             this.answer('EASY');
         }
+    }
+
+    revealAnswer(): void {
+        this.revealed = true;
     }
 
     private loadDeckAndStart(): void {
@@ -287,8 +346,8 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
     private handleNextCard(nextCard: ReviewNextCardResponse): void {
         this.queue = nextCard.queue;
 
-        if (this.initialTotal === 0) {
-            this.initialTotal = this.queue.newCount + this.queue.dueCount;
+        if (this.initialTotalRemaining === 0) {
+            this.initialTotalRemaining = this.queue.totalRemaining ?? (this.queue.newCount + this.queue.dueCount);
         }
 
         if (nextCard.userCardId === null) {
@@ -298,15 +357,16 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
         }
 
         this.currentCard = nextCard;
+        this.revealed = false;
         this.cardShownTime = performance.now();
     }
 
     get progressPercent(): number {
-        if (this.initialTotal === 0) {
+        if (this.initialTotalRemaining === 0) {
             return 100;
         }
-        const currentTotal = this.queue.newCount + this.queue.dueCount;
-        return Math.max(0, Math.min(100, (1 - currentTotal / this.initialTotal) * 100));
+        const currentRemaining = this.queue.totalRemaining ?? (this.queue.newCount + this.queue.dueCount);
+        return Math.max(0, Math.min(100, (1 - currentRemaining / this.initialTotalRemaining) * 100));
     }
 
     formatInterval(rating: string): string {
@@ -314,7 +374,7 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
             return '';
         }
         const interval = this.currentCard.intervals[rating];
-        return interval ? ` · ${interval}` : '';
+        return interval?.display ? ` · ${interval.display}` : '';
     }
 
     answer(rating: 'AGAIN' | 'HARD' | 'GOOD' | 'EASY'): void {

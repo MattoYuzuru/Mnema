@@ -40,7 +40,7 @@ class UserDeckPreferencesServiceTest {
         UserDeckPreferencesService.PreferencesSnapshot snapshot = service.getSnapshot(deckId, Instant.parse("2024-01-01T00:00:00Z"));
 
         assertThat(snapshot.userDeckId()).isEqualTo(deckId);
-        assertThat(snapshot.learningHorizon().toMinutes()).isEqualTo(1440);
+        assertThat(snapshot.learningHorizon().toMinutes()).isEqualTo(120);
         assertThat(snapshot.maxNewPerDay()).isEqualTo(20);
 
         ArgumentCaptor<UserDeckPreferencesEntity> captor = ArgumentCaptor.forClass(UserDeckPreferencesEntity.class);

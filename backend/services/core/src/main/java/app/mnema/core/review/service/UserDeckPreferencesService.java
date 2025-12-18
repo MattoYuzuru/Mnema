@@ -14,7 +14,7 @@ import java.util.UUID;
 @Service
 public class UserDeckPreferencesService {
 
-    private static final int DEFAULT_LEARNING_HORIZON_MINUTES = 24 * 60;
+    private static final int DEFAULT_LEARNING_HORIZON_MINUTES = 120;
     private static final int DEFAULT_MAX_NEW_PER_DAY = 20;
 
     private final UserDeckPreferencesRepository repository;

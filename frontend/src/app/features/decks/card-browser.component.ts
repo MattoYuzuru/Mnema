@@ -119,7 +119,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               </div>
             </div>
           </div>
-          <p class="flip-hint">{{ 'cardBrowser.clickToFlip' | translate }} • {{ 'cardBrowser.keyboardHint' | translate }}</p>
+          <div class="flip-hint">
+            <p>{{ 'cardBrowser.clickToFlip' | translate }}</p>
+            <p>{{ 'cardBrowser.keyboardHint' | translate }}</p>
+          </div>
         </div>
 
         <div class="card-actions">

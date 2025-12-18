@@ -1,6 +1,12 @@
 export interface ReviewQueueDTO {
     dueCount: number;
     newCount: number;
+    totalRemaining?: number;
+}
+
+export interface IntervalDTO {
+    at: string;
+    display: string;
 }
 
 export interface ReviewNextCardResponse {
@@ -8,7 +14,7 @@ export interface ReviewNextCardResponse {
     publicCardId: string | null;
     due: boolean;
     effectiveContent: Record<string, string>;
-    intervals: Record<string, string> | null;
+    intervals: Record<string, IntervalDTO> | null;
     queue: ReviewQueueDTO;
 }
 
@@ -26,6 +32,7 @@ export interface ReviewAnswerResponse {
 export interface ReviewDeckAlgorithmResponse {
     algorithmId: string;
     algorithmParams: Record<string, unknown> | null;
+    effectiveAlgorithmParams?: Record<string, unknown> | null;
     pendingMigrationCards: number;
 }
 
