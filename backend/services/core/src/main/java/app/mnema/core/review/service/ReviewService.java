@@ -136,7 +136,9 @@ public class ReviewService {
         AlgorithmContext algorithmContext = resolveAlgorithmContext(userId, userDeckId);
 
         Instant dueHorizon = now.plus(preferences.learningHorizon());
-        long dueCount = userCardRepo.countDue(userId, userDeckId, dueHorizon);
+        long dueNowCount = userCardRepo.countDue(userId, userDeckId, now);
+        long dueHorizonCount = userCardRepo.countDue(userId, userDeckId, dueHorizon);
+        long dueSoonCount = Math.max(0, dueHorizonCount - dueNowCount);
         long newCount = userCardRepo.countNew(userId, userDeckId);
         long remainingNewQuota = preferences.remainingNewQuota();
         long availableNew = newCount;
@@ -145,16 +147,17 @@ public class ReviewService {
         }
 
         var queue = new ReviewNextCardResponse.QueueSummary(
-                dueCount,
+                dueNowCount,
                 availableNew,
-                dueCount + availableNew
+                dueNowCount + availableNew + dueSoonCount
         );
 
         // 1) due, 2) new
         UUID nextCardId = null;
         boolean due = false;
+        boolean learningAhead = false;
 
-        var dueIds = userCardRepo.findDueCardIds(userId, userDeckId, dueHorizon, PageRequest.of(0, 1));
+        var dueIds = userCardRepo.findDueCardIds(userId, userDeckId, now, PageRequest.of(0, 1));
         if (!dueIds.isEmpty()) {
             nextCardId = dueIds.getFirst();
             due = true;
@@ -163,6 +166,13 @@ public class ReviewService {
                 var newIds = userCardRepo.findNewCardIds(userId, userDeckId, PageRequest.of(0, 1));
                 if (!newIds.isEmpty()) {
                     nextCardId = newIds.getFirst();
+                }
+            }
+            if (nextCardId == null) {
+                var learningIds = userCardRepo.findDueCardIds(userId, userDeckId, dueHorizon, PageRequest.of(0, 1));
+                if (!learningIds.isEmpty()) {
+                    nextCardId = learningIds.getFirst();
+                    learningAhead = true;
                 }
             }
         }
@@ -208,7 +218,7 @@ public class ReviewService {
                 view.effectiveContent(),
                 intervals,
                 dueAt,
-                due,
+                due && !learningAhead,
                 queue
         );
     }
