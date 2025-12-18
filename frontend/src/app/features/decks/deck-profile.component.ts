@@ -5,9 +5,11 @@ import { ReactiveFormsModule, FormsModule, FormBuilder, FormGroup, Validators } 
 import { forkJoin } from 'rxjs';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
+import { ReviewApiService } from '../../core/services/review-api.service';
 import { UserApiService } from '../../user-api.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { PublicDeckDTO } from '../../core/models/public-deck.models';
+import { ReviewDeckAlgorithmResponse } from '../../core/models/review.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { AddCardsModalComponent } from './add-cards-modal.component';
@@ -102,6 +104,17 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                 <input type="checkbox" formControlName="autoUpdate" />
                 {{ 'deckProfile.autoUpdateLabel' | translate }}
               </label>
+            </div>
+
+            <div class="form-group">
+              <label>{{ 'deckProfile.schedulerAlgorithm' | translate }}</label>
+              <select formControlName="algorithmId" class="algorithm-select">
+                <option value="sm2">SM-2</option>
+                <option value="fsrs_v6">FSRS v6</option>
+              </select>
+              <p *ngIf="currentAlgorithm && currentAlgorithm.pendingMigrationCards > 0" class="migration-info">
+                {{ currentAlgorithm.pendingMigrationCards }} {{ 'deckProfile.pendingMigrationText' | translate }}
+              </p>
             </div>
 
             <div *ngIf="isAuthor" class="public-deck-section">
@@ -327,7 +340,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         color: var(--color-text-primary);
       }
 
-      .language-select {
+      .language-select, .algorithm-select {
         width: 100%;
         padding: var(--spacing-sm) var(--spacing-md);
         border: 1px solid var(--border-color);
@@ -335,6 +348,13 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         font-size: 0.9rem;
         background: var(--color-card-background);
         cursor: pointer;
+      }
+
+      .migration-info {
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+        margin: 0;
+        font-style: italic;
       }
 
       .tag-input {
@@ -389,12 +409,15 @@ export class DeckProfileComponent implements OnInit {
     editForm!: FormGroup;
     tagInput = '';
     tags: string[] = [];
+    currentAlgorithm: ReviewDeckAlgorithmResponse | null = null;
+    originalAlgorithmId = '';
 
     constructor(
         private route: ActivatedRoute,
         private router: Router,
         private deckApi: DeckApiService,
         private publicDeckApi: PublicDeckApiService,
+        private reviewApi: ReviewApiService,
         private userApi: UserApiService,
         private fb: FormBuilder
     ) {}
@@ -487,26 +510,34 @@ export class DeckProfileComponent implements OnInit {
 
     openEditModal(): void {
         if (this.deck) {
-            const formConfig: any = {
-                displayName: [this.deck.displayName, Validators.required],
-                displayDescription: [this.deck.displayDescription],
-                autoUpdate: [this.deck.autoUpdate]
-            };
+            this.reviewApi.getDeckAlgorithm(this.userDeckId).subscribe({
+                next: algorithmData => {
+                    this.currentAlgorithm = algorithmData;
+                    this.originalAlgorithmId = algorithmData.algorithmId;
 
-            if (this.isAuthor && this.publicDeck) {
-                formConfig.publicName = [this.publicDeck.name, Validators.required];
-                formConfig.publicDescription = [this.publicDeck.description];
-                formConfig.isPublic = [this.publicDeck.isPublic];
-                formConfig.isListed = [this.publicDeck.isListed];
-                formConfig.language = [this.publicDeck.language];
-                this.tags = [...(this.publicDeck.tags || [])];
-            } else {
-                this.tags = [];
-            }
+                    const formConfig: any = {
+                        displayName: [this.deck!.displayName, Validators.required],
+                        displayDescription: [this.deck!.displayDescription],
+                        autoUpdate: [this.deck!.autoUpdate],
+                        algorithmId: [algorithmData.algorithmId, Validators.required]
+                    };
 
-            this.tagInput = '';
-            this.editForm = this.fb.group(formConfig);
-            this.showEditModal = true;
+                    if (this.isAuthor && this.publicDeck) {
+                        formConfig.publicName = [this.publicDeck.name, Validators.required];
+                        formConfig.publicDescription = [this.publicDeck.description];
+                        formConfig.isPublic = [this.publicDeck.isPublic];
+                        formConfig.isListed = [this.publicDeck.isListed];
+                        formConfig.language = [this.publicDeck.language];
+                        this.tags = [...(this.publicDeck.tags || [])];
+                    } else {
+                        this.tags = [];
+                    }
+
+                    this.tagInput = '';
+                    this.editForm = this.fb.group(formConfig);
+                    this.showEditModal = true;
+                }
+            });
         }
     }
 
@@ -539,6 +570,19 @@ export class DeckProfileComponent implements OnInit {
             autoUpdate: formValue.autoUpdate
         };
 
+        const algorithmChanged = formValue.algorithmId !== this.originalAlgorithmId;
+
+        const requests: any = {
+            userDeck: this.deckApi.patchDeck(this.userDeckId, userDeckUpdates)
+        };
+
+        if (algorithmChanged) {
+            requests.algorithm = this.reviewApi.updateDeckAlgorithm(this.userDeckId, {
+                algorithmId: formValue.algorithmId,
+                algorithmParams: null
+            });
+        }
+
         if (this.isAuthor && this.publicDeck) {
             const publicDeckUpdates: Partial<PublicDeckDTO> = {
                 name: formValue.publicName,
@@ -548,35 +592,22 @@ export class DeckProfileComponent implements OnInit {
                 language: formValue.language,
                 tags: this.tags
             };
-
-            forkJoin({
-                userDeck: this.deckApi.patchDeck(this.userDeckId, userDeckUpdates),
-                publicDeck: this.publicDeckApi.patchPublicDeck(this.publicDeck.deckId, publicDeckUpdates)
-            }).subscribe({
-                next: ({ userDeck, publicDeck }) => {
-                    this.deck = userDeck;
-                    this.publicDeck = publicDeck;
-                    this.saving = false;
-                    this.showEditModal = false;
-                },
-                error: err => {
-                    console.error('Failed to update decks:', err);
-                    this.saving = false;
-                }
-            });
-        } else {
-            this.deckApi.patchDeck(this.userDeckId, userDeckUpdates).subscribe({
-                next: updatedDeck => {
-                    this.deck = updatedDeck;
-                    this.saving = false;
-                    this.showEditModal = false;
-                },
-                error: err => {
-                    console.error('Failed to update deck:', err);
-                    this.saving = false;
-                }
-            });
+            requests.publicDeck = this.publicDeckApi.patchPublicDeck(this.publicDeck.deckId, publicDeckUpdates);
         }
+
+        forkJoin(requests).subscribe({
+            next: (results: any) => {
+                this.deck = results.userDeck;
+                if (results.publicDeck) {
+                    this.publicDeck = results.publicDeck;
+                }
+                this.saving = false;
+                this.showEditModal = false;
+            },
+            error: err => {
+                this.saving = false;
+            }
+        });
     }
 
     openDeleteConfirm(): void {

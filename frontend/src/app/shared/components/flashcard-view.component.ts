@@ -15,7 +15,7 @@ interface RenderedField {
     <div class="flashcard-view">
       <div *ngIf="side === 'front'" class="card-side front">
         <div *ngFor="let rf of frontFields" class="field-block">
-          <div class="field-label">{{ rf.field.label }}</div>
+          <div *ngIf="!hideLabels" class="field-label">{{ rf.field.label }}</div>
           <div class="field-value" [ngClass]="'field-type-' + rf.field.fieldType">
             <ng-container *ngIf="rf.field.fieldType === 'image' && rf.value">
               <img [src]="rf.value" [alt]="rf.field.label" class="field-image" />
@@ -35,7 +35,7 @@ interface RenderedField {
 
       <div *ngIf="side === 'back'" class="card-side back">
         <div *ngFor="let rf of backFields" class="field-block">
-          <div class="field-label">{{ rf.field.label }}</div>
+          <div *ngIf="!hideLabels" class="field-label">{{ rf.field.label }}</div>
           <div class="field-value" [ngClass]="'field-type-' + rf.field.fieldType">
             <ng-container *ngIf="rf.field.fieldType === 'image' && rf.value">
               <img [src]="rf.value" [alt]="rf.field.label" class="field-image" />
@@ -112,6 +112,7 @@ export class FlashcardViewComponent implements OnChanges {
     @Input() template!: CardTemplateDTO;
     @Input() content: Record<string, unknown> = {};
     @Input() side: 'front' | 'back' = 'front';
+    @Input() hideLabels = false;
 
     frontFields: RenderedField[] = [];
     backFields: RenderedField[] = [];

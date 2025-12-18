@@ -7,6 +7,7 @@ import { CardApiService } from '../../core/services/card-api.service';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
 import { TemplateApiService } from '../../core/services/template-api.service';
+import { PreferencesService } from '../../core/services/preferences.service';
 import { UserCardDTO } from '../../core/models/user-card.models';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { CardTemplateDTO } from '../../core/models/template.models';
@@ -104,6 +105,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                   [template]="template"
                   [content]="currentCard.effectiveContent"
                   side="front"
+                  [hideLabels]="preferences.hideFieldLabels"
                 ></app-flashcard-view>
               </div>
               <div class="flashcard-face back">
@@ -112,6 +114,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                   [template]="template"
                   [content]="currentCard.effectiveContent"
                   side="back"
+                  [hideLabels]="preferences.hideFieldLabels"
                 ></app-flashcard-view>
               </div>
             </div>
@@ -493,6 +496,7 @@ export class CardBrowserComponent implements OnInit {
         private deckApi: DeckApiService,
         private publicDeckApi: PublicDeckApiService,
         private templateApi: TemplateApiService,
+        public preferences: PreferencesService,
         private fb: FormBuilder
     ) {}
 
