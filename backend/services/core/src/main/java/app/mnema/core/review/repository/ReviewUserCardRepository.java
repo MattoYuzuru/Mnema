@@ -22,12 +22,12 @@ public interface ReviewUserCardRepository extends JpaRepository<ReviewUserCardEn
               and c.userId = :userId
               and c.deleted = false
               and s.suspended = false
-              and s.nextReviewAt <= :now
+              and s.nextReviewAt <= :until
             order by s.nextReviewAt asc
             """)
     List<UUID> findDueCardIds(@Param("userId") UUID userId,
                               @Param("deckId") UUID deckId,
-                              @Param("now") Instant now,
+                              @Param("until") Instant until,
                               org.springframework.data.domain.Pageable pageable);
 
     @Query("""
@@ -52,11 +52,11 @@ public interface ReviewUserCardRepository extends JpaRepository<ReviewUserCardEn
           and c.userId = :userId
           and c.deleted = false
           and s.suspended = false
-          and s.nextReviewAt <= :now
+          and s.nextReviewAt <= :until
         """)
     long countDue(@Param("userId") UUID userId,
                   @Param("deckId") UUID deckId,
-                  @Param("now") Instant now);
+                  @Param("until") Instant until);
 
     @Query("""
         select count(c.userCardId)

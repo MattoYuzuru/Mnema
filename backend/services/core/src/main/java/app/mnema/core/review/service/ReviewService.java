@@ -38,6 +38,7 @@ public class ReviewService {
     private final CardViewPort cardViewPort;
     private final DeckAlgorithmPort deckAlgorithmPort;
     private final JsonConfigMerger configMerger;
+    private final UserDeckPreferencesService preferencesService;
 
     public ReviewService(ReviewUserCardRepository userCardRepo,
                          SrCardStateRepository stateRepo,
@@ -45,7 +46,8 @@ public class ReviewService {
                          AlgorithmRegistry registry,
                          CardViewPort cardViewPort,
                          DeckAlgorithmPort deckAlgorithmPort,
-                         JsonConfigMerger configMerger) {
+                         JsonConfigMerger configMerger,
+                         UserDeckPreferencesService preferencesService) {
         this.userCardRepo = userCardRepo;
         this.stateRepo = stateRepo;
         this.algorithmRepo = algorithmRepo;
@@ -53,6 +55,7 @@ public class ReviewService {
         this.cardViewPort = cardViewPort;
         this.deckAlgorithmPort = deckAlgorithmPort;
         this.configMerger = configMerger;
+        this.preferencesService = preferencesService;
     }
 
     @Transactional(readOnly = true)
@@ -115,6 +118,7 @@ public class ReviewService {
         nextState.setSuspended(false);
 
         stateRepo.save(nextState);
+        preferencesService.incrementCounters(userDeckId, current == null, now);
 
         ReviewNextCardResponse next = nextCard(userId, userDeckId);
         return new ReviewAnswerResponse(
@@ -125,32 +129,41 @@ public class ReviewService {
         );
     }
 
-    @Transactional(readOnly = true)
+    @Transactional
     public ReviewNextCardResponse nextCard(UUID userId, UUID userDeckId) {
         Instant now = Instant.now();
+        var preferences = preferencesService.getSnapshot(userDeckId, now);
         AlgorithmContext algorithmContext = resolveAlgorithmContext(userId, userDeckId);
 
-        long dueCount = userCardRepo.countDue(userId, userDeckId, now);
+        Instant dueHorizon = now.plus(preferences.learningHorizon());
+        long dueCount = userCardRepo.countDue(userId, userDeckId, dueHorizon);
         long newCount = userCardRepo.countNew(userId, userDeckId);
+        long remainingNewQuota = preferences.remainingNewQuota();
+        long availableNew = newCount;
+        if (remainingNewQuota != Long.MAX_VALUE) {
+            availableNew = Math.min(availableNew, remainingNewQuota);
+        }
 
         var queue = new ReviewNextCardResponse.QueueSummary(
                 dueCount,
-                newCount,
-                dueCount + newCount
+                availableNew,
+                dueCount + availableNew
         );
 
         // 1) due, 2) new
         UUID nextCardId = null;
         boolean due = false;
 
-        var dueIds = userCardRepo.findDueCardIds(userId, userDeckId, now, PageRequest.of(0, 1));
+        var dueIds = userCardRepo.findDueCardIds(userId, userDeckId, dueHorizon, PageRequest.of(0, 1));
         if (!dueIds.isEmpty()) {
             nextCardId = dueIds.getFirst();
             due = true;
         } else {
-            var newIds = userCardRepo.findNewCardIds(userId, userDeckId, PageRequest.of(0, 1));
-            if (!newIds.isEmpty()) {
-                nextCardId = newIds.getFirst();
+            if (availableNew > 0) {
+                var newIds = userCardRepo.findNewCardIds(userId, userDeckId, PageRequest.of(0, 1));
+                if (!newIds.isEmpty()) {
+                    nextCardId = newIds.getFirst();
+                }
             }
         }
 

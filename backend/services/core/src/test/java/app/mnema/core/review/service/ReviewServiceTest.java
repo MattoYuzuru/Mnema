@@ -14,6 +14,7 @@ import app.mnema.core.review.entity.SrCardStateEntity;
 import app.mnema.core.review.repository.ReviewUserCardRepository;
 import app.mnema.core.review.repository.SrAlgorithmRepository;
 import app.mnema.core.review.repository.SrCardStateRepository;
+import app.mnema.core.review.service.UserDeckPreferencesService.PreferencesSnapshot;
 import app.mnema.core.review.util.JsonConfigMerger;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -24,6 +25,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -59,6 +61,9 @@ class ReviewServiceTest {
     @Mock
     JsonConfigMerger configMerger;
 
+    @Mock
+    UserDeckPreferencesService preferencesService;
+
     ReviewService reviewService;
 
     @BeforeEach
@@ -70,7 +75,8 @@ class ReviewServiceTest {
                 registry,
                 cardViewPort,
                 deckAlgorithmPort,
-                configMerger
+                configMerger,
+                preferencesService
         );
     }
 
@@ -169,14 +175,24 @@ class ReviewServiceTest {
         );
         when(newAlgorithm.apply(any(), eq(Rating.GOOD), any(), eq(effectiveCfg))).thenReturn(computation);
 
+        PreferencesSnapshot snapshot = new PreferencesSnapshot(
+                deckId,
+                Duration.ofMinutes(10),
+                20,
+                null,
+                0,
+                0
+        );
+        when(preferencesService.getSnapshot(eq(deckId), any())).thenReturn(snapshot);
         when(userCardRepo.countDue(eq(userId), eq(deckId), any())).thenReturn(0L);
         when(userCardRepo.countNew(userId, deckId)).thenReturn(0L);
         when(userCardRepo.findDueCardIds(eq(userId), eq(deckId), any(), any())).thenReturn(List.of());
-        when(userCardRepo.findNewCardIds(eq(userId), eq(deckId), any())).thenReturn(List.of());
+        lenient().when(userCardRepo.findNewCardIds(eq(userId), eq(deckId), any())).thenReturn(List.of());
         reviewService.answer(userId, deckId, cardId, Rating.GOOD);
 
         ArgumentCaptor<SrsAlgorithm.ReviewInput> inputCaptor = ArgumentCaptor.forClass(SrsAlgorithm.ReviewInput.class);
         verify(newAlgorithm).apply(inputCaptor.capture(), eq(Rating.GOOD), any(), eq(effectiveCfg));
         assertThat(inputCaptor.getValue().state()).isEqualTo(convertedState);
+        verify(preferencesService).incrementCounters(eq(deckId), eq(false), any());
     }
 }
