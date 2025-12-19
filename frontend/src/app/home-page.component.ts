@@ -1,12 +1,13 @@
 import { Component, OnInit, OnDestroy } from '@angular/core';
 import { NgIf, NgFor } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
-import { forkJoin, of, Subscription } from 'rxjs';
-import { catchError, filter } from 'rxjs/operators';
+import { forkJoin, of, Subscription, from } from 'rxjs';
+import { catchError, filter, mergeMap } from 'rxjs/operators';
 import { AuthService, AuthStatus } from './auth.service';
 import { UserApiService } from './user-api.service';
 import { PublicDeckApiService } from './core/services/public-deck-api.service';
 import { DeckApiService } from './core/services/deck-api.service';
+import { ReviewApiService } from './core/services/review-api.service';
 import { PublicDeckDTO } from './core/models/public-deck.models';
 import { UserDeckDTO } from './core/models/user-deck.models';
 import { DeckCardComponent } from './shared/components/deck-card.component';
@@ -171,9 +172,15 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
       }
 
       .deck-list {
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: 1fr;
         gap: var(--spacing-md);
+      }
+
+      @media (min-width: 768px) {
+        .deck-list {
+          grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        }
       }
 
       @media (max-width: 768px) {
@@ -228,12 +235,17 @@ export class HomePageComponent implements OnInit, OnDestroy {
     currentUserId: string | null = null;
     private authSubscription?: Subscription;
     private hasLoadedUserDecks = false;
+    private static reviewStatsCache: { data: { due: number; new: number }; timestamp: number } | null = null;
+    private static deckSizesCache: Map<string, { size: number; timestamp: number }> = new Map();
+    private static readonly CACHE_TTL_MS = 5 * 60 * 1000;
+    private deckSizes: Map<string, number> = new Map();
 
     constructor(
         public auth: AuthService,
         private userApi: UserApiService,
         private publicDeckApi: PublicDeckApiService,
         private deckApi: DeckApiService,
+        private reviewApi: ReviewApiService,
         private router: Router
     ) {}
 
@@ -281,11 +293,50 @@ export class HomePageComponent implements OnInit, OnDestroy {
                 this.currentUserId = result.user?.id || null;
                 this.hasLoadedUserDecks = isAuthenticated;
                 this.loading = false;
+
+                if (isAuthenticated && this.userDecks.length > 0) {
+                    this.loadReviewStats();
+                    this.loadDeckSizes();
+                }
             },
             error: () => {
                 this.loading = false;
             }
         });
+    }
+
+    private loadReviewStats(): void {
+        const now = Date.now();
+        const cached = HomePageComponent.reviewStatsCache;
+
+        if (cached && (now - cached.timestamp) < HomePageComponent.CACHE_TTL_MS) {
+            this.todayStats = cached.data;
+            return;
+        }
+
+        this.todayStats = { due: 0, new: 0 };
+
+        from(this.userDecks)
+            .pipe(
+                mergeMap(deck =>
+                    this.reviewApi.getNextCard(deck.userDeckId).pipe(
+                        catchError(() => of({ queue: { dueCount: 0, newCount: 0 } }))
+                    ),
+                    4
+                )
+            )
+            .subscribe({
+                next: response => {
+                    this.todayStats.due += response.queue.dueCount || 0;
+                    this.todayStats.new += response.queue.newCount || 0;
+                },
+                complete: () => {
+                    HomePageComponent.reviewStatsCache = {
+                        data: { ...this.todayStats },
+                        timestamp: now
+                    };
+                }
+            });
     }
 
     private loadUserData(): void {
@@ -305,8 +356,43 @@ export class HomePageComponent implements OnInit, OnDestroy {
                 this.userDecks = result.userDecks.content;
                 this.currentUserId = result.user?.id || null;
                 this.hasLoadedUserDecks = true;
+
+                if (this.userDecks.length > 0) {
+                    this.loadReviewStats();
+                    this.loadDeckSizes();
+                }
             }
         });
+    }
+
+    private loadDeckSizes(): void {
+        const now = Date.now();
+
+        from(this.userDecks)
+            .pipe(
+                mergeMap(deck => {
+                    const cached = HomePageComponent.deckSizesCache.get(deck.userDeckId);
+                    if (cached && (now - cached.timestamp) < HomePageComponent.CACHE_TTL_MS) {
+                        this.deckSizes.set(deck.userDeckId, cached.size);
+                        return of(null);
+                    }
+
+                    return this.deckApi.getUserDeckSize(deck.userDeckId).pipe(
+                        catchError(() => of(null))
+                    );
+                }, 4)
+            )
+            .subscribe({
+                next: response => {
+                    if (response) {
+                        this.deckSizes.set(response.deckId, response.cardsQty);
+                        HomePageComponent.deckSizesCache.set(response.deckId, {
+                            size: response.cardsQty,
+                            timestamp: now
+                        });
+                    }
+                }
+            });
     }
 
     canForkDeck(deck: PublicDeckDTO): boolean {
@@ -314,8 +400,9 @@ export class HomePageComponent implements OnInit, OnDestroy {
     }
 
     getDeckStats(deck: UserDeckDTO): { cardCount?: number; dueToday?: number } {
+        const size = this.deckSizes.get(deck.userDeckId);
         return {
-            cardCount: 0,
+            cardCount: size,
             dueToday: undefined
         };
     }

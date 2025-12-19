@@ -105,11 +105,11 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
         <div class="footer-right">
           <a href="https://github.com/MattoYuzuru/Mnema" target="_blank" rel="noopener noreferrer" class="footer-link">
-            GitHub
+            {{ 'footer.github' | translate }}
           </a>
-          <a href="https://github.com/MattoYuzuru/Mnema/wiki" target="_blank" rel="noopener noreferrer" class="footer-link">Docs</a>
-          <a routerLink="/privacy" class="footer-link">Privacy</a>
-          <a routerLink="/terms" class="footer-link">Terms</a>
+          <a href="https://github.com/MattoYuzuru/Mnema/wiki" target="_blank" rel="noopener noreferrer" class="footer-link">{{ 'footer.docs' | translate }}</a>
+          <a routerLink="/privacy" class="footer-link">{{ 'nav.privacy' | translate }}</a>
+          <a routerLink="/terms" class="footer-link">{{ 'nav.terms' | translate }}</a>
         </div>
       </footer>
     </div>

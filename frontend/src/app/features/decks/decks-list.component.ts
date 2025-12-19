@@ -1,6 +1,8 @@
 import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
+import { from, of } from 'rxjs';
+import { catchError, mergeMap } from 'rxjs/operators';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { DeckCardComponent } from '../../shared/components/deck-card.component';
@@ -68,9 +70,15 @@ import { ButtonComponent } from '../../shared/components/button.component';
       }
 
       .decks-list {
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: 1fr;
         gap: var(--spacing-md);
+      }
+
+      @media (min-width: 768px) {
+        .decks-list {
+          grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+        }
       }
 
       @media (max-width: 768px) {
@@ -94,6 +102,9 @@ import { ButtonComponent } from '../../shared/components/button.component';
 export class DecksListComponent implements OnInit {
     loading = true;
     decks: UserDeckDTO[] = [];
+    private static deckSizesCache: Map<string, { size: number; timestamp: number }> = new Map();
+    private static readonly CACHE_TTL_MS = 5 * 60 * 1000;
+    private deckSizes: Map<string, number> = new Map();
 
     constructor(
         private deckApi: DeckApiService,
@@ -109,17 +120,51 @@ export class DecksListComponent implements OnInit {
             next: page => {
                 this.decks = page.content;
                 this.loading = false;
+
+                if (this.decks.length > 0) {
+                    this.loadDeckSizes();
+                }
             },
-            error: err => {
-                console.error('Failed to load decks:', err);
+            error: () => {
                 this.loading = false;
             }
         });
     }
 
+    private loadDeckSizes(): void {
+        const now = Date.now();
+
+        from(this.decks)
+            .pipe(
+                mergeMap(deck => {
+                    const cached = DecksListComponent.deckSizesCache.get(deck.userDeckId);
+                    if (cached && (now - cached.timestamp) < DecksListComponent.CACHE_TTL_MS) {
+                        this.deckSizes.set(deck.userDeckId, cached.size);
+                        return of(null);
+                    }
+
+                    return this.deckApi.getUserDeckSize(deck.userDeckId).pipe(
+                        catchError(() => of(null))
+                    );
+                }, 4)
+            )
+            .subscribe({
+                next: response => {
+                    if (response) {
+                        this.deckSizes.set(response.deckId, response.cardsQty);
+                        DecksListComponent.deckSizesCache.set(response.deckId, {
+                            size: response.cardsQty,
+                            timestamp: now
+                        });
+                    }
+                }
+            });
+    }
+
     getDeckStats(deck: UserDeckDTO): { cardCount?: number; dueToday?: number } {
+        const size = this.deckSizes.get(deck.userDeckId);
         return {
-            cardCount: 0,
+            cardCount: size,
             dueToday: undefined
         };
     }

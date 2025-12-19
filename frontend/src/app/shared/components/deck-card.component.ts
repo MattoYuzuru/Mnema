@@ -87,6 +87,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         box-shadow: var(--shadow-sm);
         transition: all 0.2s ease;
         min-height: 12rem;
+        height: 100%;
       }
 
       .deck-card:hover {
@@ -147,6 +148,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
+        min-height: 2.8rem;
       }
 
       .deck-tags {
