@@ -51,7 +51,7 @@ interface FieldFormValue {
                       <label>Type</label>
                       <select formControlName="fieldType" class="field-select">
                         <option value="text">Text</option>
-                        <option value="long_text">Long Text</option>
+                        <option value="rich_text">Long Text</option>
                         <option value="markdown">Markdown</option>
                         <option value="image">Image</option>
                         <option value="audio">Audio</option>

@@ -11,7 +11,7 @@ import { ButtonComponent } from '../../shared/components/button.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 import { I18nService } from '../../core/services/i18n.service';
 
-type FieldType = 'text' | 'long_text' | 'markdown' | 'image' | 'audio' | 'video';
+type FieldType = 'text' | 'rich_text' | 'markdown' | 'image' | 'audio' | 'video';
 type CardSide = 'front' | 'back';
 
 interface PaletteField {
@@ -384,16 +384,17 @@ interface BuilderState {
         display: flex;
         flex-direction: column;
         transition: height 0.2s ease;
+        position: relative;
       }
 
       .card-empty {
-        flex: 1;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
         color: var(--color-text-muted);
         font-style: italic;
-        min-height: 250px;
+        pointer-events: none;
       }
 
       .field-row {
@@ -590,7 +591,7 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
         this.paletteFields = [
             { type: 'text', icon: '📝', label: this.i18n.translate('visualBuilder.fieldTypeText'), inDev: false },
             { type: 'markdown', icon: '📄', label: this.i18n.translate('visualBuilder.fieldTypeMarkdown'), inDev: false },
-            { type: 'long_text', icon: '📋', label: this.i18n.translate('visualBuilder.fieldTypeLongText'), inDev: false },
+            { type: 'rich_text', icon: '📋', label: this.i18n.translate('visualBuilder.fieldTypeLongText'), inDev: false },
             { type: 'audio', icon: '🎵', label: this.i18n.translate('visualBuilder.fieldTypeAudio'), inDev: true },
             { type: 'image', icon: '🖼️', label: this.i18n.translate('visualBuilder.fieldTypeImage'), inDev: true },
             { type: 'video', icon: '🎬', label: this.i18n.translate('visualBuilder.fieldTypeVideo'), inDev: true },
@@ -699,7 +700,7 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
         switch (field.type) {
             case 'text':
                 return 'Sample text content';
-            case 'long_text':
+            case 'rich_text':
                 return 'Sample longer text content that might span multiple lines...';
             case 'markdown':
                 return '**Sample** markdown *content*';

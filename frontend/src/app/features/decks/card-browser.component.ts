@@ -166,7 +166,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                 [placeholder]="field.helpText || 'Enter ' + field.label"
               ></app-input>
               <app-textarea
-                *ngIf="field.fieldType === 'long_text' || field.fieldType === 'markdown'"
+                *ngIf="field.fieldType === 'rich_text' || field.fieldType === 'markdown'"
                 [label]="field.label + (field.isRequired ? ' *' : '')"
                 [formControlName]="field.name"
                 [placeholder]="field.fieldType === 'markdown' ? 'Use **bold**, *italic*, inline code' : (field.helpText || 'Enter ' + field.label)"

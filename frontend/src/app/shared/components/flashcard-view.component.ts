@@ -87,7 +87,7 @@ interface RenderedField {
         line-height: 1.5;
       }
 
-      .field-type-long_text .field-value {
+      .field-type-rich_text .field-value {
         white-space: pre-wrap;
       }
 

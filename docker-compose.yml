@@ -14,6 +14,9 @@ services:
       retries: 10
 
   auth:
+    dns:
+      - 1.1.1.1
+      - 8.8.8.8
     build:
       context: ./backend
       dockerfile: Dockerfile

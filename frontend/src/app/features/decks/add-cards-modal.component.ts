@@ -43,7 +43,7 @@ interface PendingCard {
               ></app-input>
 
               <app-textarea
-                *ngIf="field.fieldType === 'long_text' || field.fieldType === 'markdown'"
+                *ngIf="field.fieldType === 'rich_text' || field.fieldType === 'markdown'"
                 [label]="field.label + (field.isRequired ? ' *' : '')"
                 [formControlName]="field.name"
                 [placeholder]="field.helpText || (field.fieldType === 'markdown' ? 'Use **bold**, *italic*, inline code' : 'Enter ' + field.label)"
@@ -98,7 +98,7 @@ interface PendingCard {
       .loading-section { padding: var(--spacing-xxl); text-align: center; color: var(--color-text-secondary); }
       .card-form { display: flex; flex-direction: column; gap: var(--spacing-md); }
       .field-group { display: flex; flex-direction: column; }
-      .form-actions { padding-top: var(--spacing-md); border-top: 1px solid var(--border-color); }
+      .form-actions { padding-top: var(--spacing-md); border-top: 1px solid var(--border-color); display: flex; }
       .pending-cards { margin-top: var(--spacing-xl); padding-top: var(--spacing-xl); border-top: 2px solid var(--border-color); }
       .pending-cards h3 { margin: 0 0 var(--spacing-md) 0; font-size: 1.1rem; font-weight: 600; }
       .card-list { display: flex; flex-direction: column; gap: var(--spacing-xs); }

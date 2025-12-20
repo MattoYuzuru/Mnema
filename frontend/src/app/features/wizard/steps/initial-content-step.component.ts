@@ -47,7 +47,7 @@ import { TextareaComponent } from '../../../shared/components/textarea.component
   `,
     styles: [`
       .step { display: flex; flex-direction: column; gap: var(--spacing-lg); }
-      .card-form { display: flex; flex-direction: column; gap: var(--spacing-md); }
+      .card-form { display: flex; flex-direction: column; gap: var(--spacing-md); align-items: flex-start; }
       .pending-cards { margin-top: var(--spacing-lg); }
       .pending-cards h4 { font-size: 1rem; font-weight: 600; margin: 0 0 var(--spacing-sm) 0; }
       .card-item { display: flex; align-items: center; justify-content: space-between; padding: var(--spacing-sm) var(--spacing-md); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-sm); margin-bottom: var(--spacing-xs); }

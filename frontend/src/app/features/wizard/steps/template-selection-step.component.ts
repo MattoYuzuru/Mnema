@@ -155,6 +155,8 @@ type TemplateFilter = 'mine' | 'public';
         font-size: 0.95rem;
         color: var(--color-text-secondary);
         margin: 0;
+        line-height: 1.5;
+        padding: 0 var(--spacing-md);
       }
 
       .browse-content {
