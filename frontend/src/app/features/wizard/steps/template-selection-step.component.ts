@@ -1,5 +1,6 @@
 import { Component, Output, EventEmitter, OnInit } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
+import { Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { TemplateApiService } from '../../../core/services/template-api.service';
 import { CardTemplateDTO } from '../../../core/models/template.models';
@@ -26,6 +27,12 @@ type TemplateFilter = 'mine' | 'public';
           <div class="choice-icon">+</div>
           <h3>Create New Template</h3>
           <p>Build a custom template from scratch</p>
+        </div>
+
+        <div class="choice-card" (click)="openVisualBuilder()">
+          <div class="choice-icon">🎨</div>
+          <h3>Visual Template Builder</h3>
+          <p>Design your template with drag & drop preview</p>
         </div>
 
         <div class="choice-card" (click)="enterBrowseMode()">
@@ -238,7 +245,8 @@ export class TemplateSelectionStepComponent implements OnInit {
     constructor(
         private templateApi: TemplateApiService,
         private userApi: UserApiService,
-        private wizardState: DeckWizardStateService
+        private wizardState: DeckWizardStateService,
+        private router: Router
     ) {}
 
     ngOnInit(): void {
@@ -292,6 +300,10 @@ export class TemplateSelectionStepComponent implements OnInit {
 
     openTemplateCreator(): void {
         this.showCreator = true;
+    }
+
+    openVisualBuilder(): void {
+        void this.router.navigate(['/wizard/visual-template-builder']);
     }
 
     closeTemplateCreator(): void {

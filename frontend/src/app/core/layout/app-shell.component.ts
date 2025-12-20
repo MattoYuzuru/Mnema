@@ -413,7 +413,7 @@ export class AppShellComponent implements OnInit, OnDestroy {
     }
 
     login(): void {
-        this.auth.beginLogin();
+        void this.router.navigate(['/login']);
     }
 
     logout(): void {

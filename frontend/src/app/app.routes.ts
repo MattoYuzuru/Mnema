@@ -11,6 +11,7 @@ import { ReviewSessionComponent } from './features/decks/review-session.componen
 import { PublicDecksCatalogComponent } from './features/public-decks/public-decks-catalog.component';
 import { PublicCardBrowserComponent } from './features/public-decks/public-card-browser.component';
 import { DeckWizardComponent } from './features/wizard/deck-wizard.component';
+import { VisualTemplateBuilderComponent } from './features/wizard/visual-template-builder.component';
 import { SettingsComponent } from './features/settings/settings.component';
 import { authGuard } from './core/guards/auth.guard';
 
@@ -24,6 +25,7 @@ export const appRoutes: Routes = [
     { path: 'decks/:userDeckId/browse', component: CardBrowserComponent, canActivate: [authGuard] },
     { path: 'decks/:userDeckId/review', component: ReviewSessionComponent, canActivate: [authGuard] },
     { path: 'create-deck', component: DeckWizardComponent, canActivate: [authGuard] },
+    { path: 'wizard/visual-template-builder', component: VisualTemplateBuilderComponent, canActivate: [authGuard] },
     { path: 'public-decks', component: PublicDecksCatalogComponent },
     { path: 'public-decks/:deckId/browse', component: PublicCardBrowserComponent },
     { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },

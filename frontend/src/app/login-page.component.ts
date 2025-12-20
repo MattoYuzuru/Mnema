@@ -1,6 +1,6 @@
-import { Component } from '@angular/core';
+import { Component, OnInit } from '@angular/core';
 import { NgIf } from '@angular/common';
-import { RouterLink } from '@angular/router';
+import { RouterLink, ActivatedRoute } from '@angular/router';
 import { AuthService } from './auth.service';
 import { TranslatePipe } from './shared/pipes/translate.pipe';
 
@@ -64,7 +64,7 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
 
             <div class="oauth-button disabled-button">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.894 15.764c-.272.453-.762.724-1.315.724H7.421c-.553 0-1.043-.271-1.315-.724a1.562 1.562 0 01-.179-1.448l4.579-10.832c.179-.423.601-.724 1.084-.724s.905.301 1.084.724l4.579 10.832c.15.362.15.905-.18 1.448z"/>
+                <path d="M20.5 0h-17C1.6 0 0 1.6 0 3.5v17C0 22.4 1.6 24 3.5 24h17c1.9 0 3.5-1.6 3.5-3.5v-17C24 1.6 22.4 0 20.5 0zm-3.9 17.5h-2.4v-8c0-1.4-.6-2.1-1.6-2.1-.7 0-1.2.3-1.5.9-.1.2-.1.5-.1.8v8.4H8.6V7.8h2.4v1.3c.3-.5 1.1-1.3 2.5-1.3 1.8 0 3.1 1.2 3.1 3.7v6z"/>
               </svg>
               {{ 'login.yandex' | translate }}
               <span class="planned-badge">{{ 'login.plannedDevelopment' | translate }}</span>
@@ -326,10 +326,19 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
     `
     ]
 })
-export class LoginPageComponent {
-    constructor(public auth: AuthService) {}
+export class LoginPageComponent implements OnInit {
+    private returnUrl = '/profile';
+
+    constructor(
+        public auth: AuthService,
+        private route: ActivatedRoute
+    ) {}
+
+    ngOnInit(): void {
+        this.returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/profile';
+    }
 
     login(): void {
-        void this.auth.beginLogin('/profile');
+        void this.auth.beginLogin(this.returnUrl);
     }
 }
