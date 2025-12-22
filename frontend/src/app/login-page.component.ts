@@ -4,6 +4,8 @@ import { RouterLink, ActivatedRoute } from '@angular/router';
 import { AuthService } from './auth.service';
 import { TranslatePipe } from './shared/pipes/translate.pipe';
 
+type OAuthProvider = 'google' | 'github' | 'yandex';
+
 @Component({
     standalone: true,
     selector: 'app-login-page',
@@ -44,7 +46,7 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
           <div class="auth-block oauth-auth">
             <h2>{{ 'login.oauthTitle' | translate }}</h2>
 
-            <button class="oauth-button google-button" type="button" (click)="login()">
+            <button class="oauth-button google-button" type="button" (click)="login('google')">
               <svg width="18" height="18" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
                 <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
@@ -54,21 +56,19 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
               {{ 'login.signInWithGoogle' | translate }}
             </button>
 
-            <div class="oauth-button disabled-button">
+            <button class="oauth-button github-button" type="button" (click)="login('github')">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
               </svg>
               {{ 'login.github' | translate }}
-              <span class="planned-badge">{{ 'login.plannedDevelopment' | translate }}</span>
-            </div>
+            </button>
 
-            <div class="oauth-button disabled-button">
+            <button class="oauth-button yandex-button" type="button" (click)="login('yandex')">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
                 <path d="M20.5 0h-17C1.6 0 0 1.6 0 3.5v17C0 22.4 1.6 24 3.5 24h17c1.9 0 3.5-1.6 3.5-3.5v-17C24 1.6 22.4 0 20.5 0zm-3.9 17.5h-2.4v-8c0-1.4-.6-2.1-1.6-2.1-.7 0-1.2.3-1.5.9-.1.2-.1.5-.1.8v8.4H8.6V7.8h2.4v1.3c.3-.5 1.1-1.3 2.5-1.3 1.8 0 3.1 1.2 3.1 3.7v6z"/>
               </svg>
               {{ 'login.yandex' | translate }}
-              <span class="planned-badge">{{ 'login.plannedDevelopment' | translate }}</span>
-            </div>
+            </button>
 
             <div class="oauth-button disabled-button">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
@@ -247,6 +247,14 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
         color: var(--color-text-primary);
       }
 
+      .github-button {
+        color: var(--color-text-primary);
+      }
+
+      .yandex-button {
+        color: var(--color-text-primary);
+      }
+
       .disabled-button {
         opacity: 0.5;
         cursor: not-allowed;
@@ -338,7 +346,7 @@ export class LoginPageComponent implements OnInit {
         this.returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/profile';
     }
 
-    login(): void {
-        void this.auth.beginLogin(this.returnUrl);
+    login(provider: OAuthProvider = 'google'): void {
+        void this.auth.beginLogin(this.returnUrl, provider);
     }
 }
