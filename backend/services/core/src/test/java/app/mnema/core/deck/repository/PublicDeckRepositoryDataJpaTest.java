@@ -3,6 +3,7 @@ package app.mnema.core.deck.repository;
 import app.mnema.core.deck.domain.entity.PublicDeckEntity;
 import app.mnema.core.deck.domain.type.LanguageTag;
 import app.mnema.core.support.PostgresIntegrationTest;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
@@ -29,6 +30,13 @@ class PublicDeckRepositoryDataJpaTest extends PostgresIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @BeforeEach
+    void cleanTables() {
+        // Ensure deterministic catalog contents even if the database already has data
+        jdbcTemplate.execute("TRUNCATE TABLE app_core.public_cards CASCADE");
+        jdbcTemplate.execute("TRUNCATE TABLE app_core.public_decks CASCADE");
+    }
 
     /**
      * Возвращает любой валидный template_id из card_templates.
