@@ -11,6 +11,7 @@ import app.mnema.core.deck.repository.UserCardRepository;
 import app.mnema.core.deck.repository.UserDeckRepository;
 import app.mnema.core.deck.service.CardService;
 import app.mnema.core.deck.service.DeckService;
+import app.mnema.core.support.PostgresIntegrationTest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
@@ -31,7 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @Transactional
-class DeckFlowIT {
+class DeckFlowIT extends PostgresIntegrationTest {
 
     @Autowired
     DeckService deckService;

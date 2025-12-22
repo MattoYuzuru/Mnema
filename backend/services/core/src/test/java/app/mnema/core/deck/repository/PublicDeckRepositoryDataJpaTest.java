@@ -2,6 +2,7 @@ package app.mnema.core.deck.repository;
 
 import app.mnema.core.deck.domain.entity.PublicDeckEntity;
 import app.mnema.core.deck.domain.type.LanguageTag;
+import app.mnema.core.support.PostgresIntegrationTest;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
@@ -21,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-class PublicDeckRepositoryDataJpaTest {
+class PublicDeckRepositoryDataJpaTest extends PostgresIntegrationTest {
 
     @Autowired
     private PublicDeckRepository publicDeckRepository;
