@@ -17,10 +17,7 @@ subprojects {
         extensions.configure<org.jetbrains.kotlin.gradle.dsl.KotlinJvmProjectExtension> {
             jvmToolchain(21)
             compilerOptions {
-                freeCompilerArgs.addAll(
-                    "-Xjsr305=strict",
-                    "-Xannotation-default-target=param-property"
-                )
+                freeCompilerArgs.add("-Xjsr305=strict")
             }
         }
         tasks.withType<Test> { useJUnitPlatform() }

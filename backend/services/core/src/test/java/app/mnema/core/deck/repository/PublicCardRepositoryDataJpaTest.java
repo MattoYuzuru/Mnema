@@ -3,6 +3,7 @@ package app.mnema.core.deck.repository;
 import app.mnema.core.deck.domain.entity.PublicCardEntity;
 import app.mnema.core.deck.domain.entity.PublicDeckEntity;
 import app.mnema.core.deck.domain.type.LanguageTag;
+import app.mnema.core.support.PostgresIntegrationTest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
@@ -24,7 +25,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
 @ActiveProfiles("test")
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-class PublicCardRepositoryDataJpaTest {
+class PublicCardRepositoryDataJpaTest extends PostgresIntegrationTest {
 
     @Autowired
     private PublicCardRepository publicCardRepository;

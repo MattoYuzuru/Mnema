@@ -71,7 +71,7 @@ export class AuthService {
         }
     }
 
-    async beginLogin(returnTo: string = window.location.pathname): Promise<void> {
+    async beginLogin(returnTo: string = window.location.pathname, provider?: string): Promise<void> {
         this._statusSubject.next('pending');
 
         const codeVerifier = this.randomString(64);
@@ -92,6 +92,10 @@ export class AuthService {
             code_challenge: codeChallenge,
             code_challenge_method: 'S256'
         });
+
+        if (provider) {
+            params.set('provider', provider);
+        }
 
         window.location.href = `${appConfig.authServerUrl}/oauth2/authorize?${params.toString()}`;
     }

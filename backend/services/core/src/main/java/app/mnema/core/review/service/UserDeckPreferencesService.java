@@ -2,6 +2,7 @@ package app.mnema.core.review.service;
 
 import app.mnema.core.review.entity.UserDeckPreferencesEntity;
 import app.mnema.core.review.repository.UserDeckPreferencesRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,12 +48,12 @@ public class UserDeckPreferencesService {
 
     private UserDeckPreferencesEntity getOrCreate(UUID userDeckId) {
         return repository.findById(userDeckId)
-                .orElseGet(() -> repository.save(buildDefault(userDeckId)));
+                .orElseGet(() -> createDefaultWithRetry(userDeckId));
     }
 
     private UserDeckPreferencesEntity getOrCreateForUpdate(UUID userDeckId) {
         return repository.findByUserDeckId(userDeckId)
-                .orElseGet(() -> repository.save(buildDefault(userDeckId)));
+                .orElseGet(() -> createDefaultWithRetry(userDeckId));
     }
 
     private static PreferencesSnapshot toSnapshot(UserDeckPreferencesEntity entity) {
@@ -78,6 +79,14 @@ public class UserDeckPreferencesService {
 
     private static LocalDate today(Instant now) {
         return LocalDate.ofInstant(now, ZoneOffset.UTC);
+    }
+
+    private UserDeckPreferencesEntity createDefaultWithRetry(UUID userDeckId) {
+        try {
+            return repository.save(buildDefault(userDeckId));
+        } catch (DataIntegrityViolationException ex) {
+            return repository.findById(userDeckId).orElseThrow(() -> ex);
+        }
     }
 
     private static UserDeckPreferencesEntity buildDefault(UUID userDeckId) {

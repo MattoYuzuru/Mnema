@@ -144,30 +144,36 @@ jobs:
         run: |
           cat <<YAML | kubectl apply -f -
           apiVersion: v1
-          kind: Namespace
-          metadata: { name: ${NS} }
-          ---
-          apiVersion: v1
           kind: Secret
-          metadata: { name: mnema-secrets, namespace: ${NS} }
+          metadata:
+            name: mnema-secrets
+            namespace: ${NS}
           type: Opaque
           stringData:
-            GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
-            GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
-            POSTGRES_USER: "${POSTGRES_USER}"
-            POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
-            POSTGRES_DB: "${POSTGRES_DB}"
             AUTH_ISSUER: "${AUTH_ISSUER}"
             AUTH_ISSUER_URI: "${AUTH_ISSUER_URI}"
+            GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
+            GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
+            GITHUB_CLIENT_ID: "${GH_CLIENT_ID}"
+            GITHUB_CLIENT_SECRET: "${GH_CLIENT_SECRET}"
+            YANDEX_CLIENT_ID: "${YANDEX_CLIENT_ID}"
+            YANDEX_CLIENT_SECRET: "${YANDEX_CLIENT_SECRET}"
+            POSTGRES_DB: "${POSTGRES_DB}"
+            POSTGRES_USER: "${POSTGRES_USER}"
+            POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
           YAML
         env:
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           AUTH_ISSUER: ${{ secrets.AUTH_ISSUER }}
           AUTH_ISSUER_URI: ${{ secrets.AUTH_ISSUER_URI }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
 
       - name: Apply manifests
         run: |

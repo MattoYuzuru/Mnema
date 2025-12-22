@@ -30,6 +30,10 @@ services:
       AUTH_ISSUER: http://auth:8080
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
+      GITHUB_CLIENT_ID: ${GH_CLIENT_ID}
+      GITHUB_CLIENT_SECRET: ${GH_CLIENT_SECRET}
+      YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID}
+      YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET}
     depends_on:
       postgres: { condition: service_healthy }
     ports: [ "8083:8080" ]

@@ -2,6 +2,7 @@ package app.mnema.user.controller
 
 import app.mnema.user.entity.User
 import app.mnema.user.repository.UserRepository
+import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
@@ -54,6 +55,18 @@ class MeController(
             return toDto(existing.get())
         }
 
+        val existingByEmail = repo.findByEmailIgnoreCase(email)
+        if (existingByEmail.isPresent) {
+            val user = existingByEmail.get()
+            if (user.id != userId) {
+                repo.migrateId(user.id, userId)
+            }
+            val migrated = repo.findById(userId)
+                .orElseThrow { ResponseStatusException(HttpStatus.CONFLICT, "Unable to migrate user profile") }
+            migrated.avatarUrl = migrated.avatarUrl ?: jwt.getClaimAsString("picture")
+            return toDto(migrated)
+        }
+
         // Первый логин -> создаём профиль
         val baseUsername = email.substringBefore('@').take(32)
         var candidate = baseUsername.ifBlank { "user" }
@@ -71,7 +84,13 @@ class MeController(
             avatarUrl = jwt.getClaimAsString("picture")
         )
 
-        return toDto(repo.save(user))
+        return try {
+            toDto(repo.save(user))
+        } catch (ex: DataIntegrityViolationException) {
+            val existingAfterInsert = repo.findById(userId)
+                .orElseGet { repo.findByEmailIgnoreCase(email).orElseThrow { ex } }
+            toDto(existingAfterInsert)
+        }
     }
 
     @PatchMapping

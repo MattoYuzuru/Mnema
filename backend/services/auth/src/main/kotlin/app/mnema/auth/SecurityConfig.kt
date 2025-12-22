@@ -1,5 +1,10 @@
 package app.mnema.auth
 
+import app.mnema.auth.federation.FederatedOAuth2UserService
+import app.mnema.auth.federation.FederatedUserMapper
+import app.mnema.auth.identity.FederatedIdentityResult
+import app.mnema.auth.identity.FederatedIdentityService
+import app.mnema.auth.security.ProviderAwareLoginEntryPoint
 import com.nimbusds.jose.jwk.JWKSet
 import com.nimbusds.jose.jwk.RSAKey
 import com.nimbusds.jose.jwk.source.JWKSource
@@ -16,7 +21,6 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken
 import org.springframework.security.oauth2.core.AuthorizationGrantType
 import org.springframework.security.oauth2.core.ClientAuthenticationMethod
-import org.springframework.security.oauth2.core.oidc.user.OidcUser
 import org.springframework.security.oauth2.server.authorization.OAuth2TokenType
 import org.springframework.security.oauth2.server.authorization.client.JdbcRegisteredClientRepository
 import org.springframework.security.oauth2.server.authorization.client.RegisteredClient
@@ -29,7 +33,6 @@ import org.springframework.security.oauth2.server.authorization.token.JwtEncodin
 import org.springframework.security.oauth2.server.authorization.token.OAuth2TokenCustomizer
 import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler
-import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint
 import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher
 import java.security.KeyPair
@@ -41,8 +44,11 @@ import java.util.*
 
 @Configuration
 class SecurityConfig(
-    private val accountService: AccountService
+    private val identityService: FederatedIdentityService,
+    private val userMapper: FederatedUserMapper
 ) {
+    private val supportedProviders = setOf("google", "github", "yandex")
+
     /** Chain #1: Authorization Server эндпоинты (/oauth2/authorize, /oauth2/token, .well-known и т.д.) */
     @Bean
     @Order(1)
@@ -60,9 +66,8 @@ class SecurityConfig(
             }
             .csrf { csrf -> csrf.ignoringRequestMatchers(endpointsMatcher) }
             .exceptionHandling { exceptions ->
-                // Если неавторизован при обращении к /oauth2/authorize - кидаем сразу на Google
                 exceptions.defaultAuthenticationEntryPointFor(
-                    LoginUrlAuthenticationEntryPoint("/oauth2/authorization/google"),
+                    ProviderAwareLoginEntryPoint("google", supportedProviders),
                     MediaTypeRequestMatcher(MediaType.TEXT_HTML)
                 )
             }
@@ -74,7 +79,11 @@ class SecurityConfig(
     /** Chain #2: обычные веб-эндпоинты самого auth-сервиса */
     @Bean
     @Order(2)
-    fun appSecurityFilterChain(http: HttpSecurity): SecurityFilterChain {
+    fun appSecurityFilterChain(
+        http: HttpSecurity,
+        federatedSuccessHandler: AuthenticationSuccessHandler,
+        federatedOAuth2UserService: FederatedOAuth2UserService
+    ): SecurityFilterChain {
         http
             .authorizeHttpRequests { auth ->
                 auth
@@ -82,7 +91,9 @@ class SecurityConfig(
                     .anyRequest().authenticated()
             }
             .oauth2Login { oauth2 ->
-                oauth2.successHandler(federatedSuccessHandler())
+                oauth2
+                    .userInfoEndpoint { userInfo -> userInfo.userService(federatedOAuth2UserService) }
+                    .successHandler(federatedSuccessHandler)
             }
             .logout { logout ->
                 logout
@@ -90,7 +101,7 @@ class SecurityConfig(
                     .clearAuthentication(true)
                     .invalidateHttpSession(true)
                     .deleteCookies("JSESSIONID")
-                    .logoutSuccessHandler { request, response, authentication ->
+                    .logoutSuccessHandler { request, response, _ ->
                         val redirect = request.getParameter("redirect")
                             ?: "https://mnema.app/"
                         response.sendRedirect(redirect)
@@ -105,9 +116,9 @@ class SecurityConfig(
 
     /**
      * SuccessHandler в духе официального FederatedIdentityAuthenticationSuccessHandler:
-     *  - достаём OidcUser от Google
-     *  - upsert в нашу таблицу accounts
-     *  - а потом ДЕЛЕГИРУЕМ дальше стандартному SavedRequestAwareAuthenticationSuccessHandler,
+     *  - маппим любые провайдеры (google/github/yandex)
+     *  - синхронизируем данные в auth.users + auth.accounts
+     *  - делегируем дальше стандартному SavedRequestAwareAuthenticationSuccessHandler,
      *    чтобы всё корректно вернулось к /oauth2/authorize и продолжилось до redirect_uri.
      */
     @Bean
@@ -116,15 +127,11 @@ class SecurityConfig(
 
         return AuthenticationSuccessHandler { request, response, authentication ->
             val oauth2 = authentication as? OAuth2AuthenticationToken
-            val oidcUser = oauth2?.principal as? OidcUser
+            val info = oauth2?.let { userMapper.from(it) }
 
-            if (oidcUser != null) {
-                accountService.upsertGoogleAccount(
-                    providerSub = oidcUser.subject,
-                    email = oidcUser.email,
-                    name = oidcUser.fullName ?: oidcUser.givenName,
-                    picture = oidcUser.picture
-                )
+            if (oauth2 != null && info != null) {
+                val result = identityService.synchronize(info)
+                oauth2.details = result
             }
 
             delegate.onAuthenticationSuccess(request, response, authentication)
@@ -234,18 +241,15 @@ class SecurityConfig(
             if (OAuth2TokenType.ACCESS_TOKEN != context.tokenType) return@OAuth2TokenCustomizer
 
             val principal = context.getPrincipal() as? OAuth2AuthenticationToken ?: return@OAuth2TokenCustomizer
-            val oidcUser = principal.principal as? OidcUser ?: return@OAuth2TokenCustomizer
+            val info = userMapper.from(principal) ?: return@OAuth2TokenCustomizer
 
-            val account = accountService.upsertGoogleAccount(
-                providerSub = oidcUser.subject,
-                email = oidcUser.email,
-                name = oidcUser.fullName ?: oidcUser.preferredUsername ?: oidcUser.givenName,
-                picture = oidcUser.picture
-            )
+            val result = (principal.details as? FederatedIdentityResult)
+                ?: identityService.synchronize(info)
+            val user = result.user
 
-            context.claims.claim("user_id", account.id.toString())
-            context.claims.claim("email", account.email)
-            account.name?.let { context.claims.claim("name", it) }
-            account.pictureUrl?.let { context.claims.claim("picture", it) }
+            user.id?.toString()?.let { context.claims.claim("user_id", it) }
+            context.claims.claim("email", user.email)
+            user.name?.let { context.claims.claim("name", it) }
+            user.pictureUrl?.let { context.claims.claim("picture", it) }
         }
 }
