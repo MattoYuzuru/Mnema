@@ -27,8 +27,6 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
 
-    // Если вместо этого сервис должен быть OAuth2 client (client_credentials/authorization_code), то поменяй на:
-    // implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
 
     // JPA + PostgreSQL + Flyway
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
@@ -36,17 +34,16 @@ dependencies {
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
 
-    // (опционально, но обычно нужно) DTO validation
-    // implementation("org.springframework.boot:spring-boot-starter-validation")
+    // DTO validation
+    implementation("org.springframework.boot:spring-boot-starter-validation")
 
     // Tests
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 
-    // (опционально) если используешь Testcontainers как в core
-    // testImplementation("org.testcontainers:junit-jupiter")
-    // testImplementation("org.testcontainers:postgresql")
+    testImplementation("org.testcontainers:junit-jupiter")
+    testImplementation("org.testcontainers:postgresql")
 }
 
 tasks.withType<Test>().configureEach {
