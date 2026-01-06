@@ -1,5 +1,6 @@
 services:
   postgres:
+    networks: [ mnema_net ]
     image: postgres:18
     env_file: [ .env ]
     environment:
@@ -14,9 +15,10 @@ services:
       retries: 10
 
   auth:
-    dns:
-      - 1.1.1.1
-      - 8.8.8.8
+    networks: [mnema_net]
+#    dns:
+#      - 1.1.1.1
+#      - 8.8.8.8
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -39,6 +41,7 @@ services:
     ports: [ "8083:8080" ]
 
   user:
+    networks: [mnema_net]
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -55,6 +58,7 @@ services:
     ports: [ "8084:8080" ]
 
   core:
+    networks: [mnema_net]
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -71,6 +75,7 @@ services:
     ports: [ "8085:8080" ]
 
   media:
+    networks: [mnema_net]
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -88,6 +93,7 @@ services:
     ports: [ "8086:8080" ]
 
   frontend:
+    networks: [mnema_net]
     build:
       context: ./frontend
       dockerfile: Dockerfile
@@ -95,5 +101,8 @@ services:
     restart: unless-stopped
 
 networks:
-  default:
-    name: mnema-net
+  mnema_net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.222.0.0/16
