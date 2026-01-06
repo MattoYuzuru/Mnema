@@ -2,6 +2,7 @@ import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { NgFor, NgIf, NgClass } from '@angular/common';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
 import { CardContentValue } from '../../core/models/user-card.models';
+import { MediaApiService } from '../../core/services/media-api.service';
 import { markdownToHtml } from '../utils/markdown.util';
 
 interface RenderedField {
@@ -119,18 +120,42 @@ export class FlashcardViewComponent implements OnChanges {
 
     frontFields: RenderedField[] = [];
     backFields: RenderedField[] = [];
+    private resolvedUrls: Record<string, string> = {};
+
+    constructor(private mediaApi: MediaApiService) {}
 
     ngOnChanges(changes: SimpleChanges): void {
         if (changes['template'] || changes['content'] || changes['side']) {
-            this.buildFields();
+            void this.buildFields();
         }
     }
 
-    private buildFields(): void {
+    private async buildFields(): Promise<void> {
         if (!this.template || !this.template.fields) {
             this.frontFields = [];
             this.backFields = [];
             return;
+        }
+
+        const mediaIdsToResolve: string[] = [];
+        const allContentValues = Object.values(this.content);
+
+        for (const value of allContentValues) {
+            if (value && typeof value === 'object' && 'mediaId' in value && !('url' in value && value.url)) {
+                const mediaId = (value as any).mediaId;
+                if (mediaId && !mediaIdsToResolve.includes(mediaId)) {
+                    mediaIdsToResolve.push(mediaId);
+                }
+            }
+        }
+
+        if (mediaIdsToResolve.length > 0) {
+            try {
+                const resolved = await this.mediaApi.resolve(mediaIdsToResolve).toPromise();
+                this.resolvedUrls = this.mediaApi.toUrlMap(resolved || []);
+            } catch (err) {
+                console.error('Failed to resolve media URLs:', err);
+            }
         }
 
         const fieldsMap = new Map<string, FieldTemplateDTO>();
@@ -170,7 +195,13 @@ export class FlashcardViewComponent implements OnChanges {
         if (typeof value === 'string') {
             return value;
         }
-        return value.url || null;
+        if (value.url) {
+            return value.url;
+        }
+        if (value.mediaId && this.resolvedUrls[value.mediaId]) {
+            return this.resolvedUrls[value.mediaId];
+        }
+        return null;
     }
 
     formatValue(value: string | null, fieldType: string = 'text'): string {

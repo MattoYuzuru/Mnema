@@ -224,8 +224,9 @@ export class MediaUploadComponent {
 
         if (!url && this.getMediaId()) {
             try {
-                const response = await this.mediaApi.resolve([this.getMediaId()!]).toPromise();
-                url = response?.resolved[this.getMediaId()!] || null;
+                const resolved = await this.mediaApi.resolve([this.getMediaId()!]).toPromise();
+                const urlMap = this.mediaApi.toUrlMap(resolved || []);
+                url = urlMap[this.getMediaId()!] || null;
             } catch (err) {
                 console.error('Failed to resolve media:', err);
                 this.error = 'Failed to load media URL';

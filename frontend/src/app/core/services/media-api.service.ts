@@ -22,6 +22,8 @@ export interface CreateUploadResponse {
     url?: string;
     headers?: Record<string, string>;
     parts?: PresignedPart[];
+    partsCount?: number;
+    partSizeBytes?: number;
 }
 
 export interface CompletePart {
@@ -33,12 +35,16 @@ export interface CompleteUploadResponse {
     mediaId: string;
 }
 
-export interface ResolveRequest {
-    mediaIds: string[];
-}
-
-export interface ResolveResponse {
-    resolved: Record<string, string | null>;
+export interface ResolvedMedia {
+    mediaId: string;
+    kind: MediaKind;
+    url: string;
+    mimeType: string;
+    sizeBytes: number;
+    durationSeconds?: number;
+    width?: number;
+    height?: number;
+    expiresAt: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -60,8 +66,16 @@ export class MediaApiService {
         return this.http.post<void>(`${this.baseUrl}/uploads/${uploadId}/abort`, {});
     }
 
-    resolve(mediaIds: string[]): Observable<ResolveResponse> {
-        return this.http.post<ResolveResponse>(`${this.baseUrl}/resolve`, { mediaIds });
+    resolve(mediaIds: string[]): Observable<ResolvedMedia[]> {
+        return this.http.post<ResolvedMedia[]>(`${this.baseUrl}/resolve`, { mediaIds });
+    }
+
+    toUrlMap(resolved: ResolvedMedia[]): Record<string, string> {
+        const map: Record<string, string> = {};
+        for (const media of resolved) {
+            map[media.mediaId] = media.url;
+        }
+        return map;
     }
 
     deleteMedia(mediaId: string): Observable<void> {
@@ -104,7 +118,7 @@ export class MediaApiService {
             }
             return completeResponse.mediaId;
         } else if (createResponse.parts && createResponse.parts.length > 0) {
-            const chunkSize = 5 * 1024 * 1024;
+            const chunkSize = createResponse.partSizeBytes || (8 * 1024 * 1024);
             const parts: CompletePart[] = [];
 
             for (let i = 0; i < createResponse.parts.length; i++) {
@@ -117,6 +131,11 @@ export class MediaApiService {
                     method: 'PUT',
                     body: chunk
                 });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`Part ${i + 1} upload failed: ${response.status} ${response.statusText} - ${errorText}`);
+                }
 
                 const eTag = response.headers.get('ETag')?.replace(/"/g, '');
                 if (!eTag) {
