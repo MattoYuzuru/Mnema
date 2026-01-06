@@ -5,6 +5,7 @@ import { forkJoin } from 'rxjs';
 import { AuthService } from '../../auth.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
 import { PublicDeckDTO, PublicCardDTO } from '../../core/models/public-deck.models';
+import { CardContentValue } from '../../core/models/user-card.models';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
@@ -214,14 +215,27 @@ export class PublicCardBrowserComponent implements OnInit {
         this.isFlipped = !this.isFlipped;
     }
 
+    private getPreviewText(value: CardContentValue | undefined, fieldType?: string): string {
+        if (!value) return '';
+        if (typeof value === 'string') return value;
+        if (fieldType === 'image') return '[Image]';
+        if (fieldType === 'audio') return '[Audio]';
+        if (fieldType === 'video') return '[Video]';
+        return '[Media]';
+    }
+
     getFrontPreview(card: PublicCardDTO): string {
         if (!this.template || !this.template.layout) {
-            return Object.values(card.content)[0] || '';
+            const firstValue = Object.values(card.content)[0];
+            return this.getPreviewText(firstValue);
         }
 
         const frontFieldNames = this.template.layout.front.slice(0, 2);
         const values = frontFieldNames
-            .map(name => card.content[name])
+            .map(name => {
+                const field = this.template?.fields?.find(f => f.name === name);
+                return this.getPreviewText(card.content[name], field?.fieldType);
+            })
             .filter(v => v)
             .join(' - ');
 

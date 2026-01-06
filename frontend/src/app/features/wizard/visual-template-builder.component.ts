@@ -23,6 +23,7 @@ interface PaletteField {
 
 interface BuilderField {
     tempId: string;
+    name: string;
     type: FieldType;
     label: string;
     helpText: string;
@@ -592,9 +593,9 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
             { type: 'text', icon: '📝', label: this.i18n.translate('visualBuilder.fieldTypeText'), inDev: false },
             { type: 'markdown', icon: '📄', label: this.i18n.translate('visualBuilder.fieldTypeMarkdown'), inDev: false },
             { type: 'rich_text', icon: '📋', label: this.i18n.translate('visualBuilder.fieldTypeLongText'), inDev: false },
-            { type: 'audio', icon: '🎵', label: this.i18n.translate('visualBuilder.fieldTypeAudio'), inDev: true },
-            { type: 'image', icon: '🖼️', label: this.i18n.translate('visualBuilder.fieldTypeImage'), inDev: true },
-            { type: 'video', icon: '🎬', label: this.i18n.translate('visualBuilder.fieldTypeVideo'), inDev: true },
+            { type: 'audio', icon: '🎵', label: this.i18n.translate('visualBuilder.fieldTypeAudio'), inDev: false },
+            { type: 'image', icon: '🖼️', label: this.i18n.translate('visualBuilder.fieldTypeImage'), inDev: false },
+            { type: 'video', icon: '🎬', label: this.i18n.translate('visualBuilder.fieldTypeVideo'), inDev: false },
         ];
     }
 
@@ -625,6 +626,25 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
         return `${height}px`;
     }
 
+    private generateFieldName(label: string, existingNames: string[]): string {
+        let base = label.trim().toLowerCase()
+            .replace(/\s+/g, '_')
+            .replace(/[^a-z0-9_]/g, '');
+
+        if (!base) {
+            base = 'field';
+        }
+
+        let name = base;
+        let counter = 2;
+        while (existingNames.includes(name)) {
+            name = `${base}_${counter}`;
+            counter++;
+        }
+
+        return name;
+    }
+
     onDrop(event: CdkDragDrop<BuilderField[]>): void {
         if (event.previousContainer === event.container) {
             moveItemInArray(this.currentFields, event.previousIndex, event.currentIndex);
@@ -639,8 +659,15 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
             const paletteField = draggedItem as PaletteField;
 
             if (paletteField && !paletteField.inDev) {
+                const existingNames = [
+                    ...this.frontFields.map(f => f.name),
+                    ...this.backFields.map(f => f.name)
+                ];
+                const fieldName = this.generateFieldName(paletteField.label, existingNames);
+
                 const newField: BuilderField = {
                     tempId: `field-${Date.now()}-${this.tempIdCounter++}`,
+                    name: fieldName,
                     type: paletteField.type,
                     label: '',
                     helpText: '',
@@ -741,8 +768,8 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
             description: this.templateDescription.trim(),
             isPublic: this.makePublic,
             layout: {
-                front: this.frontFields.map(f => f.label || this.getFieldDisplayLabel(f)),
-                back: this.backFields.map(f => f.label || this.getFieldDisplayLabel(f))
+                front: this.frontFields.map(f => f.name),
+                back: this.backFields.map(f => f.name)
             }
         };
 
@@ -760,7 +787,7 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
                 const fieldRequests = allFields.map(({ field, isOnFront, orderIndex }) => {
                     const fieldLabel = field.label.trim() || this.getFieldDisplayLabel(field);
                     return this.templateApi.addField(template.templateId, {
-                        name: fieldLabel.toLowerCase().replace(/\s+/g, '_').replace(/[^\w]/g, ''),
+                        name: field.name,
                         label: fieldLabel,
                         fieldType: field.type,
                         isRequired: field.required,

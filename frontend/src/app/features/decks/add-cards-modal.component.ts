@@ -6,19 +6,21 @@ import { PublicDeckApiService } from '../../core/services/public-deck-api.servic
 import { TemplateApiService } from '../../core/services/template-api.service';
 import { CardApiService } from '../../core/services/card-api.service';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
+import { CardContentValue } from '../../core/models/user-card.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
+import { MediaUploadComponent } from '../../shared/components/media-upload.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 interface PendingCard {
-    content: { [key: string]: string };
+    content: { [key: string]: CardContentValue };
 }
 
 @Component({
     selector: 'app-add-cards-modal',
     standalone: true,
-    imports: [ReactiveFormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe],
+    imports: [ReactiveFormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, TranslatePipe],
     template: `
     <div class="modal-overlay" (click)="onCancel()">
       <div class="modal-content" (click)="$event.stopPropagation()">
@@ -32,6 +34,14 @@ interface PendingCard {
         <div *ngIf="!loading && template" class="modal-body">
           <form [formGroup]="cardForm" class="card-form">
             <div *ngFor="let field of template.fields" class="field-group">
+              <app-media-upload
+                *ngIf="isMediaField(field)"
+                [label]="field.label + (field.isRequired ? ' *' : '')"
+                [fieldType]="getMediaFieldType(field)"
+                [value]="getMediaValue(field.name)"
+                (valueChange)="onMediaChange(field.name, $event)"
+              ></app-media-upload>
+
               <app-input
                 *ngIf="field.fieldType === 'text'"
                 [label]="field.label + (field.isRequired ? ' *' : '')"
@@ -49,16 +59,6 @@ interface PendingCard {
                 [placeholder]="field.helpText || (field.fieldType === 'markdown' ? 'Use **bold**, *italic*, inline code' : 'Enter ' + field.label)"
                 [rows]="4"
               ></app-textarea>
-
-              <app-input
-                *ngIf="field.fieldType === 'image' || field.fieldType === 'audio' || field.fieldType === 'video'"
-                [label]="field.label + (field.isRequired ? ' *' : '')"
-                type="url"
-                [formControlName]="field.name"
-                [placeholder]="field.helpText || 'Enter URL'"
-                [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
-                [errorMessage]="'wizard.required' | translate"
-              ></app-input>
             </div>
 
             <div class="form-actions">
@@ -98,7 +98,7 @@ interface PendingCard {
       .loading-section { padding: var(--spacing-xxl); text-align: center; color: var(--color-text-secondary); }
       .card-form { display: flex; flex-direction: column; gap: var(--spacing-md); }
       .field-group { display: flex; flex-direction: column; }
-      .form-actions { padding-top: var(--spacing-md); border-top: 1px solid var(--border-color); display: flex; }
+      .form-actions { padding-top: var(--spacing-md); border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; }
       .pending-cards { margin-top: var(--spacing-xl); padding-top: var(--spacing-xl); border-top: 2px solid var(--border-color); }
       .pending-cards h3 { margin: 0 0 var(--spacing-md) 0; font-size: 1.1rem; font-weight: 600; }
       .card-list { display: flex; flex-direction: column; gap: var(--spacing-xs); }
@@ -176,8 +176,37 @@ export class AddCardsModalComponent implements OnInit {
         this.pendingCards.splice(index, 1);
     }
 
+    isMediaField(field: FieldTemplateDTO): boolean {
+        return field.fieldType === 'image' || field.fieldType === 'audio' || field.fieldType === 'video';
+    }
+
+    getMediaFieldType(field: FieldTemplateDTO): 'image' | 'audio' | 'video' {
+        return field.fieldType as 'image' | 'audio' | 'video';
+    }
+
+    getMediaValue(fieldName: string): CardContentValue | null {
+        const value = this.cardForm.get(fieldName)?.value;
+        if (!value) return null;
+        return value;
+    }
+
+    onMediaChange(fieldName: string, value: CardContentValue | null): void {
+        this.cardForm.get(fieldName)?.setValue(value);
+        this.cardForm.get(fieldName)?.markAsTouched();
+    }
+
     getCardPreview(card: PendingCard): string {
-        return Object.values(card.content).filter(v => v).slice(0, 2).join(' - ') || 'Empty card';
+        const textValues = Object.values(card.content)
+            .filter(v => v)
+            .map(v => {
+                if (typeof v === 'string') return v;
+                if (v && typeof v === 'object' && 'mediaId' in v) return '[Media]';
+                return '';
+            })
+            .filter(v => v)
+            .slice(0, 2)
+            .join(' - ');
+        return textValues || 'Empty card';
     }
 
     saveCards(): void {

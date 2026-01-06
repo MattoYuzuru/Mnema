@@ -1,3 +1,5 @@
+import { CardContentValue } from './user-card.models';
+
 export interface PublicDeckDTO {
     deckId: string;
     version: number;
@@ -9,6 +11,7 @@ export interface PublicDeckDTO {
     isListed: boolean;
     language: string;
     tags: string[];
+    iconMediaId?: string | null;
     createdAt: string;
     updatedAt: string;
     publishedAt?: string | null;
@@ -19,7 +22,7 @@ export interface PublicCardDTO {
     deckId: string;
     deckVersion: number;
     cardId: string;
-    content: Record<string, string>;
+    content: Record<string, CardContentValue>;
     orderIndex: number;
     tags: string[];
     createdAt: string;

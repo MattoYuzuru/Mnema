@@ -8,7 +8,8 @@ import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
 import { TemplateApiService } from '../../core/services/template-api.service';
 import { PreferencesService } from '../../core/services/preferences.service';
-import { UserCardDTO } from '../../core/models/user-card.models';
+import { UserCardDTO, CardContentValue } from '../../core/models/user-card.models';
+import { FieldTemplateDTO } from '../../core/models/template.models';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { CardTemplateDTO } from '../../core/models/template.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
@@ -17,12 +18,13 @@ import { FlashcardViewComponent } from '../../shared/components/flashcard-view.c
 import { ButtonComponent } from '../../shared/components/button.component';
 import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
+import { MediaUploadComponent } from '../../shared/components/media-upload.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-card-browser',
     standalone: true,
-    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe],
+    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -158,6 +160,13 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         <div class="modal-body">
           <form [formGroup]="editForm" class="edit-form">
             <div *ngFor="let field of template.fields" class="field-group">
+              <app-media-upload
+                *ngIf="isMediaField(field)"
+                [label]="field.label + (field.isRequired ? ' *' : '')"
+                [fieldType]="getMediaFieldType(field)"
+                [value]="getMediaValue(field.name)"
+                (valueChange)="onMediaChange(field.name, $event)"
+              ></app-media-upload>
               <app-input
                 *ngIf="field.fieldType === 'text'"
                 [label]="field.label + (field.isRequired ? ' *' : '')"
@@ -172,13 +181,6 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                 [placeholder]="field.fieldType === 'markdown' ? 'Use **bold**, *italic*, inline code' : (field.helpText || 'Enter ' + field.label)"
                 [rows]="4"
               ></app-textarea>
-              <app-input
-                *ngIf="field.fieldType === 'image' || field.fieldType === 'audio' || field.fieldType === 'video'"
-                [label]="field.label + (field.isRequired ? ' *' : '')"
-                type="url"
-                [formControlName]="field.name"
-                [placeholder]="field.helpText || 'Enter URL'"
-              ></app-input>
             </div>
             <app-textarea
               [label]="'cardBrowser.personalNote' | translate"
@@ -651,14 +653,27 @@ export class CardBrowserComponent implements OnInit {
         this.isFlipped = !this.isFlipped;
     }
 
+    private getPreviewText(value: CardContentValue | undefined, fieldType?: string): string {
+        if (!value) return '';
+        if (typeof value === 'string') return value;
+        if (fieldType === 'image') return '[Image]';
+        if (fieldType === 'audio') return '[Audio]';
+        if (fieldType === 'video') return '[Video]';
+        return '[Media]';
+    }
+
     getFrontPreview(card: UserCardDTO): string {
         if (!this.template || !this.template.layout) {
-            return Object.values(card.effectiveContent)[0] || '';
+            const firstValue = Object.values(card.effectiveContent)[0];
+            return this.getPreviewText(firstValue);
         }
 
         const frontFieldNames = this.template.layout.front.slice(0, 2);
         const values = frontFieldNames
-            .map(name => card.effectiveContent[name])
+            .map(name => {
+                const field = this.template?.fields?.find(f => f.name === name);
+                return this.getPreviewText(card.effectiveContent[name], field?.fieldType);
+            })
             .filter(v => v)
             .join(' - ');
 
@@ -685,6 +700,25 @@ export class CardBrowserComponent implements OnInit {
     closeEditModal(): void {
         this.showEditModal = false;
         this.editingCard = null;
+    }
+
+    isMediaField(field: FieldTemplateDTO): boolean {
+        return field.fieldType === 'image' || field.fieldType === 'audio' || field.fieldType === 'video';
+    }
+
+    getMediaFieldType(field: FieldTemplateDTO): 'image' | 'audio' | 'video' {
+        return field.fieldType as 'image' | 'audio' | 'video';
+    }
+
+    getMediaValue(fieldName: string): CardContentValue | null {
+        const value = this.editForm.get(fieldName)?.value;
+        if (!value) return null;
+        return value;
+    }
+
+    onMediaChange(fieldName: string, value: CardContentValue | null): void {
+        this.editForm.get(fieldName)?.setValue(value);
+        this.editForm.get(fieldName)?.markAsTouched();
     }
 
     saveEdit(): void {

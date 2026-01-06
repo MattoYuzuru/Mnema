@@ -1,11 +1,13 @@
 import { Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { NgFor, NgIf, NgClass } from '@angular/common';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
+import { CardContentValue } from '../../core/models/user-card.models';
 import { markdownToHtml } from '../utils/markdown.util';
 
 interface RenderedField {
     field: FieldTemplateDTO;
     value: string | null;
+    rawValue: CardContentValue;
 }
 
 @Component({
@@ -138,27 +140,37 @@ export class FlashcardViewComponent implements OnChanges {
             .map(name => fieldsMap.get(name))
             .filter((f): f is FieldTemplateDTO => f !== undefined)
             .sort((a, b) => a.orderIndex - b.orderIndex)
-            .map(field => ({
-                field,
-                value: this.getFieldValue(field.name)
-            }));
+            .map(field => {
+                const rawValue = this.content[field.name] as CardContentValue;
+                return {
+                    field,
+                    value: this.extractStringValue(rawValue),
+                    rawValue
+                };
+            });
 
         this.backFields = (this.template.layout?.back || [])
             .map(name => fieldsMap.get(name))
             .filter((f): f is FieldTemplateDTO => f !== undefined)
             .sort((a, b) => a.orderIndex - b.orderIndex)
-            .map(field => ({
-                field,
-                value: this.getFieldValue(field.name)
-            }));
+            .map(field => {
+                const rawValue = this.content[field.name] as CardContentValue;
+                return {
+                    field,
+                    value: this.extractStringValue(rawValue),
+                    rawValue
+                };
+            });
     }
 
-    private getFieldValue(fieldName: string): string | null {
-        const value = this.content[fieldName];
+    private extractStringValue(value: CardContentValue): string | null {
         if (value === null || value === undefined) {
             return null;
         }
-        return String(value);
+        if (typeof value === 'string') {
+            return value;
+        }
+        return value.url || null;
     }
 
     formatValue(value: string | null, fieldType: string = 'text'): string {
