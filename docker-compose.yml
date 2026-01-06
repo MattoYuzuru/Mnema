@@ -87,6 +87,12 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD}}
       SPRING_FLYWAY_ENABLED: "true"
       AUTH_ISSUER_URI: http://auth:8080
+      AWS_REGION: ${AWS_REGION}
+      AWS_BUCKET_NAME: ${AWS_BUCKET_NAME}
+      AWS_ENDPOINT: ${AWS_ENDPOINT:-https://storage.yandexcloud.net}
+      AWS_PATH_STYLE_ACCESS: ${AWS_PATH_STYLE_ACCESS:-false}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
     depends_on:
       postgres:
         condition: service_healthy
