@@ -2,10 +2,14 @@ package app.mnema.media.storage;
 
 import app.mnema.media.config.S3Props;
 import org.springframework.stereotype.Component;
+import software.amazon.awssdk.awscore.presigner.PresignedRequest;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.*;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
-import software.amazon.awssdk.services.s3.presigner.model.*;
+import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PresignedUploadPartRequest;
+import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
+import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
 
 import java.time.Duration;
 import java.util.HashMap;
