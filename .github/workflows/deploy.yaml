@@ -167,6 +167,10 @@ jobs:
             POSTGRES_DB: "${POSTGRES_DB}"
             POSTGRES_USER: "${POSTGRES_USER}"
             POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+            AWS_REGION: "${AWS_REGION}"
+            AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+            AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+            AWS_BUCKET_NAME: "${AWS_BUCKET_NAME}"
           YAML
         env:
           AUTH_ISSUER: ${{ secrets.AUTH_ISSUER }}
@@ -180,6 +184,10 @@ jobs:
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          AWS_REGION: ${{AWS_REGION}}
+          AWS_ACCESS_KEY_ID: ${{AWS_ACCESS_KEY_ID}}
+          AWS_SECRET_ACCESS_KEY: ${{AWS_SECRET_ACCESS_KEY}}
+          AWS_BUCKET_NAME: ${{AWS_BUCKET_NAME}}
 
       - name: Apply manifests
         run: |

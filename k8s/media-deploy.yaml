@@ -7,9 +7,9 @@ metadata:
   namespace: prod
 spec:
   replicas: 1
-  selector: { matchLabels: { app: mnema-media }}
+  selector: { matchLabels: { app: mnema-media } }
   template:
-    metadata: { labels: { app: mnema-media }}
+    metadata: { labels: { app: mnema-media } }
     spec:
       initContainers:
         - name: wait-for-postgres
@@ -38,6 +38,14 @@ spec:
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: GOOGLE_CLIENT_SECRET } }
             - name: AUTH_ISSUER_URI
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AUTH_ISSUER_URI } }
+            - name: AWS_REGION
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: AWS_REGION } }
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: AWS_ACCESS_KEY_ID } }
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: AWS_SECRET_ACCESS_KEY } }
+            - name: AWS_BUCKET_NAME
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: AWS_BUCKET_NAME } }
             - name: SPRING_PROFILES_ACTIVE
               value: prod
           startupProbe:
