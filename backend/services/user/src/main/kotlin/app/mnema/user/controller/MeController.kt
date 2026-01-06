@@ -22,13 +22,15 @@ class MeController(
         val username: String,
         val bio: String?,
         val avatarUrl: String?,
+        val avatarMediaId: UUID?,
         val isAdmin: Boolean
     )
 
     data class MeUpdateRequest(
         val username: String? = null,
         val bio: String? = null,
-        val avatarUrl: String? = null
+        val avatarUrl: String? = null,
+        val avatarMediaId: UUID? = null
     )
 
     private fun toDto(user: User) = MeResponse(
@@ -37,6 +39,7 @@ class MeController(
         username = user.username,
         bio = user.bio,
         avatarUrl = user.avatarUrl,
+        avatarMediaId = user.avatarMediaId,
         isAdmin = user.isAdmin
     )
 
@@ -112,6 +115,7 @@ class MeController(
 
         req.bio?.let { user.bio = it }
         req.avatarUrl?.let { user.avatarUrl = it }
+        req.avatarMediaId?.let { user.avatarMediaId = it }
 
         return toDto(user)
     }

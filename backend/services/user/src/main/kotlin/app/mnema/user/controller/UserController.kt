@@ -18,6 +18,7 @@ class UserController(private val repo: UserRepository) {
         val username: String,
         val bio: String? = null,
         val avatarUrl: String? = null,
+        val avatarMediaId: UUID? = null,
     )
 
     data class UpdateUserReq(
@@ -25,6 +26,7 @@ class UserController(private val repo: UserRepository) {
         val username: String? = null,
         val bio: String? = null,
         val avatarUrl: String? = null,
+        val avatarMediaId: UUID? = null,
     )
 
     @GetMapping("/{id}")
@@ -45,7 +47,8 @@ class UserController(private val repo: UserRepository) {
                 email = req.email,
                 username = req.username,
                 bio = req.bio,
-                avatarUrl = req.avatarUrl
+                avatarUrl = req.avatarUrl,
+                avatarMediaId = req.avatarMediaId
             )
         )
     }
@@ -72,6 +75,7 @@ class UserController(private val repo: UserRepository) {
 
         req.bio?.let { user.bio = it }
         req.avatarUrl?.let { user.avatarUrl = it }
+        req.avatarMediaId?.let { user.avatarMediaId = it }
 
         return user
     }
@@ -93,6 +97,7 @@ class UserController(private val repo: UserRepository) {
         user.email = req.email
         user.bio = req.bio
         user.avatarUrl = req.avatarUrl
+        user.avatarMediaId = req.avatarMediaId
 
         return user
     }

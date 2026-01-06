@@ -28,6 +28,9 @@ data class User(
     @Column(name = "avatar_url")
     var avatarUrl: String? = null,
 
+    @Column(name = "avatar_media_id")
+    var avatarMediaId: UUID? = null,
+
     @Column(name = "created_at", nullable = false)
     var createdAt: Instant = Instant.now(),
 

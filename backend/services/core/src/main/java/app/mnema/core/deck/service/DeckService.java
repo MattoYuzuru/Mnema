@@ -478,6 +478,9 @@ public class DeckService {
         if (dto.description() != null) {
             deck.setDescription(dto.description());
         }
+        if (dto.iconMediaId() != null) {
+            deck.setIconMediaId(dto.iconMediaId());
+        }
         deck.setPublicFlag(dto.isPublic());
         deck.setListed(dto.isListed());
 
@@ -571,6 +574,7 @@ public class DeckService {
                 authorId,
                 publicDeckDTO.name(),
                 publicDeckDTO.description(),
+                publicDeckDTO.iconMediaId(),
                 publicDeckDTO.templateId(),
                 publicDeckDTO.isPublic(),
                 publicDeckDTO.isListed(),
@@ -625,6 +629,7 @@ public class DeckService {
                 e.getAuthorId(),
                 e.getName(),
                 e.getDescription(),
+                e.getIconMediaId(),
                 e.getTemplateId(),
                 e.isPublicFlag(),
                 e.isListed(),

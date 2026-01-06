@@ -32,6 +32,9 @@ public class PublicDeckEntity {
     @Column(name = "description")
     private String description;
 
+    @Column(name = "icon_media_id")
+    private UUID iconMediaId;
+
     @Column(name = "template_id", nullable = false)
     private UUID templateId;
 
@@ -74,6 +77,7 @@ public class PublicDeckEntity {
             UUID authorId,
             String name,
             String description,
+            UUID iconMediaId,
             UUID templateId,
             boolean publicFlag,
             boolean listed,
@@ -89,6 +93,7 @@ public class PublicDeckEntity {
         this.authorId = authorId;
         this.name = name;
         this.description = description;
+        this.iconMediaId = iconMediaId;
         this.templateId = templateId;
         this.publicFlag = publicFlag;
         this.listed = listed;
@@ -118,6 +123,10 @@ public class PublicDeckEntity {
 
     public String getDescription() {
         return description;
+    }
+
+    public UUID getIconMediaId() {
+        return iconMediaId;
     }
 
     public UUID getTemplateId() {
@@ -166,6 +175,10 @@ public class PublicDeckEntity {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public void setIconMediaId(UUID iconMediaId) {
+        this.iconMediaId = iconMediaId;
     }
 
     public void setPublicFlag(boolean publicFlag) {
