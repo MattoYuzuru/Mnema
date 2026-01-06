@@ -3,3 +3,10 @@ app:
   cors:
     origins:
       - https://mnema.app
+  s3:
+    bucket: mnema-media
+    region: ru-central1
+    endpoint: https://storage.yandexcloud.net
+    pathStyleAccess: false
+    accessKey: ${AWS_ACCESS_KEY_ID}
+    secretKey: ${AWS_SECRET_ACCESS_KEY}

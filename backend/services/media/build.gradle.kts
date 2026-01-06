@@ -37,6 +37,9 @@ dependencies {
     // DTO validation
     implementation("org.springframework.boot:spring-boot-starter-validation")
 
+    // S3 Support
+    implementation("software.amazon.awssdk:s3:2.41.1")
+
     // Tests
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
