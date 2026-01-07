@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { Router } from '@angular/router';
 import { NgFor, NgIf } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { ThemeService } from '../../core/services/theme.service';
 import { I18nService, Language } from '../../core/services/i18n.service';
 import { PreferencesService } from '../../core/services/preferences.service';
@@ -15,7 +16,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 @Component({
     selector: 'app-settings',
     standalone: true,
-    imports: [NgFor, NgIf, ButtonComponent, ConfirmationDialogComponent, TranslatePipe],
+    imports: [NgFor, NgIf, FormsModule, ButtonComponent, ConfirmationDialogComponent, TranslatePipe],
     template: `
     <div class="settings-page">
       <h1>{{ 'settings.title' | translate }}</h1>
@@ -127,6 +128,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               <app-button variant="secondary" size="sm" (click)="restoreDeck(deck.userDeckId)">
                 {{ 'settings.restore' | translate }}
               </app-button>
+              <app-button variant="ghost" size="sm" (click)="openHardDeleteConfirm(deck.userDeckId)" class="delete-btn-small">
+                Delete Permanently
+              </app-button>
             </div>
           </div>
         </div>
@@ -142,14 +146,47 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       </section>
     </div>
 
+    <div *ngIf="showDeleteConfirmation" class="modal-overlay" (click)="showDeleteConfirmation = false; deleteAccountUsername = ''">
+      <div class="modal-content delete-account-modal" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>Delete Account</h2>
+          <button class="close-btn" (click)="showDeleteConfirmation = false; deleteAccountUsername = ''">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="warning-text">This action cannot be undone. All your decks and progress will be permanently deleted.</p>
+          <p>Type your username <strong>{{ currentUsername }}</strong> to confirm:</p>
+          <input
+            type="text"
+            [(ngModel)]="deleteAccountUsername"
+            [placeholder]="currentUsername"
+            class="delete-confirm-input"
+          />
+        </div>
+        <div class="modal-footer">
+          <app-button variant="ghost" (click)="showDeleteConfirmation = false; deleteAccountUsername = ''">
+            Cancel
+          </app-button>
+          <app-button
+            variant="primary"
+            [disabled]="deleteAccountUsername !== currentUsername"
+            (click)="deleteAccount()"
+            class="delete-btn"
+          >
+            Delete Account
+          </app-button>
+        </div>
+      </div>
+    </div>
+
     <app-confirmation-dialog
-      *ngIf="showDeleteConfirmation"
-      title="Delete Account"
-      message="Are you sure you want to permanently delete your account? This will delete all your decks and cannot be undone."
-      confirmText="Delete Account"
+      *ngIf="showHardDeleteConfirmation"
+      [open]="showHardDeleteConfirmation"
+      title="Delete Deck Permanently"
+      message="Are you sure you want to permanently delete this deck? This action cannot be undone and all card progress will be lost."
+      confirmText="Delete Permanently"
       cancelText="Cancel"
-      (confirmed)="deleteAccount()"
-      (cancelled)="showDeleteConfirmation = false"
+      (confirm)="confirmHardDelete()"
+      (cancel)="closeHardDeleteConfirm()"
     ></app-confirmation-dialog>
   `,
     styles: [`
@@ -305,12 +342,99 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         background: #dc2626;
         color: white;
       }
+
+      .delete-btn-small {
+        color: #dc2626;
+      }
+
+      .delete-btn-small:hover {
+        background: #fee2e2;
+        color: #dc2626;
+      }
+
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+      }
+
+      .modal-content {
+        background: var(--color-card-background);
+        border-radius: var(--border-radius-lg);
+        width: 90%;
+        max-width: 32rem;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+      }
+
+      .modal-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: var(--spacing-xl);
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      .modal-header h2 {
+        margin: 0;
+        font-size: 1.25rem;
+      }
+
+      .close-btn {
+        background: none;
+        border: none;
+        font-size: 2rem;
+        cursor: pointer;
+        color: var(--color-text-secondary);
+        line-height: 1;
+        padding: 0;
+      }
+
+      .modal-body {
+        padding: var(--spacing-xl);
+      }
+
+      .modal-footer {
+        display: flex;
+        justify-content: flex-end;
+        gap: var(--spacing-md);
+        padding: var(--spacing-xl);
+        border-top: 1px solid var(--border-color);
+      }
+
+      .warning-text {
+        color: #dc2626;
+        font-weight: 500;
+        margin: 0 0 var(--spacing-md) 0;
+      }
+
+      .delete-confirm-input {
+        width: 100%;
+        padding: var(--spacing-md);
+        border: 2px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+        font-size: 1rem;
+        margin-top: var(--spacing-md);
+        font-family: inherit;
+      }
+
+      .delete-confirm-input:focus {
+        outline: none;
+        border-color: #dc2626;
+      }
     `]
 })
 export class SettingsComponent implements OnInit {
     archivedDecks: UserDeckDTO[] = [];
     loadingArchive = false;
     showDeleteConfirmation = false;
+    showHardDeleteConfirmation = false;
+    deckToHardDelete: string | null = null;
+    deleteAccountUsername = '';
+    currentUsername = '';
 
     constructor(
         public theme: ThemeService,
@@ -324,6 +448,11 @@ export class SettingsComponent implements OnInit {
 
     ngOnInit(): void {
         this.loadArchivedDecks();
+        this.userApi.getMe().subscribe({
+            next: profile => {
+                this.currentUsername = profile.username;
+            }
+        });
     }
 
     loadArchivedDecks(): void {
@@ -351,6 +480,31 @@ export class SettingsComponent implements OnInit {
 
     openDeck(userDeckId: string): void {
         void this.router.navigate(['/decks', userDeckId]);
+    }
+
+    openHardDeleteConfirm(userDeckId: string): void {
+        this.deckToHardDelete = userDeckId;
+        this.showHardDeleteConfirmation = true;
+    }
+
+    closeHardDeleteConfirm(): void {
+        this.showHardDeleteConfirmation = false;
+        this.deckToHardDelete = null;
+    }
+
+    confirmHardDelete(): void {
+        if (!this.deckToHardDelete) return;
+
+        const deckId = this.deckToHardDelete;
+        this.deckApi.hardDeleteDeck(deckId).subscribe({
+            next: () => {
+                this.archivedDecks = this.archivedDecks.filter(d => d.userDeckId !== deckId);
+                this.closeHardDeleteConfirm();
+            },
+            error: () => {
+                this.closeHardDeleteConfirm();
+            }
+        });
     }
 
     deleteAccount(): void {

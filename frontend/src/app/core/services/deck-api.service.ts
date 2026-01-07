@@ -39,6 +39,10 @@ export class DeckApiService {
         return this.http.delete<void>(`${this.baseUrl}/${userDeckId}`);
     }
 
+    hardDeleteDeck(userDeckId: string): Observable<void> {
+        return this.http.delete<void>(`${this.baseUrl}/${userDeckId}/hard`);
+    }
+
     getUserDeckSize(userDeckId: string): Observable<{ deckId: string; cardsQty: number }> {
         return this.http.get<{ deckId: string; cardsQty: number }>(`${this.baseUrl}/${userDeckId}/size`);
     }

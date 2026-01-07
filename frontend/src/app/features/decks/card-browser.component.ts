@@ -301,7 +301,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       }
 
       .flashcard-inner {
-        position: relative;
+        display: grid;
         width: 100%;
         min-height: 400px;
         transition: transform 0.6s;
@@ -313,8 +313,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       }
 
       .flashcard-face {
-        position: absolute;
+        grid-area: 1 / 1;
+        position: relative;
         width: 100%;
+        height: auto;
         min-height: 400px;
         backface-visibility: hidden;
         background: var(--color-card-background);

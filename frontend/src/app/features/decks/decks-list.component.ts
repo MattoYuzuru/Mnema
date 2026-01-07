@@ -4,6 +4,8 @@ import { NgIf, NgFor } from '@angular/common';
 import { from, of } from 'rxjs';
 import { catchError, mergeMap } from 'rxjs/operators';
 import { DeckApiService } from '../../core/services/deck-api.service';
+import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
+import { UserApiService } from '../../user-api.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { DeckCardComponent } from '../../shared/components/deck-card.component';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
@@ -105,14 +107,27 @@ export class DecksListComponent implements OnInit {
     private static deckSizesCache: Map<string, { size: number; timestamp: number }> = new Map();
     private static readonly CACHE_TTL_MS = 5 * 60 * 1000;
     private deckSizes: Map<string, number> = new Map();
+    private static authorIdsCache: Map<string, string> = new Map();
+    private authorIds: Map<string, string> = new Map();
+    private currentUserId: string | null = null;
 
     constructor(
         private deckApi: DeckApiService,
+        private publicDeckApi: PublicDeckApiService,
+        private userApi: UserApiService,
         private router: Router
     ) {}
 
     ngOnInit(): void {
-        this.loadDecks();
+        this.userApi.getMe().subscribe({
+            next: profile => {
+                this.currentUserId = profile.id;
+                this.loadDecks();
+            },
+            error: () => {
+                this.loadDecks();
+            }
+        });
     }
 
     private loadDecks(): void {
@@ -123,12 +138,43 @@ export class DecksListComponent implements OnInit {
 
                 if (this.decks.length > 0) {
                     this.loadDeckSizes();
+                    this.loadAuthorIds();
                 }
             },
             error: () => {
                 this.loading = false;
             }
         });
+    }
+
+    private loadAuthorIds(): void {
+        const decksWithPublicId = this.decks.filter(d => d.publicDeckId);
+        if (decksWithPublicId.length === 0) {
+            return;
+        }
+
+        from(decksWithPublicId)
+            .pipe(
+                mergeMap(deck => {
+                    const cached = DecksListComponent.authorIdsCache.get(deck.publicDeckId);
+                    if (cached) {
+                        this.authorIds.set(deck.publicDeckId, cached);
+                        return of(null);
+                    }
+
+                    return this.publicDeckApi.getPublicDeck(deck.publicDeckId).pipe(
+                        catchError(() => of(null))
+                    );
+                }, 3)
+            )
+            .subscribe({
+                next: response => {
+                    if (response) {
+                        this.authorIds.set(response.deckId, response.authorId);
+                        DecksListComponent.authorIdsCache.set(response.deckId, response.authorId);
+                    }
+                }
+            });
     }
 
     private loadDeckSizes(): void {
@@ -170,7 +216,18 @@ export class DecksListComponent implements OnInit {
     }
 
     needsUpdate(deck: UserDeckDTO): boolean {
-        return deck.subscribedVersion < deck.currentVersion;
+        if (!deck.publicDeckId || deck.subscribedVersion >= deck.currentVersion) {
+            return false;
+        }
+
+        if (this.currentUserId && this.authorIds.has(deck.publicDeckId)) {
+            const authorId = this.authorIds.get(deck.publicDeckId);
+            if (authorId === this.currentUserId) {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     openDeck(userDeckId: string): void {

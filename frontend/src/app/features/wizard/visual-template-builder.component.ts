@@ -569,6 +569,7 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     private readonly STORAGE_KEY = 'mnema_visual_builder_draft';
     private readonly BASE_CARD_HEIGHT = 300;
     private tempIdCounter = 0;
+    private skipDraftSave = false;
 
     paletteFields: PaletteField[] = [];
 
@@ -604,7 +605,9 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     }
 
     ngOnDestroy(): void {
-        this.saveDraft();
+        if (!this.skipDraftSave) {
+            this.saveDraft();
+        }
     }
 
     get currentFields(): BuilderField[] {
@@ -804,6 +807,7 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
             })
         ).subscribe({
             next: (template) => {
+                this.skipDraftSave = true;
                 this.clearDraft();
                 this.wizardState.setTemplateId(template.templateId);
                 void this.router.navigate(['/create-deck']);

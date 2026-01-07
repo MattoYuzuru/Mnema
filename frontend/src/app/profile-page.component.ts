@@ -295,6 +295,6 @@ export class ProfilePageComponent implements OnInit {
 
     private normalizeISODate(isoString?: string | null): string | null {
         if (!isoString) return null;
-        return isoString.replace(/\.(\d{3})\d+Z/, '.$1Z');
+        return isoString.replace(/\.(\d{3})\d+(Z|[+-]\d{2}:\d{2})/, '.$1$2');
     }
 }

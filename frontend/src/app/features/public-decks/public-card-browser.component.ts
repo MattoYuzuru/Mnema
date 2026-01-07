@@ -96,9 +96,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       .card-counter { font-size: 1rem; font-weight: 600; color: var(--color-text-primary); min-width: 80px; text-align: center; }
       .flashcard-container { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-md); }
       .flashcard { width: 100%; max-width: 600px; min-height: 400px; cursor: pointer; perspective: 1000px; }
-      .flashcard-inner { position: relative; width: 100%; min-height: 400px; transition: transform 0.6s; transform-style: preserve-3d; }
+      .flashcard-inner { display: grid; width: 100%; min-height: 400px; transition: transform 0.6s; transform-style: preserve-3d; }
       .flashcard.flipped .flashcard-inner { transform: rotateY(180deg); }
-      .flashcard-face { position: absolute; width: 100%; min-height: 400px; backface-visibility: hidden; background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); padding: var(--spacing-xl); display: flex; align-items: center; justify-content: center; }
+      .flashcard-face { grid-area: 1 / 1; position: relative; width: 100%; height: auto; min-height: 400px; backface-visibility: hidden; background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); padding: var(--spacing-xl); display: flex; align-items: center; justify-content: center; }
       .flashcard-face.back { transform: rotateY(180deg); }
       .flip-hint { font-size: 0.9rem; color: var(--color-text-muted); text-align: center; margin: 0; }
     `]

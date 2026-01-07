@@ -193,6 +193,26 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       (confirm)="confirmDelete()"
       (cancel)="closeDeleteConfirm()"
     ></app-confirmation-dialog>
+
+    <div *ngIf="showScopePrompt" class="modal-overlay" (click)="closeScopePrompt()">
+      <div class="modal-content scope-prompt" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>Apply Changes</h2>
+          <button class="close-btn" (click)="closeScopePrompt()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>Would you like to apply your changes globally (to the public deck) or locally (to your copy only)?</p>
+          <div class="scope-buttons">
+            <app-button variant="secondary" (click)="applyScopeChoice('local')">
+              Apply Locally
+            </app-button>
+            <app-button variant="primary" (click)="applyScopeChoice('global')">
+              Apply Globally
+            </app-button>
+          </div>
+        </div>
+      </div>
+    </div>
   `,
     styles: [`
       .deck-profile {
@@ -328,6 +348,16 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         gap: var(--spacing-md);
         padding: var(--spacing-lg);
         border-top: 1px solid var(--border-color);
+      }
+
+      .scope-prompt {
+        max-width: 32rem;
+      }
+
+      .scope-buttons {
+        display: flex;
+        gap: var(--spacing-md);
+        margin-top: var(--spacing-lg);
       }
 
       .public-deck-section {
@@ -481,12 +511,14 @@ export class DeckProfileComponent implements OnInit {
     showAddCards = false;
     showEditModal = false;
     showDeleteConfirm = false;
+    showScopePrompt = false;
     saving = false;
     editForm!: FormGroup;
     tagInput = '';
     tags: string[] = [];
     currentAlgorithm: ReviewDeckAlgorithmResponse | null = null;
     originalAlgorithmId = '';
+    pendingSaveChoice: 'local' | 'global' | null = null;
 
     constructor(
         private route: ActivatedRoute,
@@ -641,8 +673,14 @@ export class DeckProfileComponent implements OnInit {
     saveEdit(): void {
         if (this.editForm.invalid) return;
 
-        this.saving = true;
         const formValue = this.editForm.value;
+
+        if (this.isAuthor && this.publicDeck && this.hasPublicDeckChanges() && this.pendingSaveChoice === null) {
+            this.showScopePrompt = true;
+            return;
+        }
+
+        this.saving = true;
 
         const userDeckUpdates: Partial<UserDeckDTO> = {
             displayName: formValue.displayName,
@@ -670,7 +708,7 @@ export class DeckProfileComponent implements OnInit {
             });
         }
 
-        if (this.isAuthor && this.publicDeck) {
+        if (this.isAuthor && this.publicDeck && this.pendingSaveChoice === 'global') {
             const publicDeckUpdates: Partial<PublicDeckDTO> = {
                 name: formValue.publicName,
                 description: formValue.publicDescription,
@@ -690,11 +728,36 @@ export class DeckProfileComponent implements OnInit {
                 }
                 this.saving = false;
                 this.showEditModal = false;
+                this.pendingSaveChoice = null;
             },
             error: () => {
                 this.saving = false;
+                this.pendingSaveChoice = null;
             }
         });
+    }
+
+    hasPublicDeckChanges(): boolean {
+        if (!this.publicDeck) return false;
+        const formValue = this.editForm.value;
+
+        return formValue.publicName !== this.publicDeck.name ||
+               formValue.publicDescription !== this.publicDeck.description ||
+               formValue.isPublic !== this.publicDeck.isPublic ||
+               formValue.isListed !== this.publicDeck.isListed ||
+               formValue.language !== this.publicDeck.language ||
+               JSON.stringify(this.tags) !== JSON.stringify(this.publicDeck.tags);
+    }
+
+    applyScopeChoice(choice: 'local' | 'global'): void {
+        this.pendingSaveChoice = choice;
+        this.showScopePrompt = false;
+        this.saveEdit();
+    }
+
+    closeScopePrompt(): void {
+        this.showScopePrompt = false;
+        this.pendingSaveChoice = null;
     }
 
     openDeleteConfirm(): void {
