@@ -233,6 +233,8 @@ public class MediaService {
         List<MediaAssetEntity> assets = assetRepository.findByMediaIdIn(mediaIds);
         var byId = assets.stream()
                 .collect(java.util.stream.Collectors.toMap(MediaAssetEntity::getMediaId, a -> a));
+        var userIdOpt = currentUserProvider.getUserId(jwt);
+        boolean hasInternalScope = scopeHelper.hasAnyScope(jwt, INTERNAL_SCOPES);
 
         return mediaIds.stream()
                 .map(id -> {
@@ -240,7 +242,9 @@ public class MediaService {
                     if (asset == null) {
                         throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Media not found: " + id);
                     }
-                    ensureOwnerOrInternal(jwt, asset);
+                    if (!hasInternalScope && !isOwner(userIdOpt, asset) && !isPublicResolvable(asset)) {
+                        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
+                    }
                     if (asset.getStatus() != MediaStatus.ready) {
                         throw new ResponseStatusException(HttpStatus.CONFLICT, "Media not ready: " + asset.getMediaId());
                     }
@@ -324,6 +328,17 @@ public class MediaService {
         if (!asset.getOwnerUserId().equals(userId)) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Access denied");
         }
+    }
+
+    private boolean isOwner(java.util.Optional<UUID> userIdOpt, MediaAssetEntity asset) {
+        return userIdOpt.isPresent() && asset.getOwnerUserId().equals(userIdOpt.get());
+    }
+
+    private boolean isPublicResolvable(MediaAssetEntity asset) {
+        return switch (asset.getKind()) {
+            case card_image, card_audio, card_video, deck_icon -> true;
+            default -> false;
+        };
     }
 
     private List<UploadPartResponse> buildMultipartParts(String storageKey, String uploadId, int partsCount) {
