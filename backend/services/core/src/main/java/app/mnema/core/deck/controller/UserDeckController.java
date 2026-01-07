@@ -99,6 +99,17 @@ public class UserDeckController {
         deckService.deleteUserDeck(userId, userDeckId);
     }
 
+    // DELETE /decks/{userDeckId}/hard
+    @DeleteMapping("/{userDeckId}/hard")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void hardDeleteDeck(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID userDeckId
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        deckService.hardDeleteUserDeck(userId, userDeckId);
+    }
+
     // GET /decks/{userDeckId}/size
     @GetMapping("/{userDeckId}/size")
     public DeckSizeDTO getDeckSize(

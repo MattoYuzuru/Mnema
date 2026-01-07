@@ -19,4 +19,6 @@ public interface UserDeckRepository extends JpaRepository<UserDeckEntity, UUID> 
 
     List<UserDeckEntity> findByUserIdAndArchivedTrue(UUID userId);
 
+    long countByPublicDeckIdAndUserDeckIdNot(UUID publicDeckId, UUID userDeckId);
+
 }
