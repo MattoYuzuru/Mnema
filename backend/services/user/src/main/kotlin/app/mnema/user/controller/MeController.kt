@@ -119,4 +119,18 @@ class MeController(
 
         return toDto(user)
     }
+
+    @DeleteMapping
+    @Transactional
+    fun delete(@AuthenticationPrincipal jwt: Jwt) {
+        val userIdStr = jwt.getClaimAsString("user_id")
+            ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "user_id claim missing")
+        val userId = UUID.fromString(userIdStr)
+
+        if (!repo.existsById(userId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
+        }
+
+        repo.deleteById(userId)
+    }
 }
