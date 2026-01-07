@@ -14,7 +14,8 @@ import { TranslatePipe } from '../pipes/translate.pipe';
     <div class="deck-card">
       <div class="deck-card-header">
         <div class="deck-card-icon clickable" (click)="open.emit()">
-          <span class="deck-icon-placeholder">📚</span>
+          <img *ngIf="iconUrl" [src]="iconUrl" alt="Deck icon" class="deck-icon-image" />
+          <span *ngIf="!iconUrl" class="deck-icon-placeholder">📚</span>
         </div>
         <h3 class="deck-name clickable" (click)="open.emit()">{{ displayName }}</h3>
       </div>
@@ -125,6 +126,13 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         font-size: 1.25rem;
       }
 
+      .deck-icon-image {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        border-radius: var(--border-radius-sm);
+      }
+
       .deck-card-body {
         flex: 1;
         display: flex;
@@ -184,6 +192,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
 export class DeckCardComponent {
     @Input() publicDeck: PublicDeckDTO | null = null;
     @Input() userDeck: UserDeckDTO | null = null;
+    @Input() iconUrl: string | null = null;
     @Input() showFork = false;
     @Input() showUpdate = false;
     @Input() showLearn = false;

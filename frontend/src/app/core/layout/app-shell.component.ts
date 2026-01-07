@@ -1,10 +1,11 @@
 import { Component, OnInit, OnDestroy, signal } from '@angular/core';
 import { Router, RouterOutlet, RouterLink } from '@angular/router';
 import { NgIf } from '@angular/common';
-import { Subscription } from 'rxjs';
+import { Subscription, firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { AuthService, AuthStatus } from '../../auth.service';
 import { ThemeService } from '../services/theme.service';
+import { MediaApiService } from '../services/media-api.service';
 import { UserApiService, UserProfile } from '../../user-api.service';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
@@ -361,7 +362,8 @@ export class AppShellComponent implements OnInit, OnDestroy {
         public auth: AuthService,
         private themeService: ThemeService,
         private router: Router,
-        private userApi: UserApiService
+        private userApi: UserApiService,
+        private mediaApi: MediaApiService
     ) {}
 
     ngOnInit(): void {
@@ -386,7 +388,17 @@ export class AppShellComponent implements OnInit, OnDestroy {
 
     loadUserProfile(): void {
         this.userApi.getMe().subscribe({
-            next: profile => {
+            next: async profile => {
+                if (!profile.avatarUrl && profile.avatarMediaId) {
+                    try {
+                        const resolved = await firstValueFrom(this.mediaApi.resolve([profile.avatarMediaId]));
+                        if (resolved[0]?.url) {
+                            profile = { ...profile, avatarUrl: resolved[0].url };
+                        }
+                    } catch (err) {
+                        console.error('Failed to resolve avatar media', err);
+                    }
+                }
                 this.userProfile.set(profile);
             },
             error: err => {

@@ -2,6 +2,7 @@ import { Component, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
+import { firstValueFrom } from 'rxjs';
 import { AuthService } from './auth.service';
 import { UserApiService, UserProfile } from './user-api.service';
 import { MediaApiService } from './core/services/media-api.service';
@@ -24,8 +25,8 @@ import { TextareaComponent } from './shared/components/textarea.component';
           <div class="profile-header">
             <div class="avatar-section">
               <div class="avatar-container" (click)="triggerAvatarUpload()">
-                <img *ngIf="profile.avatarUrl" [src]="profile.avatarUrl" [alt]="profile.username" class="avatar" />
-                <div *ngIf="!profile.avatarUrl" class="avatar-placeholder">
+                <img *ngIf="avatarDisplayUrl" [src]="avatarDisplayUrl" [alt]="profile.username" class="avatar" />
+                <div *ngIf="!avatarDisplayUrl" class="avatar-placeholder">
                   {{ profile.username.charAt(0).toUpperCase() }}
                 </div>
                 <div class="avatar-overlay">
@@ -264,6 +265,7 @@ export class ProfilePageComponent implements OnInit {
     @ViewChild('avatarInput') avatarInput!: ElementRef<HTMLInputElement>;
 
     profile: UserProfile | null = null;
+    avatarDisplayUrl: string | null = null;
     loading = false;
     saving = false;
     uploading = false;
@@ -287,8 +289,9 @@ export class ProfilePageComponent implements OnInit {
 
         this.loading = true;
         this.api.getMe().subscribe({
-            next: profile => {
+            next: async profile => {
                 this.profile = profile;
+                await this.resolveAvatarUrl(profile);
                 this.form.patchValue({
                     username: profile.username,
                     bio: profile.bio ?? '',
@@ -304,6 +307,22 @@ export class ProfilePageComponent implements OnInit {
         });
     }
 
+    private async resolveAvatarUrl(profile: UserProfile): Promise<void> {
+        if (profile.avatarUrl) {
+            this.avatarDisplayUrl = profile.avatarUrl;
+        } else if (profile.avatarMediaId) {
+            try {
+                const resolved = await firstValueFrom(this.mediaApi.resolve([profile.avatarMediaId]));
+                this.avatarDisplayUrl = resolved[0]?.url || null;
+            } catch (err) {
+                console.error('Failed to resolve avatar media', err);
+                this.avatarDisplayUrl = null;
+            }
+        } else {
+            this.avatarDisplayUrl = null;
+        }
+    }
+
     save(): void {
         if (!this.profile || this.form.invalid) return;
 
@@ -316,8 +335,9 @@ export class ProfilePageComponent implements OnInit {
                 avatarUrl: values.avatarUrl || null
             })
             .subscribe({
-                next: profile => {
+                next: async profile => {
                     this.profile = profile;
+                    await this.resolveAvatarUrl(profile);
                 },
                 error: err => {
                     console.error('Failed to save profile', err);
@@ -346,8 +366,9 @@ export class ProfilePageComponent implements OnInit {
         try {
             const mediaId = await this.mediaApi.uploadFile(file, 'avatar', () => {});
             this.api.updateMe({ avatarMediaId: mediaId }).subscribe({
-                next: profile => {
+                next: async profile => {
                     this.profile = profile;
+                    await this.resolveAvatarUrl(profile);
                     this.uploading = false;
                 },
                 error: err => {
@@ -376,10 +397,27 @@ export class ProfilePageComponent implements OnInit {
 
     private normalizeISODate(isoString?: string | null): string | null {
         if (!isoString) return null;
-        let normalized = isoString.replace(/\.(\d{3})\d*/, '.$1');
+
+        let normalized = isoString.trim();
+
+        normalized = normalized.replace(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/, '$1T$2');
+
+        normalized = normalized.replace(/\s+([+-]\d{2}:\d{2})$/, '$1');
+        normalized = normalized.replace(/\s+([+-]\d{2})$/, '$1');
+
+        normalized = normalized.replace(/\.(\d{3})\d*/, '.$1');
+
         if (/[+-]\d{2}$/.test(normalized)) {
             normalized = normalized.replace(/([+-]\d{2})$/, '$1:00');
         }
+
+        try {
+            const test = new Date(normalized);
+            if (isNaN(test.getTime())) return null;
+        } catch {
+            return null;
+        }
+
         return normalized;
     }
 }

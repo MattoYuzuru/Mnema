@@ -2,10 +2,11 @@ import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } fr
 import { Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
 import { catchError } from 'rxjs/operators';
-import { forkJoin, of } from 'rxjs';
+import { forkJoin, of, firstValueFrom } from 'rxjs';
 import { AuthService } from '../../auth.service';
 import { UserApiService } from '../../user-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
+import { MediaApiService } from '../../core/services/media-api.service';
 import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { DeckCardComponent } from '../../shared/components/deck-card.component';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
@@ -29,6 +30,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         <app-deck-card
           *ngFor="let deck of decks"
           [publicDeck]="deck"
+          [iconUrl]="deckIcons.get(deck.deckId) || null"
           [showFork]="canForkDeck(deck)"
           [showBrowse]="true"
           (open)="openDeck(deck.deckId)"
@@ -112,6 +114,7 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
     loading = true;
     loadingMore = false;
     decks: PublicDeckDTO[] = [];
+    deckIcons: Map<string, string> = new Map();
     currentUserId: string | null = null;
     page = 1;
     pageSize = 20;
@@ -124,6 +127,7 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
         public auth: AuthService,
         private userApi: UserApiService,
         private publicDeckApi: PublicDeckApiService,
+        private mediaApi: MediaApiService,
         private router: Router
     ) {}
 
@@ -167,11 +171,12 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
             : of(null);
 
         forkJoin({ decks: decks$, user: user$ }).subscribe({
-            next: result => {
+            next: async result => {
                 this.decks = result.decks.content;
                 this.last = result.decks.last;
                 this.totalPages = result.decks.totalPages || 1;
                 this.currentUserId = result.user?.id || null;
+                await this.resolveDeckIcons(this.decks);
                 this.loading = false;
             },
             error: () => {
@@ -191,16 +196,35 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
         this.publicDeckApi.getPublicDecks(this.page, this.pageSize).pipe(
             catchError(() => of({ content: [] as PublicDeckDTO[], last: true, totalPages: 0 }))
         ).subscribe({
-            next: result => {
+            next: async result => {
                 this.decks = [...this.decks, ...result.content];
                 this.last = result.last;
                 this.totalPages = result.totalPages || this.totalPages;
+                await this.resolveDeckIcons(result.content);
                 this.loadingMore = false;
             },
             error: () => {
                 this.loadingMore = false;
             }
         });
+    }
+
+    private async resolveDeckIcons(decks: PublicDeckDTO[]): Promise<void> {
+        const decksWithIcons = decks.filter(d => d.iconMediaId);
+        if (decksWithIcons.length === 0) return;
+
+        try {
+            const mediaIds = decksWithIcons.map(d => d.iconMediaId!);
+            const resolved = await firstValueFrom(this.mediaApi.resolve(mediaIds));
+            resolved.forEach((media, index) => {
+                if (media?.url) {
+                    const deck = decksWithIcons[index];
+                    this.deckIcons.set(deck.deckId, media.url);
+                }
+            });
+        } catch (err) {
+            console.error('Failed to resolve deck icons', err);
+        }
     }
 
     canForkDeck(deck: PublicDeckDTO): boolean {
