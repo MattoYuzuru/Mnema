@@ -1,9 +1,10 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { AuthService } from './auth.service';
 import { UserApiService, UserProfile } from './user-api.service';
+import { MediaApiService } from './core/services/media-api.service';
 import { ButtonComponent } from './shared/components/button.component';
 import { InputComponent } from './shared/components/input.component';
 import { TextareaComponent } from './shared/components/textarea.component';
@@ -22,10 +23,22 @@ import { TextareaComponent } from './shared/components/textarea.component';
         <div *ngIf="!loading && profile" class="profile-content">
           <div class="profile-header">
             <div class="avatar-section">
-              <img *ngIf="profile.avatarUrl" [src]="profile.avatarUrl" [alt]="profile.username" class="avatar" />
-              <div *ngIf="!profile.avatarUrl" class="avatar-placeholder">
-                {{ profile.username.charAt(0).toUpperCase() }}
+              <div class="avatar-container" (click)="triggerAvatarUpload()">
+                <img *ngIf="profile.avatarUrl" [src]="profile.avatarUrl" [alt]="profile.username" class="avatar" />
+                <div *ngIf="!profile.avatarUrl" class="avatar-placeholder">
+                  {{ profile.username.charAt(0).toUpperCase() }}
+                </div>
+                <div class="avatar-overlay">
+                  <span class="edit-icon">✎</span>
+                </div>
               </div>
+              <input
+                #avatarInput
+                type="file"
+                accept="image/*"
+                (change)="onAvatarSelected($event)"
+                style="display: none;"
+              />
             </div>
             <div class="profile-info">
               <h2>{{ profile.username }}</h2>
@@ -128,6 +141,13 @@ import { TextareaComponent } from './shared/components/textarea.component';
         flex-shrink: 0;
       }
 
+      .avatar-container {
+        position: relative;
+        cursor: pointer;
+        width: 96px;
+        height: 96px;
+      }
+
       .avatar,
       .avatar-placeholder {
         width: 96px;
@@ -148,6 +168,30 @@ import { TextareaComponent } from './shared/components/textarea.component';
         color: #fff;
         font-size: 2.5rem;
         font-weight: 600;
+      }
+
+      .avatar-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        border-radius: 50%;
+        background: rgba(0, 0, 0, 0.5);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        opacity: 0;
+        transition: opacity 0.2s;
+      }
+
+      .avatar-container:hover .avatar-overlay {
+        opacity: 1;
+      }
+
+      .edit-icon {
+        color: white;
+        font-size: 1.5rem;
       }
 
       .profile-info {
@@ -217,14 +261,18 @@ import { TextareaComponent } from './shared/components/textarea.component';
     ]
 })
 export class ProfilePageComponent implements OnInit {
+    @ViewChild('avatarInput') avatarInput!: ElementRef<HTMLInputElement>;
+
     profile: UserProfile | null = null;
     loading = false;
     saving = false;
+    uploading = false;
     form: FormGroup;
 
     constructor(
         public auth: AuthService,
         private api: UserApiService,
+        private mediaApi: MediaApiService,
         private fb: FormBuilder
     ) {
         this.form = this.fb.group({
@@ -280,6 +328,39 @@ export class ProfilePageComponent implements OnInit {
             });
     }
 
+    triggerAvatarUpload(): void {
+        if (this.uploading) return;
+        this.avatarInput.nativeElement.click();
+    }
+
+    onAvatarSelected(event: Event): void {
+        const input = event.target as HTMLInputElement;
+        if (input.files && input.files.length > 0) {
+            void this.uploadAvatar(input.files[0]);
+            input.value = '';
+        }
+    }
+
+    async uploadAvatar(file: File): Promise<void> {
+        this.uploading = true;
+        try {
+            const mediaId = await this.mediaApi.uploadFile(file, 'avatar', () => {});
+            this.api.updateMe({ avatarMediaId: mediaId }).subscribe({
+                next: profile => {
+                    this.profile = profile;
+                    this.uploading = false;
+                },
+                error: err => {
+                    console.error('Failed to update avatar', err);
+                    this.uploading = false;
+                }
+            });
+        } catch (err) {
+            console.error('Failed to upload avatar', err);
+            this.uploading = false;
+        }
+    }
+
     formatDate(dateString: string | null | undefined): string {
         if (!dateString) return 'Unknown';
         const normalizedDate = this.normalizeISODate(dateString);
@@ -295,6 +376,10 @@ export class ProfilePageComponent implements OnInit {
 
     private normalizeISODate(isoString?: string | null): string | null {
         if (!isoString) return null;
-        return isoString.replace(/\.(\d{3})\d+(Z|[+-]\d{2}:\d{2})/, '.$1$2');
+        let normalized = isoString.replace(/\.(\d{3})\d*/, '.$1');
+        if (/[+-]\d{2}$/.test(normalized)) {
+            normalized = normalized.replace(/([+-]\d{2})$/, '$1:00');
+        }
+        return normalized;
     }
 }

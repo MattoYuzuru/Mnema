@@ -3,20 +3,29 @@ import { ReactiveFormsModule, FormsModule, FormBuilder, FormGroup, Validators } 
 import { NgFor, NgIf } from '@angular/common';
 import { DeckApiService } from '../../../core/services/deck-api.service';
 import { DeckWizardStateService } from '../deck-wizard-state.service';
+import { MediaApiService } from '../../../core/services/media-api.service';
 import { ButtonComponent } from '../../../shared/components/button.component';
 import { InputComponent } from '../../../shared/components/input.component';
 import { TextareaComponent } from '../../../shared/components/textarea.component';
+import { MediaUploadComponent } from '../../../shared/components/media-upload.component';
+import { CardContentValue } from '../../../core/models/user-card.models';
 
 @Component({
     selector: 'app-deck-metadata-step',
     standalone: true,
-    imports: [ReactiveFormsModule, FormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent],
+    imports: [ReactiveFormsModule, FormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent],
     template: `
     <div class="step">
       <h2>Deck Information</h2>
       <form [formGroup]="form" class="form">
         <app-input label="Deck Name" type="text" formControlName="name" placeholder="e.g., Spanish Vocabulary" [hasError]="form.get('name')?.invalid && form.get('name')?.touched || false" errorMessage="Required"></app-input>
         <app-textarea label="Description" formControlName="description" placeholder="Describe what this deck is about" [rows]="4"></app-textarea>
+        <app-media-upload
+          label="Deck Icon (optional)"
+          [value]="iconValue"
+          [fieldType]="'image'"
+          (valueChange)="onIconChange($event)"
+        ></app-media-upload>
         <div class="form-group">
           <label>Language</label>
           <select formControlName="language" class="language-select">
@@ -63,8 +72,9 @@ export class DeckMetadataStepComponent implements OnInit {
     tags: string[] = [];
     tagInput = '';
     saving = false;
+    iconValue: CardContentValue | null = null;
 
-    constructor(private fb: FormBuilder, private deckApi: DeckApiService, private wizardState: DeckWizardStateService) {
+    constructor(private fb: FormBuilder, private deckApi: DeckApiService, private wizardState: DeckWizardStateService, private mediaApi: MediaApiService) {
         this.form = this.fb.group({
             name: ['', Validators.required],
             description: [''],
@@ -78,6 +88,13 @@ export class DeckMetadataStepComponent implements OnInit {
         const { deckMetadata } = this.wizardState.getCurrentState();
         this.form.patchValue(deckMetadata);
         this.tags = [...deckMetadata.tags];
+        if (deckMetadata.iconMediaId) {
+            this.iconValue = { mediaId: deckMetadata.iconMediaId, kind: 'image' };
+        }
+    }
+
+    onIconChange(value: CardContentValue | null): void {
+        this.iconValue = value;
     }
 
     addTag(event: Event): void {
@@ -114,7 +131,8 @@ export class DeckMetadataStepComponent implements OnInit {
             isListed: deckMetadata.isListed,
             language: deckMetadata.language,
             tags: deckMetadata.tags,
-            forkedFromDeck: null
+            forkedFromDeck: null,
+            iconMediaId: deckMetadata.iconMediaId || null
         }).subscribe({
             next: deck => {
                 this.wizardState.setCreatedDeck(deck);
@@ -127,13 +145,15 @@ export class DeckMetadataStepComponent implements OnInit {
 
     private saveFormData(): void {
         const values = this.form.value;
+        const iconMediaId = this.iconValue && typeof this.iconValue !== 'string' ? this.iconValue.mediaId : undefined;
         this.wizardState.setDeckMetadata({
             name: values.name,
             description: values.description,
             language: values.language,
             isPublic: values.isPublic,
             isListed: values.isListed,
-            tags: this.tags
+            tags: this.tags,
+            iconMediaId
         });
     }
 }

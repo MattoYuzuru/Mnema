@@ -42,6 +42,16 @@ import { ButtonComponent } from '../../shared/components/button.component';
         ></app-deck-card>
       </div>
 
+      <div *ngIf="decks.length > 0 && hasMore" class="load-more-container">
+        <app-button
+          variant="secondary"
+          [disabled]="loadingMore"
+          (click)="loadMore()"
+        >
+          {{ loadingMore ? 'Loading...' : 'Load More' }}
+        </app-button>
+      </div>
+
       <app-empty-state
         *ngIf="decks.length === 0"
         icon="📚"
@@ -77,6 +87,12 @@ import { ButtonComponent } from '../../shared/components/button.component';
         gap: var(--spacing-md);
       }
 
+      .load-more-container {
+        display: flex;
+        justify-content: center;
+        padding: var(--spacing-xl) 0;
+      }
+
       @media (min-width: 768px) {
         .decks-list {
           grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
@@ -103,7 +119,11 @@ import { ButtonComponent } from '../../shared/components/button.component';
 })
 export class DecksListComponent implements OnInit {
     loading = true;
+    loadingMore = false;
     decks: UserDeckDTO[] = [];
+    page = 1;
+    pageSize = 20;
+    hasMore = false;
     private static deckSizesCache: Map<string, { size: number; timestamp: number }> = new Map();
     private static readonly CACHE_TTL_MS = 5 * 60 * 1000;
     private deckSizes: Map<string, number> = new Map();
@@ -131,9 +151,10 @@ export class DecksListComponent implements OnInit {
     }
 
     private loadDecks(): void {
-        this.deckApi.getMyDecks(1, 50).subscribe({
+        this.deckApi.getMyDecks(this.page, this.pageSize).subscribe({
             next: page => {
                 this.decks = page.content;
+                this.hasMore = !page.last;
                 this.loading = false;
 
                 if (this.decks.length > 0) {
@@ -147,8 +168,39 @@ export class DecksListComponent implements OnInit {
         });
     }
 
+    loadMore(): void {
+        if (this.loadingMore || !this.hasMore) {
+            return;
+        }
+
+        this.loadingMore = true;
+        this.page++;
+
+        this.deckApi.getMyDecks(this.page, this.pageSize).subscribe({
+            next: page => {
+                const newDecks = page.content;
+                this.decks = [...this.decks, ...newDecks];
+                this.hasMore = !page.last;
+                this.loadingMore = false;
+
+                if (newDecks.length > 0) {
+                    this.loadDeckSizesFor(newDecks);
+                    this.loadAuthorIdsFor(newDecks);
+                }
+            },
+            error: () => {
+                this.loadingMore = false;
+                this.page--;
+            }
+        });
+    }
+
     private loadAuthorIds(): void {
-        const decksWithPublicId = this.decks.filter(d => d.publicDeckId);
+        this.loadAuthorIdsFor(this.decks);
+    }
+
+    private loadAuthorIdsFor(decks: UserDeckDTO[]): void {
+        const decksWithPublicId = decks.filter(d => d.publicDeckId);
         if (decksWithPublicId.length === 0) {
             return;
         }
@@ -178,9 +230,13 @@ export class DecksListComponent implements OnInit {
     }
 
     private loadDeckSizes(): void {
+        this.loadDeckSizesFor(this.decks);
+    }
+
+    private loadDeckSizesFor(decks: UserDeckDTO[]): void {
         const now = Date.now();
 
-        from(this.decks)
+        from(decks)
             .pipe(
                 mergeMap(deck => {
                     const cached = DecksListComponent.deckSizesCache.get(deck.userDeckId);

@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
 import { catchError } from 'rxjs/operators';
@@ -35,6 +35,8 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           (fork)="forkDeck(deck.deckId)"
           (browse)="browseDeck(deck.deckId)"
         ></app-deck-card>
+        <div #sentinel class="sentinel"></div>
+        <div *ngIf="loadingMore" class="loading-more">Loading more...</div>
       </div>
 
       <app-empty-state
@@ -72,6 +74,17 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         gap: var(--spacing-md);
       }
 
+      .sentinel {
+        height: 1px;
+        visibility: hidden;
+      }
+
+      .loading-more {
+        text-align: center;
+        padding: var(--spacing-lg);
+        color: var(--color-text-secondary);
+      }
+
       @media (max-width: 768px) {
         .catalog-page {
           padding: 0 var(--spacing-md);
@@ -93,10 +106,19 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       }
     `]
 })
-export class PublicDecksCatalogComponent implements OnInit {
+export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDestroy {
+    @ViewChild('sentinel') sentinel!: ElementRef<HTMLDivElement>;
+
     loading = true;
+    loadingMore = false;
     decks: PublicDeckDTO[] = [];
     currentUserId: string | null = null;
+    page = 1;
+    pageSize = 20;
+    totalPages = 1;
+    last = false;
+
+    private observer?: IntersectionObserver;
 
     constructor(
         public auth: AuthService,
@@ -109,9 +131,35 @@ export class PublicDecksCatalogComponent implements OnInit {
         this.loadDecks();
     }
 
+    ngAfterViewInit(): void {
+        this.setupIntersectionObserver();
+    }
+
+    ngOnDestroy(): void {
+        if (this.observer) {
+            this.observer.disconnect();
+        }
+    }
+
+    private setupIntersectionObserver(): void {
+        this.observer = new IntersectionObserver(
+            entries => {
+                const entry = entries[0];
+                if (entry.isIntersecting && !this.loadingMore && !this.last) {
+                    this.loadMore();
+                }
+            },
+            { threshold: 0.1 }
+        );
+
+        if (this.sentinel?.nativeElement) {
+            this.observer.observe(this.sentinel.nativeElement);
+        }
+    }
+
     private loadDecks(): void {
-        const decks$ = this.publicDeckApi.getPublicDecks(1, 50).pipe(
-            catchError(() => of({ content: [] as PublicDeckDTO[] }))
+        const decks$ = this.publicDeckApi.getPublicDecks(this.page, this.pageSize).pipe(
+            catchError(() => of({ content: [] as PublicDeckDTO[], last: true, totalPages: 0 }))
         );
 
         const user$ = this.auth.status() === 'authenticated'
@@ -121,11 +169,36 @@ export class PublicDecksCatalogComponent implements OnInit {
         forkJoin({ decks: decks$, user: user$ }).subscribe({
             next: result => {
                 this.decks = result.decks.content;
+                this.last = result.decks.last;
+                this.totalPages = result.decks.totalPages || 1;
                 this.currentUserId = result.user?.id || null;
                 this.loading = false;
             },
             error: () => {
                 this.loading = false;
+            }
+        });
+    }
+
+    private loadMore(): void {
+        if (this.last || this.page >= this.totalPages) {
+            return;
+        }
+
+        this.loadingMore = true;
+        this.page++;
+
+        this.publicDeckApi.getPublicDecks(this.page, this.pageSize).pipe(
+            catchError(() => of({ content: [] as PublicDeckDTO[], last: true, totalPages: 0 }))
+        ).subscribe({
+            next: result => {
+                this.decks = [...this.decks, ...result.content];
+                this.last = result.last;
+                this.totalPages = result.totalPages || this.totalPages;
+                this.loadingMore = false;
+            },
+            error: () => {
+                this.loadingMore = false;
             }
         });
     }
