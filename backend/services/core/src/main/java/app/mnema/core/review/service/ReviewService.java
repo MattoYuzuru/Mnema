@@ -9,6 +9,7 @@ import app.mnema.core.review.api.DeckAlgorithmPort;
 import app.mnema.core.review.controller.dto.ReviewAnswerResponse;
 import app.mnema.core.review.controller.dto.ReviewDeckAlgorithmResponse;
 import app.mnema.core.review.controller.dto.ReviewNextCardResponse;
+import app.mnema.core.review.controller.dto.ReviewPreferencesDto;
 import app.mnema.core.review.domain.Rating;
 import app.mnema.core.review.entity.ReviewUserCardEntity;
 import app.mnema.core.review.entity.SrCardStateEntity;
@@ -62,23 +63,32 @@ public class ReviewService {
     public ReviewDeckAlgorithmResponse getDeckAlgorithm(UUID userId, UUID userDeckId) {
         AlgorithmContext ctx = resolveAlgorithmContext(userId, userDeckId);
         AlgorithmStats stats = computeAlgorithmStats(userId, userDeckId, ctx.algorithmId());
-        return buildAlgorithmResponse(userDeckId, ctx, stats);
+        var preferences = preferencesService.getSnapshot(userDeckId, Instant.now());
+        return buildAlgorithmResponse(userDeckId, ctx, stats, preferences);
     }
 
     @Transactional
     public ReviewDeckAlgorithmResponse updateDeckAlgorithm(UUID userId,
                                                            UUID userDeckId,
                                                            String algorithmId,
-                                                           JsonNode algorithmParams) {
+                                                           JsonNode algorithmParams,
+                                                           ReviewPreferencesDto reviewPreferences) {
         if (algorithmId == null || algorithmId.isBlank()) {
             throw new IllegalArgumentException("Algorithm id is required");
         }
 
         registry.require(algorithmId);
         DeckAlgorithmConfig updated = deckAlgorithmPort.updateDeckAlgorithm(userId, userDeckId, algorithmId, algorithmParams);
+        UserDeckPreferencesService.PreferencesSnapshot preferences = reviewPreferences == null
+                ? preferencesService.getSnapshot(userDeckId, Instant.now())
+                : preferencesService.updatePreferences(
+                userDeckId,
+                reviewPreferences.dailyNewLimit(),
+                reviewPreferences.learningHorizonHours()
+        );
         AlgorithmContext ctx = buildAlgorithmContext(updated.algorithmId(), updated.algorithmParams());
         AlgorithmStats stats = computeAlgorithmStats(userId, userDeckId, ctx.algorithmId());
-        return buildAlgorithmResponse(userDeckId, ctx, stats);
+        return buildAlgorithmResponse(userDeckId, ctx, stats, preferences);
     }
 
     @Transactional
@@ -218,7 +228,7 @@ public class ReviewService {
                 view.effectiveContent(),
                 intervals,
                 dueAt,
-                due && !learningAhead,
+                due,
                 queue
         );
     }
@@ -281,16 +291,25 @@ public class ReviewService {
 
     private ReviewDeckAlgorithmResponse buildAlgorithmResponse(UUID userDeckId,
                                                                AlgorithmContext ctx,
-                                                               AlgorithmStats stats) {
+                                                               AlgorithmStats stats,
+                                                               UserDeckPreferencesService.PreferencesSnapshot preferences) {
         return new ReviewDeckAlgorithmResponse(
                 userDeckId,
                 ctx.algorithmId(),
                 ctx.deckConfig(),
                 ctx.effectiveConfig(),
+                toReviewPreferences(preferences),
                 stats.activeCards(),
                 stats.trackedCards(),
                 stats.pendingMigrationCards()
         );
+    }
+
+    private static ReviewPreferencesDto toReviewPreferences(UserDeckPreferencesService.PreferencesSnapshot preferences) {
+        Integer dailyNewLimit = preferences.maxNewPerDay();
+        long minutes = preferences.learningHorizon().toMinutes();
+        int learningHorizonHours = Math.max(1, (int) Math.round(minutes / 60.0));
+        return new ReviewPreferencesDto(dailyNewLimit, learningHorizonHours);
     }
 
     private AlgorithmStats computeAlgorithmStats(UUID userId, UUID userDeckId, String algorithmId) {

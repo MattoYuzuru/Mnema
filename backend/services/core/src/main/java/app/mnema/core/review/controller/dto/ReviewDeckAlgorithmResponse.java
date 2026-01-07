@@ -9,6 +9,7 @@ public record ReviewDeckAlgorithmResponse(
         String algorithmId,
         JsonNode algorithmParams,
         JsonNode effectiveAlgorithmParams,
+        ReviewPreferencesDto reviewPreferences,
         long activeCards,
         long trackedCards,
         long pendingMigrationCards
