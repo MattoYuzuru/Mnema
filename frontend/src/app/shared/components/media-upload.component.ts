@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, HostListener } from '@angular/core';
+import { Component, Input, Output, EventEmitter, HostListener, ViewChild, ElementRef } from '@angular/core';
 import { NgIf, NgClass } from '@angular/common';
 import { MediaApiService, MediaKind } from '../../core/services/media-api.service';
 import { CardContentValue } from '../../core/models/user-card.models';
@@ -98,6 +98,8 @@ export class MediaUploadComponent {
     @Input() label: string = '';
     @Output() valueChange = new EventEmitter<CardContentValue | null>();
 
+    @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
+
     isDragging = false;
     uploading = false;
     uploadProgress = 0;
@@ -156,8 +158,7 @@ export class MediaUploadComponent {
 
     openFilePicker(): void {
         if (this.uploading) return;
-        const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-        input?.click();
+        this.fileInput.nativeElement.click();
     }
 
     onDragOver(event: DragEvent): void {
@@ -187,6 +188,7 @@ export class MediaUploadComponent {
         const input = event.target as HTMLInputElement;
         if (input.files && input.files.length > 0) {
             void this.uploadFile(input.files[0]);
+            input.value = '';
         }
     }
 

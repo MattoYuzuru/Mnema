@@ -102,6 +102,14 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             />
             <span>{{ 'settings.hideFieldLabels' | translate }}</span>
           </label>
+          <label class="checkbox-label">
+            <input
+              type="checkbox"
+              [checked]="preferences.showFrontSideAfterFlip"
+              (change)="preferences.setShowFrontSideAfterFlip($any($event.target).checked)"
+            />
+            <span>{{ 'settings.showFrontSideAfterFlip' | translate }}</span>
+          </label>
         </div>
       </section>
 
