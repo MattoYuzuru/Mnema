@@ -86,10 +86,12 @@ interface BuilderState {
                 <input type="text" [(ngModel)]="selectedField.helpText" (ngModelChange)="saveDraft()" class="form-input" />
               </div>
               <div class="form-group">
-                <label class="checkbox-label">
-                  <input type="checkbox" [(ngModel)]="selectedField.required" (ngModelChange)="saveDraft()" />
-                  <span>{{ 'visualBuilder.fieldRequired' | translate }}</span>
-                </label>
+                <label>{{ 'visualBuilder.fieldRequired' | translate }}</label>
+                <div class="toggle-container" (click)="toggleRequired()">
+                  <div class="toggle-switch" [class.active]="selectedField.required">
+                    <div class="toggle-slider"></div>
+                  </div>
+                </div>
               </div>
             </div>
             <div *ngIf="!selectedField" class="config-empty">
@@ -102,16 +104,17 @@ interface BuilderState {
 
         <div class="builder-right">
           <div class="preview-controls">
-            <h3>{{ 'visualBuilder.cardPreview' | translate }} - {{ (currentSide === 'front' ? 'visualBuilder.front' : 'visualBuilder.back') | translate }}</h3>
+            <h3>{{ currentSide === 'front' ? (i18n.currentLanguage === 'ru' ? 'Передняя сторона карты' : ('visualBuilder.frontSide' | translate)) : (i18n.currentLanguage === 'ru' ? 'Задняя сторона карты' : ('visualBuilder.backSide' | translate)) }}</h3>
             <div class="preview-actions">
               <label class="checkbox-label">
                 <input type="checkbox" [(ngModel)]="showLabels" />
                 <span>{{ 'visualBuilder.showLabels' | translate }}</span>
               </label>
-              <app-button variant="ghost" size="sm" (click)="flipSide()">
-                {{ 'visualBuilder.flipTo' | translate }} {{ (currentSide === 'front' ? 'visualBuilder.back' : 'visualBuilder.front') | translate }}
-              </app-button>
             </div>
+          </div>
+
+          <div class="flip-icon-button" (click)="flipSide()" title="{{ 'visualBuilder.flipTo' | translate }} {{ (currentSide === 'front' ? 'visualBuilder.back' : 'visualBuilder.front') | translate }}">
+            🔄
           </div>
 
           <div class="card-preview-container">
@@ -233,6 +236,13 @@ interface BuilderState {
         font-size: 1rem;
         font-weight: 600;
         margin: 0 0 var(--spacing-md) 0;
+        text-align: center;
+      }
+
+      .palette-column {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
       }
 
       .palette-list {
@@ -240,11 +250,13 @@ interface BuilderState {
         flex-direction: column;
         gap: var(--spacing-sm);
         min-height: 100px;
+        flex: 1;
       }
 
       .palette-item {
         display: flex;
         align-items: center;
+        justify-content: center;
         gap: var(--spacing-sm);
         padding: var(--spacing-md);
         background: var(--color-card-background);
@@ -252,6 +264,7 @@ interface BuilderState {
         border-radius: var(--border-radius-md);
         cursor: move;
         transition: all 0.2s;
+        text-align: center;
       }
 
       .palette-item:hover:not(.disabled) {
@@ -285,6 +298,7 @@ interface BuilderState {
       .config-column {
         display: flex;
         flex-direction: column;
+        height: 100%;
       }
 
       .config-panel {
@@ -295,6 +309,8 @@ interface BuilderState {
         background: var(--color-card-background);
         border: 1px solid var(--border-color);
         border-radius: var(--border-radius-md);
+        text-align: center;
+        flex: 1;
       }
 
       .config-empty {
@@ -305,6 +321,7 @@ interface BuilderState {
         text-align: center;
         color: var(--color-text-muted);
         font-style: italic;
+        flex: 1;
       }
 
       .form-group {
@@ -335,6 +352,61 @@ interface BuilderState {
 
       .checkbox-label input {
         cursor: pointer;
+      }
+
+      .toggle-container {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--spacing-sm);
+      }
+
+      .toggle-switch {
+        position: relative;
+        width: 44px;
+        height: 24px;
+        background: var(--border-color);
+        border-radius: 12px;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+
+      .toggle-switch.active {
+        background: #111827;
+      }
+
+      .toggle-slider {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 20px;
+        height: 20px;
+        background: white;
+        border-radius: 50%;
+        transition: transform 0.3s;
+      }
+
+      .toggle-switch.active .toggle-slider {
+        transform: translateX(20px);
+      }
+
+      .flip-icon-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: var(--spacing-sm) var(--spacing-md);
+        background: var(--color-card-background);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+        cursor: pointer;
+        transition: all 0.2s;
+        font-size: 1.25rem;
+        margin: var(--spacing-sm) auto;
+      }
+
+      .flip-icon-button:hover {
+        background: var(--color-background);
+        border-color: #111827;
       }
 
       .builder-divider {
@@ -588,7 +660,7 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
         private router: Router,
         private templateApi: TemplateApiService,
         private wizardState: DeckWizardStateService,
-        private i18n: I18nService
+        public i18n: I18nService
     ) {
         this.paletteFields = [
             { type: 'text', icon: '📝', label: this.i18n.translate('visualBuilder.fieldTypeText'), inDev: false },
@@ -718,6 +790,13 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
         this.selectedFieldId = null;
     }
 
+    toggleRequired(): void {
+        if (this.selectedField) {
+            this.selectedField.required = !this.selectedField.required;
+            this.saveDraft();
+        }
+    }
+
     getFieldDisplayLabel(field: BuilderField): string {
         if (field.label.trim()) {
             return field.label;
@@ -810,6 +889,7 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
                 this.skipDraftSave = true;
                 this.clearDraft();
                 this.wizardState.setTemplateId(template.templateId);
+                this.wizardState.setCurrentStep(2);
                 void this.router.navigate(['/create-deck']);
             },
             error: () => {

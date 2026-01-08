@@ -71,24 +71,38 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       }
 
       .decks-list {
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: repeat(1, minmax(0, 1fr));
         gap: var(--spacing-md);
       }
 
       .sentinel {
+        grid-column: 1 / -1;
         height: 1px;
         visibility: hidden;
       }
 
       .loading-more {
+        grid-column: 1 / -1;
         text-align: center;
         padding: var(--spacing-lg);
         color: var(--color-text-secondary);
       }
 
+      @media (min-width: 768px) {
+        .decks-list {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (min-width: 1100px) {
+        .decks-list {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
       @media (max-width: 768px) {
-        .catalog-page {
+        .public-decks-catalog {
           padding: 0 var(--spacing-md);
         }
 
@@ -98,7 +112,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       }
 
       @media (max-width: 480px) {
-        .catalog-page {
+        .public-decks-catalog {
           padding: 0 var(--spacing-sm);
         }
 
@@ -109,7 +123,12 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
     `]
 })
 export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDestroy {
-    @ViewChild('sentinel') sentinel!: ElementRef<HTMLDivElement>;
+    @ViewChild('sentinel') set sentinelRef(ref: ElementRef<HTMLDivElement> | undefined) {
+        if (ref) {
+            this.sentinel = ref;
+            this.observeSentinel();
+        }
+    }
 
     loading = true;
     loadingMore = false;
@@ -117,11 +136,12 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
     deckIcons: Map<string, string> = new Map();
     currentUserId: string | null = null;
     page = 1;
-    pageSize = 20;
+    pageSize = 15;
     totalPages = 1;
     last = false;
 
     private observer?: IntersectionObserver;
+    private sentinel?: ElementRef<HTMLDivElement>;
 
     constructor(
         public auth: AuthService,
@@ -136,7 +156,7 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
     }
 
     ngAfterViewInit(): void {
-        this.setupIntersectionObserver();
+        this.observeSentinel();
     }
 
     ngOnDestroy(): void {
@@ -145,20 +165,28 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
         }
     }
 
-    private setupIntersectionObserver(): void {
-        this.observer = new IntersectionObserver(
-            entries => {
-                const entry = entries[0];
-                if (entry.isIntersecting && !this.loadingMore && !this.last) {
-                    this.loadMore();
-                }
-            },
-            { threshold: 0.1 }
-        );
-
-        if (this.sentinel?.nativeElement) {
-            this.observer.observe(this.sentinel.nativeElement);
+    private observeSentinel(): void {
+        if (!this.sentinel?.nativeElement) {
+            return;
         }
+
+        if (!this.observer) {
+            this.observer = new IntersectionObserver(
+                entries => {
+                    const entry = entries[0];
+                    if (this.loading || this.loadingMore || this.last || this.decks.length === 0) {
+                        return;
+                    }
+                    if (entry.isIntersecting) {
+                        this.loadMore();
+                    }
+                },
+                { threshold: 0.1, rootMargin: '200px 0px' }
+            );
+        }
+
+        this.observer.disconnect();
+        this.observer.observe(this.sentinel.nativeElement);
     }
 
     private loadDecks(): void {
