@@ -59,6 +59,7 @@ class PublicDeckControllerWebMvcTest {
                 UUID.randomUUID(),
                 "Public deck",
                 "Public description",
+                null,
                 UUID.randomUUID(),
                 true,
                 true,

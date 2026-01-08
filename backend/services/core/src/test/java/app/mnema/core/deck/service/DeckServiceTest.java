@@ -6,7 +6,6 @@ import app.mnema.core.deck.domain.entity.PublicDeckEntity;
 import app.mnema.core.deck.domain.entity.UserDeckEntity;
 import app.mnema.core.deck.domain.type.LanguageTag;
 import app.mnema.core.deck.domain.type.SrAlgorithm;
-import app.mnema.core.deck.repository.PublicCardRepository;
 import app.mnema.core.deck.repository.PublicDeckRepository;
 import app.mnema.core.deck.repository.UserCardRepository;
 import app.mnema.core.deck.repository.UserDeckRepository;
@@ -41,9 +40,6 @@ class DeckServiceTest {
     UserCardRepository userCardRepository;
 
     @Mock
-    PublicCardRepository publicCardRepository;
-
-    @Mock
     PublicDeckRepository publicDeckRepository;
 
     @InjectMocks
@@ -58,6 +54,7 @@ class DeckServiceTest {
                 UUID.randomUUID(),
                 "Deck 1",
                 "Desc",
+                null,
                 UUID.randomUUID(),
                 true,
                 true,
@@ -143,6 +140,7 @@ class DeckServiceTest {
                 null,
                 "My deck",
                 "Description",
+                null,
                 templateId,
                 true,
                 true,
@@ -160,6 +158,7 @@ class DeckServiceTest {
                 userId,
                 "My deck",
                 "Description",
+                null,
                 templateId,
                 true,
                 true,
@@ -250,6 +249,7 @@ class DeckServiceTest {
                 "Author deck",
                 "Desc",
                 UUID.randomUUID(),
+                null,
                 true,
                 true,
                 LanguageTag.en,

@@ -50,9 +50,6 @@ class CardServiceTest {
     @Mock
     PublicDeckRepository publicDeckRepository;
 
-    @Mock
-    FieldTemplateRepository fieldTemplateRepository;
-
     @Spy
     ObjectMapper objectMapper = new ObjectMapper();
 
@@ -167,6 +164,7 @@ class CardServiceTest {
                 UUID.randomUUID(),
                 "Deck",
                 "Desc",
+                null,
                 UUID.randomUUID(),
                 false,
                 true,
@@ -197,6 +195,7 @@ class CardServiceTest {
                 UUID.randomUUID(),
                 "Deck v3",
                 "Desc",
+                null,
                 UUID.randomUUID(),
                 true,
                 true,
@@ -294,6 +293,7 @@ class CardServiceTest {
                 userId,
                 "Deck",
                 "Desc",
+                null,
                 templateId,
                 true,
                 true,
@@ -334,7 +334,6 @@ class CardServiceTest {
 
         when(publicCardRepository.saveAll(anyList()))
                 .thenAnswer(invocation -> {
-                    @SuppressWarnings("unchecked")
                     List<PublicCardEntity> entities = invocation.getArgument(0);
                     for (PublicCardEntity entity : entities) {
                         try {

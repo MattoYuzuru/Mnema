@@ -78,6 +78,7 @@ class PublicCardRepositoryDataJpaTest extends PostgresIntegrationTest {
                 UUID.randomUUID(),
                 "Test deck",
                 "Desc",
+                null,
                 anyTemplateId(),
                 true,
                 true,
