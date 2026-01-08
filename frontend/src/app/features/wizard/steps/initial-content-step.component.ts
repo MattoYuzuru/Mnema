@@ -10,16 +10,18 @@ import { ButtonComponent } from '../../../shared/components/button.component';
 import { InputComponent } from '../../../shared/components/input.component';
 import { TextareaComponent } from '../../../shared/components/textarea.component';
 import { MediaUploadComponent } from '../../../shared/components/media-upload.component';
+import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
+import { I18nService } from '../../../core/services/i18n.service';
 
 @Component({
     selector: 'app-initial-content-step',
     standalone: true,
-    imports: [ReactiveFormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent],
+    imports: [ReactiveFormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, TranslatePipe],
     template: `
     <div class="step">
-      <h2>Add Cards</h2>
-      <p class="subtitle">Create initial cards for your deck (optional)</p>
-      <div *ngIf="loading">Loading template...</div>
+      <h2>{{ 'wizard.addCards' | translate }}</h2>
+      <p class="subtitle">{{ 'wizard.addCardsSubtitle' | translate }}</p>
+      <div *ngIf="loading">{{ 'wizard.loadingTemplate' | translate }}</div>
       <div *ngIf="!loading">
         <form [formGroup]="cardForm" class="card-form">
           <ng-container *ngFor="let field of template?.fields">
@@ -37,7 +39,7 @@ import { MediaUploadComponent } from '../../../shared/components/media-upload.co
               [formControlName]="field.name"
               [placeholder]="field.helpText || ''"
               [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
-              [errorMessage]="'Required'"
+              [errorMessage]="'wizard.required' | translate"
             ></app-input>
             <app-textarea
               *ngIf="!isMediaField(field) && (field.fieldType === 'rich_text' || field.fieldType === 'markdown')"
@@ -45,24 +47,24 @@ import { MediaUploadComponent } from '../../../shared/components/media-upload.co
               [formControlName]="field.name"
               [placeholder]="field.helpText || ''"
               [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
-              [errorMessage]="'Required'"
+              [errorMessage]="'wizard.required' | translate"
             ></app-textarea>
           </ng-container>
           <div class="button-container">
-            <app-button variant="secondary" [disabled]="cardForm.invalid" (click)="addCard()">Add Card</app-button>
+            <app-button variant="secondary" [disabled]="cardForm.invalid" (click)="addCard()">{{ 'wizard.addCard' | translate }}</app-button>
           </div>
         </form>
         <div *ngIf="pendingCards.length > 0" class="pending-cards">
-          <h4>Pending Cards ({{ pendingCards.length }})</h4>
+          <h4>{{ 'wizard.pendingCards' | translate }} ({{ pendingCards.length }})</h4>
           <div *ngFor="let card of pendingCards; let i = index" class="card-item">
             <span>{{ getCardPreview(card) }}</span>
-            <app-button variant="ghost" size="sm" (click)="removeCard(i)">Remove</app-button>
+            <app-button variant="ghost" size="sm" (click)="removeCard(i)">{{ 'wizard.remove' | translate }}</app-button>
           </div>
         </div>
       </div>
       <div class="step-actions">
-        <app-button variant="ghost" (click)="onBack()">Back</app-button>
-        <app-button variant="primary" [disabled]="saving" (click)="onNext()">{{ saving ? 'Saving...' : 'Next: Review' }}</app-button>
+        <app-button variant="ghost" (click)="onBack()">{{ 'wizard.back' | translate }}</app-button>
+        <app-button variant="primary" [disabled]="saving" (click)="onNext()">{{ saving ? ('wizard.saving' | translate) : ('wizard.nextReview' | translate) }}</app-button>
       </div>
     </div>
   `,
@@ -85,7 +87,13 @@ export class InitialContentStepComponent implements OnInit {
     cardForm: FormGroup;
     pendingCards: PendingCard[] = [];
 
-    constructor(private fb: FormBuilder, private templateApi: TemplateApiService, private cardApi: CardApiService, private wizardState: DeckWizardStateService) {
+    constructor(
+        private fb: FormBuilder,
+        private templateApi: TemplateApiService,
+        private cardApi: CardApiService,
+        private wizardState: DeckWizardStateService,
+        private i18n: I18nService
+    ) {
         this.cardForm = this.fb.group({});
     }
 
@@ -151,13 +159,13 @@ export class InitialContentStepComponent implements OnInit {
             .filter(v => v)
             .map(v => {
                 if (typeof v === 'string') return v;
-                if (v && typeof v === 'object' && 'mediaId' in v) return '[Media]';
+                if (v && typeof v === 'object' && 'mediaId' in v) return this.i18n.translate('wizard.mediaPlaceholder');
                 return '';
             })
             .filter(v => v)
             .slice(0, 2)
             .join(' - ');
-        return textValues || 'Empty card';
+        return textValues || this.i18n.translate('wizard.emptyCard');
     }
 
     onBack(): void {

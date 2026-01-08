@@ -4,40 +4,45 @@ import { DeckWizardStateService, DeckWizardState } from '../deck-wizard-state.se
 import { CardApiService } from '../../../core/services/card-api.service';
 import { UserCardDTO } from '../../../core/models/user-card.models';
 import { ButtonComponent } from '../../../shared/components/button.component';
+import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
+import { I18nService } from '../../../core/services/i18n.service';
 
 @Component({
     selector: 'app-review-step',
     standalone: true,
-    imports: [NgIf, NgFor, ButtonComponent],
+    imports: [NgIf, NgFor, ButtonComponent, TranslatePipe],
     template: `
     <div class="step">
-      <h2>Review Your Deck</h2>
-      <p class="subtitle">Review and finalize your new deck</p>
+      <h2>{{ 'wizard.reviewDeck' | translate }}</h2>
+      <p class="subtitle">{{ 'wizard.reviewSubtitle' | translate }}</p>
       <div class="review-section">
-        <h3>Deck Information</h3>
+        <h3>{{ 'wizard.deckInformation' | translate }}</h3>
         <div class="info-grid">
-          <div><span class="label">Name:</span> {{ state.deckMetadata.name }}</div>
-          <div><span class="label">Description:</span> {{ state.deckMetadata.description || 'No description' }}</div>
-          <div><span class="label">Language:</span> {{ state.deckMetadata.language }}</div>
-          <div><span class="label">Visibility:</span> {{ state.deckMetadata.isPublic ? 'Public' : 'Private' }}{{ state.deckMetadata.isListed ? ' (Listed)' : '' }}</div>
-          <div *ngIf="state.deckMetadata.tags.length > 0"><span class="label">Tags:</span> {{ state.deckMetadata.tags.join(', ') }}</div>
+          <div><span class="label">{{ 'wizard.labelName' | translate }}:</span> {{ state.deckMetadata.name }}</div>
+          <div><span class="label">{{ 'wizard.labelDescription' | translate }}:</span> {{ state.deckMetadata.description || ('wizard.noDescription' | translate) }}</div>
+          <div><span class="label">{{ 'wizard.labelLanguage' | translate }}:</span> {{ state.deckMetadata.language }}</div>
+          <div>
+            <span class="label">{{ 'wizard.labelVisibility' | translate }}:</span>
+            {{ state.deckMetadata.isPublic ? ('wizard.visibilityPublic' | translate) : ('wizard.visibilityPrivate' | translate) }}{{ state.deckMetadata.isListed ? ' (' + ('wizard.visibilityListed' | translate) + ')' : '' }}
+          </div>
+          <div *ngIf="state.deckMetadata.tags.length > 0"><span class="label">{{ 'wizard.labelTags' | translate }}:</span> {{ state.deckMetadata.tags.join(', ') }}</div>
         </div>
       </div>
-      <div *ngIf="loading">Loading cards...</div>
+      <div *ngIf="loading">{{ 'wizard.loadingCards' | translate }}</div>
       <div *ngIf="!loading && cards.length > 0" class="review-section">
-        <h3>Cards ({{ cards.length }})</h3>
+        <h3>{{ 'wizard.cards' | translate }} ({{ cards.length }})</h3>
         <div *ngFor="let card of cards.slice(0, 3)" class="card-preview">{{ getCardPreview(card) }}</div>
-        <div *ngIf="cards.length > 3" class="more-cards">+{{ cards.length - 3 }} more cards</div>
+        <div *ngIf="cards.length > 3" class="more-cards">+{{ cards.length - 3 }} {{ 'wizard.moreCards' | translate }}</div>
       </div>
       <div *ngIf="!loading && cards.length === 0" class="review-section">
-        <h3>Cards</h3>
-        <p>No cards added yet. You can add cards later.</p>
+        <h3>{{ 'wizard.cards' | translate }}</h3>
+        <p>{{ 'wizard.noCardsAdded' | translate }}</p>
       </div>
       <div class="step-actions">
-        <app-button variant="ghost" (click)="onBack()">Back</app-button>
+        <app-button variant="ghost" (click)="onBack()">{{ 'wizard.back' | translate }}</app-button>
         <div class="action-buttons">
-          <app-button variant="secondary" (click)="onFinish('home')">Go to Home</app-button>
-          <app-button variant="primary" (click)="onFinish('deck')">Go to Deck</app-button>
+          <app-button variant="secondary" (click)="onFinish('home')">{{ 'wizard.goToHome' | translate }}</app-button>
+          <app-button variant="primary" (click)="onFinish('deck')">{{ 'wizard.goToDeck' | translate }}</app-button>
         </div>
       </div>
     </div>
@@ -61,7 +66,7 @@ export class ReviewStepComponent implements OnInit {
     loading = true;
     cards: UserCardDTO[] = [];
 
-    constructor(private wizardState: DeckWizardStateService, private cardApi: CardApiService) {
+    constructor(private wizardState: DeckWizardStateService, private cardApi: CardApiService, private i18n: I18nService) {
         this.state = this.wizardState.getCurrentState();
     }
 
@@ -82,7 +87,7 @@ export class ReviewStepComponent implements OnInit {
     }
 
     getCardPreview(card: UserCardDTO): string {
-        return Object.values(card.effectiveContent).filter(v => v).slice(0, 2).join(' - ') || 'Empty card';
+        return Object.values(card.effectiveContent).filter(v => v).slice(0, 2).join(' - ') || this.i18n.translate('wizard.emptyCard');
     }
 
     onBack(): void {

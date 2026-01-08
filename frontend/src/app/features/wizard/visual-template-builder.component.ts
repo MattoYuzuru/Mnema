@@ -104,7 +104,7 @@ interface BuilderState {
 
         <div class="builder-right">
           <div class="preview-controls">
-            <h3>{{ currentSide === 'front' ? (i18n.currentLanguage === 'ru' ? 'Передняя сторона карты' : ('visualBuilder.frontSide' | translate)) : (i18n.currentLanguage === 'ru' ? 'Задняя сторона карты' : ('visualBuilder.backSide' | translate)) }}</h3>
+            <h3>{{ currentSide === 'front' ? ('visualBuilder.frontSide' | translate) : ('visualBuilder.backSide' | translate) }}</h3>
             <div class="preview-actions">
               <label class="checkbox-label">
                 <input type="checkbox" [(ngModel)]="showLabels" />
@@ -113,9 +113,15 @@ interface BuilderState {
             </div>
           </div>
 
-          <div class="flip-icon-button" (click)="flipSide()" title="{{ 'visualBuilder.flipTo' | translate }} {{ (currentSide === 'front' ? 'visualBuilder.back' : 'visualBuilder.front') | translate }}">
-            🔄
-          </div>
+          <button
+            type="button"
+            class="flip-icon-button"
+            (click)="flipSide()"
+            [attr.title]="('visualBuilder.flipTo' | translate) + ' ' + ((currentSide === 'front' ? 'visualBuilder.back' : 'visualBuilder.front') | translate)"
+            [attr.aria-label]="('visualBuilder.flipTo' | translate) + ' ' + ((currentSide === 'front' ? 'visualBuilder.back' : 'visualBuilder.front') | translate)"
+          >
+            <span class="flip-icon" aria-hidden="true">🔄</span>
+          </button>
 
           <div class="card-preview-container">
             <div
@@ -144,9 +150,29 @@ interface BuilderState {
                   <div class="field-preview">{{ getFieldPreview(field) }}</div>
                 </div>
                 <div class="field-row-actions">
-                  <button class="icon-button" (click)="moveFieldUp(i); $event.stopPropagation()" [disabled]="i === 0">↑</button>
-                  <button class="icon-button" (click)="moveFieldDown(i); $event.stopPropagation()" [disabled]="i === currentFields.length - 1">↓</button>
-                  <button class="icon-button delete" (click)="removeField(i); $event.stopPropagation()">×</button>
+                  <button
+                    type="button"
+                    class="icon-button"
+                    [disabled]="i === 0"
+                    [attr.title]="'visualBuilder.moveUp' | translate"
+                    [attr.aria-label]="'visualBuilder.moveUp' | translate"
+                    (click)="moveFieldUp(i); $event.stopPropagation()"
+                  >↑</button>
+                  <button
+                    type="button"
+                    class="icon-button"
+                    [disabled]="i === currentFields.length - 1"
+                    [attr.title]="'visualBuilder.moveDown' | translate"
+                    [attr.aria-label]="'visualBuilder.moveDown' | translate"
+                    (click)="moveFieldDown(i); $event.stopPropagation()"
+                  >↓</button>
+                  <button
+                    type="button"
+                    class="icon-button delete"
+                    [attr.title]="'visualBuilder.removeField' | translate"
+                    [attr.aria-label]="'visualBuilder.removeField' | translate"
+                    (click)="removeField(i); $event.stopPropagation()"
+                  >×</button>
                 </div>
               </div>
 
@@ -251,20 +277,22 @@ interface BuilderState {
         gap: var(--spacing-sm);
         min-height: 100px;
         flex: 1;
+        justify-content: space-between;
       }
 
       .palette-item {
         display: flex;
         align-items: center;
-        justify-content: center;
+        justify-content: flex-start;
         gap: var(--spacing-sm);
-        padding: var(--spacing-md);
+        padding: var(--spacing-md) var(--spacing-lg);
         background: var(--color-card-background);
         border: 1px solid var(--border-color);
         border-radius: var(--border-radius-md);
         cursor: move;
         transition: all 0.2s;
-        text-align: center;
+        text-align: left;
+        min-height: 3.5rem;
       }
 
       .palette-item:hover:not(.disabled) {
@@ -309,8 +337,7 @@ interface BuilderState {
         background: var(--color-card-background);
         border: 1px solid var(--border-color);
         border-radius: var(--border-radius-md);
-        text-align: center;
-        flex: 1;
+        text-align: left;
       }
 
       .config-empty {
@@ -321,7 +348,6 @@ interface BuilderState {
         text-align: center;
         color: var(--color-text-muted);
         font-style: italic;
-        flex: 1;
       }
 
       .form-group {
@@ -357,7 +383,7 @@ interface BuilderState {
       .toggle-container {
         display: flex;
         align-items: center;
-        justify-content: center;
+        justify-content: flex-start;
         gap: var(--spacing-sm);
       }
 
@@ -394,19 +420,22 @@ interface BuilderState {
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: var(--spacing-sm) var(--spacing-md);
-        background: var(--color-card-background);
-        border: 1px solid var(--border-color);
-        border-radius: var(--border-radius-md);
+        padding: var(--spacing-xs);
+        background: transparent;
+        border: none;
         cursor: pointer;
-        transition: all 0.2s;
-        font-size: 1.25rem;
+        transition: transform 0.2s ease, opacity 0.2s ease;
+        font-size: 1.4rem;
         margin: var(--spacing-sm) auto;
       }
 
       .flip-icon-button:hover {
-        background: var(--color-background);
-        border-color: #111827;
+        transform: rotate(12deg);
+        opacity: 0.85;
+      }
+
+      .flip-icon {
+        display: inline-flex;
       }
 
       .builder-divider {
@@ -525,27 +554,28 @@ interface BuilderState {
       }
 
       .icon-button {
-        width: 24px;
-        height: 24px;
+        width: 28px;
+        height: 28px;
         padding: 0;
-        border: 1px solid var(--border-color);
-        background: var(--color-card-background);
+        border: none;
+        background: transparent;
         border-radius: var(--border-radius-sm);
         cursor: pointer;
-        font-size: 0.9rem;
+        font-size: 1.05rem;
         display: flex;
         align-items: center;
         justify-content: center;
         transition: all 0.2s;
+        color: var(--color-text-secondary);
       }
 
       .icon-button:hover:not(:disabled) {
-        background: var(--color-background);
-        border-color: #111827;
+        background: rgba(17, 24, 39, 0.08);
+        color: var(--color-text-primary);
       }
 
       .icon-button:disabled {
-        opacity: 0.3;
+        opacity: 0.35;
         cursor: not-allowed;
       }
 
@@ -554,8 +584,7 @@ interface BuilderState {
       }
 
       .icon-button.delete:hover:not(:disabled) {
-        background: #fee2e2;
-        border-color: #dc2626;
+        background: rgba(220, 38, 38, 0.12);
       }
 
       .max-fields-warning {
@@ -808,17 +837,17 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     getFieldPreview(field: BuilderField): string {
         switch (field.type) {
             case 'text':
-                return 'Sample text content';
+                return this.i18n.translate('visualBuilder.sampleText');
             case 'rich_text':
-                return 'Sample longer text content that might span multiple lines...';
+                return this.i18n.translate('visualBuilder.sampleLongText');
             case 'markdown':
-                return '**Sample** markdown *content*';
+                return this.i18n.translate('visualBuilder.sampleMarkdown');
             case 'image':
-                return '🖼️ [Image placeholder]';
+                return `🖼️ ${this.i18n.translate('visualBuilder.sampleImage')}`;
             case 'audio':
-                return '🎵 [Audio placeholder]';
+                return `🎵 ${this.i18n.translate('visualBuilder.sampleAudio')}`;
             case 'video':
-                return '🎬 [Video placeholder]';
+                return `🎬 ${this.i18n.translate('visualBuilder.sampleVideo')}`;
             default:
                 return '';
         }
