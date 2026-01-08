@@ -101,6 +101,78 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       .flashcard-face { grid-area: 1 / 1; position: relative; width: 100%; height: auto; min-height: 400px; backface-visibility: hidden; background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); padding: var(--spacing-xl); display: flex; align-items: center; justify-content: center; }
       .flashcard-face.back { transform: rotateY(180deg); }
       .flip-hint { font-size: 0.9rem; color: var(--color-text-muted); text-align: center; margin: 0; }
+
+      @media (max-width: 768px) {
+        .public-card-browser {
+          padding: 0 var(--spacing-md);
+        }
+
+        .page-header {
+          display: flex;
+          flex-direction: column;
+          gap: var(--spacing-md);
+        }
+
+        .header-right {
+          width: 100%;
+          flex-wrap: wrap;
+          justify-content: space-between;
+        }
+
+        .view-mode-toggle {
+          width: 100%;
+          flex-wrap: wrap;
+          justify-content: flex-start;
+        }
+
+        .cards-table {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        .card-row {
+          grid-template-columns: 1fr;
+        }
+
+        .card-col {
+          white-space: normal;
+        }
+
+        .card-navigation {
+          flex-wrap: wrap;
+          gap: var(--spacing-md);
+        }
+
+        .flashcard,
+        .flashcard-inner,
+        .flashcard-face {
+          min-height: 300px;
+        }
+
+        .flashcard-face {
+          padding: var(--spacing-lg);
+        }
+      }
+
+      @media (max-width: 480px) {
+        .public-card-browser {
+          padding: 0 var(--spacing-sm);
+        }
+
+        .header-left h1 {
+          font-size: 1.5rem;
+        }
+
+        .flashcard,
+        .flashcard-inner,
+        .flashcard-face {
+          min-height: 250px;
+        }
+
+        .flashcard-face {
+          padding: var(--spacing-md);
+        }
+      }
     `]
 })
 export class PublicCardBrowserComponent implements OnInit {

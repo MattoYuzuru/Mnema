@@ -316,8 +316,18 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           display: none;
         }
 
+        .header-right {
+          flex-wrap: wrap;
+          justify-content: flex-end;
+          row-gap: var(--spacing-xs);
+        }
+
         .user-name {
           display: none;
+        }
+
+        .main {
+          padding: var(--spacing-lg) var(--spacing-md);
         }
 
         .footer {
@@ -347,6 +357,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
         .logo-image {
           height: 1.5rem;
+        }
+
+        .main {
+          padding: var(--spacing-md) var(--spacing-sm);
         }
       }
     `

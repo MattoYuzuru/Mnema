@@ -225,6 +225,51 @@ type TemplateFilter = 'mine' | 'public';
         padding-top: var(--spacing-lg);
         border-top: 1px solid var(--border-color);
       }
+
+      @media (max-width: 768px) {
+        .choice-grid {
+          grid-template-columns: 1fr;
+          margin: var(--spacing-lg) 0;
+        }
+
+        .choice-card {
+          padding: var(--spacing-xl);
+          min-height: 200px;
+        }
+
+        .choice-icon {
+          width: 64px;
+          height: 64px;
+          font-size: 2rem;
+        }
+
+        .filter-tabs {
+          flex-wrap: wrap;
+        }
+
+        .templates-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .pagination {
+          flex-wrap: wrap;
+        }
+
+        .step-actions {
+          flex-direction: column;
+          gap: var(--spacing-sm);
+        }
+      }
+
+      @media (max-width: 480px) {
+        .choice-card {
+          padding: var(--spacing-lg);
+        }
+
+        .choice-card p {
+          padding: 0;
+        }
+      }
     `]
 })
 export class TemplateSelectionStepComponent implements OnInit {

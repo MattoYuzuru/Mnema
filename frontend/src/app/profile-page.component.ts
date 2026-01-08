@@ -266,6 +266,21 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
           align-items: center;
           text-align: center;
         }
+
+        .profile-page {
+          padding: var(--spacing-lg) var(--spacing-md);
+        }
+
+        .form-actions {
+          flex-direction: column;
+          align-items: stretch;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .profile-page {
+          padding: var(--spacing-md) var(--spacing-sm);
+        }
       }
     `
     ]

@@ -191,6 +191,19 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
           padding: 0 var(--spacing-md);
         }
 
+        .study-today {
+          padding: var(--spacing-lg);
+        }
+
+        .study-info {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .study-info app-button {
+          width: 100%;
+        }
+
         .hero h1 {
           font-size: 2rem;
         }
@@ -213,6 +226,10 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
       @media (max-width: 480px) {
         .home-page {
           padding: 0 var(--spacing-sm);
+        }
+
+        .study-today {
+          padding: var(--spacing-md);
         }
 
         .hero {

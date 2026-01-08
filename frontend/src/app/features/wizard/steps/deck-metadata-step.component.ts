@@ -64,6 +64,13 @@ import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
       .tag-chip button { background: none; border: none; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0; }
       .checkbox-label { display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; font-size: 0.9rem; }
       .step-actions { display: flex; justify-content: space-between; padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
+
+      @media (max-width: 768px) {
+        .step-actions {
+          flex-direction: column;
+          gap: var(--spacing-sm);
+        }
+      }
     `]
 })
 export class DeckMetadataStepComponent implements OnInit {

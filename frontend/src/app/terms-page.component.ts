@@ -83,6 +83,30 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
         color: var(--color-text-secondary);
         margin: 0 0 var(--spacing-md) 0;
       }
+
+      @media (max-width: 768px) {
+        .legal-page {
+          padding: var(--spacing-lg) var(--spacing-md);
+        }
+
+        h1 {
+          font-size: 1.5rem;
+        }
+
+        h2 {
+          font-size: 1.25rem;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .legal-page {
+          padding: var(--spacing-md) var(--spacing-sm);
+        }
+
+        h1 {
+          font-size: 1.35rem;
+        }
+      }
     `]
 })
 export class TermsPageComponent {}

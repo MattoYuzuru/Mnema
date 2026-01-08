@@ -433,6 +433,58 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         outline: none;
         border-color: #dc2626;
       }
+
+      @media (max-width: 768px) {
+        .settings-page {
+          padding: 0 var(--spacing-md);
+        }
+
+        h1 {
+          font-size: 1.5rem;
+        }
+
+        .settings-section {
+          padding: var(--spacing-lg);
+        }
+
+        .button-group {
+          flex-wrap: wrap;
+        }
+
+        .archive-item {
+          flex-direction: column;
+        }
+
+        .archive-item-actions {
+          flex-wrap: wrap;
+          justify-content: flex-start;
+        }
+
+        .modal-header,
+        .modal-body,
+        .modal-footer {
+          padding: var(--spacing-lg);
+        }
+
+        .modal-footer {
+          flex-direction: column;
+          align-items: stretch;
+        }
+      }
+
+      @media (max-width: 480px) {
+        .settings-page {
+          padding: 0 var(--spacing-sm);
+        }
+
+        .settings-section {
+          padding: var(--spacing-md);
+        }
+
+        .checkbox-label {
+          align-items: flex-start;
+        }
+      }
     `]
 })
 export class SettingsComponent implements OnInit {

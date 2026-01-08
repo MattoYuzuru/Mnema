@@ -57,6 +57,17 @@ import { I18nService } from '../../../core/services/i18n.service';
       .more-cards { text-align: center; padding: var(--spacing-sm); color: var(--color-text-muted); }
       .step-actions { display: flex; justify-content: space-between; padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
       .action-buttons { display: flex; gap: var(--spacing-sm); }
+
+      @media (max-width: 768px) {
+        .step-actions {
+          flex-direction: column;
+          gap: var(--spacing-sm);
+        }
+
+        .action-buttons {
+          flex-direction: column;
+        }
+      }
     `]
 })
 export class ReviewStepComponent implements OnInit {

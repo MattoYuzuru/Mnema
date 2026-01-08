@@ -76,6 +76,27 @@ import { I18nService } from '../../../core/services/i18n.service';
       .pending-cards h4 { font-size: 1rem; font-weight: 600; margin: 0 0 var(--spacing-sm) 0; }
       .card-item { display: flex; align-items: center; justify-content: space-between; padding: var(--spacing-sm) var(--spacing-md); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-sm); margin-bottom: var(--spacing-xs); }
       .step-actions { display: flex; justify-content: space-between; padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
+
+      @media (max-width: 768px) {
+        .card-item {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: var(--spacing-xs);
+        }
+
+        .button-container {
+          justify-content: stretch;
+        }
+
+        .button-container app-button {
+          width: 100%;
+        }
+
+        .step-actions {
+          flex-direction: column;
+          gap: var(--spacing-sm);
+        }
+      }
     `]
 })
 export class InitialContentStepComponent implements OnInit {

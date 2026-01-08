@@ -34,6 +34,31 @@ import { I18nService } from '../../core/services/i18n.service';
       .wizard-header { margin-bottom: var(--spacing-xl); }
       .wizard-header h1 { font-size: 2rem; font-weight: 700; margin: 0 0 var(--spacing-lg) 0; }
       .wizard-content { background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); padding: var(--spacing-xl); min-height: 400px; }
+
+      @media (max-width: 768px) {
+        .deck-wizard {
+          padding: var(--spacing-lg) var(--spacing-md);
+        }
+
+        .wizard-header h1 {
+          font-size: 1.5rem;
+        }
+
+        .wizard-content {
+          padding: var(--spacing-lg);
+        }
+      }
+
+      @media (max-width: 480px) {
+        .deck-wizard {
+          padding: var(--spacing-md) var(--spacing-sm);
+        }
+
+        .wizard-content {
+          padding: var(--spacing-md);
+          min-height: auto;
+        }
+      }
     `]
 })
 export class DeckWizardComponent implements OnInit, OnDestroy {

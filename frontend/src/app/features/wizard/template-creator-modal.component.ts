@@ -109,6 +109,32 @@ interface FieldFormValue {
       .template-public { padding: var(--spacing-md); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); font-size: 0.95rem; }
       .validation-message { padding: var(--spacing-md); background: #fee; border: 1px solid #fcc; border-radius: var(--border-radius-md); color: #c00; font-size: 0.9rem; }
       .modal-actions { display: flex; justify-content: flex-end; gap: var(--spacing-md); padding: var(--spacing-lg); border-top: 1px solid var(--border-color); }
+
+      @media (max-width: 768px) {
+        .modal-content {
+          width: 94%;
+        }
+
+        .modal-header,
+        .template-form,
+        .modal-actions {
+          padding: var(--spacing-md);
+        }
+
+        .field-item {
+          flex-direction: column;
+        }
+
+        .field-row {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .modal-actions {
+          flex-direction: column;
+          align-items: stretch;
+        }
+      }
     `]
 })
 export class TemplateCreatorModalComponent {
