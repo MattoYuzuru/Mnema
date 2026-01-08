@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.server.ResponseStatusException
+import java.time.Instant
 import java.util.*
 
 @RestController
@@ -23,7 +24,9 @@ class MeController(
         val bio: String?,
         val avatarUrl: String?,
         val avatarMediaId: UUID?,
-        val isAdmin: Boolean
+        val isAdmin: Boolean,
+        val createdAt: Instant,
+        val updatedAt: Instant
     )
 
     data class MeUpdateRequest(
@@ -40,7 +43,9 @@ class MeController(
         bio = user.bio,
         avatarUrl = user.avatarUrl,
         avatarMediaId = user.avatarMediaId,
-        isAdmin = user.isAdmin
+        isAdmin = user.isAdmin,
+        createdAt = user.createdAt,
+        updatedAt = user.updatedAt
     )
 
     @GetMapping

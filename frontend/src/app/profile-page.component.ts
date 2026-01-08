@@ -10,16 +10,18 @@ import { ButtonComponent } from './shared/components/button.component';
 import { InputComponent } from './shared/components/input.component';
 import { TextareaComponent } from './shared/components/textarea.component';
 
+import { TranslatePipe } from './shared/pipes/translate.pipe';
+
 @Component({
     standalone: true,
     selector: 'app-profile-page',
-    imports: [NgIf, ReactiveFormsModule, RouterLink, ButtonComponent, InputComponent, TextareaComponent],
+    imports: [NgIf, ReactiveFormsModule, RouterLink, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe],
     template: `
     <section *ngIf="auth.status() === 'authenticated'; else notAuth" class="profile-page">
       <div class="profile-container">
-        <h1>Profile</h1>
+        <h1>{{ 'profile.title' | translate }}</h1>
 
-        <div *ngIf="loading" class="loading">Loading profile...</div>
+        <div *ngIf="loading" class="loading">{{ 'profile.loadingProfile' | translate }}</div>
 
         <div *ngIf="!loading && profile" class="profile-content">
           <div class="profile-header">
@@ -29,8 +31,9 @@ import { TextareaComponent } from './shared/components/textarea.component';
                 <div *ngIf="!avatarDisplayUrl" class="avatar-placeholder">
                   {{ profile.username.charAt(0).toUpperCase() }}
                 </div>
-                <div class="avatar-overlay">
-                  <span class="edit-icon">✎</span>
+                <div class="avatar-overlay" [class.uploading]="uploading">
+                  <span *ngIf="!uploading" class="edit-icon">✎</span>
+                  <span *ngIf="uploading" class="uploading-text">Uploading... {{ uploadProgress }}%</span>
                 </div>
               </div>
               <input
@@ -44,36 +47,29 @@ import { TextareaComponent } from './shared/components/textarea.component';
             <div class="profile-info">
               <h2>{{ profile.username }}</h2>
               <p class="email">{{ profile.email }}</p>
-              <p class="member-since">Member since {{ formatDate(profile.createdAt) }}</p>
-              <span *ngIf="profile.admin" class="admin-badge">Admin</span>
+              <p class="member-since">{{ 'profile.memberSince' | translate }} {{ formatDate(profile.createdAt) }}</p>
+              <span *ngIf="profile.admin" class="admin-badge">{{ 'profile.admin' | translate }}</span>
             </div>
           </div>
 
           <form [formGroup]="form" (ngSubmit)="save()" class="edit-form">
-            <h3>Edit Profile</h3>
+            <h3>{{ 'profile.editProfile' | translate }}</h3>
 
             <app-input
-              label="Username"
+              [label]="'profile.username' | translate"
               type="text"
               formControlName="username"
-              placeholder="Enter username"
+              [placeholder]="'profile.enterUsername' | translate"
               [hasError]="form.get('username')?.invalid && form.get('username')?.touched || false"
-              errorMessage="Username must be at least 3 characters"
+              [errorMessage]="'profile.usernameMinError' | translate"
             ></app-input>
 
             <app-textarea
-              label="Bio"
+              [label]="'profile.bio' | translate"
               formControlName="bio"
-              placeholder="Tell us about yourself"
+              [placeholder]="'profile.enterBio' | translate"
               [rows]="4"
             ></app-textarea>
-
-            <app-input
-              label="Avatar URL"
-              type="url"
-              formControlName="avatarUrl"
-              placeholder="https://example.com/avatar.jpg"
-            ></app-input>
 
             <div class="form-actions">
               <app-button
@@ -81,7 +77,7 @@ import { TextareaComponent } from './shared/components/textarea.component';
                 variant="primary"
                 [disabled]="form.invalid || saving"
               >
-                {{ saving ? 'Saving...' : 'Save Changes' }}
+                {{ (saving ? 'profile.saving' : 'profile.saveChanges') | translate }}
               </app-button>
             </div>
           </form>
@@ -92,10 +88,10 @@ import { TextareaComponent } from './shared/components/textarea.component';
     <ng-template #notAuth>
       <section class="profile-page">
         <div class="profile-container">
-          <h1>Profile</h1>
-          <p>Please log in to view your profile.</p>
+          <h1>{{ 'profile.title' | translate }}</h1>
+          <p>{{ 'profile.pleaseLogIn' | translate }}</p>
           <a routerLink="/login">
-            <app-button variant="primary">Log In</app-button>
+            <app-button variant="primary">{{ 'profile.logIn' | translate }}</app-button>
           </a>
         </div>
       </section>
@@ -190,6 +186,19 @@ import { TextareaComponent } from './shared/components/textarea.component';
         opacity: 1;
       }
 
+      .avatar-overlay.uploading {
+        opacity: 1;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+        text-align: center;
+      }
+
+      .uploading-text {
+        color: #fff;
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+
       .edit-icon {
         color: white;
         font-size: 1.5rem;
@@ -269,6 +278,7 @@ export class ProfilePageComponent implements OnInit {
     loading = false;
     saving = false;
     uploading = false;
+    uploadProgress = 0;
     form: FormGroup;
 
     constructor(
@@ -279,8 +289,7 @@ export class ProfilePageComponent implements OnInit {
     ) {
         this.form = this.fb.group({
             username: ['', [Validators.required, Validators.minLength(3)]],
-            bio: [''],
-            avatarUrl: ['']
+            bio: ['']
         });
     }
 
@@ -294,8 +303,7 @@ export class ProfilePageComponent implements OnInit {
                 await this.resolveAvatarUrl(profile);
                 this.form.patchValue({
                     username: profile.username,
-                    bio: profile.bio ?? '',
-                    avatarUrl: profile.avatarUrl ?? ''
+                    bio: profile.bio ?? ''
                 });
             },
             error: err => {
@@ -308,9 +316,7 @@ export class ProfilePageComponent implements OnInit {
     }
 
     private async resolveAvatarUrl(profile: UserProfile): Promise<void> {
-        if (profile.avatarUrl) {
-            this.avatarDisplayUrl = profile.avatarUrl;
-        } else if (profile.avatarMediaId) {
+        if (profile.avatarMediaId) {
             try {
                 const resolved = await firstValueFrom(this.mediaApi.resolve([profile.avatarMediaId]));
                 this.avatarDisplayUrl = resolved[0]?.url || null;
@@ -318,6 +324,8 @@ export class ProfilePageComponent implements OnInit {
                 console.error('Failed to resolve avatar media', err);
                 this.avatarDisplayUrl = null;
             }
+        } else if (profile.avatarUrl) {
+            this.avatarDisplayUrl = profile.avatarUrl;
         } else {
             this.avatarDisplayUrl = null;
         }
@@ -331,8 +339,7 @@ export class ProfilePageComponent implements OnInit {
         this.api
             .updateMe({
                 username: values.username,
-                bio: values.bio || null,
-                avatarUrl: values.avatarUrl || null
+                bio: values.bio || null
             })
             .subscribe({
                 next: async profile => {
@@ -363,22 +370,28 @@ export class ProfilePageComponent implements OnInit {
 
     async uploadAvatar(file: File): Promise<void> {
         this.uploading = true;
+        this.uploadProgress = 0;
         try {
-            const mediaId = await this.mediaApi.uploadFile(file, 'avatar', () => {});
+            const mediaId = await this.mediaApi.uploadFile(file, 'avatar', progress => {
+                this.uploadProgress = progress;
+            });
             this.api.updateMe({ avatarMediaId: mediaId }).subscribe({
                 next: async profile => {
                     this.profile = profile;
                     await this.resolveAvatarUrl(profile);
                     this.uploading = false;
+                    this.uploadProgress = 0;
                 },
                 error: err => {
                     console.error('Failed to update avatar', err);
                     this.uploading = false;
+                    this.uploadProgress = 0;
                 }
             });
         } catch (err) {
             console.error('Failed to upload avatar', err);
             this.uploading = false;
+            this.uploadProgress = 0;
         }
     }
 
