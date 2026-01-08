@@ -8,6 +8,7 @@ import { UserApiService } from './user-api.service';
 import { PublicDeckApiService } from './core/services/public-deck-api.service';
 import { DeckApiService } from './core/services/deck-api.service';
 import { ReviewApiService } from './core/services/review-api.service';
+import { MediaApiService } from './core/services/media-api.service';
 import { PublicDeckDTO } from './core/models/public-deck.models';
 import { UserDeckDTO } from './core/models/user-deck.models';
 import { DeckCardComponent } from './shared/components/deck-card.component';
@@ -41,6 +42,7 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
             <app-deck-card
               *ngFor="let deck of userDecks"
               [userDeck]="deck"
+              [iconUrl]="getUserDeckIconUrl(deck)"
               [showLearn]="true"
               [showBrowse]="true"
               [stats]="getDeckStats(deck)"
@@ -71,6 +73,7 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
           <app-deck-card
             *ngFor="let deck of publicDecks"
             [publicDeck]="deck"
+            [iconUrl]="getPublicDeckIconUrl(deck)"
             [showFork]="canForkDeck(deck)"
             [showBrowse]="true"
             (open)="openPublicDeck(deck.deckId)"
@@ -188,6 +191,19 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
           padding: 0 var(--spacing-md);
         }
 
+        .study-today {
+          padding: var(--spacing-lg);
+        }
+
+        .study-info {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .study-info app-button {
+          width: 100%;
+        }
+
         .hero h1 {
           font-size: 2rem;
         }
@@ -210,6 +226,10 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
       @media (max-width: 480px) {
         .home-page {
           padding: 0 var(--spacing-sm);
+        }
+
+        .study-today {
+          padding: var(--spacing-md);
         }
 
         .hero {
@@ -239,6 +259,9 @@ export class HomePageComponent implements OnInit, OnDestroy {
     private static deckSizesCache: Map<string, { size: number; timestamp: number }> = new Map();
     private static readonly CACHE_TTL_MS = 5 * 60 * 1000;
     private deckSizes: Map<string, number> = new Map();
+    private static deckIconMediaCache: Map<string, string> = new Map();
+    private static deckIconUrlCache: Map<string, string> = new Map();
+    private deckIcons: Map<string, string> = new Map();
 
     constructor(
         public auth: AuthService,
@@ -246,6 +269,7 @@ export class HomePageComponent implements OnInit, OnDestroy {
         private publicDeckApi: PublicDeckApiService,
         private deckApi: DeckApiService,
         private reviewApi: ReviewApiService,
+        private mediaApi: MediaApiService,
         private router: Router
     ) {}
 
@@ -297,6 +321,11 @@ export class HomePageComponent implements OnInit, OnDestroy {
                 if (isAuthenticated && this.userDecks.length > 0) {
                     this.loadReviewStats();
                     this.loadDeckSizes();
+                    this.loadUserDeckIcons();
+                }
+
+                if (this.publicDecks.length > 0) {
+                    this.resolvePublicDeckIcons(this.publicDecks);
                 }
             },
             error: () => {
@@ -360,6 +389,7 @@ export class HomePageComponent implements OnInit, OnDestroy {
                 if (this.userDecks.length > 0) {
                     this.loadReviewStats();
                     this.loadDeckSizes();
+                    this.loadUserDeckIcons();
                 }
             }
         });
@@ -395,6 +425,104 @@ export class HomePageComponent implements OnInit, OnDestroy {
             });
     }
 
+    private resolvePublicDeckIcons(decks: PublicDeckDTO[]): void {
+        const publicDeckIds: string[] = [];
+
+        decks.forEach(deck => {
+            publicDeckIds.push(deck.deckId);
+            if (deck.iconMediaId) {
+                HomePageComponent.deckIconMediaCache.set(deck.deckId, deck.iconMediaId);
+            }
+        });
+
+        this.resolveDeckIcons(publicDeckIds);
+    }
+
+    private loadUserDeckIcons(): void {
+        const publicDeckIds = this.userDecks
+            .map(deck => deck.publicDeckId)
+            .filter(Boolean);
+
+        if (publicDeckIds.length === 0) {
+            return;
+        }
+
+        const missingIds = publicDeckIds.filter(id =>
+            !HomePageComponent.deckIconMediaCache.has(id)
+            && !HomePageComponent.deckIconUrlCache.has(id)
+        );
+
+        if (missingIds.length === 0) {
+            this.resolveDeckIcons(publicDeckIds);
+            return;
+        }
+
+        from(missingIds)
+            .pipe(
+                mergeMap(id => this.publicDeckApi.getPublicDeck(id).pipe(
+                    catchError(() => of(null))
+                ), 3)
+            )
+            .subscribe({
+                next: response => {
+                    if (response?.iconMediaId) {
+                        HomePageComponent.deckIconMediaCache.set(response.deckId, response.iconMediaId);
+                    }
+                },
+                complete: () => {
+                    this.resolveDeckIcons(publicDeckIds);
+                }
+            });
+    }
+
+    private resolveDeckIcons(publicDeckIds: string[]): void {
+        const mediaIds: string[] = [];
+        const deckIdsByMedia = new Map<string, string[]>();
+
+        for (const publicDeckId of publicDeckIds) {
+            const cachedUrl = HomePageComponent.deckIconUrlCache.get(publicDeckId);
+            if (cachedUrl) {
+                this.deckIcons.set(publicDeckId, cachedUrl);
+                continue;
+            }
+
+            const mediaId = HomePageComponent.deckIconMediaCache.get(publicDeckId);
+            if (!mediaId) {
+                continue;
+            }
+
+            if (!deckIdsByMedia.has(mediaId)) {
+                deckIdsByMedia.set(mediaId, []);
+                mediaIds.push(mediaId);
+            }
+
+            deckIdsByMedia.get(mediaId)!.push(publicDeckId);
+        }
+
+        if (mediaIds.length === 0) {
+            return;
+        }
+
+        this.mediaApi.resolve(mediaIds).subscribe({
+            next: resolved => {
+                resolved.forEach(media => {
+                    const deckIds = deckIdsByMedia.get(media.mediaId);
+                    if (!deckIds || !media.url) {
+                        return;
+                    }
+
+                    deckIds.forEach(deckId => {
+                        this.deckIcons.set(deckId, media.url);
+                        HomePageComponent.deckIconUrlCache.set(deckId, media.url);
+                    });
+                });
+            },
+            error: err => {
+                console.error('Failed to resolve deck icons', err);
+            }
+        });
+    }
+
     canForkDeck(deck: PublicDeckDTO): boolean {
         return this.auth.status() === 'authenticated' && deck.authorId !== this.currentUserId;
     }
@@ -405,6 +533,18 @@ export class HomePageComponent implements OnInit, OnDestroy {
             cardCount: size,
             dueToday: undefined
         };
+    }
+
+    getUserDeckIconUrl(deck: UserDeckDTO): string | null {
+        if (!deck.publicDeckId) {
+            return null;
+        }
+
+        return this.deckIcons.get(deck.publicDeckId) || null;
+    }
+
+    getPublicDeckIconUrl(deck: PublicDeckDTO): string | null {
+        return this.deckIcons.get(deck.deckId) || null;
     }
 
     openUserDeck(userDeckId: string): void {

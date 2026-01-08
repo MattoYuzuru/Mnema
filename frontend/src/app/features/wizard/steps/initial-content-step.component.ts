@@ -3,55 +3,100 @@ import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { TemplateApiService } from '../../../core/services/template-api.service';
 import { CardApiService } from '../../../core/services/card-api.service';
-import { CardTemplateDTO } from '../../../core/models/template.models';
+import { CardTemplateDTO, FieldTemplateDTO } from '../../../core/models/template.models';
+import { CardContentValue } from '../../../core/models/user-card.models';
 import { DeckWizardStateService, PendingCard } from '../deck-wizard-state.service';
 import { ButtonComponent } from '../../../shared/components/button.component';
 import { InputComponent } from '../../../shared/components/input.component';
 import { TextareaComponent } from '../../../shared/components/textarea.component';
+import { MediaUploadComponent } from '../../../shared/components/media-upload.component';
+import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
+import { I18nService } from '../../../core/services/i18n.service';
 
 @Component({
     selector: 'app-initial-content-step',
     standalone: true,
-    imports: [ReactiveFormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent],
+    imports: [ReactiveFormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, TranslatePipe],
     template: `
     <div class="step">
-      <h2>Add Cards</h2>
-      <p class="subtitle">Create initial cards for your deck (optional)</p>
-      <div *ngIf="loading">Loading template...</div>
+      <h2>{{ 'wizard.addCards' | translate }}</h2>
+      <p class="subtitle">{{ 'wizard.addCardsSubtitle' | translate }}</p>
+      <div *ngIf="loading">{{ 'wizard.loadingTemplate' | translate }}</div>
       <div *ngIf="!loading">
         <form [formGroup]="cardForm" class="card-form">
-          <app-input
-            *ngFor="let field of template?.fields"
-            [label]="field.label + (field.isRequired ? ' *' : '')"
-            type="text"
-            [formControlName]="field.name"
-            [placeholder]="field.helpText || ''"
-            [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
-            [errorMessage]="'Required'"
-          ></app-input>
-          <app-button variant="secondary" [disabled]="cardForm.invalid" (click)="addCard()">Add Card</app-button>
+          <ng-container *ngFor="let field of template?.fields">
+            <app-media-upload
+              *ngIf="isMediaField(field)"
+              [label]="field.label + (field.isRequired ? ' *' : '')"
+              [fieldType]="getMediaFieldType(field)"
+              [value]="getMediaValue(field.name)"
+              (valueChange)="onMediaChange(field.name, $event)"
+            ></app-media-upload>
+            <app-input
+              *ngIf="!isMediaField(field) && field.fieldType !== 'rich_text' && field.fieldType !== 'markdown'"
+              [label]="field.label + (field.isRequired ? ' *' : '')"
+              type="text"
+              [formControlName]="field.name"
+              [placeholder]="field.helpText || ''"
+              [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
+              [errorMessage]="'wizard.required' | translate"
+            ></app-input>
+            <app-textarea
+              *ngIf="!isMediaField(field) && (field.fieldType === 'rich_text' || field.fieldType === 'markdown')"
+              [label]="field.label + (field.isRequired ? ' *' : '')"
+              [formControlName]="field.name"
+              [placeholder]="field.helpText || ''"
+              [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
+              [errorMessage]="'wizard.required' | translate"
+            ></app-textarea>
+          </ng-container>
+          <div class="button-container">
+            <app-button variant="secondary" [disabled]="cardForm.invalid" (click)="addCard()">{{ 'wizard.addCard' | translate }}</app-button>
+          </div>
         </form>
         <div *ngIf="pendingCards.length > 0" class="pending-cards">
-          <h4>Pending Cards ({{ pendingCards.length }})</h4>
+          <h4>{{ 'wizard.pendingCards' | translate }} ({{ pendingCards.length }})</h4>
           <div *ngFor="let card of pendingCards; let i = index" class="card-item">
             <span>{{ getCardPreview(card) }}</span>
-            <app-button variant="ghost" size="sm" (click)="removeCard(i)">Remove</app-button>
+            <app-button variant="ghost" size="sm" (click)="removeCard(i)">{{ 'wizard.remove' | translate }}</app-button>
           </div>
         </div>
       </div>
       <div class="step-actions">
-        <app-button variant="ghost" (click)="onBack()">Back</app-button>
-        <app-button variant="primary" [disabled]="saving" (click)="onNext()">{{ saving ? 'Saving...' : 'Next: Review' }}</app-button>
+        <app-button variant="ghost" (click)="onBack()">{{ 'wizard.back' | translate }}</app-button>
+        <app-button variant="primary" [disabled]="saving" (click)="onNext()">{{ saving ? ('wizard.saving' | translate) : ('wizard.nextReview' | translate) }}</app-button>
       </div>
     </div>
   `,
     styles: [`
       .step { display: flex; flex-direction: column; gap: var(--spacing-lg); }
-      .card-form { display: flex; flex-direction: column; gap: var(--spacing-md); align-items: flex-start; }
+      .card-form { display: flex; flex-direction: column; gap: var(--spacing-md); }
+      .button-container { display: flex; justify-content: flex-end; width: 100%; }
       .pending-cards { margin-top: var(--spacing-lg); }
       .pending-cards h4 { font-size: 1rem; font-weight: 600; margin: 0 0 var(--spacing-sm) 0; }
       .card-item { display: flex; align-items: center; justify-content: space-between; padding: var(--spacing-sm) var(--spacing-md); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-sm); margin-bottom: var(--spacing-xs); }
       .step-actions { display: flex; justify-content: space-between; padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
+
+      @media (max-width: 768px) {
+        .card-item {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: var(--spacing-xs);
+        }
+
+        .button-container {
+          justify-content: stretch;
+        }
+
+        .button-container app-button {
+          width: 100%;
+        }
+
+        .step-actions {
+          flex-direction: column;
+          gap: var(--spacing-sm);
+        }
+      }
     `]
 })
 export class InitialContentStepComponent implements OnInit {
@@ -63,7 +108,13 @@ export class InitialContentStepComponent implements OnInit {
     cardForm: FormGroup;
     pendingCards: PendingCard[] = [];
 
-    constructor(private fb: FormBuilder, private templateApi: TemplateApiService, private cardApi: CardApiService, private wizardState: DeckWizardStateService) {
+    constructor(
+        private fb: FormBuilder,
+        private templateApi: TemplateApiService,
+        private cardApi: CardApiService,
+        private wizardState: DeckWizardStateService,
+        private i18n: I18nService
+    ) {
         this.cardForm = this.fb.group({});
     }
 
@@ -105,8 +156,37 @@ export class InitialContentStepComponent implements OnInit {
         this.pendingCards.splice(index, 1);
     }
 
+    isMediaField(field: FieldTemplateDTO): boolean {
+        return field.fieldType === 'image' || field.fieldType === 'audio' || field.fieldType === 'video';
+    }
+
+    getMediaFieldType(field: FieldTemplateDTO): 'image' | 'audio' | 'video' {
+        return field.fieldType as 'image' | 'audio' | 'video';
+    }
+
+    getMediaValue(fieldName: string): CardContentValue | null {
+        const value = this.cardForm.get(fieldName)?.value;
+        if (!value) return null;
+        return value;
+    }
+
+    onMediaChange(fieldName: string, value: CardContentValue | null): void {
+        this.cardForm.get(fieldName)?.setValue(value);
+        this.cardForm.get(fieldName)?.markAsTouched();
+    }
+
     getCardPreview(card: PendingCard): string {
-        return Object.values(card.content).filter(v => v).slice(0, 2).join(' - ') || 'Empty card';
+        const textValues = Object.values(card.content)
+            .filter(v => v)
+            .map(v => {
+                if (typeof v === 'string') return v;
+                if (v && typeof v === 'object' && 'mediaId' in v) return this.i18n.translate('wizard.mediaPlaceholder');
+                return '';
+            })
+            .filter(v => v)
+            .slice(0, 2)
+            .join(' - ');
+        return textValues || this.i18n.translate('wizard.emptyCard');
     }
 
     onBack(): void {

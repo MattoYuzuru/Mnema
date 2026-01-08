@@ -17,6 +17,7 @@ export interface DeckWizardState {
         tags: string[];
         isPublic: boolean;
         isListed: boolean;
+        iconMediaId?: string;
     };
     createdDeck: UserDeckDTO | null;
     pendingCards: PendingCard[];
@@ -31,7 +32,8 @@ const initialState: DeckWizardState = {
         language: 'en',
         tags: [],
         isPublic: false,
-        isListed: false
+        isListed: false,
+        iconMediaId: undefined
     },
     createdDeck: null,
     pendingCards: []

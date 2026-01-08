@@ -1,14 +1,16 @@
+export type CardContentValue = string | { mediaId: string; url?: string | null; kind?: 'image' | 'audio' | 'video' };
+
 export interface UserCardDTO {
     userCardId: string;
     publicCardId: string;
     isCustom: boolean;
     isDeleted: boolean;
     personalNote?: string | null;
-    effectiveContent: Record<string, string>;
+    effectiveContent: Record<string, CardContentValue>;
 }
 
 export interface CreateCardRequest {
-    content: Record<string, string>;
+    content: Record<string, CardContentValue>;
     orderIndex?: number;
     tags?: string[];
 }

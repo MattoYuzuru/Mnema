@@ -8,15 +8,17 @@ import { TemplateSelectionStepComponent } from './steps/template-selection-step.
 import { DeckMetadataStepComponent } from './steps/deck-metadata-step.component';
 import { InitialContentStepComponent } from './steps/initial-content-step.component';
 import { ReviewStepComponent } from './steps/review-step.component';
+import { TranslatePipe } from '../../shared/pipes/translate.pipe';
+import { I18nService } from '../../core/services/i18n.service';
 
 @Component({
     selector: 'app-deck-wizard',
     standalone: true,
-    imports: [NgIf, NgSwitch, NgSwitchCase, WizardStepperComponent, TemplateSelectionStepComponent, DeckMetadataStepComponent, InitialContentStepComponent, ReviewStepComponent],
+    imports: [NgIf, NgSwitch, NgSwitchCase, WizardStepperComponent, TemplateSelectionStepComponent, DeckMetadataStepComponent, InitialContentStepComponent, ReviewStepComponent, TranslatePipe],
     template: `
     <div class="deck-wizard">
       <header class="wizard-header">
-        <h1>Create New Deck</h1>
+        <h1>{{ 'wizard.createNewDeck' | translate }}</h1>
         <app-wizard-stepper [steps]="steps" [currentStep]="state.currentStep - 1"></app-wizard-stepper>
       </header>
       <div class="wizard-content" [ngSwitch]="state.currentStep">
@@ -32,6 +34,31 @@ import { ReviewStepComponent } from './steps/review-step.component';
       .wizard-header { margin-bottom: var(--spacing-xl); }
       .wizard-header h1 { font-size: 2rem; font-weight: 700; margin: 0 0 var(--spacing-lg) 0; }
       .wizard-content { background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); padding: var(--spacing-xl); min-height: 400px; }
+
+      @media (max-width: 768px) {
+        .deck-wizard {
+          padding: var(--spacing-lg) var(--spacing-md);
+        }
+
+        .wizard-header h1 {
+          font-size: 1.5rem;
+        }
+
+        .wizard-content {
+          padding: var(--spacing-lg);
+        }
+      }
+
+      @media (max-width: 480px) {
+        .deck-wizard {
+          padding: var(--spacing-md) var(--spacing-sm);
+        }
+
+        .wizard-content {
+          padding: var(--spacing-md);
+          min-height: auto;
+        }
+      }
     `]
 })
 export class DeckWizardComponent implements OnInit, OnDestroy {
@@ -41,14 +68,14 @@ export class DeckWizardComponent implements OnInit, OnDestroy {
     get steps() {
         const cs = this.state.currentStep;
         return [
-            { label: 'Template', completed: cs > 1 },
-            { label: 'Deck Info', completed: cs > 2 },
-            { label: 'Content', completed: cs > 3 },
-            { label: 'Review', completed: cs > 4 }
+            { label: this.i18n.translate('wizard.stepTemplate'), completed: cs > 1 },
+            { label: this.i18n.translate('wizard.stepDeckInfo'), completed: cs > 2 },
+            { label: this.i18n.translate('wizard.stepContent'), completed: cs > 3 },
+            { label: this.i18n.translate('wizard.stepReview'), completed: cs > 4 }
         ];
     }
 
-    constructor(public wizardState: DeckWizardStateService, private router: Router) {
+    constructor(public wizardState: DeckWizardStateService, private router: Router, private i18n: I18nService) {
         this.state = this.wizardState.getCurrentState();
     }
 

@@ -9,6 +9,7 @@ import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.transaction.annotation.Transactional
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.server.ResponseStatusException
+import java.time.Instant
 import java.util.*
 
 @RestController
@@ -22,13 +23,17 @@ class MeController(
         val username: String,
         val bio: String?,
         val avatarUrl: String?,
-        val isAdmin: Boolean
+        val avatarMediaId: UUID?,
+        val isAdmin: Boolean,
+        val createdAt: Instant,
+        val updatedAt: Instant
     )
 
     data class MeUpdateRequest(
         val username: String? = null,
         val bio: String? = null,
-        val avatarUrl: String? = null
+        val avatarUrl: String? = null,
+        val avatarMediaId: UUID? = null
     )
 
     private fun toDto(user: User) = MeResponse(
@@ -37,7 +42,10 @@ class MeController(
         username = user.username,
         bio = user.bio,
         avatarUrl = user.avatarUrl,
-        isAdmin = user.isAdmin
+        avatarMediaId = user.avatarMediaId,
+        isAdmin = user.isAdmin,
+        createdAt = user.createdAt,
+        updatedAt = user.updatedAt
     )
 
     @GetMapping
@@ -112,7 +120,22 @@ class MeController(
 
         req.bio?.let { user.bio = it }
         req.avatarUrl?.let { user.avatarUrl = it }
+        req.avatarMediaId?.let { user.avatarMediaId = it }
 
         return toDto(user)
+    }
+
+    @DeleteMapping
+    @Transactional
+    fun delete(@AuthenticationPrincipal jwt: Jwt) {
+        val userIdStr = jwt.getClaimAsString("user_id")
+            ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "user_id claim missing")
+        val userId = UUID.fromString(userIdStr)
+
+        if (!repo.existsById(userId)) {
+            throw ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
+        }
+
+        repo.deleteById(userId)
     }
 }

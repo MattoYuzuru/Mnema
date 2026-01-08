@@ -46,4 +46,6 @@ public interface PublicDeckRepository extends JpaRepository<PublicDeckEntity, ap
               )
             """)
     Optional<PublicDeckEntity> findLatestByDeckId(UUID deckId);
+
+    void deleteByDeckId(UUID deckId);
 }

@@ -3,6 +3,7 @@ import { BehaviorSubject, Observable } from 'rxjs';
 
 export interface UserPreferences {
     hideFieldLabels: boolean;
+    showFrontSideAfterFlip: boolean;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -31,7 +32,8 @@ export class PreferencesService {
 
     private getDefaultPreferences(): UserPreferences {
         return {
-            hideFieldLabels: false
+            hideFieldLabels: false,
+            showFrontSideAfterFlip: true
         };
     }
 
@@ -41,6 +43,16 @@ export class PreferencesService {
 
     setHideFieldLabels(hide: boolean): void {
         const updated = { ...this._preferencesSubject.value, hideFieldLabels: hide };
+        this._preferencesSubject.next(updated);
+        this.savePreferences(updated);
+    }
+
+    get showFrontSideAfterFlip(): boolean {
+        return this._preferencesSubject.value.showFrontSideAfterFlip;
+    }
+
+    setShowFrontSideAfterFlip(show: boolean): void {
+        const updated = { ...this._preferencesSubject.value, showFrontSideAfterFlip: show };
         this._preferencesSubject.next(updated);
         this.savePreferences(updated);
     }

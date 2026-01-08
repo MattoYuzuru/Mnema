@@ -55,6 +55,12 @@ public class ReviewController {
                                                        @PathVariable UUID userDeckId,
                                                        @RequestBody UpdateAlgorithmRequest req) {
         UUID userId = currentUserProvider.getUserId(jwt);
-        return reviewService.updateDeckAlgorithm(userId, userDeckId, req.algorithmId(), req.algorithmParams());
+        return reviewService.updateDeckAlgorithm(
+                userId,
+                userDeckId,
+                req.algorithmId(),
+                req.algorithmParams(),
+                req.reviewPreferences()
+        );
     }
 }

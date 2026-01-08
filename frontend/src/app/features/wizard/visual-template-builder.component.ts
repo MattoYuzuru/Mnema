@@ -23,6 +23,7 @@ interface PaletteField {
 
 interface BuilderField {
     tempId: string;
+    name: string;
     type: FieldType;
     label: string;
     helpText: string;
@@ -85,10 +86,12 @@ interface BuilderState {
                 <input type="text" [(ngModel)]="selectedField.helpText" (ngModelChange)="saveDraft()" class="form-input" />
               </div>
               <div class="form-group">
-                <label class="checkbox-label">
-                  <input type="checkbox" [(ngModel)]="selectedField.required" (ngModelChange)="saveDraft()" />
-                  <span>{{ 'visualBuilder.fieldRequired' | translate }}</span>
-                </label>
+                <label>{{ 'visualBuilder.fieldRequired' | translate }}</label>
+                <div class="toggle-container" (click)="toggleRequired()">
+                  <div class="toggle-switch" [class.active]="selectedField.required">
+                    <div class="toggle-slider"></div>
+                  </div>
+                </div>
               </div>
             </div>
             <div *ngIf="!selectedField" class="config-empty">
@@ -101,17 +104,24 @@ interface BuilderState {
 
         <div class="builder-right">
           <div class="preview-controls">
-            <h3>{{ 'visualBuilder.cardPreview' | translate }} - {{ (currentSide === 'front' ? 'visualBuilder.front' : 'visualBuilder.back') | translate }}</h3>
+            <h3>{{ currentSide === 'front' ? ('visualBuilder.frontSide' | translate) : ('visualBuilder.backSide' | translate) }}</h3>
             <div class="preview-actions">
               <label class="checkbox-label">
                 <input type="checkbox" [(ngModel)]="showLabels" />
                 <span>{{ 'visualBuilder.showLabels' | translate }}</span>
               </label>
-              <app-button variant="ghost" size="sm" (click)="flipSide()">
-                {{ 'visualBuilder.flipTo' | translate }} {{ (currentSide === 'front' ? 'visualBuilder.back' : 'visualBuilder.front') | translate }}
-              </app-button>
             </div>
           </div>
+
+          <button
+            type="button"
+            class="flip-icon-button"
+            (click)="flipSide()"
+            [attr.title]="('visualBuilder.flipTo' | translate) + ' ' + ((currentSide === 'front' ? 'visualBuilder.back' : 'visualBuilder.front') | translate)"
+            [attr.aria-label]="('visualBuilder.flipTo' | translate) + ' ' + ((currentSide === 'front' ? 'visualBuilder.back' : 'visualBuilder.front') | translate)"
+          >
+            <span class="flip-icon" aria-hidden="true">🔄</span>
+          </button>
 
           <div class="card-preview-container">
             <div
@@ -140,9 +150,29 @@ interface BuilderState {
                   <div class="field-preview">{{ getFieldPreview(field) }}</div>
                 </div>
                 <div class="field-row-actions">
-                  <button class="icon-button" (click)="moveFieldUp(i); $event.stopPropagation()" [disabled]="i === 0">↑</button>
-                  <button class="icon-button" (click)="moveFieldDown(i); $event.stopPropagation()" [disabled]="i === currentFields.length - 1">↓</button>
-                  <button class="icon-button delete" (click)="removeField(i); $event.stopPropagation()">×</button>
+                  <button
+                    type="button"
+                    class="icon-button"
+                    [disabled]="i === 0"
+                    [attr.title]="'visualBuilder.moveUp' | translate"
+                    [attr.aria-label]="'visualBuilder.moveUp' | translate"
+                    (click)="moveFieldUp(i); $event.stopPropagation()"
+                  >↑</button>
+                  <button
+                    type="button"
+                    class="icon-button"
+                    [disabled]="i === currentFields.length - 1"
+                    [attr.title]="'visualBuilder.moveDown' | translate"
+                    [attr.aria-label]="'visualBuilder.moveDown' | translate"
+                    (click)="moveFieldDown(i); $event.stopPropagation()"
+                  >↓</button>
+                  <button
+                    type="button"
+                    class="icon-button delete"
+                    [attr.title]="'visualBuilder.removeField' | translate"
+                    [attr.aria-label]="'visualBuilder.removeField' | translate"
+                    (click)="removeField(i); $event.stopPropagation()"
+                  >×</button>
                 </div>
               </div>
 
@@ -232,25 +262,37 @@ interface BuilderState {
         font-size: 1rem;
         font-weight: 600;
         margin: 0 0 var(--spacing-md) 0;
+        text-align: center;
+      }
+
+      .palette-column {
+        display: flex;
+        flex-direction: column;
+        height: 100%;
       }
 
       .palette-list {
         display: flex;
         flex-direction: column;
-        gap: var(--spacing-sm);
+        gap: var(--spacing-md);
         min-height: 100px;
+        flex: 1;
+        justify-content: flex-start;
       }
 
       .palette-item {
         display: flex;
         align-items: center;
+        justify-content: flex-start;
         gap: var(--spacing-sm);
-        padding: var(--spacing-md);
+        padding: var(--spacing-md) var(--spacing-lg);
         background: var(--color-card-background);
         border: 1px solid var(--border-color);
         border-radius: var(--border-radius-md);
         cursor: move;
         transition: all 0.2s;
+        text-align: left;
+        min-height: 4rem;
       }
 
       .palette-item:hover:not(.disabled) {
@@ -284,6 +326,7 @@ interface BuilderState {
       .config-column {
         display: flex;
         flex-direction: column;
+        height: 100%;
       }
 
       .config-panel {
@@ -294,6 +337,7 @@ interface BuilderState {
         background: var(--color-card-background);
         border: 1px solid var(--border-color);
         border-radius: var(--border-radius-md);
+        text-align: left;
       }
 
       .config-empty {
@@ -334,6 +378,64 @@ interface BuilderState {
 
       .checkbox-label input {
         cursor: pointer;
+      }
+
+      .toggle-container {
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: var(--spacing-sm);
+      }
+
+      .toggle-switch {
+        position: relative;
+        width: 44px;
+        height: 24px;
+        background: var(--border-color);
+        border-radius: 12px;
+        cursor: pointer;
+        transition: background 0.3s;
+      }
+
+      .toggle-switch.active {
+        background: #111827;
+      }
+
+      .toggle-slider {
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 20px;
+        height: 20px;
+        background: white;
+        border-radius: 50%;
+        transition: transform 0.3s;
+      }
+
+      .toggle-switch.active .toggle-slider {
+        transform: translateX(20px);
+      }
+
+      .flip-icon-button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: var(--spacing-xs);
+        background: transparent;
+        border: none;
+        cursor: pointer;
+        transition: transform 0.2s ease, opacity 0.2s ease;
+        font-size: 1.4rem;
+        margin: var(--spacing-sm) auto;
+      }
+
+      .flip-icon-button:hover {
+        transform: rotate(12deg);
+        opacity: 0.85;
+      }
+
+      .flip-icon {
+        display: inline-flex;
       }
 
       .builder-divider {
@@ -452,27 +554,28 @@ interface BuilderState {
       }
 
       .icon-button {
-        width: 24px;
-        height: 24px;
+        width: 28px;
+        height: 28px;
         padding: 0;
-        border: 1px solid var(--border-color);
-        background: var(--color-card-background);
+        border: none;
+        background: transparent;
         border-radius: var(--border-radius-sm);
         cursor: pointer;
-        font-size: 0.9rem;
+        font-size: 1.05rem;
         display: flex;
         align-items: center;
         justify-content: center;
         transition: all 0.2s;
+        color: var(--color-text-secondary);
       }
 
       .icon-button:hover:not(:disabled) {
-        background: var(--color-background);
-        border-color: #111827;
+        background: rgba(17, 24, 39, 0.08);
+        color: var(--color-text-primary);
       }
 
       .icon-button:disabled {
-        opacity: 0.3;
+        opacity: 0.35;
         cursor: not-allowed;
       }
 
@@ -481,8 +584,7 @@ interface BuilderState {
       }
 
       .icon-button.delete:hover:not(:disabled) {
-        background: #fee2e2;
-        border-color: #dc2626;
+        background: rgba(220, 38, 38, 0.12);
       }
 
       .max-fields-warning {
@@ -562,12 +664,61 @@ interface BuilderState {
       .cdk-drop-list-dragging .field-row:not(.cdk-drag-placeholder) {
         transition: transform 200ms cubic-bezier(0, 0, 0.2, 1);
       }
+
+      @media (max-width: 1024px) {
+        .builder-container {
+          grid-template-columns: 1fr;
+        }
+
+        .builder-divider {
+          display: none;
+        }
+
+        .builder-left {
+          grid-template-columns: 1fr;
+        }
+
+        .builder-right {
+          border-top: 1px solid var(--border-color);
+        }
+      }
+
+      @media (max-width: 768px) {
+        .builder-page {
+          height: auto;
+          min-height: 100vh;
+        }
+
+        .builder-header {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: var(--spacing-sm);
+        }
+
+        .header-actions {
+          width: 100%;
+          justify-content: flex-start;
+          flex-wrap: wrap;
+        }
+
+        .builder-left,
+        .builder-right {
+          padding: var(--spacing-md);
+        }
+
+        .preview-controls {
+          flex-direction: column;
+          align-items: flex-start;
+          gap: var(--spacing-sm);
+        }
+      }
     `]
 })
 export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     private readonly STORAGE_KEY = 'mnema_visual_builder_draft';
     private readonly BASE_CARD_HEIGHT = 300;
     private tempIdCounter = 0;
+    private skipDraftSave = false;
 
     paletteFields: PaletteField[] = [];
 
@@ -586,15 +737,15 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
         private router: Router,
         private templateApi: TemplateApiService,
         private wizardState: DeckWizardStateService,
-        private i18n: I18nService
+        public i18n: I18nService
     ) {
         this.paletteFields = [
             { type: 'text', icon: '📝', label: this.i18n.translate('visualBuilder.fieldTypeText'), inDev: false },
             { type: 'markdown', icon: '📄', label: this.i18n.translate('visualBuilder.fieldTypeMarkdown'), inDev: false },
             { type: 'rich_text', icon: '📋', label: this.i18n.translate('visualBuilder.fieldTypeLongText'), inDev: false },
-            { type: 'audio', icon: '🎵', label: this.i18n.translate('visualBuilder.fieldTypeAudio'), inDev: true },
-            { type: 'image', icon: '🖼️', label: this.i18n.translate('visualBuilder.fieldTypeImage'), inDev: true },
-            { type: 'video', icon: '🎬', label: this.i18n.translate('visualBuilder.fieldTypeVideo'), inDev: true },
+            { type: 'audio', icon: '🎵', label: this.i18n.translate('visualBuilder.fieldTypeAudio'), inDev: false },
+            { type: 'image', icon: '🖼️', label: this.i18n.translate('visualBuilder.fieldTypeImage'), inDev: false },
+            { type: 'video', icon: '🎬', label: this.i18n.translate('visualBuilder.fieldTypeVideo'), inDev: false },
         ];
     }
 
@@ -603,7 +754,9 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     }
 
     ngOnDestroy(): void {
-        this.saveDraft();
+        if (!this.skipDraftSave) {
+            this.saveDraft();
+        }
     }
 
     get currentFields(): BuilderField[] {
@@ -625,6 +778,25 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
         return `${height}px`;
     }
 
+    private generateFieldName(label: string, existingNames: string[]): string {
+        let base = label.trim().toLowerCase()
+            .replace(/\s+/g, '_')
+            .replace(/[^a-z0-9_]/g, '');
+
+        if (!base) {
+            base = 'field';
+        }
+
+        let name = base;
+        let counter = 2;
+        while (existingNames.includes(name)) {
+            name = `${base}_${counter}`;
+            counter++;
+        }
+
+        return name;
+    }
+
     onDrop(event: CdkDragDrop<BuilderField[]>): void {
         if (event.previousContainer === event.container) {
             moveItemInArray(this.currentFields, event.previousIndex, event.currentIndex);
@@ -639,8 +811,15 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
             const paletteField = draggedItem as PaletteField;
 
             if (paletteField && !paletteField.inDev) {
+                const existingNames = [
+                    ...this.frontFields.map(f => f.name),
+                    ...this.backFields.map(f => f.name)
+                ];
+                const fieldName = this.generateFieldName(paletteField.label, existingNames);
+
                 const newField: BuilderField = {
                     tempId: `field-${Date.now()}-${this.tempIdCounter++}`,
+                    name: fieldName,
                     type: paletteField.type,
                     label: '',
                     helpText: '',
@@ -688,6 +867,13 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
         this.selectedFieldId = null;
     }
 
+    toggleRequired(): void {
+        if (this.selectedField) {
+            this.selectedField.required = !this.selectedField.required;
+            this.saveDraft();
+        }
+    }
+
     getFieldDisplayLabel(field: BuilderField): string {
         if (field.label.trim()) {
             return field.label;
@@ -699,17 +885,17 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     getFieldPreview(field: BuilderField): string {
         switch (field.type) {
             case 'text':
-                return 'Sample text content';
+                return this.i18n.translate('visualBuilder.sampleText');
             case 'rich_text':
-                return 'Sample longer text content that might span multiple lines...';
+                return this.i18n.translate('visualBuilder.sampleLongText');
             case 'markdown':
-                return '**Sample** markdown *content*';
+                return this.i18n.translate('visualBuilder.sampleMarkdown');
             case 'image':
-                return '🖼️ [Image placeholder]';
+                return `🖼️ ${this.i18n.translate('visualBuilder.sampleImage')}`;
             case 'audio':
-                return '🎵 [Audio placeholder]';
+                return `🎵 ${this.i18n.translate('visualBuilder.sampleAudio')}`;
             case 'video':
-                return '🎬 [Video placeholder]';
+                return `🎬 ${this.i18n.translate('visualBuilder.sampleVideo')}`;
             default:
                 return '';
         }
@@ -741,8 +927,8 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
             description: this.templateDescription.trim(),
             isPublic: this.makePublic,
             layout: {
-                front: this.frontFields.map(f => f.label || this.getFieldDisplayLabel(f)),
-                back: this.backFields.map(f => f.label || this.getFieldDisplayLabel(f))
+                front: this.frontFields.map(f => f.name),
+                back: this.backFields.map(f => f.name)
             }
         };
 
@@ -760,7 +946,7 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
                 const fieldRequests = allFields.map(({ field, isOnFront, orderIndex }) => {
                     const fieldLabel = field.label.trim() || this.getFieldDisplayLabel(field);
                     return this.templateApi.addField(template.templateId, {
-                        name: fieldLabel.toLowerCase().replace(/\s+/g, '_').replace(/[^\w]/g, ''),
+                        name: field.name,
                         label: fieldLabel,
                         fieldType: field.type,
                         isRequired: field.required,
@@ -777,8 +963,10 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
             })
         ).subscribe({
             next: (template) => {
+                this.skipDraftSave = true;
                 this.clearDraft();
                 this.wizardState.setTemplateId(template.templateId);
+                this.wizardState.setCurrentStep(2);
                 void this.router.navigate(['/create-deck']);
             },
             error: () => {

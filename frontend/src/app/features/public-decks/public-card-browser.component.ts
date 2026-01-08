@@ -5,6 +5,7 @@ import { forkJoin } from 'rxjs';
 import { AuthService } from '../../auth.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
 import { PublicDeckDTO, PublicCardDTO } from '../../core/models/public-deck.models';
+import { CardContentValue } from '../../core/models/user-card.models';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
@@ -95,11 +96,83 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       .card-counter { font-size: 1rem; font-weight: 600; color: var(--color-text-primary); min-width: 80px; text-align: center; }
       .flashcard-container { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-md); }
       .flashcard { width: 100%; max-width: 600px; min-height: 400px; cursor: pointer; perspective: 1000px; }
-      .flashcard-inner { position: relative; width: 100%; min-height: 400px; transition: transform 0.6s; transform-style: preserve-3d; }
+      .flashcard-inner { display: grid; width: 100%; min-height: 400px; transition: transform 0.6s; transform-style: preserve-3d; }
       .flashcard.flipped .flashcard-inner { transform: rotateY(180deg); }
-      .flashcard-face { position: absolute; width: 100%; min-height: 400px; backface-visibility: hidden; background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); padding: var(--spacing-xl); display: flex; align-items: center; justify-content: center; }
+      .flashcard-face { grid-area: 1 / 1; position: relative; width: 100%; height: auto; min-height: 400px; backface-visibility: hidden; background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); padding: var(--spacing-xl); display: flex; align-items: center; justify-content: center; }
       .flashcard-face.back { transform: rotateY(180deg); }
       .flip-hint { font-size: 0.9rem; color: var(--color-text-muted); text-align: center; margin: 0; }
+
+      @media (max-width: 768px) {
+        .public-card-browser {
+          padding: 0 var(--spacing-md);
+        }
+
+        .page-header {
+          display: flex;
+          flex-direction: column;
+          gap: var(--spacing-md);
+        }
+
+        .header-right {
+          width: 100%;
+          flex-wrap: wrap;
+          justify-content: space-between;
+        }
+
+        .view-mode-toggle {
+          width: 100%;
+          flex-wrap: wrap;
+          justify-content: flex-start;
+        }
+
+        .cards-table {
+          overflow-x: auto;
+          -webkit-overflow-scrolling: touch;
+        }
+
+        .card-row {
+          grid-template-columns: 1fr;
+        }
+
+        .card-col {
+          white-space: normal;
+        }
+
+        .card-navigation {
+          flex-wrap: wrap;
+          gap: var(--spacing-md);
+        }
+
+        .flashcard,
+        .flashcard-inner,
+        .flashcard-face {
+          min-height: 300px;
+        }
+
+        .flashcard-face {
+          padding: var(--spacing-lg);
+        }
+      }
+
+      @media (max-width: 480px) {
+        .public-card-browser {
+          padding: 0 var(--spacing-sm);
+        }
+
+        .header-left h1 {
+          font-size: 1.5rem;
+        }
+
+        .flashcard,
+        .flashcard-inner,
+        .flashcard-face {
+          min-height: 250px;
+        }
+
+        .flashcard-face {
+          padding: var(--spacing-md);
+        }
+      }
     `]
 })
 export class PublicCardBrowserComponent implements OnInit {
@@ -214,14 +287,27 @@ export class PublicCardBrowserComponent implements OnInit {
         this.isFlipped = !this.isFlipped;
     }
 
+    private getPreviewText(value: CardContentValue | undefined, fieldType?: string): string {
+        if (!value) return '';
+        if (typeof value === 'string') return value;
+        if (fieldType === 'image') return '[Image]';
+        if (fieldType === 'audio') return '[Audio]';
+        if (fieldType === 'video') return '[Video]';
+        return '[Media]';
+    }
+
     getFrontPreview(card: PublicCardDTO): string {
         if (!this.template || !this.template.layout) {
-            return Object.values(card.content)[0] || '';
+            const firstValue = Object.values(card.content)[0];
+            return this.getPreviewText(firstValue);
         }
 
         const frontFieldNames = this.template.layout.front.slice(0, 2);
         const values = frontFieldNames
-            .map(name => card.content[name])
+            .map(name => {
+                const field = this.template?.fields?.find(f => f.name === name);
+                return this.getPreviewText(card.content[name], field?.fieldType);
+            })
             .filter(v => v)
             .join(' - ');
 

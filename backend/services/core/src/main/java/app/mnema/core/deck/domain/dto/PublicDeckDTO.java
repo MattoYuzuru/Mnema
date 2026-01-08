@@ -11,6 +11,7 @@ public record PublicDeckDTO(
         UUID authorId,
         String name,
         String description,
+        UUID iconMediaId,
         UUID templateId,
         boolean isPublic,
         boolean isListed,

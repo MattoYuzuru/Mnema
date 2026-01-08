@@ -9,6 +9,7 @@ import { UserApiService } from '../../../user-api.service';
 import { ButtonComponent } from '../../../shared/components/button.component';
 import { TemplateCardComponent } from '../../../shared/components/template-card.component';
 import { TemplateCreatorModalComponent } from '../template-creator-modal.component';
+import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
 
 type TemplateMode = 'choose' | 'browse';
 type TemplateFilter = 'mine' | 'public';
@@ -16,34 +17,34 @@ type TemplateFilter = 'mine' | 'public';
 @Component({
     selector: 'app-template-selection-step',
     standalone: true,
-    imports: [NgFor, NgIf, ButtonComponent, TemplateCardComponent, TemplateCreatorModalComponent],
+    imports: [NgFor, NgIf, ButtonComponent, TemplateCardComponent, TemplateCreatorModalComponent, TranslatePipe],
     template: `
     <div class="step">
-      <h2>Choose a Template</h2>
-      <p class="subtitle">{{ getSubtitle() }}</p>
+      <h2>{{ 'wizard.chooseTemplate' | translate }}</h2>
+      <p class="subtitle">{{ mode === 'choose' ? ('wizard.templateSubtitle' | translate) : ('wizard.browseSubtitle' | translate) }}</p>
 
       <div *ngIf="mode === 'choose'" class="choice-grid">
         <div class="choice-card" (click)="openTemplateCreator()">
           <div class="choice-icon">+</div>
-          <h3>Create New Template</h3>
-          <p>Build a custom template from scratch</p>
+          <h3>{{ 'wizard.createNewTemplate' | translate }}</h3>
+          <p>{{ 'wizard.createNewTemplateDesc' | translate }}</p>
         </div>
 
         <div class="choice-card" (click)="openVisualBuilder()">
           <div class="choice-icon">🎨</div>
-          <h3>Visual Template Builder</h3>
-          <p>Design your template with drag & drop preview</p>
+          <h3>{{ 'wizard.visualBuilder' | translate }}</h3>
+          <p>{{ 'wizard.visualBuilderDesc' | translate }}</p>
         </div>
 
         <div class="choice-card" (click)="enterBrowseMode()">
           <div class="choice-icon">📚</div>
-          <h3>Use Existing Template</h3>
-          <p>Choose from available templates</p>
+          <h3>{{ 'wizard.useExistingTemplate' | translate }}</h3>
+          <p>{{ 'wizard.useExistingTemplateDesc' | translate }}</p>
         </div>
       </div>
 
       <div *ngIf="mode === 'browse'">
-        <div *ngIf="loading">Loading templates...</div>
+        <div *ngIf="loading">{{ 'wizard.loadingTemplates' | translate }}</div>
 
         <div *ngIf="!loading" class="browse-content">
           <div class="filter-tabs">
@@ -52,14 +53,14 @@ type TemplateFilter = 'mine' | 'public';
               [class.active]="activeFilter === 'mine'"
               (click)="activeFilter = 'mine'"
             >
-              My Templates ({{ myTemplates.length }})
+              {{ 'wizard.myTemplates' | translate }} ({{ myTemplates.length }})
             </button>
             <button
               class="filter-tab"
               [class.active]="activeFilter === 'public'"
               (click)="activeFilter = 'public'"
             >
-              Public Templates ({{ publicTemplates.length }})
+              {{ 'wizard.publicTemplates' | translate }} ({{ publicTemplates.length }})
             </button>
           </div>
 
@@ -73,19 +74,19 @@ type TemplateFilter = 'mine' | 'public';
           </div>
 
           <div *ngIf="filteredTemplates.length === 0" class="empty-state">
-            <p>No templates found in this category.</p>
+            <p>{{ 'wizard.noTemplates' | translate }}</p>
           </div>
 
           <div class="pagination" *ngIf="totalPages > 1">
-            <app-button variant="ghost" size="sm" [disabled]="currentPage === 1" (click)="loadPage(currentPage - 1)">Previous</app-button>
-            <span class="page-info">Page {{ currentPage }} of {{ totalPages }}</span>
-            <app-button variant="ghost" size="sm" [disabled]="currentPage >= totalPages" (click)="loadPage(currentPage + 1)">Next</app-button>
+            <app-button variant="ghost" size="sm" [disabled]="currentPage === 1" (click)="loadPage(currentPage - 1)">{{ 'wizard.previous' | translate }}</app-button>
+            <span class="page-info">{{ 'wizard.page' | translate }} {{ currentPage }} {{ 'wizard.of' | translate }} {{ totalPages }}</span>
+            <app-button variant="ghost" size="sm" [disabled]="currentPage >= totalPages" (click)="loadPage(currentPage + 1)">{{ 'wizard.next' | translate }}</app-button>
           </div>
         </div>
 
         <div class="step-actions">
-          <app-button variant="ghost" (click)="mode = 'choose'; selectedTemplateId = null">Back</app-button>
-          <app-button variant="primary" [disabled]="!selectedTemplateId" (click)="onNext()">Next: Deck Info</app-button>
+          <app-button variant="ghost" (click)="mode = 'choose'; selectedTemplateId = null">{{ 'wizard.back' | translate }}</app-button>
+          <app-button variant="primary" [disabled]="!selectedTemplateId" (click)="onNext()">{{ 'wizard.nextDeckInfo' | translate }}</app-button>
         </div>
       </div>
     </div>
@@ -224,6 +225,51 @@ type TemplateFilter = 'mine' | 'public';
         padding-top: var(--spacing-lg);
         border-top: 1px solid var(--border-color);
       }
+
+      @media (max-width: 768px) {
+        .choice-grid {
+          grid-template-columns: 1fr;
+          margin: var(--spacing-lg) 0;
+        }
+
+        .choice-card {
+          padding: var(--spacing-xl);
+          min-height: 200px;
+        }
+
+        .choice-icon {
+          width: 64px;
+          height: 64px;
+          font-size: 2rem;
+        }
+
+        .filter-tabs {
+          flex-wrap: wrap;
+        }
+
+        .templates-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .pagination {
+          flex-wrap: wrap;
+        }
+
+        .step-actions {
+          flex-direction: column;
+          gap: var(--spacing-sm);
+        }
+      }
+
+      @media (max-width: 480px) {
+        .choice-card {
+          padding: var(--spacing-lg);
+        }
+
+        .choice-card p {
+          padding: 0;
+        }
+      }
     `]
 })
 export class TemplateSelectionStepComponent implements OnInit {
@@ -253,14 +299,6 @@ export class TemplateSelectionStepComponent implements OnInit {
 
     ngOnInit(): void {
         this.selectedTemplateId = this.wizardState.getCurrentState().templateId;
-    }
-
-    getSubtitle(): string {
-        switch (this.mode) {
-            case 'choose': return 'How would you like to get started?';
-            case 'browse': return 'Select a template that matches your learning style';
-            default: return '';
-        }
     }
 
     enterBrowseMode(): void {

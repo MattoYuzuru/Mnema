@@ -216,6 +216,38 @@ public class DeckService {
         userDeckRepository.save(deck);
     }
 
+    @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
+    public void hardDeleteUserDeck(UUID currentUserId, UUID userDeckId) {
+        UserDeckEntity deck = userDeckRepository.findById(userDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+
+        if (!deck.getUserId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to deck " + userDeckId);
+        }
+
+        if (!deck.isArchived()) {
+            throw new IllegalStateException("Deck must be archived before hard delete");
+        }
+
+        UUID publicDeckId = deck.getPublicDeckId();
+        boolean canDeletePublic = false;
+
+        if (publicDeckId != null) {
+            var latestPublic = publicDeckRepository.findLatestByDeckId(publicDeckId).orElse(null);
+            if (latestPublic != null && latestPublic.getAuthorId().equals(currentUserId)) {
+                long others = userDeckRepository.countByPublicDeckIdAndUserDeckIdNot(publicDeckId, userDeckId);
+                canDeletePublic = others == 0;
+            }
+        }
+
+        userDeckRepository.delete(deck);
+
+        if (canDeletePublic) {
+            publicDeckRepository.deleteByDeckId(publicDeckId);
+        }
+    }
+
     // Архивирование публичной колоды
     @Transactional
     @PreAuthorize("hasAuthority('SCOPE_user.write')")
@@ -478,6 +510,9 @@ public class DeckService {
         if (dto.description() != null) {
             deck.setDescription(dto.description());
         }
+        if (dto.iconMediaId() != null) {
+            deck.setIconMediaId(dto.iconMediaId());
+        }
         deck.setPublicFlag(dto.isPublic());
         deck.setListed(dto.isListed());
 
@@ -571,6 +606,7 @@ public class DeckService {
                 authorId,
                 publicDeckDTO.name(),
                 publicDeckDTO.description(),
+                publicDeckDTO.iconMediaId(),
                 publicDeckDTO.templateId(),
                 publicDeckDTO.isPublic(),
                 publicDeckDTO.isListed(),
@@ -625,6 +661,7 @@ public class DeckService {
                 e.getAuthorId(),
                 e.getName(),
                 e.getDescription(),
+                e.getIconMediaId(),
                 e.getTemplateId(),
                 e.isPublicFlag(),
                 e.isListed(),

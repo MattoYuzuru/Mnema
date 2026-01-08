@@ -56,12 +56,13 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             ></app-flashcard-view>
             <div *ngIf="revealed && template && currentCard" class="revealed-content">
               <app-flashcard-view
+                *ngIf="preferences.showFrontSideAfterFlip"
                 [template]="template"
                 [content]="currentCard.effectiveContent"
                 [side]="'front'"
                 [hideLabels]="preferences.hideFieldLabels"
               ></app-flashcard-view>
-              <div class="divider"></div>
+              <div *ngIf="preferences.showFrontSideAfterFlip" class="divider"></div>
               <app-flashcard-view
                 [template]="template"
                 [content]="currentCard.effectiveContent"

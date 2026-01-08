@@ -1,11 +1,12 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
 import { Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
 import { catchError } from 'rxjs/operators';
-import { forkJoin, of } from 'rxjs';
+import { forkJoin, of, firstValueFrom } from 'rxjs';
 import { AuthService } from '../../auth.service';
 import { UserApiService } from '../../user-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
+import { MediaApiService } from '../../core/services/media-api.service';
 import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { DeckCardComponent } from '../../shared/components/deck-card.component';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
@@ -29,12 +30,15 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         <app-deck-card
           *ngFor="let deck of decks"
           [publicDeck]="deck"
+          [iconUrl]="deckIcons.get(deck.deckId) || null"
           [showFork]="canForkDeck(deck)"
           [showBrowse]="true"
           (open)="openDeck(deck.deckId)"
           (fork)="forkDeck(deck.deckId)"
           (browse)="browseDeck(deck.deckId)"
         ></app-deck-card>
+        <div #sentinel class="sentinel"></div>
+        <div *ngIf="loadingMore" class="loading-more">Loading more...</div>
       </div>
 
       <app-empty-state
@@ -67,13 +71,38 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       }
 
       .decks-list {
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: repeat(1, minmax(0, 1fr));
         gap: var(--spacing-md);
       }
 
+      .sentinel {
+        grid-column: 1 / -1;
+        height: 1px;
+        visibility: hidden;
+      }
+
+      .loading-more {
+        grid-column: 1 / -1;
+        text-align: center;
+        padding: var(--spacing-lg);
+        color: var(--color-text-secondary);
+      }
+
+      @media (min-width: 768px) {
+        .decks-list {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (min-width: 1100px) {
+        .decks-list {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+        }
+      }
+
       @media (max-width: 768px) {
-        .catalog-page {
+        .public-decks-catalog {
           padding: 0 var(--spacing-md);
         }
 
@@ -83,7 +112,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       }
 
       @media (max-width: 480px) {
-        .catalog-page {
+        .public-decks-catalog {
           padding: 0 var(--spacing-sm);
         }
 
@@ -93,15 +122,32 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       }
     `]
 })
-export class PublicDecksCatalogComponent implements OnInit {
+export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDestroy {
+    @ViewChild('sentinel') set sentinelRef(ref: ElementRef<HTMLDivElement> | undefined) {
+        if (ref) {
+            this.sentinel = ref;
+            this.observeSentinel();
+        }
+    }
+
     loading = true;
+    loadingMore = false;
     decks: PublicDeckDTO[] = [];
+    deckIcons: Map<string, string> = new Map();
     currentUserId: string | null = null;
+    page = 1;
+    pageSize = 15;
+    totalPages = 1;
+    last = false;
+
+    private observer?: IntersectionObserver;
+    private sentinel?: ElementRef<HTMLDivElement>;
 
     constructor(
         public auth: AuthService,
         private userApi: UserApiService,
         private publicDeckApi: PublicDeckApiService,
+        private mediaApi: MediaApiService,
         private router: Router
     ) {}
 
@@ -109,9 +155,43 @@ export class PublicDecksCatalogComponent implements OnInit {
         this.loadDecks();
     }
 
+    ngAfterViewInit(): void {
+        this.observeSentinel();
+    }
+
+    ngOnDestroy(): void {
+        if (this.observer) {
+            this.observer.disconnect();
+        }
+    }
+
+    private observeSentinel(): void {
+        if (!this.sentinel?.nativeElement) {
+            return;
+        }
+
+        if (!this.observer) {
+            this.observer = new IntersectionObserver(
+                entries => {
+                    const entry = entries[0];
+                    if (this.loading || this.loadingMore || this.last || this.decks.length === 0) {
+                        return;
+                    }
+                    if (entry.isIntersecting) {
+                        this.loadMore();
+                    }
+                },
+                { threshold: 0.1, rootMargin: '200px 0px' }
+            );
+        }
+
+        this.observer.disconnect();
+        this.observer.observe(this.sentinel.nativeElement);
+    }
+
     private loadDecks(): void {
-        const decks$ = this.publicDeckApi.getPublicDecks(1, 50).pipe(
-            catchError(() => of({ content: [] as PublicDeckDTO[] }))
+        const decks$ = this.publicDeckApi.getPublicDecks(this.page, this.pageSize).pipe(
+            catchError(() => of({ content: [] as PublicDeckDTO[], last: true, totalPages: 0 }))
         );
 
         const user$ = this.auth.status() === 'authenticated'
@@ -119,15 +199,60 @@ export class PublicDecksCatalogComponent implements OnInit {
             : of(null);
 
         forkJoin({ decks: decks$, user: user$ }).subscribe({
-            next: result => {
+            next: async result => {
                 this.decks = result.decks.content;
+                this.last = result.decks.last;
+                this.totalPages = result.decks.totalPages || 1;
                 this.currentUserId = result.user?.id || null;
+                await this.resolveDeckIcons(this.decks);
                 this.loading = false;
             },
             error: () => {
                 this.loading = false;
             }
         });
+    }
+
+    private loadMore(): void {
+        if (this.last || this.page >= this.totalPages) {
+            return;
+        }
+
+        this.loadingMore = true;
+        this.page++;
+
+        this.publicDeckApi.getPublicDecks(this.page, this.pageSize).pipe(
+            catchError(() => of({ content: [] as PublicDeckDTO[], last: true, totalPages: 0 }))
+        ).subscribe({
+            next: async result => {
+                this.decks = [...this.decks, ...result.content];
+                this.last = result.last;
+                this.totalPages = result.totalPages || this.totalPages;
+                await this.resolveDeckIcons(result.content);
+                this.loadingMore = false;
+            },
+            error: () => {
+                this.loadingMore = false;
+            }
+        });
+    }
+
+    private async resolveDeckIcons(decks: PublicDeckDTO[]): Promise<void> {
+        const decksWithIcons = decks.filter(d => d.iconMediaId);
+        if (decksWithIcons.length === 0) return;
+
+        try {
+            const mediaIds = decksWithIcons.map(d => d.iconMediaId!);
+            const resolved = await firstValueFrom(this.mediaApi.resolve(mediaIds));
+            resolved.forEach((media, index) => {
+                if (media?.url) {
+                    const deck = decksWithIcons[index];
+                    this.deckIcons.set(deck.deckId, media.url);
+                }
+            });
+        } catch (err) {
+            console.error('Failed to resolve deck icons', err);
+        }
     }
 
     canForkDeck(deck: PublicDeckDTO): boolean {

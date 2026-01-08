@@ -24,15 +24,15 @@ dependencies {
 	// Web / REST
 	implementation("org.springframework.boot:spring-boot-starter-web")
 
-	// Security + JWT resource server (будешь принимать токены от auth-сервиса)
+	// Security + JWT resource server
 	implementation("org.springframework.boot:spring-boot-starter-security")
 	implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
 
 	// JPA + PostgreSQL + Flyway
 	implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+	runtimeOnly("org.postgresql:postgresql")
 	implementation("org.flywaydb:flyway-core")
 	implementation("org.flywaydb:flyway-database-postgresql")
-	runtimeOnly("org.postgresql:postgresql")
 
 	// Modulith
 	implementation("org.springframework.modulith:spring-modulith-starter-core")

@@ -1,0 +1,13 @@
+# CORS (dev)
+app:
+  cors:
+    origins:
+      - http://localhost:3005
+      - http://localhost:8086
+  s3:
+    bucket: ${AWS_BUCKET_NAME:mnema-media}
+    region: ${AWS_REGION:ru-central1}
+    endpoint: ${AWS_ENDPOINT:https://storage.yandexcloud.net}
+    pathStyleAccess: ${AWS_PATH_STYLE_ACCESS:false}
+    accessKey: ${AWS_ACCESS_KEY_ID}
+    secretKey: ${AWS_SECRET_ACCESS_KEY}

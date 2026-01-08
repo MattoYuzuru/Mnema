@@ -3,42 +3,52 @@ import { ReactiveFormsModule, FormsModule, FormBuilder, FormGroup, Validators } 
 import { NgFor, NgIf } from '@angular/common';
 import { DeckApiService } from '../../../core/services/deck-api.service';
 import { DeckWizardStateService } from '../deck-wizard-state.service';
+import { MediaApiService } from '../../../core/services/media-api.service';
 import { ButtonComponent } from '../../../shared/components/button.component';
 import { InputComponent } from '../../../shared/components/input.component';
 import { TextareaComponent } from '../../../shared/components/textarea.component';
+import { MediaUploadComponent } from '../../../shared/components/media-upload.component';
+import { CardContentValue } from '../../../core/models/user-card.models';
+import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-deck-metadata-step',
     standalone: true,
-    imports: [ReactiveFormsModule, FormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent],
+    imports: [ReactiveFormsModule, FormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, TranslatePipe],
     template: `
     <div class="step">
-      <h2>Deck Information</h2>
+      <h2>{{ 'wizard.deckInformation' | translate }}</h2>
       <form [formGroup]="form" class="form">
-        <app-input label="Deck Name" type="text" formControlName="name" placeholder="e.g., Spanish Vocabulary" [hasError]="form.get('name')?.invalid && form.get('name')?.touched || false" errorMessage="Required"></app-input>
-        <app-textarea label="Description" formControlName="description" placeholder="Describe what this deck is about" [rows]="4"></app-textarea>
+        <app-input [label]="'wizard.deckName' | translate" type="text" formControlName="name" [placeholder]="'wizard.deckNamePlaceholder' | translate" [hasError]="form.get('name')?.invalid && form.get('name')?.touched || false" [errorMessage]="'wizard.required' | translate"></app-input>
+        <app-textarea [label]="'wizard.deckDescription' | translate" formControlName="description" [placeholder]="'wizard.deckDescriptionPlaceholder' | translate" [rows]="4"></app-textarea>
+        <app-media-upload
+          [label]="'wizard.deckIcon' | translate"
+          [value]="iconValue"
+          [fieldType]="'image'"
+          (valueChange)="onIconChange($event)"
+        ></app-media-upload>
         <div class="form-group">
-          <label>Language</label>
+          <label>{{ 'wizard.language' | translate }}</label>
           <select formControlName="language" class="language-select">
-            <option value="en">English</option>
-            <option value="ru">Русский (Russian)</option>
+            <option value="en">{{ 'language.english' | translate }}</option>
+            <option value="ru">{{ 'language.russian' | translate }}</option>
             <option value="jp">日本語 (Japanese)</option>
             <option value="sp">Español (Spanish)</option>
           </select>
         </div>
         <div class="form-group">
-          <label>Tags</label>
-          <input type="text" class="tag-input" [(ngModel)]="tagInput" [ngModelOptions]="{standalone: true}" (keydown.enter)="addTag($event)" placeholder="Type and press Enter" />
+          <label>{{ 'wizard.tags' | translate }}</label>
+          <input type="text" class="tag-input" [(ngModel)]="tagInput" [ngModelOptions]="{standalone: true}" (keydown.enter)="addTag($event)" [placeholder]="'wizard.tagPlaceholder' | translate" />
           <div *ngIf="tags.length > 0" class="tags-list">
             <span *ngFor="let tag of tags; let i = index" class="tag-chip">{{ tag }} <button type="button" (click)="removeTag(i)">×</button></span>
           </div>
         </div>
-        <label class="checkbox-label"><input type="checkbox" formControlName="isPublic" /> Make this deck public</label>
-        <label class="checkbox-label"><input type="checkbox" formControlName="isListed" [disabled]="!form.get('isPublic')?.value" /> List in public catalog</label>
+        <label class="checkbox-label"><input type="checkbox" formControlName="isPublic" /> {{ 'wizard.makePublic' | translate }}</label>
+        <label class="checkbox-label"><input type="checkbox" formControlName="isListed" [disabled]="!form.get('isPublic')?.value" /> {{ 'wizard.listInCatalog' | translate }}</label>
       </form>
       <div class="step-actions">
-        <app-button variant="ghost" (click)="onBack()">Back</app-button>
-        <app-button variant="primary" [disabled]="form.invalid || saving" (click)="onNext()">{{ saving ? 'Creating...' : 'Next: Add Content' }}</app-button>
+        <app-button variant="ghost" (click)="onBack()">{{ 'wizard.back' | translate }}</app-button>
+        <app-button variant="primary" [disabled]="form.invalid || saving" (click)="onNext()">{{ saving ? ('wizard.creating' | translate) : ('wizard.nextAddContent' | translate) }}</app-button>
       </div>
     </div>
   `,
@@ -54,6 +64,13 @@ import { TextareaComponent } from '../../../shared/components/textarea.component
       .tag-chip button { background: none; border: none; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0; }
       .checkbox-label { display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; font-size: 0.9rem; }
       .step-actions { display: flex; justify-content: space-between; padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
+
+      @media (max-width: 768px) {
+        .step-actions {
+          flex-direction: column;
+          gap: var(--spacing-sm);
+        }
+      }
     `]
 })
 export class DeckMetadataStepComponent implements OnInit {
@@ -63,8 +80,9 @@ export class DeckMetadataStepComponent implements OnInit {
     tags: string[] = [];
     tagInput = '';
     saving = false;
+    iconValue: CardContentValue | null = null;
 
-    constructor(private fb: FormBuilder, private deckApi: DeckApiService, private wizardState: DeckWizardStateService) {
+    constructor(private fb: FormBuilder, private deckApi: DeckApiService, private wizardState: DeckWizardStateService, private mediaApi: MediaApiService) {
         this.form = this.fb.group({
             name: ['', Validators.required],
             description: [''],
@@ -78,6 +96,13 @@ export class DeckMetadataStepComponent implements OnInit {
         const { deckMetadata } = this.wizardState.getCurrentState();
         this.form.patchValue(deckMetadata);
         this.tags = [...deckMetadata.tags];
+        if (deckMetadata.iconMediaId) {
+            this.iconValue = { mediaId: deckMetadata.iconMediaId, kind: 'image' };
+        }
+    }
+
+    onIconChange(value: CardContentValue | null): void {
+        this.iconValue = value;
     }
 
     addTag(event: Event): void {
@@ -114,7 +139,8 @@ export class DeckMetadataStepComponent implements OnInit {
             isListed: deckMetadata.isListed,
             language: deckMetadata.language,
             tags: deckMetadata.tags,
-            forkedFromDeck: null
+            forkedFromDeck: null,
+            iconMediaId: deckMetadata.iconMediaId || null
         }).subscribe({
             next: deck => {
                 this.wizardState.setCreatedDeck(deck);
@@ -127,13 +153,15 @@ export class DeckMetadataStepComponent implements OnInit {
 
     private saveFormData(): void {
         const values = this.form.value;
+        const iconMediaId = this.iconValue && typeof this.iconValue !== 'string' ? this.iconValue.mediaId : undefined;
         this.wizardState.setDeckMetadata({
             name: values.name,
             description: values.description,
             language: values.language,
             isPublic: values.isPublic,
             isListed: values.isListed,
-            tags: this.tags
+            tags: this.tags,
+            iconMediaId
         });
     }
 }

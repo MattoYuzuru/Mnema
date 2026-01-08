@@ -106,8 +106,17 @@ class ReviewServiceTest {
         when(userCardRepo.countActive(userId, deckId)).thenReturn(10L);
         when(stateRepo.countTrackedCards(userId, deckId)).thenReturn(6L);
         when(stateRepo.countPendingMigration(userId, deckId, algorithmId)).thenReturn(4L);
+        PreferencesSnapshot snapshot = new PreferencesSnapshot(
+                deckId,
+                Duration.ofMinutes(120),
+                20,
+                null,
+                0,
+                0
+        );
+        when(preferencesService.getSnapshot(eq(deckId), any())).thenReturn(snapshot);
 
-        ReviewDeckAlgorithmResponse resp = reviewService.updateDeckAlgorithm(userId, deckId, algorithmId, override);
+        ReviewDeckAlgorithmResponse resp = reviewService.updateDeckAlgorithm(userId, deckId, algorithmId, override, null);
 
         assertThat(resp.userDeckId()).isEqualTo(deckId);
         assertThat(resp.algorithmId()).isEqualTo(algorithmId);

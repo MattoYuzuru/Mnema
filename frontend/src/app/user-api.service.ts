@@ -9,6 +9,7 @@ export interface UserProfile {
     username: string;
     bio?: string | null;
     avatarUrl?: string | null;
+    avatarMediaId?: string | null;
     admin: boolean;
     createdAt: string;
     updatedAt: string;
@@ -18,6 +19,7 @@ export interface MeUpdateRequest {
     username?: string;
     bio?: string | null;
     avatarUrl?: string | null;
+    avatarMediaId?: string | null;
 }
 
 @Injectable({ providedIn: 'root' })

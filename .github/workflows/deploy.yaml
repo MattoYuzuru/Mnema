@@ -76,6 +76,12 @@ jobs:
             dockerfile: ./backend/Dockerfile
             target: core-runtime
 
+          - name: media
+            kind: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            target: media-runtime
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -161,6 +167,10 @@ jobs:
             POSTGRES_DB: "${POSTGRES_DB}"
             POSTGRES_USER: "${POSTGRES_USER}"
             POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+            AWS_REGION: "${AWS_REGION}"
+            AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+            AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+            AWS_BUCKET_NAME: "${AWS_BUCKET_NAME}"
           YAML
         env:
           AUTH_ISSUER: ${{ secrets.AUTH_ISSUER }}
@@ -174,6 +184,10 @@ jobs:
           POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          AWS_REGION: ${{AWS_REGION}}
+          AWS_ACCESS_KEY_ID: ${{AWS_ACCESS_KEY_ID}}
+          AWS_SECRET_ACCESS_KEY: ${{AWS_SECRET_ACCESS_KEY}}
+          AWS_BUCKET_NAME: ${{AWS_BUCKET_NAME}}
 
       - name: Apply manifests
         run: |
@@ -210,6 +224,7 @@ jobs:
           kubectl -n "$NS" set image deploy/mnema-auth     auth=ghcr.io/${{ steps.repo.outputs.REPO }}/auth:${{ steps.meta.outputs.TAG }}
           kubectl -n "$NS" set image deploy/mnema-user     user=ghcr.io/${{ steps.repo.outputs.REPO }}/user:${{ steps.meta.outputs.TAG }}
           kubectl -n "$NS" set image deploy/mnema-core     core=ghcr.io/${{ steps.repo.outputs.REPO }}/core:${{ steps.meta.outputs.TAG }}
+          kubectl -n "$NS" set image deploy/mnema-media    media=ghcr.io/${{ steps.repo.outputs.REPO }}/media:${{ steps.meta.outputs.TAG }}
 
       - name: Wait for rollouts
         run: |
@@ -217,3 +232,4 @@ jobs:
           kubectl -n "$NS" rollout status deploy/mnema-auth     --timeout=600s
           kubectl -n "$NS" rollout status deploy/mnema-user     --timeout=600s
           kubectl -n "$NS" rollout status deploy/mnema-core     --timeout=600s
+          kubectl -n "$NS" rollout status deploy/mnema-media    --timeout=900s

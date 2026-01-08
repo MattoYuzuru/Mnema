@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 
 public record UpdateAlgorithmRequest(
         String algorithmId,
-        JsonNode algorithmParams
+        JsonNode algorithmParams,
+        ReviewPreferencesDto reviewPreferences
 ) {
 }

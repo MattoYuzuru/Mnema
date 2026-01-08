@@ -267,6 +267,7 @@ public class CardService {
                 latestDeck.getAuthorId(),
                 latestDeck.getName(),
                 latestDeck.getDescription(),
+                latestDeck.getIconMediaId(),
                 latestDeck.getTemplateId(),
                 latestDeck.isPublicFlag(),
                 latestDeck.isListed(),

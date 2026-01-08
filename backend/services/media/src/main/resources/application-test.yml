@@ -1,0 +1,31 @@
+spring:
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/mnema_test}
+    username: ${SPRING_DATASOURCE_USERNAME:${POSTGRES_USER:mnema}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${POSTGRES_PASSWORD:mnema}}
+    hikari:
+      schema: app_media
+      connectionInitSql: SET search_path TO app_media
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        default_schema: app_media
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    default-schema: app_media
+    schemas: app_media
+    baseline-on-migrate: false
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH_ISSUER_URI:http://localhost:8083}

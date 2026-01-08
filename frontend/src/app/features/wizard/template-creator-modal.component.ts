@@ -8,6 +8,8 @@ import { CardTemplateDTO } from '../../core/models/template.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
+import { TranslatePipe } from '../../shared/pipes/translate.pipe';
+import { I18nService } from '../../core/services/i18n.service';
 
 interface FieldFormValue {
     name: string;
@@ -22,55 +24,55 @@ interface FieldFormValue {
 @Component({
     selector: 'app-template-creator-modal',
     standalone: true,
-    imports: [ReactiveFormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent],
+    imports: [ReactiveFormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe],
     template: `
     <div class="modal-overlay" (click)="onCancel()">
       <div class="modal-content" (click)="$event.stopPropagation()">
         <div class="modal-header">
-          <h2>Create New Template</h2>
+          <h2>{{ 'templateCreator.title' | translate }}</h2>
           <button class="close-btn" (click)="onCancel()">&times;</button>
         </div>
 
         <form [formGroup]="form" class="template-form">
-          <app-input label="Template Name" type="text" formControlName="name" placeholder="e.g., Language Flashcard" [hasError]="form.get('name')?.invalid && form.get('name')?.touched || false" errorMessage="Required"></app-input>
-          <app-textarea label="Description (optional)" formControlName="description" placeholder="Describe this template" [rows]="3"></app-textarea>
+          <app-input [label]="'templateCreator.name' | translate" type="text" formControlName="name" [placeholder]="'templateCreator.namePlaceholder' | translate" [hasError]="form.get('name')?.invalid && form.get('name')?.touched || false" [errorMessage]="'wizard.required' | translate"></app-input>
+          <app-textarea [label]="'templateCreator.description' | translate" formControlName="description" [placeholder]="'templateCreator.descriptionPlaceholder' | translate" [rows]="3"></app-textarea>
 
           <div class="fields-section">
             <div class="fields-header">
-              <h3>Fields</h3>
-              <app-button variant="secondary" size="sm" type="button" (click)="addField()">+ Add Field</app-button>
+              <h3>{{ 'templateCreator.fields' | translate }}</h3>
+              <app-button variant="secondary" size="sm" type="button" (click)="addField()">{{ 'templateCreator.addField' | translate }}</app-button>
             </div>
 
             <div formArrayName="fields" class="fields-list">
               <div *ngFor="let fieldForm of fieldsArray.controls; let i = index" [formGroupName]="i" class="field-item">
                 <div class="field-number">{{ i + 1 }}</div>
                 <div class="field-inputs">
-                  <app-input label="Label" type="text" formControlName="label" placeholder="e.g., Front Side" [hasError]="fieldForm.get('label')?.invalid && fieldForm.get('label')?.touched || false" errorMessage="Required"></app-input>
+                  <app-input [label]="'templateCreator.label' | translate" type="text" formControlName="label" [placeholder]="'templateCreator.labelPlaceholder' | translate" [hasError]="fieldForm.get('label')?.invalid && fieldForm.get('label')?.touched || false" [errorMessage]="'wizard.required' | translate"></app-input>
                   <div class="field-row">
                     <div class="select-group">
-                      <label>Type</label>
+                      <label>{{ 'templateCreator.type' | translate }}</label>
                       <select formControlName="fieldType" class="field-select">
-                        <option value="text">Text</option>
-                        <option value="rich_text">Long Text</option>
-                        <option value="markdown">Markdown</option>
-                        <option value="image">Image</option>
-                        <option value="audio">Audio</option>
-                        <option value="video">Video</option>
+                        <option value="text">{{ 'templateCreator.typeText' | translate }}</option>
+                        <option value="rich_text">{{ 'templateCreator.typeLongText' | translate }}</option>
+                        <option value="markdown">{{ 'templateCreator.typeMarkdown' | translate }}</option>
+                        <option value="image">{{ 'templateCreator.typeImage' | translate }}</option>
+                        <option value="audio">{{ 'templateCreator.typeAudio' | translate }}</option>
+                        <option value="video">{{ 'templateCreator.typeVideo' | translate }}</option>
                       </select>
                     </div>
-                    <label class="checkbox-label"><input type="checkbox" formControlName="isOnFront" /> Show on front</label>
-                    <label class="checkbox-label"><input type="checkbox" formControlName="isRequired" /> Required</label>
+                    <label class="checkbox-label"><input type="checkbox" formControlName="isOnFront" /> {{ 'templateCreator.showOnFront' | translate }}</label>
+                    <label class="checkbox-label"><input type="checkbox" formControlName="isRequired" /> {{ 'templateCreator.required' | translate }}</label>
                   </div>
-                  <app-input label="Help Text (optional)" type="text" formControlName="helpText" placeholder="Hint for users"></app-input>
+                  <app-input [label]="'templateCreator.helpText' | translate" type="text" formControlName="helpText" [placeholder]="'templateCreator.helpTextPlaceholder' | translate"></app-input>
                 </div>
-                <app-button variant="ghost" size="sm" type="button" (click)="removeField(i)">Remove</app-button>
+                <app-button variant="ghost" size="sm" type="button" (click)="removeField(i)">{{ 'templateCreator.remove' | translate }}</app-button>
               </div>
             </div>
           </div>
 
           <label class="checkbox-label template-public">
             <input type="checkbox" formControlName="isPublic" />
-            Make this template public
+            {{ 'templateCreator.makePublic' | translate }}
           </label>
 
           <div *ngIf="validationMessage" class="validation-message">
@@ -79,8 +81,8 @@ interface FieldFormValue {
         </form>
 
         <div class="modal-actions">
-          <app-button variant="ghost" (click)="onCancel()" [disabled]="saving">Cancel</app-button>
-          <app-button variant="primary" (click)="onCreate()" [disabled]="form.invalid || !!validationMessage || saving">{{ saving ? 'Creating...' : 'Create Template' }}</app-button>
+          <app-button variant="ghost" (click)="onCancel()" [disabled]="saving">{{ 'templateCreator.cancel' | translate }}</app-button>
+          <app-button variant="primary" (click)="onCreate()" [disabled]="form.invalid || !!validationMessage || saving">{{ saving ? ('templateCreator.creating' | translate) : ('templateCreator.create' | translate) }}</app-button>
         </div>
       </div>
     </div>
@@ -107,6 +109,32 @@ interface FieldFormValue {
       .template-public { padding: var(--spacing-md); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); font-size: 0.95rem; }
       .validation-message { padding: var(--spacing-md); background: #fee; border: 1px solid #fcc; border-radius: var(--border-radius-md); color: #c00; font-size: 0.9rem; }
       .modal-actions { display: flex; justify-content: flex-end; gap: var(--spacing-md); padding: var(--spacing-lg); border-top: 1px solid var(--border-color); }
+
+      @media (max-width: 768px) {
+        .modal-content {
+          width: 94%;
+        }
+
+        .modal-header,
+        .template-form,
+        .modal-actions {
+          padding: var(--spacing-md);
+        }
+
+        .field-item {
+          flex-direction: column;
+        }
+
+        .field-row {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .modal-actions {
+          flex-direction: column;
+          align-items: stretch;
+        }
+      }
     `]
 })
 export class TemplateCreatorModalComponent {
@@ -118,7 +146,7 @@ export class TemplateCreatorModalComponent {
     validationMessage = '';
     private readonly draftKey = 'mnema_template_creator_draft';
 
-    constructor(private fb: FormBuilder, private templateApi: TemplateApiService) {
+    constructor(private fb: FormBuilder, private templateApi: TemplateApiService, private i18n: I18nService) {
         this.form = this.fb.group({
             name: ['', Validators.required],
             description: [''],
@@ -188,7 +216,7 @@ export class TemplateCreatorModalComponent {
         const fields: FieldFormValue[] = this.form.get('fields')?.value || [];
 
         if (fields.length < 2) {
-            this.validationMessage = 'A template must have at least 2 fields.';
+            this.validationMessage = this.i18n.translate('templateCreator.minFieldsError');
             return;
         }
 
@@ -196,7 +224,7 @@ export class TemplateCreatorModalComponent {
         const backFields = fields.filter(f => !f.isOnFront);
 
         if (frontFields.length === 0 || backFields.length === 0) {
-            this.validationMessage = 'A template must have at least one field on each side of the card.';
+            this.validationMessage = this.i18n.translate('templateCreator.bothSidesError');
             return;
         }
 

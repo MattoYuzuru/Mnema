@@ -103,6 +103,28 @@ public class UserDeckPreferencesService {
         return entity;
     }
 
+    @Transactional
+    public PreferencesSnapshot updatePreferences(UUID userDeckId, Integer maxNewPerDay, Integer learningHorizonHours) {
+        UserDeckPreferencesEntity entity = getOrCreateForUpdate(userDeckId);
+        boolean changed = false;
+
+        if (maxNewPerDay != null) {
+            entity.setMaxNewPerDay(Math.max(0, maxNewPerDay));
+            changed = true;
+        }
+
+        if (learningHorizonHours != null) {
+            int minutes = Math.max(1, learningHorizonHours) * 60;
+            entity.setLearningHorizonMinutes(minutes);
+            changed = true;
+        }
+
+        if (changed) {
+            repository.save(entity);
+        }
+        return toSnapshot(entity);
+    }
+
     public record PreferencesSnapshot(UUID userDeckId,
                                       Duration learningHorizon,
                                       Integer maxNewPerDay,
