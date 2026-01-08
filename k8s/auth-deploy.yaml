@@ -51,8 +51,9 @@ spec:
               value: prod
           startupProbe:
             httpGet: { path: /actuator/health, port: 8080 }
-            periodSeconds: 2
-            failureThreshold: 30
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 90
           readinessProbe:
             httpGet: { path: /actuator/health, port: 8080 }
             initialDelaySeconds: 5
