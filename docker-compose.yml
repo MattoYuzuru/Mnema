@@ -53,6 +53,9 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD}}
       SPRING_FLYWAY_ENABLED: "true"
       AUTH_ISSUER_URI: http://auth:8080
+      CORE_BASE_URL: http://core:8080/api/core
+      MEDIA_BASE_URL: http://media:8080/api/media
+      MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
     depends_on:
       postgres: { condition: service_healthy }
     ports: [ "8084:8080" ]
