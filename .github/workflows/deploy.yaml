@@ -82,6 +82,12 @@ jobs:
             dockerfile: ./backend/Dockerfile
             target: media-runtime
 
+          - name: import
+            kind: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            target: import-runtime
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4

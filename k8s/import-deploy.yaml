@@ -1,0 +1,61 @@
+# import-deploy.yaml
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mnema-import
+  namespace: prod
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: mnema-import } }
+  template:
+    metadata: { labels: { app: mnema-import } }
+    spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:18
+          command: [ 'sh','-c','until pg_isready -h postgres.prod.svc.cluster.local -p 5432 -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do echo waiting for postgres; sleep 2; done' ]
+          env:
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_USER } }
+            - name: POSTGRES_DB
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_DB } }
+
+      containers:
+        - name: import
+          image: ghcr.io/mattoyuzuru/mnema/import:latest
+          ports: [ { containerPort: 8080 } ]
+          env:
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://postgres.prod.svc.cluster.local:5432/mnema
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_USER } }
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_PASSWORD } }
+            - name: AUTH_ISSUER_URI
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: AUTH_ISSUER_URI } }
+            - name: SPRING_PROFILES_ACTIVE
+              value: prod
+          startupProbe:
+            httpGet: { path: /api/import/actuator/health, port: 8080 }
+            periodSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet: { path: /api/import/actuator/health, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: { path: /api/import/actuator/health, port: 8080 }
+            initialDelaySeconds: 30
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mnema-import
+  namespace: prod
+spec:
+  selector: { app: mnema-import }
+  ports:
+    - port: 80
+      targetPort: 8080

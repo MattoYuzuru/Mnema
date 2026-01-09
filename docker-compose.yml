@@ -15,10 +15,10 @@ services:
       retries: 10
 
   auth:
-    networks: [mnema_net]
-#    dns:
-#      - 1.1.1.1
-#      - 8.8.8.8
+    networks: [ mnema_net ]
+    #    dns:
+    #      - 1.1.1.1
+    #      - 8.8.8.8
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -41,7 +41,7 @@ services:
     ports: [ "8083:8080" ]
 
   user:
-    networks: [mnema_net]
+    networks: [ mnema_net ]
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -58,7 +58,7 @@ services:
     ports: [ "8084:8080" ]
 
   core:
-    networks: [mnema_net]
+    networks: [ mnema_net ]
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -75,7 +75,7 @@ services:
     ports: [ "8085:8080" ]
 
   media:
-    networks: [mnema_net]
+    networks: [ mnema_net ]
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -98,8 +98,26 @@ services:
         condition: service_healthy
     ports: [ "8086:8080" ]
 
+  import:
+    networks: [ mnema_net ]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: import-runtime
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER}}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD}}
+      SPRING_FLYWAY_ENABLED: "true"
+      AUTH_ISSUER_URI: http://auth:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports: [ "8087:8080" ]
+
   frontend:
-    networks: [mnema_net]
+    networks: [ mnema_net ]
     build:
       context: ./frontend
       dockerfile: Dockerfile
