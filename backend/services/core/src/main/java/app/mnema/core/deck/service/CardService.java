@@ -196,12 +196,14 @@ public class CardService {
 
         // 1) Локальная колода
         if (userDeck.getPublicDeckId() == null) {
+            long offsetNanos = 0L;
             for (CreateCardRequest request : requests) {
                 JsonNode content = request.contentOverride() != null ? request.contentOverride() : request.content();
                 if (content == null || content.isNull()) {
                     throw new IllegalArgumentException("Card content must not be null");
                 }
 
+                Instant createdAt = now.plusNanos(offsetNanos++);
                 UserCardEntity userCard = new UserCardEntity(
                         currentUserId,
                         userDeckId,
@@ -210,7 +212,7 @@ public class CardService {
                         false,
                         request.personalNote(),
                         content,
-                        now,
+                        createdAt,
                         null
                 );
 
@@ -227,12 +229,14 @@ public class CardService {
 
         // 2) Не автор: добавляем только кастомные карты
         if (!latestDeck.getAuthorId().equals(currentUserId)) {
+            long offsetNanos = 0L;
             for (CreateCardRequest request : requests) {
                 JsonNode content = request.contentOverride() != null ? request.contentOverride() : request.content();
                 if (content == null || content.isNull()) {
                     throw new IllegalArgumentException("Card content must not be null");
                 }
 
+                Instant createdAt = now.plusNanos(offsetNanos++);
                 UserCardEntity userCard = new UserCardEntity(
                         currentUserId,
                         userDeckId,
@@ -241,7 +245,7 @@ public class CardService {
                         false,
                         request.personalNote(),
                         content,
-                        now,
+                        createdAt,
                         null
                 );
 
@@ -354,10 +358,12 @@ public class CardService {
         userDeckRepository.save(userDeck);
 
         // Создаём user_cards для новых публичных карт (старые user_cards не трогаем)
+        long offsetNanos = 0L;
         for (int i = 0; i < savedNewPublicCards.size(); i++) {
             PublicCardEntity publicCard = savedNewPublicCards.get(i);
             CreateCardRequest request = requests.get(i);
 
+            Instant createdAt = now.plusNanos(offsetNanos++);
             UserCardEntity userCard = new UserCardEntity(
                     currentUserId,
                     userDeckId,
@@ -366,7 +372,7 @@ public class CardService {
                     false,
                     request.personalNote(),
                     request.contentOverride(),
-                    now,
+                    createdAt,
                     null
             );
 
