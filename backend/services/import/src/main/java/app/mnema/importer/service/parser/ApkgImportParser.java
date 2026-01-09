@@ -67,6 +67,7 @@ public class ApkgImportParser implements ImportParser {
 
         Map<String, List<String>> modelFields = loadModelFields(connection);
         List<String> unionFields = unionFields(modelFields);
+        int totalItems = countNotes(connection);
 
         try {
             PreparedStatement stmt = connection.prepareStatement("select id, mid, flds from notes");
@@ -78,6 +79,7 @@ public class ApkgImportParser implements ImportParser {
                     stmt,
                     rs,
                     unionFields,
+                    totalItems,
                     modelFields,
                     mediaNameToIndex
             );
@@ -146,6 +148,15 @@ public class ApkgImportParser implements ImportParser {
         }
     }
 
+    private int countNotes(Connection connection) {
+        try (PreparedStatement stmt = connection.prepareStatement("select count(*) from notes")) {
+            ResultSet rs = stmt.executeQuery();
+            return rs.next() ? rs.getInt(1) : 0;
+        } catch (SQLException ex) {
+            return 0;
+        }
+    }
+
     private List<String> unionFields(Map<String, List<String>> modelFields) {
         Set<String> union = new HashSet<>();
         List<String> ordered = new ArrayList<>();
@@ -186,6 +197,7 @@ public class ApkgImportParser implements ImportParser {
         private final PreparedStatement statement;
         private final ResultSet resultSet;
         private final List<String> fields;
+        private final Integer totalItems;
         private final Map<String, List<String>> modelFields;
         private final Map<String, String> mediaNameToIndex;
 
@@ -198,6 +210,7 @@ public class ApkgImportParser implements ImportParser {
                          PreparedStatement statement,
                          ResultSet resultSet,
                          List<String> fields,
+                         Integer totalItems,
                          Map<String, List<String>> modelFields,
                          Map<String, String> mediaNameToIndex) throws IOException {
             this.tempDir = tempDir;
@@ -206,6 +219,7 @@ public class ApkgImportParser implements ImportParser {
             this.statement = statement;
             this.resultSet = resultSet;
             this.fields = List.copyOf(fields);
+            this.totalItems = totalItems;
             this.modelFields = modelFields;
             this.mediaNameToIndex = mediaNameToIndex;
             advance();
@@ -214,6 +228,11 @@ public class ApkgImportParser implements ImportParser {
         @Override
         public List<String> fields() {
             return fields;
+        }
+
+        @Override
+        public Integer totalItems() {
+            return totalItems;
         }
 
         @Override
@@ -239,7 +258,7 @@ public class ApkgImportParser implements ImportParser {
             }
         }
 
-        public InputStream openMediaStream(String mediaName) throws IOException {
+        public ApkgMedia openMedia(String mediaName) throws IOException {
             String index = mediaNameToIndex.get(mediaName);
             if (index == null) {
                 return null;
@@ -248,7 +267,19 @@ public class ApkgImportParser implements ImportParser {
             if (entry == null) {
                 return null;
             }
-            return zipFile.getInputStream(entry);
+            long size = entry.getSize();
+            if (size > 0) {
+                return new ApkgMedia(zipFile.getInputStream(entry), size);
+            }
+            Path tempFile = tempDir.resolve("media-" + index);
+            try (InputStream in = zipFile.getInputStream(entry)) {
+                Files.copy(in, tempFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+            long actualSize = Files.size(tempFile);
+            if (actualSize <= 0) {
+                return null;
+            }
+            return new ApkgMedia(Files.newInputStream(tempFile), actualSize);
         }
 
         @Override
@@ -312,5 +343,8 @@ public class ApkgImportParser implements ImportParser {
             }
             return map;
         }
+    }
+
+    public record ApkgMedia(InputStream stream, long size) {
     }
 }

@@ -43,9 +43,13 @@ import java.util.regex.Pattern;
 @Service
 public class ImportProcessor {
 
-    private static final Pattern IMAGE_PATTERN = Pattern.compile("<img[^>]+src=[\"']([^\"']+)[\"'][^>]*>");
-    private static final Pattern SOUND_PATTERN = Pattern.compile("\\[sound:([^\\]]+)]");
+    private static final Pattern IMAGE_PATTERN = Pattern.compile("<img[^>]+src=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SOUND_PATTERN = Pattern.compile("\\[sound:([^\\]]+)]", Pattern.CASE_INSENSITIVE);
+    private static final Pattern AUDIO_TAG_PATTERN = Pattern.compile("<audio[^>]+src=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
+    private static final Pattern VIDEO_TAG_PATTERN = Pattern.compile("<video[^>]+src=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SOURCE_TAG_PATTERN = Pattern.compile("<source[^>]+src=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
     private static final Pattern UUID_PATTERN = Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+    private static final List<String> VIDEO_EXTENSIONS = List.of("mp4", "webm", "m4v", "mov", "mkv", "avi", "mpeg", "mpg");
 
     private final MediaApiClient mediaApiClient;
     private final MediaDownloadService downloadService;
@@ -88,6 +92,11 @@ public class ImportProcessor {
             CoreUserDeckResponse targetDeck = mappingContext.userDeck();
             List<CoreFieldTemplate> targetFields = mappingContext.targetFields();
             Map<String, String> mapping = mappingContext.mapping();
+
+            Integer totalItems = stream.totalItems();
+            if (totalItems != null && totalItems > 0) {
+                updateTotal(job.getJobId(), totalItems);
+            }
 
             int processed = 0;
             List<CoreCreateCardRequest> batch = new ArrayList<>(batchSize);
@@ -299,9 +308,12 @@ public class ImportProcessor {
             MediaTokens tokens = extractMediaTokens(raw);
             String mediaName = switch (normalizedType) {
                 case "audio" -> tokens.firstAudio();
-                case "video" -> tokens.firstAudio();
+                case "video" -> tokens.firstVideo();
                 default -> tokens.firstImage();
             };
+            if (mediaName == null && "video".equals(normalizedType)) {
+                mediaName = tokens.firstAudio();
+            }
             if (mediaName == null) {
                 return null;
             }
@@ -319,19 +331,24 @@ public class ImportProcessor {
     }
 
     private UUID uploadMedia(ApkgImportParser.ApkgImportStream apkgStream, UUID userId, String mediaName, String kind) {
-        try (InputStream mediaStream = apkgStream.openMediaStream(mediaName)) {
-            if (mediaStream == null) {
-                return null;
-            }
-            byte[] bytes = mediaStream.readAllBytes();
+        ApkgImportParser.ApkgMedia media;
+        try {
+            media = apkgStream.openMedia(mediaName);
+        } catch (IOException ex) {
+            return null;
+        }
+        if (media == null) {
+            return null;
+        }
+        try (InputStream mediaStream = media.stream()) {
             String contentType = guessContentType(mediaName);
             return mediaApiClient.directUpload(
                     userId,
                     kindToMediaKind(kind),
                     contentType,
                     mediaName,
-                    bytes.length,
-                    new java.io.ByteArrayInputStream(bytes)
+                    media.size(),
+                    mediaStream
             );
         } catch (IOException ex) {
             return null;
@@ -374,6 +391,9 @@ public class ImportProcessor {
         }
         String withoutMedia = IMAGE_PATTERN.matcher(raw).replaceAll("");
         withoutMedia = SOUND_PATTERN.matcher(withoutMedia).replaceAll("");
+        withoutMedia = AUDIO_TAG_PATTERN.matcher(withoutMedia).replaceAll("");
+        withoutMedia = VIDEO_TAG_PATTERN.matcher(withoutMedia).replaceAll("");
+        withoutMedia = SOURCE_TAG_PATTERN.matcher(withoutMedia).replaceAll("");
         return withoutMedia.trim();
     }
 
@@ -387,21 +407,89 @@ public class ImportProcessor {
 
     private MediaTokens extractMediaTokens(String raw) {
         List<String> images = new ArrayList<>();
-        List<String> sounds = new ArrayList<>();
+        List<String> audio = new ArrayList<>();
+        List<String> video = new ArrayList<>();
         Matcher imgMatcher = IMAGE_PATTERN.matcher(raw);
         while (imgMatcher.find()) {
             images.add(imgMatcher.group(1));
         }
         Matcher soundMatcher = SOUND_PATTERN.matcher(raw);
         while (soundMatcher.find()) {
-            sounds.add(soundMatcher.group(1));
+            classifyMedia(soundMatcher.group(1), audio, video);
         }
-        return new MediaTokens(images, sounds);
+        Matcher audioMatcher = AUDIO_TAG_PATTERN.matcher(raw);
+        while (audioMatcher.find()) {
+            classifyMedia(audioMatcher.group(1), audio, video);
+        }
+        Matcher videoMatcher = VIDEO_TAG_PATTERN.matcher(raw);
+        while (videoMatcher.find()) {
+            String name = normalizeMediaName(videoMatcher.group(1));
+            if (name != null) {
+                video.add(name);
+            }
+        }
+        Matcher sourceMatcher = SOURCE_TAG_PATTERN.matcher(raw);
+        while (sourceMatcher.find()) {
+            classifyMedia(sourceMatcher.group(1), audio, video);
+        }
+        return new MediaTokens(images, audio, video);
     }
 
     private String guessContentType(String name) {
         String guessed = URLConnection.guessContentTypeFromName(name);
-        return guessed == null ? "application/octet-stream" : guessed;
+        if (guessed != null) {
+            return guessed;
+        }
+        String ext = fileExtension(name);
+        if (ext == null) {
+            return "application/octet-stream";
+        }
+        return switch (ext) {
+            case "mp3" -> "audio/mpeg";
+            case "m4a" -> "audio/mp4";
+            case "wav" -> "audio/wav";
+            case "ogg" -> "audio/ogg";
+            case "mp4", "m4v" -> "video/mp4";
+            case "webm" -> "video/webm";
+            case "gif" -> "image/gif";
+            default -> "application/octet-stream";
+        };
+    }
+
+    private void classifyMedia(String name, List<String> audio, List<String> video) {
+        String normalized = normalizeMediaName(name);
+        if (normalized == null) {
+            return;
+        }
+        if (isVideoFile(normalized)) {
+            video.add(normalized);
+        } else {
+            audio.add(normalized);
+        }
+    }
+
+    private String normalizeMediaName(String name) {
+        if (name == null) {
+            return null;
+        }
+        String trimmed = name.trim();
+        return trimmed.isEmpty() ? null : trimmed;
+    }
+
+    private boolean isVideoFile(String name) {
+        String ext = fileExtension(name);
+        return ext != null && VIDEO_EXTENSIONS.contains(ext);
+    }
+
+    private String fileExtension(String name) {
+        if (name == null) {
+            return null;
+        }
+        int idx = name.lastIndexOf('.');
+        if (idx < 0 || idx == name.length() - 1) {
+            return null;
+        }
+        return name.substring(idx + 1).toLowerCase(Locale.ROOT);
     }
 
     @Transactional
@@ -417,7 +505,18 @@ public class ImportProcessor {
     protected void updateTotals(UUID jobId, int processed) {
         jobRepository.findById(jobId).ifPresent(job -> {
             job.setProcessedItems(processed);
-            job.setTotalItems(processed);
+            if (job.getTotalItems() == null) {
+                job.setTotalItems(processed);
+            }
+            job.setUpdatedAt(Instant.now());
+            jobRepository.save(job);
+        });
+    }
+
+    @Transactional
+    protected void updateTotal(UUID jobId, int totalItems) {
+        jobRepository.findById(jobId).ifPresent(job -> {
+            job.setTotalItems(totalItems);
             job.setUpdatedAt(Instant.now());
             jobRepository.save(job);
         });
@@ -437,13 +536,17 @@ public class ImportProcessor {
                                   Map<String, String> mapping) {
     }
 
-    private record MediaTokens(List<String> images, List<String> audio) {
+    private record MediaTokens(List<String> images, List<String> audio, List<String> video) {
         String firstImage() {
             return images.isEmpty() ? null : images.getFirst();
         }
 
         String firstAudio() {
             return audio.isEmpty() ? null : audio.getFirst();
+        }
+
+        String firstVideo() {
+            return video.isEmpty() ? null : video.getFirst();
         }
     }
 }

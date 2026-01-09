@@ -9,4 +9,8 @@ public interface ImportStream extends Closeable {
     boolean hasNext();
 
     ImportRecord next();
+
+    default Integer totalItems() {
+        return null;
+    }
 }
