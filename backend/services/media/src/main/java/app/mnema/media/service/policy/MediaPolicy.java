@@ -87,6 +87,7 @@ public class MediaPolicy {
         Map<MediaKind, MediaLimit> map = new EnumMap<>(MediaKind.class);
 
         Set<String> imageTypes = Set.of("image/jpeg", "image/png", "image/webp");
+        Set<String> cardImageTypes = Set.of("image/jpeg", "image/png", "image/webp", "image/gif");
 
         map.put(MediaKind.avatar, new MediaLimit(
                 5 * MB,
@@ -109,7 +110,7 @@ public class MediaPolicy {
                 null,
                 4096,
                 4096,
-                imageTypes
+                cardImageTypes
         ));
 
         map.put(MediaKind.card_audio, new MediaLimit(
@@ -117,7 +118,7 @@ public class MediaPolicy {
                 300,
                 null,
                 null,
-                Set.of("audio/mpeg", "audio/mp4", "audio/ogg")
+                Set.of("audio/mpeg", "audio/mp4", "audio/ogg", "audio/wav", "audio/x-wav")
         ));
 
         map.put(MediaKind.card_video, new MediaLimit(

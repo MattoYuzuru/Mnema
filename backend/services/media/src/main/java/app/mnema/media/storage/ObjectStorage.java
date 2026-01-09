@@ -14,6 +14,8 @@ public interface ObjectStorage {
 
     void abortMultipart(String key, String uploadId);
 
+    void putObject(String key, String contentType, long contentLength, java.io.InputStream inputStream);
+
     ObjectInfo headObject(String key);
 
     PresignedUrl presignGet(String key, Duration ttl);

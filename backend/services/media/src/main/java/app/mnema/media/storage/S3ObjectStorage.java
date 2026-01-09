@@ -10,6 +10,7 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 import software.amazon.awssdk.services.s3.presigner.model.PresignedUploadPartRequest;
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
+import software.amazon.awssdk.core.sync.RequestBody;
 
 import java.time.Duration;
 import java.util.HashMap;
@@ -107,6 +108,19 @@ public class S3ObjectStorage implements ObjectStorage {
                 .uploadId(uploadId)
                 .build();
         s3Client.abortMultipartUpload(request);
+    }
+
+    @Override
+    public void putObject(String key, String contentType, long contentLength, java.io.InputStream inputStream) {
+        PutObjectRequest request = PutObjectRequest.builder()
+                .bucket(bucket)
+                .key(key)
+                .contentType(contentType)
+                .cacheControl(CACHE_CONTROL)
+                .contentLength(contentLength)
+                .build();
+
+        s3Client.putObject(request, RequestBody.fromInputStream(inputStream, contentLength));
     }
 
     @Override

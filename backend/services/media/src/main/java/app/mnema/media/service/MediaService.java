@@ -5,6 +5,7 @@ import app.mnema.media.controller.dto.CompleteUploadRequest;
 import app.mnema.media.controller.dto.CompleteUploadResponse;
 import app.mnema.media.controller.dto.CreateUploadRequest;
 import app.mnema.media.controller.dto.CreateUploadResponse;
+import app.mnema.media.controller.dto.DirectUploadRequest;
 import app.mnema.media.controller.dto.ResolvedMedia;
 import app.mnema.media.controller.dto.UploadPartResponse;
 import app.mnema.media.domain.entity.MediaAssetEntity;
@@ -24,7 +25,9 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
 import java.time.Instant;
 import java.util.List;
 import java.util.Set;
@@ -204,6 +207,73 @@ public class MediaService {
     }
 
     @Transactional
+    public CompleteUploadResponse directUpload(Jwt jwt, DirectUploadRequest req, MultipartFile file) {
+        if (!scopeHelper.hasAnyScope(jwt, INTERNAL_SCOPES)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Internal scope required");
+        }
+        if (req == null || req.kind() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing media kind");
+        }
+        if (file == null || file.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Missing file");
+        }
+
+        UUID ownerUserId = resolveOwnerUserId(jwt, req.ownerUserId());
+        String contentType = policy.normalizeContentType(req.contentType());
+        if (contentType == null || contentType.isBlank()) {
+            contentType = policy.normalizeContentType(file.getContentType());
+        }
+        if (contentType == null || contentType.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "contentType is required");
+        }
+
+        long sizeBytes = file.getSize();
+        policy.validateUpload(req.kind(), contentType, sizeBytes);
+
+        UUID mediaId = UUID.randomUUID();
+        String storageKey = buildStorageKey(req.kind().name(), mediaId);
+        Instant now = Instant.now();
+        String fileName = resolveFileName(req.fileName(), file);
+
+        MediaAssetEntity asset = new MediaAssetEntity(
+                mediaId,
+                ownerUserId,
+                req.kind(),
+                MediaStatus.pending,
+                storageKey,
+                contentType,
+                null,
+                null,
+                null,
+                null,
+                fileName,
+                now,
+                null,
+                null
+        );
+
+        assetRepository.save(asset);
+
+        try (var inputStream = file.getInputStream()) {
+            storage.putObject(storageKey, contentType, sizeBytes, inputStream);
+        } catch (IOException | RuntimeException ex) {
+            asset.setStatus(MediaStatus.rejected);
+            asset.setUpdatedAt(Instant.now());
+            assetRepository.save(asset);
+            safeDelete(storageKey);
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Upload failed", ex);
+        }
+
+        asset.setSizeBytes(sizeBytes);
+        asset.setMimeType(contentType);
+        asset.setStatus(MediaStatus.ready);
+        asset.setUpdatedAt(Instant.now());
+        assetRepository.save(asset);
+
+        return new CompleteUploadResponse(asset.getMediaId(), asset.getStatus());
+    }
+
+    @Transactional
     public void abortUpload(Jwt jwt, UUID uploadId) {
         MediaUploadEntity upload = uploadRepository.findByUploadId(uploadId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Upload not found"));
@@ -373,6 +443,22 @@ public class MediaService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Duplicate part number: " + partNumber);
             }
         }
+    }
+
+    private UUID resolveOwnerUserId(Jwt jwt, UUID requestedOwnerId) {
+        if (requestedOwnerId != null) {
+            return requestedOwnerId;
+        }
+        return currentUserProvider.getUserId(jwt)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "ownerUserId is required"));
+    }
+
+    private String resolveFileName(String requestedName, MultipartFile file) {
+        if (requestedName != null && !requestedName.isBlank()) {
+            return requestedName;
+        }
+        String original = file.getOriginalFilename();
+        return (original == null || original.isBlank()) ? null : original;
     }
 
     private void safeDelete(String key) {
