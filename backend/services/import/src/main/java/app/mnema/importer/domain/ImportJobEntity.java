@@ -6,6 +6,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import com.fasterxml.jackson.databind.JsonNode;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -19,6 +20,11 @@ public class ImportJobEntity {
     @Id
     @Column(name = "job_id", nullable = false)
     private UUID jobId;
+
+    @Enumerated(EnumType.STRING)
+    @JdbcTypeCode(SqlTypes.NAMED_ENUM)
+    @Column(name = "job_type", columnDefinition = "import_job_type", nullable = false)
+    private ImportJobType jobType;
 
     @Column(name = "user_id", nullable = false)
     private UUID userId;
@@ -34,11 +40,14 @@ public class ImportJobEntity {
     @Column(name = "source_name")
     private String sourceName;
 
-    @Column(name = "source_location", nullable = false)
+    @Column(name = "source_location")
     private String sourceLocation;
 
     @Column(name = "source_size_bytes")
     private Long sourceSizeBytes;
+
+    @Column(name = "source_media_id")
+    private UUID sourceMediaId;
 
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
@@ -55,6 +64,19 @@ public class ImportJobEntity {
 
     @Column(name = "processed_items")
     private Integer processedItems;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "field_mapping", columnDefinition = "jsonb")
+    private JsonNode fieldMapping;
+
+    @Column(name = "deck_name")
+    private String deckName;
+
+    @Column(name = "result_media_id")
+    private UUID resultMediaId;
+
+    @Column(name = "user_access_token", nullable = false)
+    private String userAccessToken;
 
     @Column(name = "locked_at")
     private Instant lockedAt;
@@ -86,6 +108,14 @@ public class ImportJobEntity {
 
     public void setJobId(UUID jobId) {
         this.jobId = jobId;
+    }
+
+    public ImportJobType getJobType() {
+        return jobType;
+    }
+
+    public void setJobType(ImportJobType jobType) {
+        this.jobType = jobType;
     }
 
     public UUID getUserId() {
@@ -136,6 +166,14 @@ public class ImportJobEntity {
         this.sourceSizeBytes = sourceSizeBytes;
     }
 
+    public UUID getSourceMediaId() {
+        return sourceMediaId;
+    }
+
+    public void setSourceMediaId(UUID sourceMediaId) {
+        this.sourceMediaId = sourceMediaId;
+    }
+
     public ImportMode getMode() {
         return mode;
     }
@@ -166,6 +204,38 @@ public class ImportJobEntity {
 
     public void setProcessedItems(Integer processedItems) {
         this.processedItems = processedItems;
+    }
+
+    public JsonNode getFieldMapping() {
+        return fieldMapping;
+    }
+
+    public void setFieldMapping(JsonNode fieldMapping) {
+        this.fieldMapping = fieldMapping;
+    }
+
+    public String getDeckName() {
+        return deckName;
+    }
+
+    public void setDeckName(String deckName) {
+        this.deckName = deckName;
+    }
+
+    public UUID getResultMediaId() {
+        return resultMediaId;
+    }
+
+    public void setResultMediaId(UUID resultMediaId) {
+        this.resultMediaId = resultMediaId;
+    }
+
+    public String getUserAccessToken() {
+        return userAccessToken;
+    }
+
+    public void setUserAccessToken(String userAccessToken) {
+        this.userAccessToken = userAccessToken;
     }
 
     public Instant getLockedAt() {
