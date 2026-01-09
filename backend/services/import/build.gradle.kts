@@ -36,6 +36,12 @@ dependencies {
     // Actuator
     implementation("org.springframework.boot:spring-boot-starter-actuator")
 
+    // CSV parsing
+    implementation("org.apache.commons:commons-csv:1.12.0")
+
+    // SQLite (apkg)
+    implementation("org.xerial:sqlite-jdbc:3.49.1.0")
+
     // Tests
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.security:spring-security-test")
