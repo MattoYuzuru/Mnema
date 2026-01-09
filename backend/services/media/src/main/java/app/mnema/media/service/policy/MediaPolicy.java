@@ -88,6 +88,14 @@ public class MediaPolicy {
 
         Set<String> imageTypes = Set.of("image/jpeg", "image/png", "image/webp");
         Set<String> cardImageTypes = Set.of("image/jpeg", "image/png", "image/webp", "image/gif");
+        Set<String> importFileTypes = Set.of(
+                "application/zip",
+                "application/octet-stream",
+                "application/x-zip-compressed",
+                "application/vnd.anki",
+                "text/csv",
+                "text/plain"
+        );
 
         map.put(MediaKind.avatar, new MediaLimit(
                 5 * MB,
@@ -127,6 +135,14 @@ public class MediaPolicy {
                 1920,
                 1080,
                 Set.of("video/mp4", "video/webm", "image/gif")
+        ));
+
+        map.put(MediaKind.import_file, new MediaLimit(
+                200 * MB,
+                null,
+                null,
+                null,
+                importFileTypes
         ));
 
         return map;
