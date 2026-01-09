@@ -1,6 +1,6 @@
 package app.mnema.importer.domain;
 
 public enum ImportJobType {
-    import,
-    export
+    import_job,
+    export_job
 }
