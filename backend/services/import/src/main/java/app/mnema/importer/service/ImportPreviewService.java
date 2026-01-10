@@ -18,6 +18,8 @@ import app.mnema.importer.service.parser.ImportRecord;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -32,6 +34,7 @@ import java.util.stream.Collectors;
 public class ImportPreviewService {
 
     private static final int DEFAULT_SAMPLE_SIZE = 3;
+    private static final Logger log = LoggerFactory.getLogger(ImportPreviewService.class);
 
     private final MediaApiClient mediaApiClient;
     private final MediaDownloadService downloadService;
@@ -96,7 +99,9 @@ public class ImportPreviewService {
         try (InputStream inputStream = downloadService.openStream(url)) {
             return parser.preview(inputStream, sampleSize);
         } catch (IOException ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to read import source", ex);
+            log.error("Failed to read import source from {}", url, ex);
+            String message = ex.getMessage() == null ? "Failed to read import source" : "Failed to read import source: " + ex.getMessage();
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, message, ex);
         }
     }
 

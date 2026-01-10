@@ -51,23 +51,24 @@ public class ImportJobController {
     }
 
     @PostMapping("/previews")
-    public ImportPreviewResponse preview(@RequestHeader("Authorization") String authorization,
+    public ImportPreviewResponse preview(@AuthenticationPrincipal Jwt jwt,
                                          @Valid @RequestBody ImportPreviewRequest request) {
-        return previewService.preview(extractToken(authorization), request);
+        String accessToken = jwt == null ? null : jwt.getTokenValue();
+        return previewService.preview(accessToken, request);
     }
 
     @PostMapping("/jobs/import")
     public ImportJobResponse createImportJob(@AuthenticationPrincipal Jwt jwt,
-                                             @RequestHeader("Authorization") String authorization,
                                              @Valid @RequestBody CreateImportJobRequest request) {
-        return jobService.createImportJob(jwt, extractToken(authorization), request);
+        String accessToken = jwt == null ? null : jwt.getTokenValue();
+        return jobService.createImportJob(jwt, accessToken, request);
     }
 
     @PostMapping("/jobs/export")
     public ImportJobResponse createExportJob(@AuthenticationPrincipal Jwt jwt,
-                                             @RequestHeader("Authorization") String authorization,
                                              @Valid @RequestBody CreateExportJobRequest request) {
-        return jobService.createExportJob(jwt, extractToken(authorization), request);
+        String accessToken = jwt == null ? null : jwt.getTokenValue();
+        return jobService.createExportJob(jwt, accessToken, request);
     }
 
     @GetMapping("/jobs/{jobId}")
@@ -76,14 +77,4 @@ public class ImportJobController {
         return jobService.getJob(jwt, jobId);
     }
 
-    private String extractToken(String authorization) {
-        if (authorization == null) {
-            return null;
-        }
-        String value = authorization.trim();
-        if (value.toLowerCase().startsWith("bearer ")) {
-            return value.substring(7).trim();
-        }
-        return value;
-    }
 }

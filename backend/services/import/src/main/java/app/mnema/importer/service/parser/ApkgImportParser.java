@@ -114,10 +114,14 @@ public class ApkgImportParser implements ImportParser {
             if (json.isBlank()) {
                 return Map.of();
             }
-            JsonNode node = objectMapper.readTree(json);
-            Map<String, String> map = new HashMap<>();
-            node.fields().forEachRemaining(e -> map.put(e.getKey(), e.getValue().asText()));
-            return map;
+            try {
+                JsonNode node = objectMapper.readTree(json);
+                Map<String, String> map = new HashMap<>();
+                node.fields().forEachRemaining(e -> map.put(e.getKey(), e.getValue().asText()));
+                return map;
+            } catch (IOException ex) {
+                return Map.of();
+            }
         }
     }
 

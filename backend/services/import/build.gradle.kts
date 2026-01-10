@@ -36,6 +36,9 @@ dependencies {
     // Actuator
     implementation("org.springframework.boot:spring-boot-starter-actuator")
 
+    // Reactive streams (needed for Spring HTTP clients/actuator reflection)
+    implementation("org.reactivestreams:reactive-streams:1.0.4")
+
     // CSV parsing
     implementation("org.apache.commons:commons-csv:1.12.0")
 

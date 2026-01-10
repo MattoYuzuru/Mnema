@@ -72,7 +72,7 @@ type ImportModeUI = 'create' | 'merge';
             <div *ngIf="previewing" class="status-line">{{ 'import.previewing' | translate }}</div>
             <div *ngIf="fileInfo && !uploading" class="file-info">
               <span class="file-name">{{ fileInfo.fileName }}</span>
-              <span class="file-size">{{ formatBytes(fileInfo.fileSizeBytes) }}</span>
+              <span class="file-size">{{ formatBytes(fileInfo.sizeBytes) }}</span>
               <span class="file-type">{{ fileInfo.sourceType.toUpperCase() }}</span>
             </div>
           </section>
@@ -310,7 +310,7 @@ export class ImportDeckModalComponent implements OnDestroy {
             sourceMediaId: this.fileInfo.mediaId,
             sourceType: this.fileInfo.sourceType,
             sourceName: this.fileInfo.fileName,
-            sourceSizeBytes: this.fileInfo.fileSizeBytes,
+            sourceSizeBytes: this.fileInfo.sizeBytes,
             targetDeckId: this.mode === 'merge' ? this.targetDeckId : null,
             mode,
             deckName: this.mode === 'create' ? this.deckName || null : null,

@@ -5,6 +5,10 @@ app:
       - http://localhost:3005
       - http://localhost:8087
   core:
-    base-url: http://localhost:8085/api/core
+    base-url: ${CORE_BASE_URL:http://localhost:8085/api/core}
   media:
-    base-url: http://localhost:8086/api/media
+    base-url: ${MEDIA_BASE_URL:http://localhost:8086/api/media}
+
+server:
+  error:
+    include-message: always

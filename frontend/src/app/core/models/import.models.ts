@@ -64,6 +64,6 @@ export interface ImportJobResponse {
 export interface UploadImportSourceResponse {
     mediaId: string;
     fileName: string;
-    fileSizeBytes: number;
+    sizeBytes: number;
     sourceType: ImportSourceType;
 }

@@ -92,6 +92,8 @@ public class MediaPolicy {
                 "application/zip",
                 "application/octet-stream",
                 "application/x-zip-compressed",
+                "application/x-apkg",
+                "application/apkg",
                 "application/vnd.anki",
                 "text/csv",
                 "text/plain"
