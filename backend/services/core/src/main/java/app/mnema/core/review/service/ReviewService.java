@@ -6,11 +6,7 @@ import app.mnema.core.review.algorithm.SrsAlgorithm;
 import app.mnema.core.review.api.CardViewPort;
 import app.mnema.core.review.api.DeckAlgorithmConfig;
 import app.mnema.core.review.api.DeckAlgorithmPort;
-import app.mnema.core.review.controller.dto.ReviewAnswerResponse;
-import app.mnema.core.review.controller.dto.ReviewDeckAlgorithmResponse;
-import app.mnema.core.review.controller.dto.ReviewNextCardResponse;
-import app.mnema.core.review.controller.dto.ReviewPreferencesDto;
-import app.mnema.core.review.controller.dto.SeedCardProgressRequest;
+import app.mnema.core.review.controller.dto.*;
 import app.mnema.core.review.domain.Rating;
 import app.mnema.core.review.entity.ReviewUserCardEntity;
 import app.mnema.core.review.entity.SrCardStateEntity;
@@ -25,11 +21,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.EnumMap;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 
 @Service
 public class ReviewService {
