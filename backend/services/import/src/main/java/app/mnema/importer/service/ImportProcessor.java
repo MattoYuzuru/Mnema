@@ -35,6 +35,10 @@ public class ImportProcessor {
     private static final Pattern SOURCE_TAG_PATTERN = Pattern.compile("<source[^>]+src=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
     private static final Pattern UUID_PATTERN = Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
     private static final List<String> VIDEO_EXTENSIONS = List.of("mp4", "webm", "m4v", "mov", "mkv", "avi", "mpeg", "mpg");
+    private static final String ANKI_UPDATE_MESSAGE = "please update to the latest anki version";
+    private static final List<String> FRONT_FIELD_HINTS = List.of("front", "question", "term", "word", "expression", "original", "prompt");
+    private static final List<String> BACK_FIELD_HINTS = List.of("back", "answer", "meaning", "translation", "definition", "example", "comment", "notes", "extra", "hint");
+    private static final Set<String> SUPPORTED_LANGUAGES = Set.of("ru", "en", "jp", "sp");
 
     private final MediaApiClient mediaApiClient;
     private final MediaDownloadService downloadService;
@@ -43,6 +47,7 @@ public class ImportProcessor {
     private final ImportJobRepository jobRepository;
     private final ObjectMapper objectMapper;
     private final int batchSize;
+    private final String defaultLanguage;
 
     public ImportProcessor(MediaApiClient mediaApiClient,
                            MediaDownloadService downloadService,
@@ -50,7 +55,8 @@ public class ImportProcessor {
                            CoreApiClient coreApiClient,
                            ImportJobRepository jobRepository,
                            ObjectMapper objectMapper,
-                           @Value("${app.import.batch-size:200}") int batchSize) {
+                           @Value("${app.import.batch-size:200}") int batchSize,
+                           @Value("${app.import.default-language:en}") String defaultLanguage) {
         this.mediaApiClient = mediaApiClient;
         this.downloadService = downloadService;
         this.parserFactory = parserFactory;
@@ -58,6 +64,7 @@ public class ImportProcessor {
         this.jobRepository = jobRepository;
         this.objectMapper = objectMapper;
         this.batchSize = batchSize;
+        this.defaultLanguage = defaultLanguage;
     }
 
     public void process(ImportJobEntity job) {
@@ -91,6 +98,9 @@ public class ImportProcessor {
             while (stream.hasNext()) {
                 ImportRecord record = stream.next();
                 if (record == null) {
+                    continue;
+                }
+                if (isPlaceholderRecord(record)) {
                     continue;
                 }
                 ObjectNode content = buildContent(record, targetFields, mapping, stream, job.getUserId());
@@ -153,7 +163,7 @@ public class ImportProcessor {
                             deckName,
                             "Imported from " + job.getSourceType(),
                             false,
-                            null,
+                            buildTemplateLayout(templateFields),
                             null,
                             null,
                             templateFields
@@ -172,7 +182,7 @@ public class ImportProcessor {
                             template.templateId(),
                             false,
                             false,
-                            null,
+                            resolveLanguage(),
                             null,
                             null
                     )
@@ -234,9 +244,23 @@ public class ImportProcessor {
     }
 
     private List<CoreFieldTemplate> buildTemplateFields(List<String> sourceFields) {
+        List<String> names = sourceFields == null ? List.of() : sourceFields;
+        List<Boolean> frontFlags = new ArrayList<>(names.size());
+        boolean hasFront = false;
+        for (String name : names) {
+            boolean isFront = isFrontFieldName(name);
+            frontFlags.add(isFront);
+            if (isFront) {
+                hasFront = true;
+            }
+        }
+        if (!hasFront && !frontFlags.isEmpty()) {
+            frontFlags.set(0, true);
+        }
+
         List<CoreFieldTemplate> fields = new ArrayList<>();
         int index = 0;
-        for (String name : sourceFields) {
+        for (String name : names) {
             String type = inferFieldType(name);
             fields.add(new CoreFieldTemplate(
                     null,
@@ -245,7 +269,7 @@ public class ImportProcessor {
                     name,
                     type,
                     false,
-                    index == 0,
+                    frontFlags.get(index),
                     index,
                     null,
                     null
@@ -253,6 +277,22 @@ public class ImportProcessor {
             index++;
         }
         return fields;
+    }
+
+    private JsonNode buildTemplateLayout(List<CoreFieldTemplate> fields) {
+        ObjectNode layout = objectMapper.createObjectNode();
+        var front = layout.putArray("front");
+        var back = layout.putArray("back");
+        fields.stream()
+                .sorted(Comparator.comparingInt(field -> field.orderIndex() == null ? Integer.MAX_VALUE : field.orderIndex()))
+                .forEach(field -> {
+                    if (field.isOnFront()) {
+                        front.add(field.name());
+                    } else {
+                        back.add(field.name());
+                    }
+                });
+        return layout;
     }
 
     private ObjectNode buildContent(ImportRecord record,
@@ -366,7 +406,7 @@ public class ImportProcessor {
 
     private String inferFieldType(String name) {
         String lowered = normalize(name);
-        if (lowered.contains("image") || lowered.contains("img")) {
+        if (lowered.contains("image") || lowered.contains("img") || lowered.contains("picture") || lowered.contains("photo") || lowered.contains("pic")) {
             return "image";
         }
         if (lowered.contains("audio") || lowered.contains("sound")) {
@@ -396,6 +436,68 @@ public class ImportProcessor {
         }
         return value.toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9]", "");
+    }
+
+    private boolean isPlaceholderRecord(ImportRecord record) {
+        Map<String, String> fields = record.fields();
+        if (fields == null || fields.isEmpty()) {
+            return true;
+        }
+        boolean hasValue = false;
+        for (String value : fields.values()) {
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            hasValue = true;
+            String normalized = value.toLowerCase(Locale.ROOT);
+            if (!normalized.contains(ANKI_UPDATE_MESSAGE)) {
+                return false;
+            }
+        }
+        return hasValue;
+    }
+
+    private boolean isFrontFieldName(String name) {
+        String normalized = normalize(name);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        if (isBackFieldName(name)) {
+            return false;
+        }
+        for (String hint : FRONT_FIELD_HINTS) {
+            if (normalized.contains(hint)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean isBackFieldName(String name) {
+        String normalized = normalize(name);
+        if (normalized.isBlank()) {
+            return false;
+        }
+        for (String hint : BACK_FIELD_HINTS) {
+            if (normalized.contains(hint)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String resolveLanguage() {
+        if (defaultLanguage == null) {
+            return "en";
+        }
+        String normalized = defaultLanguage.trim().toLowerCase(Locale.ROOT);
+        if (normalized.isBlank()) {
+            return "en";
+        }
+        if (!SUPPORTED_LANGUAGES.contains(normalized)) {
+            return "en";
+        }
+        return normalized;
     }
 
     private MediaTokens extractMediaTokens(String raw) {

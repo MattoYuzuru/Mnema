@@ -2,6 +2,7 @@ package app.mnema.importer.service.parser;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.github.luben.zstd.ZstdInputStream;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -9,25 +10,20 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.sql.*;
+import java.util.*;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
 public class ApkgImportParser implements ImportParser {
 
-    private static final String COLLECTION_NAME = "collection.anki2";
+    private static final String COLLECTION_V21B_NAME = "collection.anki21b";
+    private static final String COLLECTION_V21_NAME = "collection.anki21";
+    private static final String COLLECTION_V2_NAME = "collection.anki2";
     private static final String MEDIA_NAME = "media";
+    private static final int PREVIEW_SCAN_LIMIT = 60;
+    private static final String ANKI_UPDATE_MESSAGE = "please update to the latest anki version";
+    private static final String FIELD_SEPARATOR = "\u001f";
 
     private final ObjectMapper objectMapper;
 
@@ -38,10 +34,17 @@ public class ApkgImportParser implements ImportParser {
     @Override
     public ImportPreview preview(InputStream inputStream, int sampleSize) throws IOException {
         try (ApkgImportStream stream = openStream(inputStream)) {
-            List<ImportRecord> sample = new ArrayList<>();
-            while (stream.hasNext() && sample.size() < sampleSize) {
-                sample.add(stream.next());
+            int scanLimit = Math.max(sampleSize * 10, PREVIEW_SCAN_LIMIT);
+            List<ScoredRecord> scored = new ArrayList<>();
+            int index = 0;
+            while (stream.hasNext() && index < scanLimit) {
+                ImportRecord record = stream.next();
+                if (record != null) {
+                    scored.add(scoreRecord(record, index));
+                }
+                index++;
             }
+            List<ImportRecord> sample = pickSample(scored, sampleSize);
             return new ImportPreview(stream.fields(), sample);
         }
     }
@@ -93,11 +96,28 @@ public class ApkgImportParser implements ImportParser {
     }
 
     private Path extractCollection(ZipFile zipFile, Path tempDir) throws IOException {
-        ZipEntry entry = zipFile.getEntry(COLLECTION_NAME);
+        ZipEntry entry = zipFile.getEntry(COLLECTION_V21B_NAME);
+        String chosenName = COLLECTION_V21B_NAME;
         if (entry == null) {
-            throw new IOException("Missing collection.anki2 in apkg");
+            entry = zipFile.getEntry(COLLECTION_V21_NAME);
+            chosenName = COLLECTION_V21_NAME;
         }
-        Path collectionFile = tempDir.resolve(COLLECTION_NAME);
+        if (entry == null) {
+            entry = zipFile.getEntry(COLLECTION_V2_NAME);
+            chosenName = COLLECTION_V2_NAME;
+        }
+        if (entry == null) {
+            throw new IOException("Missing collection.anki21b/collection.anki21/collection.anki2 in apkg");
+        }
+        if (COLLECTION_V21B_NAME.equals(chosenName)) {
+            Path collectionFile = tempDir.resolve(COLLECTION_V21_NAME);
+            try (InputStream in = zipFile.getInputStream(entry);
+                 ZstdInputStream zstd = new ZstdInputStream(in)) {
+                Files.copy(zstd, collectionFile, StandardCopyOption.REPLACE_EXISTING);
+            }
+            return collectionFile;
+        }
+        Path collectionFile = tempDir.resolve(chosenName);
         try (InputStream in = zipFile.getInputStream(entry)) {
             Files.copy(in, collectionFile, StandardCopyOption.REPLACE_EXISTING);
         }
@@ -129,14 +149,14 @@ public class ApkgImportParser implements ImportParser {
         try (PreparedStatement stmt = connection.prepareStatement("select models from col limit 1")) {
             ResultSet rs = stmt.executeQuery();
             if (!rs.next()) {
-                return Map.of();
+                return fallbackFields(connection);
             }
             String json = rs.getString(1);
             if (json == null || json.isBlank()) {
-                return Map.of();
+                return fallbackFields(connection);
             }
             JsonNode node = objectMapper.readTree(json);
-            Map<String, List<String>> modelFields = new HashMap<>();
+            Map<String, List<String>> modelFields = new LinkedHashMap<>();
             node.fields().forEachRemaining(entry -> {
                 JsonNode fieldsNode = entry.getValue().path("flds");
                 List<String> fields = new ArrayList<>();
@@ -146,11 +166,47 @@ public class ApkgImportParser implements ImportParser {
                         fields.add(name);
                     }
                 }
-                modelFields.put(entry.getKey(), fields);
+                if (!fields.isEmpty()) {
+                    modelFields.put(entry.getKey(), fields);
+                }
             });
+            if (modelFields.isEmpty()) {
+                return fallbackFields(connection);
+            }
             return modelFields;
-        } catch (SQLException ex) {
+        } catch (SQLException | IOException ex) {
+            Map<String, List<String>> fallback = fallbackFields(connection);
+            if (!fallback.isEmpty()) {
+                return fallback;
+            }
             throw new IOException("Failed to read models", ex);
+        }
+    }
+
+    private Map<String, List<String>> fallbackFields(Connection connection) {
+        try (PreparedStatement stmt = connection.prepareStatement("select flds from notes limit 25")) {
+            ResultSet rs = stmt.executeQuery();
+            int maxFields = 0;
+            while (rs.next()) {
+                String flds = rs.getString(1);
+                if (flds == null) {
+                    continue;
+                }
+                int count = flds.split(FIELD_SEPARATOR, -1).length;
+                if (count > maxFields) {
+                    maxFields = count;
+                }
+            }
+            if (maxFields <= 0) {
+                return Map.of();
+            }
+            List<String> fields = new ArrayList<>();
+            for (int i = 1; i <= maxFields; i++) {
+                fields.add("Field " + i);
+            }
+            return Map.of("default", fields);
+        } catch (SQLException ex) {
+            return Map.of();
         }
     }
 
@@ -164,7 +220,7 @@ public class ApkgImportParser implements ImportParser {
     }
 
     private List<String> unionFields(Map<String, List<String>> modelFields) {
-        Set<String> union = new HashSet<>();
+        Set<String> union = new LinkedHashSet<>();
         List<String> ordered = new ArrayList<>();
         for (List<String> fields : modelFields.values()) {
             for (String field : fields) {
@@ -201,6 +257,57 @@ public class ApkgImportParser implements ImportParser {
         } catch (SQLException ignored) {
         }
         return progress;
+    }
+
+    private List<ImportRecord> pickSample(List<ScoredRecord> scored, int sampleSize) {
+        if (scored.isEmpty() || sampleSize <= 0) {
+            return List.of();
+        }
+        List<ScoredRecord> candidates = scored.stream()
+                .filter(record -> record.score() > 0)
+                .toList();
+        if (candidates.isEmpty()) {
+            candidates = scored;
+        }
+        return candidates.stream()
+                .sorted(java.util.Comparator
+                        .comparingInt(ScoredRecord::score)
+                        .reversed()
+                        .thenComparingInt(ScoredRecord::index))
+                .limit(sampleSize)
+                .map(ScoredRecord::record)
+                .toList();
+    }
+
+    private ScoredRecord scoreRecord(ImportRecord record, int index) {
+        if (record == null || record.fields() == null || record.fields().isEmpty()) {
+            return new ScoredRecord(record, 0, index);
+        }
+        int nonEmpty = 0;
+        int totalLength = 0;
+        boolean updateNotice = false;
+        for (String value : record.fields().values()) {
+            if (value == null) {
+                continue;
+            }
+            String trimmed = value.trim();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            nonEmpty++;
+            totalLength += Math.min(trimmed.length(), 500);
+            if (!updateNotice && trimmed.toLowerCase(java.util.Locale.ROOT).contains(ANKI_UPDATE_MESSAGE)) {
+                updateNotice = true;
+            }
+        }
+        if (nonEmpty == 0) {
+            return new ScoredRecord(record, 0, index);
+        }
+        if (updateNotice && nonEmpty == 1) {
+            return new ScoredRecord(record, 0, index);
+        }
+        int score = nonEmpty * 1000 + totalLength;
+        return new ScoredRecord(record, score, index);
     }
 
     private ImportRecordProgress toProgress(int ivl, int factor, int reps, int queue, int type) {
@@ -242,6 +349,9 @@ public class ApkgImportParser implements ImportParser {
         return map;
     }
 
+    private record ScoredRecord(ImportRecord record, int score, int index) {
+    }
+
     private void closeQuietly(AutoCloseable closeable) {
         if (closeable == null) {
             return;
@@ -253,7 +363,6 @@ public class ApkgImportParser implements ImportParser {
     }
 
     public static class ApkgImportStream implements ImportStream {
-        private static final String FIELD_SEPARATOR = "\u001f";
 
         private final Path tempDir;
         private final ZipFile zipFile;
