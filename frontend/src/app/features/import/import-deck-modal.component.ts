@@ -4,6 +4,7 @@ import { FormsModule } from '@angular/forms';
 import { ImportApiService } from '../../core/services/import-api.service';
 import {
     ImportPreviewResponse,
+    ImportMode,
     ImportSourceType,
     UploadImportSourceResponse,
     ImportJobResponse
@@ -127,7 +128,7 @@ type ImportModeUI = 'create' | 'merge';
             <div class="status-card">
               <div class="status-row">
                 <span>{{ 'import.statusLabel' | translate }}</span>
-                <span>{{ job.status }}</span>
+                <span>{{ statusLabel(job.status) | translate }}</span>
               </div>
               <div class="status-row" *ngIf="job.totalItems">
                 <span>{{ 'import.progressLabel' | translate }}</span>
@@ -241,7 +242,7 @@ export class ImportDeckModalComponent implements OnDestroy {
     constructor(private importApi: ImportApiService) {}
 
     get canStartImport(): boolean {
-        if (!this.fileInfo || !this.preview || this.starting) {
+        if (!this.fileInfo || !this.preview || this.starting || this.uploading || this.previewing) {
             return false;
         }
         if (this.job && this.job.status !== 'failed' && this.job.status !== 'canceled') {
@@ -304,13 +305,14 @@ export class ImportDeckModalComponent implements OnDestroy {
         this.starting = true;
         this.errorMessage = '';
         const mapping = this.mode === 'merge' ? this.cleanedMapping() : null;
+        const mode: ImportMode = this.mode === 'merge' ? 'merge_into_existing' : 'create_new';
         const request = {
             sourceMediaId: this.fileInfo.mediaId,
             sourceType: this.fileInfo.sourceType,
             sourceName: this.fileInfo.fileName,
             sourceSizeBytes: this.fileInfo.fileSizeBytes,
             targetDeckId: this.mode === 'merge' ? this.targetDeckId : null,
-            mode: this.mode === 'merge' ? 'merge_into_existing' : 'create_new',
+            mode,
             deckName: this.mode === 'create' ? this.deckName || null : null,
             fieldMapping: mapping
         };
@@ -441,5 +443,22 @@ export class ImportDeckModalComponent implements OnDestroy {
         const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), sizes.length - 1);
         const value = bytes / Math.pow(1024, i);
         return `${value.toFixed(1)} ${sizes[i]}`;
+    }
+
+    statusLabel(status: string): string {
+        switch (status) {
+            case 'queued':
+                return 'import.statusQueued';
+            case 'processing':
+                return 'import.statusProcessing';
+            case 'completed':
+                return 'import.statusCompleted';
+            case 'failed':
+                return 'import.statusFailed';
+            case 'canceled':
+                return 'import.statusCanceled';
+            default:
+                return 'import.statusUnknown';
+        }
     }
 }
