@@ -11,7 +11,8 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         req.url.startsWith('/api/') ||
         req.url.startsWith(appConfig.apiBaseUrl) ||
         req.url.startsWith(appConfig.coreApiBaseUrl) ||
-        req.url.startsWith(appConfig.mediaApiBaseUrl);
+        req.url.startsWith(appConfig.mediaApiBaseUrl) ||
+        req.url.startsWith(appConfig.importApiBaseUrl);
 
     if (!token || !isApiRequest) {
         return next(req);

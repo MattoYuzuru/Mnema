@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
 import { ReactiveFormsModule, FormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
@@ -6,10 +6,13 @@ import { forkJoin } from 'rxjs';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
 import { ReviewApiService } from '../../core/services/review-api.service';
+import { ImportApiService } from '../../core/services/import-api.service';
+import { MediaApiService } from '../../core/services/media-api.service';
 import { UserApiService } from '../../user-api.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { ReviewDeckAlgorithmResponse } from '../../core/models/review.models';
+import { ImportJobResponse } from '../../core/models/import.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { AddCardsModalComponent } from './add-cards-modal.component';
@@ -17,11 +20,12 @@ import { ConfirmationDialogComponent } from '../../shared/components/confirmatio
 import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
+import { ImportDeckModalComponent } from '../import/import-deck-modal.component';
 
 @Component({
     selector: 'app-deck-profile',
     standalone: true,
-    imports: [NgIf, NgFor, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, ConfirmationDialogComponent, InputComponent, TextareaComponent, TranslatePipe],
+    imports: [NgIf, NgFor, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, ConfirmationDialogComponent, InputComponent, TextareaComponent, ImportDeckModalComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -57,8 +61,11 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         <app-button variant="secondary" size="md" (click)="browse()">
           {{ 'deckProfile.browseCards' | translate }}
         </app-button>
-        <app-button variant="secondary" (click)="openAddCards()">
+        <app-button variant="secondary" (click)="openAddCardsChoice()">
           {{ 'deckProfile.addCards' | translate }}
+        </app-button>
+        <app-button variant="secondary" (click)="openExportConfirm()" [disabled]="exporting">
+          {{ exporting ? ('deckProfile.exporting' | translate) : ('deckProfile.export' | translate) }}
         </app-button>
         <app-button variant="ghost" (click)="sync()" *ngIf="needsUpdate()">
           {{ 'deckProfile.sync' | translate }}
@@ -70,6 +77,31 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           {{ 'deckProfile.delete' | translate }}
         </app-button>
       </div>
+
+      <p *ngIf="exportStatusKey" class="export-status">{{ exportStatusKey | translate }}</p>
+    </div>
+
+    <div *ngIf="showAddCardsChoice" class="modal-overlay" (click)="closeAddCardsChoice()">
+      <div class="modal-content add-choice-modal" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>{{ 'deckProfile.addCardsChoiceTitle' | translate }}</h2>
+          <button class="close-btn" (click)="closeAddCardsChoice()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <div class="choice-grid">
+            <div class="choice-card" (click)="startManualAdd()">
+              <div class="choice-icon">✍️</div>
+              <h3>{{ 'deckProfile.addCardsManual' | translate }}</h3>
+              <p>{{ 'deckProfile.addCardsManualDesc' | translate }}</p>
+            </div>
+            <div class="choice-card" (click)="startImportMerge()">
+              <div class="choice-icon">⬆️</div>
+              <h3>{{ 'deckProfile.addCardsImport' | translate }}</h3>
+              <p>{{ 'deckProfile.addCardsImportDesc' | translate }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <app-add-cards-modal
@@ -79,6 +111,13 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       (saved)="onCardsSaved()"
       (cancelled)="closeAddCards()"
     ></app-add-cards-modal>
+
+    <app-import-deck-modal
+      *ngIf="showImportModal && deck"
+      mode="merge"
+      [targetDeckId]="deck.userDeckId"
+      (closed)="closeImportModal()"
+    ></app-import-deck-modal>
 
     <div *ngIf="showEditModal && deck" class="modal-overlay" (click)="closeEditModal()">
       <div class="modal-content" (click)="$event.stopPropagation()">
@@ -192,6 +231,16 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       [cancelText]="'deckProfile.cancel' | translate"
       (confirm)="confirmDelete()"
       (cancel)="closeDeleteConfirm()"
+    ></app-confirmation-dialog>
+
+    <app-confirmation-dialog
+      [open]="showExportConfirm"
+      [title]="'deckProfile.exportTitle' | translate"
+      [message]="'deckProfile.exportMessage' | translate"
+      [confirmText]="'deckProfile.exportConfirm' | translate"
+      [cancelText]="'deckProfile.cancel' | translate"
+      (confirm)="confirmExport()"
+      (cancel)="closeExportConfirm()"
     ></app-confirmation-dialog>
 
     <div *ngIf="showScopePrompt" class="modal-overlay" (click)="closeScopePrompt()">
@@ -479,10 +528,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           font-size: 1.5rem;
         }
 
-        .header-actions {
-          width: 100%;
-          flex-direction: column;
-        }
+      .header-actions {
+        width: 100%;
+        flex-direction: column;
+      }
 
         .deck-stats {
           flex-direction: column;
@@ -498,9 +547,56 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           font-size: 1.25rem;
         }
       }
+
+      .export-status {
+        margin-top: var(--spacing-md);
+        color: var(--color-text-secondary);
+        font-size: 0.9rem;
+      }
+
+      .add-choice-modal {
+        max-width: 720px;
+      }
+
+      .choice-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: var(--spacing-lg);
+      }
+
+      .choice-card {
+        padding: var(--spacing-xl);
+        border-radius: var(--border-radius-lg);
+        border: 1px solid var(--border-color);
+        background: var(--color-card-background);
+        cursor: pointer;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+        gap: var(--spacing-sm);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .choice-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-md);
+      }
+
+      .choice-icon {
+        width: 64px;
+        height: 64px;
+        border-radius: 50%;
+        background: #111827;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.8rem;
+      }
     `]
 })
-export class DeckProfileComponent implements OnInit {
+export class DeckProfileComponent implements OnInit, OnDestroy {
     loading = true;
     deck: UserDeckDTO | null = null;
     publicDeck: PublicDeckDTO | null = null;
@@ -509,16 +605,24 @@ export class DeckProfileComponent implements OnInit {
     isAuthor = false;
     userDeckId = '';
     showAddCards = false;
+    showAddCardsChoice = false;
+    showImportModal = false;
     showEditModal = false;
     showDeleteConfirm = false;
+    showExportConfirm = false;
     showScopePrompt = false;
     saving = false;
+    exporting = false;
+    exportStatusKey: string | null = null;
+    exportJob: ImportJobResponse | null = null;
     editForm!: FormGroup;
     tagInput = '';
     tags: string[] = [];
     currentAlgorithm: ReviewDeckAlgorithmResponse | null = null;
     originalAlgorithmId = '';
     pendingSaveChoice: 'local' | 'global' | null = null;
+
+    private exportPollHandle: ReturnType<typeof setInterval> | null = null;
 
     constructor(
         private route: ActivatedRoute,
@@ -527,7 +631,9 @@ export class DeckProfileComponent implements OnInit {
         private publicDeckApi: PublicDeckApiService,
         private reviewApi: ReviewApiService,
         private userApi: UserApiService,
-        private fb: FormBuilder
+        private fb: FormBuilder,
+        private importApi: ImportApiService,
+        private mediaApi: MediaApiService
     ) {}
 
     ngOnInit(): void {
@@ -535,6 +641,10 @@ export class DeckProfileComponent implements OnInit {
         if (this.userDeckId) {
             this.loadDeck();
         }
+    }
+
+    ngOnDestroy(): void {
+        this.stopExportPolling();
     }
 
     private loadDeck(): void {
@@ -580,8 +690,26 @@ export class DeckProfileComponent implements OnInit {
         return this.deck.currentVersion < this.latestPublicVersion;
     }
 
-    openAddCards(): void {
+    openAddCardsChoice(): void {
+        this.showAddCardsChoice = true;
+    }
+
+    closeAddCardsChoice(): void {
+        this.showAddCardsChoice = false;
+    }
+
+    startManualAdd(): void {
+        this.showAddCardsChoice = false;
         this.showAddCards = true;
+    }
+
+    startImportMerge(): void {
+        this.showAddCardsChoice = false;
+        this.showImportModal = true;
+    }
+
+    closeImportModal(): void {
+        this.showImportModal = false;
     }
 
     closeAddCards(): void {
@@ -612,6 +740,83 @@ export class DeckProfileComponent implements OnInit {
             },
             error: err => {
                 console.error('Failed to sync deck:', err);
+            }
+        });
+    }
+
+    openExportConfirm(): void {
+        this.showExportConfirm = true;
+    }
+
+    closeExportConfirm(): void {
+        this.showExportConfirm = false;
+    }
+
+    confirmExport(): void {
+        if (!this.deck) {
+            return;
+        }
+        this.showExportConfirm = false;
+        this.exporting = true;
+        this.exportStatusKey = 'deckProfile.exportPreparing';
+
+        this.importApi.createExportJob({ userDeckId: this.deck.userDeckId, format: 'csv' }).subscribe({
+            next: job => {
+                this.exportJob = job;
+                this.exportStatusKey = 'deckProfile.exportRunning';
+                this.startExportPolling(job.jobId);
+            },
+            error: () => {
+                this.exporting = false;
+                this.exportStatusKey = 'deckProfile.exportFailed';
+            }
+        });
+    }
+
+    private startExportPolling(jobId: string): void {
+        this.stopExportPolling();
+        this.exportPollHandle = setInterval(() => {
+            this.importApi.getJob(jobId).subscribe({
+                next: job => {
+                    this.exportJob = job;
+                    if (job.status === 'completed') {
+                        this.exporting = false;
+                        this.stopExportPolling();
+                        if (job.resultMediaId) {
+                            this.downloadExport(job.resultMediaId);
+                        } else {
+                            this.exportStatusKey = 'deckProfile.exportFailed';
+                        }
+                    } else if (job.status === 'failed' || job.status === 'canceled') {
+                        this.exporting = false;
+                        this.stopExportPolling();
+                        this.exportStatusKey = 'deckProfile.exportFailed';
+                    }
+                }
+            });
+        }, 2000);
+    }
+
+    private stopExportPolling(): void {
+        if (this.exportPollHandle) {
+            clearInterval(this.exportPollHandle);
+            this.exportPollHandle = null;
+        }
+    }
+
+    private downloadExport(mediaId: string): void {
+        this.mediaApi.resolve([mediaId]).subscribe({
+            next: resolved => {
+                const url = resolved[0]?.url;
+                if (url) {
+                    window.open(url, '_blank');
+                    this.exportStatusKey = 'deckProfile.exportReady';
+                } else {
+                    this.exportStatusKey = 'deckProfile.exportFailed';
+                }
+            },
+            error: () => {
+                this.exportStatusKey = 'deckProfile.exportFailed';
             }
         });
     }

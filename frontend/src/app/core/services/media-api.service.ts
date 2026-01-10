@@ -3,7 +3,7 @@ import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { appConfig } from '../../app.config';
 
-export type MediaKind = 'avatar' | 'deck_icon' | 'card_image' | 'card_audio' | 'card_video';
+export type MediaKind = 'avatar' | 'deck_icon' | 'card_image' | 'card_audio' | 'card_video' | 'import_file';
 
 export interface CreateUploadRequest {
     kind: MediaKind;
