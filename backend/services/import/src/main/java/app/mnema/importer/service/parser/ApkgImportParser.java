@@ -68,6 +68,7 @@ public class ApkgImportParser implements ImportParser {
         Map<String, List<String>> modelFields = loadModelFields(connection);
         List<String> unionFields = unionFields(modelFields);
         int totalItems = countNotes(connection);
+        Map<Long, ImportRecordProgress> noteProgress = loadNoteProgress(connection);
 
         try {
             PreparedStatement stmt = connection.prepareStatement("select id, mid, flds from notes");
@@ -81,6 +82,7 @@ public class ApkgImportParser implements ImportParser {
                     unionFields,
                     totalItems,
                     modelFields,
+                    noteProgress,
                     mediaNameToIndex
             );
         } catch (SQLException ex) {
@@ -170,6 +172,64 @@ public class ApkgImportParser implements ImportParser {
         return ordered;
     }
 
+    private Map<Long, ImportRecordProgress> loadNoteProgress(Connection connection) {
+        Map<Long, ImportRecordProgress> progress = new HashMap<>();
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "select nid, ivl, factor, reps, queue, type from cards")) {
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) {
+                long noteId = rs.getLong("nid");
+                ImportRecordProgress candidate = toProgress(
+                        rs.getInt("ivl"),
+                        rs.getInt("factor"),
+                        rs.getInt("reps"),
+                        rs.getInt("queue"),
+                        rs.getInt("type")
+                );
+                if (candidate == null) {
+                    continue;
+                }
+                ImportRecordProgress current = progress.get(noteId);
+                if (current == null || isBetterProgress(candidate, current)) {
+                    progress.put(noteId, candidate);
+                }
+            }
+        } catch (SQLException ignored) {
+        }
+        return progress;
+    }
+
+    private ImportRecordProgress toProgress(int ivl, int factor, int reps, int queue, int type) {
+        boolean suspended = queue == -1 || queue == -2;
+        boolean isNew = type == 0 || queue == 0;
+        if (isNew && !suspended) {
+            return null;
+        }
+        double stability = Math.max(0.1, Math.abs((double) ivl));
+        double ease = factor > 0 ? factor / 1000.0 : 2.5;
+        double difficulty = (2.5 - ease) / 1.5;
+        if (difficulty < 0) {
+            difficulty = 0;
+        } else if (difficulty > 1) {
+            difficulty = 1;
+        }
+        int reviewCount = Math.max(0, reps);
+        return new ImportRecordProgress(stability, difficulty, reviewCount, suspended);
+    }
+
+    private boolean isBetterProgress(ImportRecordProgress candidate, ImportRecordProgress current) {
+        if (current.suspended() && !candidate.suspended()) {
+            return true;
+        }
+        if (!current.suspended() && candidate.suspended()) {
+            return false;
+        }
+        if (candidate.reviewCount() != current.reviewCount()) {
+            return candidate.reviewCount() > current.reviewCount();
+        }
+        return Double.compare(candidate.stabilityDays(), current.stabilityDays()) > 0;
+    }
+
     private Map<String, String> invert(Map<String, String> indexToName) {
         Map<String, String> map = new HashMap<>();
         for (Map.Entry<String, String> entry : indexToName.entrySet()) {
@@ -199,6 +259,7 @@ public class ApkgImportParser implements ImportParser {
         private final List<String> fields;
         private final Integer totalItems;
         private final Map<String, List<String>> modelFields;
+        private final Map<Long, ImportRecordProgress> noteProgress;
         private final Map<String, String> mediaNameToIndex;
 
         private boolean hasNext;
@@ -212,6 +273,7 @@ public class ApkgImportParser implements ImportParser {
                          List<String> fields,
                          Integer totalItems,
                          Map<String, List<String>> modelFields,
+                         Map<Long, ImportRecordProgress> noteProgress,
                          Map<String, String> mediaNameToIndex) throws IOException {
             this.tempDir = tempDir;
             this.zipFile = zipFile;
@@ -221,6 +283,7 @@ public class ApkgImportParser implements ImportParser {
             this.fields = List.copyOf(fields);
             this.totalItems = totalItems;
             this.modelFields = modelFields;
+            this.noteProgress = noteProgress;
             this.mediaNameToIndex = mediaNameToIndex;
             advance();
         }
@@ -246,11 +309,13 @@ public class ApkgImportParser implements ImportParser {
                 return null;
             }
             try {
+                long noteId = resultSet.getLong("id");
                 long mid = resultSet.getLong("mid");
                 String flds = resultSet.getString("flds");
                 Map<String, String> values = mapFields(String.valueOf(mid), flds);
+                ImportRecordProgress progress = noteProgress.get(noteId);
                 advance();
-                return new ImportRecord(values);
+                return new ImportRecord(values, progress);
             } catch (SQLException ex) {
                 finished = true;
                 hasNext = false;

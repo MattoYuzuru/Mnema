@@ -1,23 +1,12 @@
 package app.mnema.importer.service;
 
-import app.mnema.importer.client.core.CoreApiClient;
-import app.mnema.importer.client.core.CoreCardTemplateRequest;
-import app.mnema.importer.client.core.CoreCardTemplateResponse;
-import app.mnema.importer.client.core.CoreCreateCardRequest;
-import app.mnema.importer.client.core.CoreFieldTemplate;
-import app.mnema.importer.client.core.CorePublicDeckRequest;
-import app.mnema.importer.client.core.CorePublicDeckResponse;
-import app.mnema.importer.client.core.CoreUserDeckResponse;
+import app.mnema.importer.client.core.*;
 import app.mnema.importer.client.media.MediaApiClient;
 import app.mnema.importer.client.media.MediaResolved;
 import app.mnema.importer.domain.ImportJobEntity;
 import app.mnema.importer.domain.ImportMode;
 import app.mnema.importer.repository.ImportJobRepository;
-import app.mnema.importer.service.parser.ApkgImportParser;
-import app.mnema.importer.service.parser.ImportParser;
-import app.mnema.importer.service.parser.ImportParserFactory;
-import app.mnema.importer.service.parser.ImportRecord;
-import app.mnema.importer.service.parser.ImportStream;
+import app.mnema.importer.service.parser.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -30,13 +19,9 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URLConnection;
+import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -98,8 +83,10 @@ public class ImportProcessor {
                 updateTotal(job.getJobId(), totalItems);
             }
 
+            Instant now = Instant.now();
             int processed = 0;
             List<CoreCreateCardRequest> batch = new ArrayList<>(batchSize);
+            List<ImportRecordProgress> progressBatch = new ArrayList<>(batchSize);
 
             while (stream.hasNext()) {
                 ImportRecord record = stream.next();
@@ -112,18 +99,24 @@ public class ImportProcessor {
                 }
                 CoreCreateCardRequest card = new CoreCreateCardRequest(content, null, null, null, null, null);
                 batch.add(card);
+                progressBatch.add(record.progress());
 
                 if (batch.size() >= batchSize) {
-                    coreApiClient.addCardsBatch(job.getUserAccessToken(), targetDeck.userDeckId(), batch);
-                    processed += batch.size();
+                    List<app.mnema.importer.client.core.CoreUserCardResponse> created =
+                            coreApiClient.addCardsBatch(job.getUserAccessToken(), targetDeck.userDeckId(), batch);
+                    processed += created == null ? 0 : created.size();
+                    seedProgress(job, targetDeck.userDeckId(), created, progressBatch, now);
                     batch.clear();
+                    progressBatch.clear();
                     updateProgress(job.getJobId(), processed);
                 }
             }
 
             if (!batch.isEmpty()) {
-                coreApiClient.addCardsBatch(job.getUserAccessToken(), targetDeck.userDeckId(), batch);
-                processed += batch.size();
+                List<app.mnema.importer.client.core.CoreUserCardResponse> created =
+                        coreApiClient.addCardsBatch(job.getUserAccessToken(), targetDeck.userDeckId(), batch);
+                processed += created == null ? 0 : created.size();
+                seedProgress(job, targetDeck.userDeckId(), created, progressBatch, now);
                 updateProgress(job.getJobId(), processed);
             }
 
@@ -490,6 +483,48 @@ public class ImportProcessor {
             return null;
         }
         return name.substring(idx + 1).toLowerCase(Locale.ROOT);
+    }
+
+    private void seedProgress(ImportJobEntity job,
+                              UUID userDeckId,
+                              List<app.mnema.importer.client.core.CoreUserCardResponse> created,
+                              List<ImportRecordProgress> progressBatch,
+                              Instant now) {
+        if (created == null || created.isEmpty() || progressBatch == null || progressBatch.isEmpty()) {
+            return;
+        }
+        int limit = Math.min(created.size(), progressBatch.size());
+        List<app.mnema.importer.client.core.CoreCardProgressRequest> requests = new ArrayList<>();
+        for (int i = 0; i < limit; i++) {
+            ImportRecordProgress progress = progressBatch.get(i);
+            if (progress == null) {
+                continue;
+            }
+            var card = created.get(i);
+            if (card == null || card.userCardId() == null) {
+                continue;
+            }
+            requests.add(buildProgressRequest(card.userCardId(), progress, now));
+        }
+        if (!requests.isEmpty()) {
+            coreApiClient.seedProgress(job.getUserAccessToken(), userDeckId, requests);
+        }
+    }
+
+    private app.mnema.importer.client.core.CoreCardProgressRequest buildProgressRequest(UUID userCardId,
+                                                                                        ImportRecordProgress progress,
+                                                                                        Instant now) {
+        double stabilityDays = Math.max(0.1, progress.stabilityDays());
+        Instant nextReviewAt = now.plus(Duration.ofSeconds((long) (stabilityDays * 86400)));
+        return new app.mnema.importer.client.core.CoreCardProgressRequest(
+                userCardId,
+                progress.difficulty01(),
+                stabilityDays,
+                progress.reviewCount(),
+                now,
+                nextReviewAt,
+                progress.suspended()
+        );
     }
 
     @Transactional

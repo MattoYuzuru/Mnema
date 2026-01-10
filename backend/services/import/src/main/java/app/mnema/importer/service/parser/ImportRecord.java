@@ -3,6 +3,7 @@ package app.mnema.importer.service.parser;
 import java.util.Map;
 
 public record ImportRecord(
-        Map<String, String> fields
+        Map<String, String> fields,
+        ImportRecordProgress progress
 ) {
 }

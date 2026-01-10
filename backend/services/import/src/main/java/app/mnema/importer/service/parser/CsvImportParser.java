@@ -74,7 +74,7 @@ public class CsvImportParser implements ImportParser {
             for (String header : headers) {
                 values.put(header, record.get(header));
             }
-            return new ImportRecord(values);
+            return new ImportRecord(values, null);
         }
 
         @Override

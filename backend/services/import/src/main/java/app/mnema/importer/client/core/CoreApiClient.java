@@ -82,6 +82,18 @@ public class CoreApiClient {
                 .body(new ParameterizedTypeReference<CorePageResponse<CoreUserCardResponse>>() {});
     }
 
+    public void seedProgress(String accessToken, UUID userDeckId, List<CoreCardProgressRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return;
+        }
+        restClient.post()
+                .uri("/review/decks/{deckId}/states/import", userDeckId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .body(requests)
+                .retrieve()
+                .toBodilessEntity();
+    }
+
     private String bearer(String token) {
         return "Bearer " + token;
     }
