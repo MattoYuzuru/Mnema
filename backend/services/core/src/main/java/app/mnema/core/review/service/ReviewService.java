@@ -10,6 +10,7 @@ import app.mnema.core.review.controller.dto.ReviewAnswerResponse;
 import app.mnema.core.review.controller.dto.ReviewDeckAlgorithmResponse;
 import app.mnema.core.review.controller.dto.ReviewNextCardResponse;
 import app.mnema.core.review.controller.dto.ReviewPreferencesDto;
+import app.mnema.core.review.controller.dto.SeedCardProgressRequest;
 import app.mnema.core.review.domain.Rating;
 import app.mnema.core.review.entity.ReviewUserCardEntity;
 import app.mnema.core.review.entity.SrCardStateEntity;
@@ -25,6 +26,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -137,6 +139,78 @@ public class ReviewService {
                 computation.nextReviewAt(),
                 next
         );
+    }
+
+    @Transactional
+    public void seedProgress(UUID userId,
+                             UUID userDeckId,
+                             List<SeedCardProgressRequest> requests) {
+        if (requests == null || requests.isEmpty()) {
+            return;
+        }
+        AlgorithmContext ctx = resolveAlgorithmContext(userId, userDeckId);
+        List<UUID> cardIds = requests.stream()
+                .map(SeedCardProgressRequest::userCardId)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        if (cardIds.isEmpty()) {
+            return;
+        }
+        Map<UUID, ReviewUserCardEntity> cards = new HashMap<>();
+        for (ReviewUserCardEntity card : userCardRepo.findAllById(cardIds)) {
+            cards.put(card.getUserCardId(), card);
+        }
+        Map<UUID, SrCardStateEntity> existing = new HashMap<>();
+        for (SrCardStateEntity state : stateRepo.findAllById(cardIds)) {
+            existing.put(state.getUserCardId(), state);
+        }
+
+        Instant now = Instant.now();
+        List<SrCardStateEntity> toSave = new java.util.ArrayList<>();
+
+        for (SeedCardProgressRequest request : requests) {
+            if (request == null || request.userCardId() == null) {
+                continue;
+            }
+            UUID cardId = request.userCardId();
+            ReviewUserCardEntity card = cards.get(cardId);
+            if (card == null) {
+                throw new IllegalArgumentException("User card not found: " + cardId);
+            }
+            if (!userId.equals(card.getUserId()) || !userDeckId.equals(card.getUserDeckId())) {
+                throw new SecurityException("Access denied to card " + cardId);
+            }
+            if (card.isDeleted()) {
+                continue;
+            }
+            if (existing.containsKey(cardId)) {
+                continue;
+            }
+
+            double stability = Math.max(0.1, request.stabilityDays());
+            CanonicalProgress progress = new CanonicalProgress(request.difficulty01(), stability);
+            JsonNode stateJson = ctx.algorithm().fromCanonical(progress, ctx.effectiveConfig());
+
+            Instant lastReviewAt = request.lastReviewAt() == null ? now : request.lastReviewAt();
+            Instant nextReviewAt = request.nextReviewAt();
+            if (nextReviewAt == null) {
+                nextReviewAt = lastReviewAt.plus(Duration.ofSeconds((long) (stability * 86400)));
+            }
+
+            SrCardStateEntity state = new SrCardStateEntity();
+            state.setUserCardId(cardId);
+            state.setAlgorithmId(ctx.algorithmId());
+            state.setState(stateJson);
+            state.setLastReviewAt(lastReviewAt);
+            state.setNextReviewAt(nextReviewAt);
+            state.setReviewCount(Math.max(0, request.reviewCount() == null ? 0 : request.reviewCount()));
+            state.setSuspended(request.suspended() != null && request.suspended());
+            toSave.add(state);
+        }
+
+        if (!toSave.isEmpty()) {
+            stateRepo.saveAll(toSave);
+        }
     }
 
     @Transactional
