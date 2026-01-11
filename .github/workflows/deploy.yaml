@@ -226,18 +226,43 @@ jobs:
         id: meta
         run: echo "TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
 
-      - name: Set images
+      - name: Deploy services (sequential)
         run: |
-          kubectl -n "$NS" set image deploy/mnema-frontend frontend=ghcr.io/${{ steps.repo.outputs.REPO }}/frontend:${{ steps.meta.outputs.TAG }}
-          kubectl -n "$NS" set image deploy/mnema-auth     auth=ghcr.io/${{ steps.repo.outputs.REPO }}/auth:${{ steps.meta.outputs.TAG }}
-          kubectl -n "$NS" set image deploy/mnema-user     user=ghcr.io/${{ steps.repo.outputs.REPO }}/user:${{ steps.meta.outputs.TAG }}
-          kubectl -n "$NS" set image deploy/mnema-core     core=ghcr.io/${{ steps.repo.outputs.REPO }}/core:${{ steps.meta.outputs.TAG }}
-          kubectl -n "$NS" set image deploy/mnema-media    media=ghcr.io/${{ steps.repo.outputs.REPO }}/media:${{ steps.meta.outputs.TAG }}
+          set -euo pipefail
 
-      - name: Wait for rollouts
-        run: |
-          kubectl -n "$NS" rollout status deploy/mnema-frontend --timeout=300s
-          kubectl -n "$NS" rollout status deploy/mnema-auth     --timeout=600s
-          kubectl -n "$NS" rollout status deploy/mnema-user     --timeout=600s
-          kubectl -n "$NS" rollout status deploy/mnema-core     --timeout=600s
-          kubectl -n "$NS" rollout status deploy/mnema-media    --timeout=900s
+          wait_rollout() {
+            local deploy_name="$1"
+            local timeout="$2"
+            local attempts=3
+
+            for attempt in $(seq 1 "$attempts"); do
+              if kubectl -n "$NS" rollout status "deploy/${deploy_name}" --timeout="${timeout}"; then
+                return 0
+              fi
+              if [[ "$attempt" -lt "$attempts" ]]; then
+                echo "rollout status failed for ${deploy_name}, retrying (${attempt}/${attempts})..."
+                sleep 10
+              fi
+            done
+
+            return 1
+          }
+
+          deploy() {
+            local deploy_name="$1"
+            local container_name="$2"
+            local image="$3"
+            local timeout="$4"
+
+            kubectl -n "$NS" set image "deploy/${deploy_name}" "${container_name}=${image}"
+            wait_rollout "$deploy_name" "$timeout"
+          }
+
+          image_base="ghcr.io/${{ steps.repo.outputs.REPO }}"
+          tag="${{ steps.meta.outputs.TAG }}"
+
+          deploy mnema-frontend frontend "${image_base}/frontend:${tag}" 600s
+          deploy mnema-auth     auth     "${image_base}/auth:${tag}"     1800s
+          deploy mnema-user     user     "${image_base}/user:${tag}"     1200s
+          deploy mnema-core     core     "${image_base}/core:${tag}"     1200s
+          deploy mnema-media    media    "${image_base}/media:${tag}"    1800s
