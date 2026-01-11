@@ -4,6 +4,7 @@ import app.mnema.core.review.controller.dto.AnswerCardRequest;
 import app.mnema.core.review.controller.dto.ReviewAnswerResponse;
 import app.mnema.core.review.controller.dto.ReviewDeckAlgorithmResponse;
 import app.mnema.core.review.controller.dto.ReviewNextCardResponse;
+import app.mnema.core.review.controller.dto.SeedCardProgressRequest;
 import app.mnema.core.review.controller.dto.UpdateAlgorithmRequest;
 import app.mnema.core.review.domain.Rating;
 import app.mnema.core.review.service.ReviewService;
@@ -12,6 +13,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -62,5 +64,13 @@ public class ReviewController {
                 req.algorithmParams(),
                 req.reviewPreferences()
         );
+    }
+
+    @PostMapping("/{userDeckId}/states/import")
+    public void seedProgress(@AuthenticationPrincipal Jwt jwt,
+                             @PathVariable UUID userDeckId,
+                             @RequestBody List<SeedCardProgressRequest> requests) {
+        UUID userId = currentUserProvider.getUserId(jwt);
+        reviewService.seedProgress(userId, userDeckId, requests);
     }
 }

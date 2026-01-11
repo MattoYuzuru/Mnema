@@ -60,6 +60,11 @@ interface RenderedField {
   `,
     styles: [
         `
+      :host {
+        display: block;
+        width: 100%;
+      }
+
       .flashcard-view {
         width: 100%;
       }

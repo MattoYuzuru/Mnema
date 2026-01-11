@@ -3,6 +3,7 @@ export interface AppConfig {
     apiBaseUrl: string;
     coreApiBaseUrl: string;
     mediaApiBaseUrl: string;
+    importApiBaseUrl: string;
     clientId: string;
 }
 
@@ -13,5 +14,6 @@ export const appConfig: AppConfig = {
     apiBaseUrl: isProd ? '/api/user' : 'http://localhost:8084/api/user',
     coreApiBaseUrl: isProd ? '/api/core' : 'http://localhost:8085/api/core',
     mediaApiBaseUrl: isProd ? '/api/media' : 'http://localhost:8086/api/media',
+    importApiBaseUrl: isProd ? '/api/import' : 'http://localhost:8087/api/import',
     clientId: 'mnema-web'
 };

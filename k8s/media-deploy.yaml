@@ -38,6 +38,8 @@ spec:
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: GOOGLE_CLIENT_SECRET } }
             - name: AUTH_ISSUER_URI
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AUTH_ISSUER_URI } }
+            - name: MEDIA_INTERNAL_TOKEN
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: MEDIA_INTERNAL_TOKEN } }
             - name: AWS_REGION
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AWS_REGION } }
             - name: AWS_ACCESS_KEY_ID

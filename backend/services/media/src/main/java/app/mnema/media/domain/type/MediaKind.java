@@ -5,5 +5,6 @@ public enum MediaKind {
     deck_icon,
     card_image,
     card_audio,
-    card_video
+    card_video,
+    import_file
 }

@@ -45,3 +45,10 @@ spec:
                 name: mnema-media
                 port:
                   number: 80
+          - path: /api/import
+            pathType: Prefix
+            backend:
+              service:
+                name: mnema-import
+                port:
+                  number: 80

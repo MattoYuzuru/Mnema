@@ -9,6 +9,7 @@ import { UserApiService } from '../../../user-api.service';
 import { ButtonComponent } from '../../../shared/components/button.component';
 import { TemplateCardComponent } from '../../../shared/components/template-card.component';
 import { TemplateCreatorModalComponent } from '../template-creator-modal.component';
+import { ImportDeckModalComponent } from '../../import/import-deck-modal.component';
 import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
 
 type TemplateMode = 'choose' | 'browse';
@@ -17,7 +18,7 @@ type TemplateFilter = 'mine' | 'public';
 @Component({
     selector: 'app-template-selection-step',
     standalone: true,
-    imports: [NgFor, NgIf, ButtonComponent, TemplateCardComponent, TemplateCreatorModalComponent, TranslatePipe],
+    imports: [NgFor, NgIf, ButtonComponent, TemplateCardComponent, TemplateCreatorModalComponent, ImportDeckModalComponent, TranslatePipe],
     template: `
     <div class="step">
       <h2>{{ 'wizard.chooseTemplate' | translate }}</h2>
@@ -40,6 +41,12 @@ type TemplateFilter = 'mine' | 'public';
           <div class="choice-icon">📚</div>
           <h3>{{ 'wizard.useExistingTemplate' | translate }}</h3>
           <p>{{ 'wizard.useExistingTemplateDesc' | translate }}</p>
+        </div>
+
+        <div class="choice-card" (click)="openImportModal()">
+          <div class="choice-icon">⬆️</div>
+          <h3>{{ 'wizard.importDeck' | translate }}</h3>
+          <p>{{ 'wizard.importDeckDesc' | translate }}</p>
         </div>
       </div>
 
@@ -96,6 +103,14 @@ type TemplateFilter = 'mine' | 'public';
       (created)="onTemplateCreated($event)"
       (cancelled)="closeTemplateCreator()"
     ></app-template-creator-modal>
+
+    <app-import-deck-modal
+      *ngIf="showImport"
+      mode="create"
+      [showProfileAction]="true"
+      (closed)="closeImportModal()"
+      (goProfile)="goToDecks()"
+    ></app-import-deck-modal>
   `,
     styles: [`
       .step { display: flex; flex-direction: column; gap: var(--spacing-lg); }
@@ -279,6 +294,7 @@ export class TemplateSelectionStepComponent implements OnInit {
     activeFilter: TemplateFilter = 'mine';
     loading = false;
     showCreator = false;
+    showImport = false;
 
     allTemplates: CardTemplateDTO[] = [];
     myTemplates: CardTemplateDTO[] = [];
@@ -344,6 +360,19 @@ export class TemplateSelectionStepComponent implements OnInit {
 
     openVisualBuilder(): void {
         void this.router.navigate(['/wizard/visual-template-builder']);
+    }
+
+    openImportModal(): void {
+        this.showImport = true;
+    }
+
+    closeImportModal(): void {
+        this.showImport = false;
+    }
+
+    goToDecks(): void {
+        this.showImport = false;
+        void this.router.navigate(['/decks']);
     }
 
     closeTemplateCreator(): void {
