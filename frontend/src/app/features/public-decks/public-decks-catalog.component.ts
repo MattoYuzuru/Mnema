@@ -2,12 +2,14 @@ import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } fr
 import { Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
 import { catchError } from 'rxjs/operators';
-import { forkJoin, of, firstValueFrom } from 'rxjs';
+import { forkJoin, of, firstValueFrom, Subscription } from 'rxjs';
 import { AuthService } from '../../auth.service';
 import { UserApiService } from '../../user-api.service';
+import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
 import { MediaApiService } from '../../core/services/media-api.service';
 import { PublicDeckDTO } from '../../core/models/public-deck.models';
+import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { DeckCardComponent } from '../../shared/components/deck-card.component';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
@@ -135,6 +137,7 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
     decks: PublicDeckDTO[] = [];
     deckIcons: Map<string, string> = new Map();
     currentUserId: string | null = null;
+    userPublicDeckIds: Set<string> = new Set();
     page = 1;
     pageSize = 15;
     totalPages = 1;
@@ -142,16 +145,20 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
 
     private observer?: IntersectionObserver;
     private sentinel?: ElementRef<HTMLDivElement>;
+    private authSubscription?: Subscription;
+    private userDecksLoading = false;
 
     constructor(
         public auth: AuthService,
         private userApi: UserApiService,
+        private deckApi: DeckApiService,
         private publicDeckApi: PublicDeckApiService,
         private mediaApi: MediaApiService,
         private router: Router
     ) {}
 
     ngOnInit(): void {
+        this.bindAuth();
         this.loadDecks();
     }
 
@@ -163,6 +170,68 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
         if (this.observer) {
             this.observer.disconnect();
         }
+        this.authSubscription?.unsubscribe();
+    }
+
+    private bindAuth(): void {
+        this.authSubscription = this.auth.status$.subscribe(status => {
+            if (status === 'authenticated') {
+                this.loadUserContext();
+            } else {
+                this.currentUserId = null;
+                this.userPublicDeckIds.clear();
+                this.userDecksLoading = false;
+            }
+        });
+
+        if (this.auth.status() === 'authenticated') {
+            this.loadUserContext();
+        }
+    }
+
+    private loadUserContext(): void {
+        this.userApi.getMe().pipe(
+            catchError(() => of(null))
+        ).subscribe({
+            next: user => {
+                this.currentUserId = user?.id || null;
+            }
+        });
+
+        this.loadUserDeckIds();
+    }
+
+    private loadUserDeckIds(): void {
+        if (this.userDecksLoading) {
+            return;
+        }
+        this.userDecksLoading = true;
+        this.userPublicDeckIds.clear();
+        this.fetchUserDeckPage(1);
+    }
+
+    private fetchUserDeckPage(page: number): void {
+        this.deckApi.getMyDecks(page, 50).pipe(
+            catchError(() => of({ content: [] as UserDeckDTO[], last: true, totalPages: 0 }))
+        ).subscribe({
+            next: result => {
+                result.content.forEach(deck => {
+                    if (deck.publicDeckId) {
+                        this.userPublicDeckIds.add(deck.publicDeckId);
+                    }
+                });
+
+                if (!result.last && page < (result.totalPages || 0)) {
+                    this.fetchUserDeckPage(page + 1);
+                    return;
+                }
+
+                this.userDecksLoading = false;
+            },
+            error: () => {
+                this.userDecksLoading = false;
+            }
+        });
     }
 
     private observeSentinel(): void {
@@ -194,16 +263,11 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
             catchError(() => of({ content: [] as PublicDeckDTO[], last: true, totalPages: 0 }))
         );
 
-        const user$ = this.auth.status() === 'authenticated'
-            ? this.userApi.getMe().pipe(catchError(() => of(null)))
-            : of(null);
-
-        forkJoin({ decks: decks$, user: user$ }).subscribe({
+        forkJoin({ decks: decks$ }).subscribe({
             next: async result => {
                 this.decks = result.decks.content;
                 this.last = result.decks.last;
                 this.totalPages = result.decks.totalPages || 1;
-                this.currentUserId = result.user?.id || null;
                 await this.resolveDeckIcons(this.decks);
                 this.loading = false;
             },
@@ -256,7 +320,16 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
     }
 
     canForkDeck(deck: PublicDeckDTO): boolean {
-        return this.auth.status() === 'authenticated' && deck.authorId !== this.currentUserId;
+        if (this.auth.status() !== 'authenticated') {
+            return false;
+        }
+        if (this.userDecksLoading || !this.currentUserId) {
+            return false;
+        }
+        if (this.currentUserId && deck.authorId === this.currentUserId) {
+            return false;
+        }
+        return !this.userPublicDeckIds.has(deck.deckId);
     }
 
     openDeck(deckId: string): void {

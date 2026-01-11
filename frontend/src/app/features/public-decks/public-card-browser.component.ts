@@ -1,10 +1,14 @@
-import { Component, OnInit, HostListener } from '@angular/core';
+import { Component, OnInit, HostListener, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
-import { forkJoin } from 'rxjs';
+import { forkJoin, of, Subscription } from 'rxjs';
+import { catchError } from 'rxjs/operators';
 import { AuthService } from '../../auth.service';
+import { UserApiService } from '../../user-api.service';
+import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
 import { PublicDeckDTO, PublicCardDTO } from '../../core/models/public-deck.models';
+import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { CardContentValue } from '../../core/models/user-card.models';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
@@ -28,7 +32,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           <p class="card-count">{{ cards.length }} {{ 'publicCardBrowser.cards' | translate }}</p>
         </div>
         <div class="header-right">
-          <app-button variant="primary" size="md" (click)="forkDeck()">{{ 'button.fork' | translate }}</app-button>
+          <app-button *ngIf="canFork" variant="primary" size="md" (click)="forkDeck()">{{ 'button.fork' | translate }}</app-button>
           <div class="view-mode-toggle">
             <app-button [variant]="viewMode === 'list' ? 'primary' : 'ghost'" size="sm" (click)="setViewMode('list')">{{ 'cardBrowser.list' | translate }}</app-button>
             <app-button [variant]="viewMode === 'cards' ? 'primary' : 'ghost'" size="sm" (click)="setViewMode('cards')">{{ 'cardBrowser.cardsView' | translate }}</app-button>
@@ -175,7 +179,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       }
     `]
 })
-export class PublicCardBrowserComponent implements OnInit {
+export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     loading = true;
     cards: PublicCardDTO[] = [];
     deck: PublicDeckDTO | null = null;
@@ -184,19 +188,31 @@ export class PublicCardBrowserComponent implements OnInit {
     viewMode: 'list' | 'cards' = 'list';
     currentCardIndex = 0;
     isFlipped = false;
+    canFork = false;
+    currentUserId: string | null = null;
+    userPublicDeckIds: Set<string> = new Set();
+    private authSubscription?: Subscription;
+    private userDecksLoading = false;
 
     constructor(
         private route: ActivatedRoute,
         private router: Router,
         private publicDeckApi: PublicDeckApiService,
+        private userApi: UserApiService,
+        private deckApi: DeckApiService,
         public auth: AuthService
     ) {}
 
     ngOnInit(): void {
         this.deckId = this.route.snapshot.paramMap.get('deckId') || '';
+        this.bindAuth();
         if (this.deckId) {
             this.loadDeckData();
         }
+    }
+
+    ngOnDestroy(): void {
+        this.authSubscription?.unsubscribe();
     }
 
     @HostListener('window:keydown', ['$event'])
@@ -230,6 +246,7 @@ export class PublicCardBrowserComponent implements OnInit {
                 this.deck = deck;
                 this.cards = cardsPage.content;
                 this.buildTemplateFromFields(cardsPage.fields);
+                this.updateCanFork();
                 this.loading = false;
             },
             error: err => {
@@ -237,6 +254,82 @@ export class PublicCardBrowserComponent implements OnInit {
                 this.loading = false;
             }
         });
+    }
+
+    private bindAuth(): void {
+        this.authSubscription = this.auth.status$.subscribe(status => {
+            if (status === 'authenticated') {
+                this.loadUserContext();
+            } else {
+                this.currentUserId = null;
+                this.userPublicDeckIds.clear();
+                this.userDecksLoading = false;
+                this.updateCanFork();
+            }
+        });
+
+        if (this.auth.status() === 'authenticated') {
+            this.loadUserContext();
+        }
+    }
+
+    private loadUserContext(): void {
+        this.userApi.getMe().pipe(
+            catchError(() => of(null))
+        ).subscribe({
+            next: user => {
+                this.currentUserId = user?.id || null;
+                this.updateCanFork();
+            }
+        });
+
+        this.loadUserDeckIds();
+    }
+
+    private loadUserDeckIds(): void {
+        if (this.userDecksLoading) {
+            return;
+        }
+        this.userDecksLoading = true;
+        this.userPublicDeckIds.clear();
+        this.fetchUserDeckPage(1);
+    }
+
+    private fetchUserDeckPage(page: number): void {
+        this.deckApi.getMyDecks(page, 50).pipe(
+            catchError(() => of({ content: [] as UserDeckDTO[], last: true, totalPages: 0 }))
+        ).subscribe({
+            next: result => {
+                result.content.forEach(deck => {
+                    if (deck.publicDeckId) {
+                        this.userPublicDeckIds.add(deck.publicDeckId);
+                    }
+                });
+
+                if (!result.last && page < (result.totalPages || 0)) {
+                    this.fetchUserDeckPage(page + 1);
+                    return;
+                }
+
+                this.userDecksLoading = false;
+                this.updateCanFork();
+            },
+            error: () => {
+                this.userDecksLoading = false;
+            }
+        });
+    }
+
+    private updateCanFork(): void {
+        if (this.auth.status() !== 'authenticated' || !this.deck || !this.currentUserId || this.userDecksLoading) {
+            this.canFork = false;
+            return;
+        }
+        if (this.currentUserId && this.deck.authorId === this.currentUserId) {
+            this.canFork = false;
+            return;
+        }
+        this.canFork = !this.userPublicDeckIds.has(this.deck.deckId);
     }
 
     private buildTemplateFromFields(fields: FieldTemplateDTO[]): void {

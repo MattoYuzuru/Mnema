@@ -525,7 +525,16 @@ export class HomePageComponent implements OnInit, OnDestroy {
     }
 
     canForkDeck(deck: PublicDeckDTO): boolean {
-        return this.auth.status() === 'authenticated' && deck.authorId !== this.currentUserId;
+        if (this.auth.status() !== 'authenticated') {
+            return false;
+        }
+        if (!this.currentUserId) {
+            return false;
+        }
+        if (this.currentUserId && deck.authorId === this.currentUserId) {
+            return false;
+        }
+        return !this.userDecks.some(userDeck => userDeck.publicDeckId === deck.deckId);
     }
 
     getDeckStats(deck: UserDeckDTO): { cardCount?: number; dueToday?: number } {
@@ -569,10 +578,8 @@ export class HomePageComponent implements OnInit, OnDestroy {
     }
 
     forkDeck(deckId: string): void {
-        console.log('Forking deck:', deckId);
         this.publicDeckApi.fork(deckId).subscribe({
             next: userDeck => {
-                console.log('Deck forked successfully:', userDeck);
                 void this.router.navigate(['/decks', userDeck.userDeckId]);
             },
             error: err => {
