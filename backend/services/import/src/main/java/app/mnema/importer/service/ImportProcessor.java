@@ -34,6 +34,9 @@ public class ImportProcessor {
     private static final Pattern VIDEO_TAG_PATTERN = Pattern.compile("<video[^>]+src=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
     private static final Pattern SOURCE_TAG_PATTERN = Pattern.compile("<source[^>]+src=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
     private static final Pattern UUID_PATTERN = Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
+    private static final Pattern IMAGE_FILE_PATTERN = Pattern.compile("([\\w\\-./]+\\.(?:png|jpg|jpeg|gif|webp))", Pattern.CASE_INSENSITIVE);
+    private static final Pattern AUDIO_FILE_PATTERN = Pattern.compile("([\\w\\-./]+\\.(?:mp3|m4a|wav|ogg))", Pattern.CASE_INSENSITIVE);
+    private static final Pattern VIDEO_FILE_PATTERN = Pattern.compile("([\\w\\-./]+\\.(?:mp4|webm|m4v|mov|mkv|avi|mpeg|mpg))", Pattern.CASE_INSENSITIVE);
     private static final List<String> VIDEO_EXTENSIONS = List.of("mp4", "webm", "m4v", "mov", "mkv", "avi", "mpeg", "mpg");
     private static final String ANKI_UPDATE_MESSAGE = "please update to the latest anki version";
     private static final List<String> FRONT_FIELD_HINTS = List.of("front", "question", "term", "word", "expression", "original", "prompt");
@@ -79,7 +82,8 @@ public class ImportProcessor {
              ImportStream stream = parser.openStream(sourceStream)) {
 
             List<String> sourceFields = stream.fields();
-            MappingContext mappingContext = resolveMapping(job, sourceFields);
+            ImportLayout layout = stream.layout();
+            MappingContext mappingContext = resolveMapping(job, sourceFields, layout);
 
             CoreUserDeckResponse targetDeck = mappingContext.userDeck();
             List<CoreFieldTemplate> targetFields = mappingContext.targetFields();
@@ -148,13 +152,13 @@ public class ImportProcessor {
         return media;
     }
 
-    private MappingContext resolveMapping(ImportJobEntity job, List<String> sourceFields) {
+    private MappingContext resolveMapping(ImportJobEntity job, List<String> sourceFields, ImportLayout layout) {
         if (job.getMode() == ImportMode.create_new) {
             String deckName = job.getDeckName();
             if (deckName == null || deckName.isBlank()) {
                 deckName = job.getSourceName() == null ? "Imported deck" : job.getSourceName();
             }
-            List<CoreFieldTemplate> templateFields = buildTemplateFields(sourceFields);
+            List<CoreFieldTemplate> templateFields = buildTemplateFields(sourceFields, layout);
             CoreCardTemplateResponse template = coreApiClient.createTemplate(
                     job.getUserAccessToken(),
                     new CoreCardTemplateRequest(
@@ -243,12 +247,41 @@ public class ImportProcessor {
         return mapping;
     }
 
-    private List<CoreFieldTemplate> buildTemplateFields(List<String> sourceFields) {
+    private List<CoreFieldTemplate> buildTemplateFields(List<String> sourceFields, ImportLayout layout) {
         List<String> names = sourceFields == null ? List.of() : sourceFields;
-        List<Boolean> frontFlags = new ArrayList<>(names.size());
+        List<String> ordered = new ArrayList<>();
+        Set<String> frontNames = new HashSet<>();
+
+        if (layout != null) {
+            List<String> front = layout.front() == null ? List.of() : layout.front();
+            List<String> back = layout.back() == null ? List.of() : layout.back();
+            frontNames.addAll(front);
+            for (String name : front) {
+                if (names.contains(name) && !ordered.contains(name)) {
+                    ordered.add(name);
+                }
+            }
+            for (String name : back) {
+                if (names.contains(name) && !ordered.contains(name)) {
+                    ordered.add(name);
+                }
+            }
+        }
+
+        if (ordered.isEmpty()) {
+            ordered.addAll(names);
+        } else {
+            for (String name : names) {
+                if (!ordered.contains(name)) {
+                    ordered.add(name);
+                }
+            }
+        }
+
+        List<Boolean> frontFlags = new ArrayList<>(ordered.size());
         boolean hasFront = false;
-        for (String name : names) {
-            boolean isFront = isFrontFieldName(name);
+        for (String name : ordered) {
+            boolean isFront = frontNames.contains(name) || isFrontFieldName(name);
             frontFlags.add(isFront);
             if (isFront) {
                 hasFront = true;
@@ -260,7 +293,7 @@ public class ImportProcessor {
 
         List<CoreFieldTemplate> fields = new ArrayList<>();
         int index = 0;
-        for (String name : names) {
+        for (String name : ordered) {
             String type = inferFieldType(name);
             fields.add(new CoreFieldTemplate(
                     null,
@@ -344,6 +377,9 @@ public class ImportProcessor {
                 case "video" -> tokens.firstVideo();
                 default -> tokens.firstImage();
             };
+            if (mediaName == null) {
+                mediaName = findMediaFileName(raw, normalizedType);
+            }
             if (mediaName == null && "video".equals(normalizedType)) {
                 mediaName = tokens.firstAudio();
             }
@@ -530,6 +566,23 @@ public class ImportProcessor {
         return new MediaTokens(images, audio, video);
     }
 
+    private String findMediaFileName(String raw, String type) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String cleaned = raw.trim();
+        Pattern pattern = switch (type) {
+            case "audio" -> AUDIO_FILE_PATTERN;
+            case "video" -> VIDEO_FILE_PATTERN;
+            default -> IMAGE_FILE_PATTERN;
+        };
+        Matcher matcher = pattern.matcher(cleaned);
+        if (matcher.find()) {
+            return matcher.group(1);
+        }
+        return null;
+    }
+
     private String guessContentType(String name) {
         String guessed = URLConnection.guessContentTypeFromName(name);
         if (guessed != null) {
@@ -547,6 +600,7 @@ public class ImportProcessor {
             case "mp4", "m4v" -> "video/mp4";
             case "webm" -> "video/webm";
             case "gif" -> "image/gif";
+            case "webp" -> "image/webp";
             default -> "application/octet-stream";
         };
     }

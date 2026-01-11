@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 public class CsvImportParser implements ImportParser {
@@ -39,8 +40,6 @@ public class CsvImportParser implements ImportParser {
                 .setDelimiter(delimiter)
                 .setTrim(true)
                 .setIgnoreEmptyLines(true)
-                .setHeader()
-                .setSkipHeaderRecord(true)
                 .build();
         CSVParser parser = new CSVParser(new InputStreamReader(inputStream, StandardCharsets.UTF_8), format);
         return new CsvImportStream(parser);
@@ -50,11 +49,29 @@ public class CsvImportParser implements ImportParser {
         private final CSVParser parser;
         private final Iterator<CSVRecord> iterator;
         private final List<String> headers;
+        private final boolean usesHeader;
+        private CSVRecord nextRecord;
 
         CsvImportStream(CSVParser parser) {
             this.parser = parser;
             this.iterator = parser.iterator();
-            this.headers = List.copyOf(parser.getHeaderNames());
+            CSVRecord first = iterator.hasNext() ? iterator.next() : null;
+            if (first == null) {
+                this.headers = List.of();
+                this.usesHeader = false;
+                this.nextRecord = null;
+                return;
+            }
+            List<String> candidate = recordToList(first);
+            if (looksLikeHeader(candidate)) {
+                this.headers = List.copyOf(candidate);
+                this.usesHeader = true;
+                this.nextRecord = null;
+            } else {
+                this.headers = List.copyOf(defaultHeaders(candidate.size()));
+                this.usesHeader = false;
+                this.nextRecord = first;
+            }
         }
 
         @Override
@@ -64,15 +81,18 @@ public class CsvImportParser implements ImportParser {
 
         @Override
         public boolean hasNext() {
-            return iterator.hasNext();
+            return nextRecord != null || iterator.hasNext();
         }
 
         @Override
         public ImportRecord next() {
-            CSVRecord record = iterator.next();
+            CSVRecord record = nextRecord != null ? nextRecord : iterator.next();
+            nextRecord = null;
             Map<String, String> values = new LinkedHashMap<>();
-            for (String header : headers) {
-                values.put(header, record.get(header));
+            for (int i = 0; i < headers.size(); i++) {
+                String header = headers.get(i);
+                String value = usesHeader ? record.get(header) : (i < record.size() ? record.get(i) : "");
+                values.put(header, value);
             }
             return new ImportRecord(values, null);
         }
@@ -80,6 +100,78 @@ public class CsvImportParser implements ImportParser {
         @Override
         public void close() throws IOException {
             parser.close();
+        }
+
+        private List<String> recordToList(CSVRecord record) {
+            List<String> values = new ArrayList<>();
+            for (int i = 0; i < record.size(); i++) {
+                values.add(record.get(i));
+            }
+            return values;
+        }
+
+        private boolean looksLikeHeader(List<String> values) {
+            if (values.isEmpty()) {
+                return false;
+            }
+            int likelyData = 0;
+            int likelyHeader = 0;
+            int identifierLike = 0;
+            var seen = new java.util.HashSet<String>();
+            for (String value : values) {
+                String trimmed = value == null ? "" : value.trim();
+                if (trimmed.isEmpty()) {
+                    likelyData++;
+                    continue;
+                }
+                String lower = trimmed.toLowerCase(Locale.ROOT);
+                if (!seen.add(lower)) {
+                    likelyData++;
+                }
+                if (lower.length() > 60) {
+                    likelyData++;
+                    continue;
+                }
+                if (lower.contains("?") || lower.contains("!") || lower.contains(".") || lower.contains("«") || lower.contains("»")) {
+                    likelyData++;
+                    continue;
+                }
+                if (lower.equals("front") || lower.equals("back") || lower.equals("question") || lower.equals("answer")
+                        || lower.equals("term") || lower.equals("definition") || lower.equals("word") || lower.equals("meaning")) {
+                    likelyHeader++;
+                }
+                if (isIdentifierLike(trimmed)) {
+                    identifierLike++;
+                }
+            }
+            if (likelyData > 0) {
+                return false;
+            }
+            if (likelyHeader > 0) {
+                return true;
+            }
+            return identifierLike == values.size();
+        }
+
+        private boolean isIdentifierLike(String value) {
+            if (value == null || value.isBlank()) {
+                return false;
+            }
+            if (value.length() > 40) {
+                return false;
+            }
+            return value.matches("[\\p{L}0-9 _-]+");
+        }
+
+        private List<String> defaultHeaders(int count) {
+            if (count == 2) {
+                return List.of("front", "back");
+            }
+            List<String> headers = new ArrayList<>();
+            for (int i = 1; i <= count; i++) {
+                headers.add("Field " + i);
+            }
+            return headers;
         }
     }
 }

@@ -24,6 +24,19 @@ public class ApkgImportParser implements ImportParser {
     private static final int PREVIEW_SCAN_LIMIT = 60;
     private static final String ANKI_UPDATE_MESSAGE = "please update to the latest anki version";
     private static final String FIELD_SEPARATOR = "\u001f";
+    private static final java.util.regex.Pattern TEMPLATE_FIELD_PATTERN = java.util.regex.Pattern.compile("\\{\\{([^}]+)}}");
+    private static final Set<String> BUILTIN_FIELDS = Set.of(
+            "frontside",
+            "tags",
+            "deck",
+            "subdeck",
+            "card",
+            "cardid",
+            "note",
+            "noteid",
+            "notetype",
+            "type"
+    );
 
     private final ObjectMapper objectMapper;
 
@@ -69,6 +82,7 @@ public class ApkgImportParser implements ImportParser {
         }
 
         Map<String, List<String>> modelFields = loadModelFields(connection);
+        ImportLayout layout = loadTemplateLayout(connection, modelFields);
         List<String> unionFields = unionFields(modelFields);
         int totalItems = countNotes(connection);
         Map<Long, ImportRecordProgress> noteProgress = loadNoteProgress(connection);
@@ -86,7 +100,8 @@ public class ApkgImportParser implements ImportParser {
                     totalItems,
                     modelFields,
                     noteProgress,
-                    mediaNameToIndex
+                    mediaNameToIndex,
+                    layout
             );
         } catch (SQLException ex) {
             closeQuietly(connection);
@@ -153,7 +168,8 @@ public class ApkgImportParser implements ImportParser {
             }
             String json = rs.getString(1);
             if (json == null || json.isBlank()) {
-                return fallbackFields(connection);
+                Map<String, List<String>> byTables = loadFieldsTable(connection);
+                return byTables.isEmpty() ? fallbackFields(connection) : byTables;
             }
             JsonNode node = objectMapper.readTree(json);
             Map<String, List<String>> modelFields = new LinkedHashMap<>();
@@ -171,15 +187,39 @@ public class ApkgImportParser implements ImportParser {
                 }
             });
             if (modelFields.isEmpty()) {
-                return fallbackFields(connection);
+                Map<String, List<String>> byTables = loadFieldsTable(connection);
+                return byTables.isEmpty() ? fallbackFields(connection) : byTables;
             }
             return modelFields;
         } catch (SQLException | IOException ex) {
+            Map<String, List<String>> byTables = loadFieldsTable(connection);
+            if (!byTables.isEmpty()) {
+                return byTables;
+            }
             Map<String, List<String>> fallback = fallbackFields(connection);
             if (!fallback.isEmpty()) {
                 return fallback;
             }
             throw new IOException("Failed to read models", ex);
+        }
+    }
+
+    private Map<String, List<String>> loadFieldsTable(Connection connection) {
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "select ntid, ord, name from fields order by ntid, ord")) {
+            ResultSet rs = stmt.executeQuery();
+            Map<String, List<String>> modelFields = new LinkedHashMap<>();
+            while (rs.next()) {
+                long ntid = rs.getLong("ntid");
+                String name = rs.getString("name");
+                if (name == null || name.isBlank()) {
+                    continue;
+                }
+                modelFields.computeIfAbsent(String.valueOf(ntid), key -> new ArrayList<>()).add(name);
+            }
+            return modelFields;
+        } catch (SQLException ex) {
+            return Map.of();
         }
     }
 
@@ -230,6 +270,172 @@ public class ApkgImportParser implements ImportParser {
             }
         }
         return ordered;
+    }
+
+    private ImportLayout loadTemplateLayout(Connection connection, Map<String, List<String>> modelFields) {
+        Map<String, String> normalizedFields = normalizedFieldMap(modelFields);
+        List<String> front = new ArrayList<>();
+        List<String> back = new ArrayList<>();
+
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "select config from templates order by ntid, ord")) {
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) {
+                byte[] config = rs.getBytes("config");
+                if (config == null || config.length == 0) {
+                    continue;
+                }
+                TemplateStrings templates = decodeTemplateConfig(config);
+                if (templates == null) {
+                    continue;
+                }
+                addUnique(front, extractTemplateFields(templates.front(), normalizedFields));
+                addUnique(back, extractTemplateFields(templates.back(), normalizedFields));
+            }
+        } catch (SQLException ex) {
+            return null;
+        }
+
+        if (front.isEmpty() && back.isEmpty()) {
+            return null;
+        }
+        return new ImportLayout(List.copyOf(front), List.copyOf(back));
+    }
+
+    private TemplateStrings decodeTemplateConfig(byte[] config) {
+        List<String> withFields = new ArrayList<>();
+        int index = 0;
+        while (index < config.length) {
+            Varint key = readVarint(config, index);
+            if (key == null) {
+                break;
+            }
+            int wireType = (int) (key.value() & 0x7);
+            index = key.nextIndex();
+            switch (wireType) {
+                case 2 -> {
+                    Varint lenVar = readVarint(config, index);
+                    if (lenVar == null) {
+                        return null;
+                    }
+                    int len = (int) lenVar.value();
+                    index = lenVar.nextIndex();
+                    if (len < 0 || index + len > config.length) {
+                        return null;
+                    }
+                    String text = new String(config, index, len, StandardCharsets.UTF_8);
+                    if (text.contains("{{")) {
+                        withFields.add(text);
+                    }
+                    index += len;
+                }
+                case 0 -> {
+                    Varint skip = readVarint(config, index);
+                    if (skip == null) {
+                        return null;
+                    }
+                    index = skip.nextIndex();
+                }
+                case 1 -> index += 8;
+                case 5 -> index += 4;
+                default -> index = config.length;
+            }
+        }
+        if (withFields.isEmpty()) {
+            return null;
+        }
+        String front = withFields.getFirst();
+        String back = withFields.size() > 1 ? withFields.get(1) : null;
+        return new TemplateStrings(front, back);
+    }
+
+    private Varint readVarint(byte[] data, int offset) {
+        long result = 0;
+        int shift = 0;
+        int index = offset;
+        while (index < data.length && shift < 64) {
+            int b = data[index] & 0xFF;
+            result |= (long) (b & 0x7F) << shift;
+            index++;
+            if ((b & 0x80) == 0) {
+                return new Varint(result, index);
+            }
+            shift += 7;
+        }
+        return null;
+    }
+
+    private List<String> extractTemplateFields(String template, Map<String, String> normalizedFields) {
+        if (template == null || template.isBlank()) {
+            return List.of();
+        }
+        List<String> result = new ArrayList<>();
+        var matcher = TEMPLATE_FIELD_PATTERN.matcher(template);
+        while (matcher.find()) {
+            String token = matcher.group(1);
+            if (token == null) {
+                continue;
+            }
+            String cleaned = cleanTemplateToken(token);
+            if (cleaned == null || cleaned.isBlank()) {
+                continue;
+            }
+            String normalized = normalizeField(cleaned);
+            if (normalized.isBlank() || BUILTIN_FIELDS.contains(normalized)) {
+                continue;
+            }
+            String resolved = normalizedFields.getOrDefault(normalized, cleaned);
+            if (!result.contains(resolved)) {
+                result.add(resolved);
+            }
+        }
+        return result;
+    }
+
+    private String cleanTemplateToken(String token) {
+        String cleaned = token.trim();
+        while (!cleaned.isEmpty()) {
+            char c = cleaned.charAt(0);
+            if (c == '#' || c == '^' || c == '/') {
+                cleaned = cleaned.substring(1).trim();
+            } else {
+                break;
+            }
+        }
+        int idx = cleaned.lastIndexOf(':');
+        if (idx >= 0 && idx < cleaned.length() - 1) {
+            cleaned = cleaned.substring(idx + 1).trim();
+        }
+        return cleaned;
+    }
+
+    private Map<String, String> normalizedFieldMap(Map<String, List<String>> modelFields) {
+        Map<String, String> normalized = new HashMap<>();
+        for (List<String> fields : modelFields.values()) {
+            for (String field : fields) {
+                if (field == null || field.isBlank()) {
+                    continue;
+                }
+                normalized.putIfAbsent(normalizeField(field), field);
+            }
+        }
+        return normalized;
+    }
+
+    private String normalizeField(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.toLowerCase(Locale.ROOT)
+                .replaceAll("[^a-z0-9]", "");
+    }
+
+    private void addUnique(List<String> target, List<String> values) {
+        for (String value : values) {
+            if (!target.contains(value)) {
+                target.add(value);
+            }
+        }
     }
 
     private Map<Long, ImportRecordProgress> loadNoteProgress(Connection connection) {
@@ -349,6 +555,12 @@ public class ApkgImportParser implements ImportParser {
         return map;
     }
 
+    private record Varint(long value, int nextIndex) {
+    }
+
+    private record TemplateStrings(String front, String back) {
+    }
+
     private record ScoredRecord(ImportRecord record, int score, int index) {
     }
 
@@ -374,6 +586,7 @@ public class ApkgImportParser implements ImportParser {
         private final Map<String, List<String>> modelFields;
         private final Map<Long, ImportRecordProgress> noteProgress;
         private final Map<String, String> mediaNameToIndex;
+        private final ImportLayout layout;
 
         private boolean hasNext;
         private boolean finished;
@@ -387,7 +600,8 @@ public class ApkgImportParser implements ImportParser {
                          Integer totalItems,
                          Map<String, List<String>> modelFields,
                          Map<Long, ImportRecordProgress> noteProgress,
-                         Map<String, String> mediaNameToIndex) throws IOException {
+                         Map<String, String> mediaNameToIndex,
+                         ImportLayout layout) throws IOException {
             this.tempDir = tempDir;
             this.zipFile = zipFile;
             this.connection = connection;
@@ -398,6 +612,7 @@ public class ApkgImportParser implements ImportParser {
             this.modelFields = modelFields;
             this.noteProgress = noteProgress;
             this.mediaNameToIndex = mediaNameToIndex;
+            this.layout = layout;
             advance();
         }
 
@@ -409,6 +624,11 @@ public class ApkgImportParser implements ImportParser {
         @Override
         public Integer totalItems() {
             return totalItems;
+        }
+
+        @Override
+        public ImportLayout layout() {
+            return layout;
         }
 
         @Override

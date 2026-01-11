@@ -13,4 +13,8 @@ public interface ImportStream extends Closeable {
     default Integer totalItems() {
         return null;
     }
+
+    default ImportLayout layout() {
+        return null;
+    }
 }
