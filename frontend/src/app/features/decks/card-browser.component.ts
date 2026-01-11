@@ -536,6 +536,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
     `]
 })
 export class CardBrowserComponent implements OnInit {
+    private static readonly PAGE_SIZE = 50;
+    private static readonly PREFETCH_THRESHOLD = 0.9;
+
     loading = true;
     cards: UserCardDTO[] = [];
     deck: UserDeckDTO | null = null;
@@ -548,6 +551,9 @@ export class CardBrowserComponent implements OnInit {
     editingCard: UserCardDTO | null = null;
     editForm!: FormGroup;
     saving = false;
+    private currentPage = 1;
+    private hasMoreCards = true;
+    private loadingMore = false;
 
     constructor(
         private route: ActivatedRoute,
@@ -588,6 +594,12 @@ export class CardBrowserComponent implements OnInit {
         }
     }
 
+    @HostListener('window:scroll')
+    handleScroll(): void {
+        if (this.viewMode !== 'list') return;
+        this.maybeLoadMoreOnScroll();
+    }
+
     private loadDeckData(): void {
         this.loading = true;
         this.deckApi.getUserDeck(this.userDeckId).subscribe({
@@ -607,11 +619,13 @@ export class CardBrowserComponent implements OnInit {
             next: publicDeck => {
                 forkJoin({
                     template: this.templateApi.getTemplate(publicDeck.templateId),
-                    cards: this.cardApi.getUserCards(this.userDeckId, 1, 100)
+                    cards: this.cardApi.getUserCards(this.userDeckId, 1, CardBrowserComponent.PAGE_SIZE)
                 }).subscribe({
                     next: ({ template, cards }) => {
                         this.template = template;
                         this.cards = cards.content;
+                        this.currentPage = cards.number + 1;
+                        this.hasMoreCards = !cards.last;
                         this.loading = false;
                     },
                     error: err => {
@@ -635,6 +649,9 @@ export class CardBrowserComponent implements OnInit {
         this.viewMode = mode;
         this.currentCardIndex = 0;
         this.isFlipped = false;
+        if (mode === 'cards') {
+            this.maybePrefetchMoreCards();
+        }
     }
 
     previousCard(): void {
@@ -648,7 +665,53 @@ export class CardBrowserComponent implements OnInit {
         if (this.currentCardIndex < this.cards.length - 1) {
             this.currentCardIndex++;
             this.isFlipped = false;
+            this.maybePrefetchMoreCards();
         }
+    }
+
+    private maybePrefetchMoreCards(): void {
+        if (!this.hasMoreCards || this.loadingMore || this.cards.length === 0) {
+            return;
+        }
+        const thresholdIndex = Math.floor(this.cards.length * CardBrowserComponent.PREFETCH_THRESHOLD);
+        if (this.currentCardIndex + 1 >= thresholdIndex) {
+            this.loadMoreCards();
+        }
+    }
+
+    private maybeLoadMoreOnScroll(): void {
+        if (!this.hasMoreCards || this.loadingMore || this.cards.length === 0) {
+            return;
+        }
+        const scrollPosition = window.scrollY + window.innerHeight;
+        const threshold = document.documentElement.scrollHeight * CardBrowserComponent.PREFETCH_THRESHOLD;
+        if (scrollPosition >= threshold) {
+            this.loadMoreCards();
+        }
+    }
+
+    private loadMoreCards(): void {
+        if (this.loadingMore || !this.hasMoreCards) {
+            return;
+        }
+        this.loadingMore = true;
+        const nextPage = this.currentPage + 1;
+        this.cardApi.getUserCards(this.userDeckId, nextPage, CardBrowserComponent.PAGE_SIZE).subscribe({
+            next: page => {
+                const existingIds = new Set(this.cards.map(card => card.userCardId));
+                const newCards = page.content.filter(card => !existingIds.has(card.userCardId));
+                this.cards = [...this.cards, ...newCards];
+                this.currentPage = page.number + 1;
+                this.hasMoreCards = !page.last;
+            },
+            error: err => {
+                console.error('Failed to load more cards:', err);
+                this.loadingMore = false;
+            },
+            complete: () => {
+                this.loadingMore = false;
+            }
+        });
     }
 
     toggleFlip(): void {
