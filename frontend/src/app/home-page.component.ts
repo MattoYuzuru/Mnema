@@ -253,6 +253,8 @@ export class HomePageComponent implements OnInit, OnDestroy {
     userDecks: UserDeckDTO[] = [];
     todayStats = { due: 0, new: 0 };
     currentUserId: string | null = null;
+    userPublicDeckIds: Set<string> = new Set();
+    userPublicDeckIdsLoaded = false;
     private authSubscription?: Subscription;
     private hasLoadedUserDecks = false;
     private reviewStatsSubscription?: Subscription;
@@ -312,15 +314,24 @@ export class HomePageComponent implements OnInit, OnDestroy {
             )
             : of(null);
 
+        const publicDeckIds$ = isAuthenticated
+            ? this.deckApi.getMyPublicDeckIds().pipe(
+                catchError(() => of({ publicDeckIds: [] as string[] }))
+            )
+            : of({ publicDeckIds: [] as string[] });
+
         forkJoin({
             publicDecks: publicDecks$,
             userDecks: userDecks$,
-            user: user$
+            user: user$,
+            publicDeckIds: publicDeckIds$
         }).subscribe({
             next: result => {
                 this.publicDecks = result.publicDecks.content;
                 this.userDecks = result.userDecks.content;
                 this.currentUserId = result.user?.id || null;
+                this.userPublicDeckIds = new Set(result.publicDeckIds.publicDeckIds || []);
+                this.userPublicDeckIdsLoaded = isAuthenticated;
                 this.hasLoadedUserDecks = isAuthenticated;
                 this.loading = false;
 
@@ -378,13 +389,20 @@ export class HomePageComponent implements OnInit, OnDestroy {
             catchError(() => of(null))
         );
 
+        const publicDeckIds$ = this.deckApi.getMyPublicDeckIds().pipe(
+            catchError(() => of({ publicDeckIds: [] as string[] }))
+        );
+
         forkJoin({
             userDecks: userDecks$,
-            user: user$
+            user: user$,
+            publicDeckIds: publicDeckIds$
         }).subscribe({
             next: result => {
                 this.userDecks = result.userDecks.content;
                 this.currentUserId = result.user?.id || null;
+                this.userPublicDeckIds = new Set(result.publicDeckIds.publicDeckIds || []);
+                this.userPublicDeckIdsLoaded = true;
                 this.hasLoadedUserDecks = true;
 
                 if (this.userDecks.length > 0) {
@@ -528,13 +546,13 @@ export class HomePageComponent implements OnInit, OnDestroy {
         if (this.auth.status() !== 'authenticated') {
             return false;
         }
-        if (!this.currentUserId) {
+        if (!this.currentUserId || !this.userPublicDeckIdsLoaded) {
             return false;
         }
         if (this.currentUserId && deck.authorId === this.currentUserId) {
             return false;
         }
-        return !this.userDecks.some(userDeck => userDeck.publicDeckId === deck.deckId);
+        return !this.userPublicDeckIds.has(deck.deckId);
     }
 
     getDeckStats(deck: UserDeckDTO): { cardCount?: number; dueToday?: number } {

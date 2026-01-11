@@ -37,6 +37,15 @@ public class UserDeckController {
         return deckService.getUserDecksByPage(userId, page, limit);
     }
 
+    // GET /decks/mine/public-ids
+    @GetMapping("/mine/public-ids")
+    public UserPublicDeckIdsResponse getPublicDeckIds(
+            @AuthenticationPrincipal Jwt jwt
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        return new UserPublicDeckIdsResponse(deckService.getUserPublicDeckIds(userId));
+    }
+
     // GET /decks/{userDeckId}
     @GetMapping("/{userDeckId}")
     public UserDeckDTO getDeckById(
@@ -119,5 +128,7 @@ public class UserDeckController {
         var userId = currentUserProvider.getUserId(jwt);
         return deckService.getUserDeckSize(userId, userDeckId);
     }
+
+    public record UserPublicDeckIdsResponse(List<UUID> publicDeckIds) {}
 
 }

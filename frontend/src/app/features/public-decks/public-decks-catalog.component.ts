@@ -9,7 +9,6 @@ import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
 import { MediaApiService } from '../../core/services/media-api.service';
 import { PublicDeckDTO } from '../../core/models/public-deck.models';
-import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { DeckCardComponent } from '../../shared/components/deck-card.component';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
@@ -138,6 +137,7 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
     deckIcons: Map<string, string> = new Map();
     currentUserId: string | null = null;
     userPublicDeckIds: Set<string> = new Set();
+    userPublicDeckIdsLoaded = false;
     page = 1;
     pageSize = 15;
     totalPages = 1;
@@ -146,7 +146,7 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
     private observer?: IntersectionObserver;
     private sentinel?: ElementRef<HTMLDivElement>;
     private authSubscription?: Subscription;
-    private userDecksLoading = false;
+    private userPublicDeckIdsLoading = false;
 
     constructor(
         public auth: AuthService,
@@ -180,7 +180,8 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
             } else {
                 this.currentUserId = null;
                 this.userPublicDeckIds.clear();
-                this.userDecksLoading = false;
+                this.userPublicDeckIdsLoaded = false;
+                this.userPublicDeckIdsLoading = false;
             }
         });
 
@@ -198,38 +199,27 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
             }
         });
 
-        this.loadUserDeckIds();
+        this.loadUserPublicDeckIds();
     }
 
-    private loadUserDeckIds(): void {
-        if (this.userDecksLoading) {
+    private loadUserPublicDeckIds(): void {
+        if (this.userPublicDeckIdsLoading) {
             return;
         }
-        this.userDecksLoading = true;
-        this.userPublicDeckIds.clear();
-        this.fetchUserDeckPage(1);
-    }
-
-    private fetchUserDeckPage(page: number): void {
-        this.deckApi.getMyDecks(page, 50).pipe(
-            catchError(() => of({ content: [] as UserDeckDTO[], last: true, totalPages: 0 }))
+        this.userPublicDeckIdsLoading = true;
+        this.userPublicDeckIdsLoaded = false;
+        this.deckApi.getMyPublicDeckIds().pipe(
+            catchError(() => of({ publicDeckIds: [] }))
         ).subscribe({
             next: result => {
-                result.content.forEach(deck => {
-                    if (deck.publicDeckId) {
-                        this.userPublicDeckIds.add(deck.publicDeckId);
-                    }
-                });
-
-                if (!result.last && page < (result.totalPages || 0)) {
-                    this.fetchUserDeckPage(page + 1);
-                    return;
-                }
-
-                this.userDecksLoading = false;
+                this.userPublicDeckIds = new Set(result.publicDeckIds || []);
+                this.userPublicDeckIdsLoaded = true;
             },
             error: () => {
-                this.userDecksLoading = false;
+                this.userPublicDeckIdsLoaded = true;
+            },
+            complete: () => {
+                this.userPublicDeckIdsLoading = false;
             }
         });
     }
@@ -323,7 +313,7 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
         if (this.auth.status() !== 'authenticated') {
             return false;
         }
-        if (this.userDecksLoading || !this.currentUserId) {
+        if (!this.currentUserId || !this.userPublicDeckIdsLoaded) {
             return false;
         }
         if (this.currentUserId && deck.authorId === this.currentUserId) {

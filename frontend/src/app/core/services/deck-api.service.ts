@@ -19,6 +19,10 @@ export class DeckApiService {
         return this.http.get<Page<UserDeckDTO>>(`${this.baseUrl}/mine`, { params });
     }
 
+    getMyPublicDeckIds(): Observable<{ publicDeckIds: string[] }> {
+        return this.http.get<{ publicDeckIds: string[] }>(`${this.baseUrl}/mine/public-ids`);
+    }
+
     getUserDeck(userDeckId: string): Observable<UserDeckDTO> {
         return this.http.get<UserDeckDTO>(`${this.baseUrl}/${userDeckId}`);
     }

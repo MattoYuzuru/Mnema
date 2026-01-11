@@ -4,6 +4,8 @@ import app.mnema.core.deck.domain.entity.UserDeckEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
@@ -20,5 +22,14 @@ public interface UserDeckRepository extends JpaRepository<UserDeckEntity, UUID> 
     List<UserDeckEntity> findByUserIdAndArchivedTrue(UUID userId);
 
     long countByPublicDeckIdAndUserDeckIdNot(UUID publicDeckId, UUID userDeckId);
+
+    @Query("""
+        select d.publicDeckId
+        from UserDeckEntity d
+        where d.userId = :userId
+          and d.archived = false
+          and d.publicDeckId is not null
+        """)
+    List<UUID> findPublicDeckIdsByUserId(@Param("userId") UUID userId);
 
 }

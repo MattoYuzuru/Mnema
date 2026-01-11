@@ -78,6 +78,12 @@ public class DeckService {
                 .map(this::toUserDeckDTO);
     }
 
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('SCOPE_user.read')")
+    public List<UUID> getUserPublicDeckIds(UUID currentUserId) {
+        return userDeckRepository.findPublicDeckIdsByUserId(currentUserId);
+    }
+
     // Просмотр архивированных/удаленных колод
     @Transactional(readOnly = true)
     @PreAuthorize("hasAnyAuthority('SCOPE_user.read')")

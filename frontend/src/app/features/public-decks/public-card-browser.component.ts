@@ -8,7 +8,6 @@ import { UserApiService } from '../../user-api.service';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
 import { PublicDeckDTO, PublicCardDTO } from '../../core/models/public-deck.models';
-import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { CardContentValue } from '../../core/models/user-card.models';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
@@ -191,8 +190,9 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     canFork = false;
     currentUserId: string | null = null;
     userPublicDeckIds: Set<string> = new Set();
+    userPublicDeckIdsLoaded = false;
     private authSubscription?: Subscription;
-    private userDecksLoading = false;
+    private userPublicDeckIdsLoading = false;
 
     constructor(
         private route: ActivatedRoute,
@@ -263,7 +263,8 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
             } else {
                 this.currentUserId = null;
                 this.userPublicDeckIds.clear();
-                this.userDecksLoading = false;
+                this.userPublicDeckIdsLoaded = false;
+                this.userPublicDeckIdsLoading = false;
                 this.updateCanFork();
             }
         });
@@ -283,45 +284,34 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
             }
         });
 
-        this.loadUserDeckIds();
+        this.loadUserPublicDeckIds();
     }
 
-    private loadUserDeckIds(): void {
-        if (this.userDecksLoading) {
+    private loadUserPublicDeckIds(): void {
+        if (this.userPublicDeckIdsLoading) {
             return;
         }
-        this.userDecksLoading = true;
-        this.userPublicDeckIds.clear();
-        this.fetchUserDeckPage(1);
-    }
-
-    private fetchUserDeckPage(page: number): void {
-        this.deckApi.getMyDecks(page, 50).pipe(
-            catchError(() => of({ content: [] as UserDeckDTO[], last: true, totalPages: 0 }))
+        this.userPublicDeckIdsLoading = true;
+        this.userPublicDeckIdsLoaded = false;
+        this.deckApi.getMyPublicDeckIds().pipe(
+            catchError(() => of({ publicDeckIds: [] }))
         ).subscribe({
             next: result => {
-                result.content.forEach(deck => {
-                    if (deck.publicDeckId) {
-                        this.userPublicDeckIds.add(deck.publicDeckId);
-                    }
-                });
-
-                if (!result.last && page < (result.totalPages || 0)) {
-                    this.fetchUserDeckPage(page + 1);
-                    return;
-                }
-
-                this.userDecksLoading = false;
+                this.userPublicDeckIds = new Set(result.publicDeckIds || []);
+                this.userPublicDeckIdsLoaded = true;
                 this.updateCanFork();
             },
             error: () => {
-                this.userDecksLoading = false;
+                this.userPublicDeckIdsLoaded = true;
+            },
+            complete: () => {
+                this.userPublicDeckIdsLoading = false;
             }
         });
     }
 
     private updateCanFork(): void {
-        if (this.auth.status() !== 'authenticated' || !this.deck || !this.currentUserId || this.userDecksLoading) {
+        if (this.auth.status() !== 'authenticated' || !this.deck || !this.currentUserId || !this.userPublicDeckIdsLoaded) {
             this.canFork = false;
             return;
         }
