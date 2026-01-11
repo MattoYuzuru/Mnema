@@ -371,6 +371,7 @@ export class AppShellComponent implements OnInit, OnDestroy {
     userMenuOpen = signal(false);
     userProfile = signal<UserProfile | null>(null);
     private authSubscription?: Subscription;
+    private profileSubscription?: Subscription;
 
     constructor(
         public auth: AuthService,
@@ -387,38 +388,53 @@ export class AppShellComponent implements OnInit, OnDestroy {
             this.loadUserProfile();
         }
 
-        this.authSubscription = this.auth.status$
-            .pipe(filter((status: AuthStatus) => status === 'authenticated'))
-            .subscribe(() => {
+        this.authSubscription = this.auth.status$.subscribe((status: AuthStatus) => {
+            if (status === 'authenticated') {
                 if (!this.userProfile()) {
                     this.loadUserProfile();
                 }
-            });
+            } else {
+                this.userProfile.set(null);
+            }
+        });
+
+        this.profileSubscription = this.userApi.profile$.subscribe(profile => {
+            if (!profile) {
+                this.userProfile.set(null);
+                return;
+            }
+            void this.applyUserProfile(profile);
+        });
     }
 
     ngOnDestroy(): void {
         this.authSubscription?.unsubscribe();
+        this.profileSubscription?.unsubscribe();
     }
 
     loadUserProfile(): void {
         this.userApi.getMe().subscribe({
             next: async profile => {
-                if (!profile.avatarUrl && profile.avatarMediaId) {
-                    try {
-                        const resolved = await firstValueFrom(this.mediaApi.resolve([profile.avatarMediaId]));
-                        if (resolved[0]?.url) {
-                            profile = { ...profile, avatarUrl: resolved[0].url };
-                        }
-                    } catch (err) {
-                        console.error('Failed to resolve avatar media', err);
-                    }
-                }
-                this.userProfile.set(profile);
+                await this.applyUserProfile(profile);
             },
             error: err => {
                 console.error('Failed to load user profile', err);
             }
         });
+    }
+
+    private async applyUserProfile(profile: UserProfile): Promise<void> {
+        if (profile.avatarMediaId) {
+            try {
+                const resolved = await firstValueFrom(this.mediaApi.resolve([profile.avatarMediaId]));
+                if (resolved[0]?.url) {
+                    profile = { ...profile, avatarUrl: resolved[0].url };
+                }
+            } catch (err) {
+                console.error('Failed to resolve avatar media', err);
+            }
+        }
+        this.userProfile.set(profile);
     }
 
     getUserInitials(): string {

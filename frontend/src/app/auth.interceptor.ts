@@ -1,7 +1,9 @@
-import { HttpInterceptorFn } from '@angular/common/http';
+import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
 import { AuthService } from './auth.service';
 import { appConfig } from './app.config';
+import { catchError } from 'rxjs/operators';
+import { throwError } from 'rxjs';
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
     const auth = inject(AuthService);
@@ -15,7 +17,14 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         req.url.startsWith(appConfig.importApiBaseUrl);
 
     if (!token || !isApiRequest) {
-        return next(req);
+        return next(req).pipe(
+            catchError((error: HttpErrorResponse) => {
+                if (isApiRequest && error.status === 401) {
+                    auth.expireSession();
+                }
+                return throwError(() => error);
+            })
+        );
     }
 
     const authReq = req.clone({
@@ -24,5 +33,12 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         }
     });
 
-    return next(authReq);
+    return next(authReq).pipe(
+        catchError((error: HttpErrorResponse) => {
+            if (error.status === 401) {
+                auth.expireSession();
+            }
+            return throwError(() => error);
+        })
+    );
 };

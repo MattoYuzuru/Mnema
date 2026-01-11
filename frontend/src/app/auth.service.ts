@@ -17,6 +17,7 @@ interface TokenResponse {
     refresh_token?: string;
     id_token?: string;
     expires_in: number;
+    expires_at?: number;
     token_type: string;
     scope?: string;
     [key: string]: unknown;
@@ -29,6 +30,8 @@ export class AuthService {
     private _statusSubject = new BehaviorSubject<AuthStatus>('anonymous');
     private _userSubject = new BehaviorSubject<AuthUser | null>(null);
     private _accessToken: string | null = null;
+    private _expiresAt: number | null = null;
+    private tokenExpiryTimer: number | null = null;
 
     status$: Observable<AuthStatus> = this._statusSubject.asObservable();
     user$: Observable<AuthUser | null> = this._userSubject.asObservable();
@@ -47,6 +50,10 @@ export class AuthService {
     }
 
     accessToken(): string | null {
+        if (this._accessToken && this.isExpired()) {
+            this.expireSession();
+            return null;
+        }
         return this._accessToken;
     }
 
@@ -101,10 +108,7 @@ export class AuthService {
     }
 
     logout(): void {
-        this._statusSubject.next('anonymous');
-        this._userSubject.next(null);
-        this._accessToken = null;
-        window.sessionStorage.removeItem(this.storageKey);
+        this.clearSession();
 
         const redirectUrl = `${window.location.origin}/`;
         window.location.href = `${appConfig.authServerUrl}/logout?redirect=${encodeURIComponent(redirectUrl)}`;
@@ -139,8 +143,9 @@ export class AuthService {
                 )
             );
 
-            window.sessionStorage.setItem(this.storageKey, JSON.stringify(tokenResponse));
-            this.applyTokens(tokenResponse);
+            const storedTokens = this.withExpiresAt(tokenResponse);
+            window.sessionStorage.setItem(this.storageKey, JSON.stringify(storedTokens));
+            this.applyTokens(storedTokens);
 
             const returnTo = window.sessionStorage.getItem('oauth_return_to') || '/';
             window.sessionStorage.removeItem('oauth_return_to');
@@ -155,8 +160,19 @@ export class AuthService {
     }
 
     private applyTokens(tokens: TokenResponse): void {
+        const expiresAt = this.resolveExpiresAt(tokens);
+        if (expiresAt && Date.now() >= expiresAt) {
+            this.expireSession();
+            return;
+        }
+
+        this.clearExpiryTimer();
         this._accessToken = tokens.access_token;
+        this._expiresAt = expiresAt;
         this._statusSubject.next('authenticated');
+        if (expiresAt) {
+            this.scheduleExpiry(expiresAt);
+        }
 
         if (tokens.id_token) {
             const payload = this.decodeJwt(tokens.id_token);
@@ -167,6 +183,82 @@ export class AuthService {
             };
             this._userSubject.next(user);
         }
+    }
+
+    expireSession(): void {
+        const wasAnonymous = this._statusSubject.value === 'anonymous';
+        this.clearSession();
+        if (wasAnonymous) {
+            return;
+        }
+        const returnUrl = this.router.url || '/';
+        if (!returnUrl.startsWith('/login')) {
+            void this.router.navigate(['/login'], { queryParams: { returnUrl } });
+        }
+    }
+
+    private clearSession(): void {
+        this._statusSubject.next('anonymous');
+        this._userSubject.next(null);
+        this._accessToken = null;
+        this._expiresAt = null;
+        this.clearExpiryTimer();
+        window.sessionStorage.removeItem(this.storageKey);
+    }
+
+    private scheduleExpiry(expiresAt: number): void {
+        this.clearExpiryTimer();
+        const delay = Math.max(expiresAt - Date.now(), 0);
+        this.tokenExpiryTimer = window.setTimeout(() => this.expireSession(), delay);
+    }
+
+    private clearExpiryTimer(): void {
+        if (this.tokenExpiryTimer !== null) {
+            window.clearTimeout(this.tokenExpiryTimer);
+            this.tokenExpiryTimer = null;
+        }
+    }
+
+    private isExpired(): boolean {
+        return this._expiresAt !== null && Date.now() >= this._expiresAt;
+    }
+
+    private withExpiresAt(tokens: TokenResponse): TokenResponse {
+        if (typeof tokens.expires_at === 'number') {
+            return tokens;
+        }
+        const expiresAt = this.resolveExpiresAt(tokens) ?? (Date.now() + tokens.expires_in * 1000);
+        return { ...tokens, expires_at: expiresAt };
+    }
+
+    private resolveExpiresAt(tokens: TokenResponse): number | null {
+        if (typeof tokens.expires_at === 'number') {
+            return tokens.expires_at;
+        }
+        const accessExp = this.getJwtExpiry(tokens.access_token);
+        if (accessExp) {
+            return accessExp;
+        }
+        if (tokens.id_token) {
+            const idExp = this.getJwtExpiry(tokens.id_token);
+            if (idExp) {
+                return idExp;
+            }
+        }
+        return null;
+    }
+
+    private getJwtExpiry(token: string): number | null {
+        try {
+            const payload = this.decodeJwt(token);
+            const exp = payload['exp'];
+            if (typeof exp === 'number') {
+                return exp * 1000;
+            }
+        } catch {
+            return null;
+        }
+        return null;
     }
 
     private decodeJwt(token: string): Record<string, unknown> {
