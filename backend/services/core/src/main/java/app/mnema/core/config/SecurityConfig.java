@@ -28,7 +28,7 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
                         // health/info - открыты
-                        .requestMatchers("/actuator/health", "/actuator/info").permitAll()
+                        .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
 
                         // Публичные колоды можно смотреть без токена
                         .requestMatchers(HttpMethod.GET, "/decks/public/**").permitAll()
