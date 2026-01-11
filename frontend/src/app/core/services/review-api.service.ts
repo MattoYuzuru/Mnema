@@ -7,6 +7,7 @@ import {
     ReviewAnswerRequest,
     ReviewAnswerResponse,
     ReviewDeckAlgorithmResponse,
+    ReviewSummaryResponse,
     UpdateAlgorithmRequest
 } from '../models/review.models';
 
@@ -18,6 +19,10 @@ export class ReviewApiService {
 
     getNextCard(userDeckId: string): Observable<ReviewNextCardResponse> {
         return this.http.get<ReviewNextCardResponse>(`${this.baseUrl}/decks/${userDeckId}/next`);
+    }
+
+    getSummary(): Observable<ReviewSummaryResponse> {
+        return this.http.get<ReviewSummaryResponse>(`${this.baseUrl}/summary`);
     }
 
     answerCard(userDeckId: string, userCardId: string, request: ReviewAnswerRequest): Observable<ReviewAnswerResponse> {

@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { NgIf, NgFor } from '@angular/common';
 import { Router, RouterLink } from '@angular/router';
 import { forkJoin, of, Subscription, from } from 'rxjs';
-import { catchError, filter, mergeMap } from 'rxjs/operators';
+import { catchError, distinctUntilChanged, filter, mergeMap, skip } from 'rxjs/operators';
 import { AuthService, AuthStatus } from './auth.service';
 import { UserApiService } from './user-api.service';
 import { PublicDeckApiService } from './core/services/public-deck-api.service';
@@ -255,6 +255,7 @@ export class HomePageComponent implements OnInit, OnDestroy {
     currentUserId: string | null = null;
     private authSubscription?: Subscription;
     private hasLoadedUserDecks = false;
+    private reviewStatsSubscription?: Subscription;
     private static reviewStatsCache: { data: { due: number; new: number }; timestamp: number } | null = null;
     private static deckSizesCache: Map<string, { size: number; timestamp: number }> = new Map();
     private static readonly CACHE_TTL_MS = 5 * 60 * 1000;
@@ -276,7 +277,11 @@ export class HomePageComponent implements OnInit, OnDestroy {
     ngOnInit(): void {
         this.loadData();
         this.authSubscription = this.auth.status$
-            .pipe(filter((status: AuthStatus) => status === 'authenticated'))
+            .pipe(
+                distinctUntilChanged(),
+                skip(1),
+                filter((status: AuthStatus) => status === 'authenticated')
+            )
             .subscribe(() => {
                 if (!this.hasLoadedUserDecks) {
                     this.loadUserData();
@@ -286,6 +291,7 @@ export class HomePageComponent implements OnInit, OnDestroy {
 
     ngOnDestroy(): void {
         this.authSubscription?.unsubscribe();
+        this.reviewStatsSubscription?.unsubscribe();
     }
 
     private loadData(): void {
@@ -344,22 +350,17 @@ export class HomePageComponent implements OnInit, OnDestroy {
         }
 
         this.todayStats = { due: 0, new: 0 };
+        this.reviewStatsSubscription?.unsubscribe();
 
-        from(this.userDecks)
-            .pipe(
-                mergeMap(deck =>
-                    this.reviewApi.getNextCard(deck.userDeckId).pipe(
-                        catchError(() => of({ queue: { dueCount: 0, newCount: 0 } }))
-                    ),
-                    4
-                )
-            )
+        this.reviewStatsSubscription = this.reviewApi
+            .getSummary()
+            .pipe(catchError(() => of({ dueCount: 0, newCount: 0 })))
             .subscribe({
-                next: response => {
-                    this.todayStats.due += response.queue.dueCount || 0;
-                    this.todayStats.new += response.queue.newCount || 0;
-                },
-                complete: () => {
+                next: summary => {
+                    this.todayStats = {
+                        due: summary.dueCount || 0,
+                        new: summary.newCount || 0
+                    };
                     HomePageComponent.reviewStatsCache = {
                         data: { ...this.todayStats },
                         timestamp: now

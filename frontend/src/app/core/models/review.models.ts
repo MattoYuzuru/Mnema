@@ -18,6 +18,11 @@ export interface ReviewNextCardResponse {
     queue: ReviewQueueDTO;
 }
 
+export interface ReviewSummaryResponse {
+    dueCount: number;
+    newCount: number;
+}
+
 export interface ReviewAnswerRequest {
     rating: 'AGAIN' | 'HARD' | 'GOOD' | 'EASY';
     responseMs: number;

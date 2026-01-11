@@ -54,6 +54,41 @@ public class ReviewService {
     }
 
     @Transactional(readOnly = true)
+    public ReviewSummaryResponse summary(UUID userId) {
+        List<UUID> deckIds = userCardRepo.findActiveDeckIds(userId);
+        if (deckIds.isEmpty()) {
+            return new ReviewSummaryResponse(0, 0);
+        }
+
+        Instant now = Instant.now();
+        Map<UUID, Long> dueByDeck = toCountMap(userCardRepo.countDueByDeck(userId, deckIds, now));
+        Map<UUID, Long> newByDeck = toCountMap(userCardRepo.countNewByDeck(userId, deckIds));
+
+        long totalDue = 0;
+        long totalNew = 0;
+        for (UUID deckId : deckIds) {
+            long dueCount = dueByDeck.getOrDefault(deckId, 0L);
+            long newCount = newByDeck.getOrDefault(deckId, 0L);
+            long remainingNewQuota = preferencesService.getSnapshot(deckId, now).remainingNewQuota();
+            long availableNew = remainingNewQuota == Long.MAX_VALUE
+                    ? newCount
+                    : Math.min(newCount, remainingNewQuota);
+            totalDue += dueCount;
+            totalNew += availableNew;
+        }
+
+        return new ReviewSummaryResponse(totalDue, totalNew);
+    }
+
+    private static Map<UUID, Long> toCountMap(List<ReviewUserCardRepository.DeckCount> counts) {
+        Map<UUID, Long> result = new HashMap<>();
+        for (ReviewUserCardRepository.DeckCount count : counts) {
+            result.put(count.getUserDeckId(), count.getCount());
+        }
+        return result;
+    }
+
+    @Transactional(readOnly = true)
     public ReviewDeckAlgorithmResponse getDeckAlgorithm(UUID userId, UUID userDeckId) {
         AlgorithmContext ctx = resolveAlgorithmContext(userId, userDeckId);
         AlgorithmStats stats = computeAlgorithmStats(userId, userDeckId, ctx.algorithmId());

@@ -14,6 +14,21 @@ import java.util.UUID;
 @Repository
 public interface ReviewUserCardRepository extends JpaRepository<ReviewUserCardEntity, UUID> {
 
+    interface DeckCount {
+        UUID getUserDeckId();
+        long getCount();
+    }
+
+    @Query("""
+        select distinct c.userDeckId
+        from ReviewUserCardEntity c
+        join UserDeckEntity d on d.userDeckId = c.userDeckId
+        where d.userId = :userId
+          and d.archived = false
+          and c.deleted = false
+        """)
+    List<UUID> findActiveDeckIds(@Param("userId") UUID userId);
+
     @Query("""
             select c.userCardId
             from ReviewUserCardEntity c
@@ -69,6 +84,34 @@ public interface ReviewUserCardRepository extends JpaRepository<ReviewUserCardEn
         """)
     long countNew(@Param("userId") UUID userId,
                   @Param("deckId") UUID deckId);
+
+    @Query("""
+        select c.userDeckId as userDeckId, count(c.userCardId) as count
+        from ReviewUserCardEntity c
+        join SrCardStateEntity s on s.userCardId = c.userCardId
+        where c.userId = :userId
+          and c.deleted = false
+          and s.suspended = false
+          and s.nextReviewAt <= :until
+          and c.userDeckId in :deckIds
+        group by c.userDeckId
+        """)
+    List<DeckCount> countDueByDeck(@Param("userId") UUID userId,
+                                   @Param("deckIds") List<UUID> deckIds,
+                                   @Param("until") Instant until);
+
+    @Query("""
+        select c.userDeckId as userDeckId, count(c.userCardId) as count
+        from ReviewUserCardEntity c
+        left join SrCardStateEntity s on s.userCardId = c.userCardId
+        where c.userId = :userId
+          and c.deleted = false
+          and s.userCardId is null
+          and c.userDeckId in :deckIds
+        group by c.userDeckId
+        """)
+    List<DeckCount> countNewByDeck(@Param("userId") UUID userId,
+                                   @Param("deckIds") List<UUID> deckIds);
 
     @Query("""
         select count(c.userCardId)
