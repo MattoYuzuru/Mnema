@@ -130,7 +130,7 @@ export class FlashcardViewComponent implements OnChanges {
     constructor(private mediaApi: MediaApiService) {}
 
     ngOnChanges(changes: SimpleChanges): void {
-        if (changes['template'] || changes['content'] || changes['side']) {
+        if (changes['template'] || changes['content']) {
             void this.buildFields();
         }
     }

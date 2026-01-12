@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, of } from 'rxjs';
+import { map } from 'rxjs/operators';
 import { appConfig } from '../../app.config';
 
 export type MediaKind = 'avatar' | 'deck_icon' | 'card_image' | 'card_audio' | 'card_video' | 'import_file';
@@ -50,6 +51,9 @@ export interface ResolvedMedia {
 @Injectable({ providedIn: 'root' })
 export class MediaApiService {
     private readonly baseUrl = appConfig.mediaApiBaseUrl;
+    private static readonly CACHE_SAFETY_MS = 30_000;
+    private static readonly MAX_CACHE_ENTRIES = 500;
+    private readonly mediaCache = new Map<string, { item: ResolvedMedia; expiresAtMs: number }>();
 
     constructor(private http: HttpClient) {}
 
@@ -67,7 +71,79 @@ export class MediaApiService {
     }
 
     resolve(mediaIds: string[]): Observable<ResolvedMedia[]> {
-        return this.http.post<ResolvedMedia[]>(`${this.baseUrl}/resolve`, { mediaIds });
+        if (!mediaIds.length) {
+            return of([]);
+        }
+
+        const now = Date.now();
+        const cached = new Map<string, ResolvedMedia>();
+        const missing: string[] = [];
+        const missingSet = new Set<string>();
+
+        for (const mediaId of mediaIds) {
+            const entry = this.mediaCache.get(mediaId);
+            if (entry && entry.expiresAtMs - MediaApiService.CACHE_SAFETY_MS > now) {
+                cached.set(mediaId, entry.item);
+                continue;
+            }
+            if (entry) {
+                this.mediaCache.delete(mediaId);
+            }
+            if (!missingSet.has(mediaId)) {
+                missingSet.add(mediaId);
+                missing.push(mediaId);
+            }
+        }
+
+        if (!missing.length) {
+            return of(this.buildOrderedList(mediaIds, cached));
+        }
+
+        return this.http
+            .post<ResolvedMedia[]>(`${this.baseUrl}/resolve`, { mediaIds: missing })
+            .pipe(
+                map(resolved => {
+                    for (const item of resolved) {
+                        const expiresAtMs = Date.parse(item.expiresAt);
+                        this.mediaCache.set(item.mediaId, {
+                            item,
+                            expiresAtMs: Number.isNaN(expiresAtMs) ? now : expiresAtMs
+                        });
+                    }
+                    this.trimCache();
+                    const combined = new Map<string, ResolvedMedia>(cached);
+                    for (const item of resolved) {
+                        combined.set(item.mediaId, item);
+                    }
+                    return this.buildOrderedList(mediaIds, combined);
+                })
+            );
+    }
+
+    private buildOrderedList(mediaIds: string[], map: Map<string, ResolvedMedia>): ResolvedMedia[] {
+        const ordered: ResolvedMedia[] = [];
+        for (const mediaId of mediaIds) {
+            const item = map.get(mediaId);
+            if (item) {
+                ordered.push(item);
+            }
+        }
+        return ordered;
+    }
+
+    private trimCache(): void {
+        if (this.mediaCache.size <= MediaApiService.MAX_CACHE_ENTRIES) {
+            return;
+        }
+        const overflow = this.mediaCache.size - MediaApiService.MAX_CACHE_ENTRIES;
+        let removed = 0;
+        for (const key of this.mediaCache.keys()) {
+            this.mediaCache.delete(key);
+            removed += 1;
+            if (removed >= overflow) {
+                break;
+            }
+        }
     }
 
     toUrlMap(resolved: ResolvedMedia[]): Record<string, string> {
