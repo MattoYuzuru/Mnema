@@ -237,7 +237,7 @@ export class DecksListComponent implements OnInit {
                 this.deckIcons.set(publicDeckId, cachedIconUrl);
             }
 
-            return !(cachedAuthor && cachedIconId);
+            return !(cachedAuthor && (cachedIconId || cachedIconUrl));
         });
 
         if (missingDetails.length === 0) {
@@ -260,6 +260,10 @@ export class DecksListComponent implements OnInit {
                         if (response.iconMediaId) {
                             this.deckIconMediaIds.set(response.deckId, response.iconMediaId);
                             DecksListComponent.deckIconMediaCache.set(response.deckId, response.iconMediaId);
+                        }
+                        if (response.iconUrl) {
+                            this.deckIcons.set(response.deckId, response.iconUrl);
+                            DecksListComponent.deckIconUrlCache.set(response.deckId, response.iconUrl);
                         }
                     }
                 },

@@ -12,6 +12,7 @@ export interface PublicDeckDTO {
     language: string;
     tags: string[];
     iconMediaId?: string | null;
+    iconUrl?: string | null;
     createdAt: string;
     updatedAt: string;
     publishedAt?: string | null;

@@ -292,8 +292,16 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
     }
 
     private async resolveDeckIcons(decks: PublicDeckDTO[]): Promise<void> {
-        const decksWithIcons = decks.filter(d => d.iconMediaId);
-        if (decksWithIcons.length === 0) return;
+        decks.forEach(deck => {
+            if (deck.iconUrl) {
+                this.deckIcons.set(deck.deckId, deck.iconUrl);
+            }
+        });
+
+        const decksWithIcons = decks.filter(d => d.iconMediaId && !d.iconUrl);
+        if (decksWithIcons.length === 0) {
+            return;
+        }
 
         try {
             const mediaIds = decksWithIcons.map(d => d.iconMediaId!);

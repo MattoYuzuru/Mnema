@@ -339,7 +339,9 @@ export class ProfilePageComponent implements OnInit {
                 console.error('Failed to resolve avatar media', err);
                 this.avatarDisplayUrl = null;
             }
-        } else if (profile.avatarUrl) {
+            return;
+        }
+        if (profile.avatarUrl) {
             this.avatarDisplayUrl = profile.avatarUrl;
         } else {
             this.avatarDisplayUrl = null;

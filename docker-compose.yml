@@ -49,6 +49,7 @@ services:
       YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET}
     depends_on:
       postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
     ports: [ "8083:8080" ]
 
   user:
@@ -67,8 +68,11 @@ services:
       CORE_BASE_URL: http://core:8080/api/core
       MEDIA_BASE_URL: http://media:8080/api/media
       MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
       postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
     ports: [ "8084:8080" ]
 
   core:
@@ -84,6 +88,10 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD}}
       SPRING_FLYWAY_ENABLED: "true"
       AUTH_ISSUER_URI: http://auth:8080
+      MEDIA_BASE_URL: http://media:8080/api/media
+      MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
       postgres: { condition: service_healthy }
     ports: [ "8085:8080" ]

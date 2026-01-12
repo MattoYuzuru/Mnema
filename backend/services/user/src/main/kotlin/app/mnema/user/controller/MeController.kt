@@ -1,6 +1,7 @@
 package app.mnema.user.controller
 
 import app.mnema.user.entity.User
+import app.mnema.user.media.service.MediaResolveCache
 import app.mnema.user.repository.UserRepository
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
@@ -15,7 +16,8 @@ import java.util.*
 @RestController
 @RequestMapping("/me")
 class MeController(
-    private val repo: UserRepository
+    private val repo: UserRepository,
+    private val mediaResolveCache: MediaResolveCache
 ) {
     data class MeResponse(
         val id: UUID,
@@ -36,12 +38,12 @@ class MeController(
         val avatarMediaId: UUID? = null
     )
 
-    private fun toDto(user: User) = MeResponse(
+    private fun toDto(user: User, resolvedAvatarUrl: String? = null) = MeResponse(
         id = user.id,
         email = user.email,
         username = user.username,
         bio = user.bio,
-        avatarUrl = user.avatarUrl,
+        avatarUrl = resolvedAvatarUrl ?: user.avatarUrl,
         avatarMediaId = user.avatarMediaId,
         isAdmin = user.isAdmin,
         createdAt = user.createdAt,
@@ -60,7 +62,9 @@ class MeController(
 
         val existing = repo.findById(userId)
         if (existing.isPresent) {
-            return toDto(existing.get())
+            val user = existing.get()
+            val avatarUrl = resolveAvatarUrl(user, jwt)
+            return toDto(user, avatarUrl)
         }
 
         val existingByEmail = repo.findByEmailIgnoreCase(email)
@@ -72,7 +76,8 @@ class MeController(
             val migrated = repo.findById(userId)
                 .orElseThrow { ResponseStatusException(HttpStatus.CONFLICT, "Unable to migrate user profile") }
             migrated.avatarUrl = migrated.avatarUrl ?: jwt.getClaimAsString("picture")
-            return toDto(migrated)
+            val avatarUrl = resolveAvatarUrl(migrated, jwt)
+            return toDto(migrated, avatarUrl)
         }
 
         // Первый логин -> создаём профиль
@@ -93,11 +98,14 @@ class MeController(
         )
 
         return try {
-            toDto(repo.save(user))
+            val saved = repo.save(user)
+            val avatarUrl = resolveAvatarUrl(saved, jwt)
+            toDto(saved, avatarUrl)
         } catch (ex: DataIntegrityViolationException) {
             val existingAfterInsert = repo.findById(userId)
                 .orElseGet { repo.findByEmailIgnoreCase(email).orElseThrow { ex } }
-            toDto(existingAfterInsert)
+            val avatarUrl = resolveAvatarUrl(existingAfterInsert, jwt)
+            toDto(existingAfterInsert, avatarUrl)
         }
     }
 
@@ -120,9 +128,13 @@ class MeController(
 
         req.bio?.let { user.bio = it }
         req.avatarUrl?.let { user.avatarUrl = it }
-        req.avatarMediaId?.let { user.avatarMediaId = it }
+        req.avatarMediaId?.let {
+            user.avatarMediaId = it
+            user.avatarUrl = null
+        }
 
-        return toDto(user)
+        val avatarUrl = resolveAvatarUrl(user, jwt)
+        return toDto(user, avatarUrl)
     }
 
     @DeleteMapping
@@ -137,5 +149,17 @@ class MeController(
         }
 
         repo.deleteById(userId)
+    }
+
+    private fun resolveAvatarUrl(user: User, jwt: Jwt): String? {
+        val mediaId = user.avatarMediaId
+        if (mediaId != null) {
+            val resolved = mediaResolveCache.resolveAvatar(mediaId, jwt.tokenValue)
+            if (!resolved?.url.isNullOrBlank()) {
+                return resolved.url
+            }
+            return null
+        }
+        return user.avatarUrl
     }
 }

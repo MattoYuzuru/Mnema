@@ -12,6 +12,7 @@ import app.mnema.core.deck.repository.PublicCardRepository;
 import app.mnema.core.deck.repository.PublicDeckRepository;
 import app.mnema.core.deck.repository.UserCardRepository;
 import app.mnema.core.deck.repository.UserDeckRepository;
+import app.mnema.core.media.service.MediaResolveCache;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -29,15 +30,18 @@ public class DeckService {
     private final UserCardRepository userCardRepository;
     private final PublicCardRepository publicCardRepository;
     private final PublicDeckRepository publicDeckRepository;
+    private final MediaResolveCache mediaResolveCache;
 
     public DeckService(UserDeckRepository userDeckRepository,
                        UserCardRepository userCardRepository,
                        PublicCardRepository publicCardRepository,
-                       PublicDeckRepository publicDeckRepository) {
+                       PublicDeckRepository publicDeckRepository,
+                       MediaResolveCache mediaResolveCache) {
         this.userDeckRepository = userDeckRepository;
         this.userCardRepository = userCardRepository;
         this.publicCardRepository = publicCardRepository;
         this.publicDeckRepository = publicDeckRepository;
+        this.mediaResolveCache = mediaResolveCache;
     }
 
     // Публичный каталог: только последние версии каждой публичной колоды
@@ -45,9 +49,10 @@ public class DeckService {
     public Page<PublicDeckDTO> getPublicDecksByPage(int page, int limit) {
         Pageable pageable = PageRequest.of(page - 1, limit);
 
-        return publicDeckRepository
-                .findLatestPublicVisibleDecks(pageable)
-                .map(this::toPublicDeckDTO);
+        Page<PublicDeckEntity> decksPage = publicDeckRepository.findLatestPublicVisibleDecks(pageable);
+        Map<UUID, String> iconUrls = resolveIconUrls(decksPage.getContent());
+
+        return decksPage.map(deck -> toPublicDeckDTO(deck, resolveIconUrl(iconUrls, deck.getIconMediaId())));
     }
 
     // Получить публичную колоду по deckId и опционально по версии
@@ -65,7 +70,8 @@ public class DeckService {
                             "Public deck not found: deckId=" + deckId + ", version=" + version
                     ));
         }
-        return toPublicDeckDTO(deck);
+        String iconUrl = resolveIconUrl(deck.getIconMediaId());
+        return toPublicDeckDTO(deck, iconUrl);
     }
 
     // Просмотр всех пользовательских колод постранично
@@ -532,7 +538,7 @@ public class DeckService {
         deck.setUpdatedAt(Instant.now());
 
         PublicDeckEntity saved = publicDeckRepository.save(deck);
-        return toPublicDeckDTO(saved);
+        return toPublicDeckDTO(saved, null);
     }
 
     // Форк публичной колоды
@@ -660,7 +666,7 @@ public class DeckService {
         );
     }
 
-    private PublicDeckDTO toPublicDeckDTO(PublicDeckEntity e) {
+    private PublicDeckDTO toPublicDeckDTO(PublicDeckEntity e, String iconUrl) {
         return new PublicDeckDTO(
                 e.getDeckId(),
                 e.getVersion(),
@@ -668,6 +674,7 @@ public class DeckService {
                 e.getName(),
                 e.getDescription(),
                 e.getIconMediaId(),
+                iconUrl,
                 e.getTemplateId(),
                 e.isPublicFlag(),
                 e.isListed(),
@@ -678,5 +685,41 @@ public class DeckService {
                 e.getPublishedAt(),
                 e.getForkedFromDeck()
         );
+    }
+
+    private Map<UUID, String> resolveIconUrls(List<PublicDeckEntity> decks) {
+        if (decks == null || decks.isEmpty()) {
+            return Map.of();
+        }
+
+        List<UUID> mediaIds = decks.stream()
+                .map(PublicDeckEntity::getIconMediaId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+
+        if (mediaIds.isEmpty()) {
+            return Map.of();
+        }
+
+        Map<UUID, String> urls = new HashMap<>();
+        mediaResolveCache.resolve(mediaIds)
+                .forEach((id, media) -> urls.put(id, media.url()));
+        return urls;
+    }
+
+    private String resolveIconUrl(UUID iconMediaId) {
+        if (iconMediaId == null) {
+            return null;
+        }
+        var resolved = mediaResolveCache.resolve(List.of(iconMediaId)).get(iconMediaId);
+        return resolved == null ? null : resolved.url();
+    }
+
+    private String resolveIconUrl(Map<UUID, String> iconUrls, UUID iconMediaId) {
+        if (iconMediaId == null || iconUrls == null || iconUrls.isEmpty()) {
+            return null;
+        }
+        return iconUrls.get(iconMediaId);
     }
 }
