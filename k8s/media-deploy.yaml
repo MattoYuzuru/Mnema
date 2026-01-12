@@ -40,6 +40,10 @@ spec:
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AUTH_ISSUER_URI } }
             - name: MEDIA_INTERNAL_TOKEN
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: MEDIA_INTERNAL_TOKEN } }
+            - name: REDIS_HOST
+              value: redis
+            - name: REDIS_PORT
+              value: "6379"
             - name: AWS_REGION
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AWS_REGION } }
             - name: AWS_ACCESS_KEY_ID
