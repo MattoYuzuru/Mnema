@@ -44,6 +44,10 @@ dependencies {
 	// Валидация DTO
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 
+	// Cache + Redis
+	implementation("org.springframework.boot:spring-boot-starter-cache")
+	implementation("org.springframework.boot:spring-boot-starter-data-redis")
+
 	// Swagger / OpenAPI
 	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.13")
 

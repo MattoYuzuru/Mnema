@@ -38,6 +38,14 @@ spec:
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: GOOGLE_CLIENT_SECRET } }
             - name: AUTH_ISSUER_URI
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AUTH_ISSUER_URI } }
+            - name: MEDIA_BASE_URL
+              value: http://mnema-media/api/media
+            - name: MEDIA_INTERNAL_TOKEN
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: MEDIA_INTERNAL_TOKEN } }
+            - name: REDIS_HOST
+              value: redis
+            - name: REDIS_PORT
+              value: "6379"
             - name: SPRING_PROFILES_ACTIVE
               value: prod
           startupProbe:

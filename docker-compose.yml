@@ -14,6 +14,17 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    networks: [ mnema_net ]
+    image: redis:7-alpine
+    command: [ "redis-server", "--save", "", "--appendonly", "no" ]
+    ports: [ "6379:6379" ]
+    healthcheck:
+      test: [ "CMD", "redis-cli", "ping" ]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   auth:
     networks: [ mnema_net ]
     #    dns:
@@ -38,6 +49,7 @@ services:
       YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET}
     depends_on:
       postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
     ports: [ "8083:8080" ]
 
   user:
@@ -56,8 +68,11 @@ services:
       CORE_BASE_URL: http://core:8080/api/core
       MEDIA_BASE_URL: http://media:8080/api/media
       MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
       postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
     ports: [ "8084:8080" ]
 
   core:
@@ -73,6 +88,10 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD}}
       SPRING_FLYWAY_ENABLED: "true"
       AUTH_ISSUER_URI: http://auth:8080
+      MEDIA_BASE_URL: http://media:8080/api/media
+      MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
     depends_on:
       postgres: { condition: service_healthy }
     ports: [ "8085:8080" ]
@@ -91,6 +110,8 @@ services:
       SPRING_FLYWAY_ENABLED: "true"
       AUTH_ISSUER_URI: http://auth:8080
       MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
       AWS_REGION: ${AWS_REGION}
       AWS_BUCKET_NAME: ${AWS_BUCKET_NAME}
       AWS_ENDPOINT: ${AWS_ENDPOINT:-https://storage.yandexcloud.net}
@@ -99,6 +120,8 @@ services:
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports: [ "8086:8080" ]
 

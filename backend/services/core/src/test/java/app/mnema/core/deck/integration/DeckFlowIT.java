@@ -126,7 +126,8 @@ class DeckFlowIT extends PostgresIntegrationTest {
                 null,                 // authorId (в сервисе равно currentUserId)
                 "Integration deck",
                 "Integration description",
-                null,
+                null,                 // iconMediaId
+                null,                 // iconUrl
                 templateId,           // валидный FK в card_templates
                 true,                 // isPublic
                 true,                 // isListed

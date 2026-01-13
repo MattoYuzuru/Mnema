@@ -449,6 +449,10 @@ export class HomePageComponent implements OnInit, OnDestroy {
 
         decks.forEach(deck => {
             publicDeckIds.push(deck.deckId);
+            if (deck.iconUrl) {
+                this.deckIcons.set(deck.deckId, deck.iconUrl);
+                HomePageComponent.deckIconUrlCache.set(deck.deckId, deck.iconUrl);
+            }
             if (deck.iconMediaId) {
                 HomePageComponent.deckIconMediaCache.set(deck.deckId, deck.iconMediaId);
             }
@@ -486,6 +490,10 @@ export class HomePageComponent implements OnInit, OnDestroy {
                 next: response => {
                     if (response?.iconMediaId) {
                         HomePageComponent.deckIconMediaCache.set(response.deckId, response.iconMediaId);
+                    }
+                    if (response?.iconUrl) {
+                        this.deckIcons.set(response.deckId, response.iconUrl);
+                        HomePageComponent.deckIconUrlCache.set(response.deckId, response.iconUrl);
                     }
                 },
                 complete: () => {

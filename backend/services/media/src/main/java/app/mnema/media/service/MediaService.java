@@ -43,19 +43,22 @@ public class MediaService {
     private final MediaPolicy policy;
     private final CurrentUserProvider currentUserProvider;
     private final JwtScopeHelper scopeHelper;
+    private final MediaResolveCache resolveCache;
 
     public MediaService(MediaAssetRepository assetRepository,
                         MediaUploadRepository uploadRepository,
                         ObjectStorage storage,
                         MediaPolicy policy,
                         CurrentUserProvider currentUserProvider,
-                        JwtScopeHelper scopeHelper) {
+                        JwtScopeHelper scopeHelper,
+                        MediaResolveCache resolveCache) {
         this.assetRepository = assetRepository;
         this.uploadRepository = uploadRepository;
         this.storage = storage;
         this.policy = policy;
         this.currentUserProvider = currentUserProvider;
         this.scopeHelper = scopeHelper;
+        this.resolveCache = resolveCache;
     }
 
     @Transactional
@@ -295,11 +298,11 @@ public class MediaService {
         asset.setStatus(MediaStatus.deleted);
         asset.setDeletedAt(Instant.now());
         assetRepository.save(asset);
+        resolveCache.evict(asset.getMediaId());
     }
 
     @Transactional(readOnly = true)
     public List<ResolvedMedia> resolve(Jwt jwt, List<UUID> mediaIds) {
-        Instant expiresAt = Instant.now().plus(policy.presignTtl());
         List<MediaAssetEntity> assets = assetRepository.findByMediaIdIn(mediaIds);
         var byId = assets.stream()
                 .collect(java.util.stream.Collectors.toMap(MediaAssetEntity::getMediaId, a -> a));
@@ -318,18 +321,7 @@ public class MediaService {
                     if (asset.getStatus() != MediaStatus.ready) {
                         throw new ResponseStatusException(HttpStatus.CONFLICT, "Media not ready: " + asset.getMediaId());
                     }
-                    var presigned = storage.presignGet(asset.getStorageKey(), policy.presignTtl());
-                    return new ResolvedMedia(
-                            asset.getMediaId(),
-                            asset.getKind(),
-                            presigned.url(),
-                            asset.getMimeType(),
-                            asset.getSizeBytes(),
-                            asset.getDurationSeconds(),
-                            asset.getWidth(),
-                            asset.getHeight(),
-                            expiresAt
-                    );
+                    return resolveCache.resolve(asset);
                 })
                 .toList();
     }
@@ -346,6 +338,7 @@ public class MediaService {
         asset.setStatus(MediaStatus.deleted);
         asset.setDeletedAt(Instant.now());
         assetRepository.save(asset);
+        resolveCache.evict(mediaId);
     }
 
     private void validateCompleted(MediaAssetEntity asset, MediaUploadEntity upload, ObjectInfo info) {

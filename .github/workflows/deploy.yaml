@@ -152,6 +152,9 @@ jobs:
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
 
+      - name: Ensure namespace exists
+        run: kubectl apply -f k8s/namespace.yaml
+
       - name: Create/Update secret (mnema-secrets)
         run: |
           cat <<YAML | kubectl apply -f -

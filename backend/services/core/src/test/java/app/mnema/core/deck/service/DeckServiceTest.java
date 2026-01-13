@@ -9,6 +9,7 @@ import app.mnema.core.deck.domain.type.SrAlgorithm;
 import app.mnema.core.deck.repository.PublicDeckRepository;
 import app.mnema.core.deck.repository.UserCardRepository;
 import app.mnema.core.deck.repository.UserDeckRepository;
+import app.mnema.core.media.service.MediaResolveCache;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -22,6 +23,7 @@ import org.springframework.data.domain.Pageable;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -41,6 +43,9 @@ class DeckServiceTest {
 
     @Mock
     PublicDeckRepository publicDeckRepository;
+
+    @Mock
+    MediaResolveCache mediaResolveCache;
 
     @InjectMocks
     DeckService deckService;
@@ -73,6 +78,7 @@ class DeckServiceTest {
 
         when(publicDeckRepository.findLatestPublicVisibleDecks(any(Pageable.class)))
                 .thenReturn(repoPage);
+        when(mediaResolveCache.resolve(anyList())).thenReturn(Map.of());
 
         Page<PublicDeckDTO> result = deckService.getPublicDecksByPage(1, 10);
 
@@ -140,6 +146,7 @@ class DeckServiceTest {
                 null,
                 "My deck",
                 "Description",
+                null,
                 null,
                 templateId,
                 true,
