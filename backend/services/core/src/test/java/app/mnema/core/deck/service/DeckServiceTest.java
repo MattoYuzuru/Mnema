@@ -23,13 +23,13 @@ import org.springframework.data.domain.Pageable;
 
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -78,8 +78,6 @@ class DeckServiceTest {
 
         when(publicDeckRepository.findLatestPublicVisibleDecks(any(Pageable.class)))
                 .thenReturn(repoPage);
-        when(mediaResolveCache.resolve(anyList())).thenReturn(Map.of());
-
         Page<PublicDeckDTO> result = deckService.getPublicDecksByPage(1, 10);
 
         assertThat(result.getTotalElements()).isEqualTo(1);
