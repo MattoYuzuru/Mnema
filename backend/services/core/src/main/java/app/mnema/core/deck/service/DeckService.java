@@ -132,7 +132,10 @@ public class DeckService {
                     ));
         }
 
-        long cardsCount = publicCardRepository.countByDeckIdAndDeckVersion(deck.getDeckId(), deck.getVersion());
+        long cardsCount = publicCardRepository.countByDeckIdAndDeckVersionAndActiveTrue(
+                deck.getDeckId(),
+                deck.getVersion()
+        );
 
         return new DeckSizeDTO(deck.getDeckId(), cardsCount);
     }
