@@ -40,6 +40,7 @@ dependencies {
 
 	// Actuator (health, metrics для k8s / Prometheus)
 	implementation("org.springframework.boot:spring-boot-starter-actuator")
+	runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
 	// Валидация DTO
 	implementation("org.springframework.boot:spring-boot-starter-validation")

@@ -47,6 +47,8 @@ spec:
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: YANDEX_CLIENT_SECRET } }
             - name: AUTH_ISSUER
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AUTH_ISSUER } }
+            - name: APP_ENV
+              value: prod
             - name: SPRING_PROFILES_ACTIVE
               value: prod
           startupProbe:

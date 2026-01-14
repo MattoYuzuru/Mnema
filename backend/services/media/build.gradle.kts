@@ -22,6 +22,7 @@ dependencies {
 
     // Actuator
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
     // Security + JWT
     implementation("org.springframework.boot:spring-boot-starter-security")

@@ -2,7 +2,7 @@ auth:
   issuer: https://auth.mnema.app
 
 management:
-  endpoints.web.exposure.include: health,info
+  endpoints.web.exposure.include: health,info,prometheus
 
 server:
   forward-headers-strategy: native

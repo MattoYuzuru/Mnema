@@ -35,6 +35,7 @@ dependencies {
 
     // Actuator
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
     // Reactive streams (needed for Spring HTTP clients/actuator reflection)
     implementation("org.reactivestreams:reactive-streams:1.0.4")
