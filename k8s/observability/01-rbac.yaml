@@ -21,7 +21,7 @@ kind: ClusterRole
 metadata:
   name: prometheus-observability
 rules:
-  - apiGroups: ["""]
+  - apiGroups: [""]
     resources: ["nodes", "nodes/metrics", "services", "endpoints", "pods", "namespaces"]
     verbs: ["get", "list", "watch"]
   - apiGroups: ["extensions", "networking.k8s.io"]
@@ -46,7 +46,7 @@ kind: ClusterRole
 metadata:
   name: alloy-observability
 rules:
-  - apiGroups: ["""]
+  - apiGroups: [""]
     resources: ["pods", "namespaces"]
     verbs: ["get", "list", "watch"]
 ---
@@ -68,7 +68,7 @@ kind: ClusterRole
 metadata:
   name: kube-state-metrics-observability
 rules:
-  - apiGroups: ["""]
+  - apiGroups: [""]
     resources: ["nodes", "pods", "services", "endpoints", "namespaces", "persistentvolumes", "persistentvolumeclaims", "resourcequotas", "replicationcontrollers", "limitranges"]
     verbs: ["list", "watch"]
   - apiGroups: ["apps"]
