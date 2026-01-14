@@ -43,38 +43,40 @@ public class TemplateService {
 
         Pageable pageable = PageRequest.of(page - 1, limit);
 
-        // 1. Грузим страницу публичных шаблонов
-        Page<CardTemplateEntity> templatePage = cardTemplateRepository.findByIsPublicTrue(pageable);
+        Page<CardTemplateEntity> templatePage = cardTemplateRepository
+                .findByIsPublicTrueOrderByCreatedAtDesc(pageable);
 
-        List<CardTemplateEntity> templates = templatePage.getContent();
-        if (templates.isEmpty()) {
-            return new PageImpl<>(List.of(), pageable, templatePage.getTotalElements());
+        return mapTemplatePage(templatePage);
+    }
+
+    // GET /api/core/templates?scope=mine - получить шаблоны пользователя
+    @PreAuthorize("hasAuthority('SCOPE_user.read')")
+    public Page<CardTemplateDTO> getUserTemplatesByPage(UUID currentUserId, int page, int limit) {
+        if (page < 1 || limit < 1) {
+            throw new IllegalArgumentException("page and limit must be >= 1");
         }
 
-        // 2. Собираем все templateId
-        List<UUID> templateIds = templates.stream()
-                .map(CardTemplateEntity::getTemplateId)
-                .toList();
+        Pageable pageable = PageRequest.of(page - 1, limit);
 
-        // 3. Грузим поля одним запросом
-        List<FieldTemplateEntity> fieldEntities = fieldTemplateRepository.findByTemplateIdIn(templateIds);
+        Page<CardTemplateEntity> templatePage = cardTemplateRepository
+                .findByOwnerIdOrderByCreatedAtDesc(currentUserId, pageable);
 
-        // 4. Мапим по templateId
-        Map<UUID, List<FieldTemplateDTO>> fieldsByTemplateId = fieldEntities.stream()
-                .collect(Collectors.groupingBy(
-                        FieldTemplateEntity::getTemplateId,
-                        Collectors.mapping(this::toFieldTemplateDTO, Collectors.toList())
-                ));
+        return mapTemplatePage(templatePage);
+    }
 
-        // 5. Собираем DTO с полями
-        List<CardTemplateDTO> dtoList = templates.stream()
-                .map(entity -> toCardTemplateDTO(
-                        entity,
-                        fieldsByTemplateId.getOrDefault(entity.getTemplateId(), List.of())
-                ))
-                .toList();
+    // GET /api/core/templates?scope=all - публичные + свои шаблоны
+    @PreAuthorize("hasAuthority('SCOPE_user.read')")
+    public Page<CardTemplateDTO> getTemplatesForUserAndPublic(UUID currentUserId, int page, int limit) {
+        if (page < 1 || limit < 1) {
+            throw new IllegalArgumentException("page and limit must be >= 1");
+        }
 
-        return new PageImpl<>(dtoList, pageable, templatePage.getTotalElements());
+        Pageable pageable = PageRequest.of(page - 1, limit);
+
+        Page<CardTemplateEntity> templatePage = cardTemplateRepository
+                .findByIsPublicTrueOrOwnerIdOrderByCreatedAtDesc(currentUserId, pageable);
+
+        return mapTemplatePage(templatePage);
     }
 
     // POST /api/core/templates - создать шаблон (вместе с полями)
@@ -382,5 +384,33 @@ public class TemplateService {
                 entity.getIconUrl(),
                 fields
         );
+    }
+
+    private Page<CardTemplateDTO> mapTemplatePage(Page<CardTemplateEntity> templatePage) {
+        List<CardTemplateEntity> templates = templatePage.getContent();
+        if (templates.isEmpty()) {
+            return new PageImpl<>(List.of(), templatePage.getPageable(), templatePage.getTotalElements());
+        }
+
+        List<UUID> templateIds = templates.stream()
+                .map(CardTemplateEntity::getTemplateId)
+                .toList();
+
+        List<FieldTemplateEntity> fieldEntities = fieldTemplateRepository.findByTemplateIdIn(templateIds);
+
+        Map<UUID, List<FieldTemplateDTO>> fieldsByTemplateId = fieldEntities.stream()
+                .collect(Collectors.groupingBy(
+                        FieldTemplateEntity::getTemplateId,
+                        Collectors.mapping(this::toFieldTemplateDTO, Collectors.toList())
+                ));
+
+        List<CardTemplateDTO> dtoList = templates.stream()
+                .map(entity -> toCardTemplateDTO(
+                        entity,
+                        fieldsByTemplateId.getOrDefault(entity.getTemplateId(), List.of())
+                ))
+                .toList();
+
+        return new PageImpl<>(dtoList, templatePage.getPageable(), templatePage.getTotalElements());
     }
 }

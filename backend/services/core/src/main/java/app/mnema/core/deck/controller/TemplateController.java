@@ -27,10 +27,30 @@ public class TemplateController {
     // GET /api/core/templates?page=1&limit=10
     @GetMapping
     public Page<CardTemplateDTO> getTemplatesPaginated(
+            @AuthenticationPrincipal Jwt jwt,
             @RequestParam(defaultValue = "1") int page,
-            @RequestParam(defaultValue = "10") int limit
+            @RequestParam(defaultValue = "10") int limit,
+            @RequestParam(defaultValue = "public") String scope
     ) {
-        return templateService.getCardTemplatesByPage(page, limit);
+        if ("public".equalsIgnoreCase(scope)) {
+            return templateService.getCardTemplatesByPage(page, limit);
+        }
+
+        if (jwt == null) {
+            throw new IllegalArgumentException("Authentication required for scope: " + scope);
+        }
+
+        var userId = currentUserProvider.getUserId(jwt);
+
+        if ("mine".equalsIgnoreCase(scope)) {
+            return templateService.getUserTemplatesByPage(userId, page, limit);
+        }
+
+        if ("all".equalsIgnoreCase(scope)) {
+            return templateService.getTemplatesForUserAndPublic(userId, page, limit);
+        }
+
+        throw new IllegalArgumentException("Unknown template scope: " + scope);
     }
 
     // POST /api/core/templates - создать шаблон (вместе с полями)

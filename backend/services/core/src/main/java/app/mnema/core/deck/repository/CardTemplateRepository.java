@@ -14,5 +14,11 @@ public interface CardTemplateRepository extends JpaRepository<CardTemplateEntity
 
     Page<CardTemplateEntity> findByIsPublicTrue(Pageable pageable);
 
+    Page<CardTemplateEntity> findByIsPublicTrueOrderByCreatedAtDesc(Pageable pageable);
+
+    Page<CardTemplateEntity> findByOwnerIdOrderByCreatedAtDesc(UUID ownerId, Pageable pageable);
+
+    Page<CardTemplateEntity> findByIsPublicTrueOrOwnerIdOrderByCreatedAtDesc(UUID ownerId, Pageable pageable);
+
     Optional<CardTemplateEntity> findByOwnerIdAndTemplateId(UUID ownerId, UUID templateId);
 }

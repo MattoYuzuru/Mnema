@@ -62,7 +62,7 @@ class TemplateServiceTest {
                 1
         );
 
-        when(cardTemplateRepository.findByIsPublicTrue(any(Pageable.class)))
+        when(cardTemplateRepository.findByIsPublicTrueOrderByCreatedAtDesc(any(Pageable.class)))
                 .thenReturn(page);
 
         FieldTemplateEntity field = new FieldTemplateEntity(
@@ -90,7 +90,7 @@ class TemplateServiceTest {
         assertThat(dto.fields().getFirst().name()).isEqualTo("front");
 
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
-        verify(cardTemplateRepository).findByIsPublicTrue(pageableCaptor.capture());
+        verify(cardTemplateRepository).findByIsPublicTrueOrderByCreatedAtDesc(pageableCaptor.capture());
         assertThat(pageableCaptor.getValue().getPageNumber()).isEqualTo(0);
         assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(10);
     }
