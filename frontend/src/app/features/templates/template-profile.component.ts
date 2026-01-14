@@ -375,6 +375,8 @@ type FieldSide = 'front' | 'back';
         display: flex;
         flex-direction: column;
         gap: var(--spacing-md);
+        align-items: center;
+        text-align: center;
       }
 
       .flashcard-face.back {
@@ -385,6 +387,9 @@ type FieldSide = 'front' | 'back';
         display: flex;
         flex-direction: column;
         gap: var(--spacing-xs);
+        align-items: center;
+        text-align: center;
+        width: 100%;
       }
 
       .field-label {
@@ -402,6 +407,7 @@ type FieldSide = 'front' | 'back';
       .empty-preview {
         color: var(--color-text-muted);
         font-style: italic;
+        text-align: center;
       }
 
       .flip-hint {

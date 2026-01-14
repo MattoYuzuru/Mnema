@@ -2,11 +2,12 @@ import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { NgIf } from '@angular/common';
 import { CardTemplateDTO } from '../../core/models/template.models';
 import { ButtonComponent } from './button.component';
+import { TranslatePipe } from '../pipes/translate.pipe';
 
 @Component({
     selector: 'app-template-card',
     standalone: true,
-    imports: [NgIf, ButtonComponent],
+    imports: [NgIf, ButtonComponent, TranslatePipe],
     template: `
     <div class="template-card" [class.template-card-selected]="selected">
       <div class="template-card-header">
@@ -22,7 +23,7 @@ import { ButtonComponent } from './button.component';
 
     <div class="template-meta">
         <span class="template-field-count">
-          {{ template.fields?.length || 0 }} fields
+          {{ template.fields?.length || 0 }} {{ 'templates.fields' | translate }}
         </span>
         <span *ngIf="showVisibility" class="template-visibility" [class.public]="template.isPublic">
           {{ template.isPublic ? publicLabel : privateLabel }}
@@ -62,6 +63,8 @@ import { ButtonComponent } from './button.component';
         box-shadow: var(--shadow-sm);
         transition: all 0.2s ease;
         cursor: pointer;
+        min-height: 220px;
+        height: 100%;
       }
 
       .template-card:hover {
@@ -104,12 +107,21 @@ import { ButtonComponent } from './button.component';
       .template-info {
         flex: 1;
         min-width: 0;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
       }
 
       .template-name {
         font-size: 1rem;
         font-weight: 600;
         margin: 0 0 var(--spacing-xs) 0;
+        line-height: 1.3;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        min-height: calc(1.3em * 2);
       }
 
       .template-description {
@@ -121,6 +133,7 @@ import { ButtonComponent } from './button.component';
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
+        min-height: calc(1.4em * 2);
       }
 
       .template-meta {
@@ -129,6 +142,7 @@ import { ButtonComponent } from './button.component';
         justify-content: space-between;
         font-size: 0.85rem;
         color: var(--color-text-muted);
+        margin-top: auto;
       }
 
       .template-visibility {
@@ -146,7 +160,6 @@ import { ButtonComponent } from './button.component';
 
       .template-actions {
         padding-top: var(--spacing-xs);
-        border-top: 1px solid var(--border-color);
         display: flex;
         gap: var(--spacing-xs);
         justify-content: flex-end;
