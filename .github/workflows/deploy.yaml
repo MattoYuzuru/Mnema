@@ -153,7 +153,9 @@ jobs:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
 
       - name: Ensure namespace exists
-        run: kubectl apply -f k8s/namespace.yaml
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/observability/00-namespace.yaml
 
       - name: Create/Update secret (mnema-secrets)
         run: |
@@ -180,7 +182,7 @@ jobs:
             AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
             AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
             AWS_BUCKET_NAME: "${AWS_BUCKET_NAME}"
-            MEDIA_INTERNAL_TOKEN: "${MEDIA_INTERNAL_TOKEN}"
+          MEDIA_INTERNAL_TOKEN: "${MEDIA_INTERNAL_TOKEN}"
           YAML
         env:
           AUTH_ISSUER: ${{ secrets.AUTH_ISSUER }}
@@ -200,11 +202,29 @@ jobs:
           AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
           MEDIA_INTERNAL_TOKEN: ${{ secrets.MEDIA_INTERNAL_TOKEN }}
 
+      - name: Create/Update secret (grafana-secrets)
+        run: |
+          cat <<YAML | kubectl apply -f -
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: grafana-secrets
+            namespace: observability
+          type: Opaque
+          stringData:
+            GF_SECURITY_ADMIN_USER: "${GF_SECURITY_ADMIN_USER}"
+            GF_SECURITY_ADMIN_PASSWORD: "${GF_SECURITY_ADMIN_PASSWORD}"
+          YAML
+        env:
+          GF_SECURITY_ADMIN_USER: ${{ secrets.GF_SECURITY_ADMIN_USER }}
+          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.GF_SECURITY_ADMIN_PASSWORD }}
+
       - name: Apply manifests
         run: |
           # Для наглядности
           echo "Workspace:" && ls -la && echo && ls -la k8s || true
-          kubectl -n "$NS" apply -f k8s/
+          kubectl -n "$NS" apply -f k8s/*.yaml
+          kubectl apply -f k8s/observability/
 
   deploy:
     needs: apply-manifests
