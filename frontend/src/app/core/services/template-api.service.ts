@@ -11,10 +11,13 @@ export class TemplateApiService {
 
     constructor(private http: HttpClient) {}
 
-    getTemplates(page: number, limit: number): Observable<Page<CardTemplateDTO>> {
-        const params = new HttpParams()
+    getTemplates(page: number, limit: number, scope: 'public' | 'mine' | 'all' = 'public'): Observable<Page<CardTemplateDTO>> {
+        let params = new HttpParams()
             .set('page', page.toString())
             .set('limit', limit.toString());
+        if (scope) {
+            params = params.set('scope', scope);
+        }
         return this.http.get<Page<CardTemplateDTO>>(this.baseUrl, { params });
     }
 

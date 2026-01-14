@@ -35,7 +35,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           <app-button
             variant="ghost"
             size="sm"
-            routerLink="/decks"
+            routerLink="/my-study"
           >
             {{ 'nav.myStudy' | translate }}
           </app-button>
