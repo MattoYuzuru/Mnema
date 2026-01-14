@@ -219,12 +219,23 @@ jobs:
           GF_SECURITY_ADMIN_USER: ${{ secrets.GF_SECURITY_ADMIN_USER }}
           GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.GF_SECURITY_ADMIN_PASSWORD }}
 
+      - name: Create/Update Grafana dashboards ConfigMap
+        run: |
+          kubectl -n observability create configmap grafana-dashboards \
+            --from-file=k8s/observability/dashboards \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Apply manifests
         run: |
           # Для наглядности
           echo "Workspace:" && ls -la && echo && ls -la k8s || true
           kubectl -n "$NS" apply -f k8s/
           kubectl apply -f k8s/observability/
+
+      - name: Restart observability pods (config reload)
+        run: |
+          kubectl -n observability rollout restart daemonset/alloy
+          kubectl -n observability rollout restart deployment/grafana
 
   deploy:
     needs: apply-manifests

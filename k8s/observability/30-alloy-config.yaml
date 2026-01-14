@@ -22,7 +22,22 @@ data:
     loki.process "pods" {
       stage.static_labels {
         values = {
-          cluster = "mnema-prod"
+          cluster = "mnema-prod",
+        }
+      }
+
+      stage.regex {
+        expression = "level=(?P<level>[A-Z]+)"
+      }
+
+      stage.regex {
+        expression = "service=(?P<service>[a-zA-Z0-9_-]+)"
+      }
+
+      stage.labels {
+        values = {
+          level   = "level",
+          service = "service",
         }
       }
 

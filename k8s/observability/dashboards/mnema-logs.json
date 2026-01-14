@@ -39,9 +39,20 @@
         "datasource": {"type": "loki", "uid": "loki"},
         "refresh": 1,
         "includeAll": true,
-        "allValue": ".*",
+        "allValue": ".+",
         "query": "label_values({namespace=~\"$namespace\"}, pod)",
-        "current": {"selected": true, "text": "All", "value": ".*"}
+        "current": {"selected": true, "text": "All", "value": ".+"}
+      },
+      {
+        "name": "service",
+        "type": "query",
+        "label": "Service",
+        "datasource": {"type": "loki", "uid": "loki"},
+        "refresh": 1,
+        "includeAll": true,
+        "allValue": ".+",
+        "query": "label_values({namespace=~\"$namespace\"}, service)",
+        "current": {"selected": true, "text": "All", "value": ".+"}
       }
     ]
   },
@@ -54,7 +65,7 @@
       "gridPos": {"h": 18, "w": 24, "x": 0, "y": 0},
       "targets": [
         {
-          "expr": "{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "expr": "{namespace=~\"$namespace\", pod=~\"$pod\", service=~\"$service\"}",
           "refId": "A"
         }
       ],

@@ -23,6 +23,17 @@
   "templating": {
     "list": [
       {
+        "name": "namespace",
+        "type": "query",
+        "label": "Namespace",
+        "datasource": {"type": "prometheus", "uid": "prometheus"},
+        "refresh": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "query": "label_values(up{job=~\"mnema-.*\"}, namespace)",
+        "current": {"selected": true, "text": "All", "value": ".*"}
+      },
+      {
         "name": "service",
         "type": "query",
         "label": "Service",
@@ -30,7 +41,7 @@
         "refresh": 1,
         "includeAll": true,
         "allValue": ".*",
-        "query": "label_values(http_server_requests_seconds_count, app)",
+        "query": "label_values(up{job=~\"mnema-.*\"}, app)",
         "current": {"selected": true, "text": "All", "value": ".*"}
       }
     ]
@@ -44,7 +55,7 @@
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
       "targets": [
         {
-          "expr": "sum by (app) (rate(http_server_requests_seconds_count{app=~\"$service\"}[5m]))",
+          "expr": "sum by (app) (rate(http_server_requests_seconds_count{namespace=~\"$namespace\",app=~\"$service\"}[5m]))",
           "legendFormat": "{{app}}",
           "refId": "A"
         }
@@ -61,7 +72,7 @@
       },
       "targets": [
         {
-          "expr": "sum(rate(http_server_requests_seconds_count{app=~\"$service\",status=~\"5..\"}[5m])) / sum(rate(http_server_requests_seconds_count{app=~\"$service\"}[5m]))",
+          "expr": "sum(rate(http_server_requests_seconds_count{namespace=~\"$namespace\",app=~\"$service\",status=~\"5..\"}[5m])) / sum(rate(http_server_requests_seconds_count{namespace=~\"$namespace\",app=~\"$service\"}[5m]))",
           "legendFormat": "5xx share",
           "refId": "A"
         }
@@ -75,7 +86,7 @@
       "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum by (le, app) (rate(http_server_requests_seconds_bucket{app=~\"$service\"}[5m])))",
+          "expr": "histogram_quantile(0.95, sum by (le, app) (rate(http_server_requests_seconds_bucket{namespace=~\"$namespace\",app=~\"$service\"}[5m])))",
           "legendFormat": "{{app}}",
           "refId": "A"
         }
@@ -92,7 +103,101 @@
       },
       "targets": [
         {
-          "expr": "sum by (app) (jvm_memory_used_bytes{app=~\"$service\",area=\"heap\"})",
+          "expr": "sum by (app) (jvm_memory_used_bytes{namespace=~\"$namespace\",app=~\"$service\",area=\"heap\"})",
+          "legendFormat": "{{app}}",
+          "refId": "A"
+        }
+      ]
+    }
+    ,
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "p99 latency (seconds)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 16},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum by (le, app) (rate(http_server_requests_seconds_bucket{namespace=~\"$namespace\",app=~\"$service\"}[5m])))",
+          "legendFormat": "{{app}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "4xx error rate",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit"}
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(http_server_requests_seconds_count{namespace=~\"$namespace\",app=~\"$service\",status=~\"4..\"}[5m])) / sum(rate(http_server_requests_seconds_count{namespace=~\"$namespace\",app=~\"$service\"}[5m]))",
+          "legendFormat": "4xx share",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Process CPU usage",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 24},
+      "fieldConfig": {
+        "defaults": {"unit": "percentunit"}
+      },
+      "targets": [
+        {
+          "expr": "avg by (app) (process_cpu_usage{namespace=~\"$namespace\",app=~\"$service\"})",
+          "legendFormat": "{{app}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Live threads",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+      "targets": [
+        {
+          "expr": "max by (app) (jvm_threads_live_threads{namespace=~\"$namespace\",app=~\"$service\"})",
+          "legendFormat": "{{app}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "GC pause time rate",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 32},
+      "fieldConfig": {
+        "defaults": {"unit": "s"}
+      },
+      "targets": [
+        {
+          "expr": "sum by (app) (rate(jvm_gc_pause_seconds_sum{namespace=~\"$namespace\",app=~\"$service\"}[5m]))",
+          "legendFormat": "{{app}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Hikari connections (active)",
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+      "targets": [
+        {
+          "expr": "sum by (app) (hikaricp_connections_active{namespace=~\"$namespace\",app=~\"$service\"})",
           "legendFormat": "{{app}}",
           "refId": "A"
         }
