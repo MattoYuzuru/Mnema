@@ -2,7 +2,7 @@ auth:
   issuer: http://localhost:8083
 
 management:
-  endpoints.web.exposure.include: health,info
+  endpoints.web.exposure.include: health,info,prometheus
 
 server:
   forward-headers-strategy: native

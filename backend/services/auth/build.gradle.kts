@@ -14,7 +14,9 @@ dependencies {
     implementation("org.springframework.security:spring-security-oauth2-authorization-server:1.5.3")
 
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
+
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    runtimeOnly("io.micrometer:micrometer-registry-prometheus")
 
     implementation("org.flywaydb:flyway-core")
     implementation("org.flywaydb:flyway-database-postgresql")
