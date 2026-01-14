@@ -1,0 +1,68 @@
+{
+  "id": null,
+  "uid": "mnema-logs",
+  "title": "Mnema Logs",
+  "timezone": "browser",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "tags": ["mnema", "logs"],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {"type": "grafana", "uid": "-- Grafana --"},
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "namespace",
+        "type": "query",
+        "label": "Namespace",
+        "datasource": {"type": "loki", "uid": "loki"},
+        "refresh": 1,
+        "includeAll": false,
+        "query": "label_values({namespace=~\".+\"}, namespace)",
+        "current": {"selected": true, "text": "prod", "value": "prod"}
+      },
+      {
+        "name": "pod",
+        "type": "query",
+        "label": "Pod",
+        "datasource": {"type": "loki", "uid": "loki"},
+        "refresh": 1,
+        "includeAll": true,
+        "allValue": ".*",
+        "query": "label_values({namespace=~\"$namespace\"}, pod)",
+        "current": {"selected": true, "text": "All", "value": ".*"}
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "logs",
+      "title": "Logs",
+      "datasource": {"type": "loki", "uid": "loki"},
+      "gridPos": {"h": 18, "w": 24, "x": 0, "y": 0},
+      "targets": [
+        {
+          "expr": "{namespace=~\"$namespace\", pod=~\"$pod\"}",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showLabels": true,
+        "showTime": true,
+        "wrapLogMessage": true
+      }
+    }
+  ]
+}
