@@ -46,6 +46,8 @@ spec:
               value: redis
             - name: REDIS_PORT
               value: "6379"
+            - name: APP_ENV
+              value: prod
             - name: SPRING_PROFILES_ACTIVE
               value: prod
           startupProbe:

@@ -40,6 +40,8 @@ spec:
               value: http://mnema-media/api/media
             - name: MEDIA_INTERNAL_TOKEN
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: MEDIA_INTERNAL_TOKEN } }
+            - name: APP_ENV
+              value: prod
             - name: SPRING_PROFILES_ACTIVE
               value: prod
           startupProbe:

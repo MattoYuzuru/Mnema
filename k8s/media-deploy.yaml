@@ -52,6 +52,8 @@ spec:
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AWS_SECRET_ACCESS_KEY } }
             - name: AWS_BUCKET_NAME
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AWS_BUCKET_NAME } }
+            - name: APP_ENV
+              value: prod
             - name: SPRING_PROFILES_ACTIVE
               value: prod
           startupProbe:
