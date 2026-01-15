@@ -5,7 +5,6 @@ import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { TagChipComponent } from './tag-chip.component';
 import { ButtonComponent } from './button.component';
 import { TranslatePipe } from '../pipes/translate.pipe';
-import { markdownToHtml } from '../utils/markdown.util';
 
 @Component({
     selector: 'app-deck-card',
@@ -22,7 +21,7 @@ import { markdownToHtml } from '../utils/markdown.util';
       </div>
 
       <div class="deck-card-body">
-        <div class="deck-description" [innerHTML]="formatDescription(displayDescription)"></div>
+        <p class="deck-description">{{ formatDescription(displayDescription) }}</p>
 
         <div *ngIf="tags.length > 0" class="deck-tags">
           <app-tag-chip
@@ -157,6 +156,7 @@ import { markdownToHtml } from '../utils/markdown.util';
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
+        max-height: 2.8rem;
         min-height: 2.8rem;
       }
 
@@ -237,7 +237,23 @@ export class DeckCardComponent {
     @Output() browse = new EventEmitter<void>();
 
     formatDescription(description?: string): string {
-        return markdownToHtml((description || '').trim());
+        const text = (description || '').trim();
+        if (!text) {
+            return '';
+        }
+
+        return text
+            .replace(/```[\s\S]*?```/g, '')
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+            .replace(/`([^`]+)`/g, '$1')
+            .replace(/\*\*(.+?)\*\*/g, '$1')
+            .replace(/\*(.+?)\*/g, '$1')
+            .replace(/_(.+?)_/g, '$1')
+            .replace(/^#+\s*/gm, '')
+            .replace(/^\s*[-*+]\s+/gm, '')
+            .replace(/\n+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
     get displayName(): string {
