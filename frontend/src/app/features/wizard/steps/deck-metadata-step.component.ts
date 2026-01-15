@@ -1,4 +1,4 @@
-import { Component, Output, EventEmitter, OnInit } from '@angular/core';
+import { Component, Output, EventEmitter, OnInit, ElementRef, ViewChild } from '@angular/core';
 import { ReactiveFormsModule, FormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { NgFor, NgIf } from '@angular/common';
 import { DeckApiService } from '../../../core/services/deck-api.service';
@@ -6,7 +6,6 @@ import { DeckWizardStateService } from '../deck-wizard-state.service';
 import { MediaApiService } from '../../../core/services/media-api.service';
 import { ButtonComponent } from '../../../shared/components/button.component';
 import { InputComponent } from '../../../shared/components/input.component';
-import { TextareaComponent } from '../../../shared/components/textarea.component';
 import { MediaUploadComponent } from '../../../shared/components/media-upload.component';
 import { CardContentValue } from '../../../core/models/user-card.models';
 import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
@@ -14,13 +13,29 @@ import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
 @Component({
     selector: 'app-deck-metadata-step',
     standalone: true,
-    imports: [ReactiveFormsModule, FormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, TranslatePipe],
+    imports: [ReactiveFormsModule, FormsModule, NgFor, NgIf, ButtonComponent, InputComponent, MediaUploadComponent, TranslatePipe],
     template: `
     <div class="step">
       <h2>{{ 'wizard.deckInformation' | translate }}</h2>
       <form [formGroup]="form" class="form">
         <app-input [label]="'wizard.deckName' | translate" type="text" formControlName="name" [placeholder]="'wizard.deckNamePlaceholder' | translate" [hasError]="form.get('name')?.invalid && form.get('name')?.touched || false" [errorMessage]="'wizard.required' | translate"></app-input>
-        <app-textarea [label]="'wizard.deckDescription' | translate" formControlName="description" [placeholder]="'wizard.deckDescriptionPlaceholder' | translate" [rows]="4"></app-textarea>
+        <div class="markdown-field">
+          <label class="markdown-label">{{ 'wizard.deckDescription' | translate }}</label>
+          <div class="markdown-toolbar">
+            <button type="button" class="toolbar-button" (click)="applyMarkdown('**', '**')" [attr.title]="'wizard.markdownBold' | translate" [attr.aria-label]="'wizard.markdownBold' | translate">B</button>
+            <button type="button" class="toolbar-button" (click)="applyMarkdown('*', '*')" [attr.title]="'wizard.markdownItalic' | translate" [attr.aria-label]="'wizard.markdownItalic' | translate">I</button>
+            <button type="button" class="toolbar-button" (click)="applyMarkdown(codeMarker, codeMarker)" [attr.title]="'wizard.markdownCode' | translate" [attr.aria-label]="'wizard.markdownCode' | translate">code</button>
+            <button type="button" class="toolbar-button" (click)="applyMarkdown('## ', '')" [attr.title]="'wizard.markdownHeading' | translate" [attr.aria-label]="'wizard.markdownHeading' | translate">H2</button>
+            <button type="button" class="toolbar-button" (click)="applyMarkdown('- ', '')" [attr.title]="'wizard.markdownList' | translate" [attr.aria-label]="'wizard.markdownList' | translate">-</button>
+          </div>
+          <textarea
+            #descriptionInput
+            formControlName="description"
+            class="textarea"
+            [placeholder]="'wizard.deckDescriptionPlaceholder' | translate"
+            rows="4"
+          ></textarea>
+        </div>
         <app-media-upload
           [label]="'wizard.deckIcon' | translate"
           [value]="iconValue"
@@ -56,6 +71,33 @@ import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
       .step { display: flex; flex-direction: column; gap: var(--spacing-lg); }
       .form { display: flex; flex-direction: column; gap: var(--spacing-lg); }
       .form-group { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+      .markdown-field { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+      .markdown-label { font-size: 0.9rem; font-weight: 500; color: var(--color-text-primary); }
+      .markdown-toolbar { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); }
+      .toolbar-button {
+        border: 1px solid var(--border-color);
+        background: var(--color-card-background);
+        color: var(--color-text-primary);
+        font-size: 0.75rem;
+        font-weight: 600;
+        border-radius: var(--border-radius-sm);
+        padding: 0.2rem 0.5rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+      .toolbar-button:hover { border-color: var(--color-text-primary); }
+      .textarea {
+        padding: var(--spacing-sm) var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+        font-size: 0.9rem;
+        font-family: inherit;
+        background: var(--color-card-background);
+        color: var(--color-text-primary);
+        transition: border-color 0.2s ease;
+        resize: vertical;
+      }
+      .textarea:focus { outline: none; border-color: var(--color-primary-accent); }
       .form-group label { font-size: 0.875rem; font-weight: 500; color: var(--color-text-primary); }
       .language-select { width: 100%; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); font-size: 0.9rem; background: var(--color-card-background); cursor: pointer; }
       .tag-input { width: 100%; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); font-size: 0.9rem; background: var(--color-card-background); }
@@ -76,6 +118,8 @@ import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
 export class DeckMetadataStepComponent implements OnInit {
     @Output() next = new EventEmitter<void>();
     @Output() back = new EventEmitter<void>();
+    @ViewChild('descriptionInput') descriptionInput?: ElementRef<HTMLTextAreaElement>;
+    readonly codeMarker = '`';
     form: FormGroup;
     tags: string[] = [];
     tagInput = '';
@@ -103,6 +147,27 @@ export class DeckMetadataStepComponent implements OnInit {
 
     onIconChange(value: CardContentValue | null): void {
         this.iconValue = value;
+    }
+
+    applyMarkdown(before: string, after: string, placeholder = ''): void {
+        const textarea = this.descriptionInput?.nativeElement;
+        if (!textarea) {
+            return;
+        }
+        const value = textarea.value;
+        const start = textarea.selectionStart ?? 0;
+        const end = textarea.selectionEnd ?? 0;
+        const hasSelection = start !== end;
+        const selectedText = hasSelection ? value.slice(start, end) : placeholder;
+        const newValue = value.slice(0, start) + before + selectedText + after + value.slice(end);
+        this.form.get('description')?.setValue(newValue);
+
+        const cursorStart = start + before.length;
+        const cursorEnd = cursorStart + selectedText.length;
+        requestAnimationFrame(() => {
+            textarea.focus();
+            textarea.setSelectionRange(cursorStart, cursorEnd);
+        });
     }
 
     addTag(event: Event): void {

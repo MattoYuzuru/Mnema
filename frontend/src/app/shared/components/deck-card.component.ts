@@ -5,6 +5,7 @@ import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { TagChipComponent } from './tag-chip.component';
 import { ButtonComponent } from './button.component';
 import { TranslatePipe } from '../pipes/translate.pipe';
+import { markdownToHtml } from '../utils/markdown.util';
 
 @Component({
     selector: 'app-deck-card',
@@ -21,7 +22,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
       </div>
 
       <div class="deck-card-body">
-        <p class="deck-description">{{ displayDescription }}</p>
+        <div class="deck-description" [innerHTML]="formatDescription(displayDescription)"></div>
 
         <div *ngIf="tags.length > 0" class="deck-tags">
           <app-tag-chip
@@ -159,6 +160,36 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         min-height: 2.8rem;
       }
 
+      .deck-description h1,
+      .deck-description h2,
+      .deck-description h3 {
+        font-size: 0.9rem;
+        margin: 0;
+        font-weight: 600;
+      }
+
+      .deck-description ul {
+        margin: 0;
+        padding-left: 1rem;
+      }
+
+      .deck-description li {
+        margin: 0;
+      }
+
+      .deck-description pre {
+        margin: 0;
+        white-space: pre-wrap;
+      }
+
+      .deck-description code {
+        font-family: inherit;
+        font-size: 0.85rem;
+        background: var(--color-background);
+        padding: 0 0.2rem;
+        border-radius: var(--border-radius-sm);
+      }
+
       .deck-tags {
         display: flex;
         flex-wrap: wrap;
@@ -204,6 +235,10 @@ export class DeckCardComponent {
     @Output() update = new EventEmitter<void>();
     @Output() learn = new EventEmitter<void>();
     @Output() browse = new EventEmitter<void>();
+
+    formatDescription(description?: string): string {
+        return markdownToHtml((description || '').trim());
+    }
 
     get displayName(): string {
         if (this.userDeck) {
