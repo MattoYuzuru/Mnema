@@ -104,7 +104,11 @@ public class CardService {
         }
 
         return publicCardRepository
-                .findByDeckIdAndDeckVersionOrderByOrderIndex(deck.getDeckId(), deck.getVersion(), pageable)
+                .findByDeckIdAndDeckVersionAndActiveTrueOrderByOrderIndex(
+                        deck.getDeckId(),
+                        deck.getVersion(),
+                        pageable
+                )
                 .map(this::toPublicCardDTO);
     }
 
@@ -483,6 +487,22 @@ public class CardService {
     @Transactional
     @PreAuthorize("hasAuthority('SCOPE_user.write')")
     public void deleteUserCard(UUID currentUserId, UUID userDeckId, UUID userCardId) {
+        deleteUserCard(currentUserId, userDeckId, userCardId, false);
+    }
+
+    @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
+    public void deleteUserCard(UUID currentUserId,
+                               UUID userDeckId,
+                               UUID userCardId,
+                               boolean deleteGlobally) {
+        UserDeckEntity userDeck = userDeckRepository.findById(userDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+
+        if (!userDeck.getUserId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to deck " + userDeckId);
+        }
+
         UserCardEntity card = userCardRepository.findById(userCardId)
                 .orElseThrow(() -> new IllegalArgumentException("User card not found: " + userCardId));
 
@@ -490,8 +510,166 @@ public class CardService {
             throw new SecurityException("Access denied to card " + userCardId);
         }
 
+        Instant now = Instant.now();
+
+        if (!deleteGlobally) {
+            card.setDeleted(true);
+            card.setUpdatedAt(now);
+            userCardRepository.save(card);
+            return;
+        }
+
+        UUID publicDeckId = userDeck.getPublicDeckId();
+        if (publicDeckId == null) {
+            throw new IllegalStateException("Local deck has no public source");
+        }
+
+        PublicDeckEntity latestDeck = publicDeckRepository
+                .findLatestByDeckId(publicDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + publicDeckId));
+
+        if (!latestDeck.getAuthorId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to public deck " + publicDeckId);
+        }
+
+        UUID publicCardId = card.getPublicCardId();
+        if (publicCardId == null) {
+            throw new IllegalArgumentException("Custom card cannot be deleted globally");
+        }
+
+        PublicCardEntity linkedPublicCard = publicCardRepository.findByCardId(publicCardId)
+                .orElseThrow(() -> new IllegalArgumentException("Public card not found: " + publicCardId));
+
+        if (!linkedPublicCard.getDeckId().equals(publicDeckId)) {
+            throw new IllegalArgumentException("Public card does not belong to deck " + publicDeckId);
+        }
+
+        List<PublicCardEntity> latestCards = publicCardRepository
+                .findByDeckIdAndDeckVersion(publicDeckId, latestDeck.getVersion());
+
+        String targetChecksum = normalizeChecksum(linkedPublicCard.getChecksum());
+        if (targetChecksum == null) {
+            targetChecksum = computeChecksum(linkedPublicCard.getContent());
+        }
+
+        UUID matchingCardId = null;
+        int checksumMatches = 0;
+        PublicCardEntity checksumMatchCard = null;
+
+        for (PublicCardEntity pc : latestCards) {
+            if (pc.getCardId().equals(publicCardId)) {
+                matchingCardId = publicCardId;
+            }
+
+            String latestChecksum = normalizeChecksum(pc.getChecksum());
+            if (latestChecksum == null) {
+                latestChecksum = computeChecksum(pc.getContent());
+            }
+
+            if (targetChecksum != null && targetChecksum.equals(latestChecksum)) {
+                checksumMatches++;
+                checksumMatchCard = pc;
+            }
+        }
+
+        boolean matchByCardId = matchingCardId != null;
+        if (!matchByCardId) {
+            if (targetChecksum == null) {
+                throw new IllegalStateException("Public card checksum missing for deletion");
+            }
+            if (checksumMatches == 0) {
+                throw new IllegalStateException("Public card not found in latest version");
+            }
+            if (checksumMatches > 1) {
+                throw new IllegalStateException("Public card checksum is not unique in latest version");
+            }
+        }
+
+        boolean alreadyInactive = false;
+        if (matchByCardId) {
+            for (PublicCardEntity pc : latestCards) {
+                if (pc.getCardId().equals(matchingCardId)) {
+                    alreadyInactive = !pc.isActive();
+                    break;
+                }
+            }
+        } else if (checksumMatchCard != null) {
+            alreadyInactive = !checksumMatchCard.isActive();
+        }
+
         card.setDeleted(true);
-        card.setUpdatedAt(Instant.now());
+        card.setUpdatedAt(now);
+
+        if (alreadyInactive) {
+            userCardRepository.save(card);
+            return;
+        }
+
+        int newVersion = latestDeck.getVersion() + 1;
+
+        PublicDeckEntity newDeckVersion = new PublicDeckEntity(
+                latestDeck.getDeckId(),
+                newVersion,
+                latestDeck.getAuthorId(),
+                latestDeck.getName(),
+                latestDeck.getDescription(),
+                latestDeck.getIconMediaId(),
+                latestDeck.getTemplateId(),
+                latestDeck.isPublicFlag(),
+                latestDeck.isListed(),
+                latestDeck.getLanguageCode(),
+                latestDeck.getTags(),
+                latestDeck.getCreatedAt(),
+                now,
+                now,
+                latestDeck.getForkedFromDeck()
+        );
+
+        PublicDeckEntity savedNewDeck = publicDeckRepository.save(newDeckVersion);
+
+        List<PublicCardEntity> clonedCards = new ArrayList<>(latestCards.size());
+        for (PublicCardEntity old : latestCards) {
+            String checksum = normalizeChecksum(old.getChecksum());
+            if (checksum == null) {
+                checksum = computeChecksum(old.getContent());
+            }
+
+            boolean active = old.isActive();
+            if (matchByCardId && old.getCardId().equals(matchingCardId)) {
+                active = false;
+            } else if (!matchByCardId && targetChecksum != null) {
+                String latestChecksum = normalizeChecksum(old.getChecksum());
+                if (latestChecksum == null) {
+                    latestChecksum = computeChecksum(old.getContent());
+                }
+                if (targetChecksum.equals(latestChecksum)) {
+                    active = false;
+                }
+            }
+
+            PublicCardEntity clone = new PublicCardEntity(
+                    savedNewDeck.getDeckId(),
+                    savedNewDeck.getVersion(),
+                    savedNewDeck,
+                    old.getContent(),
+                    old.getOrderIndex(),
+                    old.getTags(),
+                    old.getCreatedAt(),
+                    old.getUpdatedAt(),
+                    active,
+                    checksum
+            );
+            clonedCards.add(clone);
+        }
+
+        if (!clonedCards.isEmpty()) {
+            publicCardRepository.saveAll(clonedCards);
+        }
+
+        userDeck.setCurrentVersion(savedNewDeck.getVersion());
+        userDeck.setLastSyncedAt(now);
+        userDeckRepository.save(userDeck);
+
         userCardRepository.save(card);
     }
 

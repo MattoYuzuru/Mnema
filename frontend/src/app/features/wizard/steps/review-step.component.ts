@@ -6,6 +6,7 @@ import { UserCardDTO } from '../../../core/models/user-card.models';
 import { ButtonComponent } from '../../../shared/components/button.component';
 import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
 import { I18nService } from '../../../core/services/i18n.service';
+import { markdownToHtml } from '../../../shared/utils/markdown.util';
 
 @Component({
     selector: 'app-review-step',
@@ -19,7 +20,10 @@ import { I18nService } from '../../../core/services/i18n.service';
         <h3>{{ 'wizard.deckInformation' | translate }}</h3>
         <div class="info-grid">
           <div><span class="label">{{ 'wizard.labelName' | translate }}:</span> {{ state.deckMetadata.name }}</div>
-          <div><span class="label">{{ 'wizard.labelDescription' | translate }}:</span> {{ state.deckMetadata.description || ('wizard.noDescription' | translate) }}</div>
+          <div class="description-row">
+            <span class="label">{{ 'wizard.labelDescription' | translate }}:</span>
+            <div class="markdown-preview" [innerHTML]="formatDescription(state.deckMetadata.description)"></div>
+          </div>
           <div><span class="label">{{ 'wizard.labelLanguage' | translate }}:</span> {{ state.deckMetadata.language }}</div>
           <div>
             <span class="label">{{ 'wizard.labelVisibility' | translate }}:</span>
@@ -53,6 +57,15 @@ import { I18nService } from '../../../core/services/i18n.service';
       .review-section h3 { font-size: 1.1rem; font-weight: 600; margin: 0 0 var(--spacing-md) 0; }
       .info-grid { display: flex; flex-direction: column; gap: var(--spacing-sm); }
       .label { font-weight: 600; color: var(--color-text-secondary); }
+      .description-row { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+      .markdown-preview { color: var(--color-text-primary); line-height: 1.5; }
+      .markdown-preview h1,
+      .markdown-preview h2,
+      .markdown-preview h3 { font-size: 1rem; margin: 0 0 var(--spacing-xs) 0; font-weight: 600; }
+      .markdown-preview ul { margin: 0 0 var(--spacing-xs) 0; padding-left: 1.2rem; }
+      .markdown-preview li { margin: 0; }
+      .markdown-preview pre { margin: 0 0 var(--spacing-xs) 0; padding: var(--spacing-sm); background: var(--color-card-background); border-radius: var(--border-radius-sm); white-space: pre-wrap; }
+      .markdown-preview code { font-family: inherit; font-size: 0.9rem; background: var(--color-card-background); padding: 0 0.2rem; border-radius: var(--border-radius-sm); }
       .card-preview { padding: var(--spacing-sm) var(--spacing-md); background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-sm); margin-bottom: var(--spacing-xs); }
       .more-cards { text-align: center; padding: var(--spacing-sm); color: var(--color-text-muted); }
       .step-actions { display: flex; justify-content: space-between; padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
@@ -79,6 +92,14 @@ export class ReviewStepComponent implements OnInit {
 
     constructor(private wizardState: DeckWizardStateService, private cardApi: CardApiService, private i18n: I18nService) {
         this.state = this.wizardState.getCurrentState();
+    }
+
+    formatDescription(description?: string): string {
+        const trimmed = (description || '').trim();
+        if (!trimmed) {
+            return this.i18n.translate('wizard.noDescription');
+        }
+        return markdownToHtml(trimmed);
     }
 
     ngOnInit(): void {

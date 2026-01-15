@@ -91,9 +91,18 @@ public class UserCardController {
     public void deleteCard(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID userDeckId,
-            @PathVariable UUID cardId
+            @PathVariable UUID cardId,
+            @RequestParam(defaultValue = "local") String scope
     ) {
         var userId = currentUserProvider.getUserId(jwt);
-        cardService.deleteUserCard(userId, userDeckId, cardId);
+        boolean deleteGlobally;
+        if ("global".equalsIgnoreCase(scope)) {
+            deleteGlobally = true;
+        } else if ("local".equalsIgnoreCase(scope)) {
+            deleteGlobally = false;
+        } else {
+            throw new IllegalArgumentException("Unknown delete scope: " + scope);
+        }
+        cardService.deleteUserCard(userId, userDeckId, cardId, deleteGlobally);
     }
 }

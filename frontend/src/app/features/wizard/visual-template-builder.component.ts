@@ -3,9 +3,8 @@ import { NgFor, NgIf } from '@angular/common';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
-import { forkJoin, of, switchMap } from 'rxjs';
 import { TemplateApiService } from '../../core/services/template-api.service';
-import { CardTemplateDTO } from '../../core/models/template.models';
+import { CreateFieldTemplateRequest, CreateTemplateRequest } from '../../core/models/template.models';
 import { DeckWizardStateService } from './deck-wizard-state.service';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
@@ -47,7 +46,16 @@ interface BuilderState {
     template: `
     <div class="builder-page">
       <div class="builder-header">
-        <h1>{{ 'visualBuilder.title' | translate }}</h1>
+        <div class="title-row">
+          <h1>{{ 'visualBuilder.title' | translate }}</h1>
+          <a
+            class="help-link"
+            href="https://github.com/MattoYuzuru/Mnema/wiki/how-to-use-visual-builder"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Visual template builder guide"
+          >?</a>
+        </div>
         <div class="header-actions">
           <app-button variant="ghost" (click)="cancel()">{{ 'visualBuilder.cancel' | translate }}</app-button>
           <app-button variant="primary" [disabled]="!canSave()" (click)="openSaveDialog()">{{ 'visualBuilder.saveTemplate' | translate }}</app-button>
@@ -232,9 +240,35 @@ interface BuilderState {
         background: transparent;
       }
 
+      .title-row {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
       .builder-header h1 {
         font-size: 1.5rem;
         margin: 0;
+      }
+
+      .help-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 50%;
+        border: 1px solid var(--border-color);
+        color: var(--color-text-secondary);
+        text-decoration: none;
+        font-size: 0.75rem;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+
+      .help-link:hover {
+        color: var(--color-text-primary);
+        border-color: var(--color-text-primary);
       }
 
       .header-actions {
@@ -902,9 +936,16 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     }
 
     canSave(): boolean {
+        const totalFields = this.frontFields.length + this.backFields.length;
+        const hasRequiredFront = this.frontFields.some(field => field.required);
+        const hasRequiredBack = this.backFields.some(field => field.required);
+
         return this.templateName.trim().length > 0 &&
+               totalFields >= 2 &&
                this.frontFields.length > 0 &&
-               this.backFields.length > 0;
+               this.backFields.length > 0 &&
+               hasRequiredFront &&
+               hasRequiredBack;
     }
 
     openSaveDialog(): void {
@@ -922,46 +963,41 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
 
         this.saving = true;
 
-        const templateDto = {
+        const fields: CreateFieldTemplateRequest[] = [
+            ...this.frontFields.map((field, index) => ({
+                name: field.name,
+                label: field.label.trim() || this.getFieldDisplayLabel(field),
+                fieldType: field.type,
+                isRequired: field.required,
+                isOnFront: true,
+                orderIndex: index,
+                helpText: field.helpText || null,
+                defaultValue: null
+            })),
+            ...this.backFields.map((field, index) => ({
+                name: field.name,
+                label: field.label.trim() || this.getFieldDisplayLabel(field),
+                fieldType: field.type,
+                isRequired: field.required,
+                isOnFront: false,
+                orderIndex: index,
+                helpText: field.helpText || null,
+                defaultValue: null
+            }))
+        ];
+
+        const templateDto: CreateTemplateRequest = {
             name: this.templateName.trim(),
             description: this.templateDescription.trim(),
             isPublic: this.makePublic,
             layout: {
                 front: this.frontFields.map(f => f.name),
                 back: this.backFields.map(f => f.name)
-            }
+            },
+            fields
         };
 
-        this.templateApi.createTemplate(templateDto).pipe(
-            switchMap(template => {
-                const allFields = [
-                    ...this.frontFields.map((f, i) => ({ field: f, isOnFront: true, orderIndex: i })),
-                    ...this.backFields.map((f, i) => ({ field: f, isOnFront: false, orderIndex: i }))
-                ];
-
-                if (allFields.length === 0) {
-                    return of(template);
-                }
-
-                const fieldRequests = allFields.map(({ field, isOnFront, orderIndex }) => {
-                    const fieldLabel = field.label.trim() || this.getFieldDisplayLabel(field);
-                    return this.templateApi.addField(template.templateId, {
-                        name: field.name,
-                        label: fieldLabel,
-                        fieldType: field.type,
-                        isRequired: field.required,
-                        isOnFront,
-                        orderIndex,
-                        helpText: field.helpText || null,
-                        defaultValue: null
-                    });
-                });
-
-                return forkJoin(fieldRequests).pipe(
-                    switchMap(() => this.templateApi.getTemplate(template.templateId))
-                );
-            })
-        ).subscribe({
+        this.templateApi.createTemplate(templateDto).subscribe({
             next: (template) => {
                 this.skipDraftSave = true;
                 this.clearDraft();

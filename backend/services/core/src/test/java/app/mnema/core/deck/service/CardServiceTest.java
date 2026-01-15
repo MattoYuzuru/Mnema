@@ -216,7 +216,7 @@ class CardServiceTest {
 
         when(publicDeckRepository.findLatestByDeckId(deckId))
                 .thenReturn(Optional.of(deck));
-        when(publicCardRepository.findByDeckIdAndDeckVersionOrderByOrderIndex(
+        when(publicCardRepository.findByDeckIdAndDeckVersionAndActiveTrueOrderByOrderIndex(
                 any(), anyInt(), any(Pageable.class)))
                 .thenReturn(repoPage);
 
@@ -224,7 +224,7 @@ class CardServiceTest {
 
         assertThat(result.getTotalElements()).isEqualTo(1);
         verify(publicDeckRepository).findLatestByDeckId(deckId);
-        verify(publicCardRepository).findByDeckIdAndDeckVersionOrderByOrderIndex(
+        verify(publicCardRepository).findByDeckIdAndDeckVersionAndActiveTrueOrderByOrderIndex(
                 any(), eq(3), any(Pageable.class));
     }
 

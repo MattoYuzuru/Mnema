@@ -1,10 +1,8 @@
 import { Component, Output, EventEmitter } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, FormArray, Validators } from '@angular/forms';
-import { forkJoin, of } from 'rxjs';
-import { switchMap } from 'rxjs/operators';
 import { TemplateApiService } from '../../core/services/template-api.service';
-import { CardTemplateDTO } from '../../core/models/template.models';
+import { CardTemplateDTO, CreateFieldTemplateRequest, CreateTemplateRequest } from '../../core/models/template.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
@@ -228,6 +226,14 @@ export class TemplateCreatorModalComponent {
             return;
         }
 
+        const requiredFront = frontFields.some(field => field.isRequired);
+        const requiredBack = backFields.some(field => field.isRequired);
+
+        if (!requiredFront || !requiredBack) {
+            this.validationMessage = this.i18n.translate('templateCreator.requiredBothSidesError');
+            return;
+        }
+
         this.validationMessage = '';
     }
 
@@ -287,40 +293,29 @@ export class TemplateCreatorModalComponent {
         const frontFields = fields.filter(f => f.isOnFront).sort((a, b) => a.orderIndex - b.orderIndex);
         const backFields = fields.filter(f => !f.isOnFront).sort((a, b) => a.orderIndex - b.orderIndex);
 
-        const templateDto = {
+        const orderedFields: CreateFieldTemplateRequest[] = fields.map(field => ({
+            name: field.name,
+            label: field.label,
+            fieldType: field.fieldType,
+            isRequired: field.isRequired || false,
+            isOnFront: field.isOnFront,
+            orderIndex: field.orderIndex,
+            defaultValue: '',
+            helpText: field.helpText || ''
+        }));
+
+        const templateDto: CreateTemplateRequest = {
             name: formValue.name,
             description: formValue.description,
             isPublic: formValue.isPublic || false,
             layout: {
                 front: frontFields.map(f => f.name),
                 back: backFields.map(f => f.name)
-            }
+            },
+            fields: orderedFields
         };
 
-        this.templateApi.createTemplate(templateDto).pipe(
-            switchMap(template => {
-                if (fields.length === 0) {
-                    return of(template);
-                }
-
-                const fieldRequests = fields.map((field, index) =>
-                    this.templateApi.addField(template.templateId, {
-                        name: field.name,
-                        label: field.label,
-                        fieldType: field.fieldType,
-                        isRequired: field.isRequired || false,
-                        isOnFront: field.isOnFront,
-                        orderIndex: index,
-                        defaultValue: '',
-                        helpText: field.helpText || ''
-                    })
-                );
-
-                return forkJoin(fieldRequests).pipe(
-                    switchMap(() => this.templateApi.getTemplate(template.templateId))
-                );
-            })
-        ).subscribe({
+        this.templateApi.createTemplate(templateDto).subscribe({
             next: template => {
                 this.saving = false;
                 this.clearDraft();

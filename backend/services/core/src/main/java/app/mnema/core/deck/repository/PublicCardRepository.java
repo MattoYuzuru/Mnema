@@ -24,9 +24,17 @@ public interface PublicCardRepository extends JpaRepository<PublicCardEntity, Pu
             Pageable pageable
     );
 
+    Page<PublicCardEntity> findByDeckIdAndDeckVersionAndActiveTrueOrderByOrderIndex(
+            UUID deckId,
+            Integer deckVersion,
+            Pageable pageable
+    );
+
     Optional<PublicCardEntity> findByCardId(UUID cardId);
 
     long countByDeckIdAndDeckVersion(UUID deckId, Integer deckVersion);
+
+    long countByDeckIdAndDeckVersionAndActiveTrue(UUID deckId, Integer deckVersion);
 
     List<PublicCardEntity> findByCardIdIn(List<UUID> cardIds);
 

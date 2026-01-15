@@ -30,7 +30,7 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
         <div class="study-summary">
           <div class="study-info">
             <p class="study-message">{{ todayStats.due }} {{ 'home.cardsDue' | translate }} · {{ todayStats.new }} {{ 'home.new' | translate }}</p>
-            <app-button variant="primary" size="lg" routerLink="/decks">
+            <app-button variant="primary" size="lg" routerLink="/my-study">
               {{ 'home.continueLearn' | translate }}
             </app-button>
           </div>

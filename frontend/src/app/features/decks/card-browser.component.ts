@@ -11,7 +11,9 @@ import { PreferencesService } from '../../core/services/preferences.service';
 import { UserCardDTO, CardContentValue } from '../../core/models/user-card.models';
 import { FieldTemplateDTO } from '../../core/models/template.models';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
+import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { CardTemplateDTO } from '../../core/models/template.models';
+import { UserApiService } from '../../user-api.service';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
 import { FlashcardViewComponent } from '../../shared/components/flashcard-view.component';
@@ -19,12 +21,13 @@ import { ButtonComponent } from '../../shared/components/button.component';
 import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
 import { MediaUploadComponent } from '../../shared/components/media-upload.component';
+import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-card-browser',
     standalone: true,
-    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, TranslatePipe],
+    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, ConfirmationDialogComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -67,10 +70,19 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         <div *ngFor="let card of cards" class="card-row">
           <div class="card-col">{{ getFrontPreview(card) }}</div>
           <div class="card-col-actions">
-            <button class="icon-btn" (click)="openEditModal(card)" title="Edit card">
+            <button class="icon-btn" (click)="openEditModal(card)" [title]="'cardBrowser.editCard' | translate">
               <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+              </svg>
+            </button>
+            <button class="icon-btn delete" (click)="openDeleteModal(card)" [title]="'cardBrowser.deleteCard' | translate">
+              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                <path d="M3 6h18"/>
+                <path d="M8 6V4h8v2"/>
+                <path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/>
+                <path d="M10 11v6"/>
+                <path d="M14 11v6"/>
               </svg>
             </button>
           </div>
@@ -135,6 +147,16 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             </svg>
             {{ 'cardBrowser.editCard' | translate }}
           </app-button>
+          <app-button variant="ghost" size="sm" (click)="openDeleteModal(currentCard!)" *ngIf="currentCard">
+            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path d="M3 6h18"/>
+              <path d="M8 6V4h8v2"/>
+              <path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/>
+              <path d="M10 11v6"/>
+              <path d="M14 11v6"/>
+            </svg>
+            {{ 'cardBrowser.deleteCard' | translate }}
+          </app-button>
         </div>
 
         <div *ngIf="currentCard?.personalNote" class="personal-note">
@@ -198,6 +220,36 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         </div>
       </div>
     </div>
+
+    <app-confirmation-dialog
+      [open]="showDeleteConfirm"
+      [title]="'cardBrowser.deleteCardTitle' | translate"
+      [message]="'cardBrowser.deleteCardMessage' | translate"
+      [confirmText]="'cardBrowser.confirmDelete' | translate"
+      [cancelText]="'cardBrowser.cancel' | translate"
+      (confirm)="confirmDelete('local')"
+      (cancel)="closeDeleteConfirm()"
+    ></app-confirmation-dialog>
+
+    <div *ngIf="showScopePrompt" class="modal-overlay" (click)="closeScopePrompt()">
+      <div class="modal-content scope-prompt" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>{{ 'cardBrowser.deleteScopeTitle' | translate }}</h2>
+          <button class="close-btn" (click)="closeScopePrompt()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p>{{ 'cardBrowser.deleteScopeMessage' | translate }}</p>
+          <div class="scope-buttons">
+            <app-button variant="secondary" (click)="confirmDelete('local')" [disabled]="deleting">
+              {{ 'cardBrowser.deleteLocal' | translate }}
+            </app-button>
+            <app-button variant="primary" (click)="confirmDelete('global')" [disabled]="deleting">
+              {{ 'cardBrowser.deleteGlobal' | translate }}
+            </app-button>
+          </div>
+        </div>
+      </div>
+    </div>
   `,
     styles: [`
       .card-browser {
@@ -243,7 +295,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
       .card-row {
         display: grid;
-        grid-template-columns: 1fr 80px;
+        grid-template-columns: 1fr 120px;
         gap: var(--spacing-md);
         padding: var(--spacing-md);
         border-bottom: 1px solid var(--border-color);
@@ -361,7 +413,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       }
 
       .card-col-actions {
-        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: var(--spacing-xs);
       }
 
       .icon-btn {
@@ -380,10 +435,19 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         color: var(--color-primary-accent);
       }
 
+      .icon-btn.delete {
+        color: #b91c1c;
+      }
+
+      .icon-btn.delete:hover {
+        color: #dc2626;
+      }
+
       .card-actions {
         display: flex;
         justify-content: center;
         margin-top: var(--spacing-lg);
+        gap: var(--spacing-sm);
       }
 
       .modal-overlay {
@@ -481,6 +545,14 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         flex-shrink: 0;
       }
 
+      .scope-buttons {
+        display: flex;
+        gap: var(--spacing-sm);
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        margin-top: var(--spacing-md);
+      }
+
       @media (max-width: 768px) {
         .card-browser {
           padding: 0 var(--spacing-md);
@@ -542,6 +614,7 @@ export class CardBrowserComponent implements OnInit {
     loading = true;
     cards: UserCardDTO[] = [];
     deck: UserDeckDTO | null = null;
+    publicDeck: PublicDeckDTO | null = null;
     template: CardTemplateDTO | null = null;
     userDeckId = '';
     viewMode: 'list' | 'cards' = 'list';
@@ -549,8 +622,14 @@ export class CardBrowserComponent implements OnInit {
     isFlipped = false;
     showEditModal = false;
     editingCard: UserCardDTO | null = null;
+    showDeleteConfirm = false;
+    showScopePrompt = false;
     editForm!: FormGroup;
     saving = false;
+    deleting = false;
+    deleteTarget: UserCardDTO | null = null;
+    currentUserId: string | null = null;
+    isAuthor = false;
     private currentPage = 1;
     private hasMoreCards = true;
     private loadingMore = false;
@@ -562,6 +641,7 @@ export class CardBrowserComponent implements OnInit {
         private deckApi: DeckApiService,
         private publicDeckApi: PublicDeckApiService,
         private templateApi: TemplateApiService,
+        private userApi: UserApiService,
         public preferences: PreferencesService,
         private fb: FormBuilder
     ) {}
@@ -602,9 +682,13 @@ export class CardBrowserComponent implements OnInit {
 
     private loadDeckData(): void {
         this.loading = true;
-        this.deckApi.getUserDeck(this.userDeckId).subscribe({
-            next: deck => {
+        forkJoin({
+            deck: this.deckApi.getUserDeck(this.userDeckId),
+            user: this.userApi.getMe()
+        }).subscribe({
+            next: ({ deck, user }) => {
                 this.deck = deck;
+                this.currentUserId = user.id;
                 this.loadTemplateAndCards(deck.publicDeckId);
             },
             error: err => {
@@ -617,6 +701,8 @@ export class CardBrowserComponent implements OnInit {
     private loadTemplateAndCards(publicDeckId: string): void {
         this.publicDeckApi.getPublicDeck(publicDeckId).subscribe({
             next: publicDeck => {
+                this.publicDeck = publicDeck;
+                this.isAuthor = publicDeck.authorId === this.currentUserId;
                 forkJoin({
                     template: this.templateApi.getTemplate(publicDeck.templateId),
                     cards: this.cardApi.getUserCards(this.userDeckId, 1, CardBrowserComponent.PAGE_SIZE)
@@ -813,5 +899,71 @@ export class CardBrowserComponent implements OnInit {
                 this.saving = false;
             }
         });
+    }
+
+    openDeleteModal(card: UserCardDTO): void {
+        if (this.deleting) return;
+        this.deleteTarget = card;
+        if (this.canDeleteGlobally(card)) {
+            this.showScopePrompt = true;
+        } else {
+            this.showDeleteConfirm = true;
+        }
+    }
+
+    closeDeleteConfirm(): void {
+        this.showDeleteConfirm = false;
+        this.deleteTarget = null;
+    }
+
+    closeScopePrompt(): void {
+        this.showScopePrompt = false;
+        this.deleteTarget = null;
+    }
+
+    confirmDelete(scope: 'local' | 'global'): void {
+        if (!this.deleteTarget || this.deleting) return;
+
+        this.deleting = true;
+        this.showDeleteConfirm = false;
+        this.showScopePrompt = false;
+
+        const targetId = this.deleteTarget.userCardId;
+        this.cardApi.deleteUserCard(this.userDeckId, targetId, scope).subscribe({
+            next: () => {
+                this.removeCardFromList(targetId);
+                this.resetDeleteState();
+            },
+            error: err => {
+                console.error('Failed to delete card:', err);
+                this.resetDeleteState();
+            }
+        });
+    }
+
+    private resetDeleteState(): void {
+        this.deleting = false;
+        this.showDeleteConfirm = false;
+        this.showScopePrompt = false;
+        this.deleteTarget = null;
+    }
+
+    private removeCardFromList(cardId: string): void {
+        const index = this.cards.findIndex(card => card.userCardId === cardId);
+        if (index === -1) return;
+
+        this.cards = this.cards.filter(card => card.userCardId !== cardId);
+
+        if (this.currentCardIndex > index) {
+            this.currentCardIndex -= 1;
+        }
+        if (this.currentCardIndex >= this.cards.length) {
+            this.currentCardIndex = Math.max(0, this.cards.length - 1);
+        }
+        this.isFlipped = false;
+    }
+
+    private canDeleteGlobally(card: UserCardDTO): boolean {
+        return this.isAuthor && !!this.publicDeck && !card.isCustom;
     }
 }

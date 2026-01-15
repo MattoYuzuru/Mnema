@@ -38,7 +38,11 @@ export class CardApiService {
         return this.http.patch<UserCardDTO>(`${this.baseUrl}/${userDeckId}/cards/${cardId}`, body);
     }
 
-    deleteUserCard(userDeckId: string, cardId: string): Observable<void> {
-        return this.http.delete<void>(`${this.baseUrl}/${userDeckId}/cards/${cardId}`);
+    deleteUserCard(userDeckId: string, cardId: string, scope?: 'local' | 'global'): Observable<void> {
+        let params = new HttpParams();
+        if (scope) {
+            params = params.set('scope', scope);
+        }
+        return this.http.delete<void>(`${this.baseUrl}/${userDeckId}/cards/${cardId}`, { params });
     }
 }

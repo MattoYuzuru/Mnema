@@ -76,6 +76,9 @@ type TemplateFilter = 'mine' | 'public';
               *ngFor="let t of filteredTemplates"
               [template]="t"
               [selected]="selectedTemplateId === t.templateId"
+              [selectLabel]="'templates.select' | translate"
+              [selectedLabel]="'templates.selected' | translate"
+              (select)="selectTemplate(t.templateId)"
               (click)="selectTemplate(t.templateId)"
             ></app-template-card>
           </div>
@@ -318,8 +321,7 @@ export class TemplateSelectionStepComponent implements OnInit {
     }
 
     enterBrowseMode(): void {
-        this.mode = 'browse';
-        this.loadPage(1);
+        void this.router.navigate(['/public-templates'], { queryParams: { from: 'wizard' } });
     }
 
     loadPage(page: number): void {

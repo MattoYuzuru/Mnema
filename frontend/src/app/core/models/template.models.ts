@@ -41,3 +41,19 @@ export interface CreateFieldTemplateRequest {
     defaultValue?: string | null;
     helpText?: string | null;
 }
+
+export interface CreateTemplateRequest {
+    name: string;
+    description?: string;
+    isPublic: boolean;
+    layout: {
+        front: string[];
+        back: string[];
+    };
+    aiProfile?: {
+        prompt: string;
+        fieldsMapping: Record<string, string>;
+    } | null;
+    iconUrl?: string | null;
+    fields?: CreateFieldTemplateRequest[];
+}

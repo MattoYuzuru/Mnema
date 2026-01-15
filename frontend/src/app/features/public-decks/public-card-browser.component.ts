@@ -15,11 +15,13 @@ import { EmptyStateComponent } from '../../shared/components/empty-state.compone
 import { FlashcardViewComponent } from '../../shared/components/flashcard-view.component';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
+import { TagChipComponent } from '../../shared/components/tag-chip.component';
+import { markdownToHtml } from '../../shared/utils/markdown.util';
 
 @Component({
     selector: 'app-public-card-browser',
     standalone: true,
-    imports: [NgIf, NgFor, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, TranslatePipe],
+    imports: [NgIf, NgFor, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, TranslatePipe, TagChipComponent],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -27,7 +29,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       <header class="page-header">
         <div class="header-left">
           <h1>{{ deck?.name || ('publicCardBrowser.publicDeck' | translate) }}</h1>
-          <p class="deck-description">{{ deck?.description }}</p>
+          <div class="deck-description" [innerHTML]="formatDescription(deck?.description)"></div>
+          <div *ngIf="deck?.tags?.length" class="deck-tags">
+            <app-tag-chip *ngFor="let tag of deck!.tags" [text]="tag"></app-tag-chip>
+          </div>
           <p class="card-count">{{ cards.length }} {{ 'publicCardBrowser.cards' | translate }}</p>
         </div>
         <div class="header-right">
@@ -84,7 +89,15 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       .public-card-browser { max-width: 72rem; margin: 0 auto; }
       .page-header { margin-bottom: var(--spacing-xl); }
       .header-left h1 { font-size: 2rem; margin: 0 0 var(--spacing-sm) 0; }
-      .deck-description { font-size: 1rem; color: var(--color-text-secondary); margin: 0 0 var(--spacing-xs) 0; }
+      .deck-description { font-size: 1rem; color: var(--color-text-secondary); margin: 0 0 var(--spacing-xs) 0; line-height: 1.6; }
+      .deck-description h1,
+      .deck-description h2,
+      .deck-description h3 { font-size: 1rem; margin: 0 0 var(--spacing-xs) 0; font-weight: 600; }
+      .deck-description ul { margin: 0 0 var(--spacing-xs) 0; padding-left: 1.2rem; }
+      .deck-description li { margin: 0; }
+      .deck-description pre { margin: 0 0 var(--spacing-xs) 0; padding: var(--spacing-sm); background: var(--color-background); border-radius: var(--border-radius-md); white-space: pre-wrap; }
+      .deck-description code { font-family: inherit; font-size: 0.9rem; background: var(--color-background); padding: 0 0.2rem; border-radius: var(--border-radius-sm); }
+      .deck-tags { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); margin-bottom: var(--spacing-xs); }
       .card-count { font-size: 0.9rem; color: var(--color-text-muted); margin: 0 0 var(--spacing-md) 0; }
       .header-right { display: flex; gap: var(--spacing-md); align-items: center; }
       .view-mode-toggle { display: flex; gap: var(--spacing-xs); }
@@ -193,6 +206,10 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     userPublicDeckIdsLoaded = false;
     private authSubscription?: Subscription;
     private userPublicDeckIdsLoading = false;
+
+    formatDescription(description?: string): string {
+        return markdownToHtml((description || '').trim());
+    }
 
     constructor(
         private route: ActivatedRoute,

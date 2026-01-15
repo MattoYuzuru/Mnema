@@ -21,6 +21,7 @@ import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 import { ImportDeckModalComponent } from '../import/import-deck-modal.component';
+import { markdownToHtml } from '../../shared/utils/markdown.util';
 
 @Component({
     selector: 'app-deck-profile',
@@ -32,7 +33,7 @@ import { ImportDeckModalComponent } from '../import/import-deck-modal.component'
     <div *ngIf="!loading && deck" class="deck-profile">
       <header class="deck-header">
         <h1>{{ deck.displayName }}</h1>
-        <p class="deck-description">{{ deck.displayDescription }}</p>
+        <div class="deck-description" [innerHTML]="formatDescription(deck.displayDescription)"></div>
       </header>
 
       <div class="deck-meta">
@@ -146,7 +147,16 @@ import { ImportDeckModalComponent } from '../import/import-deck-modal.component'
             </div>
 
             <div class="form-group">
-              <label>{{ 'deckProfile.schedulerAlgorithm' | translate }}</label>
+              <div class="label-with-help">
+                <label>{{ 'deckProfile.schedulerAlgorithm' | translate }}</label>
+                <a
+                  class="help-link"
+                  href="https://github.com/MattoYuzuru/Mnema/wiki/what-are-scheduling-algorithms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Scheduling algorithms guide"
+                >?</a>
+              </div>
               <select formControlName="algorithmId" class="algorithm-select">
                 <option value="sm2">SM-2</option>
                 <option value="fsrs_v6">FSRS v6</option>
@@ -283,6 +293,39 @@ import { ImportDeckModalComponent } from '../import/import-deck-modal.component'
         color: var(--color-text-muted);
         margin: 0;
         line-height: 1.6;
+      }
+
+      .deck-description h1,
+      .deck-description h2,
+      .deck-description h3 {
+        font-size: 1.1rem;
+        margin: 0 0 var(--spacing-xs) 0;
+        font-weight: 600;
+      }
+
+      .deck-description ul {
+        margin: 0 0 var(--spacing-xs) 0;
+        padding-left: 1.2rem;
+      }
+
+      .deck-description li {
+        margin: 0;
+      }
+
+      .deck-description pre {
+        margin: 0 0 var(--spacing-xs) 0;
+        padding: var(--spacing-sm);
+        background: var(--color-background);
+        border-radius: var(--border-radius-md);
+        white-space: pre-wrap;
+      }
+
+      .deck-description code {
+        font-family: inherit;
+        font-size: 0.95rem;
+        background: var(--color-background);
+        padding: 0 0.2rem;
+        border-radius: var(--border-radius-sm);
       }
 
       .deck-meta {
@@ -427,10 +470,36 @@ import { ImportDeckModalComponent } from '../import/import-deck-modal.component'
         gap: var(--spacing-xs);
       }
 
+      .label-with-help {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
       .form-group label {
         font-size: 0.875rem;
         font-weight: 500;
         color: var(--color-text-primary);
+      }
+
+      .help-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.1rem;
+        height: 1.1rem;
+        border-radius: 50%;
+        border: 1px solid var(--border-color);
+        color: var(--color-text-secondary);
+        text-decoration: none;
+        font-size: 0.7rem;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+
+      .help-link:hover {
+        color: var(--color-text-primary);
+        border-color: var(--color-text-primary);
       }
 
       .language-select, .algorithm-select {
@@ -618,6 +687,10 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     editForm!: FormGroup;
     tagInput = '';
     tags: string[] = [];
+
+    formatDescription(description?: string): string {
+        return markdownToHtml((description || '').trim());
+    }
     currentAlgorithm: ReviewDeckAlgorithmResponse | null = null;
     originalAlgorithmId = '';
     pendingSaveChoice: 'local' | 'global' | null = null;
