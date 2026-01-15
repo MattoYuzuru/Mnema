@@ -3,9 +3,8 @@ import { NgFor, NgIf } from '@angular/common';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
-import { forkJoin, of, switchMap } from 'rxjs';
 import { TemplateApiService } from '../../core/services/template-api.service';
-import { CardTemplateDTO } from '../../core/models/template.models';
+import { CreateFieldTemplateRequest, CreateTemplateRequest } from '../../core/models/template.models';
 import { DeckWizardStateService } from './deck-wizard-state.service';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
@@ -937,9 +936,16 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     }
 
     canSave(): boolean {
+        const totalFields = this.frontFields.length + this.backFields.length;
+        const hasRequiredFront = this.frontFields.some(field => field.required);
+        const hasRequiredBack = this.backFields.some(field => field.required);
+
         return this.templateName.trim().length > 0 &&
+               totalFields >= 2 &&
                this.frontFields.length > 0 &&
-               this.backFields.length > 0;
+               this.backFields.length > 0 &&
+               hasRequiredFront &&
+               hasRequiredBack;
     }
 
     openSaveDialog(): void {
@@ -957,46 +963,41 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
 
         this.saving = true;
 
-        const templateDto = {
+        const fields: CreateFieldTemplateRequest[] = [
+            ...this.frontFields.map((field, index) => ({
+                name: field.name,
+                label: field.label.trim() || this.getFieldDisplayLabel(field),
+                fieldType: field.type,
+                isRequired: field.required,
+                isOnFront: true,
+                orderIndex: index,
+                helpText: field.helpText || null,
+                defaultValue: null
+            })),
+            ...this.backFields.map((field, index) => ({
+                name: field.name,
+                label: field.label.trim() || this.getFieldDisplayLabel(field),
+                fieldType: field.type,
+                isRequired: field.required,
+                isOnFront: false,
+                orderIndex: index,
+                helpText: field.helpText || null,
+                defaultValue: null
+            }))
+        ];
+
+        const templateDto: CreateTemplateRequest = {
             name: this.templateName.trim(),
             description: this.templateDescription.trim(),
             isPublic: this.makePublic,
             layout: {
                 front: this.frontFields.map(f => f.name),
                 back: this.backFields.map(f => f.name)
-            }
+            },
+            fields
         };
 
-        this.templateApi.createTemplate(templateDto).pipe(
-            switchMap(template => {
-                const allFields = [
-                    ...this.frontFields.map((f, i) => ({ field: f, isOnFront: true, orderIndex: i })),
-                    ...this.backFields.map((f, i) => ({ field: f, isOnFront: false, orderIndex: i }))
-                ];
-
-                if (allFields.length === 0) {
-                    return of(template);
-                }
-
-                const fieldRequests = allFields.map(({ field, isOnFront, orderIndex }) => {
-                    const fieldLabel = field.label.trim() || this.getFieldDisplayLabel(field);
-                    return this.templateApi.addField(template.templateId, {
-                        name: field.name,
-                        label: fieldLabel,
-                        fieldType: field.type,
-                        isRequired: field.required,
-                        isOnFront,
-                        orderIndex,
-                        helpText: field.helpText || null,
-                        defaultValue: null
-                    });
-                });
-
-                return forkJoin(fieldRequests).pipe(
-                    switchMap(() => this.templateApi.getTemplate(template.templateId))
-                );
-            })
-        ).subscribe({
+        this.templateApi.createTemplate(templateDto).subscribe({
             next: (template) => {
                 this.skipDraftSave = true;
                 this.clearDraft();

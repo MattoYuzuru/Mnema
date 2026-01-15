@@ -10,9 +10,11 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.List;
@@ -95,6 +97,8 @@ public class TemplateService {
         } else {
             fieldDtos = List.of();
         }
+
+        validateTemplateFields(fieldDtos);
 
         // 1. Создаем шаблон без полей
         CardTemplateEntity cardTemplate = new CardTemplateEntity(
@@ -384,6 +388,35 @@ public class TemplateService {
                 entity.getIconUrl(),
                 fields
         );
+    }
+
+    private void validateTemplateFields(List<FieldTemplateDTO> fields) {
+        if (fields == null || fields.size() < 2) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Template must have at least 2 fields."
+            );
+        }
+
+        boolean hasFront = fields.stream().anyMatch(FieldTemplateDTO::isOnFront);
+        boolean hasBack = fields.stream().anyMatch(field -> !field.isOnFront());
+
+        if (!hasFront || !hasBack) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Template must have at least one field on each side."
+            );
+        }
+
+        boolean requiredFront = fields.stream().anyMatch(field -> field.isOnFront() && field.isRequired());
+        boolean requiredBack = fields.stream().anyMatch(field -> !field.isOnFront() && field.isRequired());
+
+        if (!requiredFront || !requiredBack) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "Template must have at least one required field on each side."
+            );
+        }
     }
 
     private Page<CardTemplateDTO> mapTemplatePage(Page<CardTemplateEntity> templatePage) {

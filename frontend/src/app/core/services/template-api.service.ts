@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Page } from '../models/page.models';
-import { CardTemplateDTO, FieldTemplateDTO, CreateFieldTemplateRequest } from '../models/template.models';
+import { CardTemplateDTO, FieldTemplateDTO, CreateFieldTemplateRequest, CreateTemplateRequest } from '../models/template.models';
 import { appConfig } from '../../app.config';
 
 @Injectable({ providedIn: 'root' })
@@ -25,7 +25,7 @@ export class TemplateApiService {
         return this.http.get<CardTemplateDTO>(`${this.baseUrl}/${templateId}`);
     }
 
-    createTemplate(dto: Partial<CardTemplateDTO>): Observable<CardTemplateDTO> {
+    createTemplate(dto: CreateTemplateRequest): Observable<CardTemplateDTO> {
         return this.http.post<CardTemplateDTO>(this.baseUrl, dto);
     }
 

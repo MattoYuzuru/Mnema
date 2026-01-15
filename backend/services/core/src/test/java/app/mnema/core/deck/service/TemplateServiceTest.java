@@ -121,7 +121,7 @@ class TemplateServiceTest {
                 null
         );
 
-        FieldTemplateDTO fieldDto = new FieldTemplateDTO(
+        FieldTemplateDTO frontFieldDto = new FieldTemplateDTO(
                 null,
                 null,
                 "front",
@@ -129,6 +129,19 @@ class TemplateServiceTest {
                 null,
                 true,
                 true,
+                0,
+                null,
+                null
+        );
+
+        FieldTemplateDTO backFieldDto = new FieldTemplateDTO(
+                null,
+                null,
+                "back",
+                "Back",
+                null,
+                true,
+                false,
                 0,
                 null,
                 null
@@ -150,7 +163,7 @@ class TemplateServiceTest {
         when(cardTemplateRepository.save(any(CardTemplateEntity.class)))
                 .thenReturn(savedTemplate);
 
-        FieldTemplateEntity savedField = new FieldTemplateEntity(
+        FieldTemplateEntity savedFrontField = new FieldTemplateEntity(
                 UUID.randomUUID(),
                 savedTemplate.getTemplateId(),
                 "front",
@@ -163,14 +176,27 @@ class TemplateServiceTest {
                 null
         );
 
-        when(fieldTemplateRepository.saveAll(anyList()))
-                .thenReturn(List.of(savedField));
+        FieldTemplateEntity savedBackField = new FieldTemplateEntity(
+                UUID.randomUUID(),
+                savedTemplate.getTemplateId(),
+                "back",
+                "Back",
+                null,
+                true,
+                false,
+                0,
+                null,
+                null
+        );
 
-        CardTemplateDTO result = templateService.createNewTemplate(ownerId, dto, List.of(fieldDto));
+        when(fieldTemplateRepository.saveAll(anyList()))
+                .thenReturn(List.of(savedFrontField, savedBackField));
+
+        CardTemplateDTO result = templateService.createNewTemplate(ownerId, dto, List.of(frontFieldDto, backFieldDto));
 
         assertThat(result.templateId()).isEqualTo(savedTemplate.getTemplateId());
         assertThat(result.ownerId()).isEqualTo(ownerId);
-        assertThat(result.fields()).hasSize(1);
+        assertThat(result.fields()).hasSize(2);
         assertThat(result.fields().getFirst().templateId()).isEqualTo(savedTemplate.getTemplateId());
 
         verify(cardTemplateRepository).save(any(CardTemplateEntity.class));
