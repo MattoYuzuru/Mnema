@@ -47,7 +47,16 @@ interface BuilderState {
     template: `
     <div class="builder-page">
       <div class="builder-header">
-        <h1>{{ 'visualBuilder.title' | translate }}</h1>
+        <div class="title-row">
+          <h1>{{ 'visualBuilder.title' | translate }}</h1>
+          <a
+            class="help-link"
+            href="https://github.com/MattoYuzuru/Mnema/wiki/how-to-use-visual-builder"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Visual template builder guide"
+          >?</a>
+        </div>
         <div class="header-actions">
           <app-button variant="ghost" (click)="cancel()">{{ 'visualBuilder.cancel' | translate }}</app-button>
           <app-button variant="primary" [disabled]="!canSave()" (click)="openSaveDialog()">{{ 'visualBuilder.saveTemplate' | translate }}</app-button>
@@ -232,9 +241,35 @@ interface BuilderState {
         background: transparent;
       }
 
+      .title-row {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
       .builder-header h1 {
         font-size: 1.5rem;
         margin: 0;
+      }
+
+      .help-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 50%;
+        border: 1px solid var(--border-color);
+        color: var(--color-text-secondary);
+        text-decoration: none;
+        font-size: 0.75rem;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+
+      .help-link:hover {
+        color: var(--color-text-primary);
+        border-color: var(--color-text-primary);
       }
 
       .header-actions {

@@ -18,7 +18,16 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
     <div *ngIf="!loading" class="templates-list-page">
       <header class="page-header">
-        <h1>{{ 'templates.title' | translate }}</h1>
+        <div class="title-row">
+          <h1>{{ 'templates.title' | translate }}</h1>
+          <a
+            class="help-link"
+            href="https://github.com/MattoYuzuru/Mnema/wiki#templates"
+            target="_blank"
+            rel="noopener noreferrer"
+            aria-label="Templates guide"
+          >?</a>
+        </div>
       </header>
 
       <div *ngIf="templates.length > 0" class="templates-grid">
@@ -62,15 +71,38 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       }
 
       .page-header {
+        margin-bottom: var(--spacing-xl);
+      }
+
+      .title-row {
         display: flex;
         align-items: center;
-        justify-content: space-between;
-        margin-bottom: var(--spacing-xl);
+        gap: var(--spacing-sm);
       }
 
       .page-header h1 {
         font-size: 2rem;
         margin: 0;
+      }
+
+      .help-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 50%;
+        border: 1px solid var(--border-color);
+        color: var(--color-text-secondary);
+        text-decoration: none;
+        font-size: 0.75rem;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+
+      .help-link:hover {
+        color: var(--color-text-primary);
+        border-color: var(--color-text-primary);
       }
 
       .templates-grid {
@@ -100,12 +132,6 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       @media (max-width: 768px) {
         .templates-list-page {
           padding: 0 var(--spacing-md);
-        }
-
-        .page-header {
-          flex-direction: column;
-          align-items: flex-start;
-          gap: var(--spacing-md);
         }
 
         .page-header h1 {

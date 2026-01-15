@@ -32,7 +32,16 @@ type TemplateFilter = 'all' | 'mine' | 'public';
     <div *ngIf="!loading" class="templates-catalog">
       <header class="page-header">
         <div>
-          <h1>{{ 'publicTemplates.title' | translate }}</h1>
+          <div class="title-row">
+            <h1>{{ 'publicTemplates.title' | translate }}</h1>
+            <a
+              class="help-link"
+              href="https://github.com/MattoYuzuru/Mnema/wiki#templates"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Templates guide"
+            >?</a>
+          </div>
           <p class="subtitle">{{ 'publicTemplates.subtitle' | translate }}</p>
         </div>
       </header>
@@ -98,6 +107,12 @@ type TemplateFilter = 'all' | 'mine' | 'public';
         margin-bottom: var(--spacing-lg);
       }
 
+      .title-row {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
       .page-header h1 {
         font-size: 2rem;
         margin: 0 0 var(--spacing-xs) 0;
@@ -106,6 +121,26 @@ type TemplateFilter = 'all' | 'mine' | 'public';
       .subtitle {
         margin: 0;
         color: var(--color-text-secondary);
+      }
+
+      .help-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 50%;
+        border: 1px solid var(--border-color);
+        color: var(--color-text-secondary);
+        text-decoration: none;
+        font-size: 0.75rem;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+
+      .help-link:hover {
+        color: var(--color-text-primary);
+        border-color: var(--color-text-primary);
       }
 
       .filter-tabs {

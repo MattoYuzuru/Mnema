@@ -146,7 +146,16 @@ import { ImportDeckModalComponent } from '../import/import-deck-modal.component'
             </div>
 
             <div class="form-group">
-              <label>{{ 'deckProfile.schedulerAlgorithm' | translate }}</label>
+              <div class="label-with-help">
+                <label>{{ 'deckProfile.schedulerAlgorithm' | translate }}</label>
+                <a
+                  class="help-link"
+                  href="https://github.com/MattoYuzuru/Mnema/wiki/what-are-scheduling-algorithms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  aria-label="Scheduling algorithms guide"
+                >?</a>
+              </div>
               <select formControlName="algorithmId" class="algorithm-select">
                 <option value="sm2">SM-2</option>
                 <option value="fsrs_v6">FSRS v6</option>
@@ -427,10 +436,36 @@ import { ImportDeckModalComponent } from '../import/import-deck-modal.component'
         gap: var(--spacing-xs);
       }
 
+      .label-with-help {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
       .form-group label {
         font-size: 0.875rem;
         font-weight: 500;
         color: var(--color-text-primary);
+      }
+
+      .help-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.1rem;
+        height: 1.1rem;
+        border-radius: 50%;
+        border: 1px solid var(--border-color);
+        color: var(--color-text-secondary);
+        text-decoration: none;
+        font-size: 0.7rem;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+
+      .help-link:hover {
+        color: var(--color-text-primary);
+        border-color: var(--color-text-primary);
       }
 
       .language-select, .algorithm-select {
