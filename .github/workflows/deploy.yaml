@@ -9,22 +9,8 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-core:
+  test-backend:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: mnema
-          POSTGRES_PASSWORD: mnema
-          POSTGRES_DB: mnema_test
-        ports:
-          - 5433:5432
-        options: >-
-          --health-cmd="pg_isready -U mnema"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,17 +22,12 @@ jobs:
           java-version: '21'
           cache: gradle
 
-      - name: Run core tests
+      - name: Run backend tests
         working-directory: backend
-        env:
-          SPRING_DATASOURCE_URL: jdbc:postgresql://localhost:5433/mnema_test
-          SPRING_DATASOURCE_USERNAME: mnema
-          SPRING_DATASOURCE_PASSWORD: mnema
-          SPRING_PROFILES_ACTIVE: test
-        run: ./gradlew :services:core:test
+        run: ./gradlew test
 
   build-and-push:
-    needs: test-core
+    needs: test-backend
     runs-on: ubuntu-latest
     environment: prod
     permissions: { contents: read, packages: write }
