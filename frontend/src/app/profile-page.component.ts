@@ -61,7 +61,8 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
               formControlName="username"
               [placeholder]="'profile.enterUsername' | translate"
               [hasError]="form.get('username')?.invalid && form.get('username')?.touched || false"
-              [errorMessage]="'profile.usernameMinError' | translate"
+              [errorMessage]="usernameErrorMessage() | translate"
+              [maxLength]="maxUsernameLength"
             ></app-input>
 
             <app-textarea
@@ -69,6 +70,9 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
               formControlName="bio"
               [placeholder]="'profile.enterBio' | translate"
               [rows]="4"
+              [hasError]="form.get('bio')?.invalid && form.get('bio')?.touched || false"
+              [errorMessage]="bioErrorMessage() | translate"
+              [maxLength]="maxBioLength"
             ></app-textarea>
 
             <div class="form-actions">
@@ -286,6 +290,10 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
     ]
 })
 export class ProfilePageComponent implements OnInit {
+    private static readonly MAX_USERNAME_LENGTH = 50;
+    private static readonly MAX_BIO_LENGTH = 200;
+    readonly maxUsernameLength = ProfilePageComponent.MAX_USERNAME_LENGTH;
+    readonly maxBioLength = ProfilePageComponent.MAX_BIO_LENGTH;
     @ViewChild('avatarInput') avatarInput!: ElementRef<HTMLInputElement>;
 
     profile: UserProfile | null = null;
@@ -303,8 +311,8 @@ export class ProfilePageComponent implements OnInit {
         private fb: FormBuilder
     ) {
         this.form = this.fb.group({
-            username: ['', [Validators.required, Validators.minLength(3)]],
-            bio: ['']
+            username: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(ProfilePageComponent.MAX_USERNAME_LENGTH)]],
+            bio: ['', [Validators.maxLength(ProfilePageComponent.MAX_BIO_LENGTH)]]
         });
     }
 
@@ -370,6 +378,25 @@ export class ProfilePageComponent implements OnInit {
                     this.saving = false;
                 }
             });
+    }
+
+    usernameErrorMessage(): string {
+        const control = this.form.get('username');
+        if (control?.hasError('required') || control?.hasError('minlength')) {
+            return 'profile.usernameMinError';
+        }
+        if (control?.hasError('maxlength')) {
+            return 'validation.maxLength50';
+        }
+        return '';
+    }
+
+    bioErrorMessage(): string {
+        const control = this.form.get('bio');
+        if (control?.hasError('maxlength')) {
+            return 'validation.maxLength200';
+        }
+        return '';
     }
 
     triggerAvatarUpload(): void {

@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
 import { ReactiveFormsModule, FormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
@@ -18,15 +18,15 @@ import { ButtonComponent } from '../../shared/components/button.component';
 import { AddCardsModalComponent } from './add-cards-modal.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { InputComponent } from '../../shared/components/input.component';
-import { TextareaComponent } from '../../shared/components/textarea.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 import { ImportDeckModalComponent } from '../import/import-deck-modal.component';
 import { markdownToHtml } from '../../shared/utils/markdown.util';
+import { I18nService } from '../../core/services/i18n.service';
 
 @Component({
     selector: 'app-deck-profile',
     standalone: true,
-    imports: [NgIf, NgFor, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, ConfirmationDialogComponent, InputComponent, TextareaComponent, ImportDeckModalComponent, TranslatePipe],
+    imports: [NgIf, NgFor, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, ConfirmationDialogComponent, InputComponent, ImportDeckModalComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -133,13 +133,29 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
               [label]="('deckProfile.displayName' | translate) + ' *'"
               formControlName="displayName"
               [hasError]="editForm.get('displayName')?.invalid && editForm.get('displayName')?.touched || false"
-              [errorMessage]="'deckProfile.required' | translate"
+              [errorMessage]="displayNameErrorMessage()"
+              [maxLength]="maxDeckName"
             ></app-input>
-            <app-textarea
-              [label]="'deckProfile.description' | translate"
-              formControlName="displayDescription"
-              [rows]="4"
-            ></app-textarea>
+            <div class="markdown-field">
+              <label class="markdown-label">{{ 'deckProfile.description' | translate }}</label>
+              <div class="markdown-toolbar">
+                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '**', '**')" [attr.title]="'wizard.markdownBold' | translate" [attr.aria-label]="'wizard.markdownBold' | translate">B</button>
+                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '*', '*')" [attr.title]="'wizard.markdownItalic' | translate" [attr.aria-label]="'wizard.markdownItalic' | translate">I</button>
+                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', codeMarker, codeMarker)" [attr.title]="'wizard.markdownCode' | translate" [attr.aria-label]="'wizard.markdownCode' | translate">code</button>
+                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '## ', '')" [attr.title]="'wizard.markdownHeading' | translate" [attr.aria-label]="'wizard.markdownHeading' | translate">H2</button>
+                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '- ', '')" [attr.title]="'wizard.markdownList' | translate" [attr.aria-label]="'wizard.markdownList' | translate">-</button>
+              </div>
+              <textarea
+                #displayDescriptionInput
+                formControlName="displayDescription"
+                class="textarea"
+                rows="4"
+                [attr.maxlength]="maxDeckDescription"
+              ></textarea>
+              <div *ngIf="editForm.get('displayDescription')?.invalid && editForm.get('displayDescription')?.touched" class="error-message">
+                {{ displayDescriptionErrorMessage() }}
+              </div>
+            </div>
             <div class="checkbox-group">
               <label>
                 <input type="checkbox" formControlName="autoUpdate" />
@@ -153,13 +169,29 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
                 [label]="('deckProfile.publicDeckName' | translate) + ' *'"
                 formControlName="publicName"
                 [hasError]="editForm.get('publicName')?.invalid && editForm.get('publicName')?.touched || false"
-                [errorMessage]="'deckProfile.required' | translate"
+                [errorMessage]="publicNameErrorMessage()"
+                [maxLength]="maxDeckName"
               ></app-input>
-              <app-textarea
-                [label]="'deckProfile.publicDescription' | translate"
-                formControlName="publicDescription"
-                [rows]="4"
-              ></app-textarea>
+              <div class="markdown-field">
+                <label class="markdown-label">{{ 'deckProfile.publicDescription' | translate }}</label>
+                <div class="markdown-toolbar">
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '**', '**')" [attr.title]="'wizard.markdownBold' | translate" [attr.aria-label]="'wizard.markdownBold' | translate">B</button>
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '*', '*')" [attr.title]="'wizard.markdownItalic' | translate" [attr.aria-label]="'wizard.markdownItalic' | translate">I</button>
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', codeMarker, codeMarker)" [attr.title]="'wizard.markdownCode' | translate" [attr.aria-label]="'wizard.markdownCode' | translate">code</button>
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '## ', '')" [attr.title]="'wizard.markdownHeading' | translate" [attr.aria-label]="'wizard.markdownHeading' | translate">H2</button>
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '- ', '')" [attr.title]="'wizard.markdownList' | translate" [attr.aria-label]="'wizard.markdownList' | translate">-</button>
+                </div>
+                <textarea
+                  #publicDescriptionInput
+                  formControlName="publicDescription"
+                  class="textarea"
+                  rows="4"
+                  [attr.maxlength]="maxDeckDescription"
+                ></textarea>
+                <div *ngIf="editForm.get('publicDescription')?.invalid && editForm.get('publicDescription')?.touched" class="error-message">
+                  {{ publicDescriptionErrorMessage() }}
+                </div>
+              </div>
               <div class="form-group">
                 <label>{{ 'deckProfile.language' | translate }}</label>
                 <select formControlName="language" class="language-select">
@@ -171,10 +203,19 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
               </div>
               <div class="form-group">
                 <label>{{ 'deckProfile.tags' | translate }}</label>
-                <input type="text" class="tag-input" [(ngModel)]="tagInput" [ngModelOptions]="{standalone: true}" (keydown.enter)="addTag($event)" [placeholder]="'deckProfile.tagsPlaceholder' | translate" />
+                <input
+                  type="text"
+                  class="tag-input"
+                  [(ngModel)]="tagInput"
+                  [ngModelOptions]="{standalone: true}"
+                  (keydown.enter)="addTag($event)"
+                  [placeholder]="'deckProfile.tagsPlaceholder' | translate"
+                  [attr.maxlength]="maxTagLength"
+                />
                 <div *ngIf="tags.length > 0" class="tags-list">
                   <span *ngFor="let tag of tags; let i = index" class="tag-chip">{{ tag }} <button type="button" (click)="removeTag(i)">×</button></span>
                 </div>
+                <p *ngIf="tagError" class="error-message">{{ tagError }}</p>
               </div>
               <div class="checkbox-group">
                 <label>
@@ -394,6 +435,57 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
         gap: var(--spacing-lg);
       }
 
+      .markdown-field {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+      }
+
+      .markdown-label {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--color-text-primary);
+      }
+
+      .markdown-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+      }
+
+      .toolbar-button {
+        border: 1px solid var(--border-color);
+        background: var(--color-card-background);
+        color: var(--color-text-primary);
+        font-size: 0.75rem;
+        font-weight: 600;
+        border-radius: var(--border-radius-sm);
+        padding: 0.2rem 0.5rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .toolbar-button:hover {
+        border-color: var(--color-text-primary);
+      }
+
+      .textarea {
+        padding: var(--spacing-sm) var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+        font-size: 0.9rem;
+        font-family: inherit;
+        background: var(--color-card-background);
+        color: var(--color-text-primary);
+        transition: border-color 0.2s ease;
+        resize: vertical;
+      }
+
+      .textarea:focus {
+        outline: none;
+        border-color: var(--color-primary-accent);
+      }
+
       .checkbox-group {
         display: flex;
         align-items: center;
@@ -552,6 +644,11 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
         padding: 0;
       }
 
+      .error-message {
+        font-size: 0.85rem;
+        color: #dc2626;
+      }
+
       @media (max-width: 768px) {
         .deck-profile {
           padding: 0 var(--spacing-md);
@@ -636,6 +733,16 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
     `]
 })
 export class DeckProfileComponent implements OnInit, OnDestroy {
+    private static readonly MAX_DECK_NAME = 50;
+    private static readonly MAX_DECK_DESCRIPTION = 200;
+    private static readonly MAX_TAGS = 5;
+    private static readonly MAX_TAG_LENGTH = 25;
+    @ViewChild('displayDescriptionInput') displayDescriptionInput?: ElementRef<HTMLTextAreaElement>;
+    @ViewChild('publicDescriptionInput') publicDescriptionInput?: ElementRef<HTMLTextAreaElement>;
+    readonly maxDeckName = DeckProfileComponent.MAX_DECK_NAME;
+    readonly maxDeckDescription = DeckProfileComponent.MAX_DECK_DESCRIPTION;
+    readonly maxTagLength = DeckProfileComponent.MAX_TAG_LENGTH;
+    readonly codeMarker = '`';
     loading = true;
     deck: UserDeckDTO | null = null;
     publicDeck: PublicDeckDTO | null = null;
@@ -654,6 +761,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     exportStatusKey: string | null = null;
     exportJob: ImportJobResponse | null = null;
     editForm!: FormGroup;
+    tagError = '';
     tagInput = '';
     tags: string[] = [];
 
@@ -675,7 +783,8 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         private userApi: UserApiService,
         private fb: FormBuilder,
         private importApi: ImportApiService,
-        private mediaApi: MediaApiService
+        private mediaApi: MediaApiService,
+        private i18n: I18nService
     ) {}
 
     ngOnInit(): void {
@@ -873,8 +982,8 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                     const preferences = algorithmData.reviewPreferences;
 
                     const formConfig: any = {
-                        displayName: [this.deck!.displayName, Validators.required],
-                        displayDescription: [this.deck!.displayDescription],
+                        displayName: [this.deck!.displayName, [Validators.required, Validators.maxLength(DeckProfileComponent.MAX_DECK_NAME)]],
+                        displayDescription: [this.deck!.displayDescription, [Validators.maxLength(DeckProfileComponent.MAX_DECK_DESCRIPTION)]],
                         autoUpdate: [this.deck!.autoUpdate],
                         algorithmId: [algorithmData.algorithmId, Validators.required],
                         dailyNewLimit: [preferences?.dailyNewLimit ?? 20],
@@ -882,8 +991,8 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                     };
 
                     if (this.isAuthor && this.publicDeck) {
-                        formConfig.publicName = [this.publicDeck.name, Validators.required];
-                        formConfig.publicDescription = [this.publicDeck.description];
+                        formConfig.publicName = [this.publicDeck.name, [Validators.required, Validators.maxLength(DeckProfileComponent.MAX_DECK_NAME)]];
+                        formConfig.publicDescription = [this.publicDeck.description, [Validators.maxLength(DeckProfileComponent.MAX_DECK_DESCRIPTION)]];
                         formConfig.isPublic = [this.publicDeck.isPublic];
                         formConfig.isListed = [this.publicDeck.isListed];
                         formConfig.language = [this.publicDeck.language];
@@ -893,6 +1002,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                     }
 
                     this.tagInput = '';
+                    this.tagError = '';
                     this.editForm = this.fb.group(formConfig);
                     this.applyEditDraft();
                     this.showEditModal = true;
@@ -904,14 +1014,85 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     addTag(event: Event): void {
         event.preventDefault();
         const tag = this.tagInput.trim();
+        if (this.tags.length >= DeckProfileComponent.MAX_TAGS) {
+            this.tagError = this.i18n.translate('validation.tagsLimit');
+            return;
+        }
+        if (tag.length > DeckProfileComponent.MAX_TAG_LENGTH) {
+            this.tagError = this.i18n.translate('validation.tagTooLong');
+            return;
+        }
         if (tag && !this.tags.includes(tag)) {
             this.tags.push(tag);
             this.tagInput = '';
+            this.tagError = '';
         }
     }
 
     removeTag(index: number): void {
         this.tags.splice(index, 1);
+        this.tagError = '';
+    }
+
+    displayNameErrorMessage(): string {
+        const control = this.editForm?.get('displayName');
+        if (control?.hasError('required')) {
+            return this.i18n.translate('deckProfile.required');
+        }
+        if (control?.hasError('maxlength')) {
+            return this.i18n.translate('validation.maxLength50');
+        }
+        return '';
+    }
+
+    publicNameErrorMessage(): string {
+        const control = this.editForm?.get('publicName');
+        if (control?.hasError('required')) {
+            return this.i18n.translate('deckProfile.required');
+        }
+        if (control?.hasError('maxlength')) {
+            return this.i18n.translate('validation.maxLength50');
+        }
+        return '';
+    }
+
+    displayDescriptionErrorMessage(): string {
+        const control = this.editForm?.get('displayDescription');
+        if (control?.hasError('maxlength')) {
+            return this.i18n.translate('validation.maxLength200');
+        }
+        return '';
+    }
+
+    publicDescriptionErrorMessage(): string {
+        const control = this.editForm?.get('publicDescription');
+        if (control?.hasError('maxlength')) {
+            return this.i18n.translate('validation.maxLength200');
+        }
+        return '';
+    }
+
+    applyMarkdown(target: 'displayDescription' | 'publicDescription', before: string, after: string, placeholder = ''): void {
+        const textarea = target === 'displayDescription'
+            ? this.displayDescriptionInput?.nativeElement
+            : this.publicDescriptionInput?.nativeElement;
+        if (!textarea) {
+            return;
+        }
+        const value = textarea.value;
+        const start = textarea.selectionStart ?? 0;
+        const end = textarea.selectionEnd ?? 0;
+        const hasSelection = start !== end;
+        const selectedText = hasSelection ? value.slice(start, end) : placeholder;
+        const newValue = value.slice(0, start) + before + selectedText + after + value.slice(end);
+        this.editForm.get(target)?.setValue(newValue);
+
+        const cursorStart = start + before.length;
+        const cursorEnd = cursorStart + selectedText.length;
+        requestAnimationFrame(() => {
+            textarea.focus();
+            textarea.setSelectionRange(cursorStart, cursorEnd);
+        });
     }
 
     closeEditModal(): void {
@@ -963,7 +1144,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     }
 
     saveEdit(): void {
-        if (this.editForm.invalid) return;
+        if (this.editForm.invalid || this.hasInvalidTags()) return;
 
         const formValue = this.editForm.value;
 
@@ -1033,6 +1214,19 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                formValue.isListed !== this.publicDeck.isListed ||
                formValue.language !== this.publicDeck.language ||
                JSON.stringify(this.tags) !== JSON.stringify(this.publicDeck.tags);
+    }
+
+    private hasInvalidTags(): boolean {
+        if (this.tags.length > DeckProfileComponent.MAX_TAGS) {
+            this.tagError = this.i18n.translate('validation.tagsLimit');
+            return true;
+        }
+        if (this.tags.some(tag => tag.length > DeckProfileComponent.MAX_TAG_LENGTH)) {
+            this.tagError = this.i18n.translate('validation.tagTooLong');
+            return true;
+        }
+        this.tagError = '';
+        return false;
     }
 
     openDeleteConfirm(): void {

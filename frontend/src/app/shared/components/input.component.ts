@@ -21,6 +21,7 @@ import { NgIf, NgClass } from '@angular/common';
         [type]="type"
         [placeholder]="placeholder"
         [disabled]="disabled"
+        [attr.maxlength]="maxLength || null"
         [ngClass]="{
           'input': true,
           'input-error': hasError
@@ -87,6 +88,7 @@ export class InputComponent implements ControlValueAccessor {
     @Input() disabled = false;
     @Input() hasError = false;
     @Input() errorMessage = '';
+    @Input() maxLength?: number;
     @Input() id = `input-${Math.random().toString(36).substr(2, 9)}`;
 
     value = '';

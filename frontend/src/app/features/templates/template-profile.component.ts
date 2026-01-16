@@ -43,6 +43,7 @@ type FieldSide = 'front' | 'back';
             class="title-input"
             [(ngModel)]="draftName"
             [placeholder]="'templateProfile.namePlaceholder' | translate"
+            [attr.maxlength]="maxTemplateName"
           />
           <p *ngIf="!editing" class="description">{{ template.description || ('templateProfile.noDescription' | translate) }}</p>
           <textarea
@@ -51,6 +52,7 @@ type FieldSide = 'front' | 'back';
             rows="3"
             [(ngModel)]="draftDescription"
             [placeholder]="'templateProfile.descriptionPlaceholder' | translate"
+            [attr.maxlength]="maxTemplateDescription"
           ></textarea>
         </div>
 
@@ -141,6 +143,7 @@ type FieldSide = 'front' | 'back';
                   *ngIf="editing"
                   [(ngModel)]="field.label"
                   class="field-input"
+                  [attr.maxlength]="maxFieldLabel"
                 />
                 <span *ngIf="!editing">{{ field.label }}</span>
               </div>
@@ -150,6 +153,7 @@ type FieldSide = 'front' | 'back';
                   *ngIf="editing"
                   [(ngModel)]="field.helpText"
                   class="field-input"
+                  [attr.maxlength]="maxFieldHelpText"
                 />
                 <span *ngIf="!editing">{{ field.helpText || '-' }}</span>
               </div>
@@ -174,6 +178,7 @@ type FieldSide = 'front' | 'back';
                   *ngIf="editing"
                   [(ngModel)]="field.label"
                   class="field-input"
+                  [attr.maxlength]="maxFieldLabel"
                 />
                 <span *ngIf="!editing">{{ field.label }}</span>
               </div>
@@ -183,6 +188,7 @@ type FieldSide = 'front' | 'back';
                   *ngIf="editing"
                   [(ngModel)]="field.helpText"
                   class="field-input"
+                  [attr.maxlength]="maxFieldHelpText"
                 />
                 <span *ngIf="!editing">{{ field.helpText || '-' }}</span>
               </div>
@@ -204,7 +210,7 @@ type FieldSide = 'front' | 'back';
             </div>
             <div class="form-field">
               <label>{{ 'templateProfile.fieldLabel' | translate }}</label>
-              <input [(ngModel)]="newField.label" class="field-input" [placeholder]="'templateProfile.fieldLabelPlaceholder' | translate" />
+              <input [(ngModel)]="newField.label" class="field-input" [placeholder]="'templateProfile.fieldLabelPlaceholder' | translate" [attr.maxlength]="maxFieldLabel" />
             </div>
             <div class="form-field">
               <label>{{ 'templateProfile.fieldType' | translate }}</label>
@@ -226,7 +232,7 @@ type FieldSide = 'front' | 'back';
             </div>
             <div class="form-field">
               <label>{{ 'templateProfile.fieldHelpText' | translate }}</label>
-              <input [(ngModel)]="newField.helpText" class="field-input" [placeholder]="'templateProfile.fieldHelpTextPlaceholder' | translate" />
+              <input [(ngModel)]="newField.helpText" class="field-input" [placeholder]="'templateProfile.fieldHelpTextPlaceholder' | translate" [attr.maxlength]="maxFieldHelpText" />
             </div>
           </div>
           <p *ngIf="fieldError" class="error-text">{{ fieldError }}</p>
@@ -539,6 +545,14 @@ type FieldSide = 'front' | 'back';
     `]
 })
 export class TemplateProfileComponent implements OnInit {
+    private static readonly MAX_TEMPLATE_NAME = 50;
+    private static readonly MAX_TEMPLATE_DESCRIPTION = 200;
+    private static readonly MAX_FIELD_LABEL = 50;
+    private static readonly MAX_FIELD_HELP_TEXT = 100;
+    readonly maxTemplateName = TemplateProfileComponent.MAX_TEMPLATE_NAME;
+    readonly maxTemplateDescription = TemplateProfileComponent.MAX_TEMPLATE_DESCRIPTION;
+    readonly maxFieldLabel = TemplateProfileComponent.MAX_FIELD_LABEL;
+    readonly maxFieldHelpText = TemplateProfileComponent.MAX_FIELD_HELP_TEXT;
     loading = true;
     saving = false;
     template: CardTemplateDTO | null = null;
@@ -633,19 +647,43 @@ export class TemplateProfileComponent implements OnInit {
             this.saving = false;
             return;
         }
+        if (name.length > TemplateProfileComponent.MAX_TEMPLATE_NAME) {
+            this.templateError = this.i18n.translate('validation.maxLength50');
+            this.saving = false;
+            return;
+        }
+
+        const description = this.draftDescription.trim();
+        if (description.length > TemplateProfileComponent.MAX_TEMPLATE_DESCRIPTION) {
+            this.templateError = this.i18n.translate('validation.maxLength200');
+            this.saving = false;
+            return;
+        }
 
         const frontNames = this.frontFields.map(field => field.name);
         const backNames = this.backFields.map(field => field.name);
 
         const templateUpdates: Partial<CardTemplateDTO> = {
             name,
-            description: this.draftDescription.trim(),
+            description,
             isPublic: this.draftPublic,
             layout: {
                 front: frontNames,
                 back: backNames
             }
         };
+
+        const allFieldsForValidation = this.collectFieldsWithOrder();
+        if (allFieldsForValidation.some(field => field.label.length > TemplateProfileComponent.MAX_FIELD_LABEL)) {
+            this.templateError = this.i18n.translate('validation.maxLength50');
+            this.saving = false;
+            return;
+        }
+        if (allFieldsForValidation.some(field => (field.helpText || '').length > TemplateProfileComponent.MAX_FIELD_HELP_TEXT)) {
+            this.templateError = this.i18n.translate('validation.maxLength100');
+            this.saving = false;
+            return;
+        }
 
         const updateRequests = [];
 
@@ -728,6 +766,14 @@ export class TemplateProfileComponent implements OnInit {
         const label = this.newField.label.trim();
         if (!name || !label) {
             this.fieldError = this.i18n.translate('templateProfile.fieldRequiredError');
+            return;
+        }
+        if (label.length > TemplateProfileComponent.MAX_FIELD_LABEL) {
+            this.fieldError = this.i18n.translate('validation.maxLength50');
+            return;
+        }
+        if (this.newField.helpText.trim().length > TemplateProfileComponent.MAX_FIELD_HELP_TEXT) {
+            this.fieldError = this.i18n.translate('validation.maxLength100');
             return;
         }
 

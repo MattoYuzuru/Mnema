@@ -21,6 +21,7 @@ import { NgIf, NgClass } from '@angular/common';
         [placeholder]="placeholder"
         [disabled]="disabled"
         [rows]="rows"
+        [attr.maxlength]="maxLength || null"
         [ngClass]="{
           'textarea': true,
           'textarea-error': hasError
@@ -88,6 +89,7 @@ export class TextareaComponent implements ControlValueAccessor {
     @Input() rows = 4;
     @Input() hasError = false;
     @Input() errorMessage = '';
+    @Input() maxLength?: number;
     @Input() id = `textarea-${Math.random().toString(36).substr(2, 9)}`;
 
     value = '';

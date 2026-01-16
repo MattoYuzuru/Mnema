@@ -9,6 +9,7 @@ import { InputComponent } from '../../../shared/components/input.component';
 import { MediaUploadComponent } from '../../../shared/components/media-upload.component';
 import { CardContentValue } from '../../../core/models/user-card.models';
 import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
+import { I18nService } from '../../../core/services/i18n.service';
 
 @Component({
     selector: 'app-deck-metadata-step',
@@ -18,7 +19,15 @@ import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
     <div class="step">
       <h2>{{ 'wizard.deckInformation' | translate }}</h2>
       <form [formGroup]="form" class="form">
-        <app-input [label]="'wizard.deckName' | translate" type="text" formControlName="name" [placeholder]="'wizard.deckNamePlaceholder' | translate" [hasError]="form.get('name')?.invalid && form.get('name')?.touched || false" [errorMessage]="'wizard.required' | translate"></app-input>
+        <app-input
+          [label]="'wizard.deckName' | translate"
+          type="text"
+          formControlName="name"
+          [placeholder]="'wizard.deckNamePlaceholder' | translate"
+          [hasError]="form.get('name')?.invalid && form.get('name')?.touched || false"
+          [errorMessage]="nameErrorMessage()"
+          [maxLength]="maxNameLength"
+        ></app-input>
         <div class="markdown-field">
           <label class="markdown-label">{{ 'wizard.deckDescription' | translate }}</label>
           <div class="markdown-toolbar">
@@ -34,7 +43,11 @@ import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
             class="textarea"
             [placeholder]="'wizard.deckDescriptionPlaceholder' | translate"
             rows="4"
+            [attr.maxlength]="maxDescriptionLength"
           ></textarea>
+          <div *ngIf="form.get('description')?.invalid && form.get('description')?.touched" class="error-message">
+            {{ descriptionErrorMessage() }}
+          </div>
         </div>
         <app-media-upload
           [label]="'wizard.deckIcon' | translate"
@@ -53,10 +66,19 @@ import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
         </div>
         <div class="form-group">
           <label>{{ 'wizard.tags' | translate }}</label>
-          <input type="text" class="tag-input" [(ngModel)]="tagInput" [ngModelOptions]="{standalone: true}" (keydown.enter)="addTag($event)" [placeholder]="'wizard.tagPlaceholder' | translate" />
+          <input
+            type="text"
+            class="tag-input"
+            [(ngModel)]="tagInput"
+            [ngModelOptions]="{standalone: true}"
+            (keydown.enter)="addTag($event)"
+            [placeholder]="'wizard.tagPlaceholder' | translate"
+            [attr.maxlength]="maxTagLength"
+          />
           <div *ngIf="tags.length > 0" class="tags-list">
             <span *ngFor="let tag of tags; let i = index" class="tag-chip">{{ tag }} <button type="button" (click)="removeTag(i)">×</button></span>
           </div>
+          <p *ngIf="tagError" class="error-message">{{ tagError }}</p>
         </div>
         <label class="checkbox-label"><input type="checkbox" formControlName="isPublic" /> {{ 'wizard.makePublic' | translate }}</label>
         <label class="checkbox-label"><input type="checkbox" formControlName="isListed" [disabled]="!form.get('isPublic')?.value" /> {{ 'wizard.listInCatalog' | translate }}</label>
@@ -106,6 +128,7 @@ import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
       .tag-chip button { background: none; border: none; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0; }
       .checkbox-label { display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; font-size: 0.9rem; }
       .step-actions { display: flex; justify-content: space-between; padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
+      .error-message { font-size: 0.85rem; color: #dc2626; }
 
       @media (max-width: 768px) {
         .step-actions {
@@ -119,17 +142,25 @@ export class DeckMetadataStepComponent implements OnInit {
     @Output() next = new EventEmitter<void>();
     @Output() back = new EventEmitter<void>();
     @ViewChild('descriptionInput') descriptionInput?: ElementRef<HTMLTextAreaElement>;
+    private static readonly MAX_NAME_LENGTH = 50;
+    private static readonly MAX_DESCRIPTION_LENGTH = 200;
+    private static readonly MAX_TAGS = 5;
+    private static readonly MAX_TAG_LENGTH = 25;
+    readonly maxNameLength = DeckMetadataStepComponent.MAX_NAME_LENGTH;
+    readonly maxDescriptionLength = DeckMetadataStepComponent.MAX_DESCRIPTION_LENGTH;
+    readonly maxTagLength = DeckMetadataStepComponent.MAX_TAG_LENGTH;
     readonly codeMarker = '`';
     form: FormGroup;
     tags: string[] = [];
     tagInput = '';
+    tagError = '';
     saving = false;
     iconValue: CardContentValue | null = null;
 
-    constructor(private fb: FormBuilder, private deckApi: DeckApiService, private wizardState: DeckWizardStateService, private mediaApi: MediaApiService) {
+    constructor(private fb: FormBuilder, private deckApi: DeckApiService, private wizardState: DeckWizardStateService, private mediaApi: MediaApiService, private i18n: I18nService) {
         this.form = this.fb.group({
-            name: ['', Validators.required],
-            description: [''],
+            name: ['', [Validators.required, Validators.maxLength(DeckMetadataStepComponent.MAX_NAME_LENGTH)]],
+            description: ['', [Validators.maxLength(DeckMetadataStepComponent.MAX_DESCRIPTION_LENGTH)]],
             language: ['en'],
             isPublic: [false],
             isListed: [false]
@@ -173,14 +204,24 @@ export class DeckMetadataStepComponent implements OnInit {
     addTag(event: Event): void {
         event.preventDefault();
         const tag = this.tagInput.trim();
+        if (this.tags.length >= DeckMetadataStepComponent.MAX_TAGS) {
+            this.tagError = this.i18n.translate('validation.tagsLimit');
+            return;
+        }
+        if (tag.length > DeckMetadataStepComponent.MAX_TAG_LENGTH) {
+            this.tagError = this.i18n.translate('validation.tagTooLong');
+            return;
+        }
         if (tag && !this.tags.includes(tag)) {
             this.tags.push(tag);
             this.tagInput = '';
+            this.tagError = '';
         }
     }
 
     removeTag(index: number): void {
         this.tags.splice(index, 1);
+        this.tagError = '';
     }
 
     onBack(): void {
@@ -189,7 +230,7 @@ export class DeckMetadataStepComponent implements OnInit {
     }
 
     onNext(): void {
-        if (this.form.invalid) return;
+        if (this.form.invalid || this.hasInvalidTags()) return;
         this.saving = true;
         this.saveFormData();
 
@@ -229,4 +270,37 @@ export class DeckMetadataStepComponent implements OnInit {
             iconMediaId
         });
     }
+
+    nameErrorMessage(): string {
+        const control = this.form.get('name');
+        if (control?.hasError('required')) {
+            return this.i18n.translate('wizard.required');
+        }
+        if (control?.hasError('maxlength')) {
+            return this.i18n.translate('validation.maxLength50');
+        }
+        return '';
+    }
+
+    descriptionErrorMessage(): string {
+        const control = this.form.get('description');
+        if (control?.hasError('maxlength')) {
+            return this.i18n.translate('validation.maxLength200');
+        }
+        return '';
+    }
+
+    private hasInvalidTags(): boolean {
+        if (this.tags.length > DeckMetadataStepComponent.MAX_TAGS) {
+            this.tagError = this.i18n.translate('validation.tagsLimit');
+            return true;
+        }
+        if (this.tags.some(tag => tag.length > DeckMetadataStepComponent.MAX_TAG_LENGTH)) {
+            this.tagError = this.i18n.translate('validation.tagTooLong');
+            return true;
+        }
+        this.tagError = '';
+        return false;
+    }
+
 }
