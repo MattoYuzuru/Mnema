@@ -128,6 +128,7 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
         </div>
         <div class="modal-body">
           <form [formGroup]="editForm" class="edit-form">
+            <h3 class="section-title">{{ 'deckProfile.yourDeckSettings' | translate }}</h3>
             <app-input
               [label]="('deckProfile.displayName' | translate) + ' *'"
               formControlName="displayName"
@@ -144,40 +145,6 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
                 <input type="checkbox" formControlName="autoUpdate" />
                 {{ 'deckProfile.autoUpdateLabel' | translate }}
               </label>
-            </div>
-
-            <div class="form-group">
-              <div class="label-with-help">
-                <label>{{ 'deckProfile.schedulerAlgorithm' | translate }}</label>
-                <a
-                  class="help-link"
-                  href="https://github.com/MattoYuzuru/Mnema/wiki/what-are-scheduling-algorithms"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Scheduling algorithms guide"
-                >?</a>
-              </div>
-              <select formControlName="algorithmId" class="algorithm-select">
-                <option value="sm2">SM-2</option>
-                <option value="fsrs_v6">FSRS v6</option>
-              </select>
-              <p *ngIf="currentAlgorithm && currentAlgorithm.pendingMigrationCards > 0" class="migration-info">
-                {{ currentAlgorithm.pendingMigrationCards }} {{ 'deckProfile.pendingMigrationText' | translate }}
-              </p>
-            </div>
-
-            <div class="review-preferences-section">
-              <h4 class="subsection-title">{{ 'deckProfile.reviewPreferences' | translate }}</h4>
-              <div class="form-group">
-                <label>{{ 'deckProfile.dailyNewLimit' | translate }}</label>
-                <input type="number" formControlName="dailyNewLimit" class="number-input" min="0" />
-                <p class="field-help">{{ 'deckProfile.dailyNewLimitHelp' | translate }}</p>
-              </div>
-              <div class="form-group">
-                <label>{{ 'deckProfile.learningHorizonHours' | translate }}</label>
-                <input type="number" formControlName="learningHorizonHours" class="number-input" min="1" max="168" />
-                <p class="field-help">{{ 'deckProfile.learningHorizonHelp' | translate }}</p>
-              </div>
             </div>
 
             <div *ngIf="isAuthor" class="public-deck-section">
@@ -222,6 +189,39 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
                 </label>
               </div>
             </div>
+
+            <div class="review-preferences-section">
+              <h3 class="section-title">{{ 'deckProfile.reviewPreferences' | translate }}</h3>
+              <div class="form-group">
+                <div class="label-with-help">
+                  <label>{{ 'deckProfile.schedulerAlgorithm' | translate }}</label>
+                  <a
+                    class="help-link"
+                    href="https://github.com/MattoYuzuru/Mnema/wiki/what-are-scheduling-algorithms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Scheduling algorithms guide"
+                  >?</a>
+                </div>
+                <select formControlName="algorithmId" class="algorithm-select">
+                  <option value="sm2">SM-2</option>
+                  <option value="fsrs_v6">FSRS v6</option>
+                </select>
+                <p *ngIf="currentAlgorithm && currentAlgorithm.pendingMigrationCards > 0" class="migration-info">
+                  {{ currentAlgorithm.pendingMigrationCards }} {{ 'deckProfile.pendingMigrationText' | translate }}
+                </p>
+              </div>
+              <div class="form-group">
+                <label>{{ 'deckProfile.dailyNewLimit' | translate }}</label>
+                <input type="number" formControlName="dailyNewLimit" class="number-input" min="0" />
+                <p class="field-help">{{ 'deckProfile.dailyNewLimitHelp' | translate }}</p>
+              </div>
+              <div class="form-group">
+                <label>{{ 'deckProfile.learningHorizonHours' | translate }}</label>
+                <input type="number" formControlName="learningHorizonHours" class="number-input" min="1" max="168" />
+                <p class="field-help">{{ 'deckProfile.learningHorizonHelp' | translate }}</p>
+              </div>
+            </div>
           </form>
         </div>
         <div class="modal-footer">
@@ -252,26 +252,6 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
       (confirm)="confirmExport()"
       (cancel)="closeExportConfirm()"
     ></app-confirmation-dialog>
-
-    <div *ngIf="showScopePrompt" class="modal-overlay" (click)="closeScopePrompt()">
-      <div class="modal-content scope-prompt" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h2>Apply Changes</h2>
-          <button class="close-btn" (click)="closeScopePrompt()">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p>Would you like to apply your changes globally (to the public deck) or locally (to your copy only)?</p>
-          <div class="scope-buttons">
-            <app-button variant="secondary" (click)="applyScopeChoice('local')">
-              Apply Locally
-            </app-button>
-            <app-button variant="primary" (click)="applyScopeChoice('global')">
-              Apply Globally
-            </app-button>
-          </div>
-        </div>
-      </div>
-    </div>
   `,
     styles: [`
       .deck-profile {
@@ -411,7 +391,7 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
       .edit-form {
         display: flex;
         flex-direction: column;
-        gap: var(--spacing-md);
+        gap: var(--spacing-lg);
       }
 
       .checkbox-group {
@@ -442,20 +422,13 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
         border-top: 1px solid var(--border-color);
       }
 
-      .scope-prompt {
-        max-width: 32rem;
-      }
-
-      .scope-buttons {
-        display: flex;
-        gap: var(--spacing-md);
-        margin-top: var(--spacing-lg);
-      }
-
       .public-deck-section {
         margin-top: var(--spacing-xl);
         padding-top: var(--spacing-xl);
         border-top: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
       }
 
       .section-title {
@@ -523,12 +496,9 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
         margin-top: var(--spacing-lg);
         padding-top: var(--spacing-lg);
         border-top: 1px solid var(--border-color);
-      }
-
-      .subsection-title {
-        font-size: 1rem;
-        font-weight: 600;
-        margin: 0 0 var(--spacing-md) 0;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
       }
 
       .number-input {
@@ -679,7 +649,6 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     showEditModal = false;
     showDeleteConfirm = false;
     showExportConfirm = false;
-    showScopePrompt = false;
     saving = false;
     exporting = false;
     exportStatusKey: string | null = null;
@@ -693,7 +662,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     }
     currentAlgorithm: ReviewDeckAlgorithmResponse | null = null;
     originalAlgorithmId = '';
-    pendingSaveChoice: 'local' | 'global' | null = null;
+    private readonly editDraftKeyPrefix = 'mnema_edit_deck_draft:';
 
     private exportPollHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -925,6 +894,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
 
                     this.tagInput = '';
                     this.editForm = this.fb.group(formConfig);
+                    this.applyEditDraft();
                     this.showEditModal = true;
                 }
             });
@@ -945,18 +915,57 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     }
 
     closeEditModal(): void {
+        this.saveEditDraft();
         this.showEditModal = false;
+    }
+
+    private getEditDraftKey(): string {
+        return `${this.editDraftKeyPrefix}${this.userDeckId}`;
+    }
+
+    private saveEditDraft(): void {
+        if (!this.editForm) {
+            return;
+        }
+        const draft = {
+            form: this.editForm.getRawValue(),
+            tags: this.tags
+        };
+        try {
+            localStorage.setItem(this.getEditDraftKey(), JSON.stringify(draft));
+        } catch {
+        }
+    }
+
+    private applyEditDraft(): void {
+        const raw = localStorage.getItem(this.getEditDraftKey());
+        if (!raw) {
+            return;
+        }
+        try {
+            const draft = JSON.parse(raw);
+            const patch: Record<string, unknown> = {};
+            Object.keys(this.editForm.controls).forEach(key => {
+                if (draft.form && draft.form[key] !== undefined) {
+                    patch[key] = draft.form[key];
+                }
+            });
+            this.editForm.patchValue(patch);
+            if (Array.isArray(draft.tags)) {
+                this.tags = [...draft.tags];
+            }
+        } catch {
+        }
+    }
+
+    private clearEditDraft(): void {
+        localStorage.removeItem(this.getEditDraftKey());
     }
 
     saveEdit(): void {
         if (this.editForm.invalid) return;
 
         const formValue = this.editForm.value;
-
-        if (this.isAuthor && this.publicDeck && this.hasPublicDeckChanges() && this.pendingSaveChoice === null) {
-            this.showScopePrompt = true;
-            return;
-        }
 
         this.saving = true;
 
@@ -986,7 +995,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             });
         }
 
-        if (this.isAuthor && this.publicDeck && this.pendingSaveChoice === 'global') {
+        if (this.isAuthor && this.publicDeck && this.hasPublicDeckChanges()) {
             const publicDeckUpdates: Partial<PublicDeckDTO> = {
                 name: formValue.publicName,
                 description: formValue.publicDescription,
@@ -1006,11 +1015,10 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                 }
                 this.saving = false;
                 this.showEditModal = false;
-                this.pendingSaveChoice = null;
+                this.clearEditDraft();
             },
             error: () => {
                 this.saving = false;
-                this.pendingSaveChoice = null;
             }
         });
     }
@@ -1025,17 +1033,6 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                formValue.isListed !== this.publicDeck.isListed ||
                formValue.language !== this.publicDeck.language ||
                JSON.stringify(this.tags) !== JSON.stringify(this.publicDeck.tags);
-    }
-
-    applyScopeChoice(choice: 'local' | 'global'): void {
-        this.pendingSaveChoice = choice;
-        this.showScopePrompt = false;
-        this.saveEdit();
-    }
-
-    closeScopePrompt(): void {
-        this.showScopePrompt = false;
-        this.pendingSaveChoice = null;
     }
 
     openDeleteConfirm(): void {
