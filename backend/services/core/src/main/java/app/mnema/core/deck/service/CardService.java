@@ -30,6 +30,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Service
 public class CardService {
 
+    private static final int MAX_TAGS = 5;
+    private static final int MAX_TAG_LENGTH = 25;
+
     private final UserDeckRepository userDeckRepository;
     private final UserCardRepository userCardRepository;
     private final PublicCardRepository publicCardRepository;
@@ -202,6 +205,7 @@ public class CardService {
         if (userDeck.getPublicDeckId() == null) {
             long offsetNanos = 0L;
             for (CreateCardRequest request : requests) {
+                validateTags(request.tags());
                 JsonNode content = request.contentOverride() != null ? request.contentOverride() : request.content();
                 if (content == null || content.isNull()) {
                     throw new IllegalArgumentException("Card content must not be null");
@@ -235,6 +239,7 @@ public class CardService {
         if (!latestDeck.getAuthorId().equals(currentUserId)) {
             long offsetNanos = 0L;
             for (CreateCardRequest request : requests) {
+                validateTags(request.tags());
                 JsonNode content = request.contentOverride() != null ? request.contentOverride() : request.content();
                 if (content == null || content.isNull()) {
                     throw new IllegalArgumentException("Card content must not be null");
@@ -331,6 +336,7 @@ public class CardService {
 
         List<PublicCardEntity> newPublicCards = new ArrayList<>(requests.size());
         for (CreateCardRequest request : requests) {
+            validateTags(request.tags());
             if (request.content() == null || request.content().isNull()) {
                 throw new IllegalArgumentException("Public card content must not be null");
             }
@@ -384,6 +390,23 @@ public class CardService {
         }
 
         return result;
+    }
+
+    private void validateTags(String[] tags) {
+        if (tags == null) {
+            return;
+        }
+        if (tags.length > MAX_TAGS) {
+            throw new IllegalArgumentException("Too many tags");
+        }
+        for (String tag : tags) {
+            if (tag == null) {
+                continue;
+            }
+            if (tag.length() > MAX_TAG_LENGTH) {
+                throw new IllegalArgumentException("Tag is too long");
+            }
+        }
     }
 
     /*

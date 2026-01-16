@@ -26,6 +26,11 @@ import java.util.stream.Collectors;
 @Service
 public class TemplateService {
 
+    private static final int MAX_TEMPLATE_NAME = 50;
+    private static final int MAX_TEMPLATE_DESCRIPTION = 200;
+    private static final int MAX_FIELD_LABEL = 50;
+    private static final int MAX_FIELD_HELP_TEXT = 100;
+
     private final CardTemplateRepository cardTemplateRepository;
     private final FieldTemplateRepository fieldTemplateRepository;
 
@@ -87,6 +92,8 @@ public class TemplateService {
     public CardTemplateDTO createNewTemplate(UUID currentUserId,
                                              CardTemplateDTO dto,
                                              List<FieldTemplateDTO> fieldsDto) {
+
+        validateTemplateMeta(dto);
 
         // 0. Выбираем источник полей - либо отдельный аргумент, либо dto.fields()
         List<FieldTemplateDTO> fieldDtos;
@@ -180,9 +187,11 @@ public class TemplateService {
 
         // Обновляем только то, что есть в dto (String/JSON) + флаг публичности
         if (dto.name() != null) {
+            validateLength(dto.name(), MAX_TEMPLATE_NAME, "Template name");
             entity.setName(dto.name());
         }
         if (dto.description() != null) {
+            validateLength(dto.description(), MAX_TEMPLATE_DESCRIPTION, "Template description");
             entity.setDescription(dto.description());
         }
         if (dto.layout() != null) {
@@ -260,6 +269,13 @@ public class TemplateService {
                 dto.helpText()
         );
 
+        List<FieldTemplateDTO> existingFields = fieldTemplateRepository
+                .findByTemplateIdOrderByOrderIndexAsc(templateId)
+                .stream()
+                .map(this::toFieldTemplateDTO)
+                .toList();
+        validateTemplateFields(mergeFields(existingFields, normalized));
+
         FieldTemplateEntity entity = toFieldTemplateEntity(normalized);
         FieldTemplateEntity saved = fieldTemplateRepository.save(entity);
 
@@ -311,6 +327,28 @@ public class TemplateService {
             field.setHelpText(dto.helpText());
         }
 
+        List<FieldTemplateDTO> updatedFields = fieldTemplateRepository
+                .findByTemplateIdOrderByOrderIndexAsc(templateId)
+                .stream()
+                .map(this::toFieldTemplateDTO)
+                .map(existing -> existing.fieldId().equals(fieldId)
+                        ? new FieldTemplateDTO(
+                        fieldId,
+                        templateId,
+                        field.getName(),
+                        field.getLabel(),
+                        field.getFieldType(),
+                        field.isRequired(),
+                        field.isOnFront(),
+                        field.getOrderIndex(),
+                        field.getDefaultValue(),
+                        field.getHelpText()
+                )
+                        : existing)
+                .toList();
+
+        validateTemplateFields(updatedFields);
+
         FieldTemplateEntity saved = fieldTemplateRepository.save(field);
 
         return toFieldTemplateDTO(saved);
@@ -335,6 +373,15 @@ public class TemplateService {
                 .orElseThrow(() -> new NoSuchElementException(
                         "Field not found in template: " + fieldId
                 ));
+
+        List<FieldTemplateDTO> remainingFields = fieldTemplateRepository
+                .findByTemplateIdOrderByOrderIndexAsc(templateId)
+                .stream()
+                .filter(existing -> !existing.getFieldId().equals(fieldId))
+                .map(this::toFieldTemplateDTO)
+                .toList();
+
+        validateTemplateFields(remainingFields);
 
         fieldTemplateRepository.delete(field);
     }
@@ -415,6 +462,37 @@ public class TemplateService {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     "Template must have at least one required field on each side."
+            );
+        }
+
+        for (FieldTemplateDTO field : fields) {
+            validateLength(field.label(), MAX_FIELD_LABEL, "Field label");
+            validateLength(field.helpText(), MAX_FIELD_HELP_TEXT, "Field help text");
+        }
+    }
+
+    private List<FieldTemplateDTO> mergeFields(List<FieldTemplateDTO> fields, FieldTemplateDTO added) {
+        if (fields == null || fields.isEmpty()) {
+            return List.of(added);
+        }
+        List<FieldTemplateDTO> merged = new java.util.ArrayList<>(fields);
+        merged.add(added);
+        return merged;
+    }
+
+    private void validateTemplateMeta(CardTemplateDTO dto) {
+        validateLength(dto.name(), MAX_TEMPLATE_NAME, "Template name");
+        validateLength(dto.description(), MAX_TEMPLATE_DESCRIPTION, "Template description");
+    }
+
+    private void validateLength(String value, int maxLength, String label) {
+        if (value == null) {
+            return;
+        }
+        if (value.length() > maxLength) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    label + " must be at most " + maxLength + " characters"
             );
         }
     }

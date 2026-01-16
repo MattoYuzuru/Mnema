@@ -16,15 +16,22 @@ import app.mnema.core.media.service.MediaResolveCache;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
 import java.util.*;
 
 @Service
 public class DeckService {
+
+    private static final int MAX_DECK_NAME = 50;
+    private static final int MAX_DECK_DESCRIPTION = 200;
+    private static final int MAX_TAGS = 5;
+    private static final int MAX_TAG_LENGTH = 25;
 
     private final UserDeckRepository userDeckRepository;
     private final UserCardRepository userCardRepository;
@@ -159,6 +166,7 @@ public class DeckService {
     @Transactional
     @PreAuthorize("hasAuthority('SCOPE_user.write')")
     public UserDeckDTO createNewDeck(UUID currentUserId, PublicDeckDTO publicDeckDTO) {
+        validateDeckMeta(publicDeckDTO.name(), publicDeckDTO.description(), publicDeckDTO.tags());
 
         PublicDeckEntity publicDeckEntity = toPublicDeckEntityForCreate(currentUserId, publicDeckDTO);
         PublicDeckEntity savedPublicDeck = publicDeckRepository.save(publicDeckEntity);
@@ -194,9 +202,11 @@ public class DeckService {
         }
 
         if (dto.displayName() != null) {
+            validateLength(dto.displayName(), MAX_DECK_NAME, "Display name");
             deck.setDisplayName(dto.displayName());
         }
         if (dto.displayDescription() != null) {
+            validateLength(dto.displayDescription(), MAX_DECK_DESCRIPTION, "Display description");
             deck.setDisplayDescription(dto.displayDescription());
         }
         deck.setAutoUpdate(dto.autoUpdate());
@@ -520,9 +530,11 @@ public class DeckService {
         }
 
         if (dto.name() != null) {
+            validateLength(dto.name(), MAX_DECK_NAME, "Deck name");
             deck.setName(dto.name());
         }
         if (dto.description() != null) {
+            validateLength(dto.description(), MAX_DECK_DESCRIPTION, "Deck description");
             deck.setDescription(dto.description());
         }
         if (dto.iconMediaId() != null) {
@@ -535,6 +547,7 @@ public class DeckService {
             deck.setLanguageCode(dto.language());
         }
         if (dto.tags() != null) {
+            validateTags(dto.tags());
             deck.setTags(dto.tags());
         }
 
@@ -632,6 +645,41 @@ public class DeckService {
                 null,
                 publicDeckDTO.forkedFromDeck()
         );
+    }
+
+    private void validateDeckMeta(String name, String description, String[] tags) {
+        validateLength(name, MAX_DECK_NAME, "Deck name");
+        validateLength(description, MAX_DECK_DESCRIPTION, "Deck description");
+        validateTags(tags);
+    }
+
+    private void validateTags(String[] tags) {
+        if (tags == null) {
+            return;
+        }
+        if (tags.length > MAX_TAGS) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Too many tags");
+        }
+        for (String tag : tags) {
+            if (tag == null) {
+                continue;
+            }
+            if (tag.length() > MAX_TAG_LENGTH) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tag is too long");
+            }
+        }
+    }
+
+    private void validateLength(String value, int maxLength, String label) {
+        if (value == null) {
+            return;
+        }
+        if (value.length() > maxLength) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    label + " must be at most " + maxLength + " characters"
+            );
+        }
     }
 
     private UserDeckEntity toUserDeckEntityForFork(UserDeckDTO userDeckDTO) {

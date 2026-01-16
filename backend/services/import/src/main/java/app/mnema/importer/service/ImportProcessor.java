@@ -158,6 +158,19 @@ public class ImportProcessor {
             if (deckName == null || deckName.isBlank()) {
                 deckName = job.getSourceName() == null ? "Imported deck" : job.getSourceName();
             }
+            String deckDescription = job.getDeckDescription();
+            if (deckDescription == null || deckDescription.isBlank()) {
+                deckDescription = "Imported from " + job.getSourceType();
+            }
+            String language = job.getLanguageCode();
+            if (language == null || language.isBlank()) {
+                language = resolveLanguage();
+            }
+            boolean isPublic = Boolean.TRUE.equals(job.getIsPublic());
+            boolean isListed = Boolean.TRUE.equals(job.getIsListed());
+            if (!isPublic) {
+                isListed = false;
+            }
             List<CoreFieldTemplate> templateFields = buildTemplateFields(sourceFields, layout);
             CoreCardTemplateResponse template = coreApiClient.createTemplate(
                     job.getUserAccessToken(),
@@ -181,13 +194,13 @@ public class ImportProcessor {
                             null,
                             null,
                             deckName,
-                            "Imported from " + job.getSourceType(),
+                            deckDescription,
                             null,
                             template.templateId(),
-                            false,
-                            false,
-                            resolveLanguage(),
-                            null,
+                            isPublic,
+                            isListed,
+                            language,
+                            job.getTags(),
                             null
                     )
             );
