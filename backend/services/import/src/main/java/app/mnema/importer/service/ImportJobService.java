@@ -24,6 +24,11 @@ import java.util.UUID;
 @Service
 public class ImportJobService {
 
+    private static final int MAX_DECK_NAME = 50;
+    private static final int MAX_DECK_DESCRIPTION = 200;
+    private static final int MAX_TAGS = 5;
+    private static final int MAX_TAG_LENGTH = 25;
+
     private final ImportJobRepository jobRepository;
     private final CurrentUserProvider currentUserProvider;
     private final ObjectMapper objectMapper;
@@ -56,11 +61,18 @@ public class ImportJobService {
         job.setProcessedItems(0);
         job.setFieldMapping(toMappingNode(request.fieldMapping()));
         job.setDeckName(normalizeOptional(request.deckName()));
+        job.setDeckDescription(normalizeOptional(request.deckDescription()));
+        job.setLanguageCode(normalizeOptional(request.language()));
+        job.setTags(normalizeTags(request.tags()));
+        job.setIsPublic(request.isPublic());
+        job.setIsListed(request.isListed());
         job.setResultMediaId(null);
         job.setUserAccessToken(requireAccessToken(accessToken));
         Instant now = Instant.now();
         job.setCreatedAt(now);
         job.setUpdatedAt(now);
+
+        validateDeckMeta(job.getDeckName(), job.getDeckDescription(), job.getTags());
 
         return toResponse(jobRepository.save(job));
     }
@@ -131,6 +143,41 @@ public class ImportJobService {
         return objectMapper.valueToTree(mapping);
     }
 
+    private String[] normalizeTags(String[] tags) {
+        if (tags == null || tags.length == 0) {
+            return null;
+        }
+        return tags;
+    }
+
+    private void validateDeckMeta(String name, String description, String[] tags) {
+        validateLength(name, MAX_DECK_NAME, "Deck name");
+        validateLength(description, MAX_DECK_DESCRIPTION, "Deck description");
+        if (tags == null) {
+            return;
+        }
+        if (tags.length > MAX_TAGS) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Too many tags");
+        }
+        for (String tag : tags) {
+            if (tag != null && tag.length() > MAX_TAG_LENGTH) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Tag is too long");
+            }
+        }
+    }
+
+    private void validateLength(String value, int maxLength, String label) {
+        if (value == null) {
+            return;
+        }
+        if (value.length() > maxLength) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    label + " must be at most " + maxLength + " characters"
+            );
+        }
+    }
+
     private ImportJobResponse toResponse(ImportJobEntity job) {
         return new ImportJobResponse(
                 job.getJobId(),
@@ -147,6 +194,11 @@ public class ImportJobService {
                 job.getProcessedItems(),
                 job.getFieldMapping(),
                 job.getDeckName(),
+                job.getDeckDescription(),
+                job.getLanguageCode(),
+                job.getTags(),
+                job.getIsPublic(),
+                job.getIsListed(),
                 job.getResultMediaId(),
                 job.getCreatedAt(),
                 job.getUpdatedAt(),

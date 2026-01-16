@@ -30,6 +30,11 @@ export interface CreateImportJobRequest {
     targetDeckId?: string | null;
     mode?: ImportMode | null;
     deckName?: string | null;
+    deckDescription?: string | null;
+    language?: string | null;
+    tags?: string[] | null;
+    isPublic?: boolean | null;
+    isListed?: boolean | null;
     fieldMapping?: Record<string, string> | null;
 }
 
@@ -53,6 +58,11 @@ export interface ImportJobResponse {
     processedItems?: number | null;
     fieldMapping?: Record<string, string> | null;
     deckName?: string | null;
+    deckDescription?: string | null;
+    language?: string | null;
+    tags?: string[] | null;
+    isPublic?: boolean | null;
+    isListed?: boolean | null;
     resultMediaId?: string | null;
     createdAt?: string | null;
     updatedAt?: string | null;

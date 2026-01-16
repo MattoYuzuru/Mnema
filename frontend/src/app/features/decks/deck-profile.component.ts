@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
 import { ReactiveFormsModule, FormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
@@ -18,15 +18,15 @@ import { ButtonComponent } from '../../shared/components/button.component';
 import { AddCardsModalComponent } from './add-cards-modal.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { InputComponent } from '../../shared/components/input.component';
-import { TextareaComponent } from '../../shared/components/textarea.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 import { ImportDeckModalComponent } from '../import/import-deck-modal.component';
 import { markdownToHtml } from '../../shared/utils/markdown.util';
+import { I18nService } from '../../core/services/i18n.service';
 
 @Component({
     selector: 'app-deck-profile',
     standalone: true,
-    imports: [NgIf, NgFor, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, ConfirmationDialogComponent, InputComponent, TextareaComponent, ImportDeckModalComponent, TranslatePipe],
+    imports: [NgIf, NgFor, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, ConfirmationDialogComponent, InputComponent, ImportDeckModalComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -128,56 +128,39 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
         </div>
         <div class="modal-body">
           <form [formGroup]="editForm" class="edit-form">
+            <h3 class="section-title">{{ 'deckProfile.yourDeckSettings' | translate }}</h3>
             <app-input
               [label]="('deckProfile.displayName' | translate) + ' *'"
               formControlName="displayName"
               [hasError]="editForm.get('displayName')?.invalid && editForm.get('displayName')?.touched || false"
-              [errorMessage]="'deckProfile.required' | translate"
+              [errorMessage]="displayNameErrorMessage()"
+              [maxLength]="maxDeckName"
             ></app-input>
-            <app-textarea
-              [label]="'deckProfile.description' | translate"
-              formControlName="displayDescription"
-              [rows]="4"
-            ></app-textarea>
+            <div class="markdown-field">
+              <label class="markdown-label">{{ 'deckProfile.description' | translate }}</label>
+              <div class="markdown-toolbar">
+                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '**', '**')" [attr.title]="'wizard.markdownBold' | translate" [attr.aria-label]="'wizard.markdownBold' | translate">B</button>
+                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '*', '*')" [attr.title]="'wizard.markdownItalic' | translate" [attr.aria-label]="'wizard.markdownItalic' | translate">I</button>
+                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', codeMarker, codeMarker)" [attr.title]="'wizard.markdownCode' | translate" [attr.aria-label]="'wizard.markdownCode' | translate">code</button>
+                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '## ', '')" [attr.title]="'wizard.markdownHeading' | translate" [attr.aria-label]="'wizard.markdownHeading' | translate">H2</button>
+                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '- ', '')" [attr.title]="'wizard.markdownList' | translate" [attr.aria-label]="'wizard.markdownList' | translate">-</button>
+              </div>
+              <textarea
+                #displayDescriptionInput
+                formControlName="displayDescription"
+                class="textarea"
+                rows="4"
+                [attr.maxlength]="maxDeckDescription"
+              ></textarea>
+              <div *ngIf="editForm.get('displayDescription')?.invalid && editForm.get('displayDescription')?.touched" class="error-message">
+                {{ displayDescriptionErrorMessage() }}
+              </div>
+            </div>
             <div class="checkbox-group">
               <label>
                 <input type="checkbox" formControlName="autoUpdate" />
                 {{ 'deckProfile.autoUpdateLabel' | translate }}
               </label>
-            </div>
-
-            <div class="form-group">
-              <div class="label-with-help">
-                <label>{{ 'deckProfile.schedulerAlgorithm' | translate }}</label>
-                <a
-                  class="help-link"
-                  href="https://github.com/MattoYuzuru/Mnema/wiki/what-are-scheduling-algorithms"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label="Scheduling algorithms guide"
-                >?</a>
-              </div>
-              <select formControlName="algorithmId" class="algorithm-select">
-                <option value="sm2">SM-2</option>
-                <option value="fsrs_v6">FSRS v6</option>
-              </select>
-              <p *ngIf="currentAlgorithm && currentAlgorithm.pendingMigrationCards > 0" class="migration-info">
-                {{ currentAlgorithm.pendingMigrationCards }} {{ 'deckProfile.pendingMigrationText' | translate }}
-              </p>
-            </div>
-
-            <div class="review-preferences-section">
-              <h4 class="subsection-title">{{ 'deckProfile.reviewPreferences' | translate }}</h4>
-              <div class="form-group">
-                <label>{{ 'deckProfile.dailyNewLimit' | translate }}</label>
-                <input type="number" formControlName="dailyNewLimit" class="number-input" min="0" />
-                <p class="field-help">{{ 'deckProfile.dailyNewLimitHelp' | translate }}</p>
-              </div>
-              <div class="form-group">
-                <label>{{ 'deckProfile.learningHorizonHours' | translate }}</label>
-                <input type="number" formControlName="learningHorizonHours" class="number-input" min="1" max="168" />
-                <p class="field-help">{{ 'deckProfile.learningHorizonHelp' | translate }}</p>
-              </div>
             </div>
 
             <div *ngIf="isAuthor" class="public-deck-section">
@@ -186,13 +169,29 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
                 [label]="('deckProfile.publicDeckName' | translate) + ' *'"
                 formControlName="publicName"
                 [hasError]="editForm.get('publicName')?.invalid && editForm.get('publicName')?.touched || false"
-                [errorMessage]="'deckProfile.required' | translate"
+                [errorMessage]="publicNameErrorMessage()"
+                [maxLength]="maxDeckName"
               ></app-input>
-              <app-textarea
-                [label]="'deckProfile.publicDescription' | translate"
-                formControlName="publicDescription"
-                [rows]="4"
-              ></app-textarea>
+              <div class="markdown-field">
+                <label class="markdown-label">{{ 'deckProfile.publicDescription' | translate }}</label>
+                <div class="markdown-toolbar">
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '**', '**')" [attr.title]="'wizard.markdownBold' | translate" [attr.aria-label]="'wizard.markdownBold' | translate">B</button>
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '*', '*')" [attr.title]="'wizard.markdownItalic' | translate" [attr.aria-label]="'wizard.markdownItalic' | translate">I</button>
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', codeMarker, codeMarker)" [attr.title]="'wizard.markdownCode' | translate" [attr.aria-label]="'wizard.markdownCode' | translate">code</button>
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '## ', '')" [attr.title]="'wizard.markdownHeading' | translate" [attr.aria-label]="'wizard.markdownHeading' | translate">H2</button>
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '- ', '')" [attr.title]="'wizard.markdownList' | translate" [attr.aria-label]="'wizard.markdownList' | translate">-</button>
+                </div>
+                <textarea
+                  #publicDescriptionInput
+                  formControlName="publicDescription"
+                  class="textarea"
+                  rows="4"
+                  [attr.maxlength]="maxDeckDescription"
+                ></textarea>
+                <div *ngIf="editForm.get('publicDescription')?.invalid && editForm.get('publicDescription')?.touched" class="error-message">
+                  {{ publicDescriptionErrorMessage() }}
+                </div>
+              </div>
               <div class="form-group">
                 <label>{{ 'deckProfile.language' | translate }}</label>
                 <select formControlName="language" class="language-select">
@@ -204,10 +203,19 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
               </div>
               <div class="form-group">
                 <label>{{ 'deckProfile.tags' | translate }}</label>
-                <input type="text" class="tag-input" [(ngModel)]="tagInput" [ngModelOptions]="{standalone: true}" (keydown.enter)="addTag($event)" [placeholder]="'deckProfile.tagsPlaceholder' | translate" />
+                <input
+                  type="text"
+                  class="tag-input"
+                  [(ngModel)]="tagInput"
+                  [ngModelOptions]="{standalone: true}"
+                  (keydown.enter)="addTag($event)"
+                  [placeholder]="'deckProfile.tagsPlaceholder' | translate"
+                  [attr.maxlength]="maxTagLength"
+                />
                 <div *ngIf="tags.length > 0" class="tags-list">
                   <span *ngFor="let tag of tags; let i = index" class="tag-chip">{{ tag }} <button type="button" (click)="removeTag(i)">×</button></span>
                 </div>
+                <p *ngIf="tagError" class="error-message">{{ tagError }}</p>
               </div>
               <div class="checkbox-group">
                 <label>
@@ -220,6 +228,39 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
                   <input type="checkbox" formControlName="isListed" />
                   {{ 'deckProfile.listInCatalog' | translate }}
                 </label>
+              </div>
+            </div>
+
+            <div class="review-preferences-section">
+              <h3 class="section-title">{{ 'deckProfile.reviewPreferences' | translate }}</h3>
+              <div class="form-group">
+                <div class="label-with-help">
+                  <label>{{ 'deckProfile.schedulerAlgorithm' | translate }}</label>
+                  <a
+                    class="help-link"
+                    href="https://github.com/MattoYuzuru/Mnema/wiki/what-are-scheduling-algorithms"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    aria-label="Scheduling algorithms guide"
+                  >?</a>
+                </div>
+                <select formControlName="algorithmId" class="algorithm-select">
+                  <option value="sm2">SM-2</option>
+                  <option value="fsrs_v6">FSRS v6</option>
+                </select>
+                <p *ngIf="currentAlgorithm && currentAlgorithm.pendingMigrationCards > 0" class="migration-info">
+                  {{ currentAlgorithm.pendingMigrationCards }} {{ 'deckProfile.pendingMigrationText' | translate }}
+                </p>
+              </div>
+              <div class="form-group">
+                <label>{{ 'deckProfile.dailyNewLimit' | translate }}</label>
+                <input type="number" formControlName="dailyNewLimit" class="number-input" min="0" />
+                <p class="field-help">{{ 'deckProfile.dailyNewLimitHelp' | translate }}</p>
+              </div>
+              <div class="form-group">
+                <label>{{ 'deckProfile.learningHorizonHours' | translate }}</label>
+                <input type="number" formControlName="learningHorizonHours" class="number-input" min="1" max="168" />
+                <p class="field-help">{{ 'deckProfile.learningHorizonHelp' | translate }}</p>
               </div>
             </div>
           </form>
@@ -252,26 +293,6 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
       (confirm)="confirmExport()"
       (cancel)="closeExportConfirm()"
     ></app-confirmation-dialog>
-
-    <div *ngIf="showScopePrompt" class="modal-overlay" (click)="closeScopePrompt()">
-      <div class="modal-content scope-prompt" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h2>Apply Changes</h2>
-          <button class="close-btn" (click)="closeScopePrompt()">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p>Would you like to apply your changes globally (to the public deck) or locally (to your copy only)?</p>
-          <div class="scope-buttons">
-            <app-button variant="secondary" (click)="applyScopeChoice('local')">
-              Apply Locally
-            </app-button>
-            <app-button variant="primary" (click)="applyScopeChoice('global')">
-              Apply Globally
-            </app-button>
-          </div>
-        </div>
-      </div>
-    </div>
   `,
     styles: [`
       .deck-profile {
@@ -411,7 +432,58 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
       .edit-form {
         display: flex;
         flex-direction: column;
-        gap: var(--spacing-md);
+        gap: var(--spacing-lg);
+      }
+
+      .markdown-field {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+      }
+
+      .markdown-label {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: var(--color-text-primary);
+      }
+
+      .markdown-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+      }
+
+      .toolbar-button {
+        border: 1px solid var(--border-color);
+        background: var(--color-card-background);
+        color: var(--color-text-primary);
+        font-size: 0.75rem;
+        font-weight: 600;
+        border-radius: var(--border-radius-sm);
+        padding: 0.2rem 0.5rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+      }
+
+      .toolbar-button:hover {
+        border-color: var(--color-text-primary);
+      }
+
+      .textarea {
+        padding: var(--spacing-sm) var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+        font-size: 0.9rem;
+        font-family: inherit;
+        background: var(--color-card-background);
+        color: var(--color-text-primary);
+        transition: border-color 0.2s ease;
+        resize: vertical;
+      }
+
+      .textarea:focus {
+        outline: none;
+        border-color: var(--color-primary-accent);
       }
 
       .checkbox-group {
@@ -442,20 +514,13 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
         border-top: 1px solid var(--border-color);
       }
 
-      .scope-prompt {
-        max-width: 32rem;
-      }
-
-      .scope-buttons {
-        display: flex;
-        gap: var(--spacing-md);
-        margin-top: var(--spacing-lg);
-      }
-
       .public-deck-section {
         margin-top: var(--spacing-xl);
         padding-top: var(--spacing-xl);
         border-top: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
       }
 
       .section-title {
@@ -523,12 +588,9 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
         margin-top: var(--spacing-lg);
         padding-top: var(--spacing-lg);
         border-top: 1px solid var(--border-color);
-      }
-
-      .subsection-title {
-        font-size: 1rem;
-        font-weight: 600;
-        margin: 0 0 var(--spacing-md) 0;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
       }
 
       .number-input {
@@ -580,6 +642,11 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
         font-size: 1.2rem;
         line-height: 1;
         padding: 0;
+      }
+
+      .error-message {
+        font-size: 0.85rem;
+        color: #dc2626;
       }
 
       @media (max-width: 768px) {
@@ -666,6 +733,16 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
     `]
 })
 export class DeckProfileComponent implements OnInit, OnDestroy {
+    private static readonly MAX_DECK_NAME = 50;
+    private static readonly MAX_DECK_DESCRIPTION = 200;
+    private static readonly MAX_TAGS = 5;
+    private static readonly MAX_TAG_LENGTH = 25;
+    @ViewChild('displayDescriptionInput') displayDescriptionInput?: ElementRef<HTMLTextAreaElement>;
+    @ViewChild('publicDescriptionInput') publicDescriptionInput?: ElementRef<HTMLTextAreaElement>;
+    readonly maxDeckName = DeckProfileComponent.MAX_DECK_NAME;
+    readonly maxDeckDescription = DeckProfileComponent.MAX_DECK_DESCRIPTION;
+    readonly maxTagLength = DeckProfileComponent.MAX_TAG_LENGTH;
+    readonly codeMarker = '`';
     loading = true;
     deck: UserDeckDTO | null = null;
     publicDeck: PublicDeckDTO | null = null;
@@ -679,12 +756,12 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     showEditModal = false;
     showDeleteConfirm = false;
     showExportConfirm = false;
-    showScopePrompt = false;
     saving = false;
     exporting = false;
     exportStatusKey: string | null = null;
     exportJob: ImportJobResponse | null = null;
     editForm!: FormGroup;
+    tagError = '';
     tagInput = '';
     tags: string[] = [];
 
@@ -693,7 +770,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     }
     currentAlgorithm: ReviewDeckAlgorithmResponse | null = null;
     originalAlgorithmId = '';
-    pendingSaveChoice: 'local' | 'global' | null = null;
+    private readonly editDraftKeyPrefix = 'mnema_edit_deck_draft:';
 
     private exportPollHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -706,7 +783,8 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         private userApi: UserApiService,
         private fb: FormBuilder,
         private importApi: ImportApiService,
-        private mediaApi: MediaApiService
+        private mediaApi: MediaApiService,
+        private i18n: I18nService
     ) {}
 
     ngOnInit(): void {
@@ -904,8 +982,8 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                     const preferences = algorithmData.reviewPreferences;
 
                     const formConfig: any = {
-                        displayName: [this.deck!.displayName, Validators.required],
-                        displayDescription: [this.deck!.displayDescription],
+                        displayName: [this.deck!.displayName, [Validators.required, Validators.maxLength(DeckProfileComponent.MAX_DECK_NAME)]],
+                        displayDescription: [this.deck!.displayDescription, [Validators.maxLength(DeckProfileComponent.MAX_DECK_DESCRIPTION)]],
                         autoUpdate: [this.deck!.autoUpdate],
                         algorithmId: [algorithmData.algorithmId, Validators.required],
                         dailyNewLimit: [preferences?.dailyNewLimit ?? 20],
@@ -913,8 +991,8 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                     };
 
                     if (this.isAuthor && this.publicDeck) {
-                        formConfig.publicName = [this.publicDeck.name, Validators.required];
-                        formConfig.publicDescription = [this.publicDeck.description];
+                        formConfig.publicName = [this.publicDeck.name, [Validators.required, Validators.maxLength(DeckProfileComponent.MAX_DECK_NAME)]];
+                        formConfig.publicDescription = [this.publicDeck.description, [Validators.maxLength(DeckProfileComponent.MAX_DECK_DESCRIPTION)]];
                         formConfig.isPublic = [this.publicDeck.isPublic];
                         formConfig.isListed = [this.publicDeck.isListed];
                         formConfig.language = [this.publicDeck.language];
@@ -924,7 +1002,9 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                     }
 
                     this.tagInput = '';
+                    this.tagError = '';
                     this.editForm = this.fb.group(formConfig);
+                    this.applyEditDraft();
                     this.showEditModal = true;
                 }
             });
@@ -934,29 +1014,139 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     addTag(event: Event): void {
         event.preventDefault();
         const tag = this.tagInput.trim();
+        if (this.tags.length >= DeckProfileComponent.MAX_TAGS) {
+            this.tagError = this.i18n.translate('validation.tagsLimit');
+            return;
+        }
+        if (tag.length > DeckProfileComponent.MAX_TAG_LENGTH) {
+            this.tagError = this.i18n.translate('validation.tagTooLong');
+            return;
+        }
         if (tag && !this.tags.includes(tag)) {
             this.tags.push(tag);
             this.tagInput = '';
+            this.tagError = '';
         }
     }
 
     removeTag(index: number): void {
         this.tags.splice(index, 1);
+        this.tagError = '';
+    }
+
+    displayNameErrorMessage(): string {
+        const control = this.editForm?.get('displayName');
+        if (control?.hasError('required')) {
+            return this.i18n.translate('deckProfile.required');
+        }
+        if (control?.hasError('maxlength')) {
+            return this.i18n.translate('validation.maxLength50');
+        }
+        return '';
+    }
+
+    publicNameErrorMessage(): string {
+        const control = this.editForm?.get('publicName');
+        if (control?.hasError('required')) {
+            return this.i18n.translate('deckProfile.required');
+        }
+        if (control?.hasError('maxlength')) {
+            return this.i18n.translate('validation.maxLength50');
+        }
+        return '';
+    }
+
+    displayDescriptionErrorMessage(): string {
+        const control = this.editForm?.get('displayDescription');
+        if (control?.hasError('maxlength')) {
+            return this.i18n.translate('validation.maxLength200');
+        }
+        return '';
+    }
+
+    publicDescriptionErrorMessage(): string {
+        const control = this.editForm?.get('publicDescription');
+        if (control?.hasError('maxlength')) {
+            return this.i18n.translate('validation.maxLength200');
+        }
+        return '';
+    }
+
+    applyMarkdown(target: 'displayDescription' | 'publicDescription', before: string, after: string, placeholder = ''): void {
+        const textarea = target === 'displayDescription'
+            ? this.displayDescriptionInput?.nativeElement
+            : this.publicDescriptionInput?.nativeElement;
+        if (!textarea) {
+            return;
+        }
+        const value = textarea.value;
+        const start = textarea.selectionStart ?? 0;
+        const end = textarea.selectionEnd ?? 0;
+        const hasSelection = start !== end;
+        const selectedText = hasSelection ? value.slice(start, end) : placeholder;
+        const newValue = value.slice(0, start) + before + selectedText + after + value.slice(end);
+        this.editForm.get(target)?.setValue(newValue);
+
+        const cursorStart = start + before.length;
+        const cursorEnd = cursorStart + selectedText.length;
+        requestAnimationFrame(() => {
+            textarea.focus();
+            textarea.setSelectionRange(cursorStart, cursorEnd);
+        });
     }
 
     closeEditModal(): void {
+        this.saveEditDraft();
         this.showEditModal = false;
     }
 
-    saveEdit(): void {
-        if (this.editForm.invalid) return;
+    private getEditDraftKey(): string {
+        return `${this.editDraftKeyPrefix}${this.userDeckId}`;
+    }
 
-        const formValue = this.editForm.value;
-
-        if (this.isAuthor && this.publicDeck && this.hasPublicDeckChanges() && this.pendingSaveChoice === null) {
-            this.showScopePrompt = true;
+    private saveEditDraft(): void {
+        if (!this.editForm) {
             return;
         }
+        const draft = {
+            form: this.editForm.getRawValue(),
+            tags: this.tags
+        };
+        try {
+            localStorage.setItem(this.getEditDraftKey(), JSON.stringify(draft));
+        } catch {
+        }
+    }
+
+    private applyEditDraft(): void {
+        const raw = localStorage.getItem(this.getEditDraftKey());
+        if (!raw) {
+            return;
+        }
+        try {
+            const draft = JSON.parse(raw);
+            const patch: Record<string, unknown> = {};
+            Object.keys(this.editForm.controls).forEach(key => {
+                if (draft.form && draft.form[key] !== undefined) {
+                    patch[key] = draft.form[key];
+                }
+            });
+            this.editForm.patchValue(patch);
+            if (Array.isArray(draft.tags)) {
+                this.tags = [...draft.tags];
+            }
+        } catch {
+        }
+    }
+
+    private clearEditDraft(): void {
+        localStorage.removeItem(this.getEditDraftKey());
+    }
+
+    saveEdit(): void {
+        if (this.editForm.invalid || this.hasInvalidTags()) return;
+
+        const formValue = this.editForm.value;
 
         this.saving = true;
 
@@ -986,7 +1176,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             });
         }
 
-        if (this.isAuthor && this.publicDeck && this.pendingSaveChoice === 'global') {
+        if (this.isAuthor && this.publicDeck && this.hasPublicDeckChanges()) {
             const publicDeckUpdates: Partial<PublicDeckDTO> = {
                 name: formValue.publicName,
                 description: formValue.publicDescription,
@@ -1006,11 +1196,10 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                 }
                 this.saving = false;
                 this.showEditModal = false;
-                this.pendingSaveChoice = null;
+                this.clearEditDraft();
             },
             error: () => {
                 this.saving = false;
-                this.pendingSaveChoice = null;
             }
         });
     }
@@ -1027,15 +1216,17 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                JSON.stringify(this.tags) !== JSON.stringify(this.publicDeck.tags);
     }
 
-    applyScopeChoice(choice: 'local' | 'global'): void {
-        this.pendingSaveChoice = choice;
-        this.showScopePrompt = false;
-        this.saveEdit();
-    }
-
-    closeScopePrompt(): void {
-        this.showScopePrompt = false;
-        this.pendingSaveChoice = null;
+    private hasInvalidTags(): boolean {
+        if (this.tags.length > DeckProfileComponent.MAX_TAGS) {
+            this.tagError = this.i18n.translate('validation.tagsLimit');
+            return true;
+        }
+        if (this.tags.some(tag => tag.length > DeckProfileComponent.MAX_TAG_LENGTH)) {
+            this.tagError = this.i18n.translate('validation.tagTooLong');
+            return true;
+        }
+        this.tagError = '';
+        return false;
     }
 
     openDeleteConfirm(): void {

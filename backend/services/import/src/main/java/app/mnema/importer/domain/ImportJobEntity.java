@@ -72,6 +72,22 @@ public class ImportJobEntity {
     @Column(name = "deck_name")
     private String deckName;
 
+    @Column(name = "deck_description")
+    private String deckDescription;
+
+    @Column(name = "language_code")
+    private String languageCode;
+
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "tags", columnDefinition = "text[]")
+    private String[] tags;
+
+    @Column(name = "is_public")
+    private Boolean isPublic;
+
+    @Column(name = "is_listed")
+    private Boolean isListed;
+
     @Column(name = "result_media_id")
     private UUID resultMediaId;
 
@@ -220,6 +236,46 @@ public class ImportJobEntity {
 
     public void setDeckName(String deckName) {
         this.deckName = deckName;
+    }
+
+    public String getDeckDescription() {
+        return deckDescription;
+    }
+
+    public void setDeckDescription(String deckDescription) {
+        this.deckDescription = deckDescription;
+    }
+
+    public String getLanguageCode() {
+        return languageCode;
+    }
+
+    public void setLanguageCode(String languageCode) {
+        this.languageCode = languageCode;
+    }
+
+    public String[] getTags() {
+        return tags;
+    }
+
+    public void setTags(String[] tags) {
+        this.tags = tags;
+    }
+
+    public Boolean getIsPublic() {
+        return isPublic;
+    }
+
+    public void setIsPublic(Boolean isPublic) {
+        this.isPublic = isPublic;
+    }
+
+    public Boolean getIsListed() {
+        return isListed;
+    }
+
+    public void setIsListed(Boolean isListed) {
+        this.isListed = isListed;
     }
 
     public UUID getResultMediaId() {

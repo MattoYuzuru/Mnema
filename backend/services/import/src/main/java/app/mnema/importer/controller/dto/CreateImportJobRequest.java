@@ -16,6 +16,11 @@ public record CreateImportJobRequest(
         UUID targetDeckId,
         ImportMode mode,
         String deckName,
+        String deckDescription,
+        String language,
+        String[] tags,
+        Boolean isPublic,
+        Boolean isListed,
         Map<String, String> fieldMapping
 ) {
 }

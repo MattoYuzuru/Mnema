@@ -32,8 +32,24 @@ interface FieldFormValue {
         </div>
 
         <form [formGroup]="form" class="template-form">
-          <app-input [label]="'templateCreator.name' | translate" type="text" formControlName="name" [placeholder]="'templateCreator.namePlaceholder' | translate" [hasError]="form.get('name')?.invalid && form.get('name')?.touched || false" [errorMessage]="'wizard.required' | translate"></app-input>
-          <app-textarea [label]="'templateCreator.description' | translate" formControlName="description" [placeholder]="'templateCreator.descriptionPlaceholder' | translate" [rows]="3"></app-textarea>
+          <app-input
+            [label]="'templateCreator.name' | translate"
+            type="text"
+            formControlName="name"
+            [placeholder]="'templateCreator.namePlaceholder' | translate"
+            [hasError]="form.get('name')?.invalid && form.get('name')?.touched || false"
+            [errorMessage]="nameErrorMessage()"
+            [maxLength]="maxTemplateName"
+          ></app-input>
+          <app-textarea
+            [label]="'templateCreator.description' | translate"
+            formControlName="description"
+            [placeholder]="'templateCreator.descriptionPlaceholder' | translate"
+            [rows]="3"
+            [hasError]="form.get('description')?.invalid && form.get('description')?.touched || false"
+            [errorMessage]="descriptionErrorMessage()"
+            [maxLength]="maxTemplateDescription"
+          ></app-textarea>
 
           <div class="fields-section">
             <div class="fields-header">
@@ -45,7 +61,15 @@ interface FieldFormValue {
               <div *ngFor="let fieldForm of fieldsArray.controls; let i = index" [formGroupName]="i" class="field-item">
                 <div class="field-number">{{ i + 1 }}</div>
                 <div class="field-inputs">
-                  <app-input [label]="'templateCreator.label' | translate" type="text" formControlName="label" [placeholder]="'templateCreator.labelPlaceholder' | translate" [hasError]="fieldForm.get('label')?.invalid && fieldForm.get('label')?.touched || false" [errorMessage]="'wizard.required' | translate"></app-input>
+                  <app-input
+                    [label]="'templateCreator.label' | translate"
+                    type="text"
+                    formControlName="label"
+                    [placeholder]="'templateCreator.labelPlaceholder' | translate"
+                    [hasError]="fieldForm.get('label')?.invalid && fieldForm.get('label')?.touched || false"
+                    [errorMessage]="fieldLabelErrorMessage($any(fieldForm))"
+                    [maxLength]="maxFieldLabel"
+                  ></app-input>
                   <div class="field-row">
                     <div class="select-group">
                       <label>{{ 'templateCreator.type' | translate }}</label>
@@ -61,7 +85,15 @@ interface FieldFormValue {
                     <label class="checkbox-label"><input type="checkbox" formControlName="isOnFront" /> {{ 'templateCreator.showOnFront' | translate }}</label>
                     <label class="checkbox-label"><input type="checkbox" formControlName="isRequired" /> {{ 'templateCreator.required' | translate }}</label>
                   </div>
-                  <app-input [label]="'templateCreator.helpText' | translate" type="text" formControlName="helpText" [placeholder]="'templateCreator.helpTextPlaceholder' | translate"></app-input>
+                  <app-input
+                    [label]="'templateCreator.helpText' | translate"
+                    type="text"
+                    formControlName="helpText"
+                    [placeholder]="'templateCreator.helpTextPlaceholder' | translate"
+                    [hasError]="fieldForm.get('helpText')?.invalid && fieldForm.get('helpText')?.touched || false"
+                    [errorMessage]="fieldHelpTextErrorMessage($any(fieldForm))"
+                    [maxLength]="maxFieldHelpText"
+                  ></app-input>
                 </div>
                 <app-button variant="ghost" size="sm" type="button" (click)="removeField(i)">{{ 'templateCreator.remove' | translate }}</app-button>
               </div>
@@ -136,6 +168,14 @@ interface FieldFormValue {
     `]
 })
 export class TemplateCreatorModalComponent {
+    private static readonly MAX_TEMPLATE_NAME = 50;
+    private static readonly MAX_TEMPLATE_DESCRIPTION = 200;
+    private static readonly MAX_FIELD_LABEL = 50;
+    private static readonly MAX_FIELD_HELP_TEXT = 100;
+    readonly maxTemplateName = TemplateCreatorModalComponent.MAX_TEMPLATE_NAME;
+    readonly maxTemplateDescription = TemplateCreatorModalComponent.MAX_TEMPLATE_DESCRIPTION;
+    readonly maxFieldLabel = TemplateCreatorModalComponent.MAX_FIELD_LABEL;
+    readonly maxFieldHelpText = TemplateCreatorModalComponent.MAX_FIELD_HELP_TEXT;
     @Output() created = new EventEmitter<CardTemplateDTO>();
     @Output() cancelled = new EventEmitter<void>();
 
@@ -146,8 +186,8 @@ export class TemplateCreatorModalComponent {
 
     constructor(private fb: FormBuilder, private templateApi: TemplateApiService, private i18n: I18nService) {
         this.form = this.fb.group({
-            name: ['', Validators.required],
-            description: [''],
+            name: ['', [Validators.required, Validators.maxLength(TemplateCreatorModalComponent.MAX_TEMPLATE_NAME)]],
+            description: ['', [Validators.maxLength(TemplateCreatorModalComponent.MAX_TEMPLATE_DESCRIPTION)]],
             isPublic: [false],
             fields: this.fb.array([])
         });
@@ -172,12 +212,12 @@ export class TemplateCreatorModalComponent {
     addField(): void {
         const fieldGroup = this.fb.group({
             name: [''],
-            label: ['', Validators.required],
+            label: ['', [Validators.required, Validators.maxLength(TemplateCreatorModalComponent.MAX_FIELD_LABEL)]],
             fieldType: ['text'],
             isOnFront: [this.fieldsArray.length === 0],
             isRequired: [false],
             orderIndex: [this.fieldsArray.length],
-            helpText: ['']
+            helpText: ['', [Validators.maxLength(TemplateCreatorModalComponent.MAX_FIELD_HELP_TEXT)]]
         });
         this.fieldsArray.push(fieldGroup);
     }
@@ -235,6 +275,44 @@ export class TemplateCreatorModalComponent {
         }
 
         this.validationMessage = '';
+    }
+
+    nameErrorMessage(): string {
+        const control = this.form.get('name');
+        if (control?.hasError('required')) {
+            return this.i18n.translate('wizard.required');
+        }
+        if (control?.hasError('maxlength')) {
+            return this.i18n.translate('validation.maxLength50');
+        }
+        return '';
+    }
+
+    descriptionErrorMessage(): string {
+        const control = this.form.get('description');
+        if (control?.hasError('maxlength')) {
+            return this.i18n.translate('validation.maxLength200');
+        }
+        return '';
+    }
+
+    fieldLabelErrorMessage(fieldForm: FormGroup): string {
+        const control = fieldForm.get('label');
+        if (control?.hasError('required')) {
+            return this.i18n.translate('wizard.required');
+        }
+        if (control?.hasError('maxlength')) {
+            return this.i18n.translate('validation.maxLength50');
+        }
+        return '';
+    }
+
+    fieldHelpTextErrorMessage(fieldForm: FormGroup): string {
+        const control = fieldForm.get('helpText');
+        if (control?.hasError('maxlength')) {
+            return this.i18n.translate('validation.maxLength100');
+        }
+        return '';
     }
 
     private saveDraft(): void {

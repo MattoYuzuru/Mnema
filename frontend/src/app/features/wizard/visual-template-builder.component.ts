@@ -87,12 +87,12 @@ interface BuilderState {
             <div *ngIf="selectedField" class="config-panel">
               <div class="form-group">
                 <label>{{ 'visualBuilder.fieldLabel' | translate }}</label>
-                <input type="text" [(ngModel)]="selectedField.label" (ngModelChange)="saveDraft()" class="form-input" />
-              </div>
-              <div class="form-group">
-                <label>{{ 'visualBuilder.fieldHelpText' | translate }}</label>
-                <input type="text" [(ngModel)]="selectedField.helpText" (ngModelChange)="saveDraft()" class="form-input" />
-              </div>
+              <input type="text" [(ngModel)]="selectedField.label" (ngModelChange)="saveDraft()" class="form-input" [attr.maxlength]="maxFieldLabel" />
+            </div>
+            <div class="form-group">
+              <label>{{ 'visualBuilder.fieldHelpText' | translate }}</label>
+              <input type="text" [(ngModel)]="selectedField.helpText" (ngModelChange)="saveDraft()" class="form-input" [attr.maxlength]="maxFieldHelpText" />
+            </div>
               <div class="form-group">
                 <label>{{ 'visualBuilder.fieldRequired' | translate }}</label>
                 <div class="toggle-container" (click)="toggleRequired()">
@@ -193,11 +193,11 @@ interface BuilderState {
           <div class="template-info">
             <div class="form-group">
               <label>{{ 'visualBuilder.templateName' | translate }} *</label>
-              <input type="text" [(ngModel)]="templateName" class="form-input" [placeholder]="'visualBuilder.templateNamePlaceholder' | translate" />
+              <input type="text" [(ngModel)]="templateName" class="form-input" [placeholder]="'visualBuilder.templateNamePlaceholder' | translate" [attr.maxlength]="maxTemplateName" />
             </div>
             <div class="form-group">
               <label>{{ 'visualBuilder.templateDescription' | translate }}</label>
-              <input type="text" [(ngModel)]="templateDescription" class="form-input" [placeholder]="'visualBuilder.templateDescPlaceholder' | translate" />
+              <input type="text" [(ngModel)]="templateDescription" class="form-input" [placeholder]="'visualBuilder.templateDescPlaceholder' | translate" [attr.maxlength]="maxTemplateDescription" />
             </div>
           </div>
         </div>
@@ -749,6 +749,10 @@ interface BuilderState {
     `]
 })
 export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
+    private static readonly MAX_TEMPLATE_NAME = 50;
+    private static readonly MAX_TEMPLATE_DESCRIPTION = 200;
+    private static readonly MAX_FIELD_LABEL = 50;
+    private static readonly MAX_FIELD_HELP_TEXT = 100;
     private readonly STORAGE_KEY = 'mnema_visual_builder_draft';
     private readonly BASE_CARD_HEIGHT = 300;
     private tempIdCounter = 0;
@@ -766,6 +770,10 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     showSaveDialog = false;
     makePublic = false;
     saving = false;
+    readonly maxTemplateName = VisualTemplateBuilderComponent.MAX_TEMPLATE_NAME;
+    readonly maxTemplateDescription = VisualTemplateBuilderComponent.MAX_TEMPLATE_DESCRIPTION;
+    readonly maxFieldLabel = VisualTemplateBuilderComponent.MAX_FIELD_LABEL;
+    readonly maxFieldHelpText = VisualTemplateBuilderComponent.MAX_FIELD_HELP_TEXT;
 
     constructor(
         private router: Router,
@@ -939,8 +947,18 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
         const totalFields = this.frontFields.length + this.backFields.length;
         const hasRequiredFront = this.frontFields.some(field => field.required);
         const hasRequiredBack = this.backFields.some(field => field.required);
+        const nameLength = this.templateName.trim().length;
+        const descriptionLength = this.templateDescription.trim().length;
+        const fieldLabelsValid = [...this.frontFields, ...this.backFields]
+            .every(field => field.label.trim().length <= VisualTemplateBuilderComponent.MAX_FIELD_LABEL);
+        const fieldHelpValid = [...this.frontFields, ...this.backFields]
+            .every(field => (field.helpText || '').trim().length <= VisualTemplateBuilderComponent.MAX_FIELD_HELP_TEXT);
 
-        return this.templateName.trim().length > 0 &&
+        return nameLength > 0 &&
+               nameLength <= VisualTemplateBuilderComponent.MAX_TEMPLATE_NAME &&
+               descriptionLength <= VisualTemplateBuilderComponent.MAX_TEMPLATE_DESCRIPTION &&
+               fieldLabelsValid &&
+               fieldHelpValid &&
                totalFields >= 2 &&
                this.frontFields.length > 0 &&
                this.backFields.length > 0 &&

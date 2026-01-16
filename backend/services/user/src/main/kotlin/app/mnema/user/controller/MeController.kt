@@ -19,6 +19,10 @@ class MeController(
     private val repo: UserRepository,
     private val mediaResolveCache: MediaResolveCache
 ) {
+    companion object {
+        private const val MAX_USERNAME_LENGTH = 50
+        private const val MAX_BIO_LENGTH = 200
+    }
     data class MeResponse(
         val id: UUID,
         val email: String,
@@ -120,13 +124,21 @@ class MeController(
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
 
         req.username?.let { newUsername ->
+            if (newUsername.length > MAX_USERNAME_LENGTH) {
+                throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Username too long")
+            }
             if (repo.existsByUsernameIgnoreCaseAndIdNot(newUsername, userId)) {
                 throw ResponseStatusException(HttpStatus.CONFLICT, "Username already taken")
             }
             user.username = newUsername
         }
 
-        req.bio?.let { user.bio = it }
+        req.bio?.let {
+            if (it.length > MAX_BIO_LENGTH) {
+                throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Bio too long")
+            }
+            user.bio = it
+        }
         req.avatarUrl?.let { user.avatarUrl = it }
         req.avatarMediaId?.let {
             user.avatarMediaId = it

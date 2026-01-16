@@ -11,6 +11,7 @@ import {
 } from '../../core/models/import.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { InputComponent } from '../../shared/components/input.component';
+import { TextareaComponent } from '../../shared/components/textarea.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 type ImportModeUI = 'create' | 'merge';
@@ -18,7 +19,7 @@ type ImportModeUI = 'create' | 'merge';
 @Component({
     selector: 'app-import-deck-modal',
     standalone: true,
-    imports: [NgIf, NgFor, NgClass, FormsModule, ButtonComponent, InputComponent, TranslatePipe],
+    imports: [NgIf, NgFor, NgClass, FormsModule, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe],
     template: `
     <div class="modal-overlay" (click)="close()">
       <div class="modal-content" (click)="$event.stopPropagation()">
@@ -82,7 +83,48 @@ type ImportModeUI = 'create' | 'merge';
               [label]="'import.deckNameLabel' | translate"
               [placeholder]="'import.deckNamePlaceholder' | translate"
               [(ngModel)]="deckName"
+              [hasError]="deckNameTooLong"
+              [errorMessage]="'validation.maxLength50' | translate"
+              [maxLength]="maxDeckName"
             ></app-input>
+            <app-textarea
+              [label]="'import.deckDescriptionLabel' | translate"
+              [placeholder]="'import.deckDescriptionPlaceholder' | translate"
+              [(ngModel)]="deckDescription"
+              [rows]="3"
+              [hasError]="deckDescriptionTooLong"
+              [errorMessage]="'validation.maxLength200' | translate"
+              [maxLength]="maxDeckDescription"
+            ></app-textarea>
+            <div class="form-group">
+              <label>{{ 'import.languageLabel' | translate }}</label>
+              <select [(ngModel)]="language" class="language-select">
+                <option value="en">{{ 'language.english' | translate }}</option>
+                <option value="ru">{{ 'language.russian' | translate }}</option>
+                <option value="jp">日本語 (Japanese)</option>
+                <option value="sp">Español (Spanish)</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>{{ 'import.tagsLabel' | translate }}</label>
+              <input type="text" class="tag-input" [(ngModel)]="tagInput" (keydown.enter)="addTag($event)" [placeholder]="'import.tagsPlaceholder' | translate" [attr.maxlength]="maxTagLength" />
+              <div *ngIf="tags.length > 0" class="tags-list">
+                <span *ngFor="let tag of tags; let i = index" class="tag-chip">{{ tag }} <button type="button" (click)="removeTag(i)">×</button></span>
+              </div>
+              <p *ngIf="tagError" class="error-text">{{ tagError | translate }}</p>
+            </div>
+            <div class="checkbox-group">
+              <label>
+                <input type="checkbox" [(ngModel)]="isPublic" (change)="onPublicChange()" />
+                {{ 'import.makePublic' | translate }}
+              </label>
+            </div>
+            <div class="checkbox-group">
+              <label>
+                <input type="checkbox" [(ngModel)]="isListed" [disabled]="!isPublic" />
+                {{ 'import.listInCatalog' | translate }}
+              </label>
+            </div>
           </section>
 
           <section *ngIf="preview" class="preview-block">
@@ -210,6 +252,13 @@ type ImportModeUI = 'create' | 'merge';
       .status-message { margin: 0; font-size: 0.9rem; color: var(--color-text-secondary); }
       .status-message.error { color: #dc2626; }
       .error-text { color: #dc2626; margin: 0; }
+      .form-group { display: flex; flex-direction: column; gap: var(--spacing-xs); }
+      .language-select { width: 100%; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); font-size: 0.9rem; background: var(--color-card-background); cursor: pointer; }
+      .tag-input { width: 100%; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); font-size: 0.9rem; background: var(--color-card-background); }
+      .tags-list { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); margin-top: var(--spacing-sm); }
+      .tag-chip { display: inline-flex; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-full); font-size: 0.85rem; }
+      .tag-chip button { background: none; border: none; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0; }
+      .checkbox-group { display: flex; align-items: center; gap: var(--spacing-sm); }
 
       @media (max-width: 720px) {
         .mapping-row { grid-template-columns: 1fr; }
@@ -218,6 +267,10 @@ type ImportModeUI = 'create' | 'merge';
     `]
 })
 export class ImportDeckModalComponent implements OnDestroy {
+    private static readonly MAX_DECK_NAME = 50;
+    private static readonly MAX_DECK_DESCRIPTION = 200;
+    private static readonly MAX_TAGS = 5;
+    private static readonly MAX_TAG_LENGTH = 25;
     @Input() mode: ImportModeUI = 'create';
     @Input() targetDeckId: string | null = null;
     @Input() showProfileAction = false;
@@ -233,9 +286,19 @@ export class ImportDeckModalComponent implements OnDestroy {
     fileInfo: UploadImportSourceResponse | null = null;
     preview: ImportPreviewResponse | null = null;
     deckName = '';
+    deckDescription = '';
+    language: 'en' | 'ru' | 'jp' | 'sp' = 'en';
+    isPublic = false;
+    isListed = false;
+    tags: string[] = [];
+    tagInput = '';
+    tagError = '';
     mapping: Record<string, string> = {};
     job: ImportJobResponse | null = null;
     errorMessage = '';
+    readonly maxDeckName = ImportDeckModalComponent.MAX_DECK_NAME;
+    readonly maxDeckDescription = ImportDeckModalComponent.MAX_DECK_DESCRIPTION;
+    readonly maxTagLength = ImportDeckModalComponent.MAX_TAG_LENGTH;
 
     private pollHandle: ReturnType<typeof setInterval> | null = null;
 
@@ -249,9 +312,17 @@ export class ImportDeckModalComponent implements OnDestroy {
             return false;
         }
         if (this.mode === 'create') {
-            return true;
+            return !this.deckNameTooLong && !this.deckDescriptionTooLong && !this.hasInvalidTags();
         }
         return !!this.targetDeckId;
+    }
+
+    get deckNameTooLong(): boolean {
+        return this.deckName.length > ImportDeckModalComponent.MAX_DECK_NAME;
+    }
+
+    get deckDescriptionTooLong(): boolean {
+        return this.deckDescription.length > ImportDeckModalComponent.MAX_DECK_DESCRIPTION;
     }
 
     get sampleEntries(): [string, string][] {
@@ -306,6 +377,8 @@ export class ImportDeckModalComponent implements OnDestroy {
         this.errorMessage = '';
         const mapping = this.mode === 'merge' ? this.cleanedMapping() : null;
         const mode: ImportMode = this.mode === 'merge' ? 'merge_into_existing' : 'create_new';
+        const safeIsPublic = this.mode === 'create' ? this.isPublic : false;
+        const safeIsListed = safeIsPublic ? this.isListed : false;
         const request = {
             sourceMediaId: this.fileInfo.mediaId,
             sourceType: this.fileInfo.sourceType,
@@ -314,6 +387,11 @@ export class ImportDeckModalComponent implements OnDestroy {
             targetDeckId: this.mode === 'merge' ? this.targetDeckId : null,
             mode,
             deckName: this.mode === 'create' ? this.deckName || null : null,
+            deckDescription: this.mode === 'create' ? this.deckDescription || null : null,
+            language: this.mode === 'create' ? this.language : null,
+            tags: this.mode === 'create' ? this.tags : null,
+            isPublic: safeIsPublic,
+            isListed: safeIsListed,
             fieldMapping: mapping
         };
 
@@ -344,6 +422,13 @@ export class ImportDeckModalComponent implements OnDestroy {
         this.job = null;
         this.fileInfo = null;
         this.deckName = this.defaultDeckName(file.name);
+        this.deckDescription = '';
+        this.language = 'en';
+        this.tags = [];
+        this.tagInput = '';
+        this.tagError = '';
+        this.isPublic = false;
+        this.isListed = false;
         const sourceType = this.detectSourceType(file.name);
 
         this.uploading = true;
@@ -411,7 +496,49 @@ export class ImportDeckModalComponent implements OnDestroy {
     }
 
     private defaultDeckName(fileName: string): string {
-        return fileName.replace(/\.[^/.]+$/, '');
+        return fileName.replace(/\.[^/.]+$/, '').slice(0, ImportDeckModalComponent.MAX_DECK_NAME);
+    }
+
+    addTag(event: Event): void {
+        event.preventDefault();
+        const tag = this.tagInput.trim();
+        if (this.tags.length >= ImportDeckModalComponent.MAX_TAGS) {
+            this.tagError = 'validation.tagsLimit';
+            return;
+        }
+        if (tag.length > ImportDeckModalComponent.MAX_TAG_LENGTH) {
+            this.tagError = 'validation.tagTooLong';
+            return;
+        }
+        if (tag && !this.tags.includes(tag)) {
+            this.tags.push(tag);
+            this.tagInput = '';
+            this.tagError = '';
+        }
+    }
+
+    removeTag(index: number): void {
+        this.tags.splice(index, 1);
+        this.tagError = '';
+    }
+
+    onPublicChange(): void {
+        if (!this.isPublic) {
+            this.isListed = false;
+        }
+    }
+
+    private hasInvalidTags(): boolean {
+        if (this.tags.length > ImportDeckModalComponent.MAX_TAGS) {
+            this.tagError = 'validation.tagsLimit';
+            return true;
+        }
+        if (this.tags.some(tag => tag.length > ImportDeckModalComponent.MAX_TAG_LENGTH)) {
+            this.tagError = 'validation.tagTooLong';
+            return true;
+        }
+        this.tagError = '';
+        return false;
     }
 
     private startPolling(jobId: string): void {

@@ -33,3 +33,7 @@ backend/.gradle
 frontend/dist
 
 frontend/node_modules
+
+/scripts
+
+build

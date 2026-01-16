@@ -39,7 +39,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           </app-button>
           <div>
             <h1>{{ 'cardBrowser.title' | translate }}</h1>
-            <p class="card-count">{{ cards.length }} {{ 'cardBrowser.cards' | translate }}</p>
+            <p class="card-count">{{ cardCount }} {{ 'cardBrowser.cards' | translate }}</p>
           </div>
         </div>
         <div class="header-right">
@@ -99,7 +99,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           >
             {{ 'cardBrowser.previous' | translate }}
           </app-button>
-          <span class="card-counter">{{ currentCardIndex + 1 }} / {{ cards.length }}</span>
+          <span class="card-counter">{{ currentCardIndex + 1 }} / {{ cardCount }}</span>
           <app-button
             variant="ghost"
             size="sm"
@@ -630,6 +630,7 @@ export class CardBrowserComponent implements OnInit {
     deleteTarget: UserCardDTO | null = null;
     currentUserId: string | null = null;
     isAuthor = false;
+    totalCards = 0;
     private currentPage = 1;
     private hasMoreCards = true;
     private loadingMore = false;
@@ -705,13 +706,15 @@ export class CardBrowserComponent implements OnInit {
                 this.isAuthor = publicDeck.authorId === this.currentUserId;
                 forkJoin({
                     template: this.templateApi.getTemplate(publicDeck.templateId),
-                    cards: this.cardApi.getUserCards(this.userDeckId, 1, CardBrowserComponent.PAGE_SIZE)
+                    cards: this.cardApi.getUserCards(this.userDeckId, 1, CardBrowserComponent.PAGE_SIZE),
+                    size: this.deckApi.getUserDeckSize(this.userDeckId)
                 }).subscribe({
-                    next: ({ template, cards }) => {
+                    next: ({ template, cards, size }) => {
                         this.template = template;
                         this.cards = cards.content;
                         this.currentPage = cards.number + 1;
                         this.hasMoreCards = !cards.last;
+                        this.totalCards = size.cardsQty;
                         this.loading = false;
                     },
                     error: err => {
@@ -729,6 +732,10 @@ export class CardBrowserComponent implements OnInit {
 
     get currentCard(): UserCardDTO | null {
         return this.cards[this.currentCardIndex] || null;
+    }
+
+    get cardCount(): number {
+        return this.totalCards || this.cards.length;
     }
 
     setViewMode(mode: 'list' | 'cards'): void {
@@ -789,6 +796,7 @@ export class CardBrowserComponent implements OnInit {
                 this.cards = [...this.cards, ...newCards];
                 this.currentPage = page.number + 1;
                 this.hasMoreCards = !page.last;
+                this.totalCards = Math.max(this.totalCards, page.totalElements);
             },
             error: err => {
                 console.error('Failed to load more cards:', err);
@@ -953,6 +961,9 @@ export class CardBrowserComponent implements OnInit {
         if (index === -1) return;
 
         this.cards = this.cards.filter(card => card.userCardId !== cardId);
+        if (this.totalCards > 0) {
+            this.totalCards = Math.max(0, this.totalCards - 1);
+        }
 
         if (this.currentCardIndex > index) {
             this.currentCardIndex -= 1;
