@@ -18,7 +18,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.net.URLDecoder;
 import java.net.URLConnection;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.*;
@@ -33,15 +35,38 @@ public class ImportProcessor {
     private static final Pattern AUDIO_TAG_PATTERN = Pattern.compile("<audio[^>]+src=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
     private static final Pattern VIDEO_TAG_PATTERN = Pattern.compile("<video[^>]+src=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
     private static final Pattern SOURCE_TAG_PATTERN = Pattern.compile("<source[^>]+src=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
+    private static final Pattern IMG_SRC_PATTERN = Pattern.compile("(<img[^>]+src=[\"'])([^\"']+)([\"'][^>]*>)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern AUDIO_SRC_PATTERN = Pattern.compile("(<audio[^>]+src=[\"'])([^\"']+)([\"'][^>]*>)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern VIDEO_SRC_PATTERN = Pattern.compile("(<video[^>]+src=[\"'])([^\"']+)([\"'][^>]*>)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SOURCE_SRC_PATTERN = Pattern.compile("(<source[^>]+src=[\"'])([^\"']+)([\"'][^>]*>)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern CSS_URL_PATTERN = Pattern.compile("url\\(([^)]+)\\)", Pattern.CASE_INSENSITIVE);
+    private static final Pattern SCRIPT_TAG_PATTERN = Pattern.compile("(?is)<script[^>]*>.*?</script>");
+    private static final Pattern EVENT_HANDLER_PATTERN = Pattern.compile("(?i)\\son\\w+\\s*=\\s*(['\"]).*?\\1");
+    private static final Pattern CLOZE_PATTERN = Pattern.compile("\\{\\{c(\\d+)::(.*?)(?:::(.*?))?}}", Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+    private static final Pattern TEMPLATE_FIELD_PATTERN = Pattern.compile("\\{\\{([^}]+)}}");
+    private static final Pattern MIGAKU_FURIGANA_PATTERN = Pattern.compile("([\\p{IsHan}\\p{IsHiragana}\\p{IsKatakana}]+)\\[([^\\];]+);[^\\]]*]");
+    private static final Pattern MIGAKU_MARKER_PATTERN = Pattern.compile("\\[;[^\\]]*]");
     private static final Pattern UUID_PATTERN = Pattern.compile("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$");
-    private static final Pattern IMAGE_FILE_PATTERN = Pattern.compile("([\\w\\-./]+\\.(?:png|jpg|jpeg|gif|webp))", Pattern.CASE_INSENSITIVE);
-    private static final Pattern AUDIO_FILE_PATTERN = Pattern.compile("([\\w\\-./]+\\.(?:mp3|m4a|wav|ogg))", Pattern.CASE_INSENSITIVE);
-    private static final Pattern VIDEO_FILE_PATTERN = Pattern.compile("([\\w\\-./]+\\.(?:mp4|webm|m4v|mov|mkv|avi|mpeg|mpg))", Pattern.CASE_INSENSITIVE);
+    private static final Pattern IMAGE_FILE_PATTERN = Pattern.compile("([\\w\\-./() ]+\\.(?:png|jpg|jpeg|gif|webp))", Pattern.CASE_INSENSITIVE);
+    private static final Pattern AUDIO_FILE_PATTERN = Pattern.compile("([\\w\\-./() ]+\\.(?:mp3|m4a|wav|ogg))", Pattern.CASE_INSENSITIVE);
+    private static final Pattern VIDEO_FILE_PATTERN = Pattern.compile("([\\w\\-./() ]+\\.(?:mp4|webm|m4v|mov|mkv|avi|mpeg|mpg))", Pattern.CASE_INSENSITIVE);
     private static final List<String> VIDEO_EXTENSIONS = List.of("mp4", "webm", "m4v", "mov", "mkv", "avi", "mpeg", "mpg");
     private static final String ANKI_UPDATE_MESSAGE = "please update to the latest anki version";
     private static final List<String> FRONT_FIELD_HINTS = List.of("front", "question", "term", "word", "expression", "original", "prompt");
     private static final List<String> BACK_FIELD_HINTS = List.of("back", "answer", "meaning", "translation", "definition", "example", "comment", "notes", "extra", "hint");
     private static final Set<String> SUPPORTED_LANGUAGES = Set.of("ru", "en", "jp", "sp");
+    private static final Set<String> BUILTIN_FIELDS = Set.of(
+            "frontside",
+            "tags",
+            "deck",
+            "subdeck",
+            "card",
+            "cardid",
+            "note",
+            "noteid",
+            "notetype",
+            "type"
+    );
 
     private final MediaApiClient mediaApiClient;
     private final MediaDownloadService downloadService;
@@ -83,7 +108,8 @@ public class ImportProcessor {
 
             List<String> sourceFields = stream.fields();
             ImportLayout layout = stream.layout();
-            MappingContext mappingContext = resolveMapping(job, sourceFields, layout);
+            boolean ankiMode = stream.isAnki();
+            MappingContext mappingContext = resolveMapping(job, sourceFields, layout, ankiMode);
 
             CoreUserDeckResponse targetDeck = mappingContext.userDeck();
             List<CoreFieldTemplate> targetFields = mappingContext.targetFields();
@@ -111,7 +137,7 @@ public class ImportProcessor {
                 if (content.isEmpty()) {
                     continue;
                 }
-                CoreCreateCardRequest card = new CoreCreateCardRequest(content, null, null, null, null, null);
+                CoreCreateCardRequest card = new CoreCreateCardRequest(content, record.orderIndex(), null, null, null, null);
                 batch.add(card);
                 progressBatch.add(record.progress());
 
@@ -152,7 +178,10 @@ public class ImportProcessor {
         return media;
     }
 
-    private MappingContext resolveMapping(ImportJobEntity job, List<String> sourceFields, ImportLayout layout) {
+    private MappingContext resolveMapping(ImportJobEntity job,
+                                          List<String> sourceFields,
+                                          ImportLayout layout,
+                                          boolean ankiMode) {
         if (job.getMode() == ImportMode.create_new) {
             String deckName = job.getDeckName();
             if (deckName == null || deckName.isBlank()) {
@@ -180,7 +209,7 @@ public class ImportProcessor {
                             deckName,
                             "Imported from " + job.getSourceType(),
                             false,
-                            buildTemplateLayout(templateFields),
+                            buildTemplateLayout(templateFields, ankiMode),
                             null,
                             null,
                             templateFields
@@ -293,29 +322,50 @@ public class ImportProcessor {
 
         List<Boolean> frontFlags = new ArrayList<>(ordered.size());
         boolean hasFront = false;
+        boolean hasBack = false;
         for (String name : ordered) {
             boolean isFront = frontNames.contains(name) || isFrontFieldName(name);
             frontFlags.add(isFront);
             if (isFront) {
                 hasFront = true;
+            } else {
+                hasBack = true;
             }
         }
         if (!hasFront && !frontFlags.isEmpty()) {
             frontFlags.set(0, true);
+            hasFront = true;
+        }
+        if (!hasBack && frontFlags.size() > 1) {
+            frontFlags.set(frontFlags.size() - 1, false);
+            hasBack = true;
         }
 
         List<CoreFieldTemplate> fields = new ArrayList<>();
+        int firstFront = -1;
+        int firstBack = -1;
+        for (int i = 0; i < frontFlags.size(); i++) {
+            if (frontFlags.get(i) && firstFront < 0) {
+                firstFront = i;
+            }
+            if (!frontFlags.get(i) && firstBack < 0) {
+                firstBack = i;
+            }
+        }
+
         int index = 0;
         for (String name : ordered) {
             String type = inferFieldType(name);
+            boolean isOnFront = frontFlags.get(index);
+            boolean isRequired = index == firstFront || index == firstBack;
             fields.add(new CoreFieldTemplate(
                     null,
                     null,
                     name,
                     name,
                     type,
-                    false,
-                    frontFlags.get(index),
+                    isRequired,
+                    isOnFront,
                     index,
                     null,
                     null
@@ -325,10 +375,13 @@ public class ImportProcessor {
         return fields;
     }
 
-    private JsonNode buildTemplateLayout(List<CoreFieldTemplate> fields) {
+    private JsonNode buildTemplateLayout(List<CoreFieldTemplate> fields, boolean ankiMode) {
         ObjectNode layout = objectMapper.createObjectNode();
         var front = layout.putArray("front");
         var back = layout.putArray("back");
+        if (ankiMode) {
+            layout.put("renderMode", "anki");
+        }
         fields.stream()
                 .sorted(Comparator.comparingInt(field -> field.orderIndex() == null ? Integer.MAX_VALUE : field.orderIndex()))
                 .forEach(field -> {
@@ -346,6 +399,11 @@ public class ImportProcessor {
                                     Map<String, String> mapping,
                                     ImportStream stream,
                                     UUID userId) {
+        ImportAnkiTemplate ankiTemplate = record.ankiTemplate();
+        if (ankiTemplate != null && stream instanceof ApkgImportParser.ApkgImportStream apkgStream) {
+            return buildAnkiContent(record, ankiTemplate, targetFields, mapping, apkgStream, userId);
+        }
+
         ObjectNode content = objectMapper.createObjectNode();
         Map<String, String> sourceValues = record.fields();
 
@@ -372,6 +430,526 @@ public class ImportProcessor {
         }
 
         return content;
+    }
+
+    private ObjectNode buildAnkiContent(ImportRecord record,
+                                        ImportAnkiTemplate template,
+                                        List<CoreFieldTemplate> targetFields,
+                                        Map<String, String> mapping,
+                                        ApkgImportParser.ApkgImportStream apkgStream,
+                                        UUID userId) {
+        ObjectNode content = objectMapper.createObjectNode();
+        Map<String, String> sourceValues = record.fields();
+        for (CoreFieldTemplate targetField : targetFields) {
+            String targetName = targetField.name();
+            String sourceName = mapping.get(targetName);
+            if (sourceName == null) {
+                continue;
+            }
+            String raw = sourceValues.get(sourceName);
+            if (raw == null) {
+                continue;
+            }
+            content.put(targetName, raw);
+        }
+
+        AnkiRendered rendered = renderAnkiCard(sourceValues, template, apkgStream, userId);
+        ObjectNode ankiNode = objectMapper.createObjectNode();
+        ankiNode.put("front", rendered.frontHtml());
+        ankiNode.put("back", rendered.backHtml());
+        if (rendered.css() != null && !rendered.css().isBlank()) {
+            ankiNode.put("css", rendered.css());
+        }
+        if (template.modelId() != null) {
+            ankiNode.put("modelId", template.modelId());
+        }
+        if (template.modelName() != null) {
+            ankiNode.put("modelName", template.modelName());
+        }
+        if (template.templateName() != null) {
+            ankiNode.put("templateName", template.templateName());
+        }
+        content.set("_anki", ankiNode);
+        return content;
+    }
+
+    private AnkiRendered renderAnkiCard(Map<String, String> fields,
+                                        ImportAnkiTemplate template,
+                                        ApkgImportParser.ApkgImportStream apkgStream,
+                                        UUID userId) {
+        String front = renderTemplate(template.frontTemplate(), fields, RenderSide.FRONT, null);
+        String backTemplate = template.backTemplate() == null ? "" : template.backTemplate();
+        String back = renderTemplate(backTemplate, fields, RenderSide.BACK, front);
+
+        Map<String, UUID> mediaCache = new HashMap<>();
+        String frontHtml = replaceMediaReferences(front, apkgStream, userId, mediaCache);
+        String backHtml = replaceMediaReferences(back, apkgStream, userId, mediaCache);
+
+        String css = template.css() == null ? "" : template.css();
+        String sanitizedCss = scopeCss(stripFontFaces(css));
+        sanitizedCss = replaceCssUrls(sanitizedCss, apkgStream, userId, mediaCache);
+
+        List<String> audioNames = extractSoundTokens(fields);
+        if (!audioNames.isEmpty()
+                && !frontHtml.toLowerCase(Locale.ROOT).contains("<audio")
+                && !backHtml.toLowerCase(Locale.ROOT).contains("<audio")) {
+            String fallback = buildAudioFallback(audioNames, apkgStream, userId, mediaCache);
+            if (!fallback.isBlank()) {
+                backHtml = backHtml + fallback;
+            }
+        }
+
+        return new AnkiRendered(frontHtml, backHtml, sanitizedCss);
+    }
+
+    private String renderTemplate(String template,
+                                  Map<String, String> fields,
+                                  RenderSide side,
+                                  String frontHtml) {
+        if (template == null || template.isBlank()) {
+            return "";
+        }
+        String resolved = applyConditionals(template, fields);
+        resolved = replaceTemplateTokens(resolved, fields, side, frontHtml);
+        return resolved;
+    }
+
+    private String applyConditionals(String template, Map<String, String> fields) {
+        Pattern conditional = Pattern.compile("\\{\\{([#^])\\s*([^}]+)}}(.*?)\\{\\{/\\s*\\2\\s*}}", Pattern.DOTALL);
+        String current = template;
+        boolean changed;
+        do {
+            Matcher matcher = conditional.matcher(current);
+            StringBuffer buffer = new StringBuffer();
+            changed = false;
+            while (matcher.find()) {
+                changed = true;
+                String token = cleanTemplateToken(matcher.group(2));
+                boolean hasValue = hasFieldValue(fields, token);
+                boolean include = matcher.group(1).equals("#") ? hasValue : !hasValue;
+                String replacement = include ? matcher.group(3) : "";
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(replacement));
+            }
+            matcher.appendTail(buffer);
+            current = buffer.toString();
+        } while (changed);
+        return current;
+    }
+
+    private String replaceTemplateTokens(String template,
+                                         Map<String, String> fields,
+                                         RenderSide side,
+                                         String frontHtml) {
+        Matcher matcher = TEMPLATE_FIELD_PATTERN.matcher(template);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            String token = matcher.group(1);
+            String replacement = renderTokenValue(token, fields, side, frontHtml);
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
+    }
+
+    private String renderTokenValue(String token,
+                                    Map<String, String> fields,
+                                    RenderSide side,
+                                    String frontHtml) {
+        if (token == null) {
+            return "";
+        }
+        String trimmed = token.trim();
+        if (trimmed.isEmpty()) {
+            return "";
+        }
+        char first = trimmed.charAt(0);
+        if (first == '#' || first == '^' || first == '/') {
+            return "";
+        }
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        if (lower.equals("frontside")) {
+            return frontHtml == null ? "" : frontHtml;
+        }
+        if (BUILTIN_FIELDS.contains(lower)) {
+            return "";
+        }
+
+        String filter = null;
+        String fieldName = trimmed;
+        int idx = trimmed.indexOf(':');
+        if (idx > 0 && idx < trimmed.length() - 1) {
+            filter = trimmed.substring(0, idx).trim().toLowerCase(Locale.ROOT);
+            fieldName = trimmed.substring(idx + 1).trim();
+        }
+
+        String raw = resolveFieldValue(fields, fieldName);
+        if (raw == null) {
+            return "";
+        }
+
+        String value = normalizeMigakuText(raw);
+        if (filter != null) {
+            value = switch (filter) {
+                case "furigana" -> renderFurigana(value);
+                case "text" -> stripHtml(value);
+                case "cloze" -> renderCloze(value, side);
+                case "type" -> stripHtml(value);
+                default -> value;
+            };
+        }
+
+        return value.replace("\n", "<br>");
+    }
+
+    private boolean hasFieldValue(Map<String, String> fields, String fieldName) {
+        String raw = resolveFieldValue(fields, fieldName);
+        return raw != null && !raw.isBlank();
+    }
+
+    private String resolveFieldValue(Map<String, String> fields, String fieldName) {
+        if (fields == null || fieldName == null) {
+            return null;
+        }
+        String direct = fields.get(fieldName);
+        if (direct != null) {
+            return direct;
+        }
+        String normalized = normalize(fieldName);
+        for (Map.Entry<String, String> entry : fields.entrySet()) {
+            if (normalize(entry.getKey()).equals(normalized)) {
+                return entry.getValue();
+            }
+        }
+        return null;
+    }
+
+    private String cleanTemplateToken(String token) {
+        if (token == null) {
+            return "";
+        }
+        String cleaned = token.trim();
+        while (!cleaned.isEmpty()) {
+            char c = cleaned.charAt(0);
+            if (c == '#' || c == '^' || c == '/') {
+                cleaned = cleaned.substring(1).trim();
+            } else {
+                break;
+            }
+        }
+        int idx = cleaned.lastIndexOf(':');
+        if (idx >= 0 && idx < cleaned.length() - 1) {
+            cleaned = cleaned.substring(idx + 1).trim();
+        }
+        return cleaned;
+    }
+
+    private String renderFurigana(String value) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        Pattern pattern = Pattern.compile("([\\p{IsHan}]+)\\[([^\\];]+)(?:;[^\\]]*)?]");
+        Matcher matcher = pattern.matcher(value);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            String kanji = matcher.group(1);
+            String reading = matcher.group(2);
+            String replacement = "<ruby>" + kanji + "<rt>" + reading + "</rt></ruby>";
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
+    }
+
+    private String normalizeMigakuText(String value) {
+        if (value == null || value.isBlank()) {
+            return value == null ? "" : value;
+        }
+        String normalized = value;
+        Matcher matcher = MIGAKU_FURIGANA_PATTERN.matcher(normalized);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            String base = matcher.group(1);
+            String reading = matcher.group(2);
+            String replacement = "<ruby>" + base + "<rt>" + reading + "</rt></ruby>";
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(buffer);
+        normalized = buffer.toString();
+        normalized = MIGAKU_MARKER_PATTERN.matcher(normalized).replaceAll("");
+        return normalized;
+    }
+
+    private List<String> extractSoundTokens(Map<String, String> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return List.of();
+        }
+        Set<String> sounds = new LinkedHashSet<>();
+        for (String value : fields.values()) {
+            if (value == null || value.isBlank()) {
+                continue;
+            }
+            Matcher matcher = SOUND_PATTERN.matcher(value);
+            while (matcher.find()) {
+                String name = matcher.group(1);
+                if (name != null && !name.isBlank()) {
+                    sounds.add(name.trim());
+                }
+            }
+        }
+        return new ArrayList<>(sounds);
+    }
+
+    private String buildAudioFallback(List<String> audioNames,
+                                      ApkgImportParser.ApkgImportStream apkgStream,
+                                      UUID userId,
+                                      Map<String, UUID> mediaCache) {
+        StringBuilder out = new StringBuilder();
+        for (String name : audioNames) {
+            String resolved = resolveMediaReference(name, "audio", apkgStream, userId, mediaCache);
+            if (resolved == null) {
+                continue;
+            }
+            out.append("<audio controls src=\"").append(resolved).append("\"></audio>");
+        }
+        if (out.length() == 0) {
+            return "";
+        }
+        return "<div class=\"anki-audio\">" + out + "</div>";
+    }
+
+    private String renderCloze(String value, RenderSide side) {
+        if (value == null || value.isBlank()) {
+            return "";
+        }
+        Matcher matcher = CLOZE_PATTERN.matcher(value);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            String text = matcher.group(2);
+            String replacement = side == RenderSide.FRONT
+                    ? "<span class=\"cloze\">[...]</span>"
+                    : "<span class=\"cloze\">" + text + "</span>";
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
+    }
+
+    private String stripHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        return value.replaceAll("<[^>]+>", "");
+    }
+
+    private String stripFontFaces(String css) {
+        if (css == null || css.isBlank()) {
+            return "";
+        }
+        return css.replaceAll("(?is)@font-face\\s*\\{.*?}", "");
+    }
+
+    private String scopeCss(String css) {
+        if (css == null || css.isBlank()) {
+            return "";
+        }
+        String scoped = css;
+        scoped = scoped.replaceAll("(?i)(?<![\\w-])body(?![\\w-])", ".anki-card");
+        scoped = scoped.replaceAll("(?i)(?<![\\w-])html(?![\\w-])", ".anki-card");
+        scoped = scoped.replaceAll("(?<![\\w-])\\.card(?![\\w-])", ".anki-card");
+        scoped = scoped.replace("</style>", "");
+        return scoped;
+    }
+
+    private String replaceMediaReferences(String html,
+                                          ApkgImportParser.ApkgImportStream apkgStream,
+                                          UUID userId,
+                                          Map<String, UUID> mediaCache) {
+        if (html == null || html.isBlank()) {
+            return "";
+        }
+        String updated = html;
+        updated = replaceSoundTokens(updated, apkgStream, userId, mediaCache);
+        updated = replaceTagSrc(updated, IMG_SRC_PATTERN, "image", apkgStream, userId, mediaCache);
+        updated = replaceTagSrc(updated, AUDIO_SRC_PATTERN, "audio", apkgStream, userId, mediaCache);
+        updated = replaceTagSrc(updated, VIDEO_SRC_PATTERN, "video", apkgStream, userId, mediaCache);
+        updated = replaceTagSrc(updated, SOURCE_SRC_PATTERN, null, apkgStream, userId, mediaCache);
+        updated = SCRIPT_TAG_PATTERN.matcher(updated).replaceAll("");
+        updated = EVENT_HANDLER_PATTERN.matcher(updated).replaceAll("");
+        return updated;
+    }
+
+    private String replaceSoundTokens(String html,
+                                      ApkgImportParser.ApkgImportStream apkgStream,
+                                      UUID userId,
+                                      Map<String, UUID> mediaCache) {
+        Matcher matcher = SOUND_PATTERN.matcher(html);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            String name = matcher.group(1);
+            String resolved = resolveMediaReference(name, "audio", apkgStream, userId, mediaCache);
+            String replacement = resolved == null
+                    ? ""
+                    : "<audio controls src=\"" + resolved + "\"></audio>";
+            matcher.appendReplacement(buffer, Matcher.quoteReplacement(replacement));
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
+    }
+
+    private String replaceTagSrc(String html,
+                                 Pattern pattern,
+                                 String kind,
+                                 ApkgImportParser.ApkgImportStream apkgStream,
+                                 UUID userId,
+                                 Map<String, UUID> mediaCache) {
+        Matcher matcher = pattern.matcher(html);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            String src = matcher.group(2);
+            String resolved = resolveMediaReference(src, kind, apkgStream, userId, mediaCache);
+            if (resolved == null) {
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(matcher.group(0)));
+            } else {
+                String replacement = matcher.group(1) + resolved + matcher.group(3);
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(replacement));
+            }
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
+    }
+
+    private String replaceCssUrls(String css,
+                                  ApkgImportParser.ApkgImportStream apkgStream,
+                                  UUID userId,
+                                  Map<String, UUID> mediaCache) {
+        if (css == null || css.isBlank()) {
+            return "";
+        }
+        Matcher matcher = CSS_URL_PATTERN.matcher(css);
+        StringBuffer buffer = new StringBuffer();
+        while (matcher.find()) {
+            String raw = matcher.group(1);
+            String cleaned = stripCssUrl(raw);
+            if (cleaned == null || isExternalUrl(cleaned) || isFontFile(cleaned)) {
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(matcher.group(0)));
+                continue;
+            }
+            String kind = inferMediaKind(cleaned);
+            String resolved = resolveMediaReference(cleaned, kind, apkgStream, userId, mediaCache);
+            if (resolved == null) {
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement(matcher.group(0)));
+            } else {
+                matcher.appendReplacement(buffer, Matcher.quoteReplacement("url('" + resolved + "')"));
+            }
+        }
+        matcher.appendTail(buffer);
+        return buffer.toString();
+    }
+
+    private String stripCssUrl(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if ((trimmed.startsWith("\"") && trimmed.endsWith("\"")) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+            trimmed = trimmed.substring(1, trimmed.length() - 1);
+        }
+        return trimmed.trim();
+    }
+
+    private String resolveMediaReference(String raw,
+                                         String kind,
+                                         ApkgImportParser.ApkgImportStream apkgStream,
+                                         UUID userId,
+                                         Map<String, UUID> mediaCache) {
+        String normalized = normalizeMediaReference(raw);
+        if (normalized == null) {
+            return null;
+        }
+        if (normalized.startsWith("mnema-media://")) {
+            return normalized;
+        }
+        UUID cached = mediaCache.get(normalized);
+        if (cached != null) {
+            return "mnema-media://" + cached;
+        }
+        String inferredKind = kind == null ? inferMediaKind(normalized) : kind;
+        UUID mediaId = uploadMedia(apkgStream, userId, normalized, inferredKind);
+        if (mediaId == null && normalized.contains("/")) {
+            String fileName = normalized.substring(normalized.lastIndexOf('/') + 1);
+            mediaId = uploadMedia(apkgStream, userId, fileName, inferredKind);
+        }
+        if (mediaId == null) {
+            return null;
+        }
+        mediaCache.put(normalized, mediaId);
+        return "mnema-media://" + mediaId;
+    }
+
+    private String normalizeMediaReference(String raw) {
+        if (raw == null) {
+            return null;
+        }
+        String trimmed = raw.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (trimmed.startsWith("mnema-media://")) {
+            return trimmed;
+        }
+        if (isExternalUrl(trimmed)) {
+            return null;
+        }
+        String cleaned = trimmed.replace("\\", "/");
+        int queryIdx = cleaned.indexOf('?');
+        if (queryIdx >= 0) {
+            cleaned = cleaned.substring(0, queryIdx);
+        }
+        int hashIdx = cleaned.indexOf('#');
+        if (hashIdx >= 0) {
+            cleaned = cleaned.substring(0, hashIdx);
+        }
+        if (cleaned.startsWith("./")) {
+            cleaned = cleaned.substring(2);
+        }
+        if (cleaned.startsWith("/")) {
+            cleaned = cleaned.substring(1);
+        }
+        if (cleaned.contains("%")) {
+            try {
+                cleaned = URLDecoder.decode(cleaned, StandardCharsets.UTF_8);
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+        return cleaned.isBlank() ? null : cleaned;
+    }
+
+    private boolean isExternalUrl(String value) {
+        String lower = value.toLowerCase(Locale.ROOT);
+        return lower.startsWith("http://")
+                || lower.startsWith("https://")
+                || lower.startsWith("data:")
+                || lower.startsWith("file:")
+                || lower.startsWith("mnema-media://");
+    }
+
+    private boolean isFontFile(String name) {
+        String ext = fileExtension(name);
+        return ext != null && (ext.equals("ttf") || ext.equals("otf") || ext.equals("woff") || ext.equals("woff2"));
+    }
+
+    private String inferMediaKind(String name) {
+        String ext = fileExtension(name);
+        if (ext == null) {
+            return "image";
+        }
+        if (VIDEO_EXTENSIONS.contains(ext)) {
+            return "video";
+        }
+        if (ext.equals("mp3") || ext.equals("m4a") || ext.equals("wav") || ext.equals("ogg")) {
+            return "audio";
+        }
+        return "image";
     }
 
     private JsonNode buildMediaValue(String raw, String fieldType, ImportStream stream, UUID userId) {
@@ -738,6 +1316,14 @@ public class ImportProcessor {
     private record MappingContext(CoreUserDeckResponse userDeck,
                                   List<CoreFieldTemplate> targetFields,
                                   Map<String, String> mapping) {
+    }
+
+    private record AnkiRendered(String frontHtml, String backHtml, String css) {
+    }
+
+    private enum RenderSide {
+        FRONT,
+        BACK
     }
 
     private record MediaTokens(List<String> images, List<String> audio, List<String> video) {

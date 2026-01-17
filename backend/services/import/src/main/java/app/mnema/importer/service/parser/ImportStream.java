@@ -17,4 +17,8 @@ public interface ImportStream extends Closeable {
     default ImportLayout layout() {
         return null;
     }
+
+    default boolean isAnki() {
+        return false;
+    }
 }

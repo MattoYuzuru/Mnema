@@ -4,6 +4,8 @@ import java.util.Map;
 
 public record ImportRecord(
         Map<String, String> fields,
-        ImportRecordProgress progress
+        ImportRecordProgress progress,
+        ImportAnkiTemplate ankiTemplate,
+        Integer orderIndex
 ) {
 }

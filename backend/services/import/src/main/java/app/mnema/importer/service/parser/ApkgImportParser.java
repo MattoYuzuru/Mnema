@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.luben.zstd.ZstdInputStream;
 
+import java.io.BufferedInputStream;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
@@ -81,11 +83,39 @@ public class ApkgImportParser implements ImportParser {
             throw new IOException("Failed to open apkg sqlite", ex);
         }
 
-        Map<String, List<String>> modelFields = loadModelFields(connection);
-        ImportLayout layout = loadTemplateLayout(connection, modelFields);
+        Map<String, AnkiNoteType> noteTypes = loadNoteTypes(connection);
+        Set<String> usedNoteTypes = loadUsedNoteTypeIds(connection);
+        if (!noteTypes.isEmpty() && !usedNoteTypes.isEmpty()) {
+            Map<String, AnkiNoteType> filtered = noteTypes.entrySet().stream()
+                    .filter(entry -> usedNoteTypes.contains(entry.getKey()))
+                    .collect(java.util.stream.Collectors.toMap(
+                            Map.Entry::getKey,
+                            Map.Entry::getValue,
+                            (a, b) -> a,
+                            LinkedHashMap::new
+                    ));
+            if (!filtered.isEmpty()) {
+                noteTypes = filtered;
+            }
+        }
+        Map<String, List<String>> modelFields = noteTypes.isEmpty() ? loadModelFields(connection) : noteTypeFields(noteTypes);
+        if (!modelFields.isEmpty() && !usedNoteTypes.isEmpty()) {
+            Map<String, List<String>> filteredFields = modelFields.entrySet().stream()
+                    .filter(entry -> usedNoteTypes.contains(entry.getKey()))
+                    .collect(java.util.stream.Collectors.toMap(
+                            Map.Entry::getKey,
+                            Map.Entry::getValue,
+                            (a, b) -> a,
+                            LinkedHashMap::new
+                    ));
+            if (!filteredFields.isEmpty()) {
+                modelFields = filteredFields;
+            }
+        }
+        ImportLayout layout = buildTemplateLayout(noteTypes, modelFields);
         List<String> unionFields = unionFields(modelFields);
         int totalItems = countNotes(connection);
-        Map<Long, ImportRecordProgress> noteProgress = loadNoteProgress(connection);
+        Map<Long, NoteMeta> noteMeta = loadNoteMeta(connection);
 
         try {
             PreparedStatement stmt = connection.prepareStatement("select id, mid, flds from notes");
@@ -99,9 +129,10 @@ public class ApkgImportParser implements ImportParser {
                     unionFields,
                     totalItems,
                     modelFields,
-                    noteProgress,
+                    noteMeta,
                     mediaNameToIndex,
-                    layout
+                    layout,
+                    noteTypes
             );
         } catch (SQLException ex) {
             closeQuietly(connection);
@@ -145,19 +176,173 @@ public class ApkgImportParser implements ImportParser {
             return Map.of();
         }
         try (InputStream in = zipFile.getInputStream(entry)) {
-            String json = new String(in.readAllBytes(), StandardCharsets.UTF_8);
-            if (json.isBlank()) {
+            byte[] payload = in.readAllBytes();
+            if (payload.length == 0) {
                 return Map.of();
             }
-            try {
-                JsonNode node = objectMapper.readTree(json);
-                Map<String, String> map = new HashMap<>();
-                node.fields().forEachRemaining(e -> map.put(e.getKey(), e.getValue().asText()));
-                return map;
-            } catch (IOException ex) {
-                return Map.of();
+            Map<String, String> jsonMap = parseMediaJson(payload);
+            if (jsonMap != null) {
+                return jsonMap;
+            }
+            byte[] decoded = maybeDecompressMedia(payload);
+            List<String> indices = listMediaIndices(zipFile);
+            Map<String, String> protoMap = parseMediaProto(decoded, indices);
+            return protoMap.isEmpty() ? Map.of() : protoMap;
+        }
+    }
+
+    private Map<String, String> parseMediaJson(byte[] payload) {
+        String json = new String(payload, StandardCharsets.UTF_8);
+        if (json.isBlank()) {
+            return Map.of();
+        }
+        try {
+            JsonNode node = objectMapper.readTree(json);
+            Map<String, String> map = new HashMap<>();
+            node.fields().forEachRemaining(e -> map.put(e.getKey(), e.getValue().asText()));
+            return map;
+        } catch (IOException ex) {
+            return null;
+        }
+    }
+
+    private byte[] maybeDecompressMedia(byte[] payload) {
+        if (!isZstdFrame(payload)) {
+            return payload;
+        }
+        try (ZstdInputStream zstd = new ZstdInputStream(new ByteArrayInputStream(payload))) {
+            return zstd.readAllBytes();
+        } catch (IOException ex) {
+            return payload;
+        }
+    }
+
+    private List<String> listMediaIndices(ZipFile zipFile) {
+        List<String> indices = new ArrayList<>();
+        Enumeration<? extends ZipEntry> entries = zipFile.entries();
+        while (entries.hasMoreElements()) {
+            ZipEntry entry = entries.nextElement();
+            String name = entry.getName();
+            if (name != null && name.matches("\\d+")) {
+                indices.add(name);
             }
         }
+        indices.sort(Comparator.comparingLong(value -> {
+            try {
+                return Long.parseLong(value);
+            } catch (NumberFormatException ex) {
+                return Long.MAX_VALUE;
+            }
+        }));
+        return indices;
+    }
+
+    private static boolean isZstdFrame(byte[] payload) {
+        return payload.length >= 4
+                && payload[0] == 0x28
+                && payload[1] == (byte) 0xB5
+                && payload[2] == 0x2F
+                && payload[3] == (byte) 0xFD;
+    }
+
+    private Map<String, String> parseMediaProto(byte[] payload, List<String> indices) {
+        if (payload == null || payload.length == 0) {
+            return Map.of();
+        }
+        List<String> names = new ArrayList<>();
+        int index = 0;
+        while (index < payload.length) {
+            Varint key = readVarint(payload, index);
+            if (key == null) {
+                break;
+            }
+            int wireType = (int) (key.value() & 0x7);
+            index = key.nextIndex();
+            switch (wireType) {
+                case 2 -> {
+                    Varint lenVar = readVarint(payload, index);
+                    if (lenVar == null) {
+                        return Map.of();
+                    }
+                    int len = (int) lenVar.value();
+                    index = lenVar.nextIndex();
+                    if (len < 0 || index + len > payload.length) {
+                        return Map.of();
+                    }
+                    String name = parseMediaEntryName(payload, index, len);
+                    if (name != null && !name.isBlank()) {
+                        names.add(name);
+                    }
+                    index += len;
+                }
+                case 0 -> {
+                    Varint skip = readVarint(payload, index);
+                    if (skip == null) {
+                        return Map.of();
+                    }
+                    index = skip.nextIndex();
+                }
+                case 1 -> index += 8;
+                case 5 -> index += 4;
+                default -> index = payload.length;
+            }
+        }
+        if (names.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> map = new HashMap<>();
+        if (indices != null && indices.size() == names.size()) {
+            for (int i = 0; i < names.size(); i++) {
+                map.put(indices.get(i), names.get(i));
+            }
+            return map;
+        }
+        for (int i = 0; i < names.size(); i++) {
+            map.put(String.valueOf(i), names.get(i));
+        }
+        return map;
+    }
+
+    private String parseMediaEntryName(byte[] payload, int offset, int length) {
+        int index = offset;
+        int end = offset + length;
+        while (index < end) {
+            Varint key = readVarint(payload, index);
+            if (key == null) {
+                return null;
+            }
+            int field = (int) (key.value() >> 3);
+            int wireType = (int) (key.value() & 0x7);
+            index = key.nextIndex();
+            switch (wireType) {
+                case 2 -> {
+                    Varint lenVar = readVarint(payload, index);
+                    if (lenVar == null) {
+                        return null;
+                    }
+                    int len = (int) lenVar.value();
+                    index = lenVar.nextIndex();
+                    if (len < 0 || index + len > end) {
+                        return null;
+                    }
+                    if (field == 1) {
+                        return new String(payload, index, len, StandardCharsets.UTF_8);
+                    }
+                    index += len;
+                }
+                case 0 -> {
+                    Varint skip = readVarint(payload, index);
+                    if (skip == null) {
+                        return null;
+                    }
+                    index = skip.nextIndex();
+                }
+                case 1 -> index += 8;
+                case 5 -> index += 4;
+                default -> index = end;
+            }
+        }
+        return null;
     }
 
     private Map<String, List<String>> loadModelFields(Connection connection) throws IOException {
@@ -259,6 +444,18 @@ public class ApkgImportParser implements ImportParser {
         }
     }
 
+    private Set<String> loadUsedNoteTypeIds(Connection connection) {
+        Set<String> ids = new LinkedHashSet<>();
+        try (PreparedStatement stmt = connection.prepareStatement("select distinct mid from notes")) {
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) {
+                ids.add(String.valueOf(rs.getLong("mid")));
+            }
+        } catch (SQLException ignored) {
+        }
+        return ids;
+    }
+
     private List<String> unionFields(Map<String, List<String>> modelFields) {
         Set<String> union = new LinkedHashSet<>();
         List<String> ordered = new ArrayList<>();
@@ -272,34 +469,174 @@ public class ApkgImportParser implements ImportParser {
         return ordered;
     }
 
-    private ImportLayout loadTemplateLayout(Connection connection, Map<String, List<String>> modelFields) {
-        Map<String, String> normalizedFields = normalizedFieldMap(modelFields);
-        List<String> front = new ArrayList<>();
-        List<String> back = new ArrayList<>();
+    private Map<String, List<String>> noteTypeFields(Map<String, AnkiNoteType> noteTypes) {
+        Map<String, List<String>> fields = new LinkedHashMap<>();
+        for (AnkiNoteType type : noteTypes.values()) {
+            if (type.fields() != null && !type.fields().isEmpty()) {
+                fields.put(type.id(), type.fields());
+            }
+        }
+        return fields;
+    }
 
-        try (PreparedStatement stmt = connection.prepareStatement(
-                "select config from templates order by ntid, ord")) {
+    private Map<String, AnkiNoteType> loadNoteTypes(Connection connection) {
+        try (PreparedStatement stmt = connection.prepareStatement("select models from col limit 1")) {
+            ResultSet rs = stmt.executeQuery();
+            if (rs.next()) {
+                String json = rs.getString(1);
+                if (json != null && !json.isBlank()) {
+                    Map<String, AnkiNoteType> fromJson = parseNoteTypesFromModels(json);
+                    if (!fromJson.isEmpty()) {
+                        return fromJson;
+                    }
+                }
+            }
+        } catch (SQLException | IOException ignored) {
+        }
+        return loadNoteTypesFromTables(connection);
+    }
+
+    private Map<String, AnkiNoteType> parseNoteTypesFromModels(String json) throws IOException {
+        JsonNode node = objectMapper.readTree(json);
+        Map<String, AnkiNoteType> noteTypes = new LinkedHashMap<>();
+        node.fields().forEachRemaining(entry -> {
+            JsonNode model = entry.getValue();
+            List<String> fields = new ArrayList<>();
+            for (JsonNode f : model.path("flds")) {
+                String name = f.path("name").asText();
+                if (!name.isBlank()) {
+                    fields.add(name);
+                }
+            }
+            List<AnkiTemplateConfig> templates = new ArrayList<>();
+            for (JsonNode t : model.path("tmpls")) {
+                String front = t.path("qfmt").asText(null);
+                String back = t.path("afmt").asText(null);
+                if (front == null && back == null) {
+                    continue;
+                }
+                int ord = t.path("ord").asInt(0);
+                String name = t.path("name").asText(null);
+                templates.add(new AnkiTemplateConfig(ord, name, front, back));
+            }
+            if (!fields.isEmpty()) {
+                String name = model.path("name").asText(null);
+                String css = model.path("css").asText("");
+                noteTypes.put(entry.getKey(), new AnkiNoteType(entry.getKey(), name, fields, templates, css));
+            }
+        });
+        return noteTypes;
+    }
+
+    private Map<String, AnkiNoteType> loadNoteTypesFromTables(Connection connection) {
+        Map<String, List<String>> fields = loadFieldsTable(connection);
+        if (fields.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> cssByType = loadNotetypeCss(connection);
+        Map<String, List<AnkiTemplateConfig>> templates = loadTemplatesTable(connection);
+        Map<String, AnkiNoteType> noteTypes = new LinkedHashMap<>();
+        for (Map.Entry<String, List<String>> entry : fields.entrySet()) {
+            String id = entry.getKey();
+            List<AnkiTemplateConfig> typeTemplates = templates.getOrDefault(id, List.of());
+            String css = cssByType.getOrDefault(id, "");
+            noteTypes.put(id, new AnkiNoteType(id, null, entry.getValue(), typeTemplates, css));
+        }
+        return noteTypes;
+    }
+
+    private Map<String, String> loadNotetypeCss(Connection connection) {
+        Map<String, String> cssByType = new HashMap<>();
+        try (PreparedStatement stmt = connection.prepareStatement("select id, config from notetypes")) {
             ResultSet rs = stmt.executeQuery();
             while (rs.next()) {
                 byte[] config = rs.getBytes("config");
                 if (config == null || config.length == 0) {
                     continue;
                 }
-                TemplateStrings templates = decodeTemplateConfig(config);
-                if (templates == null) {
+                String css = extractCssFromProto(config);
+                if (css != null && !css.isBlank()) {
+                    cssByType.put(String.valueOf(rs.getLong("id")), css);
+                }
+            }
+        } catch (SQLException ignored) {
+        }
+        return cssByType;
+    }
+
+    private Map<String, List<AnkiTemplateConfig>> loadTemplatesTable(Connection connection) {
+        Map<String, List<AnkiTemplateConfig>> templates = new LinkedHashMap<>();
+        try (PreparedStatement stmt = connection.prepareStatement(
+                "select ntid, ord, name, config from templates order by ntid, ord")) {
+            ResultSet rs = stmt.executeQuery();
+            while (rs.next()) {
+                byte[] config = rs.getBytes("config");
+                if (config == null || config.length == 0) {
                     continue;
                 }
-                addUnique(front, extractTemplateFields(templates.front(), normalizedFields));
-                addUnique(back, extractTemplateFields(templates.back(), normalizedFields));
+                TemplateStrings decoded = decodeTemplateConfig(config);
+                if (decoded == null) {
+                    continue;
+                }
+                String ntid = String.valueOf(rs.getLong("ntid"));
+                int ord = rs.getInt("ord");
+                String name = rs.getString("name");
+                templates.computeIfAbsent(ntid, key -> new ArrayList<>())
+                        .add(new AnkiTemplateConfig(ord, name, decoded.front(), decoded.back()));
             }
-        } catch (SQLException ex) {
+        } catch (SQLException ignored) {
+        }
+        return templates;
+    }
+
+    private ImportLayout buildTemplateLayout(Map<String, AnkiNoteType> noteTypes,
+                                             Map<String, List<String>> modelFields) {
+        if (noteTypes.isEmpty()) {
             return null;
+        }
+        Map<String, String> normalizedFields = normalizedFieldMap(modelFields);
+        List<String> front = new ArrayList<>();
+        List<String> back = new ArrayList<>();
+        for (AnkiNoteType noteType : noteTypes.values()) {
+            AnkiTemplateConfig template = pickPrimaryTemplate(noteType.templates());
+            if (template == null) {
+                continue;
+            }
+            addUnique(front, extractTemplateFields(template.front(), normalizedFields));
+            addUnique(back, extractTemplateFields(template.back(), normalizedFields));
         }
 
         if (front.isEmpty() && back.isEmpty()) {
             return null;
         }
         return new ImportLayout(List.copyOf(front), List.copyOf(back));
+    }
+
+    private static AnkiTemplateConfig pickPrimaryTemplate(List<AnkiTemplateConfig> templates) {
+        if (templates == null || templates.isEmpty()) {
+            return null;
+        }
+        return templates.stream()
+                .min(Comparator.comparingInt(AnkiTemplateConfig::ord))
+                .orElse(null);
+    }
+
+    private static ImportAnkiTemplate toImportTemplate(AnkiNoteType noteType) {
+        if (noteType == null) {
+            return null;
+        }
+        AnkiTemplateConfig template = pickPrimaryTemplate(noteType.templates());
+        if (template == null) {
+            return null;
+        }
+        return new ImportAnkiTemplate(
+                noteType.id(),
+                noteType.name(),
+                template.name(),
+                template.front(),
+                template.back(),
+                noteType.css()
+        );
     }
 
     private TemplateStrings decodeTemplateConfig(byte[] config) {
@@ -347,6 +684,52 @@ public class ApkgImportParser implements ImportParser {
         String front = withFields.getFirst();
         String back = withFields.size() > 1 ? withFields.get(1) : null;
         return new TemplateStrings(front, back);
+    }
+
+    private String extractCssFromProto(byte[] config) {
+        List<String> candidates = new ArrayList<>();
+        int index = 0;
+        while (index < config.length) {
+            Varint key = readVarint(config, index);
+            if (key == null) {
+                break;
+            }
+            int wireType = (int) (key.value() & 0x7);
+            index = key.nextIndex();
+            switch (wireType) {
+                case 2 -> {
+                    Varint lenVar = readVarint(config, index);
+                    if (lenVar == null) {
+                        return null;
+                    }
+                    int len = (int) lenVar.value();
+                    index = lenVar.nextIndex();
+                    if (len < 0 || index + len > config.length) {
+                        return null;
+                    }
+                    String text = new String(config, index, len, StandardCharsets.UTF_8);
+                    if (text.contains(".card") || text.contains("@font-face") || text.contains("font-family")) {
+                        candidates.add(text);
+                    }
+                    index += len;
+                }
+                case 0 -> {
+                    Varint skip = readVarint(config, index);
+                    if (skip == null) {
+                        return null;
+                    }
+                    index = skip.nextIndex();
+                }
+                case 1 -> index += 8;
+                case 5 -> index += 4;
+                default -> index = config.length;
+            }
+        }
+        if (candidates.isEmpty()) {
+            return null;
+        }
+        candidates.sort(Comparator.comparingInt(String::length).reversed());
+        return candidates.getFirst();
     }
 
     private Varint readVarint(byte[] data, int offset) {
@@ -427,7 +810,7 @@ public class ApkgImportParser implements ImportParser {
             return "";
         }
         return value.toLowerCase(Locale.ROOT)
-                .replaceAll("[^a-z0-9]", "");
+                .replaceAll("[^\\p{L}\\p{N}]", "");
     }
 
     private void addUnique(List<String> target, List<String> values) {
@@ -438,13 +821,16 @@ public class ApkgImportParser implements ImportParser {
         }
     }
 
-    private Map<Long, ImportRecordProgress> loadNoteProgress(Connection connection) {
+    private Map<Long, NoteMeta> loadNoteMeta(Connection connection) {
         Map<Long, ImportRecordProgress> progress = new HashMap<>();
+        Map<Long, Long> orderKeys = new HashMap<>();
         try (PreparedStatement stmt = connection.prepareStatement(
-                "select nid, ivl, factor, reps, queue, type from cards")) {
+                "select id, nid, ivl, factor, reps, queue, type from cards")) {
             ResultSet rs = stmt.executeQuery();
             while (rs.next()) {
+                long cardId = rs.getLong("id");
                 long noteId = rs.getLong("nid");
+                orderKeys.merge(noteId, cardId, Math::min);
                 ImportRecordProgress candidate = toProgress(
                         rs.getInt("ivl"),
                         rs.getInt("factor"),
@@ -462,7 +848,23 @@ public class ApkgImportParser implements ImportParser {
             }
         } catch (SQLException ignored) {
         }
-        return progress;
+        if (orderKeys.isEmpty()) {
+            return progress.isEmpty() ? Map.of() : progress.entrySet().stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                            Map.Entry::getKey,
+                            entry -> new NoteMeta(entry.getValue(), null)
+                    ));
+        }
+        List<Map.Entry<Long, Long>> sorted = new ArrayList<>(orderKeys.entrySet());
+        sorted.sort(Comparator.comparingLong(Map.Entry::getValue));
+        Map<Long, NoteMeta> meta = new HashMap<>();
+        int index = 0;
+        for (Map.Entry<Long, Long> entry : sorted) {
+            ImportRecordProgress noteProgress = progress.get(entry.getKey());
+            meta.put(entry.getKey(), new NoteMeta(noteProgress, index));
+            index++;
+        }
+        return meta;
     }
 
     private List<ImportRecord> pickSample(List<ScoredRecord> scored, int sampleSize) {
@@ -561,6 +963,15 @@ public class ApkgImportParser implements ImportParser {
     private record TemplateStrings(String front, String back) {
     }
 
+    private record AnkiTemplateConfig(int ord, String name, String front, String back) {
+    }
+
+    private record AnkiNoteType(String id, String name, List<String> fields, List<AnkiTemplateConfig> templates, String css) {
+    }
+
+    private record NoteMeta(ImportRecordProgress progress, Integer orderIndex) {
+    }
+
     private record ScoredRecord(ImportRecord record, int score, int index) {
     }
 
@@ -584,9 +995,10 @@ public class ApkgImportParser implements ImportParser {
         private final List<String> fields;
         private final Integer totalItems;
         private final Map<String, List<String>> modelFields;
-        private final Map<Long, ImportRecordProgress> noteProgress;
+        private final Map<Long, NoteMeta> noteMeta;
         private final Map<String, String> mediaNameToIndex;
         private final ImportLayout layout;
+        private final Map<String, AnkiNoteType> noteTypes;
 
         private boolean hasNext;
         private boolean finished;
@@ -599,9 +1011,10 @@ public class ApkgImportParser implements ImportParser {
                          List<String> fields,
                          Integer totalItems,
                          Map<String, List<String>> modelFields,
-                         Map<Long, ImportRecordProgress> noteProgress,
+                         Map<Long, NoteMeta> noteMeta,
                          Map<String, String> mediaNameToIndex,
-                         ImportLayout layout) throws IOException {
+                         ImportLayout layout,
+                         Map<String, AnkiNoteType> noteTypes) throws IOException {
             this.tempDir = tempDir;
             this.zipFile = zipFile;
             this.connection = connection;
@@ -610,9 +1023,10 @@ public class ApkgImportParser implements ImportParser {
             this.fields = List.copyOf(fields);
             this.totalItems = totalItems;
             this.modelFields = modelFields;
-            this.noteProgress = noteProgress;
+            this.noteMeta = noteMeta;
             this.mediaNameToIndex = mediaNameToIndex;
             this.layout = layout;
+            this.noteTypes = noteTypes;
             advance();
         }
 
@@ -632,6 +1046,11 @@ public class ApkgImportParser implements ImportParser {
         }
 
         @Override
+        public boolean isAnki() {
+            return noteTypes != null && !noteTypes.isEmpty();
+        }
+
+        @Override
         public boolean hasNext() {
             return hasNext;
         }
@@ -646,9 +1065,12 @@ public class ApkgImportParser implements ImportParser {
                 long mid = resultSet.getLong("mid");
                 String flds = resultSet.getString("flds");
                 Map<String, String> values = mapFields(String.valueOf(mid), flds);
-                ImportRecordProgress progress = noteProgress.get(noteId);
+                NoteMeta meta = noteMeta.get(noteId);
+                ImportRecordProgress progress = meta == null ? null : meta.progress();
+                Integer orderIndex = meta == null ? null : meta.orderIndex();
+                ImportAnkiTemplate template = toImportTemplate(noteTypes.get(String.valueOf(mid)));
                 advance();
-                return new ImportRecord(values, progress);
+                return new ImportRecord(values, progress, template, orderIndex);
             } catch (SQLException ex) {
                 finished = true;
                 hasNext = false;
@@ -665,12 +1087,30 @@ public class ApkgImportParser implements ImportParser {
             if (entry == null) {
                 return null;
             }
+            InputStream raw = zipFile.getInputStream(entry);
+            BufferedInputStream buffered = new BufferedInputStream(raw);
+            buffered.mark(4);
+            byte[] header = buffered.readNBytes(4);
+            buffered.reset();
+
+            if (isZstdFrame(header)) {
+                Path tempFile = tempDir.resolve("media-" + index);
+                try (ZstdInputStream zstd = new ZstdInputStream(buffered)) {
+                    Files.copy(zstd, tempFile, StandardCopyOption.REPLACE_EXISTING);
+                }
+                long actualSize = Files.size(tempFile);
+                if (actualSize <= 0) {
+                    return null;
+                }
+                return new ApkgMedia(Files.newInputStream(tempFile), actualSize);
+            }
+
             long size = entry.getSize();
             if (size > 0) {
-                return new ApkgMedia(zipFile.getInputStream(entry), size);
+                return new ApkgMedia(buffered, size);
             }
             Path tempFile = tempDir.resolve("media-" + index);
-            try (InputStream in = zipFile.getInputStream(entry)) {
+            try (InputStream in = buffered) {
                 Files.copy(in, tempFile, StandardCopyOption.REPLACE_EXISTING);
             }
             long actualSize = Files.size(tempFile);
