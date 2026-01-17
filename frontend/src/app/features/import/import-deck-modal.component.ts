@@ -57,7 +57,7 @@ type ImportModeUI = 'create' | 'merge';
               (dragleave)="onDragLeave($event)"
               (drop)="onDrop($event)"
             >
-              <input type="file" accept=".apkg,.csv,.tsv,.txt" (change)="onFileChange($event)" hidden #fileInput />
+              <input type="file" accept=".apkg,.mnema,.csv,.tsv,.txt" (change)="onFileChange($event)" hidden #fileInput />
               <div class="dropzone-content">
                 <span class="dropzone-icon">⬆️</span>
                 <div class="dropzone-text">

@@ -12,7 +12,7 @@ import { UserApiService } from '../../user-api.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { ReviewDeckAlgorithmResponse } from '../../core/models/review.models';
-import { ImportJobResponse } from '../../core/models/import.models';
+import { ImportJobResponse, ImportSourceType } from '../../core/models/import.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { AddCardsModalComponent } from './add-cards-modal.component';
@@ -284,15 +284,29 @@ import { I18nService } from '../../core/services/i18n.service';
       (cancel)="closeDeleteConfirm()"
     ></app-confirmation-dialog>
 
-    <app-confirmation-dialog
-      [open]="showExportConfirm"
-      [title]="'deckProfile.exportTitle' | translate"
-      [message]="'deckProfile.exportMessage' | translate"
-      [confirmText]="'deckProfile.exportConfirm' | translate"
-      [cancelText]="'deckProfile.cancel' | translate"
-      (confirm)="confirmExport()"
-      (cancel)="closeExportConfirm()"
-    ></app-confirmation-dialog>
+    <div *ngIf="showExportChoice" class="modal-overlay" (click)="closeExportChoice()">
+      <div class="modal-content export-choice-modal" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>{{ 'deckProfile.exportTitle' | translate }}</h2>
+          <button class="close-btn" (click)="closeExportChoice()">&times;</button>
+        </div>
+        <div class="modal-body">
+          <p class="modal-hint">{{ 'deckProfile.exportMessage' | translate }}</p>
+          <div class="choice-grid">
+            <div class="choice-card" (click)="confirmExport('csv')">
+              <div class="choice-icon">CSV</div>
+              <h3>{{ 'deckProfile.exportCsvTitle' | translate }}</h3>
+              <p>{{ 'deckProfile.exportCsvDesc' | translate }}</p>
+            </div>
+            <div class="choice-card" (click)="confirmExport('mnema')">
+              <div class="choice-icon">📦</div>
+              <h3>{{ 'deckProfile.exportMnemaTitle' | translate }}</h3>
+              <p>{{ 'deckProfile.exportMnemaDesc' | translate }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   `,
     styles: [`
       .deck-profile {
@@ -427,6 +441,13 @@ import { I18nService } from '../../core/services/i18n.service';
       .modal-body {
         padding: var(--spacing-lg);
         overflow-y: auto;
+      }
+
+      .modal-hint {
+        margin: 0 0 var(--spacing-lg) 0;
+        color: var(--color-text-muted);
+        font-size: 0.95rem;
+        line-height: 1.5;
       }
 
       .edit-form {
@@ -694,6 +715,10 @@ import { I18nService } from '../../core/services/i18n.service';
         max-width: 720px;
       }
 
+      .export-choice-modal {
+        max-width: 720px;
+      }
+
       .choice-grid {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -755,7 +780,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     showImportModal = false;
     showEditModal = false;
     showDeleteConfirm = false;
-    showExportConfirm = false;
+    showExportChoice = false;
     saving = false;
     exporting = false;
     exportStatusKey: string | null = null;
@@ -896,22 +921,22 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     }
 
     openExportConfirm(): void {
-        this.showExportConfirm = true;
+        this.showExportChoice = true;
     }
 
-    closeExportConfirm(): void {
-        this.showExportConfirm = false;
+    closeExportChoice(): void {
+        this.showExportChoice = false;
     }
 
-    confirmExport(): void {
+    confirmExport(format: ImportSourceType): void {
         if (!this.deck) {
             return;
         }
-        this.showExportConfirm = false;
+        this.showExportChoice = false;
         this.exporting = true;
         this.exportStatusKey = 'deckProfile.exportPreparing';
 
-        this.importApi.createExportJob({ userDeckId: this.deck.userDeckId, format: 'csv' }).subscribe({
+        this.importApi.createExportJob({ userDeckId: this.deck.userDeckId, format }).subscribe({
             next: job => {
                 this.exportJob = job;
                 this.exportStatusKey = 'deckProfile.exportRunning';

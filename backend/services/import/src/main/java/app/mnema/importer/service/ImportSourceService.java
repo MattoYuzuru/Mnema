@@ -68,6 +68,9 @@ public class ImportSourceService {
         if (lower.endsWith(".apkg")) {
             return ImportSourceType.apkg;
         }
+        if (lower.endsWith(".mnema")) {
+            return ImportSourceType.mnema;
+        }
         if (lower.endsWith(".tsv")) {
             return ImportSourceType.tsv;
         }
@@ -92,6 +95,7 @@ public class ImportSourceService {
     private String defaultContentType(ImportSourceType type) {
         return switch (type) {
             case apkg -> "application/zip";
+            case mnema -> "application/zip";
             case csv -> "text/csv";
             case tsv, txt -> "text/plain";
         };

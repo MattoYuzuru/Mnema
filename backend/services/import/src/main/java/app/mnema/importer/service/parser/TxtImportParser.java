@@ -49,7 +49,7 @@ public class TxtImportParser implements ImportParser {
         public ImportRecord next() {
             String value = nextLine;
             advance();
-            return new ImportRecord(Map.of("text", value), null);
+            return new ImportRecord(Map.of("text", value), null, null, null);
         }
 
         @Override
