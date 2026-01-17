@@ -111,9 +111,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         </div>
 
         <div class="flashcard-container">
-          <div class="flashcard" [class.flipped]="isFlipped" (click)="toggleFlip()">
-            <div class="flashcard-inner">
-              <div class="flashcard-face front">
+          <div class="flashcard" (click)="toggleReveal()">
+            <div class="flashcard-content">
+              <div class="card-side front" [class.is-hidden]="revealed && !preferences.showFrontSideAfterFlip">
                 <app-flashcard-view
                   *ngIf="template && currentCard"
                   [template]="template"
@@ -122,7 +122,8 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                   [hideLabels]="preferences.hideFieldLabels"
                 ></app-flashcard-view>
               </div>
-              <div class="flashcard-face back">
+              <div *ngIf="revealed && preferences.showFrontSideAfterFlip" class="divider"></div>
+              <div class="card-side back" [class.preload]="!revealed">
                 <app-flashcard-view
                   *ngIf="template && currentCard"
                   [template]="template"
@@ -346,42 +347,49 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
       .flashcard {
         width: 100%;
-        max-width: 600px;
-        min-height: 400px;
+        max-width: 42rem;
+        min-height: 16rem;
         cursor: pointer;
-        perspective: 1000px;
-      }
-
-      .flashcard-inner {
-        display: grid;
-        width: 100%;
-        min-height: 400px;
-        transition: transform 0.6s;
-        transform-style: preserve-3d;
-      }
-
-      .flashcard.flipped .flashcard-inner {
-        transform: rotateY(180deg);
-      }
-
-      .flashcard-face {
-        grid-area: 1 / 1;
-        position: relative;
-        width: 100%;
-        height: auto;
-        min-height: 400px;
-        backface-visibility: hidden;
         background: var(--color-card-background);
         border: 1px solid var(--border-color);
         border-radius: var(--border-radius-lg);
         padding: var(--spacing-xl);
+        box-shadow: var(--shadow-md);
         display: flex;
         align-items: center;
         justify-content: center;
       }
 
-      .flashcard-face.back {
-        transform: rotateY(180deg);
+      .flashcard-content {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-lg);
+        position: relative;
+      }
+
+      .card-side {
+        width: 100%;
+      }
+
+      .card-side.preload {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        height: 0;
+        overflow: hidden;
+        pointer-events: none;
+        visibility: hidden;
+      }
+
+      .card-side.is-hidden {
+        display: none;
+      }
+
+      .divider {
+        height: 1px;
+        background: var(--border-color);
+        margin: var(--spacing-md) 0;
       }
 
       .flip-hint {
@@ -583,7 +591,8 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         }
 
         .flashcard {
-          min-height: 300px;
+          min-height: 14rem;
+          padding: var(--spacing-lg);
         }
 
         .card-actions {
@@ -602,7 +611,8 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         }
 
         .flashcard {
-          min-height: 250px;
+          min-height: 12rem;
+          padding: var(--spacing-md);
         }
       }
     `]
@@ -619,7 +629,7 @@ export class CardBrowserComponent implements OnInit {
     userDeckId = '';
     viewMode: 'list' | 'cards' = 'list';
     currentCardIndex = 0;
-    isFlipped = false;
+    revealed = false;
     showEditModal = false;
     editingCard: UserCardDTO | null = null;
     showDeleteConfirm = false;
@@ -665,7 +675,7 @@ export class CardBrowserComponent implements OnInit {
 
         if (event.key === ' ' || event.key === 'Space') {
             event.preventDefault();
-            this.toggleFlip();
+            this.toggleReveal();
         } else if (event.key === 'ArrowLeft') {
             event.preventDefault();
             this.previousCard();
@@ -741,7 +751,7 @@ export class CardBrowserComponent implements OnInit {
     setViewMode(mode: 'list' | 'cards'): void {
         this.viewMode = mode;
         this.currentCardIndex = 0;
-        this.isFlipped = false;
+        this.revealed = false;
         if (mode === 'cards') {
             this.maybePrefetchMoreCards();
         }
@@ -750,14 +760,14 @@ export class CardBrowserComponent implements OnInit {
     previousCard(): void {
         if (this.currentCardIndex > 0) {
             this.currentCardIndex--;
-            this.isFlipped = false;
+            this.revealed = false;
         }
     }
 
     nextCard(): void {
         if (this.currentCardIndex < this.cards.length - 1) {
             this.currentCardIndex++;
-            this.isFlipped = false;
+            this.revealed = false;
             this.maybePrefetchMoreCards();
         }
     }
@@ -808,8 +818,8 @@ export class CardBrowserComponent implements OnInit {
         });
     }
 
-    toggleFlip(): void {
-        this.isFlipped = !this.isFlipped;
+    toggleReveal(): void {
+        this.revealed = !this.revealed;
     }
 
     private getPreviewText(value: CardContentValue | undefined, fieldType?: string): string {
@@ -982,7 +992,7 @@ export class CardBrowserComponent implements OnInit {
         if (this.currentCardIndex >= this.cards.length) {
             this.currentCardIndex = Math.max(0, this.cards.length - 1);
         }
-        this.isFlipped = false;
+        this.revealed = false;
     }
 
     private canDeleteGlobally(card: UserCardDTO): boolean {

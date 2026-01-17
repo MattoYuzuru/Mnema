@@ -65,12 +65,13 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
         </div>
 
         <div class="flashcard-container">
-          <div class="flashcard" [class.flipped]="isFlipped" (click)="toggleFlip()">
-            <div class="flashcard-inner">
-              <div class="flashcard-face front">
+          <div class="flashcard" (click)="toggleReveal()">
+            <div class="flashcard-content">
+              <div class="card-side front">
                 <app-flashcard-view *ngIf="template && currentCard" [template]="template" [content]="currentCard.content" side="front"></app-flashcard-view>
               </div>
-              <div class="flashcard-face back">
+              <div *ngIf="revealed" class="divider"></div>
+              <div class="card-side back" [class.preload]="!revealed">
                 <app-flashcard-view *ngIf="template && currentCard" [template]="template" [content]="currentCard.content" side="back"></app-flashcard-view>
               </div>
             </div>
@@ -111,11 +112,11 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
       .card-navigation { display: flex; align-items: center; justify-content: center; gap: var(--spacing-lg); }
       .card-counter { font-size: 1rem; font-weight: 600; color: var(--color-text-primary); min-width: 80px; text-align: center; }
       .flashcard-container { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-md); }
-      .flashcard { width: 100%; max-width: 600px; min-height: 400px; cursor: pointer; perspective: 1000px; }
-      .flashcard-inner { display: grid; width: 100%; min-height: 400px; transition: transform 0.6s; transform-style: preserve-3d; }
-      .flashcard.flipped .flashcard-inner { transform: rotateY(180deg); }
-      .flashcard-face { grid-area: 1 / 1; position: relative; width: 100%; height: auto; min-height: 400px; backface-visibility: hidden; background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); padding: var(--spacing-xl); display: flex; align-items: center; justify-content: center; }
-      .flashcard-face.back { transform: rotateY(180deg); }
+      .flashcard { width: 100%; max-width: 42rem; min-height: 16rem; cursor: pointer; background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); padding: var(--spacing-xl); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-md); }
+      .flashcard-content { width: 100%; display: flex; flex-direction: column; gap: var(--spacing-lg); position: relative; }
+      .card-side { width: 100%; }
+      .card-side.preload { position: absolute; left: -9999px; top: 0; height: 0; overflow: hidden; pointer-events: none; visibility: hidden; }
+      .divider { height: 1px; background: var(--border-color); margin: var(--spacing-md) 0; }
       .flip-hint { font-size: 0.9rem; color: var(--color-text-muted); text-align: center; margin: 0; }
 
       @media (max-width: 768px) {
@@ -159,15 +160,7 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
           gap: var(--spacing-md);
         }
 
-        .flashcard,
-        .flashcard-inner,
-        .flashcard-face {
-          min-height: 300px;
-        }
-
-        .flashcard-face {
-          padding: var(--spacing-lg);
-        }
+        .flashcard { min-height: 14rem; padding: var(--spacing-lg); }
       }
 
       @media (max-width: 480px) {
@@ -179,15 +172,7 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
           font-size: 1.5rem;
         }
 
-        .flashcard,
-        .flashcard-inner,
-        .flashcard-face {
-          min-height: 250px;
-        }
-
-        .flashcard-face {
-          padding: var(--spacing-md);
-        }
+        .flashcard { min-height: 12rem; padding: var(--spacing-md); }
       }
     `]
 })
@@ -202,7 +187,7 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     deckId = '';
     viewMode: 'list' | 'cards' = 'list';
     currentCardIndex = 0;
-    isFlipped = false;
+    revealed = false;
     totalCards = 0;
     private currentPage = 1;
     private hasMoreCards = true;
@@ -250,7 +235,7 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
 
         if (event.key === ' ' || event.key === 'Space') {
             event.preventDefault();
-            this.toggleFlip();
+            this.toggleReveal();
         } else if (event.key === 'ArrowLeft') {
             event.preventDefault();
             this.previousCard();
@@ -387,7 +372,7 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     setViewMode(mode: 'list' | 'cards'): void {
         this.viewMode = mode;
         this.currentCardIndex = 0;
-        this.isFlipped = false;
+        this.revealed = false;
         if (mode === 'cards') {
             this.maybePrefetchMoreCards();
         }
@@ -396,14 +381,14 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     previousCard(): void {
         if (this.currentCardIndex > 0) {
             this.currentCardIndex--;
-            this.isFlipped = false;
+            this.revealed = false;
         }
     }
 
     nextCard(): void {
         if (this.currentCardIndex < this.cards.length - 1) {
             this.currentCardIndex++;
-            this.isFlipped = false;
+            this.revealed = false;
             this.maybePrefetchMoreCards();
         }
     }
@@ -455,8 +440,8 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
             });
     }
 
-    toggleFlip(): void {
-        this.isFlipped = !this.isFlipped;
+    toggleReveal(): void {
+        this.revealed = !this.revealed;
     }
 
     private getPreviewText(value: CardContentValue | undefined, fieldType?: string): string {
