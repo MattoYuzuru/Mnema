@@ -34,3 +34,4 @@ frontend/dist
 frontend/node_modules
 /scripts
 build
+/test_decks

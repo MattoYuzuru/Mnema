@@ -985,7 +985,7 @@ public class ApkgImportParser implements ImportParser {
         }
     }
 
-    public static class ApkgImportStream implements ImportStream {
+    public static class ApkgImportStream implements MediaImportStream {
 
         private final Path tempDir;
         private final ZipFile zipFile;
@@ -1078,7 +1078,7 @@ public class ApkgImportParser implements ImportParser {
             }
         }
 
-        public ApkgMedia openMedia(String mediaName) throws IOException {
+        public ImportMedia openMedia(String mediaName) throws IOException {
             String index = mediaNameToIndex.get(mediaName);
             if (index == null) {
                 return null;
@@ -1102,12 +1102,12 @@ public class ApkgImportParser implements ImportParser {
                 if (actualSize <= 0) {
                     return null;
                 }
-                return new ApkgMedia(Files.newInputStream(tempFile), actualSize);
+                return new ImportMedia(Files.newInputStream(tempFile), actualSize);
             }
 
             long size = entry.getSize();
             if (size > 0) {
-                return new ApkgMedia(buffered, size);
+                return new ImportMedia(buffered, size);
             }
             Path tempFile = tempDir.resolve("media-" + index);
             try (InputStream in = buffered) {
@@ -1117,7 +1117,7 @@ public class ApkgImportParser implements ImportParser {
             if (actualSize <= 0) {
                 return null;
             }
-            return new ApkgMedia(Files.newInputStream(tempFile), actualSize);
+            return new ImportMedia(Files.newInputStream(tempFile), actualSize);
         }
 
         @Override
@@ -1183,6 +1183,4 @@ public class ApkgImportParser implements ImportParser {
         }
     }
 
-    public record ApkgMedia(InputStream stream, long size) {
-    }
 }

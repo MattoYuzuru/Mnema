@@ -19,6 +19,7 @@ public class ImportParserFactory {
             case tsv -> new CsvImportParser('\t');
             case txt -> new TxtImportParser();
             case apkg -> new ApkgImportParser(objectMapper);
+            case mnema -> new MnemaPackageImportParser(objectMapper);
         };
     }
 }
