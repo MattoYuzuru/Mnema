@@ -822,6 +822,13 @@ export class CardBrowserComponent implements OnInit {
     }
 
     getFrontPreview(card: UserCardDTO): string {
+        const anki = (card.effectiveContent as any)?._anki;
+        if (this.template?.layout?.renderMode === 'anki' || anki) {
+            const html = typeof anki?.front === 'string' ? anki.front : '';
+            const text = this.stripHtml(html);
+            return text.length > 80 ? text.substring(0, 80) + '...' : text;
+        }
+
         if (!this.template || !this.template.layout) {
             const firstValue = Object.values(card.effectiveContent)[0];
             return this.getPreviewText(firstValue);
@@ -837,6 +844,10 @@ export class CardBrowserComponent implements OnInit {
             .join(' - ');
 
         return values.length > 80 ? values.substring(0, 80) + '...' : values;
+    }
+
+    private stripHtml(value: string): string {
+        return value.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
     }
 
     backToDeck(): void {

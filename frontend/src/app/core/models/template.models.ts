@@ -9,6 +9,7 @@ export interface CardTemplateDTO {
     layout: {
         front: string[];
         back: string[];
+        renderMode?: string;
     };
     aiProfile?: {
         prompt: string;
@@ -49,6 +50,7 @@ export interface CreateTemplateRequest {
     layout: {
         front: string[];
         back: string[];
+        renderMode?: string;
     };
     aiProfile?: {
         prompt: string;
