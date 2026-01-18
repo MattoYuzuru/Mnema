@@ -363,19 +363,21 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       .modal-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(8, 12, 22, 0.55);
         display: flex;
         align-items: center;
         justify-content: center;
+        backdrop-filter: blur(12px) saturate(140%);
         z-index: 1000;
       }
 
       .modal-content {
-        background: var(--color-card-background);
+        background: var(--color-surface-solid);
+        border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-lg);
         width: 90%;
         max-width: 32rem;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        box-shadow: var(--shadow-lg);
       }
 
       .modal-header {
@@ -383,7 +385,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         justify-content: space-between;
         align-items: center;
         padding: var(--spacing-xl);
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--glass-border);
       }
 
       .modal-header h2 {
@@ -410,7 +412,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         justify-content: flex-end;
         gap: var(--spacing-md);
         padding: var(--spacing-xl);
-        border-top: 1px solid var(--border-color);
+        border-top: 1px solid var(--glass-border);
       }
 
       .warning-text {

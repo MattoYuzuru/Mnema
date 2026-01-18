@@ -11,7 +11,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
     standalone: true,
     imports: [NgIf, NgFor, TagChipComponent, ButtonComponent, TranslatePipe],
     template: `
-    <div class="deck-card">
+    <div class="deck-card glass">
       <div class="deck-card-header">
         <div class="deck-card-icon clickable" (click)="open.emit()">
           <img *ngIf="iconUrl" [src]="iconUrl" alt="Deck icon" class="deck-icon-image" />
@@ -81,13 +81,13 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         display: flex;
         flex-direction: column;
         gap: var(--spacing-md);
-        padding: var(--spacing-lg);
+        padding: 1.2rem;
         background: var(--glass-surface);
         border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-lg);
         box-shadow: var(--shadow-sm);
         transition: all 0.25s ease;
-        min-height: 12rem;
+        min-height: 10.5rem;
         height: 100%;
         backdrop-filter: blur(var(--glass-blur));
       }
@@ -140,7 +140,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         flex: 1;
         display: flex;
         flex-direction: column;
-        gap: var(--spacing-sm);
+        gap: var(--spacing-xs);
       }
 
       .deck-name {
@@ -218,7 +218,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         gap: var(--spacing-sm);
         justify-content: flex-end;
         align-items: center;
-        margin-top: auto;
+        margin-top: var(--spacing-sm);
       }
     `
     ]

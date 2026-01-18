@@ -16,7 +16,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
     imports: [RouterOutlet, RouterLink, NgIf, ButtonComponent, TranslatePipe],
     template: `
     <div class="app-shell">
-      <header class="header">
+      <header class="header glass-strong">
         <div class="header-left">
           <a routerLink="/" class="logo">
             <span class="logo-text">{{ 'app.name' | translate }}</span>
@@ -103,7 +103,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         <router-outlet></router-outlet>
       </main>
 
-      <footer class="footer">
+      <footer class="footer glass-strong">
         <div class="footer-left">
           <span class="footer-copyright">© Mnema, {{ currentYear }}</span>
         </div>
@@ -139,6 +139,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         top: 0;
         z-index: 100;
         box-shadow: var(--shadow-sm);
+        overflow: visible;
       }
 
       .header-left {

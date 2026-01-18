@@ -440,12 +440,18 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
         left: 2.6rem;
         color: var(--color-text-muted);
         pointer-events: none;
+        transition: opacity 0.2s ease, transform 0.2s ease;
       }
 
       .typing-placeholder::after {
         content: "|";
         margin-left: 2px;
         animation: blink 1s steps(2, start) infinite;
+      }
+
+      .search-input:focus-within .typing-placeholder {
+        opacity: 0;
+        transform: translateY(-4px);
       }
 
       .typing-placeholder.static::after {

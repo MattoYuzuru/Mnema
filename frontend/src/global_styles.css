@@ -10,11 +10,12 @@
     --color-text-secondary: #1f2a44;
     --color-text-muted: #5b6b86;
 
-    --glass-surface: rgba(255, 255, 255, 0.58);
-    --glass-surface-strong: rgba(255, 255, 255, 0.78);
-    --glass-border: rgba(255, 255, 255, 0.45);
-    --glass-border-strong: rgba(255, 255, 255, 0.65);
-    --glass-blur: 18px;
+    --glass-surface: rgba(255, 255, 255, 0.42);
+    --glass-surface-strong: rgba(255, 255, 255, 0.68);
+    --glass-border: rgba(255, 255, 255, 0.4);
+    --glass-border-strong: rgba(255, 255, 255, 0.6);
+    --glass-blur: 24px;
+    --color-surface-solid: #f9fbff;
 
     --page-gradient:
         radial-gradient(900px 600px at 10% -10%, rgba(56, 189, 248, 0.35), transparent 60%),
@@ -134,15 +135,54 @@ textarea::placeholder {
 .glass {
     background: var(--glass-surface);
     border: 1px solid var(--glass-border);
-    backdrop-filter: blur(var(--glass-blur));
-    box-shadow: var(--shadow-sm);
+    backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+    box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.65);
+    position: relative;
+    overflow: hidden;
 }
 
 .glass-strong {
     background: var(--glass-surface-strong);
     border: 1px solid var(--glass-border-strong);
-    backdrop-filter: blur(calc(var(--glass-blur) + 6px));
-    box-shadow: var(--shadow-md);
+    backdrop-filter: blur(calc(var(--glass-blur) + 8px)) saturate(175%);
+    box-shadow: var(--shadow-md), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    position: relative;
+    overflow: hidden;
+}
+
+.glass::before,
+.glass-strong::before {
+    content: "";
+    position: absolute;
+    inset: -30% -10%;
+    background: linear-gradient(120deg, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0));
+    opacity: 0.35;
+    transform: rotate(-6deg);
+    pointer-events: none;
+}
+
+.glass::after,
+.glass-strong::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(220px 180px at 20% 10%, rgba(255, 255, 255, 0.65), transparent 70%),
+      radial-gradient(220px 180px at 80% 0%, rgba(255, 255, 255, 0.3), transparent 60%);
+    opacity: 0.35;
+    mix-blend-mode: screen;
+    pointer-events: none;
+}
+
+.glass:hover::before,
+.glass-strong:hover::before {
+    opacity: 0.5;
+    transform: rotate(-4deg) translateY(-6%);
+}
+
+.glass > *,
+.glass-strong > * {
+    position: relative;
+    z-index: 1;
 }
 
 .section {
