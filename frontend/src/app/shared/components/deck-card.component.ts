@@ -82,18 +82,20 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         flex-direction: column;
         gap: var(--spacing-md);
         padding: var(--spacing-lg);
-        background: var(--color-card-background);
-        border: 1px solid var(--border-color);
+        background: var(--glass-surface);
+        border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-lg);
         box-shadow: var(--shadow-sm);
-        transition: all 0.2s ease;
+        transition: all 0.25s ease;
         min-height: 12rem;
         height: 100%;
+        backdrop-filter: blur(var(--glass-blur));
       }
 
       .deck-card:hover {
         border-color: var(--border-color-hover);
         box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
       }
 
       .clickable {
@@ -118,8 +120,9 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         display: flex;
         align-items: center;
         justify-content: center;
-        background: var(--color-background);
+        background: var(--glass-surface-strong);
         border-radius: var(--border-radius-md);
+        border: 1px solid var(--glass-border);
       }
 
       .deck-icon-placeholder {
@@ -185,7 +188,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
       .deck-description code {
         font-family: inherit;
         font-size: 0.85rem;
-        background: var(--color-background);
+        background: var(--glass-surface-strong);
         padding: 0 0.2rem;
         border-radius: var(--border-radius-sm);
       }

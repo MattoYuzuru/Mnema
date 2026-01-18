@@ -1,29 +1,47 @@
 :root {
-    --color-primary-accent: #00ffff;
-    --color-secondary-accent: #ff00ff;
-    --color-background: #faf8f3;
-    --color-card-background: #ffffff;
-    --color-text-primary: #2d2d2d;
-    --color-text-muted: #6b6b6b;
+    --font-display: "Space Grotesk", "Sora", sans-serif;
+    --font-body: "Manrope", "Sora", sans-serif;
+
+    --color-primary-accent: #0ea5e9;
+    --color-secondary-accent: #14b8a6;
+    --color-background: #edf1f8;
+    --color-card-background: rgba(255, 255, 255, 0.65);
+    --color-text-primary: #0b1220;
+    --color-text-secondary: #1f2a44;
+    --color-text-muted: #5b6b86;
+
+    --glass-surface: rgba(255, 255, 255, 0.58);
+    --glass-surface-strong: rgba(255, 255, 255, 0.78);
+    --glass-border: rgba(255, 255, 255, 0.45);
+    --glass-border-strong: rgba(255, 255, 255, 0.65);
+    --glass-blur: 18px;
+
+    --page-gradient:
+        radial-gradient(900px 600px at 10% -10%, rgba(56, 189, 248, 0.35), transparent 60%),
+        radial-gradient(700px 500px at 85% 0%, rgba(251, 113, 133, 0.25), transparent 55%),
+        radial-gradient(600px 500px at 30% 100%, rgba(45, 212, 191, 0.18), transparent 55%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(236, 242, 255, 0.8));
 
     --spacing-xs: 0.25rem;
     --spacing-sm: 0.5rem;
     --spacing-md: 1rem;
     --spacing-lg: 1.5rem;
-    --spacing-xl: 2rem;
-    --spacing-2xl: 3rem;
+    --spacing-xl: 2.25rem;
+    --spacing-2xl: 3.5rem;
 
-    --border-radius-sm: 0.25rem;
-    --border-radius-md: 0.5rem;
-    --border-radius-lg: 0.75rem;
+    --border-radius-sm: 0.5rem;
+    --border-radius-md: 0.85rem;
+    --border-radius-lg: 1.25rem;
     --border-radius-full: 999px;
 
-    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
-    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+    --shadow-color: rgba(15, 23, 42, 0.12);
+    --shadow-sm: 0 8px 24px var(--shadow-color);
+    --shadow-md: 0 18px 40px rgba(15, 23, 42, 0.16);
+    --shadow-lg: 0 28px 60px rgba(15, 23, 42, 0.18);
 
-    --border-color: #e5e7eb;
-    --border-color-hover: #d1d5db;
+    --border-color: rgba(148, 163, 184, 0.35);
+    --border-color-hover: rgba(148, 163, 184, 0.6);
+    --focus-ring: 0 0 0 3px rgba(14, 165, 233, 0.25);
 }
 
 * {
@@ -33,17 +51,113 @@
 }
 
 body {
-    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: var(--font-body);
     background-color: var(--color-background);
+    background-image: var(--page-gradient);
+    background-attachment: fixed;
     color: var(--color-text-primary);
-    line-height: 1.5;
+    line-height: 1.6;
     overflow-x: hidden;
+    min-height: 100vh;
+}
+
+body::before {
+    content: "";
+    position: fixed;
+    inset: -20vh;
+    background: radial-gradient(400px 400px at 20% 30%, rgba(255, 255, 255, 0.55), transparent 70%);
+    opacity: 0.5;
+    z-index: -1;
+    pointer-events: none;
+    filter: blur(30px);
+}
+
+body::after {
+    content: "";
+    position: fixed;
+    inset: -20vh;
+    background: radial-gradient(360px 360px at 80% 60%, rgba(255, 255, 255, 0.35), transparent 70%);
+    opacity: 0.45;
+    z-index: -1;
+    pointer-events: none;
+    filter: blur(40px);
+}
+
+h1, h2, h3, h4, h5 {
+    font-family: var(--font-display);
+    letter-spacing: -0.02em;
+    color: var(--color-text-primary);
+}
+
+a {
+    color: inherit;
+}
+
+img {
+    max-width: 100%;
+    height: auto;
+}
+
+button,
+input,
+textarea,
+select {
+    font-family: inherit;
+}
+
+input,
+textarea,
+select {
+    background: var(--glass-surface);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--border-radius-md);
+    color: var(--color-text-primary);
+    padding: 0.65rem 0.9rem;
+    backdrop-filter: blur(var(--glass-blur));
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+input::placeholder,
+textarea::placeholder {
+    color: var(--color-text-muted);
+}
+
+::selection {
+    background: rgba(14, 165, 233, 0.25);
+}
+
+:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+}
+
+.glass {
+    background: var(--glass-surface);
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(var(--glass-blur));
+    box-shadow: var(--shadow-sm);
+}
+
+.glass-strong {
+    background: var(--glass-surface-strong);
+    border: 1px solid var(--glass-border-strong);
+    backdrop-filter: blur(calc(var(--glass-blur) + 6px));
+    box-shadow: var(--shadow-md);
+}
+
+.section {
+    padding: var(--spacing-2xl) 0;
+}
+
+.container {
+    width: min(1200px, 92vw);
+    margin: 0 auto;
 }
 
 @media (max-width: 768px) {
     :root {
-        --spacing-xl: 1.5rem;
-        --spacing-2xl: 2rem;
+        --spacing-xl: 1.75rem;
+        --spacing-2xl: 2.5rem;
     }
 
     body {

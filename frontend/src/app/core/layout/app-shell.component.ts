@@ -132,11 +132,13 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         align-items: center;
         gap: var(--spacing-lg);
         padding: var(--spacing-md) var(--spacing-xl);
-        background: var(--color-card-background);
-        border-bottom: 1px solid var(--border-color);
+        background: var(--glass-surface-strong);
+        border-bottom: 1px solid var(--glass-border);
+        backdrop-filter: blur(calc(var(--glass-blur) + 6px));
         position: sticky;
         top: 0;
         z-index: 100;
+        box-shadow: var(--shadow-sm);
       }
 
       .header-left {
@@ -147,9 +149,17 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         display: flex;
         align-items: center;
         text-decoration: none;
-        font-size: 1.25rem;
+        font-size: 1.3rem;
         font-weight: 700;
         color: var(--color-text-primary);
+        letter-spacing: -0.02em;
+      }
+
+      .logo-text {
+        background: linear-gradient(120deg, var(--color-text-primary), var(--color-primary-accent));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
       }
 
       .logo-image {
@@ -164,19 +174,22 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
       .global-search {
         width: 100%;
-        padding: var(--spacing-sm) var(--spacing-md);
-        border: 1px solid var(--border-color);
+        padding: 0.75rem 1.1rem;
+        border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-full);
-        font-size: 0.9rem;
+        font-size: 0.95rem;
         font-family: inherit;
-        background: var(--color-background);
+        background: var(--glass-surface);
         color: var(--color-text-primary);
-        transition: all 0.2s ease;
+        transition: all 0.25s ease;
+        backdrop-filter: blur(var(--glass-blur));
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
       }
 
       .global-search:focus {
         outline: none;
-        border-color: var(--color-primary-accent);
+        border-color: rgba(14, 165, 233, 0.6);
+        box-shadow: var(--focus-ring);
       }
 
       .header-right {
@@ -193,18 +206,19 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         display: flex;
         align-items: center;
         gap: var(--spacing-sm);
-        padding: var(--spacing-xs) var(--spacing-sm);
-        border: 1px solid var(--border-color);
+        padding: 0.4rem 0.75rem;
+        border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-full);
-        background: transparent;
+        background: var(--glass-surface);
         color: var(--color-text-primary);
         font-size: 0.9rem;
         cursor: pointer;
         transition: all 0.2s ease;
+        backdrop-filter: blur(var(--glass-blur));
       }
 
       .user-menu-trigger:hover {
-        background: var(--color-background);
+        border-color: var(--border-color-hover);
       }
 
       .user-avatar {
@@ -218,7 +232,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         width: 28px;
         height: 28px;
         border-radius: 50%;
-        background: #111827;
+        background: linear-gradient(135deg, var(--color-primary-accent), var(--color-secondary-accent));
         color: #fff;
         display: flex;
         align-items: center;
@@ -239,14 +253,15 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         top: calc(100% + var(--spacing-xs));
         right: 0;
         min-width: 180px;
-        background: var(--color-card-background);
-        border: 1px solid var(--border-color);
+        background: var(--glass-surface-strong);
+        border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-md);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        box-shadow: var(--shadow-md);
         padding: var(--spacing-xs);
         display: flex;
         flex-direction: column;
         gap: var(--spacing-xs);
+        backdrop-filter: blur(var(--glass-blur));
       }
 
       .menu-item {
@@ -268,7 +283,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       }
 
       .menu-item:hover {
-        background: var(--color-background);
+        background: var(--glass-surface);
       }
 
       .menu-item svg {
@@ -285,8 +300,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         align-items: center;
         justify-content: space-between;
         padding: var(--spacing-lg) var(--spacing-xl);
-        background: var(--color-card-background);
-        border-top: 1px solid var(--border-color);
+        background: var(--glass-surface-strong);
+        border-top: 1px solid var(--glass-border);
+        backdrop-filter: blur(var(--glass-blur));
       }
 
       .footer-copyright {
