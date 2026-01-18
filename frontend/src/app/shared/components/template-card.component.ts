@@ -82,6 +82,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
       .template-card-header {
         display: flex;
         gap: var(--spacing-md);
+        align-items: center;
       }
 
       .template-icon {
@@ -113,6 +114,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         display: flex;
         flex-direction: column;
         gap: var(--spacing-xs);
+        justify-content: center;
       }
 
       .template-name {

@@ -176,15 +176,15 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       .global-search {
         width: 100%;
         padding: 0.75rem 1.1rem;
-        border: 1px solid var(--glass-border);
+        border: 1px solid var(--glass-border-strong);
         border-radius: var(--border-radius-full);
         font-size: 0.95rem;
         font-family: inherit;
-        background: var(--glass-surface);
+        background: var(--glass-surface-strong);
         color: var(--color-text-primary);
         transition: all 0.25s ease;
         backdrop-filter: blur(var(--glass-blur));
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35), 0 10px 24px rgba(15, 23, 42, 0.08);
       }
 
       .global-search:focus {

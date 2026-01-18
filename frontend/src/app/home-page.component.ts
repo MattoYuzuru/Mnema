@@ -825,6 +825,10 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
         border-top: 1px solid var(--glass-border);
       }
 
+      .recent-decks h3 {
+        margin: 0 0 var(--spacing-md) 0;
+      }
+
       .public-decks {
         display: flex;
         flex-direction: column;

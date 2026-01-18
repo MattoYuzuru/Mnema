@@ -225,8 +225,9 @@ interface BuilderState {
       .builder-page {
         display: flex;
         flex-direction: column;
-        height: 100vh;
-        overflow: hidden;
+        min-height: 100vh;
+        height: auto;
+        overflow: visible;
         background: transparent;
       }
 
@@ -280,7 +281,7 @@ interface BuilderState {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         flex: 1;
-        overflow: hidden;
+        overflow: visible;
         min-height: 0;
         gap: var(--spacing-lg);
         padding: 0 var(--spacing-xl) var(--spacing-xl);
@@ -291,9 +292,9 @@ interface BuilderState {
         grid-template-columns: 1fr 1fr;
         gap: var(--spacing-md);
         padding: var(--spacing-lg);
-        overflow-y: auto;
+        overflow: visible;
         border-radius: var(--border-radius-lg);
-        border: 1px solid var(--glass-border);
+        border: 1px solid var(--glass-border-strong);
       }
 
       .palette-column h3, .config-column h3 {
@@ -307,6 +308,10 @@ interface BuilderState {
         display: flex;
         flex-direction: column;
         height: 100%;
+        padding: var(--spacing-md);
+        border-radius: var(--border-radius-lg);
+        border: 1px solid var(--glass-border);
+        background: var(--glass-surface);
       }
 
       .palette-list {
@@ -324,8 +329,8 @@ interface BuilderState {
         justify-content: flex-start;
         gap: var(--spacing-sm);
         padding: var(--spacing-md) var(--spacing-lg);
-        background: var(--glass-surface);
-        border: 1px solid var(--glass-border);
+        background: var(--glass-surface-strong);
+        border: 1px solid var(--glass-border-strong);
         border-radius: var(--border-radius-md);
         cursor: move;
         transition: all 0.2s;
@@ -365,6 +370,10 @@ interface BuilderState {
         display: flex;
         flex-direction: column;
         height: 100%;
+        padding: var(--spacing-md);
+        border-radius: var(--border-radius-lg);
+        border: 1px solid var(--glass-border);
+        background: var(--glass-surface);
       }
 
       .config-panel {
@@ -372,8 +381,8 @@ interface BuilderState {
         flex-direction: column;
         gap: var(--spacing-md);
         padding: var(--spacing-md);
-        background: var(--glass-surface);
-        border: 1px solid var(--glass-border);
+        background: var(--glass-surface-strong);
+        border: 1px solid var(--glass-border-strong);
         border-radius: var(--border-radius-md);
         text-align: left;
       }
@@ -401,10 +410,12 @@ interface BuilderState {
 
       .form-input {
         padding: var(--spacing-sm) var(--spacing-md);
-        border: 1px solid var(--glass-border);
+        border: 1px solid var(--glass-border-strong);
         border-radius: var(--border-radius-md);
         font-size: 0.95rem;
         font-family: inherit;
+        background: var(--color-surface-solid);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
       }
 
       .checkbox-label {
@@ -480,10 +491,10 @@ interface BuilderState {
         display: flex;
         flex-direction: column;
         padding: var(--spacing-lg);
-        overflow-y: auto;
+        overflow: visible;
         gap: var(--spacing-lg);
         border-radius: var(--border-radius-lg);
-        border: 1px solid var(--glass-border);
+        border: 1px solid var(--glass-border-strong);
       }
 
       .preview-controls {

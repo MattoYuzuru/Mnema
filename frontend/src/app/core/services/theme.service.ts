@@ -44,7 +44,7 @@ const THEME_PALETTES: Record<ThemeMode, Record<ThemeAccent, ThemePalette>> = {
             glassBorder: 'rgba(255, 255, 255, 0.4)',
             glassBorderStrong: 'rgba(255, 255, 255, 0.6)',
             shadowColor: 'rgba(15, 23, 42, 0.14)',
-            pageGradient: 'radial-gradient(900px 600px at 10% -10%, rgba(56, 189, 248, 0.35), transparent 60%), radial-gradient(700px 500px at 85% 0%, rgba(251, 113, 133, 0.25), transparent 55%), radial-gradient(600px 500px at 30% 100%, rgba(45, 212, 191, 0.18), transparent 55%), linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(236, 242, 255, 0.8))',
+            pageGradient: 'radial-gradient(900px 600px at 8% -10%, rgba(56, 189, 248, 0.45), transparent 60%), radial-gradient(700px 500px at 92% 4%, rgba(249, 115, 22, 0.18), transparent 55%), radial-gradient(650px 520px at 25% 110%, rgba(236, 72, 153, 0.18), transparent 55%), radial-gradient(520px 420px at 70% 120%, rgba(45, 212, 191, 0.18), transparent 55%), linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(231, 242, 255, 0.9))',
             focusRing: '0 0 0 3px rgba(14, 165, 233, 0.25)'
         },
         vintage: {
