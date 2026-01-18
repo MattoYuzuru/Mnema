@@ -3,6 +3,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
 import { forkJoin } from 'rxjs';
 import { TemplateApiService } from '../../core/services/template-api.service';
+import { SearchApiService } from '../../core/services/search-api.service';
 import { UserApiService } from '../../user-api.service';
 import { DeckWizardStateService } from '../wizard/deck-wizard-state.service';
 import { CardTemplateDTO } from '../../core/models/template.models';
@@ -46,6 +47,17 @@ type TemplateFilter = 'all' | 'mine' | 'public';
         </div>
       </header>
 
+      <div class="templates-toolbar">
+        <input
+          type="search"
+          class="templates-search"
+          [placeholder]="'publicTemplates.searchPlaceholder' | translate"
+          [attr.aria-label]="'publicTemplates.searchPlaceholder' | translate"
+          [value]="searchQuery"
+          (input)="onSearchInput($event)"
+        />
+      </div>
+
       <div class="filter-tabs">
         <button class="filter-tab" [class.active]="activeFilter === 'all'" (click)="activeFilter = 'all'">
           {{ 'publicTemplates.filterAll' | translate }} ({{ templates.length }})
@@ -79,8 +91,8 @@ type TemplateFilter = 'all' | 'mine' | 'public';
       <app-empty-state
         *ngIf="filteredTemplates.length === 0"
         icon="T"
-        [title]="'templates.noTemplates' | translate"
-        [description]="'templates.noTemplatesDescription' | translate"
+        [title]="searchQuery ? ('publicTemplates.noSearchResults' | translate) : ('templates.noTemplates' | translate)"
+        [description]="searchQuery ? ('publicTemplates.noSearchResultsDescription' | translate) : ('templates.noTemplatesDescription' | translate)"
       ></app-empty-state>
 
       <div *ngIf="templates.length > 0 && hasMore" class="load-more-container">
@@ -105,6 +117,28 @@ type TemplateFilter = 'all' | 'mine' | 'public';
         align-items: flex-end;
         justify-content: space-between;
         margin-bottom: var(--spacing-lg);
+      }
+
+      .templates-toolbar {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-md);
+      }
+
+      .templates-search {
+        width: 100%;
+        padding: var(--spacing-sm) var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-full);
+        font-size: 0.9rem;
+        background: var(--color-background);
+        color: var(--color-text-primary);
+      }
+
+      .templates-search:focus {
+        outline: none;
+        border-color: var(--color-primary-accent);
       }
 
       .title-row {
@@ -206,6 +240,10 @@ type TemplateFilter = 'all' | 'mine' | 'public';
           gap: var(--spacing-sm);
         }
 
+        .templates-toolbar {
+          width: 100%;
+        }
+
         .page-header h1 {
           font-size: 1.5rem;
         }
@@ -226,9 +264,12 @@ export class PublicTemplatesComponent implements OnInit {
     fromWizard = false;
     activeFilter: TemplateFilter = 'all';
     currentUserId: string | null = null;
+    searchQuery = '';
+    private searchDebounce?: ReturnType<typeof setTimeout>;
 
     constructor(
         private templateApi: TemplateApiService,
+        private searchApi: SearchApiService,
         private userApi: UserApiService,
         private wizardState: DeckWizardStateService,
         private router: Router,
@@ -244,7 +285,7 @@ export class PublicTemplatesComponent implements OnInit {
         this.loading = true;
         forkJoin({
             user: this.userApi.getMe(),
-            templates: this.templateApi.getTemplates(this.page, this.pageSize, 'all')
+            templates: this.fetchTemplatesPage(this.page)
         }).subscribe({
             next: ({ user, templates }) => {
                 this.currentUserId = user.id;
@@ -266,7 +307,7 @@ export class PublicTemplatesComponent implements OnInit {
         this.loadingMore = true;
         this.page += 1;
 
-        this.templateApi.getTemplates(this.page, this.pageSize, 'all').subscribe({
+        this.fetchTemplatesPage(this.page).subscribe({
             next: page => {
                 this.templates = [...this.templates, ...page.content];
                 this.hasMore = !page.last;
@@ -277,6 +318,45 @@ export class PublicTemplatesComponent implements OnInit {
                 this.page -= 1;
             }
         });
+    }
+
+    onSearchInput(event: Event): void {
+        const input = event.target as HTMLInputElement;
+        this.searchQuery = input.value;
+        if (this.searchDebounce) {
+            clearTimeout(this.searchDebounce);
+        }
+        this.searchDebounce = setTimeout(() => {
+            this.applySearch();
+        }, 300);
+    }
+
+    private applySearch(): void {
+        const normalized = this.searchQuery.trim();
+        this.searchQuery = normalized;
+        this.page = 1;
+        this.templates = [];
+        this.hasMore = false;
+        this.loading = true;
+        this.loadingMore = false;
+
+        this.fetchTemplatesPage(this.page).subscribe({
+            next: templates => {
+                this.templates = templates.content;
+                this.hasMore = !templates.last;
+                this.loading = false;
+            },
+            error: () => {
+                this.loading = false;
+            }
+        });
+    }
+
+    private fetchTemplatesPage(page: number) {
+        if (this.searchQuery) {
+            return this.searchApi.searchTemplates(this.searchQuery, 'all', page, this.pageSize);
+        }
+        return this.templateApi.getTemplates(page, this.pageSize, 'all');
     }
 
     get myTemplates(): CardTemplateDTO[] {

@@ -44,13 +44,29 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
         </div>
       </header>
 
-      <div *ngIf="viewMode === 'list' && cards.length > 0" class="cards-table">
+      <div *ngIf="viewMode === 'list'" class="cards-toolbar">
+        <input
+          type="search"
+          class="card-search"
+          [placeholder]="'publicCardBrowser.searchPlaceholder' | translate"
+          [attr.aria-label]="'publicCardBrowser.searchPlaceholder' | translate"
+          [value]="searchQuery"
+          (input)="onSearchInput($event)"
+        />
+        <span *ngIf="searchQuery" class="search-meta">
+          {{ visibleCards.length }} / {{ totalCards || cards.length }} {{ 'publicCardBrowser.cards' | translate }}
+        </span>
+      </div>
+
+      <div *ngIf="viewMode === 'list' && visibleCards.length > 0" class="cards-table">
         <div class="card-row header-row">
           <div class="card-col">{{ 'publicCardBrowser.frontPreview' | translate }}</div>
           <div class="card-col">{{ 'cardBrowser.tags' | translate }}</div>
         </div>
-        <div *ngFor="let card of cards" class="card-row">
-          <div class="card-col">{{ getFrontPreview(card) }}</div>
+        <div *ngFor="let card of visibleCards; let index = index" class="card-row">
+          <button class="card-col card-preview" type="button" (click)="openCardFromList(index)">
+            {{ getFrontPreview(card) }}
+          </button>
           <div class="card-col">
             <span *ngFor="let tag of card.tags" class="tag-chip">{{ tag }}</span>
           </div>
@@ -83,7 +99,12 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
         </div>
       </div>
 
-      <app-empty-state *ngIf="cards.length === 0" icon="📝" [title]="'publicCardBrowser.noCards' | translate" [description]="'publicCardBrowser.noCardsDescription' | translate"></app-empty-state>
+      <app-empty-state
+        *ngIf="visibleCards.length === 0"
+        icon="📝"
+        [title]="searchQuery ? ('publicCardBrowser.noSearchResults' | translate) : ('publicCardBrowser.noCards' | translate)"
+        [description]="searchQuery ? ('publicCardBrowser.noSearchResultsDescription' | translate) : ('publicCardBrowser.noCardsDescription' | translate)"
+      ></app-empty-state>
     </div>
   `,
     styles: [`
@@ -102,11 +123,17 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
       .card-count { font-size: 0.9rem; color: var(--color-text-muted); margin: 0 0 var(--spacing-md) 0; }
       .header-right { display: flex; gap: var(--spacing-md); align-items: center; }
       .view-mode-toggle { display: flex; gap: var(--spacing-xs); }
+      .cards-toolbar { display: flex; align-items: center; gap: var(--spacing-md); margin-bottom: var(--spacing-md); }
+      .card-search { flex: 1; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--border-color); border-radius: var(--border-radius-full); font-size: 0.9rem; background: var(--color-background); color: var(--color-text-primary); }
+      .card-search:focus { outline: none; border-color: var(--color-primary-accent); }
+      .search-meta { font-size: 0.85rem; color: var(--color-text-muted); white-space: nowrap; }
       .cards-table { background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); overflow: hidden; }
       .card-row { display: grid; grid-template-columns: 3fr 1fr; gap: var(--spacing-md); padding: var(--spacing-md); border-bottom: 1px solid var(--border-color); }
       .card-row:last-child { border-bottom: none; }
       .header-row { background: var(--color-background); font-weight: 600; }
       .card-col { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .card-preview { text-align: left; background: none; border: none; padding: 0; color: var(--color-text-primary); cursor: pointer; font: inherit; }
+      .card-preview:hover { text-decoration: underline; }
       .tag-chip { display: inline-block; padding: var(--spacing-xs) var(--spacing-sm); margin-right: var(--spacing-xs); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-full); font-size: 0.75rem; }
       .card-view-mode { display: flex; flex-direction: column; gap: var(--spacing-xl); }
       .card-navigation { display: flex; align-items: center; justify-content: center; gap: var(--spacing-lg); }
@@ -140,6 +167,11 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
           width: 100%;
           flex-wrap: wrap;
           justify-content: flex-start;
+        }
+
+        .cards-toolbar {
+          flex-direction: column;
+          align-items: stretch;
         }
 
         .cards-table {
@@ -189,9 +221,11 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     currentCardIndex = 0;
     revealed = false;
     totalCards = 0;
+    searchQuery = '';
     private currentPage = 1;
     private hasMoreCards = true;
     private loadingMore = false;
+    private searchDebounce?: ReturnType<typeof setTimeout>;
     canFork = false;
     currentUserId: string | null = null;
     userPublicDeckIds: Set<string> = new Set();
@@ -362,11 +396,23 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     }
 
     get currentCard(): PublicCardDTO | null {
-        return this.cards[this.currentCardIndex] || null;
+        return this.visibleCards[this.currentCardIndex] || null;
     }
 
     get cardCount(): number {
+        if (this.searchQuery) {
+            return this.visibleCards.length;
+        }
         return this.totalCards || this.cards.length;
+    }
+
+    get visibleCards(): PublicCardDTO[] {
+        const query = this.searchQuery.trim().toLowerCase();
+        if (!query) {
+            return this.cards;
+        }
+
+        return this.cards.filter(card => this.matchesSearch(card, query));
     }
 
     setViewMode(mode: 'list' | 'cards'): void {
@@ -386,7 +432,7 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     }
 
     nextCard(): void {
-        if (this.currentCardIndex < this.cards.length - 1) {
+        if (this.currentCardIndex < this.visibleCards.length - 1) {
             this.currentCardIndex++;
             this.revealed = false;
             this.maybePrefetchMoreCards();
@@ -394,10 +440,11 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     }
 
     private maybePrefetchMoreCards(): void {
-        if (!this.hasMoreCards || this.loadingMore || this.cards.length === 0) {
+        const cardPool = this.searchQuery ? this.visibleCards : this.cards;
+        if (!this.hasMoreCards || this.loadingMore || cardPool.length === 0) {
             return;
         }
-        const thresholdIndex = Math.floor(this.cards.length * PublicCardBrowserComponent.PREFETCH_THRESHOLD);
+        const thresholdIndex = Math.floor(cardPool.length * PublicCardBrowserComponent.PREFETCH_THRESHOLD);
         if (this.currentCardIndex + 1 >= thresholdIndex) {
             this.loadMoreCards();
         }
@@ -444,6 +491,18 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         this.revealed = !this.revealed;
     }
 
+    onSearchInput(event: Event): void {
+        const input = event.target as HTMLInputElement;
+        this.searchQuery = input.value;
+        if (this.searchDebounce) {
+            clearTimeout(this.searchDebounce);
+        }
+        this.searchDebounce = setTimeout(() => {
+            this.currentCardIndex = 0;
+            this.revealed = false;
+        }, 200);
+    }
+
     private getPreviewText(value: CardContentValue | undefined, fieldType?: string): string {
         if (!value) return '';
         if (typeof value === 'string') return value;
@@ -478,6 +537,16 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         return values.length > 80 ? values.substring(0, 80) + '...' : values;
     }
 
+    openCardFromList(index: number): void {
+        if (index < 0 || index >= this.visibleCards.length) {
+            return;
+        }
+        this.viewMode = 'cards';
+        this.currentCardIndex = index;
+        this.revealed = false;
+        this.maybePrefetchMoreCards();
+    }
+
     private stripHtml(value: string): string {
         return value.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
     }
@@ -498,5 +567,27 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
                 console.error('Failed to fork deck:', err);
             }
         });
+    }
+
+    private matchesSearch(card: PublicCardDTO, query: string): boolean {
+        const text = this.buildSearchText(card);
+        return text.includes(query);
+    }
+
+    private buildSearchText(card: PublicCardDTO): string {
+        const parts: string[] = [];
+        const preview = this.getFrontPreview(card);
+        if (preview) {
+            parts.push(preview);
+        }
+        if (card.tags?.length) {
+            parts.push(card.tags.join(' '));
+        }
+        Object.values(card.content || {}).forEach(value => {
+            if (typeof value === 'string') {
+                parts.push(value);
+            }
+        });
+        return parts.join(' ').toLowerCase();
     }
 }

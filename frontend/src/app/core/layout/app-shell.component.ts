@@ -1,5 +1,5 @@
 import { Component, OnInit, OnDestroy, signal } from '@angular/core';
-import { Router, RouterOutlet, RouterLink } from '@angular/router';
+import { NavigationEnd, Router, RouterOutlet, RouterLink } from '@angular/router';
 import { NgIf } from '@angular/common';
 import { Subscription, firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
@@ -27,7 +27,11 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           <input
             type="search"
             class="global-search"
+            [value]="globalSearchQuery()"
             [placeholder]="'publicDecks.searchPlaceholder' | translate"
+            [attr.aria-label]="'publicDecks.searchPlaceholder' | translate"
+            (input)="onGlobalSearchInput($event)"
+            (keydown.enter)="submitGlobalSearch()"
           />
         </div>
 
@@ -370,8 +374,10 @@ export class AppShellComponent implements OnInit, OnDestroy {
     currentYear = new Date().getFullYear();
     userMenuOpen = signal(false);
     userProfile = signal<UserProfile | null>(null);
+    globalSearchQuery = signal('');
     private authSubscription?: Subscription;
     private profileSubscription?: Subscription;
+    private routerSubscription?: Subscription;
 
     constructor(
         public auth: AuthService,
@@ -405,11 +411,17 @@ export class AppShellComponent implements OnInit, OnDestroy {
             }
             void this.applyUserProfile(profile);
         });
+
+        this.syncGlobalSearchFromUrl();
+        this.routerSubscription = this.router.events
+            .pipe(filter(event => event instanceof NavigationEnd))
+            .subscribe(() => this.syncGlobalSearchFromUrl());
     }
 
     ngOnDestroy(): void {
         this.authSubscription?.unsubscribe();
         this.profileSubscription?.unsubscribe();
+        this.routerSubscription?.unsubscribe();
     }
 
     loadUserProfile(): void {
@@ -462,5 +474,27 @@ export class AppShellComponent implements OnInit, OnDestroy {
         this.closeUserMenu();
         this.auth.logout();
         void this.router.navigate(['/']);
+    }
+
+    onGlobalSearchInput(event: Event): void {
+        const input = event.target as HTMLInputElement;
+        this.globalSearchQuery.set(input.value);
+    }
+
+    submitGlobalSearch(): void {
+        const query = this.globalSearchQuery().trim();
+        const queryParams = query ? { q: query } : {};
+        void this.router.navigate(['/public-decks'], { queryParams });
+    }
+
+    private syncGlobalSearchFromUrl(): void {
+        const tree = this.router.parseUrl(this.router.url);
+        const primary = tree.root.children['primary'];
+        const firstSegment = primary?.segments?.[0]?.path;
+        if (firstSegment === 'public-decks') {
+            this.globalSearchQuery.set(tree.queryParams['q'] || '');
+        } else {
+            this.globalSearchQuery.set('');
+        }
     }
 }

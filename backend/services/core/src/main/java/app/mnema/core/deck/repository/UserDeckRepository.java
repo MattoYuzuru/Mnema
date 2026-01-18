@@ -32,4 +32,65 @@ public interface UserDeckRepository extends JpaRepository<UserDeckEntity, UUID> 
         """)
     List<UUID> findPublicDeckIdsByUserId(@Param("userId") UUID userId);
 
+    @Query(value = """
+        select ud.*
+        from app_core.user_decks ud
+        left join app_core.public_decks pd
+          on pd.deck_id = ud.public_deck_id
+         and pd.version = ud.current_version
+        where ud.user_id = :userId
+          and ud.is_archived = false
+          and to_tsvector('simple', coalesce(ud.display_name, '') || ' ' || coalesce(ud.display_description, ''))
+            @@ websearch_to_tsquery('simple', :query)
+          and (:tags is null or pd.tags && string_to_array(:tags, ','))
+        order by ts_rank(
+            to_tsvector('simple', coalesce(ud.display_name, '') || ' ' || coalesce(ud.display_description, '')),
+            websearch_to_tsquery('simple', :query)
+        ) desc,
+        ud.created_at desc
+        """, countQuery = """
+        select count(*)
+        from app_core.user_decks ud
+        left join app_core.public_decks pd
+          on pd.deck_id = ud.public_deck_id
+         and pd.version = ud.current_version
+        where ud.user_id = :userId
+          and ud.is_archived = false
+          and to_tsvector('simple', coalesce(ud.display_name, '') || ' ' || coalesce(ud.display_description, ''))
+            @@ websearch_to_tsquery('simple', :query)
+          and (:tags is null or pd.tags && string_to_array(:tags, ','))
+        """, nativeQuery = true)
+    Page<UserDeckEntity> searchUserDecks(
+            @Param("userId") UUID userId,
+            @Param("query") String query,
+            @Param("tags") String tags,
+            Pageable pageable
+    );
+
+    @Query(value = """
+        select ud.*
+        from app_core.user_decks ud
+        join app_core.public_decks pd
+          on pd.deck_id = ud.public_deck_id
+         and pd.version = ud.current_version
+        where ud.user_id = :userId
+          and ud.is_archived = false
+          and pd.tags && string_to_array(:tags, ',')
+        order by ud.created_at desc
+        """, countQuery = """
+        select count(*)
+        from app_core.user_decks ud
+        join app_core.public_decks pd
+          on pd.deck_id = ud.public_deck_id
+         and pd.version = ud.current_version
+        where ud.user_id = :userId
+          and ud.is_archived = false
+          and pd.tags && string_to_array(:tags, ',')
+        """, nativeQuery = true)
+    Page<UserDeckEntity> searchUserDecksByTags(
+            @Param("userId") UUID userId,
+            @Param("tags") String tags,
+            Pageable pageable
+    );
+
 }

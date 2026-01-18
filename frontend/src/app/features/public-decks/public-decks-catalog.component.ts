@@ -1,5 +1,5 @@
 import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
-import { Router } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
 import { catchError } from 'rxjs/operators';
 import { forkJoin, of, firstValueFrom, Subscription } from 'rxjs';
@@ -29,7 +29,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
       <div *ngIf="decks.length > 0" class="decks-list">
         <app-deck-card
-          *ngFor="let deck of decks"
+          *ngFor="let deck of filteredDecks"
           [publicDeck]="deck"
           [iconUrl]="deckIcons.get(deck.deckId) || null"
           [showFork]="canForkDeck(deck)"
@@ -43,10 +43,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       </div>
 
       <app-empty-state
-        *ngIf="decks.length === 0"
+        *ngIf="filteredDecks.length === 0"
         icon="🌐"
-        [title]="'home.noPublicDecks' | translate"
-        [description]="'home.noPublicDecksDescription' | translate"
+        [title]="searchQuery ? ('publicDecks.noResults' | translate) : ('home.noPublicDecks' | translate)"
+        [description]="searchQuery ? ('publicDecks.noResultsDescription' | translate) : ('home.noPublicDecksDescription' | translate)"
       ></app-empty-state>
     </div>
   `,
@@ -142,11 +142,13 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
     pageSize = 15;
     totalPages = 1;
     last = false;
+    searchQuery = '';
 
     private observer?: IntersectionObserver;
     private sentinel?: ElementRef<HTMLDivElement>;
     private authSubscription?: Subscription;
     private userPublicDeckIdsLoading = false;
+    private routeSubscription?: Subscription;
 
     constructor(
         public auth: AuthService,
@@ -154,11 +156,13 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
         private deckApi: DeckApiService,
         private publicDeckApi: PublicDeckApiService,
         private mediaApi: MediaApiService,
-        private router: Router
+        private router: Router,
+        private route: ActivatedRoute
     ) {}
 
     ngOnInit(): void {
         this.bindAuth();
+        this.bindSearchQuery();
         this.loadDecks();
     }
 
@@ -171,6 +175,27 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
             this.observer.disconnect();
         }
         this.authSubscription?.unsubscribe();
+        this.routeSubscription?.unsubscribe();
+    }
+
+    get filteredDecks(): PublicDeckDTO[] {
+        const query = this.searchQuery.trim().toLowerCase();
+        if (!query) {
+            return this.decks;
+        }
+
+        return this.decks.filter(deck => {
+            const text = [
+                deck.name,
+                deck.description,
+                ...(deck.tags || [])
+            ]
+                .filter(Boolean)
+                .join(' ')
+                .toLowerCase();
+
+            return text.includes(query);
+        });
     }
 
     private bindAuth(): void {
@@ -221,6 +246,12 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
             complete: () => {
                 this.userPublicDeckIdsLoading = false;
             }
+        });
+    }
+
+    private bindSearchQuery(): void {
+        this.routeSubscription = this.route.queryParamMap.subscribe(params => {
+            this.searchQuery = params.get('q') || '';
         });
     }
 
