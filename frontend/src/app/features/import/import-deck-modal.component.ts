@@ -208,14 +208,14 @@ type ImportModeUI = 'create' | 'merge';
     </div>
   `,
     styles: [`
-      .modal-overlay { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-      .modal-content { width: min(920px, 92vw); max-height: 92vh; background: var(--color-card-background); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden; }
-      .modal-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--spacing-lg); padding: var(--spacing-xl); border-bottom: 1px solid var(--border-color); }
+      .modal-overlay { position: fixed; inset: 0; background: rgba(8, 12, 22, 0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(12px) saturate(140%); }
+      .modal-content { width: min(920px, 92vw); max-height: 92vh; background: var(--color-surface-solid); border-radius: var(--border-radius-lg); border: 1px solid var(--glass-border); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden; }
+      .modal-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--spacing-lg); padding: var(--spacing-xl); border-bottom: 1px solid var(--glass-border); }
       .modal-header h2 { margin: 0; font-size: 1.6rem; }
       .subtitle { margin: var(--spacing-xs) 0 0; color: var(--color-text-secondary); font-size: 0.95rem; }
       .close-btn { background: none; border: none; font-size: 2rem; line-height: 1; cursor: pointer; color: var(--color-text-secondary); }
       .modal-body { padding: var(--spacing-xl); overflow-y: auto; display: flex; flex-direction: column; gap: var(--spacing-xl); }
-      .modal-footer { padding: var(--spacing-lg); border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; gap: var(--spacing-sm); flex-wrap: wrap; }
+      .modal-footer { padding: var(--spacing-lg); border-top: 1px solid var(--glass-border); display: flex; justify-content: flex-end; gap: var(--spacing-sm); flex-wrap: wrap; }
       .info-block ul { margin: var(--spacing-sm) 0 0; padding-left: 1.25rem; color: var(--color-text-secondary); display: grid; gap: var(--spacing-xs); }
       .upload-block { display: flex; flex-direction: column; gap: var(--spacing-md); }
       .dropzone { border: 2px dashed var(--border-color); border-radius: var(--border-radius-lg); padding: var(--spacing-xl); background: var(--color-background); transition: border-color 0.2s ease, background 0.2s ease; }

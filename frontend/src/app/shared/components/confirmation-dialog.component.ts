@@ -40,8 +40,8 @@ import { ButtonComponent } from './button.component';
         display: flex;
         align-items: center;
         justify-content: center;
-        background: rgba(0, 0, 0, 0.5);
-        backdrop-filter: blur(2px);
+        background: rgba(8, 12, 22, 0.55);
+        backdrop-filter: blur(12px) saturate(140%);
         z-index: 10000;
       }
 
@@ -49,7 +49,8 @@ import { ButtonComponent } from './button.component';
         width: 100%;
         max-width: 28rem;
         padding: var(--spacing-xl);
-        background: var(--color-card-background);
+        background: var(--color-surface-solid);
+        border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-lg);
         box-shadow: var(--shadow-lg);
       }

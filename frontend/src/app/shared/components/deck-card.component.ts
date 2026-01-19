@@ -11,7 +11,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
     standalone: true,
     imports: [NgIf, NgFor, TagChipComponent, ButtonComponent, TranslatePipe],
     template: `
-    <div class="deck-card">
+    <div class="deck-card glass">
       <div class="deck-card-header">
         <div class="deck-card-icon clickable" (click)="open.emit()">
           <img *ngIf="iconUrl" [src]="iconUrl" alt="Deck icon" class="deck-icon-image" />
@@ -81,19 +81,21 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         display: flex;
         flex-direction: column;
         gap: var(--spacing-md);
-        padding: var(--spacing-lg);
-        background: var(--color-card-background);
-        border: 1px solid var(--border-color);
+        padding: 1.2rem;
+        background: var(--glass-surface);
+        border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-lg);
         box-shadow: var(--shadow-sm);
-        transition: all 0.2s ease;
-        min-height: 12rem;
+        transition: all 0.25s ease;
+        min-height: 10.5rem;
         height: 100%;
+        backdrop-filter: blur(var(--glass-blur));
       }
 
       .deck-card:hover {
         border-color: var(--border-color-hover);
         box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
       }
 
       .clickable {
@@ -118,8 +120,9 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         display: flex;
         align-items: center;
         justify-content: center;
-        background: var(--color-background);
+        background: var(--glass-surface-strong);
         border-radius: var(--border-radius-md);
+        border: 1px solid var(--glass-border);
       }
 
       .deck-icon-placeholder {
@@ -137,7 +140,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         flex: 1;
         display: flex;
         flex-direction: column;
-        gap: var(--spacing-sm);
+        gap: var(--spacing-xs);
       }
 
       .deck-name {
@@ -185,7 +188,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
       .deck-description code {
         font-family: inherit;
         font-size: 0.85rem;
-        background: var(--color-background);
+        background: var(--glass-surface-strong);
         padding: 0 0.2rem;
         border-radius: var(--border-radius-sm);
       }
@@ -215,7 +218,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         gap: var(--spacing-sm);
         justify-content: flex-end;
         align-items: center;
-        margin-top: auto;
+        margin-top: var(--spacing-sm);
       }
     `
     ]

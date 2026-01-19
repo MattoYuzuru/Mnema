@@ -89,24 +89,24 @@ interface PendingCard {
     </div>
   `,
     styles: [`
-      .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-      .modal-content { background: var(--color-card-background); border-radius: var(--border-radius-lg); max-width: 800px; width: 90%; max-height: 90vh; display: flex; flex-direction: column; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); }
-      .modal-header { display: flex; justify-content: space-between; align-items: center; padding: var(--spacing-lg); border-bottom: 1px solid var(--border-color); flex-shrink: 0; }
+      .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(8, 12, 22, 0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(12px) saturate(140%); }
+      .modal-content { background: var(--color-surface-solid); border-radius: var(--border-radius-lg); max-width: 800px; width: 90%; max-height: 90vh; display: flex; flex-direction: column; border: 1px solid var(--glass-border); box-shadow: var(--shadow-lg); }
+      .modal-header { display: flex; justify-content: space-between; align-items: center; padding: var(--spacing-lg); border-bottom: 1px solid var(--glass-border); flex-shrink: 0; }
       .modal-header h2 { margin: 0; font-size: 1.5rem; font-weight: 600; }
       .close-btn { background: none; border: none; font-size: 2rem; cursor: pointer; color: var(--color-text-secondary); line-height: 1; padding: 0; }
       .modal-body { padding: var(--spacing-lg); overflow-y: auto; flex: 1; }
       .loading-section { padding: var(--spacing-xxl); text-align: center; color: var(--color-text-secondary); }
       .card-form { display: flex; flex-direction: column; gap: var(--spacing-md); }
       .field-group { display: flex; flex-direction: column; }
-      .form-actions { padding-top: var(--spacing-md); border-top: 1px solid var(--border-color); display: flex; justify-content: flex-end; }
-      .pending-cards { margin-top: var(--spacing-xl); padding-top: var(--spacing-xl); border-top: 2px solid var(--border-color); }
+      .form-actions { padding-top: var(--spacing-md); border-top: 1px solid var(--glass-border); display: flex; justify-content: flex-end; }
+      .pending-cards { margin-top: var(--spacing-xl); padding-top: var(--spacing-xl); border-top: 2px solid var(--glass-border); }
       .pending-cards h3 { margin: 0 0 var(--spacing-md) 0; font-size: 1.1rem; font-weight: 600; }
       .card-list { display: flex; flex-direction: column; gap: var(--spacing-xs); }
       .card-item { display: flex; align-items: center; gap: var(--spacing-md); padding: var(--spacing-sm) var(--spacing-md); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); }
       .card-preview { flex: 1; font-size: 0.9rem; color: var(--color-text-secondary); }
       .remove-btn { background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--color-text-secondary); line-height: 1; padding: 0; width: 24px; height: 24px; }
       .remove-btn:hover { color: var(--color-text-primary); }
-      .modal-footer { display: flex; justify-content: flex-end; gap: var(--spacing-md); padding: var(--spacing-lg); border-top: 1px solid var(--border-color); flex-shrink: 0; }
+      .modal-footer { display: flex; justify-content: flex-end; gap: var(--spacing-md); padding: var(--spacing-lg); border-top: 1px solid var(--glass-border); flex-shrink: 0; }
     `]
 })
 export class AddCardsModalComponent implements OnInit {

@@ -14,6 +14,7 @@ import { NgClass } from '@angular/common';
         'btn-primary': variant === 'primary',
         'btn-secondary': variant === 'secondary',
         'btn-ghost': variant === 'ghost',
+        'btn-danger': tone === 'danger',
         'btn-sm': size === 'sm',
         'btn-md': size === 'md',
         'btn-lg': size === 'lg',
@@ -30,15 +31,17 @@ import { NgClass } from '@angular/common';
         align-items: center;
         justify-content: center;
         gap: var(--spacing-sm);
-        padding: 0.625rem 1.25rem;
-        border: 2px solid transparent;
-        border-radius: var(--border-radius-md);
+        padding: 0.7rem 1.4rem;
+        border: 1px solid transparent;
+        border-radius: var(--border-radius-full);
         font-size: 0.95rem;
-        font-weight: 500;
+        font-weight: 600;
         cursor: pointer;
-        transition: all 0.2s ease;
+        transition: all 0.25s ease;
         white-space: nowrap;
         min-width: 5rem;
+        position: relative;
+        overflow: hidden;
       }
 
       .btn:disabled {
@@ -47,40 +50,61 @@ import { NgClass } from '@angular/common';
       }
 
       .btn-primary {
-        background: var(--color-primary-accent);
+        background: linear-gradient(135deg, var(--color-primary-accent), var(--color-secondary-accent));
         color: #ffffff;
-        border-color: var(--color-primary-accent);
+        border-color: rgba(255, 255, 255, 0.2);
+        box-shadow: var(--accent-shadow);
       }
 
       .btn-primary:hover:not(:disabled) {
-        opacity: 0.9;
-        transform: translateY(-1px);
+        transform: translateY(-2px);
+        box-shadow: var(--accent-shadow-hover);
       }
 
       .btn-secondary {
-        background: var(--color-card-background);
+        background: var(--glass-surface);
         color: var(--color-text-primary);
-        border-color: var(--border-color);
+        border-color: var(--glass-border);
+        backdrop-filter: blur(var(--glass-blur));
       }
 
       .btn-secondary:hover:not(:disabled) {
-        border-color: var(--color-primary-accent);
-        background: var(--color-background);
+        border-color: var(--border-color-hover);
+        background: var(--glass-surface-strong);
       }
 
       .btn-ghost {
-        background: transparent;
+        background: rgba(255, 255, 255, 0.05);
         color: var(--color-text-primary);
-        border-color: var(--border-color);
+        border-color: var(--glass-border);
+        backdrop-filter: blur(var(--glass-blur));
       }
 
       .btn-ghost:hover:not(:disabled) {
-        background: var(--color-background);
+        background: var(--glass-surface);
         border-color: var(--border-color-hover);
       }
 
+      .btn-danger {
+        color: #dc2626;
+        border-color: #dc2626;
+      }
+
+      .btn-danger.btn-primary {
+        background: #dc2626;
+        color: #ffffff;
+        border-color: #dc2626;
+      }
+
+      .btn-danger.btn-ghost:hover:not(:disabled),
+      .btn-danger.btn-secondary:hover:not(:disabled) {
+        background: #dc2626;
+        color: #ffffff;
+        border-color: #dc2626;
+      }
+
       .btn-sm {
-        padding: 0.5rem 0.875rem;
+        padding: 0.5rem 1rem;
         font-size: 0.875rem;
       }
 
@@ -90,7 +114,7 @@ import { NgClass } from '@angular/common';
       }
 
       .btn-lg {
-        padding: 0.75rem 1.5rem;
+        padding: 0.85rem 1.8rem;
         font-size: 1.05rem;
         font-weight: 600;
       }
@@ -107,4 +131,5 @@ export class ButtonComponent {
     @Input() type: 'button' | 'submit' | 'reset' = 'button';
     @Input() disabled = false;
     @Input() fullWidth = false;
+    @Input() tone: 'default' | 'danger' = 'default';
 }

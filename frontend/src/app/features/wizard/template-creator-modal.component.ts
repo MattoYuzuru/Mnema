@@ -118,9 +118,9 @@ interface FieldFormValue {
     </div>
   `,
     styles: [`
-      .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0, 0, 0, 0.5); display: flex; align-items: center; justify-content: center; z-index: 1000; }
-      .modal-content { background: var(--color-card-background); border-radius: var(--border-radius-lg); max-width: 700px; width: 90%; max-height: 90vh; overflow-y: auto; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); }
-      .modal-header { display: flex; justify-content: space-between; align-items: center; padding: var(--spacing-lg); border-bottom: 1px solid var(--border-color); }
+      .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(8, 12, 22, 0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(12px) saturate(140%); }
+      .modal-content { background: var(--color-surface-solid); border-radius: var(--border-radius-lg); max-width: 700px; width: 90%; max-height: 90vh; overflow-y: auto; border: 1px solid var(--glass-border); box-shadow: var(--shadow-lg); }
+      .modal-header { display: flex; justify-content: space-between; align-items: center; padding: var(--spacing-lg); border-bottom: 1px solid var(--glass-border); }
       .modal-header h2 { margin: 0; font-size: 1.5rem; font-weight: 600; }
       .close-btn { background: none; border: none; font-size: 2rem; cursor: pointer; color: var(--color-text-secondary); line-height: 1; padding: 0; }
       .template-form { padding: var(--spacing-lg); display: flex; flex-direction: column; gap: var(--spacing-lg); }
@@ -138,7 +138,7 @@ interface FieldFormValue {
       .checkbox-label { display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; font-size: 0.9rem; white-space: nowrap; }
       .template-public { padding: var(--spacing-md); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); font-size: 0.95rem; }
       .validation-message { padding: var(--spacing-md); background: #fee; border: 1px solid #fcc; border-radius: var(--border-radius-md); color: #c00; font-size: 0.9rem; }
-      .modal-actions { display: flex; justify-content: flex-end; gap: var(--spacing-md); padding: var(--spacing-lg); border-top: 1px solid var(--border-color); }
+      .modal-actions { display: flex; justify-content: flex-end; gap: var(--spacing-md); padding: var(--spacing-lg); border-top: 1px solid var(--glass-border); }
 
       @media (max-width: 768px) {
         .modal-content {

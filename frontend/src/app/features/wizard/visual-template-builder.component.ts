@@ -45,7 +45,7 @@ interface BuilderState {
     imports: [NgFor, NgIf, FormsModule, DragDropModule, ButtonComponent, TranslatePipe],
     template: `
     <div class="builder-page">
-      <div class="builder-header">
+      <div class="builder-header glass-strong">
         <div class="title-row">
           <h1>{{ 'visualBuilder.title' | translate }}</h1>
           <a
@@ -63,7 +63,7 @@ interface BuilderState {
       </div>
 
       <div class="builder-container">
-        <div class="builder-left">
+        <div class="builder-left glass">
           <div class="palette-column">
             <h3>{{ 'visualBuilder.fieldTypes' | translate }}</h3>
             <div class="palette-list" cdkDropList [cdkDropListData]="paletteFields" [cdkDropListConnectedTo]="['cardDropZone']" [cdkDropListSortingDisabled]="true">
@@ -108,9 +108,7 @@ interface BuilderState {
           </div>
         </div>
 
-        <div class="builder-divider"></div>
-
-        <div class="builder-right">
+        <div class="builder-right glass">
           <div class="preview-controls">
             <h3>{{ currentSide === 'front' ? ('visualBuilder.frontSide' | translate) : ('visualBuilder.backSide' | translate) }}</h3>
             <div class="preview-actions">
@@ -133,7 +131,7 @@ interface BuilderState {
 
           <div class="card-preview-container">
             <div
-              class="card-preview"
+              class="card-preview glass"
               [style.height]="getCardHeight()"
               cdkDropList
               id="cardDropZone"
@@ -227,9 +225,11 @@ interface BuilderState {
       .builder-page {
         display: flex;
         flex-direction: column;
+        min-height: 100vh;
         height: 100vh;
-        overflow: hidden;
-        background: var(--color-background);
+        overflow-y: auto;
+        overflow-x: hidden;
+        background: transparent;
       }
 
       .builder-header {
@@ -237,7 +237,9 @@ interface BuilderState {
         justify-content: space-between;
         align-items: center;
         padding: var(--spacing-lg) var(--spacing-xl);
-        background: transparent;
+        border-radius: var(--border-radius-lg);
+        margin: var(--spacing-lg) var(--spacing-xl) var(--spacing-md);
+        border: 1px solid var(--glass-border);
       }
 
       .title-row {
@@ -278,10 +280,14 @@ interface BuilderState {
 
       .builder-container {
         display: grid;
-        grid-template-columns: 1fr 1px 1fr;
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
         flex: 1;
-        overflow: hidden;
+        overflow: visible;
         min-height: 0;
+        gap: var(--spacing-lg);
+        padding: 0 var(--spacing-xl) var(--spacing-xl);
+        align-items: stretch;
+        overflow-x: hidden;
       }
 
       .builder-left {
@@ -289,7 +295,18 @@ interface BuilderState {
         grid-template-columns: 1fr 1fr;
         gap: var(--spacing-md);
         padding: var(--spacing-lg);
-        overflow-y: auto;
+        overflow: visible;
+        border-radius: var(--border-radius-lg);
+        border: 1px solid var(--glass-border-strong);
+        height: 100%;
+        min-height: 0;
+      }
+
+      .builder-left.glass::before,
+      .builder-left.glass::after,
+      .builder-right.glass::before,
+      .builder-right.glass::after {
+        display: none;
       }
 
       .palette-column h3, .config-column h3 {
@@ -303,6 +320,11 @@ interface BuilderState {
         display: flex;
         flex-direction: column;
         height: 100%;
+        padding: var(--spacing-md);
+        border-radius: var(--border-radius-lg);
+        border: 1px solid var(--glass-border);
+        background: var(--glass-surface);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
       }
 
       .palette-list {
@@ -320,8 +342,8 @@ interface BuilderState {
         justify-content: flex-start;
         gap: var(--spacing-sm);
         padding: var(--spacing-md) var(--spacing-lg);
-        background: var(--color-card-background);
-        border: 1px solid var(--border-color);
+        background: var(--glass-surface-strong);
+        border: 1px solid var(--glass-border-strong);
         border-radius: var(--border-radius-md);
         cursor: move;
         transition: all 0.2s;
@@ -330,8 +352,8 @@ interface BuilderState {
       }
 
       .palette-item:hover:not(.disabled) {
-        border-color: #111827;
-        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        border-color: var(--border-color-hover);
+        box-shadow: var(--shadow-sm);
       }
 
       .palette-item.disabled {
@@ -352,7 +374,7 @@ interface BuilderState {
       .in-dev-badge {
         font-size: 0.7rem;
         padding: 2px 6px;
-        background: var(--color-background);
+        background: var(--glass-surface-strong);
         border-radius: var(--border-radius-sm);
         color: var(--color-text-muted);
       }
@@ -361,6 +383,11 @@ interface BuilderState {
         display: flex;
         flex-direction: column;
         height: 100%;
+        padding: var(--spacing-md);
+        border-radius: var(--border-radius-lg);
+        border: 1px solid var(--glass-border);
+        background: var(--glass-surface);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
       }
 
       .config-panel {
@@ -368,8 +395,8 @@ interface BuilderState {
         flex-direction: column;
         gap: var(--spacing-md);
         padding: var(--spacing-md);
-        background: var(--color-card-background);
-        border: 1px solid var(--border-color);
+        background: var(--glass-surface-strong);
+        border: 1px solid var(--glass-border-strong);
         border-radius: var(--border-radius-md);
         text-align: left;
       }
@@ -397,10 +424,12 @@ interface BuilderState {
 
       .form-input {
         padding: var(--spacing-sm) var(--spacing-md);
-        border: 1px solid var(--border-color);
+        border: 1px solid var(--glass-border-strong);
         border-radius: var(--border-radius-md);
         font-size: 0.95rem;
         font-family: inherit;
+        background: var(--color-surface-solid);
+        box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.12), 0 6px 14px rgba(15, 23, 42, 0.08);
       }
 
       .checkbox-label {
@@ -411,7 +440,13 @@ interface BuilderState {
       }
 
       .checkbox-label input {
+        width: 18px;
+        height: 18px;
         cursor: pointer;
+        border: 1px solid var(--glass-border-strong);
+        border-radius: 4px;
+        background: var(--color-surface-solid);
+        box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
       }
 
       .toggle-container {
@@ -425,14 +460,14 @@ interface BuilderState {
         position: relative;
         width: 44px;
         height: 24px;
-        background: var(--border-color);
+        background: var(--glass-border);
         border-radius: 12px;
         cursor: pointer;
         transition: background 0.3s;
       }
 
       .toggle-switch.active {
-        background: #111827;
+        background: var(--color-primary-accent);
       }
 
       .toggle-slider {
@@ -472,16 +507,16 @@ interface BuilderState {
         display: inline-flex;
       }
 
-      .builder-divider {
-        background: var(--border-color);
-      }
-
       .builder-right {
         display: flex;
         flex-direction: column;
         padding: var(--spacing-lg);
-        overflow-y: auto;
+        overflow: visible;
         gap: var(--spacing-lg);
+        border-radius: var(--border-radius-lg);
+        border: 1px solid var(--glass-border-strong);
+        height: 100%;
+        min-height: 0;
       }
 
       .preview-controls {
@@ -512,11 +547,11 @@ interface BuilderState {
       .card-preview {
         width: 100%;
         max-width: 500px;
-        background: var(--color-card-background);
-        border: 2px solid var(--border-color);
+        background: var(--glass-surface);
+        border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-lg);
         padding: var(--spacing-lg);
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+        box-shadow: var(--shadow-md);
         display: flex;
         flex-direction: column;
         transition: height 0.2s ease;
@@ -538,8 +573,8 @@ interface BuilderState {
         align-items: center;
         gap: var(--spacing-sm);
         padding: var(--spacing-md);
-        background: var(--color-background);
-        border: 1px solid var(--border-color);
+        background: var(--glass-surface);
+        border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-md);
         margin-bottom: var(--spacing-sm);
         cursor: pointer;
@@ -552,13 +587,13 @@ interface BuilderState {
       }
 
       .field-row:hover {
-        border-color: #111827;
+        border-color: var(--border-color-hover);
       }
 
       .field-row.selected {
-        border-color: #111827;
+        border-color: var(--color-primary-accent);
         border-width: 2px;
-        background: rgba(17, 24, 39, 0.05);
+        background: rgba(14, 165, 233, 0.08);
       }
 
       .field-row-content {
@@ -604,7 +639,7 @@ interface BuilderState {
       }
 
       .icon-button:hover:not(:disabled) {
-        background: rgba(17, 24, 39, 0.08);
+        background: rgba(14, 165, 233, 0.12);
         color: var(--color-text-primary);
       }
 
@@ -637,27 +672,30 @@ interface BuilderState {
         flex-direction: column;
         gap: var(--spacing-md);
         padding-top: var(--spacing-lg);
-        border-top: 1px solid var(--border-color);
+        border-top: 1px solid var(--glass-border);
         flex-shrink: 0;
+        margin-top: auto;
       }
 
       .modal-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(8, 12, 22, 0.55);
         display: flex;
         align-items: center;
         justify-content: center;
+        backdrop-filter: blur(12px) saturate(140%);
         z-index: 1000;
       }
 
       .modal-dialog {
-        background: var(--color-card-background);
+        background: var(--color-surface-solid);
         border-radius: var(--border-radius-lg);
         padding: var(--spacing-xl);
         max-width: 500px;
         width: 90%;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        border: 1px solid var(--glass-border);
+        box-shadow: var(--shadow-lg);
       }
 
       .modal-dialog h2 {
@@ -704,10 +742,6 @@ interface BuilderState {
           grid-template-columns: 1fr;
         }
 
-        .builder-divider {
-          display: none;
-        }
-
         .builder-left {
           grid-template-columns: 1fr;
         }
@@ -727,12 +761,18 @@ interface BuilderState {
           flex-direction: column;
           align-items: flex-start;
           gap: var(--spacing-sm);
+          margin: var(--spacing-md);
+          padding: var(--spacing-md);
         }
 
         .header-actions {
           width: 100%;
           justify-content: flex-start;
           flex-wrap: wrap;
+        }
+
+        .builder-container {
+          padding: 0 var(--spacing-md) var(--spacing-lg);
         }
 
         .builder-left,

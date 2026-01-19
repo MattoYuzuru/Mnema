@@ -396,22 +396,24 @@ import { I18nService } from '../../core/services/i18n.service';
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(8, 12, 22, 0.55);
         display: flex;
         align-items: center;
         justify-content: center;
+        backdrop-filter: blur(12px) saturate(140%);
         z-index: 1000;
       }
 
       .modal-content {
-        background: var(--color-card-background);
+        background: var(--color-surface-solid);
+        border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-lg);
         max-width: 600px;
         width: 90%;
         max-height: 90vh;
         display: flex;
         flex-direction: column;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        box-shadow: var(--shadow-lg);
       }
 
       .modal-header {
@@ -419,7 +421,7 @@ import { I18nService } from '../../core/services/i18n.service';
         justify-content: space-between;
         align-items: center;
         padding: var(--spacing-lg);
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--glass-border);
       }
 
       .modal-header h2 {
@@ -532,7 +534,7 @@ import { I18nService } from '../../core/services/i18n.service';
         justify-content: flex-end;
         gap: var(--spacing-md);
         padding: var(--spacing-lg);
-        border-top: 1px solid var(--border-color);
+        border-top: 1px solid var(--glass-border);
       }
 
       .public-deck-section {

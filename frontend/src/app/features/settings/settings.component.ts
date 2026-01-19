@@ -136,9 +136,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               <app-button variant="secondary" size="sm" (click)="restoreDeck(deck.userDeckId)">
                 {{ 'settings.restore' | translate }}
               </app-button>
-              <app-button variant="ghost" size="sm" (click)="openHardDeleteConfirm(deck.userDeckId)" class="delete-btn-small">
-                Delete Permanently
-              </app-button>
+        <app-button variant="ghost" size="sm" tone="danger" (click)="openHardDeleteConfirm(deck.userDeckId)">
+          Delete Permanently
+        </app-button>
             </div>
           </div>
         </div>
@@ -148,7 +148,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         <h2>{{ 'settings.dangerZone' | translate }}</h2>
         <p class="section-description">{{ 'settings.deleteAccountWarning' | translate }}</p>
 
-        <app-button variant="ghost" (click)="showDeleteConfirmation = true" class="delete-btn">
+        <app-button variant="ghost" tone="danger" (click)="showDeleteConfirmation = true">
           {{ 'settings.deleteAccount' | translate }}
         </app-button>
       </section>
@@ -176,9 +176,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           </app-button>
           <app-button
             variant="primary"
+            tone="danger"
             [disabled]="deleteAccountUsername !== currentUsername"
             (click)="deleteAccount()"
-            class="delete-btn"
           >
             Delete Account
           </app-button>
@@ -341,41 +341,26 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         color: #dc2626;
       }
 
-      .delete-btn {
-        color: #dc2626;
-        border-color: #dc2626;
-      }
-
-      .delete-btn:hover {
-        background: #dc2626;
-        color: white;
-      }
-
-      .delete-btn-small {
-        color: #dc2626;
-      }
-
-      .delete-btn-small:hover {
-        background: #fee2e2;
-        color: #dc2626;
-      }
+      
 
       .modal-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(8, 12, 22, 0.55);
         display: flex;
         align-items: center;
         justify-content: center;
+        backdrop-filter: blur(12px) saturate(140%);
         z-index: 1000;
       }
 
       .modal-content {
-        background: var(--color-card-background);
+        background: var(--color-surface-solid);
+        border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-lg);
         width: 90%;
         max-width: 32rem;
-        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+        box-shadow: var(--shadow-lg);
       }
 
       .modal-header {
@@ -383,7 +368,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         justify-content: space-between;
         align-items: center;
         padding: var(--spacing-xl);
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--glass-border);
       }
 
       .modal-header h2 {
@@ -410,7 +395,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         justify-content: flex-end;
         gap: var(--spacing-md);
         padding: var(--spacing-xl);
-        border-top: 1px solid var(--border-color);
+        border-top: 1px solid var(--glass-border);
       }
 
       .warning-text {

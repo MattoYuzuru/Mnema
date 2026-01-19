@@ -25,12 +25,13 @@ import { NgIf } from '@angular/common';
         display: inline-flex;
         align-items: center;
         gap: var(--spacing-xs);
-        padding: var(--spacing-xs) var(--spacing-sm);
-        background: var(--color-background);
-        border: 1px solid var(--border-color);
+        padding: 0.25rem 0.7rem;
+        background: var(--glass-surface);
+        border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-full);
         font-size: 0.85rem;
         color: var(--color-text-primary);
+        backdrop-filter: blur(var(--glass-blur));
       }
 
       .tag-text {
@@ -55,7 +56,7 @@ import { NgIf } from '@angular/common';
       }
 
       .tag-remove:hover {
-        background: var(--color-card-background);
+        background: var(--glass-surface-strong);
         color: var(--color-text-primary);
       }
     `

@@ -64,9 +64,7 @@ type OAuthProvider = 'google' | 'github' | 'yandex';
             </button>
 
             <button class="oauth-button yandex-button" type="button" (click)="login('yandex')">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M20.5 0h-17C1.6 0 0 1.6 0 3.5v17C0 22.4 1.6 24 3.5 24h17c1.9 0 3.5-1.6 3.5-3.5v-17C24 1.6 22.4 0 20.5 0zm-3.9 17.5h-2.4v-8c0-1.4-.6-2.1-1.6-2.1-.7 0-1.2.3-1.5.9-.1.2-.1.5-.1.8v8.4H8.6V7.8h2.4v1.3c.3-.5 1.1-1.3 2.5-1.3 1.8 0 3.1 1.2 3.1 3.7v6z"/>
-              </svg>
+              <span class="yandex-icon" aria-hidden="true">Ya</span>
               {{ 'login.yandex' | translate }}
             </button>
 
@@ -253,6 +251,22 @@ type OAuthProvider = 'google' | 'github' | 'yandex';
 
       .yandex-button {
         color: var(--color-text-primary);
+      }
+
+      .yandex-icon {
+        width: 18px;
+        height: 18px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        color: #ff3b30;
+        background: rgba(255, 255, 255, 0.85);
+        border: 1px solid rgba(255, 59, 48, 0.25);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
       }
 
       .disabled-button {

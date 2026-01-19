@@ -9,7 +9,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
     standalone: true,
     imports: [NgIf, ButtonComponent, TranslatePipe],
     template: `
-    <div class="template-card" [class.template-card-selected]="selected">
+    <div class="template-card glass" [class.template-card-selected]="selected">
       <div class="template-card-header">
         <div class="template-icon">
           <img *ngIf="template.iconUrl" [src]="template.iconUrl" [alt]="template.name" />
@@ -56,41 +56,46 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         display: flex;
         flex-direction: column;
         gap: var(--spacing-md);
-        padding: var(--spacing-md);
-        background: var(--color-card-background);
-        border: 2px solid var(--border-color);
+        padding: var(--spacing-sm) var(--spacing-md);
+        background: var(--glass-surface);
+        border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-lg);
         box-shadow: var(--shadow-sm);
         transition: all 0.2s ease;
         cursor: pointer;
-        min-height: 220px;
+        min-height: 170px;
         height: 100%;
+        backdrop-filter: blur(var(--glass-blur));
       }
 
       .template-card:hover {
         border-color: var(--border-color-hover);
         box-shadow: var(--shadow-md);
+        transform: translateY(-2px);
       }
 
       .template-card-selected {
         border-color: var(--color-primary-accent);
-        box-shadow: 0 0 0 2px rgba(0, 255, 255, 0.1);
+        box-shadow: 0 0 0 2px rgba(14, 165, 233, 0.15);
       }
 
       .template-card-header {
         display: flex;
-        gap: var(--spacing-md);
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-sm);
       }
 
       .template-icon {
         flex-shrink: 0;
-        width: 2.5rem;
-        height: 2.5rem;
+        width: 2.8rem;
+        height: 2.8rem;
         display: flex;
         align-items: center;
         justify-content: center;
-        background: var(--color-background);
+        background: var(--glass-surface-strong);
         border-radius: var(--border-radius-md);
+        border: 1px solid var(--glass-border);
       }
 
       .template-icon img {
@@ -121,7 +126,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
-        min-height: calc(1.3em * 2);
+        min-height: calc(1.3em * 1.6);
       }
 
       .template-description {
@@ -133,7 +138,7 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
-        min-height: calc(1.4em * 2);
+        min-height: calc(1.4em * 1.2);
       }
 
       .template-meta {
@@ -148,8 +153,8 @@ import { TranslatePipe } from '../pipes/translate.pipe';
       .template-visibility {
         padding: 0.15rem 0.5rem;
         border-radius: var(--border-radius-full);
-        background: var(--color-background);
-        border: 1px solid var(--border-color);
+        background: var(--glass-surface);
+        border: 1px solid var(--glass-border);
         font-size: 0.75rem;
       }
 

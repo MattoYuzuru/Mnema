@@ -34,7 +34,7 @@ import { ButtonComponent } from './button.component';
 
       .empty-icon {
         font-size: 3rem;
-        opacity: 0.5;
+        opacity: 0.6;
       }
 
       .empty-title {
