@@ -6,4 +6,5 @@ import org.springframework.data.jpa.repository.JpaRepository
 
 interface FederatedIdentityRepository : JpaRepository<FederatedIdentity, UUID> {
     fun findByProviderAndProviderSub(provider: String, providerSub: String): Optional<FederatedIdentity>
+    fun deleteByUserId(userId: UUID): Long
 }

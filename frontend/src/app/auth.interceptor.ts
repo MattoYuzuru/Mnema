@@ -20,7 +20,8 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
     const isAuthEndpoint = req.url.startsWith(authEndpointBase);
     const isAuthProtected =
         req.url.startsWith(`${authEndpointBase}password`) ||
-        req.url.startsWith(`${authEndpointBase}password/status`);
+        req.url.startsWith(`${authEndpointBase}password/status`) ||
+        req.url.startsWith(`${authEndpointBase}account`);
 
     if (!token || !(isApiRequest || (isAuthEndpoint && isAuthProtected))) {
         return next(req).pipe(

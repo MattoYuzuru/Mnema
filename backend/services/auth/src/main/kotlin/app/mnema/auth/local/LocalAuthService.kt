@@ -5,6 +5,7 @@ import app.mnema.auth.security.LocalTokenResponse
 import app.mnema.auth.security.LocalTokenService
 import app.mnema.auth.security.RateLimiter
 import app.mnema.auth.security.TurnstileService
+import app.mnema.auth.identity.FederatedIdentityRepository
 import app.mnema.auth.user.AuthUser
 import app.mnema.auth.user.AuthUserRepository
 import java.time.Instant
@@ -25,7 +26,8 @@ class LocalAuthService(
     private val tokenService: LocalTokenService,
     private val props: LocalAuthProps,
     private val rateLimiter: RateLimiter,
-    private val turnstileService: TurnstileService
+    private val turnstileService: TurnstileService,
+    private val identityRepository: FederatedIdentityRepository
 ) {
     private val allowedUsername = Regex("^[A-Za-z0-9._-]{3,50}$")
     private val scopes = setOf("openid", "profile", "email", "user.read", "user.write")
@@ -139,6 +141,16 @@ class LocalAuthService(
         user.setPassword(passwordEncoder.encode(newPassword))
         user.resetFailedLogins()
         userRepository.save(user)
+    }
+
+    @Transactional
+    fun deleteAccount(jwt: Jwt) {
+        val user = resolveUser(jwt)
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
+        val userId = user.id
+            ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
+        identityRepository.deleteByUserId(userId)
+        userRepository.deleteById(userId)
     }
 
     private fun findByLogin(login: String): AuthUser? {

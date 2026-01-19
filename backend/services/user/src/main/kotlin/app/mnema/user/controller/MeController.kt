@@ -1,5 +1,6 @@
 package app.mnema.user.controller
 
+import app.mnema.user.auth.AuthAccountClient
 import app.mnema.user.entity.User
 import app.mnema.user.media.service.MediaResolveCache
 import app.mnema.user.repository.UserRepository
@@ -18,7 +19,8 @@ import java.util.*
 @RequestMapping("/me")
 class MeController(
     private val repo: UserRepository,
-    private val mediaResolveCache: MediaResolveCache
+    private val mediaResolveCache: MediaResolveCache,
+    private val authAccountClient: AuthAccountClient
 ) {
     companion object {
         private const val MAX_USERNAME_LENGTH = 50
@@ -169,6 +171,11 @@ class MeController(
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
         }
 
+        try {
+            authAccountClient.deleteAccount(jwt.tokenValue)
+        } catch (ex: RuntimeException) {
+            throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Auth account deletion failed", ex)
+        }
         repo.deleteById(userId)
     }
 
