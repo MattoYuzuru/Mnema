@@ -121,7 +121,7 @@ const THEME_PALETTES: Record<ThemeMode, Record<ThemeAccent, ThemePalette>> = {
 
 @Injectable({ providedIn: 'root' })
 export class ThemeService {
-    private readonly _mode = signal<ThemeMode>('light');
+    private readonly _mode = signal<ThemeMode>('dark');
     private readonly _accent = signal<ThemeAccent>('neo');
 
     readonly mode = this._mode.asReadonly();
