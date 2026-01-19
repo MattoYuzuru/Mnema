@@ -64,7 +64,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               (input)="onSearchInput($event)"
             />
             <span *ngIf="searchActive" class="search-meta">
-              {{ cards.length }} / {{ totalCards }} {{ 'cardBrowser.cards' | translate }}
+              {{ searchResultCount }} / {{ totalCards }} {{ 'cardBrowser.cards' | translate }}
             </span>
           </div>
 
@@ -99,14 +99,16 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           <div class="preview-header">
             <div>
               <h2>{{ 'cardBrowser.cardsView' | translate }}</h2>
-              <p class="panel-meta">{{ currentCardIndex + 1 }} / {{ cardCount }}</p>
+              <p class="panel-meta">
+                {{ searchNoResults ? 0 : (currentCardIndex + 1) }} / {{ searchNoResults ? 0 : cardCount }}
+              </p>
             </div>
             <div class="preview-nav">
               <app-button
                 variant="ghost"
                 size="sm"
                 (click)="previousCard()"
-                [disabled]="currentCardIndex === 0"
+                [disabled]="searchNoResults || currentCardIndex === 0"
               >
                 {{ 'cardBrowser.previous' | translate }}
               </app-button>
@@ -114,14 +116,21 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                 variant="ghost"
                 size="sm"
                 (click)="nextCard()"
-                [disabled]="currentCardIndex >= cards.length - 1"
+                [disabled]="searchNoResults || currentCardIndex >= cards.length - 1"
               >
                 {{ 'cardBrowser.next' | translate }}
               </app-button>
             </div>
           </div>
 
-          <div class="flashcard-container">
+          <div *ngIf="searchNoResults" class="no-results-panel">
+            <div class="no-results-card glass">
+              <h3>{{ 'cardBrowser.noSearchResults' | translate }}</h3>
+              <p>{{ 'cardBrowser.noSearchResultsDescription' | translate }}</p>
+            </div>
+          </div>
+
+          <div *ngIf="!searchNoResults && currentCard" class="flashcard-container">
             <div class="flashcard glass" (click)="toggleReveal()">
               <div class="flashcard-content">
                 <div class="card-side front" [class.is-hidden]="revealed && !preferences.showFrontSideAfterFlip">
@@ -151,7 +160,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             </div>
           </div>
 
-          <div class="card-actions">
+          <div class="card-actions" *ngIf="!searchNoResults && currentCard">
             <app-button variant="secondary" size="sm" (click)="openEditModal(currentCard!)" *ngIf="currentCard">
               <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
@@ -171,7 +180,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             </app-button>
           </div>
 
-          <div *ngIf="currentCard?.personalNote" class="personal-note">
+          <div *ngIf="!searchNoResults && currentCard?.personalNote" class="personal-note">
             <h3>{{ 'cardBrowser.personalNote' | translate }}</h3>
             <p>{{ currentCard?.personalNote }}</p>
           </div>
@@ -420,6 +429,32 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         flex-direction: column;
         align-items: center;
         gap: var(--spacing-md);
+      }
+
+      .no-results-panel {
+        display: flex;
+        flex: 1;
+        align-items: center;
+        justify-content: center;
+        padding: var(--spacing-lg);
+      }
+
+      .no-results-card {
+        width: 100%;
+        max-width: 30rem;
+        padding: var(--spacing-xl);
+        border-radius: var(--border-radius-lg);
+        text-align: center;
+      }
+
+      .no-results-card h3 {
+        margin: 0 0 var(--spacing-sm) 0;
+        font-size: 1.1rem;
+      }
+
+      .no-results-card p {
+        margin: 0;
+        color: var(--color-text-muted);
       }
 
       .flashcard {
@@ -744,6 +779,9 @@ export class CardBrowserComponent implements OnInit {
     deckTotalCards = 0;
     searchQuery = '';
     searchActive = false;
+    searchNoResults = false;
+    searchResultCount = 0;
+    private unfilteredCards: UserCardDTO[] = [];
     private currentPage = 1;
     private hasMoreCards = true;
     private loadingMore = false;
@@ -773,6 +811,7 @@ export class CardBrowserComponent implements OnInit {
     handleKeyDown(event: KeyboardEvent): void {
         if (this.cards.length === 0 || !this.currentCard) return;
         if (this.showEditModal || this.showDeleteConfirm || this.showScopePrompt) return;
+        if (this.searchNoResults) return;
 
         const target = event.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
@@ -839,6 +878,7 @@ export class CardBrowserComponent implements OnInit {
                     next: ({ template, cards, size }) => {
                         this.template = template;
                         this.cards = cards.content;
+                        this.unfilteredCards = cards.content;
                         this.currentPage = cards.number + 1;
                         this.hasMoreCards = !cards.last;
                         this.deckTotalCards = size.cardsQty;
@@ -860,22 +900,37 @@ export class CardBrowserComponent implements OnInit {
 
     private applySearch(): void {
         const normalized = this.searchQuery.trim();
-        this.searchQuery = normalized;
         this.searchActive = normalized.length > 0;
+        this.searchNoResults = false;
+        this.searchResultCount = 0;
         this.currentPage = 1;
         this.hasMoreCards = true;
         this.loadingMore = false;
         this.currentCardIndex = 0;
         this.revealed = false;
 
-        this.totalCards = this.searchActive ? 0 : this.deckTotalCards;
+        if (!this.searchActive) {
+            this.totalCards = this.deckTotalCards;
+        }
 
-        this.fetchCardsPage(1, normalized).subscribe({
+        this.fetchCardsPage(1, this.searchActive ? normalized : null).subscribe({
             next: page => {
-                this.cards = page.content;
+                this.searchResultCount = page.totalElements || page.content.length;
                 this.currentPage = page.number + 1;
                 this.hasMoreCards = !page.last;
                 this.totalCards = this.searchActive ? (page.totalElements || 0) : this.deckTotalCards;
+
+                if (this.searchActive && page.content.length === 0) {
+                    this.searchNoResults = true;
+                    this.cards = this.unfilteredCards;
+                    this.hasMoreCards = false;
+                    return;
+                }
+
+                this.cards = page.content;
+                if (!this.searchActive) {
+                    this.unfilteredCards = page.content;
+                }
             },
             error: err => {
                 console.error('Failed to search cards:', err);
@@ -907,6 +962,9 @@ export class CardBrowserComponent implements OnInit {
     }
 
     private maybePrefetchMoreCards(): void {
+        if (this.searchNoResults) {
+            return;
+        }
         if (!this.hasMoreCards || this.loadingMore || this.cards.length === 0) {
             return;
         }
@@ -933,7 +991,8 @@ export class CardBrowserComponent implements OnInit {
         }
         this.loadingMore = true;
         const nextPage = this.currentPage + 1;
-        const query = this.searchActive ? this.searchQuery : null;
+        const normalizedQuery = this.searchQuery.trim();
+        const query = this.searchActive && normalizedQuery.length > 0 ? normalizedQuery : null;
         this.fetchCardsPage(nextPage, query).subscribe({
             next: page => {
                 const existingIds = new Set(this.cards.map(card => card.userCardId));
@@ -942,6 +1001,9 @@ export class CardBrowserComponent implements OnInit {
                 this.currentPage = page.number + 1;
                 this.hasMoreCards = !page.last;
                 this.totalCards = this.searchActive ? (page.totalElements || 0) : this.deckTotalCards;
+                if (!this.searchActive) {
+                    this.unfilteredCards = this.cards;
+                }
             },
             error: err => {
                 console.error('Failed to load more cards:', err);
@@ -1133,6 +1195,7 @@ export class CardBrowserComponent implements OnInit {
         if (index === -1) return;
 
         this.cards = this.cards.filter(card => card.userCardId !== cardId);
+        this.unfilteredCards = this.unfilteredCards.filter(card => card.userCardId !== cardId);
         if (this.totalCards > 0) {
             this.totalCards = Math.max(0, this.totalCards - 1);
         }

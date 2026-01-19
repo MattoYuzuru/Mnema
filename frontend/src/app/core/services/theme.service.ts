@@ -14,6 +14,8 @@ interface ThemePalette {
     textPrimary: string;
     textSecondary: string;
     textMuted: string;
+    accentShadow: string;
+    accentShadowHover: string;
     borderColor: string;
     borderColorHover: string;
     surfaceSolid: string;
@@ -36,6 +38,8 @@ const THEME_PALETTES: Record<ThemeMode, Record<ThemeAccent, ThemePalette>> = {
             textPrimary: '#0b1220',
             textSecondary: '#1f2a44',
             textMuted: '#5b6b86',
+            accentShadow: '0 12px 30px rgba(14, 165, 233, 0.25)',
+            accentShadowHover: '0 18px 36px rgba(14, 165, 233, 0.3)',
             borderColor: 'rgba(148, 163, 184, 0.35)',
             borderColorHover: 'rgba(148, 163, 184, 0.6)',
             surfaceSolid: '#f9fbff',
@@ -55,6 +59,8 @@ const THEME_PALETTES: Record<ThemeMode, Record<ThemeAccent, ThemePalette>> = {
             textPrimary: '#3b1d05',
             textSecondary: '#5c2a0c',
             textMuted: '#8a4b1b',
+            accentShadow: '0 12px 30px rgba(249, 115, 22, 0.28)',
+            accentShadowHover: '0 18px 36px rgba(249, 115, 22, 0.36)',
             borderColor: 'rgba(249, 115, 22, 0.25)',
             borderColorHover: 'rgba(249, 115, 22, 0.45)',
             surfaceSolid: '#fff7ed',
@@ -76,6 +82,8 @@ const THEME_PALETTES: Record<ThemeMode, Record<ThemeAccent, ThemePalette>> = {
             textPrimary: '#e2e8f0',
             textSecondary: '#cbd5f5',
             textMuted: '#94a3b8',
+            accentShadow: '0 12px 30px rgba(56, 189, 248, 0.3)',
+            accentShadowHover: '0 18px 36px rgba(56, 189, 248, 0.38)',
             borderColor: 'rgba(148, 163, 184, 0.18)',
             borderColorHover: 'rgba(148, 163, 184, 0.4)',
             surfaceSolid: '#0b1220',
@@ -95,6 +103,8 @@ const THEME_PALETTES: Record<ThemeMode, Record<ThemeAccent, ThemePalette>> = {
             textPrimary: '#fafaf9',
             textSecondary: '#e7e5e4',
             textMuted: '#b9b2ab',
+            accentShadow: '0 12px 30px rgba(251, 146, 60, 0.3)',
+            accentShadowHover: '0 18px 36px rgba(251, 146, 60, 0.4)',
             borderColor: 'rgba(120, 113, 108, 0.35)',
             borderColorHover: 'rgba(120, 113, 108, 0.6)',
             surfaceSolid: '#181310',
@@ -149,6 +159,8 @@ export class ThemeService {
         root.style.setProperty('--color-text-primary', palette.textPrimary);
         root.style.setProperty('--color-text-secondary', palette.textSecondary);
         root.style.setProperty('--color-text-muted', palette.textMuted);
+        root.style.setProperty('--accent-shadow', palette.accentShadow);
+        root.style.setProperty('--accent-shadow-hover', palette.accentShadowHover);
         root.style.setProperty('--border-color', palette.borderColor);
         root.style.setProperty('--border-color-hover', palette.borderColorHover);
         root.style.setProperty('--color-surface-solid', palette.surfaceSolid);

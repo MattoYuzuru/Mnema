@@ -53,12 +53,12 @@ import { NgClass } from '@angular/common';
         background: linear-gradient(135deg, var(--color-primary-accent), var(--color-secondary-accent));
         color: #ffffff;
         border-color: rgba(255, 255, 255, 0.2);
-        box-shadow: 0 12px 30px rgba(14, 165, 233, 0.25);
+        box-shadow: var(--accent-shadow);
       }
 
       .btn-primary:hover:not(:disabled) {
         transform: translateY(-2px);
-        box-shadow: 0 18px 36px rgba(14, 165, 233, 0.3);
+        box-shadow: var(--accent-shadow-hover);
       }
 
       .btn-secondary {

@@ -228,6 +228,7 @@ interface BuilderState {
         min-height: 100vh;
         height: 100vh;
         overflow-y: auto;
+        overflow-x: hidden;
         background: transparent;
       }
 
@@ -286,6 +287,7 @@ interface BuilderState {
         gap: var(--spacing-lg);
         padding: 0 var(--spacing-xl) var(--spacing-xl);
         align-items: stretch;
+        overflow-x: hidden;
       }
 
       .builder-left {
@@ -298,6 +300,13 @@ interface BuilderState {
         border: 1px solid var(--glass-border-strong);
         height: 100%;
         min-height: 0;
+      }
+
+      .builder-left.glass::before,
+      .builder-left.glass::after,
+      .builder-right.glass::before,
+      .builder-right.glass::after {
+        display: none;
       }
 
       .palette-column h3, .config-column h3 {
@@ -431,7 +440,13 @@ interface BuilderState {
       }
 
       .checkbox-label input {
+        width: 18px;
+        height: 18px;
         cursor: pointer;
+        border: 1px solid var(--glass-border-strong);
+        border-radius: 4px;
+        background: var(--color-surface-solid);
+        box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
       }
 
       .toggle-container {

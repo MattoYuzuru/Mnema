@@ -406,8 +406,8 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
         align-items: center;
         padding: 0.85rem 1rem 0.85rem 2.6rem;
         border-radius: var(--border-radius-full);
-        border: 1px solid var(--glass-border);
-        background: var(--glass-surface);
+        border: 1px solid var(--glass-border-strong);
+        background: var(--glass-surface-strong);
         backdrop-filter: blur(var(--glass-blur));
         transition: border-color 0.2s ease, box-shadow 0.2s ease;
       }

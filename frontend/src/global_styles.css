@@ -9,6 +9,8 @@
     --color-text-primary: #0b1220;
     --color-text-secondary: #1f2a44;
     --color-text-muted: #5b6b86;
+    --accent-shadow: 0 12px 30px rgba(14, 165, 233, 0.25);
+    --accent-shadow-hover: 0 18px 36px rgba(14, 165, 233, 0.3);
 
     --glass-surface: rgba(255, 255, 255, 0.42);
     --glass-surface-strong: rgba(255, 255, 255, 0.68);
