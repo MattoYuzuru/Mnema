@@ -8,6 +8,7 @@ export interface AuthUser {
     email: string;
     name?: string;
     picture?: string;
+    emailVerified?: boolean;
 }
 
 export type AuthStatus = 'anonymous' | 'pending' | 'authenticated' | 'error';
@@ -23,6 +24,15 @@ interface TokenResponse {
     [key: string]: unknown;
 }
 
+export interface TurnstileConfig {
+    enabled: boolean;
+    siteKey?: string | null;
+}
+
+export interface PasswordStatus {
+    hasPassword: boolean;
+}
+
 @Injectable({ providedIn: 'root' })
 export class AuthService {
     private readonly storageKey = 'mnema_tokens';
@@ -32,6 +42,7 @@ export class AuthService {
     private _accessToken: string | null = null;
     private _expiresAt: number | null = null;
     private tokenExpiryTimer: number | null = null;
+    private turnstileConfig: TurnstileConfig | null = null;
 
     status$: Observable<AuthStatus> = this._statusSubject.asObservable();
     user$: Observable<AuthUser | null> = this._userSubject.asObservable();
@@ -114,6 +125,91 @@ export class AuthService {
         window.location.href = `${appConfig.authServerUrl}/logout?redirect=${encodeURIComponent(redirectUrl)}`;
     }
 
+    async loginWithPassword(
+        login: string,
+        password: string,
+        returnTo: string,
+        turnstileToken?: string | null
+    ): Promise<void> {
+        this._statusSubject.next('pending');
+        try {
+            const tokenResponse = await firstValueFrom(
+                this.http.post<TokenResponse>(`${appConfig.authServerUrl}/auth/login`, {
+                    login,
+                    password,
+                    turnstileToken
+                })
+            );
+            const storedTokens = this.withExpiresAt(tokenResponse);
+            window.sessionStorage.setItem(this.storageKey, JSON.stringify(storedTokens));
+            this.applyTokens(storedTokens);
+            await this.router.navigateByUrl(returnTo);
+        } catch (e) {
+            console.error('Local login failed', e);
+            this._statusSubject.next('error');
+            throw e;
+        }
+    }
+
+    async registerWithPassword(
+        email: string,
+        username: string,
+        password: string,
+        returnTo: string,
+        turnstileToken?: string | null
+    ): Promise<void> {
+        this._statusSubject.next('pending');
+        try {
+            const tokenResponse = await firstValueFrom(
+                this.http.post<TokenResponse>(`${appConfig.authServerUrl}/auth/register`, {
+                    email,
+                    username,
+                    password,
+                    turnstileToken
+                })
+            );
+            const storedTokens = this.withExpiresAt(tokenResponse);
+            window.sessionStorage.setItem(this.storageKey, JSON.stringify(storedTokens));
+            this.applyTokens(storedTokens);
+            await this.router.navigateByUrl(returnTo);
+        } catch (e) {
+            console.error('Local registration failed', e);
+            this._statusSubject.next('error');
+            throw e;
+        }
+    }
+
+    async getTurnstileConfig(): Promise<TurnstileConfig> {
+        if (this.turnstileConfig) {
+            return this.turnstileConfig;
+        }
+        try {
+            const config = await firstValueFrom(
+                this.http.get<TurnstileConfig>(`${appConfig.authServerUrl}/auth/turnstile/config`)
+            );
+            this.turnstileConfig = config;
+            return config;
+        } catch {
+            this.turnstileConfig = { enabled: false };
+            return this.turnstileConfig;
+        }
+    }
+
+    async getPasswordStatus(): Promise<PasswordStatus> {
+        return firstValueFrom(
+            this.http.get<PasswordStatus>(`${appConfig.authServerUrl}/auth/password/status`)
+        );
+    }
+
+    async setPassword(currentPassword: string | null, newPassword: string): Promise<PasswordStatus> {
+        return firstValueFrom(
+            this.http.post<PasswordStatus>(`${appConfig.authServerUrl}/auth/password`, {
+                currentPassword,
+                newPassword
+            })
+        );
+    }
+
     private async handleAuthCallback(code: string, returnedState: string | null): Promise<void> {
         const expectedState = window.sessionStorage.getItem('oauth_state');
         const codeVerifier = window.sessionStorage.getItem('pkce_verifier');
@@ -174,12 +270,14 @@ export class AuthService {
             this.scheduleExpiry(expiresAt);
         }
 
-        if (tokens.id_token) {
-            const payload = this.decodeJwt(tokens.id_token);
+        const tokenForProfile = tokens.id_token ?? tokens.access_token;
+        if (tokenForProfile) {
+            const payload = this.decodeJwt(tokenForProfile);
             const user: AuthUser = {
                 email: (payload['email'] as string) ?? '',
                 name: (payload['name'] || payload['given_name']) as string | undefined,
-                picture: payload['picture'] as string | undefined
+                picture: payload['picture'] as string | undefined,
+                emailVerified: payload['email_verified'] as boolean | undefined
             };
             this._userSubject.next(user);
         }

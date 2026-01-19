@@ -150,6 +150,10 @@ jobs:
           stringData:
             AUTH_ISSUER: "${AUTH_ISSUER}"
             AUTH_ISSUER_URI: "${AUTH_ISSUER_URI}"
+            AUTH_JWT_PUBLIC_KEY: "${AUTH_JWT_PUBLIC_KEY}"
+            AUTH_JWT_PRIVATE_KEY: "${AUTH_JWT_PRIVATE_KEY}"
+            TURNSTILE_SITE_KEY: "${TURNSTILE_SITE_KEY}"
+            TURNSTILE_SECRET_KEY: "${TURNSTILE_SECRET_KEY}"
             GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
             GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
             GITHUB_CLIENT_ID: "${GITHUB_CLIENT_ID}"
@@ -168,6 +172,10 @@ jobs:
         env:
           AUTH_ISSUER: ${{ secrets.AUTH_ISSUER }}
           AUTH_ISSUER_URI: ${{ secrets.AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GITHUB_CLIENT_ID: ${{ secrets.GH_CLIENT_ID }}

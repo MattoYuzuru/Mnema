@@ -29,6 +29,7 @@ AGENTS.md
 .idea
 .vscode
 *.env
+jwt-*.pem
 backend/.gradle
 frontend/dist
 frontend/node_modules

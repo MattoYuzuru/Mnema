@@ -1,5 +1,11 @@
 server.servlet.context-path: /api/user
 
+springdoc:
+  api-docs:
+    enabled: false
+  swagger-ui:
+    enabled: false
+
 # CORS (prod)
 app:
   cors:

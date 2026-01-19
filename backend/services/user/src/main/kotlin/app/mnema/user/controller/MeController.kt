@@ -1,10 +1,12 @@
 package app.mnema.user.controller
 
+import app.mnema.user.auth.AuthAccountClient
 import app.mnema.user.entity.User
 import app.mnema.user.media.service.MediaResolveCache
 import app.mnema.user.repository.UserRepository
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.transaction.annotation.Transactional
@@ -17,7 +19,8 @@ import java.util.*
 @RequestMapping("/me")
 class MeController(
     private val repo: UserRepository,
-    private val mediaResolveCache: MediaResolveCache
+    private val mediaResolveCache: MediaResolveCache,
+    private val authAccountClient: AuthAccountClient
 ) {
     companion object {
         private const val MAX_USERNAME_LENGTH = 50
@@ -56,6 +59,7 @@ class MeController(
 
     @GetMapping
     @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.read')")
     fun getOrCreate(@AuthenticationPrincipal jwt: Jwt): MeResponse {
         val userIdStr = jwt.getClaimAsString("user_id")
             ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "user_id claim missing")
@@ -85,12 +89,17 @@ class MeController(
         }
 
         // Первый логин -> создаём профиль
-        val baseUsername = email.substringBefore('@').take(32)
-        var candidate = baseUsername.ifBlank { "user" }
+        val claimedUsername = resolveUsernameClaim(jwt)
+        val baseUsername = (claimedUsername ?: email.substringBefore('@').take(32))
+            .ifBlank { "user" }
+        val normalizedBase = baseUsername.take(MAX_USERNAME_LENGTH)
+        var candidate = normalizedBase
         var suffix = 1
 
         while (repo.existsByUsernameIgnoreCase(candidate)) {
-            candidate = "$baseUsername$suffix"
+            val suffixStr = suffix.toString()
+            val trimLength = (MAX_USERNAME_LENGTH - suffixStr.length).coerceAtLeast(1)
+            candidate = normalizedBase.take(trimLength) + suffixStr
             suffix++
         }
 
@@ -102,7 +111,7 @@ class MeController(
         )
 
         return try {
-            val saved = repo.save(user)
+            val saved = repo.saveAndFlush(user)
             val avatarUrl = resolveAvatarUrl(saved, jwt)
             toDto(saved, avatarUrl)
         } catch (ex: DataIntegrityViolationException) {
@@ -115,6 +124,7 @@ class MeController(
 
     @PatchMapping
     @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
     fun update(@AuthenticationPrincipal jwt: Jwt, @RequestBody req: MeUpdateRequest): MeResponse {
         val userIdStr = jwt.getClaimAsString("user_id")
             ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "user_id claim missing")
@@ -151,6 +161,7 @@ class MeController(
 
     @DeleteMapping
     @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
     fun delete(@AuthenticationPrincipal jwt: Jwt) {
         val userIdStr = jwt.getClaimAsString("user_id")
             ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "user_id claim missing")
@@ -160,6 +171,11 @@ class MeController(
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
         }
 
+        try {
+            authAccountClient.deleteAccount(jwt.tokenValue)
+        } catch (ex: RuntimeException) {
+            throw ResponseStatusException(HttpStatus.BAD_GATEWAY, "Auth account deletion failed", ex)
+        }
         repo.deleteById(userId)
     }
 
@@ -173,5 +189,12 @@ class MeController(
             return null
         }
         return user.avatarUrl
+    }
+
+    private fun resolveUsernameClaim(jwt: Jwt): String? {
+        val raw = jwt.getClaimAsString("username")
+            ?: jwt.getClaimAsString("preferred_username")
+        val cleaned = raw?.trim()?.replace("\\s+".toRegex(), "")
+        return cleaned?.take(MAX_USERNAME_LENGTH)?.takeIf { it.isNotBlank() }
     }
 }

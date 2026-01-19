@@ -1,9 +1,9 @@
 import { Component, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { NgIf } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { AbstractControl, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { AuthService } from './auth.service';
+import { AuthService, PasswordStatus } from './auth.service';
 import { UserApiService, UserProfile } from './user-api.service';
 import { MediaApiService } from './core/services/media-api.service';
 import { ButtonComponent } from './shared/components/button.component';
@@ -24,6 +24,10 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
         <div *ngIf="loading" class="loading">{{ 'profile.loadingProfile' | translate }}</div>
 
         <div *ngIf="!loading && profile" class="profile-content">
+          <div *ngIf="auth.user()?.emailVerified === false" class="verification-warning">
+            <h3>{{ 'profile.unverifiedTitle' | translate }}</h3>
+            <p>{{ 'profile.unverifiedText' | translate }}</p>
+          </div>
           <div class="profile-header">
             <div class="avatar-section">
               <div class="avatar-container" (click)="triggerAvatarUpload()">
@@ -85,6 +89,54 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
               </app-button>
             </div>
           </form>
+
+          <div *ngIf="passwordStatus" class="password-panel">
+            <h3>{{ 'profile.passwordTitle' | translate }}</h3>
+            <p class="password-description">
+              {{ (passwordStatus.hasPassword ? 'profile.passwordChangeHint' : 'profile.passwordSetHint') | translate }}
+            </p>
+            <form [formGroup]="passwordForm" (ngSubmit)="savePassword()" class="password-form">
+              <app-input
+                *ngIf="passwordStatus.hasPassword"
+                [label]="'profile.passwordCurrent' | translate"
+                type="password"
+                formControlName="currentPassword"
+                [placeholder]="'profile.passwordCurrentPlaceholder' | translate"
+                [hasError]="passwordForm.get('currentPassword')?.invalid && passwordForm.get('currentPassword')?.touched || false"
+                [errorMessage]="'profile.passwordRequired' | translate"
+              ></app-input>
+
+              <app-input
+                [label]="'profile.passwordNew' | translate"
+                type="password"
+                formControlName="newPassword"
+                [placeholder]="'profile.passwordNewPlaceholder' | translate"
+                [hasError]="passwordForm.get('newPassword')?.invalid && passwordForm.get('newPassword')?.touched || false"
+                [errorMessage]="passwordErrorMessage('newPassword') | translate"
+              ></app-input>
+
+              <app-input
+                [label]="'profile.passwordConfirm' | translate"
+                type="password"
+                formControlName="confirmPassword"
+                [placeholder]="'profile.passwordConfirmPlaceholder' | translate"
+                [hasError]="passwordForm.hasError('passwordMismatch') && passwordForm.get('confirmPassword')?.touched || false"
+                [errorMessage]="'profile.passwordMismatch' | translate"
+              ></app-input>
+
+              <div class="form-actions">
+                <app-button
+                  type="submit"
+                  variant="primary"
+                  [disabled]="passwordForm.invalid || passwordSaving"
+                >
+                  {{ (passwordSaving ? 'profile.passwordSaving' : 'profile.passwordSave') | translate }}
+                </app-button>
+              </div>
+              <div *ngIf="passwordMessageKey" class="password-success">{{ passwordMessageKey | translate }}</div>
+              <div *ngIf="passwordErrorKey" class="password-error">{{ passwordErrorKey | translate }}</div>
+            </form>
+          </div>
         </div>
       </div>
     </section>
@@ -127,6 +179,73 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
         display: flex;
         flex-direction: column;
         gap: var(--spacing-xl);
+      }
+
+      .verification-warning {
+        position: relative;
+        padding: var(--spacing-lg) var(--spacing-lg) var(--spacing-lg) calc(var(--spacing-lg) + 8px);
+        border-radius: var(--border-radius-lg);
+        background: var(--color-card-background);
+        border: 1px solid rgba(14, 165, 233, 0.35);
+        box-shadow: var(--shadow-md);
+        color: var(--color-text-primary);
+        overflow: hidden;
+      }
+
+      .verification-warning::before {
+        content: '';
+        position: absolute;
+        top: 10px;
+        bottom: 10px;
+        left: 10px;
+        width: 4px;
+        border-radius: 999px;
+        background: linear-gradient(180deg, var(--color-primary-accent), var(--color-secondary-accent));
+      }
+
+      .verification-warning h3 {
+        margin: 0 0 var(--spacing-xs) 0;
+        font-size: 1.1rem;
+        color: var(--color-text-primary);
+      }
+
+      .verification-warning p {
+        margin: 0;
+        font-size: 0.95rem;
+        line-height: 1.5;
+        color: var(--color-text-secondary);
+      }
+
+      .password-panel {
+        padding: var(--spacing-xl);
+        background: var(--color-card-background);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-lg);
+      }
+
+      .password-panel h3 {
+        margin: 0 0 var(--spacing-sm) 0;
+      }
+
+      .password-description {
+        margin: 0 0 var(--spacing-lg) 0;
+        color: var(--color-text-secondary);
+      }
+
+      .password-form {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+      }
+
+      .password-success {
+        color: #166534;
+        font-size: 0.9rem;
+      }
+
+      .password-error {
+        color: #b91c1c;
+        font-size: 0.9rem;
       }
 
       .profile-header {
@@ -303,6 +422,11 @@ export class ProfilePageComponent implements OnInit {
     uploading = false;
     uploadProgress = 0;
     form: FormGroup;
+    passwordForm: FormGroup;
+    passwordStatus: PasswordStatus | null = null;
+    passwordSaving = false;
+    passwordMessageKey: string | null = null;
+    passwordErrorKey: string | null = null;
 
     constructor(
         public auth: AuthService,
@@ -314,6 +438,14 @@ export class ProfilePageComponent implements OnInit {
             username: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(ProfilePageComponent.MAX_USERNAME_LENGTH)]],
             bio: ['', [Validators.maxLength(ProfilePageComponent.MAX_BIO_LENGTH)]]
         });
+        this.passwordForm = this.fb.group(
+            {
+                currentPassword: [''],
+                newPassword: ['', [Validators.required, Validators.minLength(8)]],
+                confirmPassword: ['', [Validators.required]]
+            },
+            { validators: this.passwordMatchValidator }
+        );
     }
 
     ngOnInit(): void {
@@ -328,6 +460,7 @@ export class ProfilePageComponent implements OnInit {
                     username: profile.username,
                     bio: profile.bio ?? ''
                 });
+                await this.loadPasswordStatus();
             },
             error: err => {
                 console.error('Failed to load profile', err);
@@ -380,6 +513,54 @@ export class ProfilePageComponent implements OnInit {
             });
     }
 
+    async loadPasswordStatus(): Promise<void> {
+        try {
+            this.passwordStatus = await this.auth.getPasswordStatus();
+            this.applyPasswordValidators();
+        } catch (err) {
+            console.error('Failed to load password status', err);
+        }
+    }
+
+    savePassword(): void {
+        if (!this.passwordStatus || this.passwordForm.invalid) return;
+        this.passwordSaving = true;
+        this.passwordMessageKey = null;
+        this.passwordErrorKey = null;
+
+        const currentPassword = this.passwordStatus.hasPassword
+            ? (this.passwordForm.get('currentPassword')?.value as string | null)
+            : null;
+        const newPassword = this.passwordForm.get('newPassword')?.value as string;
+
+        this.auth
+            .setPassword(currentPassword, newPassword)
+            .then(status => {
+                this.passwordStatus = status;
+                this.passwordMessageKey = 'profile.passwordSuccess';
+                this.passwordForm.reset();
+                this.applyPasswordValidators();
+            })
+            .catch(err => {
+                console.error('Failed to update password', err);
+                this.passwordErrorKey = 'profile.passwordError';
+            })
+            .finally(() => {
+                this.passwordSaving = false;
+            });
+    }
+
+    private applyPasswordValidators(): void {
+        const current = this.passwordForm.get('currentPassword');
+        if (!current) return;
+        if (this.passwordStatus?.hasPassword) {
+            current.setValidators([Validators.required]);
+        } else {
+            current.clearValidators();
+        }
+        current.updateValueAndValidity();
+    }
+
     usernameErrorMessage(): string {
         const control = this.form.get('username');
         if (control?.hasError('required') || control?.hasError('minlength')) {
@@ -395,6 +576,17 @@ export class ProfilePageComponent implements OnInit {
         const control = this.form.get('bio');
         if (control?.hasError('maxlength')) {
             return 'validation.maxLength200';
+        }
+        return '';
+    }
+
+    passwordErrorMessage(controlName: string): string {
+        const control = this.passwordForm.get(controlName);
+        if (control?.hasError('required')) {
+            return 'profile.passwordRequired';
+        }
+        if (control?.hasError('minlength')) {
+            return 'profile.passwordMinError';
         }
         return '';
     }
@@ -476,5 +668,14 @@ export class ProfilePageComponent implements OnInit {
         }
 
         return normalized;
+    }
+
+    private passwordMatchValidator(control: AbstractControl): { [key: string]: boolean } | null {
+        const newPassword = control.get('newPassword')?.value;
+        const confirmPassword = control.get('confirmPassword')?.value;
+        if (!newPassword || !confirmPassword) {
+            return null;
+        }
+        return newPassword === confirmPassword ? null : { passwordMismatch: true };
     }
 }

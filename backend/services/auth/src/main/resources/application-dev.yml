@@ -8,6 +8,7 @@ server:
   forward-headers-strategy: native
 
 logging.level.org.springframework.security: DEBUG
+logging.level.org.springframework.security.oauth2: DEBUG
 
 # CORS (dev)
 app:
