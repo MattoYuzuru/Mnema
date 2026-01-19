@@ -87,12 +87,17 @@ class MeController(
         }
 
         // Первый логин -> создаём профиль
-        val baseUsername = email.substringBefore('@').take(32)
-        var candidate = baseUsername.ifBlank { "user" }
+        val claimedUsername = resolveUsernameClaim(jwt)
+        val baseUsername = (claimedUsername ?: email.substringBefore('@').take(32))
+            .ifBlank { "user" }
+        val normalizedBase = baseUsername.take(MAX_USERNAME_LENGTH)
+        var candidate = normalizedBase
         var suffix = 1
 
         while (repo.existsByUsernameIgnoreCase(candidate)) {
-            candidate = "$baseUsername$suffix"
+            val suffixStr = suffix.toString()
+            val trimLength = (MAX_USERNAME_LENGTH - suffixStr.length).coerceAtLeast(1)
+            candidate = normalizedBase.take(trimLength) + suffixStr
             suffix++
         }
 
@@ -104,7 +109,7 @@ class MeController(
         )
 
         return try {
-            val saved = repo.save(user)
+            val saved = repo.saveAndFlush(user)
             val avatarUrl = resolveAvatarUrl(saved, jwt)
             toDto(saved, avatarUrl)
         } catch (ex: DataIntegrityViolationException) {
@@ -177,5 +182,12 @@ class MeController(
             return null
         }
         return user.avatarUrl
+    }
+
+    private fun resolveUsernameClaim(jwt: Jwt): String? {
+        val raw = jwt.getClaimAsString("username")
+            ?: jwt.getClaimAsString("preferred_username")
+        val cleaned = raw?.trim()?.replace("\\s+".toRegex(), "")
+        return cleaned?.take(MAX_USERNAME_LENGTH)?.takeIf { it.isNotBlank() }
     }
 }

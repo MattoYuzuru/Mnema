@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
-import org.springframework.security.oauth2.server.resource.web.DefaultBearerTokenResolver;
+import org.springframework.http.HttpHeaders;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -70,10 +70,13 @@ public class SecurityConfig {
 
     @Bean
     public BearerTokenResolver bearerTokenResolver(MediaInternalAuthProps props) {
-        DefaultBearerTokenResolver resolver = new DefaultBearerTokenResolver();
         return request -> {
-            String token = resolver.resolve(request);
-            if (token != null && token.equals(props.internalToken())) {
+            String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return null;
+            }
+            String token = authHeader.substring("Bearer ".length());
+            if (token.equals(props.internalToken())) {
                 return null;
             }
             return token;

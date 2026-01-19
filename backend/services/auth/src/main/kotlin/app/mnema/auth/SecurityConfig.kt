@@ -57,6 +57,28 @@ class SecurityConfig(
     private val supportedProviders = setOf("google", "github", "yandex")
     private val log = LoggerFactory.getLogger(SecurityConfig::class.java)
 
+    /** Chain #0: локальная регистрация/логин */
+    @Bean
+    @Order(0)
+    fun localAuthSecurityFilterChain(http: HttpSecurity): SecurityFilterChain {
+        http
+            .securityMatcher("/auth/**")
+            .authorizeHttpRequests { auth ->
+                auth
+                    .requestMatchers(
+                        "/auth/login",
+                        "/auth/register",
+                        "/auth/turnstile/config"
+                    ).permitAll()
+                    .anyRequest().authenticated()
+            }
+            .oauth2ResourceServer { it.jwt(Customizer.withDefaults()) }
+            .csrf { it.disable() }
+            .cors {}
+
+        return http.build()
+    }
+
     /** Chain #1: Authorization Server эндпоинты (/oauth2/authorize, /oauth2/token, .well-known и т.д.) */
     @Bean
     @Order(1)
@@ -96,7 +118,8 @@ class SecurityConfig(
         http
             .authorizeHttpRequests { auth ->
                 auth
-                    .requestMatchers("/actuator/**").permitAll()
+                    .requestMatchers("/auth/**").permitAll()
+                    .requestMatchers("/actuator/**", "/error").permitAll()
                     .anyRequest().authenticated()
             }
             .oauth2Login { oauth2 ->
@@ -274,6 +297,8 @@ class SecurityConfig(
 
             user.id?.toString()?.let { context.claims.claim("user_id", it) }
             context.claims.claim("email", user.email)
+            context.claims.claim("email_verified", user.emailVerified)
+            user.username?.let { context.claims.claim("username", it) }
             user.name?.let { context.claims.claim("name", it) }
             user.pictureUrl?.let { context.claims.claim("picture", it) }
         }
