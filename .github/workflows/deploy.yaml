@@ -140,6 +140,8 @@ jobs:
 
       - name: Create/Update secret (mnema-secrets)
         run: |
+          AUTH_JWT_PUBLIC_KEY_B64=$(printf '%s' "$AUTH_JWT_PUBLIC_KEY" | base64 | tr -d '\n')
+          AUTH_JWT_PRIVATE_KEY_B64=$(printf '%s' "$AUTH_JWT_PRIVATE_KEY" | base64 | tr -d '\n')
           cat <<YAML | kubectl apply -f -
           apiVersion: v1
           kind: Secret
@@ -147,11 +149,12 @@ jobs:
             name: mnema-secrets
             namespace: ${NS}
           type: Opaque
+          data:
+            AUTH_JWT_PUBLIC_KEY: "${AUTH_JWT_PUBLIC_KEY_B64}"
+            AUTH_JWT_PRIVATE_KEY: "${AUTH_JWT_PRIVATE_KEY_B64}"
           stringData:
             AUTH_ISSUER: "${AUTH_ISSUER}"
             AUTH_ISSUER_URI: "${AUTH_ISSUER_URI}"
-            AUTH_JWT_PUBLIC_KEY: "${AUTH_JWT_PUBLIC_KEY}"
-            AUTH_JWT_PRIVATE_KEY: "${AUTH_JWT_PRIVATE_KEY}"
             TURNSTILE_SITE_KEY: "${TURNSTILE_SITE_KEY}"
             TURNSTILE_SECRET_KEY: "${TURNSTILE_SECRET_KEY}"
             GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
