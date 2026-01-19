@@ -51,6 +51,10 @@ spec:
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AUTH_JWT_PUBLIC_KEY } }
             - name: AUTH_JWT_PRIVATE_KEY
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AUTH_JWT_PRIVATE_KEY } }
+            - name: TURNSTILE_SITE_KEY
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: TURNSTILE_SITE_KEY } }
+            - name: TURNSTILE_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: TURNSTILE_SECRET_KEY } }
             - name: APP_ENV
               value: prod
             - name: SPRING_PROFILES_ACTIVE
