@@ -1,5 +1,10 @@
 auth:
   issuer: https://auth.mnema.app
+  jwt:
+    public-key: ${AUTH_JWT_PUBLIC_KEY:}
+    private-key: ${AUTH_JWT_PRIVATE_KEY:}
+  logout:
+    default-redirect: https://mnema.app/
 
 management:
   endpoints.web.exposure.include: health,info,prometheus

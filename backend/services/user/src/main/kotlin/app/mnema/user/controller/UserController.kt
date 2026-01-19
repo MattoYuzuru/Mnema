@@ -4,6 +4,7 @@ import app.mnema.user.entity.User
 import app.mnema.user.repository.UserRepository
 import jakarta.validation.Valid
 import org.springframework.http.HttpStatus
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.web.bind.annotation.*
 import org.springframework.web.server.ResponseStatusException
 import org.springframework.transaction.annotation.Transactional
@@ -30,11 +31,13 @@ class UserController(private val repo: UserRepository) {
     )
 
     @GetMapping("/{id}")
+    @PreAuthorize("hasAuthority('SCOPE_user.read') and @userAuthz.isAdmin(authentication)")
     fun get(@PathVariable id: UUID): User =
         repo.findById(id).orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAuthority('SCOPE_user.write') and @userAuthz.isAdmin(authentication)")
     fun create(@Valid @RequestBody req: CreateUserReq): User {
         if (repo.existsByUsernameIgnoreCase(req.username)) {
             throw ResponseStatusException(HttpStatus.CONFLICT, "Username already taken")
@@ -55,6 +58,7 @@ class UserController(private val repo: UserRepository) {
 
     @PatchMapping("/{id}")
     @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write') and @userAuthz.isAdmin(authentication)")
     fun partialUpdate(@PathVariable id: UUID, @Valid @RequestBody req: UpdateUserReq): User {
         val user = repo.findById(id)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
@@ -82,6 +86,7 @@ class UserController(private val repo: UserRepository) {
 
     @PutMapping("/{id}")
     @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write') and @userAuthz.isAdmin(authentication)")
     fun fullUpdate(@PathVariable id: UUID, @Valid @RequestBody req: CreateUserReq): User {
         val user = repo.findById(id)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
@@ -104,6 +109,7 @@ class UserController(private val repo: UserRepository) {
 
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
+    @PreAuthorize("hasAuthority('SCOPE_user.write') and @userAuthz.isAdmin(authentication)")
     fun delete(@PathVariable id: UUID) {
         if (!repo.existsById(id)) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")

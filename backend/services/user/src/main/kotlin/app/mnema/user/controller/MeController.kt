@@ -5,6 +5,7 @@ import app.mnema.user.media.service.MediaResolveCache
 import app.mnema.user.repository.UserRepository
 import org.springframework.dao.DataIntegrityViolationException
 import org.springframework.http.HttpStatus
+import org.springframework.security.access.prepost.PreAuthorize
 import org.springframework.security.core.annotation.AuthenticationPrincipal
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.transaction.annotation.Transactional
@@ -56,6 +57,7 @@ class MeController(
 
     @GetMapping
     @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.read')")
     fun getOrCreate(@AuthenticationPrincipal jwt: Jwt): MeResponse {
         val userIdStr = jwt.getClaimAsString("user_id")
             ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "user_id claim missing")
@@ -115,6 +117,7 @@ class MeController(
 
     @PatchMapping
     @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
     fun update(@AuthenticationPrincipal jwt: Jwt, @RequestBody req: MeUpdateRequest): MeResponse {
         val userIdStr = jwt.getClaimAsString("user_id")
             ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "user_id claim missing")
@@ -151,6 +154,7 @@ class MeController(
 
     @DeleteMapping
     @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
     fun delete(@AuthenticationPrincipal jwt: Jwt) {
         val userIdStr = jwt.getClaimAsString("user_id")
             ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "user_id claim missing")

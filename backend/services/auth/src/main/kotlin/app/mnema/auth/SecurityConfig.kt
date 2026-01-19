@@ -4,11 +4,13 @@ import app.mnema.auth.federation.FederatedOAuth2UserService
 import app.mnema.auth.federation.FederatedUserMapper
 import app.mnema.auth.identity.FederatedIdentityResult
 import app.mnema.auth.identity.FederatedIdentityService
+import app.mnema.auth.security.LogoutRedirectService
 import app.mnema.auth.security.ProviderAwareLoginEntryPoint
 import com.nimbusds.jose.jwk.JWKSet
 import com.nimbusds.jose.jwk.RSAKey
 import com.nimbusds.jose.jwk.source.JWKSource
 import com.nimbusds.jose.proc.SecurityContext
+import java.security.KeyFactory
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.CommandLineRunner
 import org.springframework.context.annotation.Bean
@@ -35,12 +37,17 @@ import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler
 import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher
+import org.slf4j.LoggerFactory
+import java.security.MessageDigest
 import java.security.KeyPair
 import java.security.KeyPairGenerator
 import java.security.interfaces.RSAPrivateKey
 import java.security.interfaces.RSAPublicKey
+import java.security.spec.PKCS8EncodedKeySpec
+import java.security.spec.X509EncodedKeySpec
 import java.time.Duration
 import java.util.*
+import java.util.Base64
 
 @Configuration
 class SecurityConfig(
@@ -48,6 +55,7 @@ class SecurityConfig(
     private val userMapper: FederatedUserMapper
 ) {
     private val supportedProviders = setOf("google", "github", "yandex")
+    private val log = LoggerFactory.getLogger(SecurityConfig::class.java)
 
     /** Chain #1: Authorization Server эндпоинты (/oauth2/authorize, /oauth2/token, .well-known и т.д.) */
     @Bean
@@ -82,7 +90,8 @@ class SecurityConfig(
     fun appSecurityFilterChain(
         http: HttpSecurity,
         federatedSuccessHandler: AuthenticationSuccessHandler,
-        federatedOAuth2UserService: FederatedOAuth2UserService
+        federatedOAuth2UserService: FederatedOAuth2UserService,
+        logoutRedirectService: LogoutRedirectService
     ): SecurityFilterChain {
         http
             .authorizeHttpRequests { auth ->
@@ -102,8 +111,7 @@ class SecurityConfig(
                     .invalidateHttpSession(true)
                     .deleteCookies("JSESSIONID")
                     .logoutSuccessHandler { request, response, _ ->
-                        val redirect = request.getParameter("redirect")
-                            ?: "https://mnema.app/"
+                        val redirect = logoutRedirectService.resolve(request.getParameter("redirect"))
                         response.sendRedirect(redirect)
                     }
             }
@@ -147,18 +155,35 @@ class SecurityConfig(
 
     /** JWK (dev): генерим RSA ключ на старте */
     @Bean
-    fun jwkSource(): JWKSource<SecurityContext> {
-        val kpg = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }
-        val kp: KeyPair = kpg.generateKeyPair()
-        val publicKey = kp.public as RSAPublicKey
-        val privateKey = kp.private as RSAPrivateKey
+    fun jwkSource(
+        @Value("\${auth.jwt.public-key:}") publicKeyValue: String,
+        @Value("\${auth.jwt.private-key:}") privateKeyValue: String
+    ): JWKSource<SecurityContext> {
+        val configuredPublicKey = parsePublicKey(publicKeyValue)
+        val configuredPrivateKey = parsePrivateKey(privateKeyValue)
 
-        val rsa = RSAKey.Builder(publicKey)
-            .privateKey(privateKey)
-            .keyID(UUID.randomUUID().toString())
-            .build()
+        val rsa = if (configuredPublicKey != null && configuredPrivateKey != null) {
+            RSAKey.Builder(configuredPublicKey)
+                .privateKey(configuredPrivateKey)
+                .keyID(keyIdFor(configuredPublicKey))
+                .build()
+        } else {
+            if (publicKeyValue.isNotBlank() || privateKeyValue.isNotBlank()) {
+                log.warn("auth.jwt.public-key/private-key invalid or incomplete; using ephemeral key")
+            } else {
+                log.warn("auth.jwt.public-key/private-key not configured; using ephemeral key")
+            }
+            val kpg = KeyPairGenerator.getInstance("RSA").apply { initialize(2048) }
+            val kp: KeyPair = kpg.generateKeyPair()
+            val publicKey = kp.public as RSAPublicKey
+            val privateKey = kp.private as RSAPrivateKey
+            RSAKey.Builder(publicKey)
+                .privateKey(privateKey)
+                .keyID(keyIdFor(publicKey))
+                .build()
+        }
 
-        val jwkSet = JWKSet(listOf(rsa)) // избегаем неоднозначности конструктора
+        val jwkSet = JWKSet(listOf(rsa))
         return JWKSource { selector, _ -> selector.select(jwkSet) }
     }
 
@@ -252,4 +277,39 @@ class SecurityConfig(
             user.name?.let { context.claims.claim("name", it) }
             user.pictureUrl?.let { context.claims.claim("picture", it) }
         }
+
+    private fun parsePublicKey(value: String): RSAPublicKey? {
+        val cleaned = cleanPem(value)
+        if (cleaned.isBlank()) return null
+        return runCatching {
+            val spec = X509EncodedKeySpec(Base64.getDecoder().decode(cleaned))
+            KeyFactory.getInstance("RSA").generatePublic(spec) as RSAPublicKey
+        }.onFailure {
+            log.warn("Failed to parse auth.jwt.public-key", it)
+        }.getOrNull()
+    }
+
+    private fun parsePrivateKey(value: String): RSAPrivateKey? {
+        val cleaned = cleanPem(value)
+        if (cleaned.isBlank()) return null
+        return runCatching {
+            val spec = PKCS8EncodedKeySpec(Base64.getDecoder().decode(cleaned))
+            KeyFactory.getInstance("RSA").generatePrivate(spec) as RSAPrivateKey
+        }.onFailure {
+            log.warn("Failed to parse auth.jwt.private-key", it)
+        }.getOrNull()
+    }
+
+    private fun cleanPem(value: String): String {
+        return value
+            .replace(Regex("-----BEGIN [A-Z ]+-----"), "")
+            .replace(Regex("-----END [A-Z ]+-----"), "")
+            .replace(Regex("\\s"), "")
+            .trim()
+    }
+
+    private fun keyIdFor(publicKey: RSAPublicKey): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest(publicKey.encoded)
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
+    }
 }
