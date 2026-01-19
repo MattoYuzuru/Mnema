@@ -226,8 +226,8 @@ interface BuilderState {
         display: flex;
         flex-direction: column;
         min-height: 100vh;
-        height: auto;
-        overflow: visible;
+        height: 100vh;
+        overflow-y: auto;
         background: transparent;
       }
 
@@ -285,6 +285,7 @@ interface BuilderState {
         min-height: 0;
         gap: var(--spacing-lg);
         padding: 0 var(--spacing-xl) var(--spacing-xl);
+        align-items: stretch;
       }
 
       .builder-left {
@@ -295,6 +296,8 @@ interface BuilderState {
         overflow: visible;
         border-radius: var(--border-radius-lg);
         border: 1px solid var(--glass-border-strong);
+        height: 100%;
+        min-height: 0;
       }
 
       .palette-column h3, .config-column h3 {
@@ -312,6 +315,7 @@ interface BuilderState {
         border-radius: var(--border-radius-lg);
         border: 1px solid var(--glass-border);
         background: var(--glass-surface);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
       }
 
       .palette-list {
@@ -374,6 +378,7 @@ interface BuilderState {
         border-radius: var(--border-radius-lg);
         border: 1px solid var(--glass-border);
         background: var(--glass-surface);
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
       }
 
       .config-panel {
@@ -415,7 +420,7 @@ interface BuilderState {
         font-size: 0.95rem;
         font-family: inherit;
         background: var(--color-surface-solid);
-        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+        box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.12), 0 6px 14px rgba(15, 23, 42, 0.08);
       }
 
       .checkbox-label {
@@ -495,6 +500,8 @@ interface BuilderState {
         gap: var(--spacing-lg);
         border-radius: var(--border-radius-lg);
         border: 1px solid var(--glass-border-strong);
+        height: 100%;
+        min-height: 0;
       }
 
       .preview-controls {
@@ -652,6 +659,7 @@ interface BuilderState {
         padding-top: var(--spacing-lg);
         border-top: 1px solid var(--glass-border);
         flex-shrink: 0;
+        margin-top: auto;
       }
 
       .modal-overlay {

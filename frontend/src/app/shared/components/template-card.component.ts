@@ -81,14 +81,15 @@ import { TranslatePipe } from '../pipes/translate.pipe';
 
       .template-card-header {
         display: flex;
-        gap: var(--spacing-md);
-        align-items: center;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: var(--spacing-sm);
       }
 
       .template-icon {
         flex-shrink: 0;
-        width: 2.5rem;
-        height: 2.5rem;
+        width: 2.8rem;
+        height: 2.8rem;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -114,7 +115,6 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         display: flex;
         flex-direction: column;
         gap: var(--spacing-xs);
-        justify-content: center;
       }
 
       .template-name {

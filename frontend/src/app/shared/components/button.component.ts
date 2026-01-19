@@ -14,6 +14,7 @@ import { NgClass } from '@angular/common';
         'btn-primary': variant === 'primary',
         'btn-secondary': variant === 'secondary',
         'btn-ghost': variant === 'ghost',
+        'btn-danger': tone === 'danger',
         'btn-sm': size === 'sm',
         'btn-md': size === 'md',
         'btn-lg': size === 'lg',
@@ -84,6 +85,24 @@ import { NgClass } from '@angular/common';
         border-color: var(--border-color-hover);
       }
 
+      .btn-danger {
+        color: #dc2626;
+        border-color: #dc2626;
+      }
+
+      .btn-danger.btn-primary {
+        background: #dc2626;
+        color: #ffffff;
+        border-color: #dc2626;
+      }
+
+      .btn-danger.btn-ghost:hover:not(:disabled),
+      .btn-danger.btn-secondary:hover:not(:disabled) {
+        background: #dc2626;
+        color: #ffffff;
+        border-color: #dc2626;
+      }
+
       .btn-sm {
         padding: 0.5rem 1rem;
         font-size: 0.875rem;
@@ -112,4 +131,5 @@ export class ButtonComponent {
     @Input() type: 'button' | 'submit' | 'reset' = 'button';
     @Input() disabled = false;
     @Input() fullWidth = false;
+    @Input() tone: 'default' | 'danger' = 'default';
 }

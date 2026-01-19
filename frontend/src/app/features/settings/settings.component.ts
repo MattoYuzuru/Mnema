@@ -136,9 +136,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               <app-button variant="secondary" size="sm" (click)="restoreDeck(deck.userDeckId)">
                 {{ 'settings.restore' | translate }}
               </app-button>
-              <app-button variant="ghost" size="sm" (click)="openHardDeleteConfirm(deck.userDeckId)" class="delete-btn-small">
-                Delete Permanently
-              </app-button>
+        <app-button variant="ghost" size="sm" tone="danger" (click)="openHardDeleteConfirm(deck.userDeckId)">
+          Delete Permanently
+        </app-button>
             </div>
           </div>
         </div>
@@ -148,7 +148,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         <h2>{{ 'settings.dangerZone' | translate }}</h2>
         <p class="section-description">{{ 'settings.deleteAccountWarning' | translate }}</p>
 
-        <app-button variant="ghost" (click)="showDeleteConfirmation = true" class="delete-btn">
+        <app-button variant="ghost" tone="danger" (click)="showDeleteConfirmation = true">
           {{ 'settings.deleteAccount' | translate }}
         </app-button>
       </section>
@@ -176,9 +176,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           </app-button>
           <app-button
             variant="primary"
+            tone="danger"
             [disabled]="deleteAccountUsername !== currentUsername"
             (click)="deleteAccount()"
-            class="delete-btn"
           >
             Delete Account
           </app-button>
@@ -341,24 +341,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         color: #dc2626;
       }
 
-      .delete-btn {
-        color: #dc2626;
-        border-color: #dc2626;
-      }
-
-      .delete-btn:hover {
-        background: #dc2626;
-        color: white;
-      }
-
-      .delete-btn-small {
-        color: #dc2626;
-      }
-
-      .delete-btn-small:hover {
-        background: #fee2e2;
-        color: #dc2626;
-      }
+      
 
       .modal-overlay {
         position: fixed;
