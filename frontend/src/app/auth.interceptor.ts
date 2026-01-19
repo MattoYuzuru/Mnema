@@ -16,7 +16,13 @@ export const authInterceptor: HttpInterceptorFn = (req, next) => {
         req.url.startsWith(appConfig.mediaApiBaseUrl) ||
         req.url.startsWith(appConfig.importApiBaseUrl);
 
-    if (!token || !isApiRequest) {
+    const authEndpointBase = `${appConfig.authServerUrl}/auth/`;
+    const isAuthEndpoint = req.url.startsWith(authEndpointBase);
+    const isAuthProtected =
+        req.url.startsWith(`${authEndpointBase}password`) ||
+        req.url.startsWith(`${authEndpointBase}password/status`);
+
+    if (!token || !(isApiRequest || (isAuthEndpoint && isAuthProtected))) {
         return next(req).pipe(
             catchError((error: HttpErrorResponse) => {
                 if (isApiRequest && error.status === 401) {

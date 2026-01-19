@@ -1,15 +1,26 @@
-import { Component, OnInit } from '@angular/core';
+import { AfterViewInit, Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { NgIf } from '@angular/common';
+import { FormsModule } from '@angular/forms';
+import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink, ActivatedRoute } from '@angular/router';
 import { AuthService } from './auth.service';
 import { TranslatePipe } from './shared/pipes/translate.pipe';
 
 type OAuthProvider = 'google' | 'github' | 'yandex';
 
+declare global {
+    interface Window {
+        turnstile?: {
+            render: (container: HTMLElement, options: Record<string, unknown>) => string;
+            reset: (widgetId: string) => void;
+        };
+    }
+}
+
 @Component({
     standalone: true,
     selector: 'app-login-page',
-    imports: [NgIf, RouterLink, TranslatePipe],
+    imports: [NgIf, FormsModule, RouterLink, TranslatePipe],
     template: `
     <div class="login-page">
       <div class="login-container">
@@ -25,20 +36,41 @@ type OAuthProvider = 'google' | 'github' | 'yandex';
 
         <div *ngIf="auth.status() !== 'authenticated'" class="auth-blocks">
           <div class="auth-block local-auth">
-            <div class="overlay-badge">{{ 'login.plannedDevelopment' | translate }}</div>
-            <h2>{{ 'login.localAuthTitle' | translate }}</h2>
-            <div class="form-group">
-              <label>{{ 'login.email' | translate }}</label>
-              <input type="email" disabled class="form-input" />
-            </div>
-            <div class="form-group">
-              <label>{{ 'login.username' | translate }}</label>
-              <input type="text" disabled class="form-input" />
-            </div>
-            <div class="form-group">
-              <label>{{ 'login.password' | translate }}</label>
-              <input type="password" disabled class="form-input" />
-            </div>
+            <h2>{{ mode === 'login' ? ('login.loginTitle' | translate) : ('login.registerTitle' | translate) }}</h2>
+            <form class="local-form" (ngSubmit)="submitLocal()">
+              <div *ngIf="mode === 'register'" class="form-group">
+                <label>{{ 'login.email' | translate }}</label>
+                <input type="email" class="form-input" [(ngModel)]="registerEmail" name="registerEmail" autocomplete="email" />
+              </div>
+              <div *ngIf="mode === 'register'" class="form-group">
+                <label>{{ 'login.username' | translate }}</label>
+                <input type="text" class="form-input" [(ngModel)]="registerUsername" name="registerUsername" autocomplete="username" />
+              </div>
+              <div *ngIf="mode === 'login'" class="form-group">
+                <label>{{ 'login.loginIdentifier' | translate }}</label>
+                <input type="text" class="form-input" [(ngModel)]="loginIdentifier" name="loginIdentifier" autocomplete="username" />
+              </div>
+              <div class="form-group">
+                <label>{{ 'login.password' | translate }}</label>
+                <input
+                  type="password"
+                  class="form-input"
+                  [(ngModel)]="password"
+                  name="password"
+                  [attr.autocomplete]="mode === 'register' ? 'new-password' : 'current-password'"
+                />
+              </div>
+              <div *ngIf="turnstileEnabled" class="turnstile-block">
+                <div #turnstileContainer class="turnstile-container"></div>
+              </div>
+              <button class="local-submit" type="submit" [disabled]="submitting">
+                {{ mode === 'login' ? ('login.loginAction' | translate) : ('login.registerAction' | translate) }}
+              </button>
+              <div *ngIf="localErrorKey" class="form-error">{{ localErrorKey | translate }}</div>
+              <button type="button" class="toggle-mode" (click)="toggleMode()">
+                {{ mode === 'login' ? ('login.noAccount' | translate) : ('login.haveAccount' | translate) }}
+              </button>
+            </form>
           </div>
 
           <div class="divider"></div>
@@ -166,25 +198,15 @@ type OAuthProvider = 'google' | 'github' | 'yandex';
       }
 
       .local-auth {
-        opacity: 0.5;
-        pointer-events: none;
-        filter: blur(1px);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-lg);
       }
 
-      .overlay-badge {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: var(--color-text-primary);
-        color: var(--color-card-background);
-        padding: var(--spacing-sm) var(--spacing-lg);
-        border-radius: var(--border-radius-full);
-        font-weight: 600;
-        font-size: 0.9rem;
-        z-index: 10;
-        pointer-events: all;
-        box-shadow: var(--shadow-lg);
+      .local-form {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
       }
 
       .form-group {
@@ -207,6 +229,50 @@ type OAuthProvider = 'google' | 'github' | 'yandex';
         font-size: 0.95rem;
         font-family: inherit;
         background: var(--color-background);
+      }
+
+      .turnstile-block {
+        display: flex;
+        justify-content: flex-start;
+      }
+
+      .turnstile-container {
+        min-height: 64px;
+      }
+
+      .local-submit {
+        padding: var(--spacing-sm) var(--spacing-md);
+        border-radius: var(--border-radius-md);
+        border: 1px solid var(--color-text-primary);
+        background: var(--color-text-primary);
+        color: var(--color-card-background);
+        font-weight: 600;
+        cursor: pointer;
+        transition: opacity 0.2s;
+      }
+
+      .local-submit:disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+      }
+
+      .toggle-mode {
+        border: none;
+        background: none;
+        color: var(--color-text-muted);
+        font-size: 0.85rem;
+        text-align: left;
+        cursor: pointer;
+        padding: 0;
+      }
+
+      .toggle-mode:hover {
+        color: var(--color-text-primary);
+      }
+
+      .form-error {
+        color: #b91c1c;
+        font-size: 0.85rem;
       }
 
       .divider {
@@ -329,10 +395,9 @@ type OAuthProvider = 'google' | 'github' | 'yandex';
           display: none;
         }
 
-        .overlay-badge {
-          font-size: 0.8rem;
-          padding: var(--spacing-xs) var(--spacing-md);
-        }
+      .turnstile-block {
+        justify-content: center;
+      }
       }
 
       @media (max-width: 480px) {
@@ -348,8 +413,23 @@ type OAuthProvider = 'google' | 'github' | 'yandex';
     `
     ]
 })
-export class LoginPageComponent implements OnInit {
+export class LoginPageComponent implements OnInit, AfterViewInit {
     private returnUrl = '/profile';
+    private turnstileWidgetId: string | null = null;
+    private viewReady = false;
+
+    mode: 'login' | 'register' = 'login';
+    loginIdentifier = '';
+    registerEmail = '';
+    registerUsername = '';
+    password = '';
+    localErrorKey: string | null = null;
+    submitting = false;
+    turnstileEnabled = false;
+    turnstileSiteKey: string | null = null;
+    turnstileToken: string | null = null;
+
+    @ViewChild('turnstileContainer') turnstileContainer?: ElementRef<HTMLDivElement>;
 
     constructor(
         public auth: AuthService,
@@ -358,9 +438,147 @@ export class LoginPageComponent implements OnInit {
 
     ngOnInit(): void {
         this.returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/profile';
+        void this.loadTurnstile();
+    }
+
+    ngAfterViewInit(): void {
+        this.viewReady = true;
+        this.renderTurnstile();
+    }
+
+    toggleMode(): void {
+        this.mode = this.mode === 'login' ? 'register' : 'login';
+        this.localErrorKey = null;
+        this.resetTurnstile();
     }
 
     login(provider: OAuthProvider = 'google'): void {
         void this.auth.beginLogin(this.returnUrl, provider);
+    }
+
+    async submitLocal(): Promise<void> {
+        this.localErrorKey = null;
+        this.submitting = true;
+
+        try {
+            if (this.turnstileEnabled && !this.turnstileToken) {
+                this.localErrorKey = 'login.errorCaptcha';
+                return;
+            }
+
+            if (this.mode === 'login') {
+                await this.auth.loginWithPassword(
+                    this.loginIdentifier,
+                    this.password,
+                    this.returnUrl,
+                    this.turnstileToken
+                );
+            } else {
+                await this.auth.registerWithPassword(
+                    this.registerEmail,
+                    this.registerUsername,
+                    this.password,
+                    this.returnUrl,
+                    this.turnstileToken
+                );
+            }
+        } catch (err) {
+            this.localErrorKey = this.mapLocalError(err);
+        } finally {
+            this.submitting = false;
+            this.resetTurnstile();
+        }
+    }
+
+    private mapLocalError(err: unknown): string {
+        if (err instanceof HttpErrorResponse) {
+            switch (err.status) {
+                case 400:
+                    return 'login.errorInvalidInput';
+                case 401:
+                    return 'login.errorInvalidCredentials';
+                case 409:
+                    return this.mode === 'login' ? 'login.errorOAuthOnly' : 'login.errorConflict';
+                case 423:
+                    return 'login.errorLocked';
+                case 429:
+                    return 'login.errorTooMany';
+                default:
+                    return 'login.errorGeneric';
+            }
+        }
+        return 'login.errorGeneric';
+    }
+
+    private async loadTurnstile(): Promise<void> {
+        const config = await this.auth.getTurnstileConfig();
+        this.turnstileEnabled = Boolean(config.enabled && config.siteKey);
+        this.turnstileSiteKey = config.siteKey ?? null;
+        if (!this.turnstileEnabled) {
+            return;
+        }
+        try {
+            await this.ensureTurnstileScript();
+            this.renderTurnstile();
+        } catch {
+            this.turnstileEnabled = false;
+        }
+    }
+
+    private renderTurnstile(): void {
+        if (!this.turnstileEnabled || !this.turnstileSiteKey || !this.viewReady) {
+            return;
+        }
+        if (!window.turnstile || !this.turnstileContainer?.nativeElement) {
+            return;
+        }
+        if (this.turnstileWidgetId) {
+            window.turnstile.reset(this.turnstileWidgetId);
+            return;
+        }
+        this.turnstileWidgetId = window.turnstile.render(this.turnstileContainer.nativeElement, {
+            sitekey: this.turnstileSiteKey,
+            callback: (token: string) => {
+                this.turnstileToken = token;
+            },
+            'error-callback': () => {
+                this.turnstileToken = null;
+            },
+            'expired-callback': () => {
+                this.turnstileToken = null;
+            }
+        });
+    }
+
+    private resetTurnstile(): void {
+        if (this.turnstileWidgetId && window.turnstile) {
+            window.turnstile.reset(this.turnstileWidgetId);
+        }
+        this.turnstileToken = null;
+    }
+
+    private ensureTurnstileScript(): Promise<void> {
+        if (window.turnstile) {
+            return Promise.resolve();
+        }
+        const existing = document.querySelector('script[data-turnstile]');
+        if (existing) {
+            return new Promise(resolve => {
+                existing.addEventListener('load', () => resolve());
+                if (window.turnstile) {
+                    resolve();
+                }
+            });
+        }
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
+            script.async = true;
+            script.defer = true;
+            script.dataset['turnstile'] = 'true';
+            script.onload = () => resolve();
+            script.onerror = () => reject();
+            document.head.appendChild(script);
+        });
     }
 }
