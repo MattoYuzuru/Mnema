@@ -492,13 +492,17 @@ export class LoginPageComponent implements OnInit, AfterViewInit {
 
     private mapLocalError(err: unknown): string {
         if (err instanceof HttpErrorResponse) {
+            const message = this.extractErrorMessage(err);
             switch (err.status) {
                 case 400:
                     return 'login.errorInvalidInput';
                 case 401:
                     return 'login.errorInvalidCredentials';
                 case 409:
-                    return this.mode === 'login' ? 'login.errorOAuthOnly' : 'login.errorConflict';
+                    if (message === 'oauth_only' || message === 'password_not_set') {
+                        return 'login.errorOAuthOnly';
+                    }
+                    return 'login.errorConflict';
                 case 423:
                     return 'login.errorLocked';
                 case 429:
@@ -508,6 +512,17 @@ export class LoginPageComponent implements OnInit, AfterViewInit {
             }
         }
         return 'login.errorGeneric';
+    }
+
+    private extractErrorMessage(err: HttpErrorResponse): string {
+        const payload = err.error;
+        if (payload && typeof payload === 'object' && 'message' in payload) {
+            const message = (payload as { message?: unknown }).message;
+            if (typeof message === 'string') {
+                return message;
+            }
+        }
+        return '';
     }
 
     private async loadTurnstile(): Promise<void> {

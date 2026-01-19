@@ -182,22 +182,38 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
       }
 
       .verification-warning {
-        padding: var(--spacing-lg);
+        position: relative;
+        padding: var(--spacing-lg) var(--spacing-lg) var(--spacing-lg) calc(var(--spacing-lg) + 8px);
         border-radius: var(--border-radius-lg);
-        background: #fff4e5;
-        border: 1px solid #f5c26b;
-        color: #7a4b00;
+        background: var(--color-card-background);
+        border: 1px solid rgba(14, 165, 233, 0.35);
+        box-shadow: var(--shadow-md);
+        color: var(--color-text-primary);
+        overflow: hidden;
+      }
+
+      .verification-warning::before {
+        content: '';
+        position: absolute;
+        top: 10px;
+        bottom: 10px;
+        left: 10px;
+        width: 4px;
+        border-radius: 999px;
+        background: linear-gradient(180deg, var(--color-primary-accent), var(--color-secondary-accent));
       }
 
       .verification-warning h3 {
         margin: 0 0 var(--spacing-xs) 0;
         font-size: 1.1rem;
+        color: var(--color-text-primary);
       }
 
       .verification-warning p {
         margin: 0;
         font-size: 0.95rem;
         line-height: 1.5;
+        color: var(--color-text-secondary);
       }
 
       .password-panel {

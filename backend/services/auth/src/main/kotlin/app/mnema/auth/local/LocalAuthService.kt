@@ -51,11 +51,15 @@ class LocalAuthService(
         if (password.length < 8) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Password too short")
         }
-        if (userRepository.findByEmailIgnoreCase(email).isPresent) {
-            throw ResponseStatusException(HttpStatus.CONFLICT, "Email already in use")
+        val existingByEmail = userRepository.findByEmailIgnoreCase(email).orElse(null)
+        if (existingByEmail != null) {
+            if (existingByEmail.passwordHash.isNullOrBlank()) {
+                throw ResponseStatusException(HttpStatus.CONFLICT, "oauth_only")
+            }
+            throw ResponseStatusException(HttpStatus.CONFLICT, "email_in_use")
         }
         if (userRepository.existsByUsernameIgnoreCase(username)) {
-            throw ResponseStatusException(HttpStatus.CONFLICT, "Username already taken")
+            throw ResponseStatusException(HttpStatus.CONFLICT, "username_in_use")
         }
 
         val user = AuthUser(
@@ -70,7 +74,7 @@ class LocalAuthService(
         val saved = try {
             userRepository.save(user)
         } catch (ex: DataIntegrityViolationException) {
-            throw ResponseStatusException(HttpStatus.CONFLICT, "Email or username already in use")
+            throw ResponseStatusException(HttpStatus.CONFLICT, "email_or_username_in_use")
         }
         return tokenService.generateTokens(saved, scopes, props.accessTokenTtl, now)
     }
@@ -95,7 +99,7 @@ class LocalAuthService(
         }
 
         val hash = user.passwordHash
-            ?: throw ResponseStatusException(HttpStatus.CONFLICT, "Password not set")
+            ?: throw ResponseStatusException(HttpStatus.CONFLICT, "password_not_set")
         if (!passwordEncoder.matches(req.password, hash)) {
             user.registerFailedLogin(now, props.maxFailedAttempts, props.lockDuration)
             userRepository.save(user)
