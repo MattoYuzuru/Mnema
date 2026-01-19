@@ -7,6 +7,7 @@ import { AuthService, AuthStatus } from '../../auth.service';
 import { ThemeService } from '../services/theme.service';
 import { MediaApiService } from '../services/media-api.service';
 import { UserApiService, UserProfile } from '../../user-api.service';
+import { I18nService, Language } from '../services/i18n.service';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
@@ -88,6 +89,27 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           </div>
 
           <ng-template #loginBlock>
+            <div class="language-menu">
+              <button class="language-trigger" type="button" (click)="toggleLanguageMenu()">
+                <svg class="language-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+                  <circle cx="12" cy="12" r="9"/>
+                  <path d="M3 12h18"/>
+                  <path d="M12 3c2.5 2.6 2.5 15.4 0 18"/>
+                  <path d="M12 3c-2.5 2.6-2.5 15.4 0 18"/>
+                </svg>
+                <span class="language-current">{{ currentLanguageCode() }}</span>
+              </button>
+              <div *ngIf="languageMenuOpen()" class="language-dropdown">
+                <button class="language-option" type="button" (click)="setLanguage('en')">
+                  <span class="language-code">EN</span>
+                  <span class="language-name">{{ 'language.english' | translate }}</span>
+                </button>
+                <button class="language-option" type="button" (click)="setLanguage('ru')">
+                  <span class="language-code">RU</span>
+                  <span class="language-name">{{ 'language.russian' | translate }}</span>
+                </button>
+              </div>
+            </div>
             <app-button
               variant="primary"
               size="sm"
@@ -197,6 +219,85 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         display: flex;
         align-items: center;
         gap: var(--spacing-sm);
+      }
+
+      .language-menu {
+        position: relative;
+      }
+
+      .language-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        padding: 0.45rem 0.75rem;
+        border: 1px solid var(--glass-border);
+        border-radius: var(--border-radius-full);
+        background: var(--glass-surface);
+        color: var(--color-text-primary);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        backdrop-filter: blur(var(--glass-blur));
+      }
+
+      .language-trigger:hover {
+        border-color: var(--border-color-hover);
+        background: var(--glass-surface-strong);
+      }
+
+      .language-icon {
+        display: block;
+      }
+
+      .language-current {
+        font-size: 0.85rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+      }
+
+      .language-dropdown {
+        position: absolute;
+        top: calc(100% + var(--spacing-xs));
+        right: 0;
+        min-width: 160px;
+        background: var(--glass-surface-strong);
+        border: 1px solid var(--glass-border);
+        border-radius: var(--border-radius-md);
+        box-shadow: var(--shadow-md);
+        padding: var(--spacing-xs);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+        backdrop-filter: blur(var(--glass-blur));
+        z-index: 10;
+      }
+
+      .language-option {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm) var(--spacing-md);
+        border: none;
+        border-radius: var(--border-radius-sm);
+        background: transparent;
+        color: var(--color-text-primary);
+        font-size: 0.9rem;
+        cursor: pointer;
+        transition: background 0.2s ease;
+        font-family: inherit;
+      }
+
+      .language-option:hover {
+        background: var(--glass-surface);
+      }
+
+      .language-code {
+        min-width: 2rem;
+        font-weight: 600;
+        color: var(--color-text-secondary);
+      }
+
+      .language-name {
+        color: var(--color-text-primary);
       }
 
       .user-menu {
@@ -343,6 +444,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           row-gap: var(--spacing-xs);
         }
 
+        .language-current {
+          display: none;
+        }
+
         .user-name {
           display: none;
         }
@@ -390,6 +495,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 export class AppShellComponent implements OnInit, OnDestroy {
     currentYear = new Date().getFullYear();
     userMenuOpen = signal(false);
+    languageMenuOpen = signal(false);
     userProfile = signal<UserProfile | null>(null);
     globalSearchQuery = signal('');
     private authSubscription?: Subscription;
@@ -401,7 +507,8 @@ export class AppShellComponent implements OnInit, OnDestroy {
         private themeService: ThemeService,
         private router: Router,
         private userApi: UserApiService,
-        private mediaApi: MediaApiService
+        private mediaApi: MediaApiService,
+        private i18n: I18nService
     ) {}
 
     ngOnInit(): void {
@@ -481,6 +588,19 @@ export class AppShellComponent implements OnInit, OnDestroy {
 
     closeUserMenu(): void {
         this.userMenuOpen.set(false);
+    }
+
+    toggleLanguageMenu(): void {
+        this.languageMenuOpen.set(!this.languageMenuOpen());
+    }
+
+    setLanguage(lang: Language): void {
+        this.i18n.setLanguage(lang);
+        this.languageMenuOpen.set(false);
+    }
+
+    currentLanguageCode(): string {
+        return this.i18n.currentLanguage === 'ru' ? 'RU' : 'EN';
     }
 
     login(): void {

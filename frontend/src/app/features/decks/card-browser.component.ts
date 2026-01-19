@@ -376,6 +376,27 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         flex: 1;
         min-height: 0;
         padding-right: var(--spacing-xs);
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+
+      .cards-list::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .cards-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .cards-list::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      .cards-list::-webkit-scrollbar-thumb:hover {
+        background: var(--border-color-hover);
       }
 
       .cards-list-item {
