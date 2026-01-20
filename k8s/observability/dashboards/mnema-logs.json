@@ -29,7 +29,7 @@
         "datasource": {"type": "loki", "uid": "loki"},
         "refresh": 1,
         "includeAll": false,
-        "query": "label_values({namespace=~\".+\"}, namespace)",
+        "query": "label_values({cluster=\"mnema-prod\"}, namespace)",
         "current": {"selected": true, "text": "prod", "value": "prod"}
       },
       {
@@ -40,7 +40,7 @@
         "refresh": 1,
         "includeAll": true,
         "allValue": ".+",
-        "query": "label_values({namespace=~\"$namespace\"}, pod)",
+        "query": "label_values({cluster=\"mnema-prod\", namespace=~\"$namespace\"}, pod)",
         "current": {"selected": true, "text": "All", "value": ".+"}
       },
       {
@@ -51,7 +51,7 @@
         "refresh": 1,
         "includeAll": true,
         "allValue": ".+",
-        "query": "label_values({namespace=~\"$namespace\"}, service)",
+        "query": "label_values({cluster=\"mnema-prod\", namespace=~\"$namespace\"}, service)",
         "current": {"selected": true, "text": "All", "value": ".+"}
       }
     ]

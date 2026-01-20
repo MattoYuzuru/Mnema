@@ -47,7 +47,7 @@ metadata:
   name: alloy-observability
 rules:
   - apiGroups: [""]
-    resources: ["pods", "namespaces"]
+    resources: ["pods", "pods/log", "namespaces"]
     verbs: ["get", "list", "watch"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
