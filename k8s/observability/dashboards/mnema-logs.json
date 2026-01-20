@@ -65,7 +65,7 @@
       "gridPos": {"h": 18, "w": 24, "x": 0, "y": 0},
       "targets": [
         {
-          "expr": "{namespace=~\"$namespace\", pod=~\"$pod\", service=~\"$service\"}",
+          "expr": "{cluster=\"mnema-prod\", namespace=~\"$namespace\", pod=~\"$pod\", service=~\"$service\"}",
           "refId": "A"
         }
       ],
