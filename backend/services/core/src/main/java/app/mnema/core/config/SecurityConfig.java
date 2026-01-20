@@ -27,8 +27,8 @@ public class SecurityConfig {
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        // health/info - открыты
-                        .requestMatchers("/actuator/health/**", "/actuator/info").permitAll()
+                        // health/info/prometheus - открыты
+                        .requestMatchers("/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
 
                         // Публичные колоды можно смотреть без токена
                         .requestMatchers(HttpMethod.GET, "/decks/public/**").permitAll()
