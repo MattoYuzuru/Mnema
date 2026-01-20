@@ -1,6 +1,6 @@
 import { AfterViewInit, Component, ElementRef, OnInit, ViewChild } from '@angular/core';
 import { NgIf } from '@angular/common';
-import { FormsModule } from '@angular/forms';
+import { FormsModule, NgForm } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink, ActivatedRoute } from '@angular/router';
 import { AuthService } from './auth.service';
@@ -37,18 +37,69 @@ declare global {
         <div *ngIf="auth.status() !== 'authenticated'" class="auth-blocks">
           <div class="auth-block local-auth">
             <h2>{{ mode === 'login' ? ('login.loginTitle' | translate) : ('login.registerTitle' | translate) }}</h2>
-            <form class="local-form" (ngSubmit)="submitLocal()">
+            <form #localForm="ngForm" class="local-form" (ngSubmit)="submitLocal(localForm)">
               <div *ngIf="mode === 'register'" class="form-group">
                 <label>{{ 'login.email' | translate }}</label>
-                <input type="email" class="form-input" [(ngModel)]="registerEmail" name="registerEmail" autocomplete="email" />
+                <input
+                  type="email"
+                  class="form-input"
+                  [(ngModel)]="registerEmail"
+                  name="registerEmail"
+                  autocomplete="email"
+                  required
+                  email
+                  #registerEmailModel="ngModel"
+                />
+                <div class="form-error" *ngIf="registerEmailModel.invalid && (registerEmailModel.touched || formSubmitted)">
+                  <span *ngIf="registerEmailModel.errors?.['required']">{{ 'login.errorEmailRequired' | translate }}</span>
+                  <span *ngIf="!registerEmailModel.errors?.['required'] && registerEmailModel.errors?.['email']">
+                    {{ 'login.errorEmailInvalid' | translate }}
+                  </span>
+                </div>
               </div>
               <div *ngIf="mode === 'register'" class="form-group">
                 <label>{{ 'login.username' | translate }}</label>
-                <input type="text" class="form-input" [(ngModel)]="registerUsername" name="registerUsername" autocomplete="username" />
+                <input
+                  type="text"
+                  class="form-input"
+                  [(ngModel)]="registerUsername"
+                  name="registerUsername"
+                  autocomplete="username"
+                  required
+                  [minlength]="usernameMinLength"
+                  [maxlength]="usernameMaxLength"
+                  pattern="[A-Za-z0-9._-]+"
+                  #registerUsernameModel="ngModel"
+                />
+                <div class="form-error" *ngIf="registerUsernameModel.invalid && (registerUsernameModel.touched || formSubmitted)">
+                  <span *ngIf="registerUsernameModel.errors?.['required']">{{ 'login.errorUsernameRequired' | translate }}</span>
+                  <span
+                    *ngIf="!registerUsernameModel.errors?.['required'] && (registerUsernameModel.errors?.['minlength'] || registerUsernameModel.errors?.['maxlength'] || registerUsernameModel.errors?.['pattern'])"
+                  >
+                    {{ 'login.errorUsernameInvalid' | translate }}
+                  </span>
+                </div>
               </div>
               <div *ngIf="mode === 'login'" class="form-group">
                 <label>{{ 'login.loginIdentifier' | translate }}</label>
-                <input type="text" class="form-input" [(ngModel)]="loginIdentifier" name="loginIdentifier" autocomplete="username" />
+                <input
+                  type="text"
+                  class="form-input"
+                  [(ngModel)]="loginIdentifier"
+                  name="loginIdentifier"
+                  autocomplete="username"
+                  required
+                  #loginIdentifierModel="ngModel"
+                />
+                <div
+                  class="form-error"
+                  *ngIf="(loginIdentifierModel.touched || formSubmitted) && (loginIdentifierModel.invalid || loginIdentifierEmailInvalid)"
+                >
+                  <span *ngIf="loginIdentifierModel.errors?.['required']">{{ 'login.errorLoginRequired' | translate }}</span>
+                  <span *ngIf="!loginIdentifierModel.errors?.['required'] && loginIdentifierEmailInvalid">
+                    {{ 'login.errorEmailInvalid' | translate }}
+                  </span>
+                </div>
               </div>
               <div class="form-group">
                 <label>{{ 'login.password' | translate }}</label>
@@ -58,7 +109,20 @@ declare global {
                   [(ngModel)]="password"
                   name="password"
                   [attr.autocomplete]="mode === 'register' ? 'new-password' : 'current-password'"
+                  required
+                  [minlength]="passwordMinLength"
+                  [maxlength]="mode === 'register' ? passwordMaxLength : null"
+                  #passwordModel="ngModel"
                 />
+                <div class="form-error" *ngIf="passwordModel.invalid && (passwordModel.touched || formSubmitted)">
+                  <span *ngIf="passwordModel.errors?.['required']">{{ 'login.errorPasswordRequired' | translate }}</span>
+                  <span *ngIf="!passwordModel.errors?.['required'] && passwordModel.errors?.['minlength']">
+                    {{ 'login.errorPasswordTooShort' | translate }}
+                  </span>
+                  <span *ngIf="!passwordModel.errors?.['required'] && passwordModel.errors?.['maxlength']">
+                    {{ 'login.errorPasswordTooLong' | translate }}
+                  </span>
+                </div>
               </div>
               <div *ngIf="turnstileEnabled" class="turnstile-block">
                 <div #turnstileContainer class="turnstile-container"></div>
@@ -425,9 +489,16 @@ export class LoginPageComponent implements OnInit, AfterViewInit {
     password = '';
     localErrorKey: string | null = null;
     submitting = false;
+    formSubmitted = false;
     turnstileEnabled = false;
     turnstileSiteKey: string | null = null;
     turnstileToken: string | null = null;
+    readonly passwordMinLength = 8;
+    readonly passwordMaxLength = 128;
+    readonly usernameMinLength = 3;
+    readonly usernameMaxLength = 50;
+
+    private readonly emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     @ViewChild('turnstileContainer') turnstileContainer?: ElementRef<HTMLDivElement>;
 
@@ -449,6 +520,7 @@ export class LoginPageComponent implements OnInit, AfterViewInit {
     toggleMode(): void {
         this.mode = this.mode === 'login' ? 'register' : 'login';
         this.localErrorKey = null;
+        this.formSubmitted = false;
         this.resetTurnstile();
     }
 
@@ -456,16 +528,22 @@ export class LoginPageComponent implements OnInit, AfterViewInit {
         void this.auth.beginLogin(this.returnUrl, provider);
     }
 
-    async submitLocal(): Promise<void> {
+    async submitLocal(form: NgForm): Promise<void> {
         this.localErrorKey = null;
+        this.formSubmitted = true;
+
+        if (form.invalid || (this.mode === 'login' && this.loginIdentifierEmailInvalid)) {
+            return;
+        }
+
+        if (this.turnstileEnabled && !this.turnstileToken) {
+            this.localErrorKey = 'login.errorCaptcha';
+            return;
+        }
+
         this.submitting = true;
 
         try {
-            if (this.turnstileEnabled && !this.turnstileToken) {
-                this.localErrorKey = 'login.errorCaptcha';
-                return;
-            }
-
             if (this.mode === 'login') {
                 await this.auth.loginWithPassword(
                     this.loginIdentifier,
@@ -490,12 +568,43 @@ export class LoginPageComponent implements OnInit, AfterViewInit {
         }
     }
 
+    get loginIdentifierEmailInvalid(): boolean {
+        const value = this.loginIdentifier.trim();
+        if (!value || !value.includes('@')) {
+            return false;
+        }
+        return !this.isValidEmail(value);
+    }
+
+    private isValidEmail(value: string): boolean {
+        return this.emailPattern.test(value);
+    }
+
     private mapLocalError(err: unknown): string {
         if (err instanceof HttpErrorResponse) {
             const message = this.extractErrorMessage(err);
             switch (err.status) {
                 case 400:
-                    return 'login.errorInvalidInput';
+                    switch (message) {
+                        case 'email_invalid':
+                            return 'login.errorEmailInvalid';
+                        case 'email_required':
+                            return 'login.errorEmailRequired';
+                        case 'login_required':
+                            return 'login.errorLoginRequired';
+                        case 'password_required':
+                            return 'login.errorPasswordRequired';
+                        case 'password_too_short':
+                            return 'login.errorPasswordTooShort';
+                        case 'password_too_long':
+                            return 'login.errorPasswordTooLong';
+                        case 'username_invalid':
+                            return 'login.errorUsernameInvalid';
+                        case 'username_required':
+                            return 'login.errorUsernameRequired';
+                        default:
+                            return 'login.errorInvalidInput';
+                    }
                 case 401:
                     return 'login.errorInvalidCredentials';
                 case 409:

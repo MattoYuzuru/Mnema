@@ -388,6 +388,12 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
         gap: var(--spacing-md);
       }
 
+      .hero-search .search-input {
+        border-radius: var(--border-radius-lg);
+        background: var(--glass-surface);
+        border-color: var(--glass-border);
+      }
+
       .search-label {
         font-size: 0.9rem;
         color: var(--color-text-muted);

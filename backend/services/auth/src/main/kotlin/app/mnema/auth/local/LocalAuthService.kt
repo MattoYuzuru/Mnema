@@ -30,6 +30,9 @@ class LocalAuthService(
     private val identityRepository: FederatedIdentityRepository
 ) {
     private val allowedUsername = Regex("^[A-Za-z0-9._-]{3,50}$")
+    private val emailPattern = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
+    private val minPasswordLength = 8
+    private val maxPasswordLength = 128
     private val scopes = setOf("openid", "profile", "email", "user.read", "user.write")
 
     @Transactional
@@ -43,15 +46,32 @@ class LocalAuthService(
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Captcha verification failed")
         }
 
+        if (req.email.isBlank()) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "email_required")
+        }
         val email = normalizeEmail(req.email)
+        if (!emailPattern.matches(email)) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "email_invalid")
+        }
+
         val username = req.username.trim()
+        if (username.isBlank()) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "username_required")
+        }
+
         val password = req.password
+        if (password.isBlank()) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "password_required")
+        }
 
         if (!allowedUsername.matches(username)) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Username must be 3-50 chars: letters, digits, . _ -")
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "username_invalid")
         }
-        if (password.length < 8) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Password too short")
+        if (password.length < minPasswordLength) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "password_too_short")
+        }
+        if (password.length > maxPasswordLength) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "password_too_long")
         }
         val existingByEmail = userRepository.findByEmailIgnoreCase(email).orElse(null)
         if (existingByEmail != null) {
@@ -93,6 +113,18 @@ class LocalAuthService(
         }
 
         val loginValue = req.login.trim()
+        if (loginValue.isBlank()) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "login_required")
+        }
+        if (loginValue.contains("@") && !emailPattern.matches(normalizeEmail(loginValue))) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "email_invalid")
+        }
+        if (req.password.isBlank()) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "password_required")
+        }
+        if (req.password.length < minPasswordLength) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "password_too_short")
+        }
         val user = findByLogin(loginValue)
             ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "Invalid credentials")
 
@@ -126,8 +158,14 @@ class LocalAuthService(
         val user = resolveUser(jwt)
             ?: throw ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
         val newPassword = req.newPassword
-        if (newPassword.length < 8) {
-            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Password too short")
+        if (newPassword.isBlank()) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "password_required")
+        }
+        if (newPassword.length < minPasswordLength) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "password_too_short")
+        }
+        if (newPassword.length > maxPasswordLength) {
+            throw ResponseStatusException(HttpStatus.BAD_REQUEST, "password_too_long")
         }
 
         if (!user.passwordHash.isNullOrBlank()) {
