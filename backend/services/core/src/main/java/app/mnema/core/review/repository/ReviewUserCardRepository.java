@@ -38,23 +38,28 @@ public interface ReviewUserCardRepository extends JpaRepository<ReviewUserCardEn
               and c.deleted = false
               and s.suspended = false
               and s.nextReviewAt <= :until
-            order by s.nextReviewAt asc
+            order by s.nextReviewAt asc, c.userCardId asc
             """)
     List<UUID> findDueCardIds(@Param("userId") UUID userId,
                               @Param("deckId") UUID deckId,
                               @Param("until") Instant until,
                               org.springframework.data.domain.Pageable pageable);
 
-    @Query("""
-            select c.userCardId
-            from ReviewUserCardEntity c
-            left join SrCardStateEntity s on s.userCardId = c.userCardId
-            where c.userDeckId = :deckId
-              and c.userId = :userId
-              and c.deleted = false
-              and s.userCardId is null
-            order by c.createdAt asc, c.userCardId asc
-            """)
+    @Query(value = """
+            select uc.user_card_id
+            from app_core.user_cards uc
+            left join app_core.sr_card_states s on s.user_card_id = uc.user_card_id
+            left join app_core.public_cards pc on pc.card_id = uc.public_card_id
+            where uc.subscription_id = :deckId
+              and uc.user_id = :userId
+              and uc.is_deleted = false
+              and s.user_card_id is null
+            order by
+              case when pc.order_index is null then 1 else 0 end,
+              pc.order_index asc,
+              uc.created_at asc,
+              uc.user_card_id asc
+            """, nativeQuery = true)
     List<UUID> findNewCardIds(@Param("userId") UUID userId,
                               @Param("deckId") UUID deckId,
                               org.springframework.data.domain.Pageable pageable);

@@ -10,7 +10,6 @@ import org.springframework.stereotype.Component;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -45,7 +44,7 @@ public class Sm2Algorithm implements SrsAlgorithm {
     @Override
     public ReviewComputation apply(ReviewInput input, Rating rating, Instant now, JsonNode effectiveConfig) {
         Sm2Config cfg = Sm2Config.from(effectiveConfig);
-        Sm2State st = Sm2State.from(input.state());
+        Sm2State st = Sm2State.from(input.state(), om);
 
         String phase = st.phase;
 
@@ -95,19 +94,19 @@ public class Sm2Algorithm implements SrsAlgorithm {
         int step = st.step;
 
         if (steps.isEmpty()) {
-            ObjectNode n = st.toJson(om);
+            ObjectNode n = st.toJson();
             n.put("phase", "review");
             n.put("intervalDays", (rating == Rating.EASY) ? cfg.easyIntervalDays : cfg.graduatingIntervalDays);
-            Instant due = now.plus(Math.round(n.get("intervalDays").asDouble()), ChronoUnit.DAYS);
+            Instant due = dueFromDays(now, n.get("intervalDays").asDouble());
             return new ReviewComputation(n, due, now, 1);
         }
 
         if (rating == Rating.EASY) {
-            ObjectNode n = st.toJson(om);
+            ObjectNode n = st.toJson();
             n.put("phase", "review");
             n.put("step", 0);
             n.put("intervalDays", cfg.easyIntervalDays);
-            Instant due = now.plus((long) cfg.easyIntervalDays, ChronoUnit.DAYS);
+            Instant due = dueFromDays(now, cfg.easyIntervalDays);
             return new ReviewComputation(n, due, now, 1);
         }
 
@@ -115,16 +114,16 @@ public class Sm2Algorithm implements SrsAlgorithm {
         if (rating == Rating.AGAIN) step = 0;
 
         if (step >= steps.size()) {
-            ObjectNode n = st.toJson(om);
+            ObjectNode n = st.toJson();
             n.put("phase", "review");
             n.put("step", 0);
             n.put("intervalDays", cfg.graduatingIntervalDays);
-            Instant due = now.plus((long) cfg.graduatingIntervalDays, ChronoUnit.DAYS);
+            Instant due = dueFromDays(now, cfg.graduatingIntervalDays);
             return new ReviewComputation(n, due, now, 1);
         }
 
         int minutes = Math.max(cfg.minimumIntervalMinutes, steps.get(step));
-        ObjectNode n = st.toJson(om);
+        ObjectNode n = st.toJson();
         n.put("phase", "learning");
         n.put("step", step);
 
@@ -144,7 +143,7 @@ public class Sm2Algorithm implements SrsAlgorithm {
         if (rating == Rating.EASY) step = steps.size();
 
         if (step >= steps.size()) {
-            ObjectNode n = st.toJson(om);
+            ObjectNode n = st.toJson();
             n.put("phase", "review");
             n.put("step", 0);
 
@@ -152,12 +151,12 @@ public class Sm2Algorithm implements SrsAlgorithm {
             double newInterval = Math.max(1.0, Math.round(oldInterval * 0.5));
             n.put("intervalDays", newInterval);
 
-            Instant due = now.plus((long) newInterval, ChronoUnit.DAYS);
+            Instant due = dueFromDays(now, newInterval);
             return new ReviewComputation(n, due, now, 1);
         }
 
         int minutes = Math.max(cfg.minimumIntervalMinutes, steps.get(step));
-        ObjectNode n = st.toJson(om);
+        ObjectNode n = st.toJson();
         n.put("phase", "relearning");
         n.put("step", step);
 
@@ -165,7 +164,7 @@ public class Sm2Algorithm implements SrsAlgorithm {
     }
 
     private ReviewComputation handleReview(Sm2State st, Sm2Config cfg, Rating rating, Instant now) {
-        ObjectNode n = st.toJson(om);
+        ObjectNode n = st.toJson();
 
         double ef = n.path("ef").asDouble(cfg.initialEaseFactor);
         int reps = n.path("repetitions").asInt(0);
@@ -220,7 +219,7 @@ public class Sm2Algorithm implements SrsAlgorithm {
         n.put("repetitions", reps);
         n.put("intervalDays", interval);
 
-        Instant due = now.plus(Math.round(interval), ChronoUnit.DAYS);
+        Instant due = dueFromDays(now, interval);
         return new ReviewComputation(n, due, now, 1);
     }
 
@@ -273,25 +272,24 @@ public class Sm2Algorithm implements SrsAlgorithm {
         }
     }
 
-    private record Sm2State(String phase, int step) {
-        static Sm2State from(JsonNode state) {
-            if (state == null || state.isNull() || !state.isObject()) {
-                return new Sm2State("learning", 0);
-            }
-            String p = state.path("phase").asText("learning");
-            int s = state.path("step").asInt(0);
-            return new Sm2State(p, s);
+    private static Instant dueFromDays(Instant now, double days) {
+        return now.plus(Duration.ofSeconds((long) (days * 86400)));
+    }
+
+    private record Sm2State(String phase, int step, ObjectNode base) {
+        static Sm2State from(JsonNode state, ObjectMapper om) {
+            ObjectNode base = (state != null && state.isObject())
+                    ? (ObjectNode) state.deepCopy()
+                    : om.createObjectNode();
+            String p = base.path("phase").asText("learning");
+            int s = base.path("step").asInt(0);
+            return new Sm2State(p, s, base);
         }
 
-        ObjectNode toJson(ObjectMapper om) {
-            ObjectNode n = (stateToObjectNode(om));
-            n.put("phase", phase);
-            n.put("step", step);
-            return n;
-        }
-
-        private ObjectNode stateToObjectNode(ObjectMapper om) {
-            return om.createObjectNode();
+        ObjectNode toJson() {
+            base.put("phase", phase);
+            base.put("step", step);
+            return base;
         }
     }
 }
