@@ -86,15 +86,15 @@ class DeckFlowIT extends PostgresIntegrationTest {
     }
 
     /**
-     * Гарантирует, что в sr_algorithms есть запись для SrAlgorithm.sm2.
+     * Гарантирует, что в sr_algorithms есть запись для SrAlgorithm.fsrs_v6.
      * Нужна из-за FK user_decks.algorithm_id -> sr_algorithms.algorithm_id.
      */
-    private void ensureSm2AlgorithmExists() {
+    private void ensureFsrsAlgorithmExists() {
         try {
             Integer count = jdbcTemplate.queryForObject(
                     "select count(*) from sr_algorithms where algorithm_id = ?",
                     Integer.class,
-                    SrAlgorithm.sm2.name()
+                    SrAlgorithm.fsrs_v6.name()
             );
             if (count != null && count > 0) {
                 return;
@@ -106,8 +106,8 @@ class DeckFlowIT extends PostgresIntegrationTest {
 
         jdbcTemplate.update(
                 "insert into sr_algorithms (algorithm_id, name) values (?, ?)",
-                SrAlgorithm.sm2.name(),
-                "SM-2 default"
+                SrAlgorithm.fsrs_v6.name(),
+                "FSRS v6 default"
         );
     }
 
@@ -115,7 +115,7 @@ class DeckFlowIT extends PostgresIntegrationTest {
     @WithMockUser(authorities = {"SCOPE_user.read", "SCOPE_user.write"})
     void createDeckAndAddCard_persistsPublicAndUserState() {
         // обеспечиваем наличие необходимых справочников
-        ensureSm2AlgorithmExists();
+        ensureFsrsAlgorithmExists();
         UUID userId = UUID.randomUUID();
         UUID templateId = anyTemplateId();
 
@@ -145,7 +145,7 @@ class DeckFlowIT extends PostgresIntegrationTest {
         assertThat(createdDeck.userDeckId()).isNotNull();
         assertThat(createdDeck.userId()).isEqualTo(userId);
         assertThat(createdDeck.publicDeckId()).isNotNull();
-        assertThat(createdDeck.algorithmId()).isEqualTo(SrAlgorithm.sm2.name());
+        assertThat(createdDeck.algorithmId()).isEqualTo(SrAlgorithm.fsrs_v6.name());
         assertThat(createdDeck.autoUpdate()).isTrue();
 
         // Проверяем, что user_deck сохранён

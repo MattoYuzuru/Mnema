@@ -9,11 +9,10 @@ import app.mnema.core.review.api.DeckAlgorithmPort;
 import app.mnema.core.review.controller.dto.ReviewDeckAlgorithmResponse;
 import app.mnema.core.review.domain.Rating;
 import app.mnema.core.review.entity.ReviewUserCardEntity;
-import app.mnema.core.review.entity.SrAlgorithmEntity;
 import app.mnema.core.review.entity.SrCardStateEntity;
 import app.mnema.core.review.repository.ReviewUserCardRepository;
-import app.mnema.core.review.repository.SrAlgorithmRepository;
 import app.mnema.core.review.repository.SrCardStateRepository;
+import app.mnema.core.review.repository.SrReviewLogRepository;
 import app.mnema.core.review.service.UserDeckPreferencesService.PreferencesSnapshot;
 import app.mnema.core.review.util.JsonConfigMerger;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -27,7 +26,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -47,9 +45,6 @@ class ReviewServiceTest {
     SrCardStateRepository stateRepo;
 
     @Mock
-    SrAlgorithmRepository algorithmRepo;
-
-    @Mock
     AlgorithmRegistry registry;
 
     @Mock
@@ -64,6 +59,15 @@ class ReviewServiceTest {
     @Mock
     UserDeckPreferencesService preferencesService;
 
+    @Mock
+    SrReviewLogRepository reviewLogRepository;
+
+    @Mock
+    AlgorithmDefaultConfigCache defaultConfigCache;
+
+    @Mock
+    DeckAlgorithmUpdateBuffer updateBuffer;
+
     ReviewService reviewService;
 
     @BeforeEach
@@ -71,12 +75,14 @@ class ReviewServiceTest {
         reviewService = new ReviewService(
                 userCardRepo,
                 stateRepo,
-                algorithmRepo,
                 registry,
                 cardViewPort,
                 deckAlgorithmPort,
                 configMerger,
-                preferencesService
+                preferencesService,
+                reviewLogRepository,
+                defaultConfigCache,
+                updateBuffer
         );
     }
 
@@ -90,11 +96,7 @@ class ReviewServiceTest {
         JsonNode defaultCfg = MAPPER.createObjectNode().put("minimumEaseFactor", 1.2);
         JsonNode effective = MAPPER.createObjectNode().put("combined", true);
 
-        SrAlgorithmEntity algoEntity = new SrAlgorithmEntity();
-        algoEntity.setAlgorithmId(algorithmId);
-        algoEntity.setDefaultConfig(defaultCfg);
-
-        when(algorithmRepo.findById(algorithmId)).thenReturn(Optional.of(algoEntity));
+        when(defaultConfigCache.getDefaultConfig(algorithmId)).thenReturn(defaultCfg);
         when(configMerger.merge(defaultCfg, override)).thenReturn(effective);
 
         SrsAlgorithm algorithm = mock(SrsAlgorithm.class);
@@ -112,6 +114,8 @@ class ReviewServiceTest {
                 20,
                 null,
                 0,
+                0,
+                null,
                 0
         );
         when(preferencesService.getSnapshot(eq(deckId), any())).thenReturn(snapshot);
@@ -143,10 +147,9 @@ class ReviewServiceTest {
         DeckAlgorithmConfig deckAlgo = new DeckAlgorithmConfig("sm2", deckConfig);
         when(deckAlgorithmPort.getDeckAlgorithm(userId, deckId)).thenReturn(deckAlgo);
 
-        SrAlgorithmEntity algoEntity = new SrAlgorithmEntity();
-        algoEntity.setAlgorithmId("sm2");
-        algoEntity.setDefaultConfig(defaultCfg);
-        when(algorithmRepo.findById("sm2")).thenReturn(Optional.of(algoEntity));
+        when(defaultConfigCache.getDefaultConfig("sm2")).thenReturn(defaultCfg);
+        when(updateBuffer.applyPending(eq(deckId), eq("sm2"), eq(deckConfig), any())).thenReturn(deckConfig);
+        when(updateBuffer.flushIfPending(eq(deckId), eq("sm2"), any())).thenReturn(Optional.empty());
         when(configMerger.merge(defaultCfg, deckConfig)).thenReturn(effectiveCfg);
 
         SrsAlgorithm newAlgorithm = mock(SrsAlgorithm.class);
@@ -182,7 +185,8 @@ class ReviewServiceTest {
                 now,
                 1
         );
-        when(newAlgorithm.apply(any(), eq(Rating.GOOD), any(), eq(effectiveCfg))).thenReturn(computation);
+        SrsAlgorithm.ReviewOutcome outcome = new SrsAlgorithm.ReviewOutcome(computation, null);
+        when(newAlgorithm.review(any(), eq(Rating.GOOD), any(), eq(effectiveCfg), any(), any())).thenReturn(outcome);
 
         PreferencesSnapshot snapshot = new PreferencesSnapshot(
                 deckId,
@@ -190,17 +194,17 @@ class ReviewServiceTest {
                 20,
                 null,
                 0,
+                0,
+                null,
                 0
         );
         when(preferencesService.getSnapshot(eq(deckId), any())).thenReturn(snapshot);
         when(userCardRepo.countDue(eq(userId), eq(deckId), any())).thenReturn(0L);
         when(userCardRepo.countNew(userId, deckId)).thenReturn(0L);
-        when(userCardRepo.findDueCardIds(eq(userId), eq(deckId), any(), any())).thenReturn(List.of());
-        lenient().when(userCardRepo.findNewCardIds(eq(userId), eq(deckId), any())).thenReturn(List.of());
-        reviewService.answer(userId, deckId, cardId, Rating.GOOD);
+        reviewService.answer(userId, deckId, cardId, Rating.GOOD, 1200, app.mnema.core.review.domain.ReviewSource.web, null);
 
         ArgumentCaptor<SrsAlgorithm.ReviewInput> inputCaptor = ArgumentCaptor.forClass(SrsAlgorithm.ReviewInput.class);
-        verify(newAlgorithm).apply(inputCaptor.capture(), eq(Rating.GOOD), any(), eq(effectiveCfg));
+        verify(newAlgorithm).review(inputCaptor.capture(), eq(Rating.GOOD), any(), eq(effectiveCfg), any(), any());
         assertThat(inputCaptor.getValue().state()).isEqualTo(convertedState);
         verify(preferencesService).incrementCounters(eq(deckId), eq(false), any());
     }

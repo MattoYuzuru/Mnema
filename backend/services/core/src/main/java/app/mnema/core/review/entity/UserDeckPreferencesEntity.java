@@ -23,6 +23,12 @@ public class UserDeckPreferencesEntity {
     @Column(name = "max_review_per_day")
     private Integer maxReviewPerDay;
 
+    @Column(name = "time_zone")
+    private String timeZoneId;
+
+    @Column(name = "day_cutoff_minutes", nullable = false)
+    private int dayCutoffMinutes;
+
     @Column(name = "new_seen_today", nullable = false)
     private int newSeenToday;
 
@@ -72,6 +78,22 @@ public class UserDeckPreferencesEntity {
 
     public void setMaxReviewPerDay(Integer maxReviewPerDay) {
         this.maxReviewPerDay = maxReviewPerDay;
+    }
+
+    public String getTimeZoneId() {
+        return timeZoneId;
+    }
+
+    public void setTimeZoneId(String timeZoneId) {
+        this.timeZoneId = timeZoneId;
+    }
+
+    public int getDayCutoffMinutes() {
+        return dayCutoffMinutes;
+    }
+
+    public void setDayCutoffMinutes(int dayCutoffMinutes) {
+        this.dayCutoffMinutes = dayCutoffMinutes;
     }
 
     public int getNewSeenToday() {

@@ -6,9 +6,12 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.DateTimeException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.UUID;
 
@@ -17,6 +20,8 @@ public class UserDeckPreferencesService {
 
     private static final int DEFAULT_LEARNING_HORIZON_MINUTES = 120;
     private static final int DEFAULT_MAX_NEW_PER_DAY = 20;
+    private static final int DEFAULT_DAY_CUTOFF_MINUTES = 0;
+    private static final int MAX_DAY_CUTOFF_MINUTES = 24 * 60 - 1;
 
     private final UserDeckPreferencesRepository repository;
 
@@ -27,7 +32,8 @@ public class UserDeckPreferencesService {
     @Transactional
     public PreferencesSnapshot getSnapshot(UUID userDeckId, Instant now) {
         UserDeckPreferencesEntity entity = getOrCreate(userDeckId);
-        boolean reset = ensureCountersForDate(entity, today(now));
+        ReviewDayBounds reviewDay = reviewDay(entity.getTimeZoneId(), entity.getDayCutoffMinutes(), now);
+        boolean reset = ensureCountersForDate(entity, reviewDay.date());
         if (reset) {
             repository.save(entity);
         }
@@ -37,7 +43,8 @@ public class UserDeckPreferencesService {
     @Transactional
     public void incrementCounters(UUID userDeckId, boolean newCardAnswered, Instant now) {
         UserDeckPreferencesEntity entity = getOrCreateForUpdate(userDeckId);
-        ensureCountersForDate(entity, today(now));
+        ReviewDayBounds reviewDay = reviewDay(entity.getTimeZoneId(), entity.getDayCutoffMinutes(), now);
+        ensureCountersForDate(entity, reviewDay.date());
         if (newCardAnswered) {
             entity.setNewSeenToday(entity.getNewSeenToday() + 1);
         } else {
@@ -63,7 +70,9 @@ public class UserDeckPreferencesService {
                 entity.getMaxNewPerDay(),
                 entity.getMaxReviewPerDay(),
                 entity.getNewSeenToday(),
-                entity.getReviewSeenToday()
+                entity.getReviewSeenToday(),
+                entity.getTimeZoneId(),
+                normalizeDayCutoff(entity.getDayCutoffMinutes())
         );
     }
 
@@ -77,8 +86,34 @@ public class UserDeckPreferencesService {
         return true;
     }
 
-    private static LocalDate today(Instant now) {
-        return LocalDate.ofInstant(now, ZoneOffset.UTC);
+    private static ReviewDayBounds reviewDay(String timeZoneId, int dayCutoffMinutes, Instant now) {
+        ZoneId zoneId = resolveZoneId(timeZoneId);
+        int cutoffMinutes = normalizeDayCutoff(dayCutoffMinutes);
+        LocalTime cutoff = LocalTime.of(cutoffMinutes / 60, cutoffMinutes % 60);
+
+        var zoned = now.atZone(zoneId);
+        LocalDate date = zoned.toLocalDate();
+        if (cutoffMinutes > 0 && zoned.toLocalTime().isBefore(cutoff)) {
+            date = date.minusDays(1);
+        }
+        Instant start = date.atTime(cutoff).atZone(zoneId).toInstant();
+        Instant end = date.plusDays(1).atTime(cutoff).atZone(zoneId).toInstant();
+        return new ReviewDayBounds(date, start, end);
+    }
+
+    private static ZoneId resolveZoneId(String timeZoneId) {
+        if (timeZoneId == null || timeZoneId.isBlank()) {
+            return ZoneOffset.UTC;
+        }
+        try {
+            return ZoneId.of(timeZoneId);
+        } catch (DateTimeException ex) {
+            return ZoneOffset.UTC;
+        }
+    }
+
+    private static int normalizeDayCutoff(int dayCutoffMinutes) {
+        return Math.max(0, Math.min(MAX_DAY_CUTOFF_MINUTES, dayCutoffMinutes));
     }
 
     private UserDeckPreferencesEntity createDefaultWithRetry(UUID userDeckId) {
@@ -95,6 +130,8 @@ public class UserDeckPreferencesService {
         entity.setLearningHorizonMinutes(DEFAULT_LEARNING_HORIZON_MINUTES);
         entity.setMaxNewPerDay(DEFAULT_MAX_NEW_PER_DAY);
         entity.setMaxReviewPerDay(null);
+        entity.setDayCutoffMinutes(DEFAULT_DAY_CUTOFF_MINUTES);
+        entity.setTimeZoneId(null);
         entity.setNewSeenToday(0);
         entity.setReviewSeenToday(0);
         entity.setCounterDate(null);
@@ -104,7 +141,12 @@ public class UserDeckPreferencesService {
     }
 
     @Transactional
-    public PreferencesSnapshot updatePreferences(UUID userDeckId, Integer maxNewPerDay, Integer learningHorizonHours) {
+    public PreferencesSnapshot updatePreferences(UUID userDeckId,
+                                                 Integer maxNewPerDay,
+                                                 Integer learningHorizonHours,
+                                                 Integer maxReviewPerDay,
+                                                 Integer dayCutoffHour,
+                                                 String timeZoneId) {
         UserDeckPreferencesEntity entity = getOrCreateForUpdate(userDeckId);
         boolean changed = false;
 
@@ -119,6 +161,25 @@ public class UserDeckPreferencesService {
             changed = true;
         }
 
+        if (maxReviewPerDay != null) {
+            entity.setMaxReviewPerDay(Math.max(0, maxReviewPerDay));
+            changed = true;
+        }
+
+        if (dayCutoffHour != null) {
+            int minutes = Math.max(0, Math.min(23, dayCutoffHour)) * 60;
+            entity.setDayCutoffMinutes(minutes);
+            changed = true;
+        }
+
+        if (timeZoneId != null) {
+            String normalized = normalizeTimeZoneId(timeZoneId);
+            if (normalized != null || timeZoneId.isBlank()) {
+                entity.setTimeZoneId(normalized);
+                changed = true;
+            }
+        }
+
         if (changed) {
             repository.save(entity);
         }
@@ -130,12 +191,40 @@ public class UserDeckPreferencesService {
                                       Integer maxNewPerDay,
                                       Integer maxReviewPerDay,
                                       int newSeenToday,
-                                      int reviewSeenToday) {
+                                      int reviewSeenToday,
+                                      String timeZoneId,
+                                      int dayCutoffMinutes) {
         public long remainingNewQuota() {
             if (maxNewPerDay == null || maxNewPerDay <= 0) {
                 return Long.MAX_VALUE;
             }
             return Math.max(0, (long) maxNewPerDay - newSeenToday);
+        }
+
+        public long remainingReviewQuota() {
+            if (maxReviewPerDay == null || maxReviewPerDay <= 0) {
+                return Long.MAX_VALUE;
+            }
+            return Math.max(0, (long) maxReviewPerDay - reviewSeenToday);
+        }
+
+        public ReviewDayBounds reviewDay(Instant now) {
+            return UserDeckPreferencesService.reviewDay(timeZoneId, dayCutoffMinutes, now);
+        }
+    }
+
+    public record ReviewDayBounds(LocalDate date, Instant start, Instant end) {
+    }
+
+    private static String normalizeTimeZoneId(String timeZoneId) {
+        if (timeZoneId == null || timeZoneId.isBlank()) {
+            return null;
+        }
+        try {
+            ZoneId.of(timeZoneId);
+            return timeZoneId;
+        } catch (DateTimeException ex) {
+            return null;
         }
     }
 }

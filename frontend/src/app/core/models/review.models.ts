@@ -2,6 +2,9 @@ export interface ReviewQueueDTO {
     dueCount: number;
     newCount: number;
     totalRemaining?: number;
+    dueTodayCount?: number;
+    newTotalCount?: number;
+    learningAheadCount?: number;
 }
 
 export interface IntervalDTO {
@@ -27,6 +30,14 @@ export interface ReviewAnswerRequest {
     rating: 'AGAIN' | 'HARD' | 'GOOD' | 'EASY';
     responseMs: number;
     source: string;
+    features?: ReviewClientFeatures | null;
+}
+
+export interface ReviewClientFeatures {
+    x?: number[];
+    meta?: {
+        uiMode?: 'binary' | 'quad';
+    };
 }
 
 export interface ReviewAnswerResponse {
@@ -35,8 +46,11 @@ export interface ReviewAnswerResponse {
 }
 
 export interface ReviewPreferencesDTO {
-    dailyNewLimit: number | null;
-    learningHorizonHours: number | null;
+    dailyNewLimit?: number | null;
+    learningHorizonHours?: number | null;
+    maxReviewPerDay?: number | null;
+    dayCutoffHour?: number | null;
+    timeZone?: string | null;
 }
 
 export interface ReviewDeckAlgorithmResponse {

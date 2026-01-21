@@ -2,6 +2,7 @@ package app.mnema.core.review.entity;
 
 import jakarta.persistence.*;
 
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -21,6 +22,9 @@ public class ReviewUserCardEntity {
     @Column(name = "is_deleted", nullable = false)
     private boolean deleted;
 
+    @Column(name = "created_at", nullable = false)
+    private Instant createdAt;
+
     public UUID getUserCardId() {
         return userCardId;
     }
@@ -35,5 +39,9 @@ public class ReviewUserCardEntity {
 
     public boolean isDeleted() {
         return deleted;
+    }
+
+    public Instant getCreatedAt() {
+        return createdAt;
     }
 }

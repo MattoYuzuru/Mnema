@@ -7,6 +7,7 @@ import { AuthService } from '../../auth.service';
 import { UserApiService } from '../../user-api.service';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
+import { ReviewApiService } from '../../core/services/review-api.service';
 import { PublicDeckDTO, PublicCardDTO } from '../../core/models/public-deck.models';
 import { CardContentValue } from '../../core/models/user-card.models';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
@@ -243,6 +244,7 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         private publicDeckApi: PublicDeckApiService,
         private userApi: UserApiService,
         private deckApi: DeckApiService,
+        private reviewApi: ReviewApiService,
         public auth: AuthService
     ) {}
 
@@ -561,12 +563,33 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
 
         this.publicDeckApi.fork(this.deckId).subscribe({
             next: userDeck => {
+                this.applyDeckTimeZone(userDeck.userDeckId, userDeck.algorithmId);
                 void this.router.navigate(['/decks', userDeck.userDeckId]);
             },
             error: err => {
                 console.error('Failed to fork deck:', err);
             }
         });
+    }
+
+    private applyDeckTimeZone(userDeckId: string, algorithmId: string): void {
+        const timeZone = this.resolveBrowserTimeZone();
+        if (!timeZone) {
+            return;
+        }
+        this.reviewApi.updateDeckAlgorithm(userDeckId, {
+            algorithmId,
+            algorithmParams: null,
+            reviewPreferences: { timeZone }
+        }).subscribe({ error: () => {} });
+    }
+
+    private resolveBrowserTimeZone(): string | null {
+        try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+        } catch {
+            return null;
+        }
     }
 
     private matchesSearch(card: PublicCardDTO, query: string): boolean {
