@@ -53,7 +53,7 @@ public interface ReviewUserCardRepository extends JpaRepository<ReviewUserCardEn
               and c.userId = :userId
               and c.deleted = false
               and s.userCardId is null
-            order by c.userCardId asc
+            order by c.createdAt asc, c.userCardId asc
             """)
     List<UUID> findNewCardIds(@Param("userId") UUID userId,
                               @Param("deckId") UUID deckId,

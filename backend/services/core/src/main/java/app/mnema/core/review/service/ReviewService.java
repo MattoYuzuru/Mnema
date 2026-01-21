@@ -8,9 +8,12 @@ import app.mnema.core.review.api.DeckAlgorithmConfig;
 import app.mnema.core.review.api.DeckAlgorithmPort;
 import app.mnema.core.review.controller.dto.*;
 import app.mnema.core.review.domain.Rating;
+import app.mnema.core.review.domain.ReviewSource;
 import app.mnema.core.review.entity.ReviewUserCardEntity;
 import app.mnema.core.review.entity.SrCardStateEntity;
+import app.mnema.core.review.entity.SrReviewLogEntity;
 import app.mnema.core.review.repository.ReviewUserCardRepository;
+import app.mnema.core.review.repository.SrReviewLogRepository;
 import app.mnema.core.review.repository.SrAlgorithmRepository;
 import app.mnema.core.review.repository.SrCardStateRepository;
 import app.mnema.core.review.util.JsonConfigMerger;
@@ -34,6 +37,7 @@ public class ReviewService {
     private final DeckAlgorithmPort deckAlgorithmPort;
     private final JsonConfigMerger configMerger;
     private final UserDeckPreferencesService preferencesService;
+    private final SrReviewLogRepository reviewLogRepository;
 
     public ReviewService(ReviewUserCardRepository userCardRepo,
                          SrCardStateRepository stateRepo,
@@ -42,7 +46,8 @@ public class ReviewService {
                          CardViewPort cardViewPort,
                          DeckAlgorithmPort deckAlgorithmPort,
                          JsonConfigMerger configMerger,
-                         UserDeckPreferencesService preferencesService) {
+                         UserDeckPreferencesService preferencesService,
+                         SrReviewLogRepository reviewLogRepository) {
         this.userCardRepo = userCardRepo;
         this.stateRepo = stateRepo;
         this.algorithmRepo = algorithmRepo;
@@ -51,6 +56,7 @@ public class ReviewService {
         this.deckAlgorithmPort = deckAlgorithmPort;
         this.configMerger = configMerger;
         this.preferencesService = preferencesService;
+        this.reviewLogRepository = reviewLogRepository;
     }
 
     @Transactional(readOnly = true)
@@ -61,19 +67,24 @@ public class ReviewService {
         }
 
         Instant now = Instant.now();
-        Map<UUID, Long> dueByDeck = toCountMap(userCardRepo.countDueByDeck(userId, deckIds, now));
         Map<UUID, Long> newByDeck = toCountMap(userCardRepo.countNewByDeck(userId, deckIds));
 
         long totalDue = 0;
         long totalNew = 0;
         for (UUID deckId : deckIds) {
-            long dueCount = dueByDeck.getOrDefault(deckId, 0L);
+            UserDeckPreferencesService.PreferencesSnapshot preferences = preferencesService.getSnapshot(deckId, now);
+            Instant reviewDayEnd = preferences.reviewDay(now).end();
+            long dueCount = userCardRepo.countDue(userId, deckId, reviewDayEnd);
             long newCount = newByDeck.getOrDefault(deckId, 0L);
-            long remainingNewQuota = preferencesService.getSnapshot(deckId, now).remainingNewQuota();
+            long remainingNewQuota = preferences.remainingNewQuota();
+            long remainingReviewQuota = preferences.remainingReviewQuota();
             long availableNew = remainingNewQuota == Long.MAX_VALUE
                     ? newCount
                     : Math.min(newCount, remainingNewQuota);
-            totalDue += dueCount;
+            long availableDue = remainingReviewQuota == Long.MAX_VALUE
+                    ? dueCount
+                    : Math.min(dueCount, remainingReviewQuota);
+            totalDue += availableDue;
             totalNew += availableNew;
         }
 
@@ -113,7 +124,10 @@ public class ReviewService {
                 : preferencesService.updatePreferences(
                 userDeckId,
                 reviewPreferences.dailyNewLimit(),
-                reviewPreferences.learningHorizonHours()
+                reviewPreferences.learningHorizonHours(),
+                reviewPreferences.maxReviewPerDay(),
+                reviewPreferences.dayCutoffHour(),
+                reviewPreferences.timeZone()
         );
         AlgorithmContext ctx = buildAlgorithmContext(updated.algorithmId(), updated.algorithmParams());
         AlgorithmStats stats = computeAlgorithmStats(userId, userDeckId, ctx.algorithmId());
@@ -124,7 +138,9 @@ public class ReviewService {
     public ReviewAnswerResponse answer(UUID userId,
                                        UUID userDeckId,
                                        UUID userCardId,
-                                       Rating rating) {
+                                       Rating rating,
+                                       Integer responseMs,
+                                       ReviewSource source) {
         Instant now = Instant.now();
         AlgorithmContext algorithmContext = resolveAlgorithmContext(userId, userDeckId);
 
@@ -143,6 +159,8 @@ public class ReviewService {
 
         SrsAlgorithm.ReviewComputation computation = algorithmContext.algorithm()
                 .apply(input, rating, now, algorithmContext.effectiveConfig());
+
+        logReview(userCardId, algorithmContext.algorithmId(), rating, responseMs, source, input.state(), computation.newState(), now);
 
         SrCardStateEntity nextState = (current == null) ? new SrCardStateEntity() : current;
         if (nextState.getUserCardId() == null) {
@@ -247,12 +265,23 @@ public class ReviewService {
         AlgorithmContext algorithmContext = resolveAlgorithmContext(userId, userDeckId);
 
         Instant dueHorizon = now.plus(preferences.learningHorizon());
-        long dueNowCount = userCardRepo.countDue(userId, userDeckId, now);
-        long dueHorizonCount = userCardRepo.countDue(userId, userDeckId, dueHorizon);
-        long dueSoonCount = Math.max(0, dueHorizonCount - dueNowCount);
-        long newCount = userCardRepo.countNew(userId, userDeckId);
+        Instant reviewDayEnd = preferences.reviewDay(now).end();
+        long reviewQuota = preferences.remainingReviewQuota();
+        long rawDueNowCount = userCardRepo.countDue(userId, userDeckId, now);
+        long dueNowCount = applyReviewQuota(rawDueNowCount, reviewQuota);
+        long rawDueHorizonCount = userCardRepo.countDue(userId, userDeckId, dueHorizon);
+        long rawDueSoonCount = Math.max(0, rawDueHorizonCount - rawDueNowCount);
+        long remainingAfterDue = (reviewQuota == Long.MAX_VALUE)
+                ? Long.MAX_VALUE
+                : Math.max(0, reviewQuota - dueNowCount);
+        long dueSoonCount = (remainingAfterDue == Long.MAX_VALUE)
+                ? rawDueSoonCount
+                : Math.min(rawDueSoonCount, remainingAfterDue);
+        long rawDueTodayCount = userCardRepo.countDue(userId, userDeckId, reviewDayEnd);
+        long dueTodayCount = applyReviewQuota(rawDueTodayCount, reviewQuota);
+        long newTotalCount = userCardRepo.countNew(userId, userDeckId);
         long remainingNewQuota = preferences.remainingNewQuota();
-        long availableNew = newCount;
+        long availableNew = newTotalCount;
         if (remainingNewQuota != Long.MAX_VALUE) {
             availableNew = Math.min(availableNew, remainingNewQuota);
         }
@@ -260,7 +289,10 @@ public class ReviewService {
         var queue = new ReviewNextCardResponse.QueueSummary(
                 dueNowCount,
                 availableNew,
-                dueNowCount + availableNew + dueSoonCount
+                dueTodayCount + availableNew,
+                dueTodayCount,
+                newTotalCount,
+                dueSoonCount
         );
 
         // 1) due, 2) new
@@ -268,23 +300,24 @@ public class ReviewService {
         boolean due = false;
         boolean learningAhead = false;
 
-        var dueIds = userCardRepo.findDueCardIds(userId, userDeckId, now, PageRequest.of(0, 1));
-        if (!dueIds.isEmpty()) {
-            nextCardId = dueIds.getFirst();
-            due = true;
-        } else {
-            if (availableNew > 0) {
-                var newIds = userCardRepo.findNewCardIds(userId, userDeckId, PageRequest.of(0, 1));
-                if (!newIds.isEmpty()) {
-                    nextCardId = newIds.getFirst();
-                }
+        if (dueNowCount > 0) {
+            var dueIds = userCardRepo.findDueCardIds(userId, userDeckId, now, PageRequest.of(0, 1));
+            if (!dueIds.isEmpty()) {
+                nextCardId = dueIds.getFirst();
+                due = true;
             }
-            if (nextCardId == null) {
-                var learningIds = userCardRepo.findDueCardIds(userId, userDeckId, dueHorizon, PageRequest.of(0, 1));
-                if (!learningIds.isEmpty()) {
-                    nextCardId = learningIds.getFirst();
-                    learningAhead = true;
-                }
+        }
+        if (nextCardId == null && availableNew > 0) {
+            var newIds = userCardRepo.findNewCardIds(userId, userDeckId, PageRequest.of(0, 1));
+            if (!newIds.isEmpty()) {
+                nextCardId = newIds.getFirst();
+            }
+        }
+        if (nextCardId == null && dueSoonCount > 0) {
+            var learningIds = userCardRepo.findDueCardIds(userId, userDeckId, dueHorizon, PageRequest.of(0, 1));
+            if (!learningIds.isEmpty()) {
+                nextCardId = learningIds.getFirst();
+                learningAhead = true;
             }
         }
 
@@ -383,6 +416,33 @@ public class ReviewService {
         return out;
     }
 
+    private static long applyReviewQuota(long dueCount, long remainingReviewQuota) {
+        if (remainingReviewQuota == Long.MAX_VALUE) {
+            return dueCount;
+        }
+        return Math.min(dueCount, remainingReviewQuota);
+    }
+
+    private void logReview(UUID userCardId,
+                           String algorithmId,
+                           Rating rating,
+                           Integer responseMs,
+                           ReviewSource source,
+                           JsonNode stateBefore,
+                           JsonNode stateAfter,
+                           Instant reviewedAt) {
+        SrReviewLogEntity log = new SrReviewLogEntity();
+        log.setUserCardId(userCardId);
+        log.setAlgorithmId(algorithmId);
+        log.setReviewedAt(reviewedAt);
+        log.setRating((short) rating.code());
+        log.setResponseMs(responseMs);
+        log.setSource(source == null ? ReviewSource.other : source);
+        log.setStateBefore(stateBefore);
+        log.setStateAfter(stateAfter);
+        reviewLogRepository.save(log);
+    }
+
     private static String humanize(Duration d) {
         long s = Math.max(0, d.getSeconds());
         if (s < 3600) return (s / 60) + "m";
@@ -410,7 +470,10 @@ public class ReviewService {
         Integer dailyNewLimit = preferences.maxNewPerDay();
         long minutes = preferences.learningHorizon().toMinutes();
         int learningHorizonHours = Math.max(1, (int) Math.round(minutes / 60.0));
-        return new ReviewPreferencesDto(dailyNewLimit, learningHorizonHours);
+        Integer maxReviewPerDay = preferences.maxReviewPerDay();
+        int dayCutoffHour = Math.max(0, Math.min(23, preferences.dayCutoffMinutes() / 60));
+        String timeZone = preferences.timeZoneId();
+        return new ReviewPreferencesDto(dailyNewLimit, learningHorizonHours, maxReviewPerDay, dayCutoffHour, timeZone);
     }
 
     private AlgorithmStats computeAlgorithmStats(UUID userId, UUID userDeckId, String algorithmId) {
