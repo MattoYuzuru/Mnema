@@ -34,6 +34,10 @@ public class SrReviewLogEntity {
     private Integer responseMs;
 
     @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "features", columnDefinition = "jsonb")
+    private JsonNode features;
+
+    @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "state_before", columnDefinition = "jsonb")
     private JsonNode stateBefore;
 
@@ -88,6 +92,14 @@ public class SrReviewLogEntity {
 
     public void setResponseMs(Integer responseMs) {
         this.responseMs = responseMs;
+    }
+
+    public JsonNode getFeatures() {
+        return features;
+    }
+
+    public void setFeatures(JsonNode features) {
+        this.features = features;
     }
 
     public JsonNode getStateBefore() {

@@ -15,6 +15,14 @@ public interface SrsAlgorithm {
 
     ReviewComputation apply(ReviewInput input, Rating rating, Instant now, JsonNode effectiveConfig);
 
+    default ReviewComputation apply(ReviewInput input,
+                                    Rating rating,
+                                    Instant now,
+                                    JsonNode effectiveConfig,
+                                    ReviewContext context) {
+        return apply(input, rating, now, effectiveConfig);
+    }
+
     CanonicalProgress toCanonical(JsonNode state);
 
     JsonNode fromCanonical(CanonicalProgress progress, JsonNode effectiveConfig);

@@ -2,6 +2,7 @@ package app.mnema.core.review.service;
 
 import app.mnema.core.review.algorithm.AlgorithmRegistry;
 import app.mnema.core.review.algorithm.CanonicalProgress;
+import app.mnema.core.review.algorithm.ReviewContext;
 import app.mnema.core.review.algorithm.SrsAlgorithm;
 import app.mnema.core.review.api.CardViewPort;
 import app.mnema.core.review.api.DeckAlgorithmConfig;
@@ -140,7 +141,8 @@ public class ReviewService {
                                        UUID userCardId,
                                        Rating rating,
                                        Integer responseMs,
-                                       ReviewSource source) {
+                                       ReviewSource source,
+                                       JsonNode features) {
         Instant now = Instant.now();
         AlgorithmContext algorithmContext = resolveAlgorithmContext(userId, userDeckId);
 
@@ -156,11 +158,17 @@ public class ReviewService {
 
         SrCardStateEntity current = stateRepo.findByIdForUpdate(userCardId).orElse(null);
         SrsAlgorithm.ReviewInput input = buildReviewInput(current, algorithmContext);
+        ReviewContext context = new ReviewContext(
+                source == null ? ReviewSource.other : source,
+                responseMs,
+                features
+        );
 
         SrsAlgorithm.ReviewComputation computation = algorithmContext.algorithm()
-                .apply(input, rating, now, algorithmContext.effectiveConfig());
+                .apply(input, rating, now, algorithmContext.effectiveConfig(), context);
 
-        logReview(userCardId, algorithmContext.algorithmId(), rating, responseMs, source, input.state(), computation.newState(), now);
+        logReview(userCardId, algorithmContext.algorithmId(), rating, responseMs, context.source(), context.features(),
+                input.state(), computation.newState(), now);
 
         SrCardStateEntity nextState = (current == null) ? new SrCardStateEntity() : current;
         if (nextState.getUserCardId() == null) {
@@ -428,6 +436,7 @@ public class ReviewService {
                            Rating rating,
                            Integer responseMs,
                            ReviewSource source,
+                           JsonNode features,
                            JsonNode stateBefore,
                            JsonNode stateAfter,
                            Instant reviewedAt) {
@@ -438,6 +447,7 @@ public class ReviewService {
         log.setRating((short) rating.code());
         log.setResponseMs(responseMs);
         log.setSource(source == null ? ReviewSource.other : source);
+        log.setFeatures(features);
         log.setStateBefore(stateBefore);
         log.setStateAfter(stateAfter);
         reviewLogRepository.save(log);
