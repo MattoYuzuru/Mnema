@@ -21,5 +21,10 @@ public record ReviewNextCardResponse(
 ) {
     public record IntervalPreview(Instant at, String display) {}
 
-    public record QueueSummary(long dueCount, long newCount, long totalRemaining) {}
+    public record QueueSummary(long dueCount,
+                               long newCount,
+                               long totalRemaining,
+                               long dueTodayCount,
+                               long newTotalCount,
+                               long learningAheadCount) {}
 }

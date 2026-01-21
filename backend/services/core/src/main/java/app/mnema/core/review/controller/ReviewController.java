@@ -42,7 +42,7 @@ public class ReviewController {
                                        @RequestBody AnswerCardRequest req) {
         UUID userId = currentUserProvider.getUserId(jwt);
         Rating rating = Rating.fromString(req.rating());
-        return reviewService.answer(userId, userDeckId, userCardId, rating);
+        return reviewService.answer(userId, userDeckId, userCardId, rating, req.responseMs(), req.source());
     }
 
     @GetMapping("/{userDeckId}/algorithm")
