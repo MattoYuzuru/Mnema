@@ -30,6 +30,14 @@ export interface ReviewAnswerRequest {
     rating: 'AGAIN' | 'HARD' | 'GOOD' | 'EASY';
     responseMs: number;
     source: string;
+    features?: ReviewClientFeatures | null;
+}
+
+export interface ReviewClientFeatures {
+    x?: number[];
+    meta?: {
+        uiMode?: 'binary' | 'quad';
+    };
 }
 
 export interface ReviewAnswerResponse {

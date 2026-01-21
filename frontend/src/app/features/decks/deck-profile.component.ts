@@ -247,6 +247,7 @@ import { I18nService } from '../../core/services/i18n.service';
                 <select formControlName="algorithmId" class="algorithm-select">
                   <option value="sm2">SM-2</option>
                   <option value="fsrs_v6">FSRS v6</option>
+                  <option value="hlr">HLR</option>
                 </select>
                 <p *ngIf="currentAlgorithm && currentAlgorithm.pendingMigrationCards > 0" class="migration-info">
                   {{ currentAlgorithm.pendingMigrationCards }} {{ 'deckProfile.pendingMigrationText' | translate }}

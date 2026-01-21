@@ -9,7 +9,7 @@ import { ReviewApiService } from '../../core/services/review-api.service';
 import { PreferencesService } from '../../core/services/preferences.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { CardTemplateDTO } from '../../core/models/template.models';
-import { ReviewNextCardResponse, ReviewQueueDTO } from '../../core/models/review.models';
+import { ReviewClientFeatures, ReviewNextCardResponse, ReviewQueueDTO } from '../../core/models/review.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { FlashcardViewComponent } from '../../shared/components/flashcard-view.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
@@ -94,7 +94,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           <p class="keyboard-hint">{{ 'review.spaceToReveal' | translate }}</p>
         </div>
 
-        <div *ngIf="revealed" class="answer-buttons">
+        <div *ngIf="revealed && !isHlr()" class="answer-buttons">
           <app-button variant="ghost" (click)="answer('AGAIN')">
             {{ 'review.again' | translate }}{{ formatInterval('AGAIN') }}
           </app-button>
@@ -106,6 +106,15 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           </app-button>
           <app-button variant="primary" (click)="answer('EASY')">
             {{ 'review.easy' | translate }}{{ formatInterval('EASY') }}
+          </app-button>
+        </div>
+
+        <div *ngIf="revealed && isHlr()" class="answer-buttons">
+          <app-button variant="ghost" (click)="answer('AGAIN')">
+            {{ 'review.again' | translate }}{{ formatInterval('AGAIN') }}
+          </app-button>
+          <app-button variant="primary" (click)="answer('GOOD')">
+            {{ 'review.good' | translate }}{{ formatInterval('GOOD') }}
           </app-button>
         </div>
 
@@ -367,11 +376,11 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
             this.answer('AGAIN');
         } else if (event.key === '2') {
             event.preventDefault();
-            this.answer('HARD');
-        } else if (event.key === '3') {
+            this.answer(this.isHlr() ? 'GOOD' : 'HARD');
+        } else if (!this.isHlr() && event.key === '3') {
             event.preventDefault();
             this.answer('GOOD');
-        } else if (event.key === '4') {
+        } else if (!this.isHlr() && event.key === '4') {
             event.preventDefault();
             this.answer('EASY');
         }
@@ -458,7 +467,8 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
         this.reviewApi.answerCard(this.userDeckId, this.currentCard.userCardId, {
             rating,
             responseMs,
-            source: 'web'
+            source: 'web',
+            features: this.buildClientFeatures()
         }).subscribe({
             next: response => {
                 this.handleNextCard(response.next);
@@ -471,5 +481,17 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
 
     backToDeck(): void {
         void this.router.navigate(['/decks', this.userDeckId]);
+    }
+
+    isHlr(): boolean {
+        return this.deck?.algorithmId === 'hlr';
+    }
+
+    private buildClientFeatures(): ReviewClientFeatures | null {
+        return {
+            meta: {
+                uiMode: this.isHlr() ? 'binary' : 'quad'
+            }
+        };
     }
 }
