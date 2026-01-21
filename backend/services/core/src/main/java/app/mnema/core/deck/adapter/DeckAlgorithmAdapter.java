@@ -28,7 +28,7 @@ public class DeckAlgorithmAdapter implements DeckAlgorithmPort {
         }
 
         String algo = (deck.getAlgorithmId() == null || deck.getAlgorithmId().isBlank())
-                ? "sm2"
+                ? "fsrs_v6"
                 : deck.getAlgorithmId();
 
         return new DeckAlgorithmConfig(algo, deck.getAlgorithmParams());
