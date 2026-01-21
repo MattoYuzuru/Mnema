@@ -19,6 +19,8 @@ import app.mnema.core.review.repository.SrAlgorithmRepository;
 import app.mnema.core.review.repository.SrCardStateRepository;
 import app.mnema.core.review.util.JsonConfigMerger;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -158,14 +160,16 @@ public class ReviewService {
 
         SrCardStateEntity current = stateRepo.findByIdForUpdate(userCardId).orElse(null);
         SrsAlgorithm.ReviewInput input = buildReviewInput(current, algorithmContext);
+        JsonNode mergedFeatures = buildFeatures(input, rating, responseMs, source, features, now);
         ReviewContext context = new ReviewContext(
                 source == null ? ReviewSource.other : source,
                 responseMs,
-                features
+                mergedFeatures
         );
 
-        SrsAlgorithm.ReviewComputation computation = algorithmContext.algorithm()
-                .apply(input, rating, now, algorithmContext.effectiveConfig(), context);
+        SrsAlgorithm.ReviewOutcome outcome = algorithmContext.algorithm()
+                .review(input, rating, now, algorithmContext.effectiveConfig(), context, algorithmContext.deckConfig());
+        SrsAlgorithm.ReviewComputation computation = outcome.computation();
 
         logReview(userCardId, algorithmContext.algorithmId(), rating, responseMs, context.source(), context.features(),
                 input.state(), computation.newState(), now);
@@ -183,6 +187,11 @@ public class ReviewService {
         nextState.setSuspended(false);
 
         stateRepo.save(nextState);
+
+        JsonNode updatedDeckConfig = outcome.updatedDeckConfig();
+        if (updatedDeckConfig != null && !Objects.equals(updatedDeckConfig, algorithmContext.deckConfig())) {
+            deckAlgorithmPort.updateDeckAlgorithm(userId, userDeckId, algorithmContext.algorithmId(), updatedDeckConfig);
+        }
         preferencesService.incrementCounters(userDeckId, current == null, now);
 
         ReviewNextCardResponse next = nextCard(userId, userDeckId);
@@ -451,6 +460,36 @@ public class ReviewService {
         log.setStateBefore(stateBefore);
         log.setStateAfter(stateAfter);
         reviewLogRepository.save(log);
+    }
+
+    private static JsonNode buildFeatures(SrsAlgorithm.ReviewInput input,
+                                          Rating rating,
+                                          Integer responseMs,
+                                          ReviewSource source,
+                                          JsonNode requestFeatures,
+                                          Instant now) {
+        ObjectNode server = JsonNodeFactory.instance.objectNode();
+        server.put("rating", rating.name().toLowerCase());
+        server.put("ratingCode", rating.code());
+        if (responseMs != null) {
+            server.put("responseMs", responseMs);
+        }
+        if (source != null) {
+            server.put("source", source.name());
+        }
+        server.put("reviewCount", Math.max(0, input.reviewCount()));
+        server.put("isNew", input.lastReviewAt() == null);
+        if (input.lastReviewAt() != null) {
+            double elapsedDays = Math.max(0.0, Duration.between(input.lastReviewAt(), now).toSeconds() / 86400.0);
+            server.put("elapsedDays", elapsedDays);
+        }
+
+        ObjectNode out = JsonNodeFactory.instance.objectNode();
+        out.set("server", server);
+        if (requestFeatures != null && !requestFeatures.isNull()) {
+            out.set("client", requestFeatures);
+        }
+        return out;
     }
 
     private static String humanize(Duration d) {

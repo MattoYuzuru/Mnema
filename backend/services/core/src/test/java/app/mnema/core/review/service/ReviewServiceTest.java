@@ -189,7 +189,8 @@ class ReviewServiceTest {
                 now,
                 1
         );
-        when(newAlgorithm.apply(any(), eq(Rating.GOOD), any(), eq(effectiveCfg), any())).thenReturn(computation);
+        SrsAlgorithm.ReviewOutcome outcome = new SrsAlgorithm.ReviewOutcome(computation, null);
+        when(newAlgorithm.review(any(), eq(Rating.GOOD), any(), eq(effectiveCfg), any(), any())).thenReturn(outcome);
 
         PreferencesSnapshot snapshot = new PreferencesSnapshot(
                 deckId,
@@ -207,7 +208,7 @@ class ReviewServiceTest {
         reviewService.answer(userId, deckId, cardId, Rating.GOOD, 1200, app.mnema.core.review.domain.ReviewSource.web, null);
 
         ArgumentCaptor<SrsAlgorithm.ReviewInput> inputCaptor = ArgumentCaptor.forClass(SrsAlgorithm.ReviewInput.class);
-        verify(newAlgorithm).apply(inputCaptor.capture(), eq(Rating.GOOD), any(), eq(effectiveCfg), any());
+        verify(newAlgorithm).review(inputCaptor.capture(), eq(Rating.GOOD), any(), eq(effectiveCfg), any(), any());
         assertThat(inputCaptor.getValue().state()).isEqualTo(convertedState);
         verify(preferencesService).incrementCounters(eq(deckId), eq(false), any());
     }

@@ -23,6 +23,15 @@ public interface SrsAlgorithm {
         return apply(input, rating, now, effectiveConfig);
     }
 
+    default ReviewOutcome review(ReviewInput input,
+                                 Rating rating,
+                                 Instant now,
+                                 JsonNode effectiveConfig,
+                                 ReviewContext context,
+                                 JsonNode deckConfig) {
+        return new ReviewOutcome(apply(input, rating, now, effectiveConfig, context), null);
+    }
+
     CanonicalProgress toCanonical(JsonNode state);
 
     JsonNode fromCanonical(CanonicalProgress progress, JsonNode effectiveConfig);
@@ -47,6 +56,12 @@ public interface SrsAlgorithm {
             Instant nextReviewAt,
             Instant lastReviewAt,
             int reviewCountDelta
+    ) {
+    }
+
+    record ReviewOutcome(
+            ReviewComputation computation,
+            JsonNode updatedDeckConfig
     ) {
     }
 }
