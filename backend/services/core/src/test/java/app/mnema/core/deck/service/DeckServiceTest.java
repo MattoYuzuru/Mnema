@@ -101,7 +101,7 @@ class DeckServiceTest {
                 1,
                 1,
                 true,
-                SrAlgorithm.sm2.name(),
+                SrAlgorithm.fsrs_v6.name(),
                 null,
                 "My deck",
                 "Description",
@@ -184,7 +184,7 @@ class DeckServiceTest {
                 1,
                 1,
                 true,
-                SrAlgorithm.sm2.name(),
+                SrAlgorithm.fsrs_v6.name(),
                 null,
                 "My deck",
                 "Description",
@@ -202,7 +202,7 @@ class DeckServiceTest {
         assertThat(result.displayName()).isEqualTo("My deck");
         assertThat(result.subscribedVersion()).isEqualTo(1);
         assertThat(result.currentVersion()).isEqualTo(1);
-        assertThat(result.algorithmId()).isEqualTo(SrAlgorithm.sm2.name());
+        assertThat(result.algorithmId()).isEqualTo(SrAlgorithm.fsrs_v6.name());
         assertThat(result.autoUpdate()).isTrue();
 
         verify(publicDeckRepository).save(any(PublicDeckEntity.class));
@@ -220,7 +220,7 @@ class DeckServiceTest {
                 1,
                 1,
                 true,
-                SrAlgorithm.sm2.name(),
+                SrAlgorithm.fsrs_v6.name(),
                 null,
                 "Existing deck",
                 "Desc",

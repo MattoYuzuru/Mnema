@@ -14,6 +14,7 @@ import app.mnema.core.review.entity.SrCardStateEntity;
 import app.mnema.core.review.repository.ReviewUserCardRepository;
 import app.mnema.core.review.repository.SrAlgorithmRepository;
 import app.mnema.core.review.repository.SrCardStateRepository;
+import app.mnema.core.review.repository.SrReviewLogRepository;
 import app.mnema.core.review.service.UserDeckPreferencesService.PreferencesSnapshot;
 import app.mnema.core.review.util.JsonConfigMerger;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -64,6 +65,9 @@ class ReviewServiceTest {
     @Mock
     UserDeckPreferencesService preferencesService;
 
+    @Mock
+    SrReviewLogRepository reviewLogRepository;
+
     ReviewService reviewService;
 
     @BeforeEach
@@ -76,7 +80,8 @@ class ReviewServiceTest {
                 cardViewPort,
                 deckAlgorithmPort,
                 configMerger,
-                preferencesService
+                preferencesService,
+                reviewLogRepository
         );
     }
 
@@ -112,6 +117,8 @@ class ReviewServiceTest {
                 20,
                 null,
                 0,
+                0,
+                null,
                 0
         );
         when(preferencesService.getSnapshot(eq(deckId), any())).thenReturn(snapshot);
@@ -190,14 +197,14 @@ class ReviewServiceTest {
                 20,
                 null,
                 0,
+                0,
+                null,
                 0
         );
         when(preferencesService.getSnapshot(eq(deckId), any())).thenReturn(snapshot);
         when(userCardRepo.countDue(eq(userId), eq(deckId), any())).thenReturn(0L);
         when(userCardRepo.countNew(userId, deckId)).thenReturn(0L);
-        when(userCardRepo.findDueCardIds(eq(userId), eq(deckId), any(), any())).thenReturn(List.of());
-        lenient().when(userCardRepo.findNewCardIds(eq(userId), eq(deckId), any())).thenReturn(List.of());
-        reviewService.answer(userId, deckId, cardId, Rating.GOOD);
+        reviewService.answer(userId, deckId, cardId, Rating.GOOD, 1200, app.mnema.core.review.domain.ReviewSource.web);
 
         ArgumentCaptor<SrsAlgorithm.ReviewInput> inputCaptor = ArgumentCaptor.forClass(SrsAlgorithm.ReviewInput.class);
         verify(newAlgorithm).apply(inputCaptor.capture(), eq(Rating.GOOD), any(), eq(effectiveCfg));

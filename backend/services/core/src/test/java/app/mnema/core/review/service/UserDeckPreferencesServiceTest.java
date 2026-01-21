@@ -55,6 +55,8 @@ class UserDeckPreferencesServiceTest {
         entity.setUserDeckId(deckId);
         entity.setLearningHorizonMinutes(1440);
         entity.setMaxNewPerDay(20);
+        entity.setDayCutoffMinutes(0);
+        entity.setTimeZoneId("UTC");
         entity.setNewSeenToday(5);
         entity.setCounterDate(LocalDate.of(2024, 1, 1));
         entity.setCreatedAt(Instant.now());
