@@ -14,13 +14,8 @@ data:
       role = "pod"
     }
 
-    loki.source.kubernetes "pods" {
-      targets    = discovery.kubernetes.pods.targets
-      forward_to = [loki.relabel.pods.receiver]
-    }
-
-    loki.relabel "pods" {
-      forward_to = [loki.process.pods.receiver]
+    discovery.relabel "pods" {
+      targets = discovery.kubernetes.pods.targets
 
       rule {
         source_labels = ["__meta_kubernetes_namespace"]
@@ -41,6 +36,11 @@ data:
         source_labels = ["__meta_kubernetes_pod_label_app"]
         target_label  = "app"
       }
+    }
+
+    loki.source.kubernetes "pods" {
+      targets    = discovery.relabel.pods.targets
+      forward_to = [loki.process.pods.receiver]
     }
 
     loki.process "pods" {
