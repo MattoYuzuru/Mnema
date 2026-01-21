@@ -119,7 +119,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         </div>
 
         <div *ngIf="revealed" class="keyboard-hint">
-          <p>{{ 'review.keyboardShortcuts' | translate }}</p>
+          <p>{{ (isHlr() ? 'review.keyboardShortcutsBinary' : 'review.keyboardShortcuts') | translate }}</p>
         </div>
       </div>
     </div>

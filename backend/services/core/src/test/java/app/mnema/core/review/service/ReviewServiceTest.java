@@ -9,10 +9,8 @@ import app.mnema.core.review.api.DeckAlgorithmPort;
 import app.mnema.core.review.controller.dto.ReviewDeckAlgorithmResponse;
 import app.mnema.core.review.domain.Rating;
 import app.mnema.core.review.entity.ReviewUserCardEntity;
-import app.mnema.core.review.entity.SrAlgorithmEntity;
 import app.mnema.core.review.entity.SrCardStateEntity;
 import app.mnema.core.review.repository.ReviewUserCardRepository;
-import app.mnema.core.review.repository.SrAlgorithmRepository;
 import app.mnema.core.review.repository.SrCardStateRepository;
 import app.mnema.core.review.repository.SrReviewLogRepository;
 import app.mnema.core.review.service.UserDeckPreferencesService.PreferencesSnapshot;
@@ -28,7 +26,6 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -48,9 +45,6 @@ class ReviewServiceTest {
     SrCardStateRepository stateRepo;
 
     @Mock
-    SrAlgorithmRepository algorithmRepo;
-
-    @Mock
     AlgorithmRegistry registry;
 
     @Mock
@@ -68,6 +62,12 @@ class ReviewServiceTest {
     @Mock
     SrReviewLogRepository reviewLogRepository;
 
+    @Mock
+    AlgorithmDefaultConfigCache defaultConfigCache;
+
+    @Mock
+    DeckAlgorithmUpdateBuffer updateBuffer;
+
     ReviewService reviewService;
 
     @BeforeEach
@@ -75,13 +75,14 @@ class ReviewServiceTest {
         reviewService = new ReviewService(
                 userCardRepo,
                 stateRepo,
-                algorithmRepo,
                 registry,
                 cardViewPort,
                 deckAlgorithmPort,
                 configMerger,
                 preferencesService,
-                reviewLogRepository
+                reviewLogRepository,
+                defaultConfigCache,
+                updateBuffer
         );
     }
 
@@ -95,11 +96,7 @@ class ReviewServiceTest {
         JsonNode defaultCfg = MAPPER.createObjectNode().put("minimumEaseFactor", 1.2);
         JsonNode effective = MAPPER.createObjectNode().put("combined", true);
 
-        SrAlgorithmEntity algoEntity = new SrAlgorithmEntity();
-        algoEntity.setAlgorithmId(algorithmId);
-        algoEntity.setDefaultConfig(defaultCfg);
-
-        when(algorithmRepo.findById(algorithmId)).thenReturn(Optional.of(algoEntity));
+        when(defaultConfigCache.getDefaultConfig(algorithmId)).thenReturn(defaultCfg);
         when(configMerger.merge(defaultCfg, override)).thenReturn(effective);
 
         SrsAlgorithm algorithm = mock(SrsAlgorithm.class);
@@ -107,6 +104,9 @@ class ReviewServiceTest {
 
         DeckAlgorithmConfig updated = new DeckAlgorithmConfig(algorithmId, override);
         when(deckAlgorithmPort.updateDeckAlgorithm(userId, deckId, algorithmId, override)).thenReturn(updated);
+        when(updateBuffer.applyPending(eq(deckId), eq(algorithmId), eq(override), any())).thenReturn(override);
+        when(updateBuffer.recordUpdate(eq(deckId), eq(algorithmId), any(), any())).thenReturn(Optional.empty());
+        when(updateBuffer.flushIfPending(eq(deckId), eq(algorithmId), any())).thenReturn(Optional.empty());
 
         when(userCardRepo.countActive(userId, deckId)).thenReturn(10L);
         when(stateRepo.countTrackedCards(userId, deckId)).thenReturn(6L);
@@ -150,10 +150,10 @@ class ReviewServiceTest {
         DeckAlgorithmConfig deckAlgo = new DeckAlgorithmConfig("sm2", deckConfig);
         when(deckAlgorithmPort.getDeckAlgorithm(userId, deckId)).thenReturn(deckAlgo);
 
-        SrAlgorithmEntity algoEntity = new SrAlgorithmEntity();
-        algoEntity.setAlgorithmId("sm2");
-        algoEntity.setDefaultConfig(defaultCfg);
-        when(algorithmRepo.findById("sm2")).thenReturn(Optional.of(algoEntity));
+        when(defaultConfigCache.getDefaultConfig("sm2")).thenReturn(defaultCfg);
+        when(updateBuffer.applyPending(eq(deckId), eq("sm2"), eq(deckConfig), any())).thenReturn(deckConfig);
+        when(updateBuffer.recordUpdate(eq(deckId), eq("sm2"), any(), any())).thenReturn(Optional.empty());
+        when(updateBuffer.flushIfPending(eq(deckId), eq("sm2"), any())).thenReturn(Optional.empty());
         when(configMerger.merge(defaultCfg, deckConfig)).thenReturn(effectiveCfg);
 
         SrsAlgorithm newAlgorithm = mock(SrsAlgorithm.class);

@@ -15,7 +15,6 @@ import app.mnema.core.review.entity.SrCardStateEntity;
 import app.mnema.core.review.entity.SrReviewLogEntity;
 import app.mnema.core.review.repository.ReviewUserCardRepository;
 import app.mnema.core.review.repository.SrReviewLogRepository;
-import app.mnema.core.review.repository.SrAlgorithmRepository;
 import app.mnema.core.review.repository.SrCardStateRepository;
 import app.mnema.core.review.util.JsonConfigMerger;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -34,32 +33,35 @@ public class ReviewService {
 
     private final ReviewUserCardRepository userCardRepo;
     private final SrCardStateRepository stateRepo;
-    private final SrAlgorithmRepository algorithmRepo;
     private final AlgorithmRegistry registry;
     private final CardViewPort cardViewPort;
     private final DeckAlgorithmPort deckAlgorithmPort;
     private final JsonConfigMerger configMerger;
     private final UserDeckPreferencesService preferencesService;
     private final SrReviewLogRepository reviewLogRepository;
+    private final AlgorithmDefaultConfigCache defaultConfigCache;
+    private final DeckAlgorithmUpdateBuffer updateBuffer;
 
     public ReviewService(ReviewUserCardRepository userCardRepo,
                          SrCardStateRepository stateRepo,
-                         SrAlgorithmRepository algorithmRepo,
                          AlgorithmRegistry registry,
                          CardViewPort cardViewPort,
                          DeckAlgorithmPort deckAlgorithmPort,
                          JsonConfigMerger configMerger,
                          UserDeckPreferencesService preferencesService,
-                         SrReviewLogRepository reviewLogRepository) {
+                         SrReviewLogRepository reviewLogRepository,
+                         AlgorithmDefaultConfigCache defaultConfigCache,
+                         DeckAlgorithmUpdateBuffer updateBuffer) {
         this.userCardRepo = userCardRepo;
         this.stateRepo = stateRepo;
-        this.algorithmRepo = algorithmRepo;
         this.registry = registry;
         this.cardViewPort = cardViewPort;
         this.deckAlgorithmPort = deckAlgorithmPort;
         this.configMerger = configMerger;
         this.preferencesService = preferencesService;
         this.reviewLogRepository = reviewLogRepository;
+        this.defaultConfigCache = defaultConfigCache;
+        this.updateBuffer = updateBuffer;
     }
 
     @Transactional(readOnly = true)
@@ -190,11 +192,16 @@ public class ReviewService {
 
         JsonNode updatedDeckConfig = outcome.updatedDeckConfig();
         if (updatedDeckConfig != null && !Objects.equals(updatedDeckConfig, algorithmContext.deckConfig())) {
-            deckAlgorithmPort.updateDeckAlgorithm(userId, userDeckId, algorithmContext.algorithmId(), updatedDeckConfig);
+            updateBuffer.recordUpdate(userDeckId, algorithmContext.algorithmId(), updatedDeckConfig, now)
+                    .ifPresent(cfg -> deckAlgorithmPort.updateDeckAlgorithm(userId, userDeckId, algorithmContext.algorithmId(), cfg));
         }
         preferencesService.incrementCounters(userDeckId, current == null, now);
 
         ReviewNextCardResponse next = nextCard(userId, userDeckId);
+        if (next.userCardId() == null) {
+            updateBuffer.flushIfPending(userDeckId, algorithmContext.algorithmId(), now)
+                    .ifPresent(cfg -> deckAlgorithmPort.updateDeckAlgorithm(userId, userDeckId, algorithmContext.algorithmId(), cfg));
+        }
         return new ReviewAnswerResponse(
                 userCardId,
                 rating,
@@ -318,11 +325,9 @@ public class ReviewService {
         boolean learningAhead = false;
 
         if (dueNowCount > 0) {
-            var dueIds = userCardRepo.findDueCardIds(userId, userDeckId, now, PageRequest.of(0, 1));
-            if (!dueIds.isEmpty()) {
-                nextCardId = dueIds.getFirst();
-                due = true;
-            }
+            var dueIds = userCardRepo.findDueCardIds(userId, userDeckId, now, PageRequest.of(0, dueCandidateSize()));
+            nextCardId = pickSoftRandom(dueIds);
+            due = nextCardId != null;
         }
         if (nextCardId == null && availableNew > 0) {
             var newIds = userCardRepo.findNewCardIds(userId, userDeckId, PageRequest.of(0, 1));
@@ -331,11 +336,9 @@ public class ReviewService {
             }
         }
         if (nextCardId == null && dueSoonCount > 0) {
-            var learningIds = userCardRepo.findDueCardIds(userId, userDeckId, dueHorizon, PageRequest.of(0, 1));
-            if (!learningIds.isEmpty()) {
-                nextCardId = learningIds.getFirst();
-                learningAhead = true;
-            }
+            var learningIds = userCardRepo.findDueCardIds(userId, userDeckId, dueHorizon, PageRequest.of(0, dueCandidateSize()));
+            nextCardId = pickSoftRandom(learningIds);
+            learningAhead = nextCardId != null;
         }
 
         if (nextCardId == null) {
@@ -386,14 +389,13 @@ public class ReviewService {
 
     private AlgorithmContext resolveAlgorithmContext(UUID userId, UUID userDeckId) {
         DeckAlgorithmConfig deckAlgo = deckAlgorithmPort.getDeckAlgorithm(userId, userDeckId);
-        return buildAlgorithmContext(deckAlgo.algorithmId(), deckAlgo.algorithmParams());
+        JsonNode deckConfig = updateBuffer.applyPending(userDeckId, deckAlgo.algorithmId(), deckAlgo.algorithmParams(), Instant.now());
+        return buildAlgorithmContext(deckAlgo.algorithmId(), deckConfig);
     }
 
     private AlgorithmContext buildAlgorithmContext(String algorithmId, JsonNode deckConfig) {
         SrsAlgorithm algorithm = registry.require(algorithmId);
-        JsonNode defaultConfig = algorithmRepo.findById(algorithmId)
-                .map(app.mnema.core.review.entity.SrAlgorithmEntity::getDefaultConfig)
-                .orElse(null);
+        JsonNode defaultConfig = defaultConfigCache.getDefaultConfig(algorithmId);
 
         JsonNode effective = configMerger.merge(defaultConfig, deckConfig);
         return new AlgorithmContext(algorithmId, algorithm, effective, deckConfig);
@@ -438,6 +440,23 @@ public class ReviewService {
             return dueCount;
         }
         return Math.min(dueCount, remainingReviewQuota);
+    }
+
+    private static UUID pickSoftRandom(List<UUID> ids) {
+        if (ids == null || ids.isEmpty()) {
+            return null;
+        }
+        if (ids.size() == 1) {
+            return ids.getFirst();
+        }
+        double r = java.util.concurrent.ThreadLocalRandom.current().nextDouble();
+        int idx = (int) Math.floor(Math.pow(r, 2.0) * ids.size());
+        idx = Math.max(0, Math.min(ids.size() - 1, idx));
+        return ids.get(idx);
+    }
+
+    private static int dueCandidateSize() {
+        return 8;
     }
 
     private void logReview(UUID userCardId,

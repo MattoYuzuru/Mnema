@@ -55,6 +55,10 @@ public class UserDeckEntity {
     @Column(name = "is_archived", nullable = false)
     private boolean archived;
 
+    @Version
+    @Column(name = "row_version", nullable = false)
+    private long rowVersion;
+
     public UserDeckEntity() {
     }
 
@@ -136,6 +140,10 @@ public class UserDeckEntity {
 
     public boolean isArchived() {
         return archived;
+    }
+
+    public long getRowVersion() {
+        return rowVersion;
     }
 
     public void setUserDeckId(UUID userDeckId) {
