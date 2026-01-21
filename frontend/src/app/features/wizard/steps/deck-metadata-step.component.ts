@@ -4,6 +4,7 @@ import { NgFor, NgIf } from '@angular/common';
 import { DeckApiService } from '../../../core/services/deck-api.service';
 import { DeckWizardStateService } from '../deck-wizard-state.service';
 import { MediaApiService } from '../../../core/services/media-api.service';
+import { ReviewApiService } from '../../../core/services/review-api.service';
 import { ButtonComponent } from '../../../shared/components/button.component';
 import { InputComponent } from '../../../shared/components/input.component';
 import { MediaUploadComponent } from '../../../shared/components/media-upload.component';
@@ -157,7 +158,14 @@ export class DeckMetadataStepComponent implements OnInit {
     saving = false;
     iconValue: CardContentValue | null = null;
 
-    constructor(private fb: FormBuilder, private deckApi: DeckApiService, private wizardState: DeckWizardStateService, private mediaApi: MediaApiService, private i18n: I18nService) {
+    constructor(
+        private fb: FormBuilder,
+        private deckApi: DeckApiService,
+        private wizardState: DeckWizardStateService,
+        private mediaApi: MediaApiService,
+        private i18n: I18nService,
+        private reviewApi: ReviewApiService
+    ) {
         this.form = this.fb.group({
             name: ['', [Validators.required, Validators.maxLength(DeckMetadataStepComponent.MAX_NAME_LENGTH)]],
             description: ['', [Validators.maxLength(DeckMetadataStepComponent.MAX_DESCRIPTION_LENGTH)]],
@@ -249,6 +257,7 @@ export class DeckMetadataStepComponent implements OnInit {
             iconMediaId: deckMetadata.iconMediaId || null
         }).subscribe({
             next: deck => {
+                this.applyDeckTimeZone(deck.userDeckId, deck.algorithmId);
                 this.wizardState.setCreatedDeck(deck);
                 this.saving = false;
                 this.next.emit();
@@ -301,6 +310,26 @@ export class DeckMetadataStepComponent implements OnInit {
         }
         this.tagError = '';
         return false;
+    }
+
+    private applyDeckTimeZone(userDeckId: string, algorithmId: string): void {
+        const timeZone = this.resolveBrowserTimeZone();
+        if (!timeZone) {
+            return;
+        }
+        this.reviewApi.updateDeckAlgorithm(userDeckId, {
+            algorithmId,
+            algorithmParams: null,
+            reviewPreferences: { timeZone }
+        }).subscribe({ error: () => {} });
+    }
+
+    private resolveBrowserTimeZone(): string | null {
+        try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+        } catch {
+            return null;
+        }
     }
 
 }

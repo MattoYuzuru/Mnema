@@ -1448,6 +1448,7 @@ export class HomePageComponent implements OnInit, OnDestroy {
     forkDeck(deckId: string): void {
         this.publicDeckApi.fork(deckId).subscribe({
             next: userDeck => {
+                this.applyDeckTimeZone(userDeck.userDeckId, userDeck.algorithmId);
                 void this.router.navigate(['/decks', userDeck.userDeckId]);
             },
             error: err => {
@@ -1458,5 +1459,25 @@ export class HomePageComponent implements OnInit, OnDestroy {
 
     goToPublicDecks(): void {
         void this.router.navigate(['/public-decks']);
+    }
+
+    private applyDeckTimeZone(userDeckId: string, algorithmId: string): void {
+        const timeZone = this.resolveBrowserTimeZone();
+        if (!timeZone) {
+            return;
+        }
+        this.reviewApi.updateDeckAlgorithm(userDeckId, {
+            algorithmId,
+            algorithmParams: null,
+            reviewPreferences: { timeZone }
+        }).subscribe({ error: () => {} });
+    }
+
+    private resolveBrowserTimeZone(): string | null {
+        try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+        } catch {
+            return null;
+        }
     }
 }

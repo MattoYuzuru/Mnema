@@ -7,6 +7,7 @@ import { AuthService } from '../../auth.service';
 import { UserApiService } from '../../user-api.service';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
+import { ReviewApiService } from '../../core/services/review-api.service';
 import { MediaApiService } from '../../core/services/media-api.service';
 import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { DeckCardComponent } from '../../shared/components/deck-card.component';
@@ -155,6 +156,7 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
         private userApi: UserApiService,
         private deckApi: DeckApiService,
         private publicDeckApi: PublicDeckApiService,
+        private reviewApi: ReviewApiService,
         private mediaApi: MediaApiService,
         private router: Router,
         private route: ActivatedRoute
@@ -377,11 +379,32 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
 
         this.publicDeckApi.fork(deckId).subscribe({
             next: userDeck => {
+                this.applyDeckTimeZone(userDeck.userDeckId, userDeck.algorithmId);
                 void this.router.navigate(['/decks', userDeck.userDeckId]);
             },
             error: err => {
                 console.error('Failed to fork deck:', err);
             }
         });
+    }
+
+    private applyDeckTimeZone(userDeckId: string, algorithmId: string): void {
+        const timeZone = this.resolveBrowserTimeZone();
+        if (!timeZone) {
+            return;
+        }
+        this.reviewApi.updateDeckAlgorithm(userDeckId, {
+            algorithmId,
+            algorithmParams: null,
+            reviewPreferences: { timeZone }
+        }).subscribe({ error: () => {} });
+    }
+
+    private resolveBrowserTimeZone(): string | null {
+        try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+        } catch {
+            return null;
+        }
     }
 }

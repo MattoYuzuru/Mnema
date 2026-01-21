@@ -262,6 +262,16 @@ import { I18nService } from '../../core/services/i18n.service';
                 <input type="number" formControlName="learningHorizonHours" class="number-input" min="1" max="168" />
                 <p class="field-help">{{ 'deckProfile.learningHorizonHelp' | translate }}</p>
               </div>
+              <div class="form-group">
+                <label>{{ 'deckProfile.maxReviewPerDay' | translate }}</label>
+                <input type="number" formControlName="maxReviewPerDay" class="number-input" min="0" />
+                <p class="field-help">{{ 'deckProfile.maxReviewPerDayHelp' | translate }}</p>
+              </div>
+              <div class="form-group">
+                <label>{{ 'deckProfile.dayCutoffHour' | translate }}</label>
+                <input type="number" formControlName="dayCutoffHour" class="number-input" min="0" max="23" />
+                <p class="field-help">{{ 'deckProfile.dayCutoffHelp' | translate }}</p>
+              </div>
             </div>
           </form>
         </div>
@@ -999,6 +1009,14 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         });
     }
 
+    private resolveBrowserTimeZone(): string | null {
+        try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+        } catch {
+            return null;
+        }
+    }
+
     openEditModal(): void {
         if (this.deck) {
             this.reviewApi.getDeckAlgorithm(this.userDeckId).subscribe({
@@ -1007,6 +1025,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                     this.originalAlgorithmId = algorithmData.algorithmId;
 
                     const preferences = algorithmData.reviewPreferences;
+                    const resolvedTimeZone = preferences?.timeZone ?? this.resolveBrowserTimeZone();
 
                     const formConfig: any = {
                         displayName: [this.deck!.displayName, [Validators.required, Validators.maxLength(DeckProfileComponent.MAX_DECK_NAME)]],
@@ -1014,7 +1033,10 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                         autoUpdate: [this.deck!.autoUpdate],
                         algorithmId: [algorithmData.algorithmId, Validators.required],
                         dailyNewLimit: [preferences?.dailyNewLimit ?? 20],
-                        learningHorizonHours: [preferences?.learningHorizonHours ?? 24]
+                        learningHorizonHours: [preferences?.learningHorizonHours ?? 24],
+                        maxReviewPerDay: [preferences?.maxReviewPerDay ?? 0],
+                        dayCutoffHour: [preferences?.dayCutoffHour ?? 0],
+                        timeZone: [resolvedTimeZone]
                     };
 
                     if (this.isAuthor && this.publicDeck) {
@@ -1184,16 +1206,29 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         };
 
         const algorithmChanged = formValue.algorithmId !== this.originalAlgorithmId;
-        const hasPreferenceValues = formValue.dailyNewLimit !== undefined || formValue.learningHorizonHours !== undefined;
+        const hasPreferenceValues = formValue.dailyNewLimit !== undefined ||
+            formValue.learningHorizonHours !== undefined ||
+            formValue.maxReviewPerDay !== undefined ||
+            formValue.dayCutoffHour !== undefined ||
+            formValue.timeZone !== undefined;
 
         const requests: any = {
             userDeck: this.deckApi.patchDeck(this.userDeckId, userDeckUpdates)
         };
 
         if (algorithmChanged || hasPreferenceValues) {
+            const toOptionalNumber = (value: any): number | null => {
+                if (value === null || value === undefined || value === '') {
+                    return null;
+                }
+                return Number(value);
+            };
             const reviewPreferences = {
-                dailyNewLimit: formValue.dailyNewLimit !== undefined ? Number(formValue.dailyNewLimit) : null,
-                learningHorizonHours: formValue.learningHorizonHours !== undefined ? Number(formValue.learningHorizonHours) : null
+                dailyNewLimit: toOptionalNumber(formValue.dailyNewLimit),
+                learningHorizonHours: toOptionalNumber(formValue.learningHorizonHours),
+                maxReviewPerDay: toOptionalNumber(formValue.maxReviewPerDay),
+                dayCutoffHour: toOptionalNumber(formValue.dayCutoffHour),
+                timeZone: formValue.timeZone ?? this.resolveBrowserTimeZone()
             };
 
             requests.algorithm = this.reviewApi.updateDeckAlgorithm(this.userDeckId, {

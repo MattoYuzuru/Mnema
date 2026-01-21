@@ -38,9 +38,23 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               <div class="progress" [style.width.%]="progressPercent"></div>
             </div>
             <p class="progress-text">
-              <span class="count-new">{{ 'review.new' | translate }}: {{ queue.newCount }}</span>
+              <span class="count-new">
+                {{ 'review.new' | translate }}: {{ queue.newCount }}
+                <ng-container *ngIf="queue.newTotalCount !== undefined">
+                  / {{ queue.newTotalCount }} {{ 'review.total' | translate }}
+                </ng-container>
+              </span>
               <span class="count-separator">·</span>
-              <span class="count-due">{{ 'review.due' | translate }}: {{ queue.dueCount }}</span>
+              <span class="count-due">
+                {{ 'review.due' | translate }}: {{ queue.dueCount }}
+                <ng-container *ngIf="queue.dueTodayCount !== undefined">
+                  / {{ queue.dueTodayCount }} {{ 'review.today' | translate }}
+                </ng-container>
+              </span>
+              <ng-container *ngIf="queue.learningAheadCount && queue.learningAheadCount > 0">
+                <span class="count-separator">·</span>
+                <span class="count-ahead">{{ 'review.ahead' | translate }}: {{ queue.learningAheadCount }}</span>
+              </ng-container>
             </p>
           </div>
         </header>
@@ -170,6 +184,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         align-items: center;
         justify-content: center;
         gap: var(--spacing-xs);
+        flex-wrap: wrap;
       }
 
       .count-new {
@@ -184,6 +199,11 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
       .count-separator {
         color: var(--color-text-tertiary);
+      }
+
+      .count-ahead {
+        color: var(--color-text-tertiary);
+        font-weight: 500;
       }
 
       .card-container {
@@ -391,7 +411,7 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
         this.queue = nextCard.queue;
 
         if (this.initialTotalRemaining === 0) {
-            this.initialTotalRemaining = this.queue.totalRemaining ?? (this.queue.newCount + this.queue.dueCount);
+            this.initialTotalRemaining = this.getRemainingToday(this.queue);
         }
 
         if (nextCard.userCardId === null) {
@@ -409,8 +429,15 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
         if (this.initialTotalRemaining === 0) {
             return 100;
         }
-        const currentRemaining = this.queue.totalRemaining ?? (this.queue.newCount + this.queue.dueCount);
+        const currentRemaining = this.getRemainingToday(this.queue);
         return Math.max(0, Math.min(100, (1 - currentRemaining / this.initialTotalRemaining) * 100));
+    }
+
+    private getRemainingToday(queue: ReviewQueueDTO): number {
+        if (queue.dueTodayCount !== undefined) {
+            return queue.dueTodayCount + queue.newCount;
+        }
+        return queue.totalRemaining ?? (queue.newCount + queue.dueCount);
     }
 
     formatInterval(rating: string): string {

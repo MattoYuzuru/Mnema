@@ -2,6 +2,7 @@ import { Component, EventEmitter, Input, OnDestroy, Output } from '@angular/core
 import { NgFor, NgIf, NgClass } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ImportApiService } from '../../core/services/import-api.service';
+import { ReviewApiService } from '../../core/services/review-api.service';
 import {
     ImportPreviewResponse,
     ImportMode,
@@ -301,8 +302,12 @@ export class ImportDeckModalComponent implements OnDestroy {
     readonly maxTagLength = ImportDeckModalComponent.MAX_TAG_LENGTH;
 
     private pollHandle: ReturnType<typeof setInterval> | null = null;
+    private timeZoneApplied = false;
 
-    constructor(private importApi: ImportApiService) {}
+    constructor(
+        private importApi: ImportApiService,
+        private reviewApi: ReviewApiService
+    ) {}
 
     get canStartImport(): boolean {
         if (!this.fileInfo || !this.preview || this.starting || this.uploading || this.previewing) {
@@ -547,6 +552,7 @@ export class ImportDeckModalComponent implements OnDestroy {
             this.importApi.getJob(jobId).subscribe({
                 next: job => {
                     this.job = job;
+                    this.maybeApplyTimeZone(job);
                     if (job.status === 'completed' || job.status === 'failed' || job.status === 'canceled') {
                         this.stopPolling();
                     }
@@ -559,6 +565,35 @@ export class ImportDeckModalComponent implements OnDestroy {
         if (this.pollHandle) {
             clearInterval(this.pollHandle);
             this.pollHandle = null;
+        }
+    }
+
+    private maybeApplyTimeZone(job: ImportJobResponse): void {
+        if (this.timeZoneApplied || job.status !== 'completed' || job.mode !== 'create_new' || !job.targetDeckId) {
+            return;
+        }
+        this.timeZoneApplied = true;
+        const timeZone = this.resolveBrowserTimeZone();
+        if (!timeZone) {
+            return;
+        }
+        this.reviewApi.getDeckAlgorithm(job.targetDeckId).subscribe({
+            next: algorithm => {
+                this.reviewApi.updateDeckAlgorithm(job.targetDeckId!, {
+                    algorithmId: algorithm.algorithmId,
+                    algorithmParams: null,
+                    reviewPreferences: { timeZone }
+                }).subscribe({ error: () => {} });
+            },
+            error: () => {}
+        });
+    }
+
+    private resolveBrowserTimeZone(): string | null {
+        try {
+            return Intl.DateTimeFormat().resolvedOptions().timeZone || null;
+        } catch {
+            return null;
         }
     }
 
