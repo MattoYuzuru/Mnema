@@ -17,6 +17,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -194,35 +195,45 @@ public class DeckService {
     @Transactional
     @PreAuthorize("hasAuthority('SCOPE_user.write')")
     public UserDeckDTO updateUserDeckMeta(UUID currentUserId, UUID userDeckId, UserDeckDTO dto) {
-        UserDeckEntity deck = userDeckRepository.findById(userDeckId)
-                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+        for (int attempt = 0; attempt < 3; attempt++) {
+            UserDeckEntity deck = userDeckRepository.findById(userDeckId)
+                    .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
 
-        if (!deck.getUserId().equals(currentUserId)) {
-            throw new SecurityException("Access denied to deck " + userDeckId);
-        }
+            if (!deck.getUserId().equals(currentUserId)) {
+                throw new SecurityException("Access denied to deck " + userDeckId);
+            }
 
-        if (dto.displayName() != null) {
-            validateLength(dto.displayName(), MAX_DECK_NAME, "Display name");
-            deck.setDisplayName(dto.displayName());
-        }
-        if (dto.displayDescription() != null) {
-            validateLength(dto.displayDescription(), MAX_DECK_DESCRIPTION, "Display description");
-            deck.setDisplayDescription(dto.displayDescription());
-        }
-        deck.setAutoUpdate(dto.autoUpdate());
+            if (dto.displayName() != null) {
+                validateLength(dto.displayName(), MAX_DECK_NAME, "Display name");
+                deck.setDisplayName(dto.displayName());
+            }
+            if (dto.displayDescription() != null) {
+                validateLength(dto.displayDescription(), MAX_DECK_DESCRIPTION, "Display description");
+                deck.setDisplayDescription(dto.displayDescription());
+            }
+            deck.setAutoUpdate(dto.autoUpdate());
 
-        if (dto.algorithmId() != null) {
-            deck.setAlgorithmId(dto.algorithmId());
-        }
-        if (dto.algorithmParams() != null) {
-            deck.setAlgorithmParams(dto.algorithmParams());
-        }
+            if (dto.algorithmId() != null) {
+                deck.setAlgorithmId(dto.algorithmId());
+            }
+            if (dto.algorithmParams() != null) {
+                deck.setAlgorithmParams(dto.algorithmParams());
+            }
 
-        deck.setArchived(dto.archived());
-        deck.setLastSyncedAt(Instant.now());
+            deck.setArchived(dto.archived());
+            deck.setLastSyncedAt(Instant.now());
 
-        UserDeckEntity saved = userDeckRepository.save(deck);
-        return toUserDeckDTO(saved);
+            try {
+                UserDeckEntity saved = userDeckRepository.save(deck);
+                return toUserDeckDTO(saved);
+            } catch (OptimisticLockingFailureException ex) {
+                if (attempt == 2) {
+                    throw ex;
+                }
+                Thread.yield();
+            }
+        }
+        throw new IllegalStateException("Failed to update deck meta: " + userDeckId);
     }
 
     // Архивирование (логическое удаление) пользовательской колоды

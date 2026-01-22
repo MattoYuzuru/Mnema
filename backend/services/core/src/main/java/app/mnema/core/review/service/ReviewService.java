@@ -123,6 +123,7 @@ public class ReviewService {
         }
 
         registry.require(algorithmId);
+        updateBuffer.clear(userDeckId);
         DeckAlgorithmConfig updated = deckAlgorithmPort.updateDeckAlgorithm(userId, userDeckId, algorithmId, algorithmParams);
         UserDeckPreferencesService.PreferencesSnapshot preferences = reviewPreferences == null
                 ? preferencesService.getSnapshot(userDeckId, Instant.now())

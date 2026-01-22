@@ -3,6 +3,7 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
 import { ReactiveFormsModule, FormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
+import { map, switchMap } from 'rxjs/operators';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
 import { ReviewApiService } from '../../core/services/review-api.service';
@@ -1213,9 +1214,8 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             formValue.dayCutoffHour !== undefined ||
             formValue.timeZone !== undefined;
 
-        const requests: any = {
-            userDeck: this.deckApi.patchDeck(this.userDeckId, userDeckUpdates)
-        };
+        const requests: any = {};
+        const userDeckRequest = this.deckApi.patchDeck(this.userDeckId, userDeckUpdates);
 
         if (algorithmChanged || hasPreferenceValues) {
             const toOptionalNumber = (value: any): number | null => {
@@ -1232,11 +1232,15 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                 timeZone: formValue.timeZone ?? this.resolveBrowserTimeZone()
             };
 
-            requests.algorithm = this.reviewApi.updateDeckAlgorithm(this.userDeckId, {
-                algorithmId: formValue.algorithmId,
-                algorithmParams: null,
-                reviewPreferences: reviewPreferences
-            });
+            requests.userDeck = userDeckRequest.pipe(
+                switchMap(deck => this.reviewApi.updateDeckAlgorithm(this.userDeckId, {
+                    algorithmId: formValue.algorithmId,
+                    algorithmParams: null,
+                    reviewPreferences: reviewPreferences
+                }).pipe(map(() => deck)))
+            );
+        } else {
+            requests.userDeck = userDeckRequest;
         }
 
         if (this.isAuthor && this.publicDeck && this.hasPublicDeckChanges()) {

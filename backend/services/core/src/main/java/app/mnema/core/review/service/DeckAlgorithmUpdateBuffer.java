@@ -70,6 +70,10 @@ public class DeckAlgorithmUpdateBuffer {
         return Optional.of(entry.pendingConfig());
     }
 
+    public void clear(UUID userDeckId) {
+        entries.remove(userDeckId);
+    }
+
     private static boolean shouldFlush(Entry entry, Instant now) {
         if (entry.pendingCount() >= FLUSH_BATCH_SIZE) {
             return true;
