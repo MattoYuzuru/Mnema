@@ -166,6 +166,7 @@ services:
       REDIS_PORT: 6379
     depends_on:
       postgres: { condition: service_healthy }
+      redis: { condition: service_healthy }
     ports: [ "8088:8080" ]
 
 
