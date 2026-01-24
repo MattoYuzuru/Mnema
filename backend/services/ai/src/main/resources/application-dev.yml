@@ -1,0 +1,14 @@
+# CORS (dev)
+app:
+  cors:
+    origins:
+      - http://localhost:3005
+      - http://localhost:8088
+  core:
+    base-url: ${CORE_BASE_URL:http://localhost:8085/api/core}
+  media:
+    base-url: ${MEDIA_BASE_URL:http://localhost:8086/api/media}
+
+server:
+  error:
+    include-message: always

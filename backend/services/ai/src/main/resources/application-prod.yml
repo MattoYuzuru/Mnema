@@ -1,0 +1,5 @@
+# CORS (prod)
+app:
+  cors:
+    origins:
+      - https://mnema.app

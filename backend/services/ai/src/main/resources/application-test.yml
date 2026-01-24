@@ -1,0 +1,33 @@
+spring:
+  cache:
+    type: none
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/mnema_test}
+    username: ${SPRING_DATASOURCE_USERNAME:${POSTGRES_USER:mnema}}
+    password: ${SPRING_DATASOURCE_PASSWORD:${POSTGRES_PASSWORD:mnema}}
+    hikari:
+      schema: app_ai
+      connectionInitSql: SET search_path TO app_ai
+
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+        default_schema: app_ai
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    default-schema: app_ai
+    schemas: app_ai
+    baseline-on-migrate: false
+
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          issuer-uri: ${AUTH_ISSUER_URI:http://localhost:8083}
