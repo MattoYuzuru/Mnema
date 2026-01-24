@@ -11,6 +11,7 @@ COPY services/user/build.gradle.kts services/user/
 COPY services/core/build.gradle.kts services/core/
 COPY services/media/build.gradle.kts services/media/
 COPY services/import/build.gradle.kts services/import/
+COPY services/ai/build.gradle.kts services/ai/
 RUN chmod +x gradlew
 
 # 2. Прогреваем зависимости (используя кеш BuildKit)
@@ -21,6 +22,7 @@ RUN --mount=type=cache,target=/home/gradle/.gradle \
       :services:core:dependencies \
       :services:media:dependencies \
       :services:import:dependencies \
+      :services:ai:dependencies \
       --no-daemon
 
 # 3. Копируем исходники и собираем все bootJar одним прогоном
@@ -33,6 +35,7 @@ RUN --mount=type=cache,target=/home/gradle/.gradle \
       :services:core:bootJar \
       :services:media:bootJar \
       :services:import:bootJar \
+      :services:ai:bootJar \
       --no-daemon -x test
 
 # 4. Runtime-образы
@@ -64,5 +67,11 @@ ENTRYPOINT ["java","-jar","/app/app.jar"]
 FROM eclipse-temurin:21-jre AS import-runtime
 WORKDIR /app
 COPY --from=build /workspace/services/import/build/libs/*.jar app.jar
+EXPOSE 8080
+ENTRYPOINT ["java","-jar","/app/app.jar"]
+
+FROM eclipse-temurin:21-jre AS ai-runtime
+WORKDIR /app
+COPY --from=build /workspace/services/ai/build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]

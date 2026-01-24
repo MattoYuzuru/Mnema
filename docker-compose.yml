@@ -146,6 +146,29 @@ services:
         condition: service_healthy
     ports: [ "8087:8080" ]
 
+  ai:
+    networks: [ mnema_net ]
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: ai-runtime
+    environment:
+      SPRING_PROFILES_ACTIVE: dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
+      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER}}
+      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD}}
+      SPRING_FLYWAY_ENABLED: "true"
+      AUTH_ISSUER_URI: http://auth:8080
+      CORE_BASE_URL: http://core:8080/api/core
+      MEDIA_BASE_URL: http://media:8080/api/media
+      MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      postgres: { condition: service_healthy }
+    ports: [ "8088:8080" ]
+
+
   frontend:
     networks: [ mnema_net ]
     build:

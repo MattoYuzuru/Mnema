@@ -69,6 +69,12 @@ jobs:
             dockerfile: ./backend/Dockerfile
             target: import-runtime
 
+          - name: ai
+            kind: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            target: ai-runtime
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -288,7 +294,8 @@ jobs:
           tag="${{ steps.meta.outputs.TAG }}"
 
           deploy mnema-frontend frontend "${image_base}/frontend:${tag}" 600s
-          deploy mnema-auth     auth     "${image_base}/auth:${tag}"     1800s
+          deploy mnema-auth     auth     "${image_base}/auth:${tag}"     1200s
           deploy mnema-user     user     "${image_base}/user:${tag}"     1200s
           deploy mnema-core     core     "${image_base}/core:${tag}"     1200s
           deploy mnema-media    media    "${image_base}/media:${tag}"    1800s
+          deploy mnema-ai       ai       "${image_base}/ai:${tag}"       1800s
