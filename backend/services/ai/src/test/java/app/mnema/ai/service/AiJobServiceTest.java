@@ -7,6 +7,8 @@ import app.mnema.ai.domain.type.AiJobType;
 import app.mnema.ai.repository.AiJobRepository;
 import app.mnema.ai.repository.AiQuotaRepository;
 import app.mnema.ai.support.PostgresIntegrationTest;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.NullNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -39,6 +41,8 @@ class AiJobServiceTest extends PostgresIntegrationTest {
     @Autowired
     private AiQuotaService quotaService;
 
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
     @Test
     void createJobIsIdempotent() {
         UUID userId = UUID.randomUUID();
@@ -63,14 +67,12 @@ class AiJobServiceTest extends PostgresIntegrationTest {
 
         AiQuotaEntity quota = quotaRepository.findByUserIdAndPeriodStart(userId, currentPeriodStart(userId))
                 .orElseThrow();
-        assertThat(quota.getTokensUsed()).isEqualTo(10);
+        assertThat(quota.getTokensUsed()).isEqualTo(estimateTokens(AiJobType.generic, null, NullNode.getInstance()));
     }
 
     @Test
     void createJobEnforcesQuota() {
         UUID userId = UUID.randomUUID();
-        seedQuota(userId, 5);
-
         CreateAiJobRequest request = new CreateAiJobRequest(
                 UUID.randomUUID(),
                 null,
@@ -80,6 +82,8 @@ class AiJobServiceTest extends PostgresIntegrationTest {
                 10,
                 null
         );
+        int estimate = estimateTokens(AiJobType.generic, null, NullNode.getInstance());
+        seedQuota(userId, Math.max(estimate - 1, 0));
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
                 () -> jobService.createJob(jwtFor(userId), request));
@@ -117,5 +121,19 @@ class AiJobServiceTest extends PostgresIntegrationTest {
                 .issuedAt(now)
                 .expiresAt(now.plusSeconds(3600))
                 .build();
+    }
+
+    private int estimateTokens(AiJobType type, UUID deckId, JsonNode params) {
+        try {
+            var payload = new java.util.LinkedHashMap<String, Object>();
+            payload.put("type", type);
+            payload.put("deckId", deckId);
+            payload.put("params", params);
+            byte[] bytes = objectMapper.writeValueAsBytes(payload);
+            int estimated = (int) Math.ceil(bytes.length / 4.0);
+            return Math.max(1, estimated);
+        } catch (Exception ex) {
+            throw new IllegalStateException(ex);
+        }
     }
 }

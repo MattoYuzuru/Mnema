@@ -31,18 +31,15 @@ public class AiJobService {
     private final AiJobRepository jobRepository;
     private final CurrentUserProvider currentUserProvider;
     private final AiQuotaService quotaService;
-    private final AiUsageLedgerService usageLedgerService;
     private final ObjectMapper objectMapper;
 
     public AiJobService(AiJobRepository jobRepository,
                         CurrentUserProvider currentUserProvider,
                         AiQuotaService quotaService,
-                        AiUsageLedgerService usageLedgerService,
                         ObjectMapper objectMapper) {
         this.jobRepository = jobRepository;
         this.currentUserProvider = currentUserProvider;
         this.quotaService = quotaService;
-        this.usageLedgerService = usageLedgerService;
         this.objectMapper = objectMapper;
     }
 
@@ -61,15 +58,19 @@ public class AiJobService {
         }
 
         Instant now = Instant.now();
+        AiJobType jobType = defaultType(request.type());
+        JsonNode params = request.params() == null ? NullNode.getInstance() : request.params();
+        int estimatedTokens = estimateTokens(jobType, request.deckId(), params);
+        quotaService.consumeTokens(userId, estimatedTokens);
+
         AiJobEntity job = new AiJobEntity();
         job.setJobId(UUID.randomUUID());
         job.setRequestId(requestId);
         job.setUserId(userId);
         job.setDeckId(request.deckId());
-        job.setType(defaultType(request.type()));
+        job.setType(jobType);
         job.setStatus(AiJobStatus.queued);
         job.setProgress(0);
-        JsonNode params = request.params() == null ? NullNode.getInstance() : request.params();
         job.setParamsJson(params);
         job.setInputHash(resolveInputHash(request.inputHash(), job.getType(), job.getDeckId(), params));
         job.setResultSummary(NullNode.getInstance());
@@ -79,21 +80,8 @@ public class AiJobService {
         job.setCreatedAt(now);
         job.setUpdatedAt(now);
 
-        int tokens = normalizeTokens(request.tokensEstimated());
         try {
             AiJobEntity saved = jobRepository.save(job);
-            quotaService.consumeTokens(userId, tokens);
-            usageLedgerService.recordUsage(
-                    saved.getRequestId(),
-                    saved.getJobId(),
-                    userId,
-                    tokens,
-                    0,
-                    request.costEstimate(),
-                    null,
-                    null,
-                    saved.getInputHash()
-            );
             return toResponse(saved);
         } catch (DataIntegrityViolationException ex) {
             AiJobEntity duplicate = jobRepository.findByRequestId(requestId)
@@ -153,13 +141,6 @@ public class AiJobService {
         return requestId;
     }
 
-    private int normalizeTokens(Integer tokens) {
-        if (tokens == null) {
-            return 0;
-        }
-        return Math.max(tokens, 0);
-    }
-
     private AiJobType defaultType(AiJobType type) {
         if (type == null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "type is required");
@@ -172,6 +153,20 @@ public class AiJobService {
             return inputHash;
         }
         return computeHash(type, deckId, params);
+    }
+
+    private int estimateTokens(AiJobType type, UUID deckId, JsonNode params) {
+        try {
+            Map<String, Object> payloadMap = new java.util.LinkedHashMap<>();
+            payloadMap.put("type", type);
+            payloadMap.put("deckId", deckId);
+            payloadMap.put("params", params);
+            byte[] payload = objectMapper.writeValueAsBytes(payloadMap);
+            int estimated = (int) Math.ceil(payload.length / 4.0);
+            return Math.max(1, estimated);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to estimate token usage", ex);
+        }
     }
 
     private String computeHash(AiJobType type, UUID deckId, JsonNode params) {

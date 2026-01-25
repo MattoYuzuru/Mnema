@@ -24,6 +24,7 @@ public class AiJobWorker {
     private final JdbcTemplate jdbcTemplate;
     private final AiJobRepository jobRepository;
     private final AiJobProcessor jobProcessor;
+    private final AiUsageLedgerService usageLedgerService;
     private final String workerId;
     private final Duration lockTtl;
     private final int maxAttempts;
@@ -33,6 +34,7 @@ public class AiJobWorker {
     public AiJobWorker(JdbcTemplate jdbcTemplate,
                        AiJobRepository jobRepository,
                        AiJobProcessor jobProcessor,
+                       AiUsageLedgerService usageLedgerService,
                        @Value("${app.ai.jobs.worker-id:}") String workerId,
                        @Value("${app.ai.jobs.lock-ttl-seconds:300}") long lockTtlSeconds,
                        @Value("${app.ai.jobs.max-attempts:3}") int maxAttempts,
@@ -41,6 +43,7 @@ public class AiJobWorker {
         this.jdbcTemplate = jdbcTemplate;
         this.jobRepository = jobRepository;
         this.jobProcessor = jobProcessor;
+        this.usageLedgerService = usageLedgerService;
         this.workerId = (workerId == null || workerId.isBlank()) ? defaultWorkerId() : workerId;
         this.lockTtl = Duration.ofSeconds(lockTtlSeconds);
         this.maxAttempts = Math.max(maxAttempts, 1);
@@ -110,6 +113,19 @@ public class AiJobWorker {
         job.setLockedBy(null);
         job.setNextRunAt(null);
         job.setErrorMessage(null);
+        if (result != null) {
+            usageLedgerService.recordUsage(
+                    job.getRequestId(),
+                    job.getJobId(),
+                    job.getUserId(),
+                    result.tokensIn(),
+                    result.tokensOut(),
+                    result.costEstimate(),
+                    result.provider(),
+                    result.model(),
+                    resolvePromptHash(job, result)
+            );
+        }
         jobRepository.save(job);
     }
 
@@ -147,5 +163,12 @@ public class AiJobWorker {
     private String defaultWorkerId() {
         String host = System.getenv("HOSTNAME");
         return (host == null || host.isBlank()) ? "ai-worker" : host;
+    }
+
+    private String resolvePromptHash(AiJobEntity job, AiJobProcessingResult result) {
+        if (result.promptHash() != null && !result.promptHash().isBlank()) {
+            return result.promptHash();
+        }
+        return job.getInputHash();
     }
 }

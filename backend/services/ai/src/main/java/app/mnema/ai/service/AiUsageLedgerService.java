@@ -28,12 +28,14 @@ public class AiUsageLedgerService {
                             String provider,
                             String model,
                             String promptHash) {
+        int normalizedIn = tokensIn == null ? 0 : Math.max(tokensIn, 0);
+        int normalizedOut = tokensOut == null ? 0 : Math.max(tokensOut, 0);
         AiUsageLedgerEntity entry = new AiUsageLedgerEntity();
         entry.setRequestId(requestId);
         entry.setJobId(jobId);
         entry.setUserId(userId);
-        entry.setTokensIn(tokensIn);
-        entry.setTokensOut(tokensOut);
+        entry.setTokensIn(normalizedIn);
+        entry.setTokensOut(normalizedOut);
         entry.setCostEstimate(costEstimate);
         entry.setProvider(provider);
         entry.setModel(model);
