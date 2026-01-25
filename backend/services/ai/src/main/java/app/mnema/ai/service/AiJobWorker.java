@@ -58,6 +58,9 @@ public class AiJobWorker {
     }
 
     private void handleJob(AiJobEntity job) {
+        if (isCanceled(job.getJobId())) {
+            return;
+        }
         try {
             AiJobProcessingResult result = jobProcessor.process(job);
             markCompleted(job, result);
@@ -103,6 +106,9 @@ public class AiJobWorker {
 
     @Transactional
     public void markCompleted(AiJobEntity job, AiJobProcessingResult result) {
+        if (isCanceled(job.getJobId())) {
+            return;
+        }
         Instant now = Instant.now();
         job.setStatus(AiJobStatus.completed);
         job.setProgress(100);
@@ -131,6 +137,9 @@ public class AiJobWorker {
 
     @Transactional
     public void markFailed(AiJobEntity job, Exception ex) {
+        if (isCanceled(job.getJobId())) {
+            return;
+        }
         Instant now = Instant.now();
         int attempts = job.getAttempts() == null ? 1 : job.getAttempts() + 1;
         job.setAttempts(attempts);
@@ -170,5 +179,14 @@ public class AiJobWorker {
             return result.promptHash();
         }
         return job.getInputHash();
+    }
+
+    private boolean isCanceled(UUID jobId) {
+        String status = jdbcTemplate.query(
+                "select status from app_ai.ai_jobs where job_id = ?",
+                rs -> rs.next() ? rs.getString("status") : null,
+                jobId
+        );
+        return "canceled".equalsIgnoreCase(status);
     }
 }

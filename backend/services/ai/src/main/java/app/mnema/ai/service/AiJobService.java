@@ -23,6 +23,7 @@ import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -47,6 +48,9 @@ public class AiJobService {
     public AiJobResponse createJob(Jwt jwt, CreateAiJobRequest request) {
         UUID userId = requireUserId(jwt);
         UUID requestId = requireRequestId(request.requestId());
+        AiJobType jobType = defaultType(request.type());
+        JsonNode params = request.params() == null ? NullNode.getInstance() : request.params();
+        String expectedHash = resolveInputHash(request.inputHash(), jobType, request.deckId(), params);
 
         Optional<AiJobEntity> existing = jobRepository.findByRequestId(requestId);
         if (existing.isPresent()) {
@@ -54,12 +58,13 @@ public class AiJobService {
             if (!job.getUserId().equals(userId)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Request id already used");
             }
+            if (!Objects.equals(job.getInputHash(), expectedHash)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Request id already used with different input");
+            }
             return toResponse(job);
         }
 
         Instant now = Instant.now();
-        AiJobType jobType = defaultType(request.type());
-        JsonNode params = request.params() == null ? NullNode.getInstance() : request.params();
         int estimatedTokens = estimateTokens(jobType, request.deckId(), params);
         quotaService.consumeTokens(userId, estimatedTokens);
 
@@ -72,7 +77,7 @@ public class AiJobService {
         job.setStatus(AiJobStatus.queued);
         job.setProgress(0);
         job.setParamsJson(params);
-        job.setInputHash(resolveInputHash(request.inputHash(), job.getType(), job.getDeckId(), params));
+        job.setInputHash(expectedHash);
         job.setResultSummary(NullNode.getInstance());
         job.setAttempts(0);
         job.setNextRunAt(null);
@@ -88,6 +93,9 @@ public class AiJobService {
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Request id already used"));
             if (!duplicate.getUserId().equals(userId)) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Request id already used");
+            }
+            if (!Objects.equals(duplicate.getInputHash(), expectedHash)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Request id already used with different input");
             }
             return toResponse(duplicate);
         }
