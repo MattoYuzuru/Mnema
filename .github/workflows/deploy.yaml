@@ -177,6 +177,8 @@ jobs:
             AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
             AWS_BUCKET_NAME: "${AWS_BUCKET_NAME}"
             MEDIA_INTERNAL_TOKEN: "${MEDIA_INTERNAL_TOKEN}"
+            AI_VAULT_MASTER_KEY: "${AI_VAULT_MASTER_KEY}"
+            AI_VAULT_KEY_ID: "${AI_VAULT_KEY_ID}"
           YAML
         env:
           AUTH_ISSUER: ${{ secrets.AUTH_ISSUER }}
@@ -199,6 +201,8 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
           MEDIA_INTERNAL_TOKEN: ${{ secrets.MEDIA_INTERNAL_TOKEN }}
+          AI_VAULT_MASTER_KEY: ${{ secrets.AI_VAULT_MASTER_KEY }}
+          AI_VAULT_KEY_ID: ${{ secrets.AI_VAULT_KEY_ID }}
 
       - name: Create/Update secret (grafana-secrets)
         run: |

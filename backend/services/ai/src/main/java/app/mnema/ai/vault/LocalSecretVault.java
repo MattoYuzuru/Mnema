@@ -24,8 +24,14 @@ public class LocalSecretVault implements SecretVault {
     private final SecureRandom random = new SecureRandom();
 
     public LocalSecretVault(VaultProps props) {
+        String appEnv = System.getenv("APP_ENV");
+        boolean isProd = appEnv != null
+                && (appEnv.equalsIgnoreCase("prod") || appEnv.equalsIgnoreCase("production"));
         String key = props == null ? null : props.masterKey();
         if (key == null || key.isBlank()) {
+            if (isProd) {
+                throw new IllegalStateException("AI vault master key is required in prod");
+            }
             byte[] generated = new byte[32];
             random.nextBytes(generated);
             this.masterKey = new SecretKeySpec(generated, "AES");

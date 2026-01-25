@@ -25,6 +25,9 @@ public class AiQuotaEntity {
     @Column(name = "period_start", nullable = false)
     private LocalDate periodStart;
 
+    @Column(name = "period_end")
+    private LocalDate periodEnd;
+
     @Column(name = "tokens_limit")
     private Integer tokensLimit;
 
@@ -42,12 +45,14 @@ public class AiQuotaEntity {
 
     public AiQuotaEntity(UUID userId,
                          LocalDate periodStart,
+                         LocalDate periodEnd,
                          Integer tokensLimit,
                          Integer tokensUsed,
                          BigDecimal costLimit,
                          Instant updatedAt) {
         this.userId = userId;
         this.periodStart = periodStart;
+        this.periodEnd = periodEnd;
         this.tokensLimit = tokensLimit;
         this.tokensUsed = tokensUsed;
         this.costLimit = costLimit;
@@ -68,6 +73,14 @@ public class AiQuotaEntity {
 
     public void setPeriodStart(LocalDate periodStart) {
         this.periodStart = periodStart;
+    }
+
+    public LocalDate getPeriodEnd() {
+        return periodEnd;
+    }
+
+    public void setPeriodEnd(LocalDate periodEnd) {
+        this.periodEnd = periodEnd;
     }
 
     public Integer getTokensLimit() {

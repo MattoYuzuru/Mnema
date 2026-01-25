@@ -164,6 +164,8 @@ services:
       MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      APP_AI_VAULT_MASTER_KEY: ${AI_VAULT_MASTER_KEY}
+      APP_AI_VAULT_KEY_ID: ${AI_VAULT_KEY_ID}
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

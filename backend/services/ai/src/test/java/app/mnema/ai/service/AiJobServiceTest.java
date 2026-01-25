@@ -61,7 +61,7 @@ class AiJobServiceTest extends PostgresIntegrationTest {
         assertThat(first.jobId()).isEqualTo(second.jobId());
         assertThat(jobRepository.count()).isEqualTo(1);
 
-        AiQuotaEntity quota = quotaRepository.findByUserIdAndPeriodStart(userId, currentPeriodStart())
+        AiQuotaEntity quota = quotaRepository.findByUserIdAndPeriodStart(userId, currentPeriodStart(userId))
                 .orElseThrow();
         assertThat(quota.getTokensUsed()).isEqualTo(10);
     }
@@ -87,24 +87,26 @@ class AiJobServiceTest extends PostgresIntegrationTest {
         assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.PAYMENT_REQUIRED);
         assertThat(jobRepository.count()).isEqualTo(0);
 
-        AiQuotaEntity quota = quotaRepository.findByUserIdAndPeriodStart(userId, currentPeriodStart())
+        AiQuotaEntity quota = quotaRepository.findByUserIdAndPeriodStart(userId, currentPeriodStart(userId))
                 .orElseThrow();
         assertThat(quota.getTokensUsed()).isEqualTo(0);
     }
 
     private void seedQuota(UUID userId, int tokensLimit) {
-        LocalDate periodStart = currentPeriodStart();
+        LocalDate periodStart = currentPeriodStart(userId);
+        LocalDate periodEnd = quotaService.currentPeriodEnd(userId);
         AiQuotaEntity quota = new AiQuotaEntity();
         quota.setUserId(userId);
         quota.setPeriodStart(periodStart);
+        quota.setPeriodEnd(periodEnd);
         quota.setTokensLimit(tokensLimit);
         quota.setTokensUsed(0);
         quota.setUpdatedAt(Instant.now());
         quotaRepository.save(quota);
     }
 
-    private LocalDate currentPeriodStart() {
-        return quotaService.currentPeriodStart();
+    private LocalDate currentPeriodStart(UUID userId) {
+        return quotaService.currentPeriodStart(userId);
     }
 
     private Jwt jwtFor(UUID userId) {

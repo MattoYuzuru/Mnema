@@ -25,17 +25,22 @@ public class SubscriptionEntity {
     @Column(name = "period_end")
     private Instant periodEnd;
 
+    @Column(name = "billing_anchor")
+    private Integer billingAnchor;
+
     public SubscriptionEntity() {
     }
 
     public SubscriptionEntity(UUID userId,
                               String planId,
                               String subscriptionStatus,
-                              Instant periodEnd) {
+                              Instant periodEnd,
+                              Integer billingAnchor) {
         this.userId = userId;
         this.planId = planId;
         this.subscriptionStatus = subscriptionStatus;
         this.periodEnd = periodEnd;
+        this.billingAnchor = billingAnchor;
     }
 
     public UUID getUserId() {
@@ -68,5 +73,13 @@ public class SubscriptionEntity {
 
     public void setPeriodEnd(Instant periodEnd) {
         this.periodEnd = periodEnd;
+    }
+
+    public Integer getBillingAnchor() {
+        return billingAnchor;
+    }
+
+    public void setBillingAnchor(Integer billingAnchor) {
+        this.billingAnchor = billingAnchor;
     }
 }

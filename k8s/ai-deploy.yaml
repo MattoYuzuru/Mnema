@@ -44,6 +44,10 @@ spec:
               value: redis
             - name: REDIS_PORT
               value: "6379"
+            - name: APP_AI_VAULT_MASTER_KEY
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: AI_VAULT_MASTER_KEY } }
+            - name: APP_AI_VAULT_KEY_ID
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: AI_VAULT_KEY_ID } }
             - name: APP_ENV
               value: prod
             - name: SPRING_PROFILES_ACTIVE
