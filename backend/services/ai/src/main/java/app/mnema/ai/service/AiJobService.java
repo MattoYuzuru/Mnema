@@ -66,7 +66,6 @@ public class AiJobService {
 
         Instant now = Instant.now();
         int estimatedTokens = estimateTokens(jobType, request.deckId(), params);
-        quotaService.consumeTokens(userId, estimatedTokens);
 
         AiJobEntity job = new AiJobEntity();
         job.setJobId(UUID.randomUUID());
@@ -87,6 +86,7 @@ public class AiJobService {
 
         try {
             AiJobEntity saved = jobRepository.save(job);
+            quotaService.consumeTokens(userId, estimatedTokens);
             return toResponse(saved);
         } catch (DataIntegrityViolationException ex) {
             AiJobEntity duplicate = jobRepository.findByRequestId(requestId)
