@@ -14,7 +14,7 @@ export interface CardTemplateDTO {
     aiProfile?: {
         prompt: string;
         fieldsMapping: Record<string, string>;
-    } | null;
+    } | string | null;
     iconUrl?: string | null;
     fields?: FieldTemplateDTO[];
 }
@@ -55,7 +55,7 @@ export interface CreateTemplateRequest {
     aiProfile?: {
         prompt: string;
         fieldsMapping: Record<string, string>;
-    } | null;
+    } | string | null;
     iconUrl?: string | null;
     fields?: CreateFieldTemplateRequest[];
 }

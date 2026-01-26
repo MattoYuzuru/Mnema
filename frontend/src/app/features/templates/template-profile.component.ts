@@ -93,6 +93,23 @@ type FieldSide = 'front' | 'back';
       <p *ngIf="templateError" class="error-text">{{ templateError }}</p>
       <p *ngIf="editing" class="safe-note">{{ 'templateProfile.safeChanges' | translate }}</p>
 
+      <section class="ai-profile-section">
+        <div class="section-header">
+          <h2>{{ 'templateProfile.aiProfileTitle' | translate }}</h2>
+        </div>
+        <p class="ai-hint">{{ 'templateProfile.aiProfileHint' | translate }}</p>
+        <textarea
+          *ngIf="editing"
+          class="ai-profile-input"
+          rows="4"
+          [(ngModel)]="draftAiProfilePrompt"
+          [placeholder]="'templateProfile.aiProfilePlaceholder' | translate"
+        ></textarea>
+        <p *ngIf="!editing" class="ai-profile-preview">
+          {{ draftAiProfilePrompt || ('templateProfile.aiProfileEmpty' | translate) }}
+        </p>
+      </section>
+
       <section class="preview-section">
         <div class="section-header">
           <h2>{{ 'templateProfile.previewTitle' | translate }}</h2>
@@ -332,6 +349,38 @@ type FieldSide = 'front' | 'back';
         margin: 0 0 var(--spacing-lg) 0;
       }
 
+      .ai-profile-section {
+        margin-bottom: var(--spacing-2xl);
+        border: 1px solid var(--glass-border);
+        border-radius: var(--border-radius-xl);
+        background: var(--color-card-background);
+        padding: var(--spacing-lg);
+        box-shadow: var(--shadow-soft);
+      }
+
+      .ai-hint {
+        margin: 0 0 var(--spacing-md);
+        color: var(--color-text-muted);
+        font-size: 0.95rem;
+      }
+
+      .ai-profile-input {
+        width: 100%;
+        border-radius: var(--border-radius-md);
+        border: 1px solid var(--border-color);
+        padding: var(--spacing-md);
+        background: var(--color-background);
+        color: var(--color-text-primary);
+        resize: vertical;
+      }
+
+      .ai-profile-preview {
+        margin: 0;
+        white-space: pre-wrap;
+        color: var(--color-text-primary);
+        font-size: 0.95rem;
+      }
+
       .preview-section {
         margin-bottom: var(--spacing-2xl);
       }
@@ -566,6 +615,8 @@ export class TemplateProfileComponent implements OnInit {
     draftName = '';
     draftDescription = '';
     draftPublic = false;
+    draftAiProfilePrompt = '';
+    draftAiProfileMapping: Record<string, string> | null = null;
 
     frontFields: EditableField[] = [];
     backFields: EditableField[] = [];
@@ -662,6 +713,7 @@ export class TemplateProfileComponent implements OnInit {
 
         const frontNames = this.frontFields.map(field => field.name);
         const backNames = this.backFields.map(field => field.name);
+        const aiProfilePayload = this.buildAiProfilePayload();
 
         const templateUpdates: Partial<CardTemplateDTO> = {
             name,
@@ -670,7 +722,8 @@ export class TemplateProfileComponent implements OnInit {
             layout: {
                 front: frontNames,
                 back: backNames
-            }
+            },
+            aiProfile: aiProfilePayload
         };
 
         const allFieldsForValidation = this.collectFieldsWithOrder();
@@ -854,6 +907,9 @@ export class TemplateProfileComponent implements OnInit {
         this.draftName = template.name || '';
         this.draftDescription = template.description || '';
         this.draftPublic = template.isPublic;
+        const aiProfile = this.parseAiProfile(template.aiProfile);
+        this.draftAiProfilePrompt = aiProfile.prompt;
+        this.draftAiProfileMapping = aiProfile.fieldsMapping ?? null;
         this.isFlipped = false;
         this.buildEditableFields(template);
     }
@@ -932,10 +988,52 @@ export class TemplateProfileComponent implements OnInit {
 
     private shouldUpdateTemplate(updates: Partial<CardTemplateDTO>): boolean {
         if (!this.template) return false;
+        const currentProfile = this.normalizeAiProfile(this.template.aiProfile);
+        const nextProfile = this.normalizeAiProfile(updates.aiProfile);
         return updates.name !== this.template.name ||
             updates.description !== this.template.description ||
             updates.isPublic !== this.template.isPublic ||
-            JSON.stringify(updates.layout) !== JSON.stringify(this.template.layout);
+            JSON.stringify(updates.layout) !== JSON.stringify(this.template.layout) ||
+            currentProfile !== nextProfile;
+    }
+
+    private parseAiProfile(
+        raw: CardTemplateDTO['aiProfile']
+    ): { prompt: string; fieldsMapping?: Record<string, string> } {
+        if (!raw) {
+            return { prompt: '' };
+        }
+        if (typeof raw === 'string') {
+            return { prompt: raw };
+        }
+        const prompt = typeof raw.prompt === 'string' ? raw.prompt : '';
+        const fieldsMapping = raw.fieldsMapping || undefined;
+        return { prompt, fieldsMapping };
+    }
+
+    private buildAiProfilePayload(): { prompt: string; fieldsMapping?: Record<string, string> } | null {
+        const prompt = this.draftAiProfilePrompt.trim();
+        if (!prompt) {
+            return null;
+        }
+        if (this.draftAiProfileMapping && Object.keys(this.draftAiProfileMapping).length > 0) {
+            return { prompt, fieldsMapping: this.draftAiProfileMapping };
+        }
+        return { prompt };
+    }
+
+    private normalizeAiProfile(raw: CardTemplateDTO['aiProfile']): string {
+        if (!raw) {
+            return '';
+        }
+        if (typeof raw === 'string') {
+            return raw.trim();
+        }
+        try {
+            return JSON.stringify(raw);
+        } catch {
+            return '';
+        }
     }
 
     private shouldUpdateField(field: EditableField): boolean {
