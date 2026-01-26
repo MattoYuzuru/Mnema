@@ -3,8 +3,10 @@ package app.mnema.core.deck.service;
 import app.mnema.core.deck.domain.dto.CardTemplateDTO;
 import app.mnema.core.deck.domain.dto.FieldTemplateDTO;
 import app.mnema.core.deck.domain.entity.CardTemplateEntity;
+import app.mnema.core.deck.domain.entity.CardTemplateVersionEntity;
 import app.mnema.core.deck.domain.entity.FieldTemplateEntity;
 import app.mnema.core.deck.repository.CardTemplateRepository;
+import app.mnema.core.deck.repository.CardTemplateVersionRepository;
 import app.mnema.core.deck.repository.FieldTemplateRepository;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,6 +38,9 @@ class TemplateServiceTest {
     @Mock
     FieldTemplateRepository fieldTemplateRepository;
 
+    @Mock
+    CardTemplateVersionRepository cardTemplateVersionRepository;
+
     @InjectMocks
     TemplateService templateService;
 
@@ -53,7 +58,8 @@ class TemplateServiceTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                1
         );
 
         Page<CardTemplateEntity> page = new PageImpl<>(
@@ -65,9 +71,23 @@ class TemplateServiceTest {
         when(cardTemplateRepository.findByIsPublicTrueOrderByCreatedAtDesc(any(Pageable.class)))
                 .thenReturn(page);
 
+        CardTemplateVersionEntity version = new CardTemplateVersionEntity(
+                templateId,
+                1,
+                null,
+                null,
+                null,
+                Instant.now(),
+                UUID.randomUUID()
+        );
+
+        when(cardTemplateVersionRepository.findByTemplateIdIn(eq(List.of(templateId))))
+                .thenReturn(List.of(version));
+
         FieldTemplateEntity field = new FieldTemplateEntity(
                 UUID.randomUUID(),
                 templateId,
+                1,
                 "front",
                 "Front",
                 null,
@@ -108,6 +128,8 @@ class TemplateServiceTest {
         UUID ownerId = UUID.randomUUID();
 
         CardTemplateDTO dto = new CardTemplateDTO(
+                null,
+                null,
                 null,
                 ownerId,
                 "Name",
@@ -157,7 +179,8 @@ class TemplateServiceTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                1
         );
 
         when(cardTemplateRepository.save(any(CardTemplateEntity.class)))
@@ -166,6 +189,7 @@ class TemplateServiceTest {
         FieldTemplateEntity savedFrontField = new FieldTemplateEntity(
                 UUID.randomUUID(),
                 savedTemplate.getTemplateId(),
+                1,
                 "front",
                 "Front",
                 null,
@@ -179,6 +203,7 @@ class TemplateServiceTest {
         FieldTemplateEntity savedBackField = new FieldTemplateEntity(
                 UUID.randomUUID(),
                 savedTemplate.getTemplateId(),
+                1,
                 "back",
                 "Back",
                 null,

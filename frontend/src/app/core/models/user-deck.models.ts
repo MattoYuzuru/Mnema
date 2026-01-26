@@ -4,6 +4,8 @@ export interface UserDeckDTO {
     publicDeckId: string;
     subscribedVersion: number;
     currentVersion: number;
+    templateVersion?: number | null;
+    subscribedTemplateVersion?: number | null;
     autoUpdate: boolean;
     algorithmId: string;
     algorithmParams?: Record<string, unknown> | null;

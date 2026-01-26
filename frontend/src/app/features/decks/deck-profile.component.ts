@@ -6,6 +6,7 @@ import { forkJoin } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
+import { TemplateApiService } from '../../core/services/template-api.service';
 import { ReviewApiService } from '../../core/services/review-api.service';
 import { ImportApiService } from '../../core/services/import-api.service';
 import { MediaApiService } from '../../core/services/media-api.service';
@@ -54,6 +55,10 @@ import { I18nService } from '../../core/services/i18n.service';
           <span class="meta-label">{{ 'deckProfile.version' | translate }}:</span>
           <span class="meta-value">{{ deck.currentVersion }}<span *ngIf="latestPublicVersion !== null"> / {{ latestPublicVersion }}</span></span>
         </div>
+        <div class="meta-item" *ngIf="deck.templateVersion !== null && deck.templateVersion !== undefined">
+          <span class="meta-label">{{ 'deckProfile.templateVersion' | translate }}:</span>
+          <span class="meta-value">{{ deck.templateVersion }}<span *ngIf="latestTemplateVersion !== null"> / {{ latestTemplateVersion }}</span></span>
+        </div>
         <div class="meta-item" *ngIf="!deck.publicDeckId">
           <span class="meta-label">{{ 'deckProfile.version' | translate }}:</span>
           <span class="meta-value">{{ deck.currentVersion }}</span>
@@ -78,6 +83,9 @@ import { I18nService } from '../../core/services/i18n.service';
         </app-button>
         <app-button variant="ghost" (click)="sync()" *ngIf="needsUpdate()">
           {{ 'deckProfile.sync' | translate }}
+        </app-button>
+        <app-button variant="ghost" (click)="syncTemplate()" *ngIf="needsTemplateUpdate()">
+          {{ 'deckProfile.syncTemplate' | translate }}
         </app-button>
         <app-button variant="secondary" (click)="openEditModal()">
           {{ 'deckProfile.edit' | translate }}
@@ -224,6 +232,7 @@ import { I18nService } from '../../core/services/i18n.service';
       *ngIf="showAddCards && deck"
       [userDeckId]="deck.userDeckId"
       [publicDeckId]="deck.publicDeckId"
+      [templateVersion]="deck.templateVersion || null"
       (saved)="onCardsSaved()"
       (cancelled)="closeAddCards()"
     ></app-add-cards-modal>
@@ -240,6 +249,7 @@ import { I18nService } from '../../core/services/i18n.service';
       [userDeckId]="deck.userDeckId"
       [deckName]="deck.displayName"
       [templateId]="publicDeck?.templateId || ''"
+      [templateVersion]="deck.templateVersion || null"
       (closed)="closeAiAddModal()"
     ></app-ai-add-cards-modal>
 
@@ -1138,6 +1148,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     deck: UserDeckDTO | null = null;
     publicDeck: PublicDeckDTO | null = null;
     latestPublicVersion: number | null = null;
+    latestTemplateVersion: number | null = null;
     currentUserId: string | null = null;
     isAuthor = false;
     userDeckId = '';
@@ -1177,6 +1188,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         private router: Router,
         private deckApi: DeckApiService,
         private publicDeckApi: PublicDeckApiService,
+        private templateApi: TemplateApiService,
         private reviewApi: ReviewApiService,
         private userApi: UserApiService,
         private fb: FormBuilder,
@@ -1228,6 +1240,16 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                 this.publicDeck = publicDeck;
                 this.latestPublicVersion = publicDeck.version;
                 this.isAuthor = publicDeck.authorId === this.currentUserId;
+                if (publicDeck.templateId) {
+                    this.templateApi.getTemplate(publicDeck.templateId).subscribe({
+                        next: template => {
+                            this.latestTemplateVersion = template.latestVersion ?? template.version ?? null;
+                        },
+                        error: () => {
+                            this.latestTemplateVersion = null;
+                        }
+                    });
+                }
                 this.loading = false;
             },
             error: err => {
@@ -1458,6 +1480,25 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             },
             error: err => {
                 console.error('Failed to sync deck:', err);
+            }
+        });
+    }
+
+    needsTemplateUpdate(): boolean {
+        if (!this.deck) return false;
+        if (this.latestTemplateVersion === null) return false;
+        if (this.deck.templateVersion === null || this.deck.templateVersion === undefined) return false;
+        return this.deck.templateVersion < this.latestTemplateVersion;
+    }
+
+    syncTemplate(): void {
+        this.deckApi.syncDeckTemplate(this.userDeckId).subscribe({
+            next: updatedDeck => {
+                this.deck = updatedDeck;
+                console.log('Template synced successfully');
+            },
+            error: err => {
+                console.error('Failed to sync template:', err);
             }
         });
     }

@@ -57,6 +57,8 @@ class SearchControllerWebMvcTest {
                 UUID.randomUUID(),
                 1,
                 1,
+                1,
+                1,
                 true,
                 null,
                 null,
@@ -126,6 +128,8 @@ class SearchControllerWebMvcTest {
 
         CardTemplateDTO dto = new CardTemplateDTO(
                 UUID.randomUUID(),
+                1,
+                1,
                 userId,
                 "Basic",
                 "Template",

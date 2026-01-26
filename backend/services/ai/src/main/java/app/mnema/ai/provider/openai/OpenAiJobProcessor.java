@@ -135,7 +135,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (publicDeck.templateId() == null) {
             throw new IllegalStateException("Template id not found");
         }
-        CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), accessToken);
+        Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
+        CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
 
         int count = resolveCount(params);
         var allowedFields = resolveAllowedFields(params, template);

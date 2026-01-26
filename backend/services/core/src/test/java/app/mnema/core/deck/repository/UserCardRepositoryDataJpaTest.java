@@ -43,6 +43,8 @@ class UserCardRepositoryDataJpaTest extends PostgresIntegrationTest {
         deck.setDisplayName("Test deck");
         deck.setAutoUpdate(true);
         deck.setCreatedAt(now);
+        deck.setTemplateVersion(1);
+        deck.setSubscribedTemplateVersion(1);
 
         deck = userDeckRepository.save(deck);
         UUID deckId = deck.getUserDeckId();

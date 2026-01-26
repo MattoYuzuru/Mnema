@@ -88,9 +88,19 @@ type FieldSide = 'front' | 'back';
           <span class="meta-label">{{ 'templateProfile.createdAt' | translate }}</span>
           <span class="meta-value">{{ formatDate(template.createdAt) }}</span>
         </div>
+        <div class="meta-item">
+          <span class="meta-label">{{ 'templateProfile.version' | translate }}</span>
+          <span class="meta-value">
+            v{{ template.version || template.latestVersion || 1 }}
+            <ng-container *ngIf="template.latestVersion && template.version && template.version !== template.latestVersion">
+              ({{ 'templateProfile.latestVersion' | translate }} v{{ template.latestVersion }})
+            </ng-container>
+          </span>
+        </div>
       </div>
 
       <p *ngIf="templateError" class="error-text">{{ templateError }}</p>
+      <p *ngIf="!isLatestVersion" class="safe-note">{{ 'templateProfile.versionViewOnly' | translate }}</p>
       <p *ngIf="editing" class="safe-note">{{ 'templateProfile.safeChanges' | translate }}</p>
 
       <section class="ai-profile-section">
@@ -611,6 +621,8 @@ export class TemplateProfileComponent implements OnInit {
     isFlipped = false;
     editing = false;
     templateError = '';
+    requestedVersion: number | null = null;
+    isLatestVersion = true;
 
     draftName = '';
     draftDescription = '';
@@ -648,6 +660,8 @@ export class TemplateProfileComponent implements OnInit {
 
     ngOnInit(): void {
         const templateId = this.route.snapshot.paramMap.get('templateId') || '';
+        const versionParam = this.route.snapshot.queryParamMap.get('version');
+        this.requestedVersion = versionParam ? Number(versionParam) : null;
         this.fromWizard = this.route.snapshot.queryParamMap.get('from') === 'wizard';
         if (!templateId) {
             this.loading = false;
@@ -655,13 +669,14 @@ export class TemplateProfileComponent implements OnInit {
         }
 
         forkJoin({
-            template: this.templateApi.getTemplate(templateId),
+            template: this.templateApi.getTemplate(templateId, this.requestedVersion),
             user: this.userApi.getMe()
         }).subscribe({
             next: ({ template, user }) => {
                 this.template = template;
                 this.currentUserId = user.id;
                 this.isOwner = template.ownerId === user.id;
+                this.isLatestVersion = !template.latestVersion || !template.version || template.version === template.latestVersion;
                 this.hydrateDraft(template);
                 this.loading = false;
             },
@@ -673,6 +688,10 @@ export class TemplateProfileComponent implements OnInit {
 
     startEdit(): void {
         if (!this.template) return;
+        if (!this.isLatestVersion) {
+            this.templateError = this.i18n.translate('templateProfile.versionEditBlocked');
+            return;
+        }
         this.editing = true;
         this.fieldError = '';
         this.templateError = '';
@@ -999,27 +1018,27 @@ export class TemplateProfileComponent implements OnInit {
 
     private parseAiProfile(
         raw: CardTemplateDTO['aiProfile']
-    ): { prompt: string; fieldsMapping?: Record<string, string> } {
+    ): { prompt: string; fieldsMapping: Record<string, string> } {
         if (!raw) {
-            return { prompt: '' };
+            return { prompt: '', fieldsMapping: {} };
         }
         if (typeof raw === 'string') {
-            return { prompt: raw };
+            return { prompt: raw, fieldsMapping: {} };
         }
         const prompt = typeof raw.prompt === 'string' ? raw.prompt : '';
-        const fieldsMapping = raw.fieldsMapping || undefined;
+        const fieldsMapping = raw.fieldsMapping || {};
         return { prompt, fieldsMapping };
     }
 
-    private buildAiProfilePayload(): { prompt: string; fieldsMapping?: Record<string, string> } | null {
+    private buildAiProfilePayload(): { prompt: string; fieldsMapping: Record<string, string> } | null {
         const prompt = this.draftAiProfilePrompt.trim();
         if (!prompt) {
             return null;
         }
-        if (this.draftAiProfileMapping && Object.keys(this.draftAiProfileMapping).length > 0) {
-            return { prompt, fieldsMapping: this.draftAiProfileMapping };
-        }
-        return { prompt };
+        const fieldsMapping = this.draftAiProfileMapping && Object.keys(this.draftAiProfileMapping).length > 0
+            ? this.draftAiProfileMapping
+            : {};
+        return { prompt, fieldsMapping };
     }
 
     private normalizeAiProfile(raw: CardTemplateDTO['aiProfile']): string {

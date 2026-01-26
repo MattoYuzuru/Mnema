@@ -891,8 +891,9 @@ export class CardBrowserComponent implements OnInit {
             next: publicDeck => {
                 this.publicDeck = publicDeck;
                 this.isAuthor = publicDeck.authorId === this.currentUserId;
+                const templateVersion = this.deck?.templateVersion ?? publicDeck.templateVersion ?? null;
                 forkJoin({
-                    template: this.templateApi.getTemplate(publicDeck.templateId),
+                    template: this.templateApi.getTemplate(publicDeck.templateId, templateVersion),
                     cards: this.cardApi.getUserCards(this.userDeckId, 1, CardBrowserComponent.PAGE_SIZE),
                     size: this.deckApi.getUserDeckSize(this.userDeckId)
                 }).subscribe({

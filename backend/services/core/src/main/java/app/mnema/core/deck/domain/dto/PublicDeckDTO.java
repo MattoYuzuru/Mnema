@@ -14,6 +14,7 @@ public record PublicDeckDTO(
         UUID iconMediaId,
         String iconUrl,
         UUID templateId,
+        Integer templateVersion,
         boolean isPublic,
         boolean isListed,
         LanguageTag language,

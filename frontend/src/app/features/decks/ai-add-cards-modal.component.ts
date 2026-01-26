@@ -268,6 +268,7 @@ export class AiAddCardsModalComponent implements OnInit {
     @Input() userDeckId = '';
     @Input() deckName = '';
     @Input() templateId = '';
+    @Input() templateVersion: number | null = null;
     @Output() closed = new EventEmitter<void>();
 
     private storageKey = '';
@@ -341,7 +342,7 @@ export class AiAddCardsModalComponent implements OnInit {
             return;
         }
         this.loadingTemplate.set(true);
-        this.templateApi.getTemplate(this.templateId).subscribe({
+        this.templateApi.getTemplate(this.templateId, this.templateVersion).subscribe({
             next: template => {
                 const fields = template.fields || [];
                 this.templateFields.set(fields);

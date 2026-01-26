@@ -2,10 +2,12 @@ package app.mnema.core.deck.service;
 
 import app.mnema.core.deck.domain.dto.PublicDeckDTO;
 import app.mnema.core.deck.domain.dto.UserDeckDTO;
+import app.mnema.core.deck.domain.entity.CardTemplateEntity;
 import app.mnema.core.deck.domain.entity.PublicDeckEntity;
 import app.mnema.core.deck.domain.entity.UserDeckEntity;
 import app.mnema.core.deck.domain.type.LanguageTag;
 import app.mnema.core.deck.domain.type.SrAlgorithm;
+import app.mnema.core.deck.repository.CardTemplateRepository;
 import app.mnema.core.deck.repository.PublicDeckRepository;
 import app.mnema.core.deck.repository.UserCardRepository;
 import app.mnema.core.deck.repository.UserDeckRepository;
@@ -43,6 +45,9 @@ class DeckServiceTest {
 
     @Mock
     PublicDeckRepository publicDeckRepository;
+
+    @Mock
+    CardTemplateRepository cardTemplateRepository;
 
     @Mock
     MediaResolveCache mediaResolveCache;
@@ -147,6 +152,7 @@ class DeckServiceTest {
                 null,
                 null,
                 templateId,
+                1,
                 true,
                 true,
                 LanguageTag.en,
@@ -165,6 +171,7 @@ class DeckServiceTest {
                 "Description",
                 null,
                 templateId,
+                1,
                 true,
                 true,
                 LanguageTag.en,
@@ -181,6 +188,8 @@ class DeckServiceTest {
         UserDeckEntity savedUserDeck = new UserDeckEntity(
                 userId,
                 UUID.randomUUID(),
+                1,
+                1,
                 1,
                 1,
                 true,

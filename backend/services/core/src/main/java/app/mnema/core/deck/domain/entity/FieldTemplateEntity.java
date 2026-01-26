@@ -19,6 +19,9 @@ public class FieldTemplateEntity {
     @Column(name = "template_id", nullable = false)
     private UUID templateId;
 
+    @Column(name = "template_version", nullable = false)
+    private Integer templateVersion;
+
     @Column(name = "name", nullable = false)
     private String name;
 
@@ -50,6 +53,7 @@ public class FieldTemplateEntity {
 
     public FieldTemplateEntity(UUID fieldId,
                                UUID templateId,
+                               Integer templateVersion,
                                String name,
                                String label,
                                CardFieldType fieldType,
@@ -60,6 +64,7 @@ public class FieldTemplateEntity {
                                String helpText) {
         this.fieldId = fieldId;
         this.templateId = templateId;
+        this.templateVersion = templateVersion;
         this.name = name;
         this.label = label;
         this.fieldType = fieldType;
@@ -76,6 +81,10 @@ public class FieldTemplateEntity {
 
     public UUID getTemplateId() {
         return templateId;
+    }
+
+    public Integer getTemplateVersion() {
+        return templateVersion;
     }
 
     public String getName() {

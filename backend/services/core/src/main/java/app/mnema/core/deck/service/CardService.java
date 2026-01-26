@@ -149,7 +149,7 @@ public class CardService {
         }
 
         return fieldTemplateRepository
-                .findByTemplateIdOrderByOrderIndexAsc(templateId)
+                .findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, deck.getTemplateVersion())
                 .stream()
                 .map(this::toFieldTemplateDTO)
                 .toList();
@@ -282,6 +282,7 @@ public class CardService {
                 latestDeck.getDescription(),
                 latestDeck.getIconMediaId(),
                 latestDeck.getTemplateId(),
+                latestDeck.getTemplateVersion(),
                 latestDeck.isPublicFlag(),
                 latestDeck.isListed(),
                 latestDeck.getLanguageCode(),
@@ -364,6 +365,7 @@ public class CardService {
 
         // Обновляем текущую версию в user_decks автора
         userDeck.setCurrentVersion(savedNewDeck.getVersion());
+        userDeck.setTemplateVersion(savedNewDeck.getTemplateVersion());
         userDeck.setLastSyncedAt(now);
         userDeckRepository.save(userDeck);
 
@@ -638,6 +640,7 @@ public class CardService {
                 latestDeck.getDescription(),
                 latestDeck.getIconMediaId(),
                 latestDeck.getTemplateId(),
+                latestDeck.getTemplateVersion(),
                 latestDeck.isPublicFlag(),
                 latestDeck.isListed(),
                 latestDeck.getLanguageCode(),
@@ -690,6 +693,7 @@ public class CardService {
         }
 
         userDeck.setCurrentVersion(savedNewDeck.getVersion());
+        userDeck.setTemplateVersion(savedNewDeck.getTemplateVersion());
         userDeck.setLastSyncedAt(now);
         userDeckRepository.save(userDeck);
 

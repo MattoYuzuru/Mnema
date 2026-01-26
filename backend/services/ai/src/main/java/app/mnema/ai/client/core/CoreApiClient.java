@@ -50,9 +50,15 @@ public class CoreApiClient {
         return response;
     }
 
-    public CoreTemplateResponse getTemplate(UUID templateId, String accessToken) {
+    public CoreTemplateResponse getTemplate(UUID templateId, Integer version, String accessToken) {
         CoreTemplateResponse response = restClient.get()
-                .uri("/templates/{templateId}", templateId)
+                .uri(uriBuilder -> {
+                    uriBuilder.path("/templates/{templateId}");
+                    if (version != null) {
+                        uriBuilder.queryParam("version", version);
+                    }
+                    return uriBuilder.build(templateId);
+                })
                 .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
                 .retrieve()
                 .body(CoreTemplateResponse.class);
@@ -119,7 +125,8 @@ public class CoreApiClient {
     public record CoreUserDeckResponse(
             UUID userDeckId,
             UUID publicDeckId,
-            Integer currentVersion
+            Integer currentVersion,
+            Integer templateVersion
     ) {
     }
 
@@ -129,12 +136,15 @@ public class CoreApiClient {
             String name,
             String description,
             String language,
-            UUID templateId
+            UUID templateId,
+            Integer templateVersion
     ) {
     }
 
     public record CoreTemplateResponse(
             UUID templateId,
+            Integer version,
+            Integer latestVersion,
             String name,
             String description,
             JsonNode aiProfile,

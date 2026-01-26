@@ -5,6 +5,7 @@ import app.mnema.core.deck.domain.dto.UserDeckDTO;
 import app.mnema.core.deck.domain.entity.UserCardEntity;
 import app.mnema.core.deck.domain.entity.UserDeckEntity;
 import app.mnema.core.deck.repository.CardTemplateRepository;
+import app.mnema.core.deck.repository.CardTemplateVersionRepository;
 import app.mnema.core.deck.repository.FieldTemplateRepository;
 import app.mnema.core.deck.repository.PublicCardRepository;
 import app.mnema.core.deck.repository.UserCardRepository;
@@ -52,6 +53,9 @@ class SearchServiceTest {
 
     @Mock
     FieldTemplateRepository fieldTemplateRepository;
+
+    @Mock
+    CardTemplateVersionRepository cardTemplateVersionRepository;
 
     @InjectMocks
     SearchService searchService;

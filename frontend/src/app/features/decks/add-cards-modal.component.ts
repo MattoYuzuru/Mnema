@@ -112,6 +112,7 @@ interface PendingCard {
 export class AddCardsModalComponent implements OnInit {
     @Input() userDeckId = '';
     @Input() publicDeckId = '';
+    @Input() templateVersion: number | null = null;
     @Output() saved = new EventEmitter<void>();
     @Output() cancelled = new EventEmitter<void>();
 
@@ -136,7 +137,8 @@ export class AddCardsModalComponent implements OnInit {
         this.loading = true;
         this.publicDeckApi.getPublicDeck(this.publicDeckId).subscribe({
             next: publicDeck => {
-                this.templateApi.getTemplate(publicDeck.templateId).subscribe({
+                const templateVersion = this.templateVersion ?? publicDeck.templateVersion ?? null;
+                this.templateApi.getTemplate(publicDeck.templateId, templateVersion).subscribe({
                     next: template => {
                         this.template = template;
                         const controls: { [key: string]: any } = {};

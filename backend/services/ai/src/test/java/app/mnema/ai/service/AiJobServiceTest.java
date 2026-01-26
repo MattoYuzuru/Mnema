@@ -59,8 +59,8 @@ class AiJobServiceTest extends PostgresIntegrationTest {
                 null
         );
 
-        AiJobResponse first = jobService.createJob(jwtFor(userId), request);
-        AiJobResponse second = jobService.createJob(jwtFor(userId), request);
+        AiJobResponse first = jobService.createJob(jwtFor(userId), "token", request);
+        AiJobResponse second = jobService.createJob(jwtFor(userId), "token", request);
 
         assertThat(first.jobId()).isEqualTo(second.jobId());
         assertThat(jobRepository.count()).isEqualTo(1);
@@ -86,7 +86,7 @@ class AiJobServiceTest extends PostgresIntegrationTest {
         seedQuota(userId, Math.max(estimate - 1, 0));
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
-                () -> jobService.createJob(jwtFor(userId), request));
+                () -> jobService.createJob(jwtFor(userId), "token", request));
 
         assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.PAYMENT_REQUIRED);
         assertThat(jobRepository.count()).isEqualTo(0);

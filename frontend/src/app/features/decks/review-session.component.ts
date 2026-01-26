@@ -401,7 +401,8 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
                 if (this.deck.publicDeckId && !this.sessionComplete) {
                     this.publicDeckApi.getPublicDeck(this.deck.publicDeckId).subscribe({
                         next: publicDeck => {
-                            this.templateApi.getTemplate(publicDeck.templateId).subscribe({
+                            const templateVersion = this.deck?.templateVersion ?? publicDeck.templateVersion ?? null;
+                            this.templateApi.getTemplate(publicDeck.templateId, templateVersion).subscribe({
                                 next: (template: CardTemplateDTO) => {
                                     this.template = template;
                                 }

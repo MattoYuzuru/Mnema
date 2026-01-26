@@ -21,8 +21,16 @@ export class TemplateApiService {
         return this.http.get<Page<CardTemplateDTO>>(this.baseUrl, { params });
     }
 
-    getTemplate(templateId: string): Observable<CardTemplateDTO> {
-        return this.http.get<CardTemplateDTO>(`${this.baseUrl}/${templateId}`);
+    getTemplate(templateId: string, version?: number | null): Observable<CardTemplateDTO> {
+        let params = new HttpParams();
+        if (version !== undefined && version !== null) {
+            params = params.set('version', version.toString());
+        }
+        return this.http.get<CardTemplateDTO>(`${this.baseUrl}/${templateId}`, { params });
+    }
+
+    getTemplateVersions(templateId: string): Observable<number[]> {
+        return this.http.get<number[]>(`${this.baseUrl}/${templateId}/versions`);
     }
 
     createTemplate(dto: CreateTemplateRequest): Observable<CardTemplateDTO> {

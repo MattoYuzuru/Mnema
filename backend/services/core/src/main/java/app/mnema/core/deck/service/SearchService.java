@@ -5,11 +5,13 @@ import app.mnema.core.deck.domain.dto.FieldTemplateDTO;
 import app.mnema.core.deck.domain.dto.UserCardDTO;
 import app.mnema.core.deck.domain.dto.UserDeckDTO;
 import app.mnema.core.deck.domain.entity.CardTemplateEntity;
+import app.mnema.core.deck.domain.entity.CardTemplateVersionEntity;
 import app.mnema.core.deck.domain.entity.FieldTemplateEntity;
 import app.mnema.core.deck.domain.entity.PublicCardEntity;
 import app.mnema.core.deck.domain.entity.UserCardEntity;
 import app.mnema.core.deck.domain.entity.UserDeckEntity;
 import app.mnema.core.deck.repository.CardTemplateRepository;
+import app.mnema.core.deck.repository.CardTemplateVersionRepository;
 import app.mnema.core.deck.repository.FieldTemplateRepository;
 import app.mnema.core.deck.repository.PublicCardRepository;
 import app.mnema.core.deck.repository.UserCardRepository;
@@ -38,17 +40,20 @@ public class SearchService {
     private final PublicCardRepository publicCardRepository;
     private final CardTemplateRepository cardTemplateRepository;
     private final FieldTemplateRepository fieldTemplateRepository;
+    private final CardTemplateVersionRepository cardTemplateVersionRepository;
 
     public SearchService(UserDeckRepository userDeckRepository,
                          UserCardRepository userCardRepository,
                          PublicCardRepository publicCardRepository,
                          CardTemplateRepository cardTemplateRepository,
-                         FieldTemplateRepository fieldTemplateRepository) {
+                         FieldTemplateRepository fieldTemplateRepository,
+                         CardTemplateVersionRepository cardTemplateVersionRepository) {
         this.userDeckRepository = userDeckRepository;
         this.userCardRepository = userCardRepository;
         this.publicCardRepository = publicCardRepository;
         this.cardTemplateRepository = cardTemplateRepository;
         this.fieldTemplateRepository = fieldTemplateRepository;
+        this.cardTemplateVersionRepository = cardTemplateVersionRepository;
     }
 
     @Transactional(readOnly = true)
@@ -241,9 +246,26 @@ public class SearchService {
                 .map(CardTemplateEntity::getTemplateId)
                 .toList();
 
+        List<CardTemplateVersionEntity> versions = cardTemplateVersionRepository.findByTemplateIdIn(templateIds);
+        Map<UUID, CardTemplateVersionEntity> latestByTemplate = new java.util.HashMap<>();
+        for (CardTemplateVersionEntity version : versions) {
+            if (version == null) {
+                continue;
+            }
+            CardTemplateVersionEntity existing = latestByTemplate.get(version.getTemplateId());
+            if (existing == null || version.getVersion() > existing.getVersion()) {
+                latestByTemplate.put(version.getTemplateId(), version);
+            }
+        }
+
         List<FieldTemplateEntity> fieldEntities = fieldTemplateRepository.findByTemplateIdIn(templateIds);
 
         Map<UUID, List<FieldTemplateDTO>> fieldsByTemplateId = fieldEntities.stream()
+                .filter(field -> {
+                    CardTemplateVersionEntity latest = latestByTemplate.get(field.getTemplateId());
+                    return latest != null && field.getTemplateVersion() != null
+                            && field.getTemplateVersion().equals(latest.getVersion());
+                })
                 .collect(Collectors.groupingBy(
                         FieldTemplateEntity::getTemplateId,
                         Collectors.mapping(this::toFieldTemplateDTO, Collectors.toList())
@@ -252,6 +274,7 @@ public class SearchService {
         List<CardTemplateDTO> dtoList = templates.stream()
                 .map(entity -> toCardTemplateDTO(
                         entity,
+                        latestByTemplate.get(entity.getTemplateId()),
                         fieldsByTemplateId.getOrDefault(entity.getTemplateId(), List.of())
                 ))
                 .toList();
@@ -259,18 +282,23 @@ public class SearchService {
         return new PageImpl<>(dtoList, templatePage.getPageable(), templatePage.getTotalElements());
     }
 
-    private CardTemplateDTO toCardTemplateDTO(CardTemplateEntity entity, List<FieldTemplateDTO> fields) {
+    private CardTemplateDTO toCardTemplateDTO(CardTemplateEntity entity,
+                                              CardTemplateVersionEntity version,
+                                              List<FieldTemplateDTO> fields) {
+        Integer effectiveVersion = version != null ? version.getVersion() : entity.getLatestVersion();
         return new CardTemplateDTO(
                 entity.getTemplateId(),
+                effectiveVersion,
+                entity.getLatestVersion(),
                 entity.getOwnerId(),
                 entity.getName(),
                 entity.getDescription(),
                 entity.isPublic(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt(),
-                entity.getLayout(),
-                entity.getAiProfile(),
-                entity.getIconUrl(),
+                version != null ? version.getLayout() : entity.getLayout(),
+                version != null ? version.getAiProfile() : entity.getAiProfile(),
+                version != null ? version.getIconUrl() : entity.getIconUrl(),
                 fields
         );
     }
@@ -297,6 +325,8 @@ public class SearchService {
                 entity.getPublicDeckId(),
                 entity.getSubscribedVersion(),
                 entity.getCurrentVersion(),
+                entity.getTemplateVersion(),
+                entity.getSubscribedTemplateVersion(),
                 entity.isAutoUpdate(),
                 entity.getAlgorithmId(),
                 entity.getAlgorithmParams(),

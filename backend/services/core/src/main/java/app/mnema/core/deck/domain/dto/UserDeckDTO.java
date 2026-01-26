@@ -11,6 +11,8 @@ public record UserDeckDTO(
         UUID publicDeckId,
         Integer subscribedVersion,
         Integer currentVersion,
+        Integer templateVersion,
+        Integer subscribedTemplateVersion,
         boolean autoUpdate,
         String algorithmId,
         JsonNode algorithmParams,

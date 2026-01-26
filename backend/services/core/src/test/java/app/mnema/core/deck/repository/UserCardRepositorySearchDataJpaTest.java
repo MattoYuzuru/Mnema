@@ -188,6 +188,8 @@ class UserCardRepositorySearchDataJpaTest extends PostgresIntegrationTest {
         deck.setPublicDeckId(publicDeck.getDeckId());
         deck.setSubscribedVersion(publicDeck.getVersion());
         deck.setCurrentVersion(publicDeck.getVersion());
+        deck.setTemplateVersion(publicDeck.getTemplateVersion());
+        deck.setSubscribedTemplateVersion(publicDeck.getTemplateVersion());
         deck.setAutoUpdate(true);
         deck.setDisplayName("User deck");
         deck.setCreatedAt(Instant.now());
@@ -227,6 +229,7 @@ class UserCardRepositorySearchDataJpaTest extends PostgresIntegrationTest {
             // If table is empty, fall through and create a minimal template.
         }
         if (existing != null) {
+            ensureTemplateVersion(existing);
             return existing;
         }
 
@@ -238,7 +241,21 @@ class UserCardRepositorySearchDataJpaTest extends PostgresIntegrationTest {
                 "insert into card_templates (template_id, owner_id, name) values (?, ?, ?)",
                 id, ownerId, name
         );
+        ensureTemplateVersion(id);
 
         return id;
+    }
+
+    private void ensureTemplateVersion(UUID templateId) {
+        UUID ownerId = jdbcTemplate.queryForObject(
+                "select owner_id from card_templates where template_id = ?",
+                UUID.class,
+                templateId
+        );
+        jdbcTemplate.update(
+                "insert into card_template_versions (template_id, version, created_by) values (?, 1, ?) on conflict do nothing",
+                templateId,
+                ownerId
+        );
     }
 }

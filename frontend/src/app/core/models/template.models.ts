@@ -1,5 +1,7 @@
 export interface CardTemplateDTO {
     templateId: string;
+    version?: number | null;
+    latestVersion?: number | null;
     ownerId: string;
     name: string;
     description: string;
