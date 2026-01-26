@@ -17,6 +17,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.data.domain.PageRequest;
 
 import java.security.MessageDigest;
 import java.time.Instant;
@@ -45,8 +46,9 @@ public class AiJobService {
     }
 
     @Transactional
-    public AiJobResponse createJob(Jwt jwt, CreateAiJobRequest request) {
+    public AiJobResponse createJob(Jwt jwt, String accessToken, CreateAiJobRequest request) {
         UUID userId = requireUserId(jwt);
+        String token = requireAccessToken(accessToken);
         UUID requestId = requireRequestId(request.requestId());
         AiJobType jobType = defaultType(request.type());
         JsonNode params = request.params() == null ? NullNode.getInstance() : request.params();
@@ -72,6 +74,7 @@ public class AiJobService {
         job.setRequestId(requestId);
         job.setUserId(userId);
         job.setDeckId(request.deckId());
+        job.setUserAccessToken(token);
         job.setType(jobType);
         job.setStatus(AiJobStatus.queued);
         job.setProgress(0);
@@ -99,6 +102,19 @@ public class AiJobService {
             }
             return toResponse(duplicate);
         }
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.List<AiJobResponse> listJobs(Jwt jwt, UUID deckId, int limit) {
+        UUID userId = requireUserId(jwt);
+        if (deckId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "deckId is required");
+        }
+        int safeLimit = Math.max(1, Math.min(limit, 50));
+        return jobRepository
+                .findByUserIdAndDeckIdOrderByCreatedAtDesc(userId, deckId, PageRequest.of(0, safeLimit))
+                .map(this::toResponse)
+                .getContent();
     }
 
     @Transactional(readOnly = true)
@@ -147,6 +163,13 @@ public class AiJobService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "requestId is required");
         }
         return requestId;
+    }
+
+    private String requireAccessToken(String accessToken) {
+        if (accessToken == null || accessToken.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Missing access token");
+        }
+        return accessToken;
     }
 
     private AiJobType defaultType(AiJobType type) {

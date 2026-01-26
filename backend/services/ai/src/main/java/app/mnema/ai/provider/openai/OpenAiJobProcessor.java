@@ -1,5 +1,13 @@
 package app.mnema.ai.provider.openai;
 
+import app.mnema.ai.client.core.CoreApiClient;
+import app.mnema.ai.client.core.CoreApiClient.CoreFieldTemplate;
+import app.mnema.ai.client.core.CoreApiClient.CorePublicDeckResponse;
+import app.mnema.ai.client.core.CoreApiClient.CoreTemplateResponse;
+import app.mnema.ai.client.core.CoreApiClient.CoreUserDeckResponse;
+import app.mnema.ai.client.core.CoreApiClient.CoreUserCardPage;
+import app.mnema.ai.client.core.CoreApiClient.CoreUserCardResponse;
+import app.mnema.ai.client.core.CoreApiClient.CreateCardRequestPayload;
 import app.mnema.ai.client.media.MediaApiClient;
 import app.mnema.ai.domain.entity.AiJobEntity;
 import app.mnema.ai.domain.entity.AiProviderCredentialEntity;
@@ -12,6 +20,7 @@ import app.mnema.ai.vault.EncryptedSecret;
 import app.mnema.ai.vault.SecretVault;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Service;
 
@@ -19,6 +28,7 @@ import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
@@ -27,12 +37,15 @@ import java.util.UUID;
 public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private static final String PROVIDER = "openai";
+    private static final String MODE_GENERATE_CARDS = "generate_cards";
+    private static final int MAX_CARDS = 50;
 
     private final OpenAiClient openAiClient;
     private final OpenAiProps props;
     private final SecretVault secretVault;
     private final AiProviderCredentialRepository credentialRepository;
     private final MediaApiClient mediaApiClient;
+    private final CoreApiClient coreApiClient;
     private final ObjectMapper objectMapper;
 
     public OpenAiJobProcessor(OpenAiClient openAiClient,
@@ -40,12 +53,14 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                               SecretVault secretVault,
                               AiProviderCredentialRepository credentialRepository,
                               MediaApiClient mediaApiClient,
+                              CoreApiClient coreApiClient,
                               ObjectMapper objectMapper) {
         this.openAiClient = openAiClient;
         this.props = props;
         this.secretVault = secretVault;
         this.credentialRepository = credentialRepository;
         this.mediaApiClient = mediaApiClient;
+        this.coreApiClient = coreApiClient;
         this.objectMapper = objectMapper;
     }
 
@@ -70,6 +85,14 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private AiJobProcessingResult handleText(AiJobEntity job, String apiKey) {
         JsonNode params = safeParams(job);
+        String mode = params.path("mode").asText();
+        if (MODE_GENERATE_CARDS.equalsIgnoreCase(mode)) {
+            return handleGenerateCards(job, apiKey, params);
+        }
+        return handleFreeformText(job, apiKey, params);
+    }
+
+    private AiJobProcessingResult handleFreeformText(AiJobEntity job, String apiKey, JsonNode params) {
         String input = extractTextParam(params, "input", "prompt", "text");
         if (input == null || input.isBlank()) {
             input = params.isMissingNode() ? "" : params.toString();
@@ -81,12 +104,76 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
         OpenAiResponseResult response = openAiClient.createResponse(
                 apiKey,
-                new OpenAiResponseRequest(model, input, maxOutputTokens)
+                new OpenAiResponseRequest(model, input, maxOutputTokens, null)
         );
 
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("text", response.outputText());
         summary.put("model", response.model());
+        return new AiJobProcessingResult(
+                summary,
+                PROVIDER,
+                response.model(),
+                response.inputTokens(),
+                response.outputTokens(),
+                BigDecimal.ZERO,
+                job.getInputHash()
+        );
+    }
+
+    private AiJobProcessingResult handleGenerateCards(AiJobEntity job, String apiKey, JsonNode params) {
+        if (job.getDeckId() == null) {
+            throw new IllegalStateException("Deck id is required for card generation");
+        }
+        String accessToken = job.getUserAccessToken();
+        CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
+        if (deck.publicDeckId() == null) {
+            throw new IllegalStateException("Deck template not found");
+        }
+        CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
+        if (publicDeck.templateId() == null) {
+            throw new IllegalStateException("Template id not found");
+        }
+        CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), accessToken);
+
+        int count = resolveCount(params);
+        var allowedFields = resolveAllowedFields(params, template);
+        if (allowedFields.isEmpty()) {
+            throw new IllegalStateException("No supported fields to generate");
+        }
+
+        String userPrompt = extractTextParam(params, "input", "prompt", "text");
+        String prompt = buildCardsPrompt(userPrompt, template, publicDeck, allowedFields, count, job.getDeckId(), job.getUserAccessToken());
+        JsonNode responseFormat = buildCardsSchema(allowedFields, count);
+        String model = textOrDefault(params.path("model"), props.defaultModel());
+        Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
+                ? params.path("maxOutputTokens").asInt()
+                : null;
+
+        OpenAiResponseResult response = openAiClient.createResponse(
+                apiKey,
+                new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
+        );
+
+        JsonNode parsed = parseJsonResponse(response.outputText());
+        List<CreateCardRequestPayload> cardRequests = buildCardRequests(parsed, allowedFields);
+        List<CreateCardRequestPayload> limitedRequests = cardRequests.stream()
+                .limit(count)
+                .toList();
+
+        coreApiClient.addCards(job.getDeckId(), limitedRequests, accessToken);
+
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("mode", MODE_GENERATE_CARDS);
+        summary.put("deckId", job.getDeckId().toString());
+        summary.put("templateId", publicDeck.templateId().toString());
+        summary.put("requestedCards", count);
+        summary.put("createdCards", limitedRequests.size());
+        ArrayNode fieldsNode = summary.putArray("fields");
+        for (String field : allowedFields) {
+            fieldsNode.add(field);
+        }
+
         return new AiJobProcessingResult(
                 summary,
                 PROVIDER,
@@ -195,6 +282,276 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             }
         }
         return Objects.requireNonNullElse(fallback, "");
+    }
+
+    private int resolveCount(JsonNode params) {
+        int count = params.path("count").isInt() ? params.path("count").asInt() : 10;
+        if (count < 1) {
+            count = 1;
+        }
+        return Math.min(count, MAX_CARDS);
+    }
+
+    private List<String> resolveAllowedFields(JsonNode params, CoreTemplateResponse template) {
+        List<String> templateFields = template.fields() == null
+                ? List.of()
+                : template.fields().stream()
+                .filter(this::isTextField)
+                .map(CoreFieldTemplate::name)
+                .filter(name -> name != null && !name.isBlank())
+                .distinct()
+                .toList();
+
+        List<String> requested = extractStringArray(params.path("fields"));
+        if (requested.isEmpty()) {
+            return templateFields;
+        }
+        return requested.stream()
+                .filter(templateFields::contains)
+                .distinct()
+                .toList();
+    }
+
+    private boolean isTextField(CoreFieldTemplate field) {
+        if (field == null || field.fieldType() == null) {
+            return false;
+        }
+        return switch (field.fieldType()) {
+            case "text", "rich_text", "markdown", "cloze" -> true;
+            default -> false;
+        };
+    }
+
+    private List<String> extractStringArray(JsonNode node) {
+        if (node == null || !node.isArray()) {
+            return List.of();
+        }
+        List<String> result = new java.util.ArrayList<>();
+        for (JsonNode item : node) {
+            if (item.isTextual()) {
+                String value = item.asText().trim();
+                if (!value.isEmpty()) {
+                    result.add(value);
+                }
+            }
+        }
+        return result;
+    }
+
+    private String buildCardsPrompt(String userPrompt,
+                                    CoreTemplateResponse template,
+                                    CorePublicDeckResponse publicDeck,
+                                    List<String> fields,
+                                    int count,
+                                    UUID deckId,
+                                    String accessToken) {
+        String fieldList = String.join(", ", fields);
+        StringBuilder builder = new StringBuilder();
+        builder.append("You are generating flashcards for a deck template. ");
+        builder.append("Return JSON that strictly matches the provided schema. ");
+        builder.append("Use only these fields: ").append(fieldList).append(". ");
+        builder.append("Create exactly ").append(count).append(" cards. ");
+        builder.append("If a field is unknown or not applicable, return an empty string for that field. ");
+
+        String deckName = publicDeck == null ? null : publicDeck.name();
+        String deckDescription = publicDeck == null ? null : publicDeck.description();
+        String deckLanguage = publicDeck == null ? null : publicDeck.language();
+        if (deckName != null && !deckName.isBlank()) {
+            builder.append("Deck name: ").append(deckName.trim()).append(". ");
+        }
+        if (deckDescription != null && !deckDescription.isBlank()) {
+            builder.append("Deck description: ").append(deckDescription.trim()).append(". ");
+        }
+        if (deckLanguage != null && !deckLanguage.isBlank()) {
+            builder.append("Deck language: ").append(deckLanguage.trim()).append(". ");
+        }
+
+        if (template != null) {
+            String templateName = template.name();
+            String templateDescription = template.description();
+            if (templateName != null && !templateName.isBlank()) {
+                builder.append("Template name: ").append(templateName.trim()).append(". ");
+            }
+            if (templateDescription != null && !templateDescription.isBlank()) {
+                builder.append("Template description: ").append(templateDescription.trim()).append(". ");
+            }
+            String fieldHints = buildFieldHints(template, fields);
+            if (!fieldHints.isBlank()) {
+                builder.append("Field hints: ").append(fieldHints).append(". ");
+            }
+            String profile = formatAiProfile(template.aiProfile());
+            if (!profile.isBlank()) {
+                builder.append("Template AI profile: ").append(profile).append(". ");
+            }
+        }
+
+        String examples = buildFewShotExamples(deckId, accessToken, fields);
+        if (!examples.isBlank()) {
+            builder.append("Examples from existing cards: ").append(examples).append(". ");
+        }
+
+        if (userPrompt != null && !userPrompt.isBlank()) {
+            builder.append("User instructions: ").append(userPrompt.trim());
+        }
+        return builder.toString().trim();
+    }
+
+    private JsonNode buildCardsSchema(List<String> fields, int count) {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        ObjectNode cards = properties.putObject("cards");
+        cards.put("type", "array");
+        cards.put("minItems", count);
+        cards.put("maxItems", count);
+        ObjectNode items = cards.putObject("items");
+        items.put("type", "object");
+        ObjectNode itemProps = items.putObject("properties");
+        ObjectNode fieldsNode = itemProps.putObject("fields");
+        fieldsNode.put("type", "object");
+        ObjectNode fieldProps = fieldsNode.putObject("properties");
+        for (String field : fields) {
+            fieldProps.putObject(field).put("type", "string");
+        }
+        fieldsNode.put("additionalProperties", false);
+        ArrayNode requiredFields = fieldsNode.putArray("required");
+        for (String field : fields) {
+            requiredFields.add(field);
+        }
+        items.putArray("required").add("fields");
+        items.put("additionalProperties", false);
+        schema.put("additionalProperties", false);
+        schema.putArray("required").add("cards");
+
+        ObjectNode responseFormat = objectMapper.createObjectNode();
+        responseFormat.put("type", "json_schema");
+        responseFormat.put("name", "mnema_cards");
+        responseFormat.set("schema", schema);
+        responseFormat.put("strict", true);
+        return responseFormat;
+    }
+
+    private JsonNode parseJsonResponse(String outputText) {
+        if (outputText == null || outputText.isBlank()) {
+            throw new IllegalStateException("AI response is empty");
+        }
+        try {
+            return objectMapper.readTree(outputText);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to parse AI response", ex);
+        }
+    }
+
+    private List<CreateCardRequestPayload> buildCardRequests(JsonNode response, List<String> fields) {
+        JsonNode cardsNode = response.path("cards");
+        if (!cardsNode.isArray()) {
+            throw new IllegalStateException("AI response missing cards array");
+        }
+        List<CreateCardRequestPayload> requests = new java.util.ArrayList<>();
+        for (JsonNode cardNode : cardsNode) {
+            JsonNode fieldsNode = cardNode.path("fields");
+            if (!fieldsNode.isObject()) {
+                continue;
+            }
+            ObjectNode content = objectMapper.createObjectNode();
+            boolean hasValue = false;
+            for (String field : fields) {
+                JsonNode valueNode = fieldsNode.get(field);
+                if (valueNode == null || valueNode.isNull()) {
+                    continue;
+                }
+                if (valueNode.isTextual()) {
+                    String value = valueNode.asText().trim();
+                    if (!value.isEmpty()) {
+                        content.put(field, value);
+                        hasValue = true;
+                    }
+                }
+            }
+            if (!hasValue) {
+                continue;
+            }
+            requests.add(new CreateCardRequestPayload(content, null, null, null, null, null));
+        }
+        return requests;
+    }
+
+    private String buildFieldHints(CoreTemplateResponse template, List<String> fields) {
+        if (template == null || template.fields() == null || template.fields().isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (String fieldName : fields) {
+            CoreFieldTemplate field = template.fields().stream()
+                    .filter(f -> f != null && fieldName.equals(f.name()))
+                    .findFirst()
+                    .orElse(null);
+            if (field == null) {
+                continue;
+            }
+            if (!builder.isEmpty()) {
+                builder.append("; ");
+            }
+            String label = field.label();
+            if (label != null && !label.isBlank() && !label.equals(fieldName)) {
+                builder.append(fieldName).append(" (").append(label.trim()).append(")");
+            } else {
+                builder.append(fieldName);
+            }
+        }
+        return builder.toString();
+    }
+
+    private String formatAiProfile(JsonNode aiProfile) {
+        if (aiProfile == null || aiProfile.isNull()) {
+            return "";
+        }
+        String raw = aiProfile.isTextual() ? aiProfile.asText() : aiProfile.toString();
+        String trimmed = raw.trim();
+        int max = 800;
+        if (trimmed.length() <= max) {
+            return trimmed;
+        }
+        return trimmed.substring(0, max) + "...";
+    }
+
+    private String buildFewShotExamples(UUID deckId, String accessToken, List<String> fields) {
+        if (deckId == null || accessToken == null || accessToken.isBlank()) {
+            return "";
+        }
+        CoreUserCardPage page = coreApiClient.getUserCards(deckId, 1, 3, accessToken);
+        if (page == null || page.content() == null || page.content().isEmpty()) {
+            return "";
+        }
+        var examples = new java.util.ArrayList<ObjectNode>();
+        for (CoreUserCardResponse card : page.content()) {
+            if (card == null || card.effectiveContent() == null || card.effectiveContent().isNull()) {
+                continue;
+            }
+            ObjectNode example = objectMapper.createObjectNode();
+            boolean hasValue = false;
+            for (String field : fields) {
+                JsonNode value = card.effectiveContent().get(field);
+                if (value != null && value.isTextual()) {
+                    String text = value.asText().trim();
+                    if (!text.isEmpty()) {
+                        example.put(field, text);
+                        hasValue = true;
+                    }
+                }
+            }
+            if (hasValue) {
+                examples.add(example);
+            }
+        }
+        if (examples.isEmpty()) {
+            return "";
+        }
+        try {
+            return objectMapper.writeValueAsString(examples);
+        } catch (Exception ex) {
+            return "";
+        }
     }
 
     private UUID parseUuid(String raw) {

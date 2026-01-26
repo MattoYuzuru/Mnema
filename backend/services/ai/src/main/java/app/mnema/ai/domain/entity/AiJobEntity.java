@@ -32,6 +32,9 @@ public class AiJobEntity {
     @Column(name = "deck_id")
     private UUID deckId;
 
+    @Column(name = "user_access_token")
+    private String userAccessToken;
+
     @Enumerated(EnumType.STRING)
     @JdbcTypeCode(SqlTypes.NAMED_ENUM)
     @Column(name = "type", columnDefinition = "ai_job_type", nullable = false)
@@ -156,6 +159,14 @@ public class AiJobEntity {
 
     public void setDeckId(UUID deckId) {
         this.deckId = deckId;
+    }
+
+    public String getUserAccessToken() {
+        return userAccessToken;
+    }
+
+    public void setUserAccessToken(String userAccessToken) {
+        this.userAccessToken = userAccessToken;
     }
 
     public AiJobType getType() {

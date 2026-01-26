@@ -2,7 +2,9 @@ import { Component, EventEmitter, Input, OnInit, Output, signal } from '@angular
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AiApiService } from '../../core/services/ai-api.service';
+import { TemplateApiService } from '../../core/services/template-api.service';
 import { AiProviderCredential } from '../../core/models/ai.models';
+import { FieldTemplateDTO } from '../../core/models/template.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 
 type FieldOption = { key: string; label: string; enabled: boolean };
@@ -21,7 +23,7 @@ type FieldOption = { key: string; label: string; enabled: boolean };
 
         <div class="modal-body">
           <p class="modal-hint">
-            Generate new cards with AI using your provider key. Results will appear in the AI jobs list once completed.
+            Generate new cards with AI using your provider key. Results will appear in this deck once completed.
           </p>
 
           <div class="ai-source">
@@ -157,10 +159,12 @@ type FieldOption = { key: string; label: string; enabled: boolean };
 export class AiAddCardsModalComponent implements OnInit {
     @Input() userDeckId = '';
     @Input() deckName = '';
+    @Input() templateId = '';
     @Output() closed = new EventEmitter<void>();
 
     providerKeys = signal<AiProviderCredential[]>([]);
     loadingProviders = signal(false);
+    loadingTemplate = signal(false);
     selectedCredentialId = signal('');
     cardsCount = signal(10);
     modelName = signal('');
@@ -180,10 +184,11 @@ export class AiAddCardsModalComponent implements OnInit {
 
     selectedFields = signal<Set<string>>(new Set(['front', 'back']));
 
-    constructor(private aiApi: AiApiService) {}
+    constructor(private aiApi: AiApiService, private templateApi: TemplateApiService) {}
 
     ngOnInit(): void {
         this.loadProviders();
+        this.loadTemplateFields();
     }
 
     loadProviders(): void {
@@ -203,6 +208,29 @@ export class AiAddCardsModalComponent implements OnInit {
         });
     }
 
+    loadTemplateFields(): void {
+        if (!this.templateId) {
+            return;
+        }
+        this.loadingTemplate.set(true);
+        this.templateApi.getTemplate(this.templateId).subscribe({
+            next: template => {
+                const options = (template.fields || []).map(field => this.toFieldOption(field));
+                if (options.length > 0) {
+                    this.fieldOptions.set(options);
+                    const initial = options.filter(option => option.enabled).slice(0, 2).map(option => option.key);
+                    if (initial.length > 0) {
+                        this.selectedFields.set(new Set(initial));
+                    }
+                }
+                this.loadingTemplate.set(false);
+            },
+            error: () => {
+                this.loadingTemplate.set(false);
+            }
+        });
+    }
+
     toggleField(field: FieldOption): void {
         if (!field.enabled) return;
         const next = new Set(this.selectedFields());
@@ -218,6 +246,7 @@ export class AiAddCardsModalComponent implements OnInit {
         return !this.creating()
             && !!this.selectedCredentialId()
             && this.cardsCount() > 0
+            && this.selectedFields().size > 0
             && this.prompt().trim().length > 0;
     }
 
@@ -245,7 +274,7 @@ export class AiAddCardsModalComponent implements OnInit {
         }).subscribe({
             next: () => {
                 this.creating.set(false);
-                this.createSuccess.set('AI job queued. You can track it in Settings → AI jobs.');
+                this.createSuccess.set('AI job queued. You can track it in this deck.');
             },
             error: err => {
                 this.creating.set(false);
@@ -271,6 +300,19 @@ export class AiAddCardsModalComponent implements OnInit {
         const deckLabel = this.deckName ? `Deck: ${this.deckName}.` : '';
         const fieldList = fields.length ? fields.join(', ') : 'front, back';
         return `${deckLabel} Generate ${count} new flashcards. Populate fields: ${fieldList}. ${this.prompt().trim()}`.trim();
+    }
+
+    private toFieldOption(field: FieldTemplateDTO): FieldOption {
+        const label = field.label || field.name;
+        return {
+            key: field.name,
+            label,
+            enabled: this.isTextField(field.fieldType)
+        };
+    }
+
+    private isTextField(fieldType: string): boolean {
+        return ['text', 'rich_text', 'markdown', 'cloze'].includes(fieldType);
     }
 
     private generateRequestId(): string {

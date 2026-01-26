@@ -30,6 +30,10 @@ public class OpenAiClient {
         if (request.maxOutputTokens() != null && request.maxOutputTokens() > 0) {
             payload.put("max_output_tokens", request.maxOutputTokens());
         }
+        if (request.responseFormat() != null && !request.responseFormat().isNull()) {
+            ObjectNode textNode = payload.putObject("text");
+            textNode.set("format", request.responseFormat());
+        }
 
         JsonNode response = restClient.post()
                 .uri("/v1/responses")

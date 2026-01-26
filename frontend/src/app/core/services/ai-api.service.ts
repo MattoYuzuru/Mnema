@@ -40,6 +40,15 @@ export class AiApiService {
         return this.http.get<AiJobResultResponse>(`${this.baseUrl}/jobs/${jobId}/results`);
     }
 
+    listJobs(deckId: string, limit: number = 20): Observable<AiJobResponse[]> {
+        return this.http.get<AiJobResponse[]>(`${this.baseUrl}/jobs`, {
+            params: {
+                deckId,
+                limit
+            }
+        });
+    }
+
     cancelJob(jobId: string): Observable<AiJobResponse> {
         return this.http.post<AiJobResponse>(`${this.baseUrl}/jobs/${jobId}/cancel`, {});
     }

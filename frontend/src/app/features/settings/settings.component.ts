@@ -1,4 +1,4 @@
-import { Component, OnDestroy, OnInit, computed, signal } from '@angular/core';
+import { Component, OnInit, computed, signal } from '@angular/core';
 import { Router } from '@angular/router';
 import { DatePipe, NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -10,7 +10,7 @@ import { AiApiService } from '../../core/services/ai-api.service';
 import { UserApiService } from '../../user-api.service';
 import { AuthService } from '../../auth.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
-import { AiJobResponse, AiJobStatus, AiJobType, AiProviderCredential } from '../../core/models/ai.models';
+import { AiProviderCredential } from '../../core/models/ai.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
@@ -116,26 +116,26 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       </section>
 
       <section class="settings-section ai-settings">
-        <h2>AI Provider Keys</h2>
+        <h2>{{ 'settings.aiProviderKeysTitle' | translate }}</h2>
         <p class="section-description">
-          Manage your AI provider keys. Secrets are stored encrypted and shown only once.
+          {{ 'settings.aiProviderKeysDescription' | translate }}
         </p>
 
         <div class="ai-settings-grid">
           <div class="ai-keys-panel" [attr.aria-busy]="providersLoading()">
             <div class="ai-panel-header">
-              <h3>Saved keys</h3>
+              <h3>{{ 'settings.aiProviderKeysSavedTitle' | translate }}</h3>
               <app-button variant="ghost" size="sm" (click)="loadProviders()" [disabled]="providersLoading()">
-                Refresh
+                {{ 'settings.aiProviderKeysRefresh' | translate }}
               </app-button>
             </div>
 
-            <div *ngIf="providersLoading()" class="loading-state">Loading keys...</div>
+            <div *ngIf="providersLoading()" class="loading-state">{{ 'settings.aiProviderKeysLoading' | translate }}</div>
             <div *ngIf="!providersLoading() && providerError()" class="error-state" role="alert">
-              {{ providerError() }}
+              {{ (providerError() || '') | translate }}
             </div>
             <div *ngIf="!providersLoading() && !providerError() && providerKeys().length === 0" class="empty-state">
-              No provider keys yet.
+              {{ 'settings.aiProviderKeysEmpty' | translate }}
             </div>
 
             <div *ngIf="!providersLoading() && providerKeys().length > 0" class="ai-keys-list">
@@ -146,14 +146,16 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                     <span *ngIf="key.alias" class="ai-key-alias">- {{ key.alias }}</span>
                   </div>
                   <div class="ai-key-meta">
-                    <span class="ai-key-secret" aria-label="Secret stored">{{ maskedSecret() }}</span>
+                    <span class="ai-key-secret" [attr.aria-label]="'settings.aiProviderKeysSecretStored' | translate">
+                      {{ maskedSecret() }}
+                    </span>
                     <span class="ai-key-status" [class.active]="key.status === 'active'" [class.inactive]="key.status !== 'active'">
                       {{ formatStatus(key.status) }}
                     </span>
                     <span class="ai-key-last-used">
-                      Last used:
+                      {{ 'settings.aiProviderKeysLastUsed' | translate }}
                       <span *ngIf="key.lastUsedAt; else neverUsed">{{ key.lastUsedAt | date:'medium' }}</span>
-                      <ng-template #neverUsed>Never</ng-template>
+                      <ng-template #neverUsed>{{ 'settings.aiProviderKeysNever' | translate }}</ng-template>
                     </span>
                   </div>
                 </div>
@@ -165,7 +167,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                     (click)="openDeleteProvider(key)"
                     [disabled]="deleteInFlight()"
                   >
-                    Delete
+                    {{ 'settings.aiProviderKeysDelete' | translate }}
                   </app-button>
                 </div>
               </div>
@@ -173,11 +175,11 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           </div>
 
           <div class="ai-form-panel">
-            <h3>Add new key</h3>
-            <p class="form-help">You can rotate keys at any time by adding a new one.</p>
+            <h3>{{ 'settings.aiProviderKeysAddTitle' | translate }}</h3>
+            <p class="form-help">{{ 'settings.aiProviderKeysAddHelp' | translate }}</p>
             <form (ngSubmit)="createProvider()" class="ai-form">
               <div class="form-field">
-                <label for="ai-provider">Provider</label>
+                <label for="ai-provider">{{ 'settings.aiProviderKeysProviderLabel' | translate }}</label>
                 <select
                   id="ai-provider"
                   name="provider"
@@ -194,37 +196,37 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                   type="text"
                   [ngModel]="providerName()"
                   (ngModelChange)="providerName.set($event)"
-                  placeholder="custom-provider"
+                  [placeholder]="'settings.aiProviderKeysCustomPlaceholder' | translate"
                   autocomplete="organization"
                 />
               </div>
 
               <div class="form-field">
-                <label for="ai-alias">Alias (optional)</label>
+                <label for="ai-alias">{{ 'settings.aiProviderKeysAliasLabel' | translate }}</label>
                 <input
                   id="ai-alias"
                   name="alias"
                   type="text"
                   [ngModel]="providerAlias()"
                   (ngModelChange)="providerAlias.set($event)"
-                  placeholder="Work key"
+                  [placeholder]="'settings.aiProviderKeysAliasPlaceholder' | translate"
                   autocomplete="off"
                 />
               </div>
 
               <div class="form-field">
-                <label for="ai-secret">Secret key</label>
+                <label for="ai-secret">{{ 'settings.aiProviderKeysSecretLabel' | translate }}</label>
                 <input
                   id="ai-secret"
                   name="secret"
                   type="password"
                   [ngModel]="providerSecret()"
                   (ngModelChange)="providerSecret.set($event)"
-                  placeholder="sk-..."
+                  [placeholder]="'settings.aiProviderKeysSecretPlaceholder' | translate"
                   required
                   autocomplete="new-password"
                 />
-                <p class="field-hint">We will never show this key again.</p>
+                <p class="field-hint">{{ 'settings.aiProviderKeysSecretHint' | translate }}</p>
               </div>
 
               <div class="form-actions">
@@ -233,133 +235,17 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                   variant="primary"
                   [disabled]="!canCreateProvider()"
                 >
-                  {{ creatingProvider() ? 'Saving...' : 'Save key' }}
+                  {{ creatingProvider() ? ('settings.aiProviderKeysSaving' | translate) : ('settings.aiProviderKeysSave' | translate) }}
                 </app-button>
               </div>
 
               <div *ngIf="createSuccess()" class="success-state" role="status" aria-live="polite">
-                {{ createSuccess() }}
+                {{ (createSuccess() || '') | translate }}
               </div>
               <div *ngIf="createError()" class="error-state" role="alert">
-                {{ createError() }}
+                {{ (createError() || '') | translate }}
               </div>
             </form>
-          </div>
-        </div>
-      </section>
-
-      <section class="settings-section ai-jobs">
-        <h2>AI Jobs</h2>
-        <p class="section-description">
-          Create an enrichment or TTS job and monitor progress. Results are summarized when ready.
-        </p>
-
-        <div class="ai-jobs-grid">
-          <div class="ai-job-form">
-            <h3>Create job</h3>
-            <form (ngSubmit)="createJob()">
-              <div class="form-field">
-                <label for="ai-job-type">Job type</label>
-                <select
-                  id="ai-job-type"
-                  name="jobType"
-                  [ngModel]="jobType()"
-                  (ngModelChange)="jobType.set($event)"
-                >
-                  <option value="enrich">Enrich</option>
-                  <option value="tts">TTS</option>
-                </select>
-              </div>
-
-              <div class="form-field">
-                <label for="ai-job-deck">Deck ID (optional)</label>
-                <input
-                  id="ai-job-deck"
-                  name="deckId"
-                  type="text"
-                  [ngModel]="jobDeckId()"
-                  (ngModelChange)="jobDeckId.set($event)"
-                  placeholder="UUID"
-                  autocomplete="off"
-                />
-              </div>
-
-              <div class="form-field">
-                <label for="ai-job-text">Input text</label>
-                <textarea
-                  id="ai-job-text"
-                  name="jobText"
-                  rows="4"
-                  [ngModel]="jobText()"
-                  (ngModelChange)="jobText.set($event)"
-                  placeholder="Paste the content to enrich or synthesize..."
-                  required
-                ></textarea>
-              </div>
-
-              <div class="form-actions">
-                <app-button
-                  type="submit"
-                  variant="primary"
-                  [disabled]="!canCreateJob()"
-                >
-                  {{ jobCreating() ? 'Creating...' : 'Start job' }}
-                </app-button>
-              </div>
-
-              <div *ngIf="jobError()" class="error-state" role="alert">
-                {{ jobError() }}
-              </div>
-            </form>
-          </div>
-
-          <div class="ai-job-list" aria-live="polite">
-            <h3>Recent jobs</h3>
-            <div *ngIf="jobs().length === 0" class="empty-state">No AI jobs yet.</div>
-
-            <div *ngFor="let entry of jobs(); trackBy: trackJob" class="ai-job-card">
-              <div class="ai-job-header">
-                <div>
-                  <div class="ai-job-title">{{ formatJobType(entry.job.type) }}</div>
-                  <div class="ai-job-id">ID: {{ entry.job.jobId }}</div>
-                </div>
-                <div class="ai-job-actions">
-                  <app-button
-                    variant="ghost"
-                    size="sm"
-                    tone="danger"
-                    [disabled]="!canCancel(entry.job.status) || cancelingJobs().has(entry.job.jobId)"
-                    (click)="cancelJob(entry.job.jobId)"
-                  >
-                    {{ cancelingJobs().has(entry.job.jobId) ? 'Canceling...' : 'Cancel' }}
-                  </app-button>
-                </div>
-              </div>
-
-              <div class="ai-job-status">
-                <span class="ai-job-status-pill" [class.completed]="entry.job.status === 'completed'" [class.failed]="entry.job.status === 'failed'" [class.canceled]="entry.job.status === 'canceled'">
-                  {{ formatStatus(entry.job.status) }}
-                </span>
-                <span class="ai-job-progress-text">{{ entry.job.progress }}%</span>
-              </div>
-
-              <div class="ai-job-progress" role="progressbar" [attr.aria-valuenow]="entry.job.progress" aria-valuemin="0" aria-valuemax="100">
-                <div class="ai-job-progress-bar" [style.width.%]="entry.job.progress"></div>
-              </div>
-
-              <div *ngIf="entry.job.errorMessage" class="ai-job-error" role="alert">
-                {{ entry.job.errorMessage }}
-              </div>
-
-              <div class="ai-job-result">
-                <h4>Result summary</h4>
-                <div *ngIf="entry.resultLoading" class="loading-state">Loading summary...</div>
-                <pre *ngIf="!entry.resultLoading && entry.resultSummary" class="ai-job-result-json">{{ formatJson(entry.resultSummary) }}</pre>
-                <div *ngIf="!entry.resultLoading && !entry.resultSummary && entry.job.status !== 'completed'" class="empty-state">
-                  Summary will appear once the job completes.
-                </div>
-              </div>
-            </div>
           </div>
         </div>
       </section>
@@ -451,10 +337,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
     <app-confirmation-dialog
       *ngIf="deleteProviderTarget()"
       [open]="!!deleteProviderTarget()"
-      title="Delete provider key"
-      message="This will remove the stored key. You can add a new key at any time."
-      confirmText="Delete key"
-      cancelText="Cancel"
+      [title]="'settings.aiProviderKeysDeleteTitle' | translate"
+      [message]="'settings.aiProviderKeysDeleteMessage' | translate"
+      [confirmText]="'settings.aiProviderKeysDeleteConfirm' | translate"
+      [cancelText]="'settings.aiProviderKeysDeleteCancel' | translate"
       confirmVariant="ghost"
       (confirm)="confirmDeleteProvider()"
       (cancel)="closeDeleteProvider()"
@@ -768,136 +654,6 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         color: #dc2626;
       }
 
-      .ai-jobs-grid {
-        display: grid;
-        grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
-        gap: var(--spacing-xl);
-      }
-
-      .ai-job-form,
-      .ai-job-list {
-        background: var(--color-background);
-        border: 1px solid var(--border-color);
-        border-radius: var(--border-radius-md);
-        padding: var(--spacing-lg);
-      }
-
-      .ai-job-form select,
-      .ai-job-form textarea {
-        padding: var(--spacing-sm) var(--spacing-md);
-        border-radius: var(--border-radius-md);
-        border: 1px solid var(--border-color);
-        background: var(--color-surface-solid);
-        color: var(--color-text-primary);
-        font-family: inherit;
-      }
-
-      .ai-job-form textarea {
-        resize: vertical;
-      }
-
-      .ai-job-list h3 {
-        margin: 0 0 var(--spacing-md) 0;
-      }
-
-      .ai-job-card {
-        border: 1px solid var(--border-color);
-        border-radius: var(--border-radius-md);
-        padding: var(--spacing-md);
-        background: var(--color-card-background);
-        margin-bottom: var(--spacing-md);
-      }
-
-      .ai-job-header {
-        display: flex;
-        justify-content: space-between;
-        gap: var(--spacing-md);
-        align-items: center;
-      }
-
-      .ai-job-title {
-        font-weight: 600;
-      }
-
-      .ai-job-id {
-        font-size: 0.75rem;
-        color: var(--color-text-muted);
-        word-break: break-all;
-      }
-
-      .ai-job-status {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        margin: var(--spacing-sm) 0;
-        font-size: 0.85rem;
-      }
-
-      .ai-job-status-pill {
-        padding: 2px 10px;
-        border-radius: 999px;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        font-size: 0.7rem;
-        background: rgba(148, 163, 184, 0.2);
-        color: #475569;
-      }
-
-      .ai-job-status-pill.completed {
-        background: rgba(34, 197, 94, 0.12);
-        color: #15803d;
-      }
-
-      .ai-job-status-pill.failed {
-        background: rgba(239, 68, 68, 0.12);
-        color: #b91c1c;
-      }
-
-      .ai-job-status-pill.canceled {
-        background: rgba(148, 163, 184, 0.2);
-        color: #475569;
-      }
-
-      .ai-job-progress {
-        height: 6px;
-        background: rgba(148, 163, 184, 0.2);
-        border-radius: 999px;
-        overflow: hidden;
-      }
-
-      .ai-job-progress-bar {
-        height: 100%;
-        background: var(--color-primary-accent);
-        transition: width 0.3s ease;
-      }
-
-      .ai-job-error {
-        margin-top: var(--spacing-sm);
-        color: #dc2626;
-        font-size: 0.85rem;
-      }
-
-      .ai-job-result {
-        margin-top: var(--spacing-md);
-      }
-
-      .ai-job-result h4 {
-        margin: 0 0 var(--spacing-xs) 0;
-        font-size: 0.9rem;
-      }
-
-      .ai-job-result-json {
-        margin: 0;
-        padding: var(--spacing-sm);
-        background: rgba(15, 23, 42, 0.04);
-        border-radius: var(--border-radius-md);
-        font-size: 0.8rem;
-        overflow: auto;
-        max-height: 200px;
-      }
-
-      
-
       .modal-overlay {
         position: fixed;
         inset: 0;
@@ -1004,10 +760,6 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           grid-template-columns: 1fr;
         }
 
-        .ai-jobs-grid {
-          grid-template-columns: 1fr;
-        }
-
         .modal-header,
         .modal-body,
         .modal-footer {
@@ -1035,7 +787,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       }
     `]
 })
-export class SettingsComponent implements OnInit, OnDestroy {
+export class SettingsComponent implements OnInit {
     archivedDecks: UserDeckDTO[] = [];
     loadingArchive = false;
     showDeleteConfirmation = false;
@@ -1071,19 +823,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
         { label: 'Custom', value: 'custom' }
     ];
 
-    readonly jobType = signal<AiJobType>('enrich');
-    readonly jobDeckId = signal('');
-    readonly jobText = signal('');
-    readonly jobCreating = signal(false);
-    readonly jobError = signal<string | null>(null);
-    readonly jobs = signal<AiJobEntry[]>([]);
-    readonly cancelingJobs = signal<Set<string>>(new Set());
-    readonly canCreateJob = computed(() =>
-        !this.jobCreating() && this.jobText().trim().length > 0
-    );
-
-    private readonly jobPollers = new Map<string, number>();
-
     constructor(
         public theme: ThemeService,
         public i18n: I18nService,
@@ -1104,11 +843,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
                 this.currentUsername = profile.username;
             }
         });
-    }
-
-    ngOnDestroy(): void {
-        this.jobPollers.forEach(id => window.clearInterval(id));
-        this.jobPollers.clear();
     }
 
     loadArchivedDecks(): void {
@@ -1133,7 +867,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
                 this.providersLoading.set(false);
             },
             error: () => {
-                this.providerError.set('Failed to load provider keys.');
+                this.providerError.set('settings.aiProviderKeysLoadError');
                 this.providersLoading.set(false);
             }
         });
@@ -1163,11 +897,11 @@ export class SettingsComponent implements OnInit, OnDestroy {
             next: provider => {
                 this.providerKeys.update(list => [provider, ...list]);
                 this.providerSecret.set('');
-                this.createSuccess.set('Key saved securely.');
+                this.createSuccess.set('settings.aiProviderKeysSaved');
                 this.creatingProvider.set(false);
             },
             error: () => {
-                this.createError.set('Failed to save key.');
+                this.createError.set('settings.aiProviderKeysSaveError');
                 this.creatingProvider.set(false);
             }
         });
@@ -1213,170 +947,6 @@ export class SettingsComponent implements OnInit, OnDestroy {
 
     trackProvider(_: number, item: AiProviderCredential): string {
         return item.id;
-    }
-
-    createJob(): void {
-        if (!this.canCreateJob()) {
-            return;
-        }
-        this.jobCreating.set(true);
-        this.jobError.set(null);
-        const deckIdValue = this.jobDeckId().trim();
-        if (deckIdValue && !this.isValidUuid(deckIdValue)) {
-            this.jobCreating.set(false);
-            this.jobError.set('Deck ID must be a valid UUID.');
-            return;
-        }
-        const requestId = this.generateRequestId();
-        const payload = {
-            requestId,
-            deckId: deckIdValue || null,
-            type: this.jobType(),
-            params: { text: this.jobText().trim() }
-        };
-        this.aiApi.createJob(payload).subscribe({
-            next: job => {
-                this.jobCreating.set(false);
-                this.jobText.set('');
-                this.upsertJob(job);
-                this.startPolling(job.jobId);
-            },
-            error: () => {
-                this.jobCreating.set(false);
-                this.jobError.set('Failed to create AI job.');
-            }
-        });
-    }
-
-    cancelJob(jobId: string): void {
-        const pending = new Set(this.cancelingJobs());
-        if (pending.has(jobId)) {
-            return;
-        }
-        pending.add(jobId);
-        this.cancelingJobs.set(pending);
-        this.aiApi.cancelJob(jobId).subscribe({
-            next: job => {
-                this.stopPolling(jobId);
-                this.upsertJob(job);
-                this.clearCanceling(jobId);
-            },
-            error: () => {
-                this.clearCanceling(jobId);
-            }
-        });
-    }
-
-    trackJob(_: number, entry: AiJobEntry): string {
-        return entry.job.jobId;
-    }
-
-    formatJobType(type: AiJobType): string {
-        switch (type) {
-            case 'enrich':
-                return 'Enrich';
-            case 'tts':
-                return 'TTS';
-            default:
-                return 'AI Job';
-        }
-    }
-
-    canCancel(status: AiJobStatus): boolean {
-        return status === 'queued' || status === 'processing';
-    }
-
-    formatJson(value: unknown): string {
-        try {
-            return JSON.stringify(value ?? {}, null, 2);
-        } catch {
-            return '{}';
-        }
-    }
-
-    private upsertJob(job: AiJobResponse): void {
-        this.jobs.update(list => {
-            const index = list.findIndex(entry => entry.job.jobId === job.jobId);
-            if (index === -1) {
-                return [{ job, resultSummary: null, resultLoading: false }, ...list];
-            }
-            const updated = [...list];
-            updated[index] = { ...updated[index], job };
-            return updated;
-        });
-    }
-
-    private startPolling(jobId: string): void {
-        if (this.jobPollers.has(jobId)) {
-            return;
-        }
-        this.refreshJob(jobId);
-        const id = window.setInterval(() => this.refreshJob(jobId), 3000);
-        this.jobPollers.set(jobId, id);
-    }
-
-    private stopPolling(jobId: string): void {
-        const id = this.jobPollers.get(jobId);
-        if (id) {
-            window.clearInterval(id);
-            this.jobPollers.delete(jobId);
-        }
-    }
-
-    private refreshJob(jobId: string): void {
-        this.aiApi.getJob(jobId).subscribe({
-            next: job => {
-                this.upsertJob(job);
-                if (job.status === 'completed' || job.status === 'failed' || job.status === 'canceled') {
-                    this.stopPolling(jobId);
-                    if (job.status === 'completed') {
-                        this.fetchResult(jobId);
-                    }
-                }
-            }
-        });
-    }
-
-    private fetchResult(jobId: string): void {
-        this.jobs.update(list => list.map(entry => entry.job.jobId === jobId
-            ? { ...entry, resultLoading: true }
-            : entry
-        ));
-        this.aiApi.getJobResult(jobId).subscribe({
-            next: result => {
-                this.jobs.update(list => list.map(entry => entry.job.jobId === jobId
-                    ? { ...entry, resultLoading: false, resultSummary: result.resultSummary }
-                    : entry
-                ));
-            },
-            error: () => {
-                this.jobs.update(list => list.map(entry => entry.job.jobId === jobId
-                    ? { ...entry, resultLoading: false }
-                    : entry
-                ));
-            }
-        });
-    }
-
-    private clearCanceling(jobId: string): void {
-        const pending = new Set(this.cancelingJobs());
-        pending.delete(jobId);
-        this.cancelingJobs.set(pending);
-    }
-
-    private generateRequestId(): string {
-        if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-            return crypto.randomUUID();
-        }
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-            const r = Math.random() * 16 | 0;
-            const v = c === 'x' ? r : (r & 0x3 | 0x8);
-            return v.toString(16);
-        });
-    }
-
-    private isValidUuid(value: string): boolean {
-        return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
     }
 
     restoreDeck(userDeckId: string): void {
@@ -1430,9 +1000,3 @@ export class SettingsComponent implements OnInit, OnDestroy {
         });
     }
 }
-
-type AiJobEntry = {
-    job: AiJobResponse;
-    resultSummary: unknown | null;
-    resultLoading: boolean;
-};

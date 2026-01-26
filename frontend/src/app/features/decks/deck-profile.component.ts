@@ -1,6 +1,6 @@
 import { Component, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { NgIf, NgFor } from '@angular/common';
+import { DatePipe, NgIf, NgFor } from '@angular/common';
 import { ReactiveFormsModule, FormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
@@ -9,11 +9,13 @@ import { PublicDeckApiService } from '../../core/services/public-deck-api.servic
 import { ReviewApiService } from '../../core/services/review-api.service';
 import { ImportApiService } from '../../core/services/import-api.service';
 import { MediaApiService } from '../../core/services/media-api.service';
+import { AiApiService } from '../../core/services/ai-api.service';
 import { UserApiService } from '../../user-api.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { ReviewDeckAlgorithmResponse } from '../../core/models/review.models';
 import { ImportJobResponse, ImportSourceType } from '../../core/models/import.models';
+import { AiJobResponse, AiJobStatus, AiJobType } from '../../core/models/ai.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { AddCardsModalComponent } from './add-cards-modal.component';
@@ -29,7 +31,7 @@ import { I18nService } from '../../core/services/i18n.service';
 @Component({
     selector: 'app-deck-profile',
     standalone: true,
-    imports: [NgIf, NgFor, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, AiAddCardsModalComponent, AiEnhanceDeckModalComponent, ConfirmationDialogComponent, InputComponent, ImportDeckModalComponent, TranslatePipe],
+    imports: [NgIf, NgFor, DatePipe, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, AiAddCardsModalComponent, AiEnhanceDeckModalComponent, ConfirmationDialogComponent, InputComponent, ImportDeckModalComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -69,7 +71,7 @@ import { I18nService } from '../../core/services/i18n.service';
           {{ 'deckProfile.addCards' | translate }}
         </app-button>
         <app-button variant="secondary" (click)="openAiEnhanceModal()">
-          ✨ Deck enhancement
+          ✨ {{ 'deckProfile.aiEnhanceButton' | translate }}
         </app-button>
         <app-button variant="secondary" (click)="openExportConfirm()" [disabled]="exporting">
           {{ exporting ? ('deckProfile.exporting' | translate) : ('deckProfile.export' | translate) }}
@@ -89,29 +91,96 @@ import { I18nService } from '../../core/services/i18n.service';
 
       <section class="ai-feature-section">
         <div class="ai-feature-header">
-          <h2>AI features</h2>
-          <p>Generate new cards or improve your deck using your saved provider keys.</p>
+          <h2>{{ 'deckProfile.aiFeaturesTitle' | translate }}</h2>
+          <p>{{ 'deckProfile.aiFeaturesDescription' | translate }}</p>
         </div>
         <div class="ai-feature-grid">
           <button class="ai-feature-card" (click)="openAiAddModal()">
             <div class="ai-feature-icon">✨</div>
             <div>
-              <h3>Add cards with AI</h3>
-              <p>Create new cards by describing what you want to learn.</p>
+              <h3>{{ 'deckProfile.aiAddCardsTitle' | translate }}</h3>
+              <p>{{ 'deckProfile.aiAddCardsDescription' | translate }}</p>
             </div>
           </button>
           <button class="ai-feature-card" (click)="openAiEnhanceModal()">
             <div class="ai-feature-icon">🧠</div>
             <div>
-              <h3>Enhance deck</h3>
-              <p>Audit the deck and fill missing fields.</p>
+              <h3>{{ 'deckProfile.aiEnhanceTitle' | translate }}</h3>
+              <p>{{ 'deckProfile.aiEnhanceDescription' | translate }}</p>
             </div>
           </button>
           <div class="ai-feature-card disabled" aria-disabled="true">
             <div class="ai-feature-icon">📷</div>
             <div>
-              <h3>Import from photo</h3>
-              <p>Extract cards from images or PDFs. Coming soon.</p>
+              <h3>{{ 'deckProfile.aiImportTitle' | translate }}</h3>
+              <p>{{ 'deckProfile.aiImportDescription' | translate }}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="ai-jobs-section">
+        <div class="ai-jobs-header">
+          <div>
+            <h2>{{ 'deckProfile.aiJobsTitle' | translate }}</h2>
+            <p>{{ 'deckProfile.aiJobsDescription' | translate }}</p>
+          </div>
+          <app-button variant="ghost" size="sm" (click)="refreshAiJobs()" [disabled]="aiJobsLoading">
+            {{ 'deckProfile.aiJobsRefresh' | translate }}
+          </app-button>
+        </div>
+
+        <div *ngIf="aiJobsLoading" class="loading-state">{{ 'deckProfile.aiJobsLoading' | translate }}</div>
+        <div *ngIf="!aiJobsLoading && aiJobsError" class="error-state" role="alert">
+          {{ aiJobsError | translate }}
+        </div>
+        <div *ngIf="!aiJobsLoading && !aiJobsError && aiJobs.length === 0" class="empty-state">
+          {{ 'deckProfile.aiJobsEmpty' | translate }}
+        </div>
+
+        <div *ngIf="aiJobs.length > 0" class="ai-job-list" aria-live="polite">
+          <div *ngFor="let entry of aiJobs; trackBy: trackAiJob" class="ai-job-card">
+            <div class="ai-job-header">
+              <div>
+                <div class="ai-job-title">{{ formatAiJobType(entry.job.type) }}</div>
+                <div class="ai-job-meta">
+                  <span class="ai-job-status-pill"
+                        [class.completed]="entry.job.status === 'completed'"
+                        [class.failed]="entry.job.status === 'failed'"
+                        [class.canceled]="entry.job.status === 'canceled'">
+                    {{ formatStatus(entry.job.status) }}
+                  </span>
+                  <span class="ai-job-date">{{ entry.job.createdAt | date:'medium' }}</span>
+                </div>
+              </div>
+              <app-button
+                variant="ghost"
+                size="sm"
+                tone="danger"
+                [disabled]="!canCancelAiJob(entry.job.status) || cancelingAiJobs.has(entry.job.jobId)"
+                (click)="cancelAiJob(entry.job.jobId)"
+              >
+                {{ cancelingAiJobs.has(entry.job.jobId) ? ('deckProfile.aiJobsCanceling' | translate) : ('deckProfile.aiJobsCancel' | translate) }}
+              </app-button>
+            </div>
+
+            <div class="ai-job-status-row">
+              <span class="ai-job-progress-text">{{ entry.job.progress }}%</span>
+              <div class="ai-job-progress" role="progressbar" [attr.aria-valuenow]="entry.job.progress" aria-valuemin="0" aria-valuemax="100">
+                <div class="ai-job-progress-bar" [style.width.%]="entry.job.progress"></div>
+              </div>
+            </div>
+
+            <div *ngIf="entry.job.status === 'failed'" class="ai-job-error" role="alert">
+              {{ 'deckProfile.aiJobsFailed' | translate }}
+            </div>
+
+            <div class="ai-job-result">
+              <div *ngIf="entry.resultLoading" class="loading-state">{{ 'deckProfile.aiJobsResultLoading' | translate }}</div>
+              <pre *ngIf="!entry.resultLoading && entry.resultSummary" class="ai-job-result-json">{{ formatJson(entry.resultSummary) }}</pre>
+              <div *ngIf="!entry.resultLoading && !entry.resultSummary && entry.job.status !== 'completed'" class="empty-state">
+                {{ 'deckProfile.aiJobsResultPending' | translate }}
+              </div>
             </div>
           </div>
         </div>
@@ -138,13 +207,13 @@ import { I18nService } from '../../core/services/i18n.service';
             </div>
             <div class="choice-card ai-choice" (click)="startAiAdd()">
               <div class="choice-icon">✨</div>
-              <h3>AI additions</h3>
-              <p>Generate new cards using your saved provider key.</p>
+              <h3>{{ 'deckProfile.aiAddCardsTitle' | translate }}</h3>
+              <p>{{ 'deckProfile.aiAddCardsDescription' | translate }}</p>
             </div>
             <div class="choice-card disabled" aria-disabled="true">
               <div class="choice-icon">📷</div>
-              <h3>Photo / file</h3>
-              <p>Import cards from images or PDFs. Coming soon.</p>
+              <h3>{{ 'deckProfile.aiImportTitle' | translate }}</h3>
+              <p>{{ 'deckProfile.aiImportDescription' | translate }}</p>
             </div>
           </div>
         </div>
@@ -170,6 +239,7 @@ import { I18nService } from '../../core/services/i18n.service';
       *ngIf="showAiAddModal && deck"
       [userDeckId]="deck.userDeckId"
       [deckName]="deck.displayName"
+      [templateId]="publicDeck?.templateId || ''"
       (closed)="closeAiAddModal()"
     ></app-ai-add-cards-modal>
 
@@ -461,6 +531,17 @@ import { I18nService } from '../../core/services/i18n.service';
         flex-wrap: wrap;
       }
 
+      .loading-state,
+      .empty-state {
+        color: var(--color-text-secondary);
+        font-size: 0.9rem;
+      }
+
+      .error-state {
+        color: #dc2626;
+        font-size: 0.9rem;
+      }
+
       .ai-feature-section {
         margin-top: var(--spacing-2xl);
         padding: var(--spacing-xl);
@@ -495,7 +576,18 @@ import { I18nService } from '../../core/services/i18n.service';
         background: var(--color-background);
         text-align: left;
         cursor: pointer;
+        color: var(--color-text-primary);
         transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .ai-feature-card h3 {
+        margin: 0 0 var(--spacing-xs) 0;
+        color: var(--color-text-primary);
+      }
+
+      .ai-feature-card p {
+        margin: 0;
+        color: var(--color-text-secondary);
       }
 
       .ai-feature-card:hover {
@@ -514,12 +606,145 @@ import { I18nService } from '../../core/services/i18n.service';
         width: 44px;
         height: 44px;
         border-radius: 12px;
-        background: #111827;
-        color: #fff;
+        background: var(--color-surface-solid);
+        color: var(--color-text-primary);
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 1.2rem;
+        font-size: 1.25rem;
+        line-height: 1;
+        border: 1px solid var(--border-color);
+        flex-shrink: 0;
+      }
+
+      .ai-jobs-section {
+        margin-top: var(--spacing-2xl);
+        padding: var(--spacing-xl);
+        background: var(--color-card-background);
+        border-radius: var(--border-radius-lg);
+        border: 1px solid var(--border-color);
+      }
+
+      .ai-jobs-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-lg);
+      }
+
+      .ai-jobs-header h2 {
+        margin: 0 0 var(--spacing-xs) 0;
+        font-size: 1.3rem;
+      }
+
+      .ai-jobs-header p {
+        margin: 0;
+        color: var(--color-text-muted);
+      }
+
+      .ai-job-list {
+        display: grid;
+        gap: var(--spacing-md);
+        min-width: 0;
+      }
+
+      .ai-job-card {
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+        padding: var(--spacing-md);
+        background: var(--color-background);
+        min-width: 0;
+      }
+
+      .ai-job-header {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        align-items: flex-start;
+      }
+
+      .ai-job-title {
+        font-weight: 600;
+      }
+
+      .ai-job-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        align-items: center;
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+      }
+
+      .ai-job-status-pill {
+        padding: 2px 10px;
+        border-radius: 999px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-size: 0.7rem;
+        background: rgba(148, 163, 184, 0.2);
+        color: #475569;
+      }
+
+      .ai-job-status-pill.completed {
+        background: rgba(34, 197, 94, 0.12);
+        color: #15803d;
+      }
+
+      .ai-job-status-pill.failed {
+        background: rgba(239, 68, 68, 0.12);
+        color: #b91c1c;
+      }
+
+      .ai-job-status-pill.canceled {
+        background: rgba(148, 163, 184, 0.2);
+        color: #475569;
+      }
+
+      .ai-job-status-row {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        margin-top: var(--spacing-sm);
+        font-size: 0.85rem;
+      }
+
+      .ai-job-progress {
+        flex: 1;
+        height: 6px;
+        background: rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .ai-job-progress-bar {
+        height: 100%;
+        background: var(--color-primary-accent);
+        transition: width 0.3s ease;
+      }
+
+      .ai-job-error {
+        margin-top: var(--spacing-sm);
+        color: #dc2626;
+        font-size: 0.85rem;
+      }
+
+      .ai-job-result {
+        margin-top: var(--spacing-md);
+      }
+
+      .ai-job-result-json {
+        margin: 0;
+        padding: var(--spacing-sm);
+        background: rgba(15, 23, 42, 0.04);
+        border-radius: var(--border-radius-md);
+        font-size: 0.8rem;
+        overflow: auto;
+        max-height: 200px;
+        max-width: 100%;
+        white-space: pre-wrap;
+        word-break: break-word;
       }
 
       .choice-card.disabled {
@@ -887,12 +1112,14 @@ import { I18nService } from '../../core/services/i18n.service';
         width: 64px;
         height: 64px;
         border-radius: 50%;
-        background: #111827;
-        color: #fff;
+        background: var(--color-surface-solid);
+        color: var(--color-text-primary);
         display: flex;
         align-items: center;
         justify-content: center;
         font-size: 1.8rem;
+        line-height: 1;
+        border: 1px solid var(--border-color);
       }
     `]
 })
@@ -926,6 +1153,10 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     exporting = false;
     exportStatusKey: string | null = null;
     exportJob: ImportJobResponse | null = null;
+    aiJobs: AiJobEntry[] = [];
+    aiJobsLoading = false;
+    aiJobsError = '';
+    cancelingAiJobs = new Set<string>();
     editForm!: FormGroup;
     tagError = '';
     tagInput = '';
@@ -939,6 +1170,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     private readonly editDraftKeyPrefix = 'mnema_edit_deck_draft:';
 
     private exportPollHandle: ReturnType<typeof setInterval> | null = null;
+    private aiJobPollers = new Map<string, number>();
 
     constructor(
         private route: ActivatedRoute,
@@ -950,6 +1182,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         private fb: FormBuilder,
         private importApi: ImportApiService,
         private mediaApi: MediaApiService,
+        private aiApi: AiApiService,
         private i18n: I18nService
     ) {}
 
@@ -957,11 +1190,14 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         this.userDeckId = this.route.snapshot.paramMap.get('userDeckId') || '';
         if (this.userDeckId) {
             this.loadDeck();
+            this.loadAiJobs();
         }
     }
 
     ngOnDestroy(): void {
         this.stopExportPolling();
+        this.aiJobPollers.forEach(id => window.clearInterval(id));
+        this.aiJobPollers.clear();
     }
 
     private loadDeck(): void {
@@ -1057,6 +1293,150 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     onCardsSaved(): void {
         this.showAddCards = false;
         console.log('Cards saved successfully');
+    }
+
+    refreshAiJobs(): void {
+        this.loadAiJobs();
+    }
+
+    cancelAiJob(jobId: string): void {
+        if (this.cancelingAiJobs.has(jobId)) {
+            return;
+        }
+        this.cancelingAiJobs.add(jobId);
+        this.aiApi.cancelJob(jobId).subscribe({
+            next: job => {
+                this.stopAiPolling(jobId);
+                this.upsertAiJob(job);
+                this.cancelingAiJobs.delete(jobId);
+            },
+            error: () => {
+                this.cancelingAiJobs.delete(jobId);
+            }
+        });
+    }
+
+    trackAiJob(_: number, entry: AiJobEntry): string {
+        return entry.job.jobId;
+    }
+
+    formatAiJobType(type: AiJobType): string {
+        switch (type) {
+            case 'enrich':
+                return 'Enrich';
+            case 'tts':
+                return 'TTS';
+            default:
+                return 'AI Job';
+        }
+    }
+
+    canCancelAiJob(status: AiJobStatus): boolean {
+        return status === 'queued' || status === 'processing';
+    }
+
+    formatStatus(status: string): string {
+        if (!status) {
+            return 'Unknown';
+        }
+        return status.charAt(0).toUpperCase() + status.slice(1);
+    }
+
+    formatJson(value: unknown): string {
+        try {
+            return JSON.stringify(value ?? {}, null, 2);
+        } catch {
+            return '{}';
+        }
+    }
+
+    private loadAiJobs(): void {
+        if (!this.userDeckId) {
+            return;
+        }
+        this.aiJobsLoading = true;
+        this.aiJobsError = '';
+        this.aiJobPollers.forEach(id => window.clearInterval(id));
+        this.aiJobPollers.clear();
+        this.aiApi.listJobs(this.userDeckId).subscribe({
+            next: jobs => {
+                this.aiJobs = jobs.map(job => ({ job, resultSummary: null, resultLoading: false }));
+                this.aiJobsLoading = false;
+                for (const entry of this.aiJobs) {
+                    if (entry.job.status === 'queued' || entry.job.status === 'processing') {
+                        this.startAiPolling(entry.job.jobId);
+                    } else if (entry.job.status === 'completed') {
+                        this.fetchAiResult(entry.job.jobId);
+                    }
+                }
+            },
+            error: () => {
+                this.aiJobsLoading = false;
+                this.aiJobsError = 'deckProfile.aiJobsLoadError';
+            }
+        });
+    }
+
+    private upsertAiJob(job: AiJobResponse): void {
+        const index = this.aiJobs.findIndex(entry => entry.job.jobId === job.jobId);
+        if (index === -1) {
+            this.aiJobs = [{ job, resultSummary: null, resultLoading: false }, ...this.aiJobs];
+            return;
+        }
+        const entry = this.aiJobs[index];
+        this.aiJobs[index] = { ...entry, job };
+    }
+
+    private startAiPolling(jobId: string): void {
+        if (this.aiJobPollers.has(jobId)) {
+            return;
+        }
+        this.refreshAiJob(jobId);
+        const id = window.setInterval(() => this.refreshAiJob(jobId), 3000);
+        this.aiJobPollers.set(jobId, id);
+    }
+
+    private stopAiPolling(jobId: string): void {
+        const id = this.aiJobPollers.get(jobId);
+        if (id) {
+            window.clearInterval(id);
+            this.aiJobPollers.delete(jobId);
+        }
+    }
+
+    private refreshAiJob(jobId: string): void {
+        this.aiApi.getJob(jobId).subscribe({
+            next: job => {
+                this.upsertAiJob(job);
+                if (job.status === 'completed' || job.status === 'failed' || job.status === 'canceled') {
+                    this.stopAiPolling(jobId);
+                    if (job.status === 'completed') {
+                        this.fetchAiResult(jobId);
+                    }
+                }
+            }
+        });
+    }
+
+    private fetchAiResult(jobId: string): void {
+        this.aiJobs = this.aiJobs.map(entry => entry.job.jobId === jobId
+            ? { ...entry, resultLoading: true }
+            : entry
+        );
+        this.aiApi.getJobResult(jobId).subscribe({
+            next: result => {
+                this.aiJobs = this.aiJobs.map(entry => entry.job.jobId === jobId
+                    ? { ...entry, resultLoading: false, resultSummary: result.resultSummary }
+                    : entry
+                );
+            },
+            error: () => {
+                this.aiJobs = this.aiJobs.map(entry => entry.job.jobId === jobId
+                    ? { ...entry, resultLoading: false }
+                    : entry
+                );
+            }
+        });
     }
 
     learn(): void {
@@ -1481,3 +1861,9 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         }
     }
 }
+
+type AiJobEntry = {
+    job: AiJobResponse;
+    resultSummary: unknown | null;
+    resultLoading: boolean;
+};

@@ -65,7 +65,7 @@ public class AiJobWorker {
             AiJobProcessingResult result = jobProcessor.process(job);
             markCompleted(job, result);
         } catch (Exception ex) {
-            log.warn("AI job failed jobId={} errorType={}", job.getJobId(), ex.getClass().getSimpleName());
+            log.warn("AI job failed jobId={} errorType={} message={}", job.getJobId(), ex.getClass().getSimpleName(), safeMessage(ex));
             markFailed(job, ex);
         }
     }
@@ -188,5 +188,18 @@ public class AiJobWorker {
                 jobId
         );
         return "canceled".equalsIgnoreCase(status);
+    }
+
+    private String safeMessage(Exception ex) {
+        if (ex == null) {
+            return "";
+        }
+        String message = ex.getMessage();
+        if (message == null) {
+            return "";
+        }
+        String trimmed = message.replaceAll("[\\r\\n]+", " ").trim();
+        int max = 200;
+        return trimmed.length() <= max ? trimmed : trimmed.substring(0, max) + "...";
     }
 }

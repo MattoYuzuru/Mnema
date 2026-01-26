@@ -218,7 +218,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         }).subscribe({
             next: () => {
                 this.creating.set(false);
-                this.createSuccess.set('AI job queued. You can track it in Settings → AI jobs.');
+                this.createSuccess.set('AI job queued. You can track it in this deck.');
             },
             error: err => {
                 this.creating.set(false);

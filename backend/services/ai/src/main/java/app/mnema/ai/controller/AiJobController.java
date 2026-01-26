@@ -11,9 +11,11 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -29,7 +31,15 @@ public class AiJobController {
     @PostMapping
     public AiJobResponse create(@AuthenticationPrincipal Jwt jwt,
                                 @Valid @RequestBody CreateAiJobRequest request) {
-        return jobService.createJob(jwt, request);
+        String accessToken = jwt == null ? null : jwt.getTokenValue();
+        return jobService.createJob(jwt, accessToken, request);
+    }
+
+    @GetMapping
+    public List<AiJobResponse> list(@AuthenticationPrincipal Jwt jwt,
+                                    @RequestParam UUID deckId,
+                                    @RequestParam(defaultValue = "20") int limit) {
+        return jobService.listJobs(jwt, deckId, limit);
     }
 
     @GetMapping("/{jobId}")
