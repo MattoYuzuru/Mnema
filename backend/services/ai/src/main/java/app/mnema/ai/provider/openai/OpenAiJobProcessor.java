@@ -8,6 +8,7 @@ import app.mnema.ai.client.core.CoreApiClient.CoreUserDeckResponse;
 import app.mnema.ai.client.core.CoreApiClient.CoreUserCardPage;
 import app.mnema.ai.client.core.CoreApiClient.CoreUserCardResponse;
 import app.mnema.ai.client.core.CoreApiClient.CreateCardRequestPayload;
+import app.mnema.ai.client.core.CoreApiClient.UpdateUserCardRequest;
 import app.mnema.ai.client.media.MediaApiClient;
 import app.mnema.ai.domain.entity.AiJobEntity;
 import app.mnema.ai.domain.entity.AiProviderCredentialEntity;
@@ -161,7 +162,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 .limit(count)
                 .toList();
 
-        coreApiClient.addCards(job.getDeckId(), limitedRequests, accessToken);
+        List<CoreUserCardResponse> createdCards = coreApiClient.addCards(job.getDeckId(), limitedRequests, accessToken);
+        int ttsGenerated = applyTtsIfNeeded(job, apiKey, params, createdCards, template);
 
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("mode", MODE_GENERATE_CARDS);
@@ -169,6 +171,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         summary.put("templateId", publicDeck.templateId().toString());
         summary.put("requestedCards", count);
         summary.put("createdCards", limitedRequests.size());
+        if (ttsGenerated > 0) {
+            summary.put("ttsGenerated", ttsGenerated);
+        }
         ArrayNode fieldsNode = summary.putArray("fields");
         for (String field : allowedFields) {
             fieldsNode.add(field);
@@ -552,6 +557,177 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         } catch (Exception ex) {
             return "";
         }
+    }
+
+    private int applyTtsIfNeeded(AiJobEntity job,
+                                 String apiKey,
+                                 JsonNode params,
+                                 List<CoreUserCardResponse> createdCards,
+                                 CoreTemplateResponse template) {
+        JsonNode ttsNode = params.path("tts");
+        if (!ttsNode.path("enabled").asBoolean(false)) {
+            return 0;
+        }
+        if (createdCards == null || createdCards.isEmpty()) {
+            return 0;
+        }
+        String accessToken = job.getUserAccessToken();
+        if (accessToken == null || accessToken.isBlank()) {
+            return 0;
+        }
+        List<String> audioFields = resolveAudioFields(template);
+        if (audioFields.isEmpty()) {
+            return 0;
+        }
+        List<String> textFields = resolveTextFields(template);
+        if (textFields.isEmpty()) {
+            return 0;
+        }
+
+        List<TtsMapping> mappings = resolveTtsMappings(ttsNode, textFields, audioFields, template);
+        if (mappings.isEmpty()) {
+            return 0;
+        }
+
+        String model = textOrDefault(ttsNode.path("model"), props.defaultTtsModel());
+        String voice = textOrDefault(ttsNode.path("voice"), props.defaultVoice());
+        String format = textOrDefault(ttsNode.path("format"), props.defaultTtsFormat());
+        int maxChars = ttsNode.path("maxChars").isInt() ? ttsNode.path("maxChars").asInt() : 300;
+        if (maxChars < 1) {
+            maxChars = 1;
+        }
+
+        int generated = 0;
+        for (CoreUserCardResponse card : createdCards) {
+            if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
+                continue;
+            }
+            ObjectNode updatedContent = card.effectiveContent().deepCopy();
+            boolean updated = false;
+            for (TtsMapping mapping : mappings) {
+                String text = extractTextValue(card.effectiveContent(), mapping.sourceField());
+                if (text == null || text.isBlank()) {
+                    continue;
+                }
+                if (text.length() > maxChars) {
+                    continue;
+                }
+                byte[] audio = openAiClient.createSpeech(
+                        apiKey,
+                        new OpenAiSpeechRequest(model, text, voice, format)
+                );
+                String contentType = resolveAudioContentType(format);
+                String fileName = "ai-tts-" + job.getJobId() + "-" + card.userCardId() + "." + format;
+                UUID mediaId = mediaApiClient.directUpload(
+                        job.getUserId(),
+                        "card_audio",
+                        contentType,
+                        fileName,
+                        audio.length,
+                        new ByteArrayInputStream(audio)
+                );
+                ObjectNode audioNode = objectMapper.createObjectNode();
+                audioNode.put("mediaId", mediaId.toString());
+                audioNode.put("kind", "audio");
+                updatedContent.set(mapping.targetField(), audioNode);
+                updated = true;
+                generated++;
+            }
+            if (updated) {
+                UpdateUserCardRequest update = new UpdateUserCardRequest(
+                        card.userCardId(),
+                        null,
+                        false,
+                        false,
+                        null,
+                        updatedContent
+                );
+                coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken);
+            }
+        }
+        return generated;
+    }
+
+    private List<String> resolveAudioFields(CoreTemplateResponse template) {
+        if (template == null || template.fields() == null) {
+            return List.of();
+        }
+        return template.fields().stream()
+                .filter(field -> field != null && "audio".equals(field.fieldType()))
+                .map(CoreFieldTemplate::name)
+                .filter(name -> name != null && !name.isBlank())
+                .toList();
+    }
+
+    private List<String> resolveTextFields(CoreTemplateResponse template) {
+        if (template == null || template.fields() == null) {
+            return List.of();
+        }
+        return template.fields().stream()
+                .filter(this::isTextField)
+                .map(CoreFieldTemplate::name)
+                .filter(name -> name != null && !name.isBlank())
+                .toList();
+    }
+
+    private List<TtsMapping> resolveTtsMappings(JsonNode ttsNode,
+                                                List<String> textFields,
+                                                List<String> audioFields,
+                                                CoreTemplateResponse template) {
+        List<TtsMapping> mappings = new java.util.ArrayList<>();
+        JsonNode mappingNode = ttsNode.path("mappings");
+        if (mappingNode.isArray()) {
+            for (JsonNode node : mappingNode) {
+                String source = node.path("sourceField").asText(null);
+                String target = node.path("targetField").asText(null);
+                if (source != null && target != null && textFields.contains(source) && audioFields.contains(target)) {
+                    mappings.add(new TtsMapping(source, target));
+                }
+            }
+        }
+        if (!mappings.isEmpty()) {
+            return mappings;
+        }
+
+        String defaultSource = resolveDefaultSourceField(template, textFields);
+        String defaultTarget = audioFields.getFirst();
+        mappings.add(new TtsMapping(defaultSource, defaultTarget));
+        return mappings;
+    }
+
+    private String resolveDefaultSourceField(CoreTemplateResponse template, List<String> textFields) {
+        if (template == null || template.fields() == null || template.fields().isEmpty()) {
+            return textFields.getFirst();
+        }
+        return template.fields().stream()
+                .filter(this::isTextField)
+                .sorted((a, b) -> {
+                    int frontCompare = Boolean.compare(!a.isOnFront(), !b.isOnFront());
+                    if (frontCompare != 0) {
+                        return frontCompare;
+                    }
+                    Integer aOrder = a.orderIndex() == null ? Integer.MAX_VALUE : a.orderIndex();
+                    Integer bOrder = b.orderIndex() == null ? Integer.MAX_VALUE : b.orderIndex();
+                    return Integer.compare(aOrder, bOrder);
+                })
+                .map(CoreFieldTemplate::name)
+                .filter(name -> name != null && !name.isBlank())
+                .findFirst()
+                .orElse(textFields.getFirst());
+    }
+
+    private String extractTextValue(JsonNode content, String field) {
+        if (content == null || field == null) {
+            return null;
+        }
+        JsonNode node = content.get(field);
+        if (node != null && node.isTextual()) {
+            return node.asText();
+        }
+        return null;
+    }
+
+    private record TtsMapping(String sourceField, String targetField) {
     }
 
     private UUID parseUuid(String raw) {

@@ -77,6 +77,22 @@ public class CoreApiClient {
         return response == null ? List.of() : response;
     }
 
+    public CoreUserCardResponse updateUserCard(UUID userDeckId,
+                                               UUID userCardId,
+                                               UpdateUserCardRequest request,
+                                               String accessToken) {
+        CoreUserCardResponse response = restClient.patch()
+                .uri("/decks/{userDeckId}/cards/{userCardId}", userDeckId, userCardId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .body(request)
+                .retrieve()
+                .body(CoreUserCardResponse.class);
+        if (response == null) {
+            throw new IllegalStateException("Core card update response is empty");
+        }
+        return response;
+    }
+
     public CoreUserCardPage getUserCards(UUID userDeckId, int page, int limit, String accessToken) {
         CoreUserCardPage response = restClient.get()
                 .uri(uriBuilder -> uriBuilder
@@ -131,12 +147,24 @@ public class CoreApiClient {
             String name,
             String label,
             String fieldType,
-            boolean isRequired
+            boolean isRequired,
+            boolean isOnFront,
+            Integer orderIndex
     ) {
     }
 
     public record CoreUserCardResponse(
             UUID userCardId,
+            JsonNode effectiveContent
+    ) {
+    }
+
+    public record UpdateUserCardRequest(
+            UUID userCardId,
+            UUID publicCardId,
+            boolean isCustom,
+            boolean isDeleted,
+            String personalNote,
             JsonNode effectiveContent
     ) {
     }

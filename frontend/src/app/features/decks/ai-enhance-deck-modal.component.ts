@@ -30,7 +30,7 @@ type EnhanceOption = { key: string; label: string; description: string; enabled:
               <select
                 id="ai-enhance-provider"
                 [ngModel]="selectedCredentialId()"
-                (ngModelChange)="selectedCredentialId.set($event)"
+                (ngModelChange)="onProviderChange($event)"
                 [disabled]="loadingProviders() || providerKeys().length === 0"
               >
                 <option [ngValue]="''">Select a key</option>
@@ -49,7 +49,7 @@ type EnhanceOption = { key: string; label: string; description: string; enabled:
                 id="ai-enhance-model"
                 type="text"
                 [ngModel]="modelName()"
-                (ngModelChange)="modelName.set($event)"
+                (ngModelChange)="onModelChange($event)"
                 placeholder="gpt-4.1-mini"
               />
             </div>
@@ -80,7 +80,7 @@ type EnhanceOption = { key: string; label: string; description: string; enabled:
               id="ai-enhance-notes"
               rows="3"
               [ngModel]="notes()"
-              (ngModelChange)="notes.set($event)"
+              (ngModelChange)="onNotesChange($event)"
               placeholder="Any preferences for the improvement..."
             ></textarea>
           </div>
@@ -138,6 +138,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     @Input() deckName = '';
     @Output() closed = new EventEmitter<void>();
 
+    private storageKey = '';
     providerKeys = signal<AiProviderCredential[]>([]);
     loadingProviders = signal(false);
     selectedCredentialId = signal('');
@@ -158,6 +159,8 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     constructor(private aiApi: AiApiService) {}
 
     ngOnInit(): void {
+        this.storageKey = `mnema_ai_enhance:${this.userDeckId || 'default'}`;
+        this.restoreDraft();
         this.loadProviders();
     }
 
@@ -187,6 +190,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             next.add(option.key);
         }
         this.selectedOptions.set(next);
+        this.persistDraft();
     }
 
     canSubmit(): boolean {
@@ -218,13 +222,14 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         }).subscribe({
             next: () => {
                 this.creating.set(false);
-                this.createSuccess.set('AI job queued. You can track it in this deck.');
             },
             error: err => {
                 this.creating.set(false);
                 this.createError.set(err?.error?.message || 'Failed to create AI job');
             }
         });
+        this.clearDraft();
+        this.close();
     }
 
     close(): void {
@@ -237,6 +242,59 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
     trackOption(_: number, option: EnhanceOption): string {
         return option.key;
+    }
+
+    onProviderChange(value: string): void {
+        this.selectedCredentialId.set(value);
+        this.persistDraft();
+    }
+
+    onModelChange(value: string): void {
+        this.modelName.set(value);
+        this.persistDraft();
+    }
+
+    onNotesChange(value: string): void {
+        this.notes.set(value);
+        this.persistDraft();
+    }
+
+    private persistDraft(): void {
+        if (!this.storageKey) return;
+        const payload = {
+            providerCredentialId: this.selectedCredentialId(),
+            modelName: this.modelName(),
+            notes: this.notes(),
+            selectedOptions: Array.from(this.selectedOptions())
+        };
+        try {
+            localStorage.setItem(this.storageKey, JSON.stringify(payload));
+        } catch {
+        }
+    }
+
+    private restoreDraft(): void {
+        if (!this.storageKey) return;
+        try {
+            const raw = localStorage.getItem(this.storageKey);
+            if (!raw) return;
+            const payload = JSON.parse(raw);
+            if (payload.providerCredentialId) this.selectedCredentialId.set(payload.providerCredentialId);
+            if (payload.modelName) this.modelName.set(payload.modelName);
+            if (payload.notes) this.notes.set(payload.notes);
+            if (Array.isArray(payload.selectedOptions)) {
+                this.selectedOptions.set(new Set(payload.selectedOptions));
+            }
+        } catch {
+        }
+    }
+
+    private clearDraft(): void {
+        if (!this.storageKey) return;
+        try {
+            localStorage.removeItem(this.storageKey);
+        } catch {
+        }
     }
 
     private buildPrompt(actions: string[]): string {
