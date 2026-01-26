@@ -7,13 +7,12 @@ import app.mnema.ai.domain.type.AiJobType;
 import app.mnema.ai.domain.type.AiProviderStatus;
 import app.mnema.ai.repository.AiProviderCredentialRepository;
 import app.mnema.ai.service.AiJobProcessingResult;
-import app.mnema.ai.service.AiJobProcessor;
+import app.mnema.ai.service.AiProviderProcessor;
 import app.mnema.ai.vault.EncryptedSecret;
 import app.mnema.ai.vault.SecretVault;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
@@ -25,8 +24,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Service
-@ConditionalOnProperty(name = "app.ai.provider", havingValue = "openai")
-public class OpenAiJobProcessor implements AiJobProcessor {
+public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private static final String PROVIDER = "openai";
 
@@ -49,6 +47,11 @@ public class OpenAiJobProcessor implements AiJobProcessor {
         this.credentialRepository = credentialRepository;
         this.mediaApiClient = mediaApiClient;
         this.objectMapper = objectMapper;
+    }
+
+    @Override
+    public String provider() {
+        return PROVIDER;
     }
 
     @Override

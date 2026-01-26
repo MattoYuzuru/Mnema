@@ -17,6 +17,8 @@ import { ImportJobResponse, ImportSourceType } from '../../core/models/import.mo
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { AddCardsModalComponent } from './add-cards-modal.component';
+import { AiAddCardsModalComponent } from './ai-add-cards-modal.component';
+import { AiEnhanceDeckModalComponent } from './ai-enhance-deck-modal.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { InputComponent } from '../../shared/components/input.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
@@ -27,7 +29,7 @@ import { I18nService } from '../../core/services/i18n.service';
 @Component({
     selector: 'app-deck-profile',
     standalone: true,
-    imports: [NgIf, NgFor, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, ConfirmationDialogComponent, InputComponent, ImportDeckModalComponent, TranslatePipe],
+    imports: [NgIf, NgFor, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, AiAddCardsModalComponent, AiEnhanceDeckModalComponent, ConfirmationDialogComponent, InputComponent, ImportDeckModalComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -66,6 +68,9 @@ import { I18nService } from '../../core/services/i18n.service';
         <app-button variant="secondary" (click)="openAddCardsChoice()">
           {{ 'deckProfile.addCards' | translate }}
         </app-button>
+        <app-button variant="secondary" (click)="openAiEnhanceModal()">
+          ✨ Deck enhancement
+        </app-button>
         <app-button variant="secondary" (click)="openExportConfirm()" [disabled]="exporting">
           {{ exporting ? ('deckProfile.exporting' | translate) : ('deckProfile.export' | translate) }}
         </app-button>
@@ -81,6 +86,36 @@ import { I18nService } from '../../core/services/i18n.service';
       </div>
 
       <p *ngIf="exportStatusKey" class="export-status">{{ exportStatusKey | translate }}</p>
+
+      <section class="ai-feature-section">
+        <div class="ai-feature-header">
+          <h2>AI features</h2>
+          <p>Generate new cards or improve your deck using your saved provider keys.</p>
+        </div>
+        <div class="ai-feature-grid">
+          <button class="ai-feature-card" (click)="openAiAddModal()">
+            <div class="ai-feature-icon">✨</div>
+            <div>
+              <h3>Add cards with AI</h3>
+              <p>Create new cards by describing what you want to learn.</p>
+            </div>
+          </button>
+          <button class="ai-feature-card" (click)="openAiEnhanceModal()">
+            <div class="ai-feature-icon">🧠</div>
+            <div>
+              <h3>Enhance deck</h3>
+              <p>Audit the deck and fill missing fields.</p>
+            </div>
+          </button>
+          <div class="ai-feature-card disabled" aria-disabled="true">
+            <div class="ai-feature-icon">📷</div>
+            <div>
+              <h3>Import from photo</h3>
+              <p>Extract cards from images or PDFs. Coming soon.</p>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
 
     <div *ngIf="showAddCardsChoice" class="modal-overlay" (click)="closeAddCardsChoice()">
@@ -101,6 +136,16 @@ import { I18nService } from '../../core/services/i18n.service';
               <h3>{{ 'deckProfile.addCardsImport' | translate }}</h3>
               <p>{{ 'deckProfile.addCardsImportDesc' | translate }}</p>
             </div>
+            <div class="choice-card ai-choice" (click)="startAiAdd()">
+              <div class="choice-icon">✨</div>
+              <h3>AI additions</h3>
+              <p>Generate new cards using your saved provider key.</p>
+            </div>
+            <div class="choice-card disabled" aria-disabled="true">
+              <div class="choice-icon">📷</div>
+              <h3>Photo / file</h3>
+              <p>Import cards from images or PDFs. Coming soon.</p>
+            </div>
           </div>
         </div>
       </div>
@@ -120,6 +165,20 @@ import { I18nService } from '../../core/services/i18n.service';
       [targetDeckId]="deck.userDeckId"
       (closed)="closeImportModal()"
     ></app-import-deck-modal>
+
+    <app-ai-add-cards-modal
+      *ngIf="showAiAddModal && deck"
+      [userDeckId]="deck.userDeckId"
+      [deckName]="deck.displayName"
+      (closed)="closeAiAddModal()"
+    ></app-ai-add-cards-modal>
+
+    <app-ai-enhance-deck-modal
+      *ngIf="showAiEnhanceModal && deck"
+      [userDeckId]="deck.userDeckId"
+      [deckName]="deck.displayName"
+      (closed)="closeAiEnhanceModal()"
+    ></app-ai-enhance-deck-modal>
 
     <div *ngIf="showEditModal && deck" class="modal-overlay" (click)="closeEditModal()">
       <div class="modal-content" (click)="$event.stopPropagation()">
@@ -400,6 +459,72 @@ import { I18nService } from '../../core/services/i18n.service';
         display: flex;
         gap: var(--spacing-md);
         flex-wrap: wrap;
+      }
+
+      .ai-feature-section {
+        margin-top: var(--spacing-2xl);
+        padding: var(--spacing-xl);
+        background: var(--color-card-background);
+        border-radius: var(--border-radius-lg);
+        border: 1px solid var(--border-color);
+      }
+
+      .ai-feature-header h2 {
+        margin: 0 0 var(--spacing-xs) 0;
+        font-size: 1.4rem;
+      }
+
+      .ai-feature-header p {
+        margin: 0 0 var(--spacing-lg) 0;
+        color: var(--color-text-muted);
+      }
+
+      .ai-feature-grid {
+        display: grid;
+        gap: var(--spacing-md);
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .ai-feature-card {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--spacing-md);
+        padding: var(--spacing-md);
+        border-radius: var(--border-radius-lg);
+        border: 1px solid var(--glass-border);
+        background: var(--color-background);
+        text-align: left;
+        cursor: pointer;
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .ai-feature-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .ai-feature-card.disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        box-shadow: none;
+        transform: none;
+      }
+
+      .ai-feature-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: #111827;
+        color: #fff;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+      }
+
+      .choice-card.disabled {
+        opacity: 0.6;
+        pointer-events: none;
       }
 
       .modal-overlay {
@@ -791,6 +916,8 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     userDeckId = '';
     showAddCards = false;
     showAddCardsChoice = false;
+    showAiAddModal = false;
+    showAiEnhanceModal = false;
     showImportModal = false;
     showEditModal = false;
     showDeleteConfirm = false;
@@ -898,8 +1025,29 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         this.showImportModal = true;
     }
 
+    startAiAdd(): void {
+        this.showAddCardsChoice = false;
+        this.showAiAddModal = true;
+    }
+
     closeImportModal(): void {
         this.showImportModal = false;
+    }
+
+    openAiAddModal(): void {
+        this.showAiAddModal = true;
+    }
+
+    closeAiAddModal(): void {
+        this.showAiAddModal = false;
+    }
+
+    openAiEnhanceModal(): void {
+        this.showAiEnhanceModal = true;
+    }
+
+    closeAiEnhanceModal(): void {
+        this.showAiEnhanceModal = false;
     }
 
     closeAddCards(): void {

@@ -178,14 +178,23 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             <form (ngSubmit)="createProvider()" class="ai-form">
               <div class="form-field">
                 <label for="ai-provider">Provider</label>
-                <input
+                <select
                   id="ai-provider"
                   name="provider"
+                  [ngModel]="providerPreset()"
+                  (ngModelChange)="onProviderPresetChange($event)"
+                >
+                  <option *ngFor="let opt of providerOptions" [ngValue]="opt.value">
+                    {{ opt.label }}
+                  </option>
+                </select>
+                <input
+                  *ngIf="providerPreset() === 'custom'"
+                  name="providerCustom"
                   type="text"
                   [ngModel]="providerName()"
                   (ngModelChange)="providerName.set($event)"
-                  placeholder="openai"
-                  required
+                  placeholder="custom-provider"
                   autocomplete="organization"
                 />
               </div>
@@ -1043,6 +1052,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     readonly creatingProvider = signal(false);
     readonly deleteInFlight = signal(false);
     readonly providerName = signal('');
+    readonly providerPreset = signal('openai');
     readonly providerAlias = signal('');
     readonly providerSecret = signal('');
     readonly deleteProviderTarget = signal<AiProviderCredential | null>(null);
@@ -1051,6 +1061,15 @@ export class SettingsComponent implements OnInit, OnDestroy {
         this.providerName().trim().length > 0 &&
         this.providerSecret().trim().length > 0
     );
+
+    readonly providerOptions = [
+        { label: 'OpenAI', value: 'openai' },
+        { label: 'Google Gemini', value: 'gemini' },
+        { label: 'Anthropic', value: 'anthropic' },
+        { label: 'DeepSeek', value: 'deepseek' },
+        { label: 'GigaChat', value: 'gigachat' },
+        { label: 'Custom', value: 'custom' }
+    ];
 
     readonly jobType = signal<AiJobType>('enrich');
     readonly jobDeckId = signal('');
@@ -1079,6 +1098,7 @@ export class SettingsComponent implements OnInit, OnDestroy {
     ngOnInit(): void {
         this.loadArchivedDecks();
         this.loadProviders();
+        this.providerName.set(this.providerPreset());
         this.userApi.getMe().subscribe({
             next: profile => {
                 this.currentUsername = profile.username;
@@ -1117,6 +1137,15 @@ export class SettingsComponent implements OnInit, OnDestroy {
                 this.providersLoading.set(false);
             }
         });
+    }
+
+    onProviderPresetChange(value: string): void {
+        this.providerPreset.set(value);
+        if (value === 'custom') {
+            this.providerName.set('');
+            return;
+        }
+        this.providerName.set(value);
     }
 
     createProvider(): void {
