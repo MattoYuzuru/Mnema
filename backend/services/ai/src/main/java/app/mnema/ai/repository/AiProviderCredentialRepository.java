@@ -14,4 +14,10 @@ public interface AiProviderCredentialRepository extends JpaRepository<AiProvider
     List<AiProviderCredentialEntity> findByUserIdAndStatus(UUID userId, AiProviderStatus status);
 
     Optional<AiProviderCredentialEntity> findByIdAndUserId(UUID id, UUID userId);
+
+    Optional<AiProviderCredentialEntity> findFirstByUserIdAndProviderAndStatusOrderByCreatedAtAsc(
+            UUID userId,
+            String provider,
+            AiProviderStatus status
+    );
 }

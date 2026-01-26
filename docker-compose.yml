@@ -166,6 +166,7 @@ services:
       REDIS_PORT: 6379
       APP_AI_VAULT_MASTER_KEY: ${AI_VAULT_MASTER_KEY}
       APP_AI_VAULT_KEY_ID: ${AI_VAULT_KEY_ID}
+      AI_PROVIDER: ${AI_PROVIDER}
     depends_on:
       postgres: { condition: service_healthy }
       redis: { condition: service_healthy }

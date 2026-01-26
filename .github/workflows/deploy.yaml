@@ -179,6 +179,7 @@ jobs:
             MEDIA_INTERNAL_TOKEN: "${MEDIA_INTERNAL_TOKEN}"
             AI_VAULT_MASTER_KEY: "${AI_VAULT_MASTER_KEY}"
             AI_VAULT_KEY_ID: "${AI_VAULT_KEY_ID}"
+            AI_PROVIDER: "${AI_PROVIDER}"
           YAML
         env:
           AUTH_ISSUER: ${{ secrets.AUTH_ISSUER }}
@@ -203,6 +204,7 @@ jobs:
           MEDIA_INTERNAL_TOKEN: ${{ secrets.MEDIA_INTERNAL_TOKEN }}
           AI_VAULT_MASTER_KEY: ${{ secrets.AI_VAULT_MASTER_KEY }}
           AI_VAULT_KEY_ID: ${{ secrets.AI_VAULT_KEY_ID }}
+          AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
 
       - name: Create/Update secret (grafana-secrets)
         run: |
