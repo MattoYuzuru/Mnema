@@ -108,7 +108,14 @@ public class AiProviderService {
         if (trimmed.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Provider is required");
         }
-        return trimmed.toLowerCase();
+        String normalized = trimmed.toLowerCase();
+        if ("claude".equals(normalized)) {
+            return "anthropic";
+        }
+        if ("google".equals(normalized) || "google-gemini".equals(normalized)) {
+            return "gemini";
+        }
+        return normalized;
     }
 
     private String normalizeAlias(String alias) {

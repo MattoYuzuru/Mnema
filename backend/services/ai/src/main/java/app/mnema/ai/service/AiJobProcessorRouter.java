@@ -87,6 +87,13 @@ public class AiJobProcessorRouter implements AiJobProcessor {
         if (provider == null) {
             return "stub";
         }
-        return provider.trim().toLowerCase(Locale.ROOT);
+        String normalized = provider.trim().toLowerCase(Locale.ROOT);
+        if ("claude".equals(normalized)) {
+            return "anthropic";
+        }
+        if ("google".equals(normalized) || "google-gemini".equals(normalized)) {
+            return "gemini";
+        }
+        return normalized;
     }
 }

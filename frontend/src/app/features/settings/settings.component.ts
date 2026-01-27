@@ -817,7 +817,7 @@ export class SettingsComponent implements OnInit {
     readonly providerOptions = [
         { label: 'OpenAI', value: 'openai' },
         { label: 'Google Gemini', value: 'gemini' },
-        { label: 'Anthropic', value: 'anthropic' },
+        { label: 'Claude (Anthropic)', value: 'anthropic' },
         { label: 'DeepSeek', value: 'deepseek' },
         { label: 'GigaChat', value: 'gigachat' },
         { label: 'Custom', value: 'custom' }
