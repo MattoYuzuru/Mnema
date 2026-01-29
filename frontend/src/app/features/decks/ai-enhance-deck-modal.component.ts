@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, OnInit, Output, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, computed, signal } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AiApiService } from '../../core/services/ai-api.service';
@@ -50,7 +50,7 @@ type EnhanceOption = { key: string; label: string; description: string; enabled:
                 type="text"
                 [ngModel]="modelName()"
                 (ngModelChange)="onModelChange($event)"
-                placeholder="gpt-4.1-mini"
+                [placeholder]="modelPlaceholder()"
               />
             </div>
           </div>
@@ -147,6 +147,13 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     creating = signal(false);
     createError = signal('');
     createSuccess = signal('');
+    readonly selectedProvider = computed(() => {
+        const selectedId = this.selectedCredentialId();
+        if (!selectedId) return '';
+        const provider = this.providerKeys().find(item => item.id === selectedId)?.provider;
+        return this.normalizeProvider(provider);
+    });
+    readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
 
     options = signal<EnhanceOption[]>([
         { key: 'audit', label: 'Deck audit', description: 'Find inconsistencies and weak cards.', enabled: true },
@@ -242,6 +249,31 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
     trackOption(_: number, option: EnhanceOption): string {
         return option.key;
+    }
+
+    private normalizeProvider(provider?: string | null): string {
+        if (!provider) return '';
+        const normalized = provider.trim().toLowerCase();
+        if (normalized === 'claude') return 'anthropic';
+        if (normalized === 'google' || normalized === 'google-gemini') return 'gemini';
+        return normalized;
+    }
+
+    private resolveModelPlaceholder(provider: string): string {
+        switch (provider) {
+            case 'openai':
+                return 'gpt-4.1-mini';
+            case 'gemini':
+                return 'gemini-2.0-flash';
+            case 'anthropic':
+                return 'claude-3-5-sonnet-20241022';
+            case 'deepseek':
+                return 'deepseek-chat';
+            case 'gigachat':
+                return 'giga-chat';
+            default:
+                return 'model-name';
+        }
     }
 
     onProviderChange(value: string): void {

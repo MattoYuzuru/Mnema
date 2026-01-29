@@ -76,7 +76,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                 type="text"
                 [ngModel]="modelName()"
                 (ngModelChange)="onModelChange($event)"
-                placeholder="gpt-4.1-mini"
+                [placeholder]="modelPlaceholder()"
               />
             </div>
           </div>
@@ -115,7 +115,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                     type="text"
                     [ngModel]="ttsModel()"
                     (ngModelChange)="onTtsModelChange($event)"
-                    placeholder="gpt-4o-mini-tts"
+                    [placeholder]="ttsModelPlaceholder()"
                   />
                 </div>
                 <div class="form-field">
@@ -310,6 +310,14 @@ export class AiAddCardsModalComponent implements OnInit {
     readonly voiceOptions = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer', 'custom'];
     readonly formatOptions = ['mp3', 'ogg', 'wav'];
     readonly hasAudioFields = computed(() => this.audioFields().length > 0);
+    readonly selectedProvider = computed(() => {
+        const selectedId = this.selectedCredentialId();
+        if (!selectedId) return '';
+        const provider = this.providerKeys().find(item => item.id === selectedId)?.provider;
+        return this.normalizeProvider(provider);
+    });
+    readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
+    readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
 
     constructor(private aiApi: AiApiService, private templateApi: TemplateApiService) {}
 
@@ -487,6 +495,42 @@ export class AiAddCardsModalComponent implements OnInit {
             return aOrder - bOrder;
         });
         return sorted[0]?.name || '';
+    }
+
+    private normalizeProvider(provider?: string | null): string {
+        if (!provider) return '';
+        const normalized = provider.trim().toLowerCase();
+        if (normalized === 'claude') return 'anthropic';
+        if (normalized === 'google' || normalized === 'google-gemini') return 'gemini';
+        return normalized;
+    }
+
+    private resolveModelPlaceholder(provider: string): string {
+        switch (provider) {
+            case 'openai':
+                return 'gpt-4.1-mini';
+            case 'gemini':
+                return 'gemini-2.0-flash';
+            case 'anthropic':
+                return 'claude-3-5-sonnet-20241022';
+            case 'deepseek':
+                return 'deepseek-chat';
+            case 'gigachat':
+                return 'giga-chat';
+            default:
+                return 'model-name';
+        }
+    }
+
+    private resolveTtsModelPlaceholder(provider: string): string {
+        switch (provider) {
+            case 'openai':
+                return 'gpt-4o-mini-tts';
+            case 'gemini':
+                return 'gemini-2.5-flash-preview-tts';
+            default:
+                return 'tts-model';
+        }
     }
 
     onProviderChange(value: string): void {

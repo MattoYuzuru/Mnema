@@ -454,14 +454,11 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         for (String field : fields) {
             fieldProps.putObject(field).put("type", "string");
         }
-        fieldsNode.put("additionalProperties", false);
         ArrayNode requiredFields = fieldsNode.putArray("required");
         for (String field : fields) {
             requiredFields.add(field);
         }
         items.putArray("required").add("fields");
-        items.put("additionalProperties", false);
-        schema.put("additionalProperties", false);
         schema.putArray("required").add("cards");
         return schema;
     }
