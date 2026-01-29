@@ -15,6 +15,7 @@ import app.mnema.ai.domain.type.AiProviderStatus;
 import app.mnema.ai.repository.AiProviderCredentialRepository;
 import app.mnema.ai.service.AiJobProcessingResult;
 import app.mnema.ai.service.AiProviderProcessor;
+import app.mnema.ai.provider.anki.AnkiTemplateSupport;
 import app.mnema.ai.vault.EncryptedSecret;
 import app.mnema.ai.vault.SecretVault;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -42,6 +43,7 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
     private final AiProviderCredentialRepository credentialRepository;
     private final CoreApiClient coreApiClient;
     private final ObjectMapper objectMapper;
+    private final AnkiTemplateSupport ankiSupport;
 
     public ClaudeJobProcessor(ClaudeClient claudeClient,
                               ClaudeProps props,
@@ -55,6 +57,7 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         this.credentialRepository = credentialRepository;
         this.coreApiClient = coreApiClient;
         this.objectMapper = objectMapper;
+        this.ankiSupport = new AnkiTemplateSupport(objectMapper);
     }
 
     @Override
@@ -145,7 +148,7 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         );
 
         JsonNode parsed = parseJsonResponse(response.outputText());
-        List<CreateCardRequestPayload> cardRequests = buildCardRequests(parsed, allowedFields);
+        List<CreateCardRequestPayload> cardRequests = buildCardRequests(parsed, allowedFields, template);
         List<CreateCardRequestPayload> limitedRequests = cardRequests.stream()
                 .limit(count)
                 .toList();
@@ -399,7 +402,9 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         }
     }
 
-    private List<CreateCardRequestPayload> buildCardRequests(JsonNode response, List<String> fields) {
+    private List<CreateCardRequestPayload> buildCardRequests(JsonNode response,
+                                                             List<String> fields,
+                                                             CoreTemplateResponse template) {
         JsonNode cardsNode = response.path("cards");
         if (!cardsNode.isArray()) {
             throw new IllegalStateException("AI response missing cards array");
@@ -415,6 +420,7 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
                 JsonNode value = fieldsNode.get(field);
                 content.set(field, value == null ? objectMapper.nullNode() : value);
             }
+            ankiSupport.applyIfPresent(content, template);
             requests.add(new CreateCardRequestPayload(content, null, null, null, null, null));
         }
         return requests;

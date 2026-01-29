@@ -147,6 +147,7 @@ public class CoreApiClient {
             Integer latestVersion,
             String name,
             String description,
+            JsonNode layout,
             JsonNode aiProfile,
             List<CoreFieldTemplate> fields
     ) {

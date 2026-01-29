@@ -1051,6 +1051,15 @@ public class ApkgImportParser implements ImportParser {
         }
 
         @Override
+        public ImportAnkiTemplate ankiTemplate() {
+            if (noteTypes == null || noteTypes.isEmpty()) {
+                return null;
+            }
+            AnkiNoteType noteType = noteTypes.values().iterator().next();
+            return toImportTemplate(noteType);
+        }
+
+        @Override
         public boolean hasNext() {
             return hasNext;
         }
