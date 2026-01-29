@@ -64,6 +64,7 @@ class UserCardRepositorySearchDataJpaTest extends PostgresIntegrationTest {
                 false,
                 "feline note",
                 null,
+                null,
                 now,
                 null
         );
@@ -77,6 +78,7 @@ class UserCardRepositorySearchDataJpaTest extends PostgresIntegrationTest {
                 false,
                 false,
                 null,
+                null,
                 override,
                 now.plusSeconds(1),
                 null
@@ -89,6 +91,7 @@ class UserCardRepositorySearchDataJpaTest extends PostgresIntegrationTest {
                 false,
                 true,
                 "Sprint",
+                null,
                 null,
                 now.plusSeconds(2),
                 null
@@ -129,6 +132,7 @@ class UserCardRepositorySearchDataJpaTest extends PostgresIntegrationTest {
                 false,
                 null,
                 null,
+                null,
                 now,
                 null
         );
@@ -139,6 +143,7 @@ class UserCardRepositorySearchDataJpaTest extends PostgresIntegrationTest {
                 publicCard2.getCardId(),
                 false,
                 false,
+                null,
                 null,
                 null,
                 now.plusSeconds(1),

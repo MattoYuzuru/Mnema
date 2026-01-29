@@ -148,6 +148,7 @@ class SearchServiceTest {
                 false,
                 "note",
                 null,
+                null,
                 now,
                 null
         );

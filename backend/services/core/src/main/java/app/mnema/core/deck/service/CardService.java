@@ -30,7 +30,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 @Service
 public class CardService {
 
-    private static final int MAX_TAGS = 5;
+    private static final int MAX_TAGS = 3;
     private static final int MAX_TAG_LENGTH = 25;
 
     private final UserDeckRepository userDeckRepository;
@@ -219,6 +219,7 @@ public class CardService {
                         true,
                         false,
                         request.personalNote(),
+                        request.tags(),
                         content,
                         createdAt,
                         null
@@ -253,6 +254,7 @@ public class CardService {
                         true,
                         false,
                         request.personalNote(),
+                        request.tags(),
                         content,
                         createdAt,
                         null
@@ -383,6 +385,7 @@ public class CardService {
                     false,
                     false,
                     request.personalNote(),
+                    null,
                     request.contentOverride(),
                     createdAt,
                     null
@@ -502,6 +505,21 @@ public class CardService {
         // Для простоты считаем, что effectiveContent, присланный с фронта, и есть новый override
         card.setContentOverride(dto.effectiveContent());
         card.setDeleted(dto.isDeleted());
+
+        if (dto.tags() != null) {
+            validateTags(dto.tags());
+            if (card.getPublicCardId() != null) {
+                var publicCardOpt = publicCardRepository.findByCardId(card.getPublicCardId());
+                if (publicCardOpt.isPresent() && tagsEqual(dto.tags(), publicCardOpt.get().getTags())) {
+                    card.setTags(null);
+                } else {
+                    card.setTags(dto.tags());
+                }
+            } else {
+                card.setTags(dto.tags());
+            }
+        }
+
         card.setUpdatedAt(Instant.now());
 
         UserCardEntity saved = userCardRepository.save(card);
@@ -703,7 +721,13 @@ public class CardService {
     // ==== Приватные мапперы и утилиты ==== //
 
     private UserCardDTO toUserCardDTO(UserCardEntity c) {
-        JsonNode effective = buildEffectiveContent(c);
+        PublicCardEntity publicCard = null;
+        if (c.getPublicCardId() != null) {
+            publicCard = publicCardRepository.findByCardId(c.getPublicCardId()).orElse(null);
+        }
+
+        JsonNode effective = buildEffectiveContent(c, publicCard);
+        String[] tags = buildEffectiveTags(c, publicCard);
 
         return new UserCardDTO(
                 c.getUserCardId(),
@@ -711,6 +735,7 @@ public class CardService {
                 c.isCustom(),
                 c.isDeleted(),
                 c.getPersonalNote(),
+                tags,
                 effective
         );
     }
@@ -731,7 +756,7 @@ public class CardService {
     }
 
     // простое слияние: override перекрывает поля из public.content
-    private JsonNode buildEffectiveContent(UserCardEntity c) {
+    private JsonNode buildEffectiveContent(UserCardEntity c, PublicCardEntity publicCard) {
         JsonNode override = c.getContentOverride();
 
         // кастомная карта без привязки к public - просто override
@@ -739,14 +764,48 @@ public class CardService {
             return override;
         }
 
-        // пытаемся подтянуть public-карту
-        var publicCardOpt = publicCardRepository.findByCardId(c.getPublicCardId());
-        if (publicCardOpt.isEmpty()) {
+        if (publicCard == null) {
             return override;
         }
 
-        JsonNode base = publicCardOpt.get().getContent();
+        JsonNode base = publicCard.getContent();
         return mergeJson(base, override);
+    }
+
+    private String[] buildEffectiveTags(UserCardEntity c, PublicCardEntity publicCard) {
+        if (c.getTags() != null) {
+            return c.getTags();
+        }
+
+        if (publicCard == null) {
+            return null;
+        }
+
+        return publicCard.getTags();
+    }
+
+    private boolean tagsEqual(String[] first, String[] second) {
+        if (first == null && second == null) {
+            return true;
+        }
+        if (first == null || second == null) {
+            return false;
+        }
+        if (first.length != second.length) {
+            return false;
+        }
+        for (int i = 0; i < first.length; i++) {
+            if (first[i] == null && second[i] == null) {
+                continue;
+            }
+            if (first[i] == null || second[i] == null) {
+                return false;
+            }
+            if (!first[i].equals(second[i])) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private JsonNode mergeJson(JsonNode base, JsonNode override) {

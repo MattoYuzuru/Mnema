@@ -1,7 +1,7 @@
 import { Component, OnInit, HostListener } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { ReactiveFormsModule, FormBuilder, FormGroup, Validators, FormControl } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { CardApiService } from '../../core/services/card-api.service';
 import { DeckApiService } from '../../core/services/deck-api.service';
@@ -23,12 +23,13 @@ import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
 import { MediaUploadComponent } from '../../shared/components/media-upload.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
+import { TagChipComponent } from '../../shared/components/tag-chip.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-card-browser',
     standalone: true,
-    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, ConfirmationDialogComponent, TranslatePipe],
+    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, ConfirmationDialogComponent, TagChipComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -72,7 +73,12 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             <div *ngFor="let card of cards; let index = index" class="cards-list-item" [class.active]="index === currentCardIndex">
               <button class="card-preview" type="button" (click)="openCardFromList(index)">
                 <span class="card-index">{{ index + 1 }}</span>
-                <span class="card-text">{{ getFrontPreview(card) }}</span>
+                <div class="card-preview-body">
+                  <span class="card-text">{{ getFrontPreview(card) }}</span>
+                  <div *ngIf="card.tags?.length" class="card-tags-inline">
+                    <app-tag-chip *ngFor="let tag of card.tags" [text]="tag"></app-tag-chip>
+                  </div>
+                </div>
               </button>
               <div class="card-item-actions">
                 <button class="icon-btn" (click)="openEditModal(card); $event.stopPropagation()" [title]="'cardBrowser.editCard' | translate">
@@ -160,6 +166,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             </div>
           </div>
 
+          <div *ngIf="!searchNoResults && currentCard?.tags?.length" class="card-tags-panel">
+            <app-tag-chip *ngFor="let tag of currentCard!.tags" [text]="tag"></app-tag-chip>
+          </div>
+
           <div class="card-actions" *ngIf="!searchNoResults && currentCard">
             <app-button variant="secondary" size="sm" (click)="openEditModal(currentCard!)" *ngIf="currentCard">
               <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -225,6 +235,27 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                 [placeholder]="field.fieldType === 'markdown' ? 'Use **bold**, *italic*, inline code' : (field.helpText || 'Enter ' + field.label)"
                 [rows]="4"
               ></app-textarea>
+            </div>
+            <div class="tag-editor">
+              <label>{{ 'cardBrowser.tags' | translate }}</label>
+              <input
+                type="text"
+                class="tag-input"
+                [formControl]="tagInputControl"
+                (keydown.enter)="addTag($event)"
+                [placeholder]="'cardBrowser.tagsPlaceholder' | translate"
+                [attr.maxlength]="maxTagLength"
+                [attr.aria-label]="'cardBrowser.tags' | translate"
+              />
+              <div *ngIf="tags.length > 0" class="tags-list">
+                <app-tag-chip
+                  *ngFor="let tag of tags; let i = index"
+                  [text]="tag"
+                  [removable]="true"
+                  (remove)="removeTag(i)"
+                ></app-tag-chip>
+              </div>
+              <p *ngIf="tagErrorKey" class="error-message">{{ tagErrorKey | translate }}</p>
             </div>
             <app-textarea
               [label]="'cardBrowser.personalNote' | translate"
@@ -445,6 +476,20 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         white-space: nowrap;
       }
 
+      .card-preview-body {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+        min-width: 0;
+        flex: 1;
+      }
+
+      .card-tags-inline {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+      }
+
       .flashcard-container {
         display: flex;
         flex-direction: column;
@@ -527,6 +572,14 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         color: var(--color-text-muted);
         text-align: center;
         margin: 0;
+      }
+
+      .card-tags-panel {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+        justify-content: center;
+        padding: var(--spacing-xs) 0;
       }
 
       .personal-note {
@@ -683,6 +736,40 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         flex-direction: column;
       }
 
+      .tag-editor {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+      }
+
+      .tag-input {
+        width: 100%;
+        padding: var(--spacing-sm) var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+        background: var(--color-card-background);
+        color: var(--color-text-primary);
+        transition: border-color 0.2s ease;
+      }
+
+      .tag-input:focus {
+        outline: none;
+        border-color: var(--color-primary-accent);
+        box-shadow: var(--focus-ring);
+      }
+
+      .tags-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+      }
+
+      .error-message {
+        margin: 0;
+        font-size: 0.85rem;
+        color: #dc2626;
+      }
+
       .checkbox-group {
         display: flex;
         align-items: center;
@@ -777,6 +864,8 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 export class CardBrowserComponent implements OnInit {
     private static readonly PAGE_SIZE = 50;
     private static readonly PREFETCH_THRESHOLD = 0.9;
+    private static readonly MAX_TAGS = 3;
+    private static readonly MAX_TAG_LENGTH = 25;
 
     loading = true;
     cards: UserCardDTO[] = [];
@@ -791,6 +880,10 @@ export class CardBrowserComponent implements OnInit {
     showDeleteConfirm = false;
     showScopePrompt = false;
     editForm!: FormGroup;
+    tagInputControl = new FormControl('', { nonNullable: true });
+    tags: string[] = [];
+    tagErrorKey = '';
+    readonly maxTagLength = CardBrowserComponent.MAX_TAG_LENGTH;
     saving = false;
     deleting = false;
     deleteTarget: UserCardDTO | null = null;
@@ -1108,6 +1201,9 @@ export class CardBrowserComponent implements OnInit {
             });
             controls['personalNote'] = [card.personalNote || ''];
             this.editForm = this.fb.group(controls);
+            this.tags = [...(card.tags || [])];
+            this.tagInputControl.setValue('');
+            this.tagErrorKey = '';
             this.showEditModal = true;
         }
     }
@@ -1136,8 +1232,48 @@ export class CardBrowserComponent implements OnInit {
         this.editForm.get(fieldName)?.markAsTouched();
     }
 
+    addTag(event: Event): void {
+        event.preventDefault();
+        const tag = this.tagInputControl.value.trim();
+        if (!tag) {
+            return;
+        }
+        if (this.tags.length >= CardBrowserComponent.MAX_TAGS) {
+            this.tagErrorKey = 'validation.cardTagsLimit';
+            return;
+        }
+        if (tag.length > CardBrowserComponent.MAX_TAG_LENGTH) {
+            this.tagErrorKey = 'validation.tagTooLong';
+            return;
+        }
+        if (!this.tags.includes(tag)) {
+            this.tags.push(tag);
+        }
+        this.tagInputControl.setValue('');
+        this.tagErrorKey = '';
+    }
+
+    removeTag(index: number): void {
+        this.tags.splice(index, 1);
+        this.tagErrorKey = '';
+    }
+
+    private validateTags(): boolean {
+        if (this.tags.length > CardBrowserComponent.MAX_TAGS) {
+            this.tagErrorKey = 'validation.cardTagsLimit';
+            return false;
+        }
+        if (this.tags.some(tag => tag.length > CardBrowserComponent.MAX_TAG_LENGTH)) {
+            this.tagErrorKey = 'validation.tagTooLong';
+            return false;
+        }
+        this.tagErrorKey = '';
+        return true;
+    }
+
     saveEdit(): void {
         if (this.editForm.invalid || !this.editingCard) return;
+        if (!this.validateTags()) return;
 
         this.saving = true;
         const formValue = this.editForm.value;
@@ -1145,7 +1281,8 @@ export class CardBrowserComponent implements OnInit {
 
         const updates: Partial<UserCardDTO> = {
             effectiveContent: content,
-            personalNote: personalNote || null
+            personalNote: personalNote || null,
+            tags: this.tags
         };
 
         this.cardApi.patchUserCard(this.userDeckId, this.editingCard.userCardId, updates).subscribe({

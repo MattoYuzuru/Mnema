@@ -172,16 +172,16 @@ public class SearchService {
             return new PageImpl<>(List.of(), cardsPage.getPageable(), cardsPage.getTotalElements());
         }
 
-        Map<UUID, JsonNode> publicContentById = resolvePublicCardContent(cards);
+        Map<UUID, PublicCardEntity> publicCardsById = resolvePublicCards(cards);
 
         List<UserCardDTO> dtoList = cards.stream()
-                .map(card -> toUserCardDTO(card, publicContentById))
+                .map(card -> toUserCardDTO(card, publicCardsById))
                 .toList();
 
         return new PageImpl<>(dtoList, cardsPage.getPageable(), cardsPage.getTotalElements());
     }
 
-    private Map<UUID, JsonNode> resolvePublicCardContent(List<UserCardEntity> cards) {
+    private Map<UUID, PublicCardEntity> resolvePublicCards(List<UserCardEntity> cards) {
         List<UUID> publicCardIds = cards.stream()
                 .map(UserCardEntity::getPublicCardId)
                 .filter(Objects::nonNull)
@@ -193,11 +193,12 @@ public class SearchService {
         }
 
         return publicCardRepository.findAllByCardIdIn(publicCardIds).stream()
-                .collect(Collectors.toMap(PublicCardEntity::getCardId, PublicCardEntity::getContent));
+                .collect(Collectors.toMap(PublicCardEntity::getCardId, card -> card));
     }
 
-    private UserCardDTO toUserCardDTO(UserCardEntity card, Map<UUID, JsonNode> publicContentById) {
-        JsonNode effectiveContent = buildEffectiveContent(card, publicContentById);
+    private UserCardDTO toUserCardDTO(UserCardEntity card, Map<UUID, PublicCardEntity> publicCardsById) {
+        JsonNode effectiveContent = buildEffectiveContent(card, publicCardsById);
+        String[] tags = buildEffectiveTags(card, publicCardsById);
 
         return new UserCardDTO(
                 card.getUserCardId(),
@@ -205,18 +206,31 @@ public class SearchService {
                 card.isCustom(),
                 card.isDeleted(),
                 card.getPersonalNote(),
+                tags,
                 effectiveContent
         );
     }
 
-    private JsonNode buildEffectiveContent(UserCardEntity card, Map<UUID, JsonNode> publicContentById) {
+    private JsonNode buildEffectiveContent(UserCardEntity card, Map<UUID, PublicCardEntity> publicCardsById) {
         JsonNode override = card.getContentOverride();
         if (card.getPublicCardId() == null) {
             return override;
         }
 
-        JsonNode base = publicContentById.get(card.getPublicCardId());
+        PublicCardEntity publicCard = publicCardsById.get(card.getPublicCardId());
+        JsonNode base = publicCard == null ? null : publicCard.getContent();
         return mergeJson(base, override);
+    }
+
+    private String[] buildEffectiveTags(UserCardEntity card, Map<UUID, PublicCardEntity> publicCardsById) {
+        if (card.getTags() != null) {
+            return card.getTags();
+        }
+        if (card.getPublicCardId() == null) {
+            return null;
+        }
+        PublicCardEntity publicCard = publicCardsById.get(card.getPublicCardId());
+        return publicCard == null ? null : publicCard.getTags();
     }
 
     private JsonNode mergeJson(JsonNode base, JsonNode override) {

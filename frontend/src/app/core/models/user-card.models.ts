@@ -6,6 +6,7 @@ export interface UserCardDTO {
     isCustom: boolean;
     isDeleted: boolean;
     personalNote?: string | null;
+    tags?: string[] | null;
     effectiveContent: Record<string, CardContentValue>;
 }
 

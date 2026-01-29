@@ -61,6 +61,7 @@ class UserCardRepositoryDataJpaTest extends PostgresIntegrationTest {
                 true,
                 false,
                 "older",
+                null,
                 content,
                 now.minusSeconds(60),
                 null
@@ -74,6 +75,7 @@ class UserCardRepositoryDataJpaTest extends PostgresIntegrationTest {
                 true,
                 false,
                 "newer",
+                null,
                 content,
                 now,
                 null
@@ -87,6 +89,7 @@ class UserCardRepositoryDataJpaTest extends PostgresIntegrationTest {
                 true,
                 true,
                 "deleted",
+                null,
                 content,
                 now.minusSeconds(30),
                 null

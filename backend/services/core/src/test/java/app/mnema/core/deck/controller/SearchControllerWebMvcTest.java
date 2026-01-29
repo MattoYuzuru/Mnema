@@ -102,6 +102,7 @@ class SearchControllerWebMvcTest {
                 true,
                 false,
                 "note",
+                new String[]{"tag1"},
                 content
         );
 

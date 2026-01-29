@@ -499,6 +499,7 @@ public class DeckService {
                     false,
                     null,
                     null,
+                    null,
                     now,
                     null
             );
@@ -670,6 +671,7 @@ public class DeckService {
                     publicCard.getCardId(),
                     false,
                     false,
+                    null,
                     null,
                     null,
                     now,

@@ -11,6 +11,7 @@ public record UserCardDTO(
         boolean isCustom,
         boolean isDeleted,
         String personalNote,
+        String[] tags,
         JsonNode effectiveContent
 ) {
 }

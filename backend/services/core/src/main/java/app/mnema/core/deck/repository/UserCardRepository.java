@@ -38,7 +38,7 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
             or to_tsvector('simple', coalesce(uc.personal_note, ''))
               @@ websearch_to_tsquery('simple', :query)
           )
-          and (:tags is null or pc.tags && string_to_array(:tags, ','))
+          and (:tags is null or coalesce(uc.tags, pc.tags) && string_to_array(:tags, ','))
         order by greatest(
             ts_rank(
                 to_tsvector('simple', coalesce(pc.content::text, '')),
@@ -70,7 +70,7 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
             or to_tsvector('simple', coalesce(uc.personal_note, ''))
               @@ websearch_to_tsquery('simple', :query)
           )
-          and (:tags is null or pc.tags && string_to_array(:tags, ','))
+          and (:tags is null or coalesce(uc.tags, pc.tags) && string_to_array(:tags, ','))
         """, nativeQuery = true)
     Page<UserCardEntity> searchUserCards(
             @Param("userId") UUID userId,
@@ -83,22 +83,22 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
     @Query(value = """
         select uc.*
         from app_core.user_cards uc
-        join app_core.public_cards pc
+        left join app_core.public_cards pc
           on pc.card_id = uc.public_card_id
         where uc.user_id = :userId
           and uc.subscription_id = :userDeckId
           and uc.is_deleted = false
-          and pc.tags && string_to_array(:tags, ',')
+          and coalesce(uc.tags, pc.tags) && string_to_array(:tags, ',')
         order by uc.created_at desc
         """, countQuery = """
         select count(*)
         from app_core.user_cards uc
-        join app_core.public_cards pc
+        left join app_core.public_cards pc
           on pc.card_id = uc.public_card_id
         where uc.user_id = :userId
           and uc.subscription_id = :userDeckId
           and uc.is_deleted = false
-          and pc.tags && string_to_array(:tags, ',')
+          and coalesce(uc.tags, pc.tags) && string_to_array(:tags, ',')
         """, nativeQuery = true)
     Page<UserCardEntity> searchUserCardsByTags(
             @Param("userId") UUID userId,
