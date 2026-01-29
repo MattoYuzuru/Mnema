@@ -1,7 +1,9 @@
 package app.mnema.core.deck.controller;
 
 import app.mnema.core.deck.domain.dto.UserCardDTO;
+import app.mnema.core.deck.domain.dto.MissingFieldSummaryDTO;
 import app.mnema.core.deck.domain.request.CreateCardRequest;
+import app.mnema.core.deck.domain.request.MissingFieldSummaryRequest;
 import app.mnema.core.deck.service.CardService;
 import app.mnema.core.security.CurrentUserProvider;
 import org.springframework.data.domain.Page;
@@ -47,6 +49,17 @@ public class UserCardController {
     ) {
         var userId = currentUserProvider.getUserId(jwt);
         return cardService.getUserCard(userId, userDeckId, cardId);
+    }
+
+    // POST /decks/{userDeckId}/cards/missing-fields
+    @PostMapping("/missing-fields")
+    public MissingFieldSummaryDTO getMissingFields(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID userDeckId,
+            @RequestBody MissingFieldSummaryRequest request
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        return cardService.getMissingFieldSummary(userId, userDeckId, request);
     }
 
     // POST /decks/{userDeckId}/cards

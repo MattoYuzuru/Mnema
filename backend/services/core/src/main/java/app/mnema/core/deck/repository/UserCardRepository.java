@@ -106,4 +106,58 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
             @Param("tags") String tags,
             Pageable pageable
     );
+
+    @Query(value = """
+        select count(*)
+        from app_core.user_cards uc
+        left join app_core.public_cards pc
+          on pc.card_id = uc.public_card_id
+        where uc.user_id = :userId
+          and uc.subscription_id = :userDeckId
+          and uc.is_deleted = false
+          and coalesce(
+                nullif(jsonb_extract_path_text(uc.content_override, :field), ''),
+                nullif(jsonb_extract_path_text(pc.content, :field), '')
+              ) is null
+        """, nativeQuery = true)
+    long countMissingField(
+            @Param("userId") UUID userId,
+            @Param("userDeckId") UUID userDeckId,
+            @Param("field") String field
+    );
+
+    @Query(value = """
+        select uc.user_card_id
+        from app_core.user_cards uc
+        left join app_core.public_cards pc
+          on pc.card_id = uc.public_card_id
+        where uc.user_id = :userId
+          and uc.subscription_id = :userDeckId
+          and uc.is_deleted = false
+          and coalesce(
+                nullif(jsonb_extract_path_text(uc.content_override, :field), ''),
+                nullif(jsonb_extract_path_text(pc.content, :field), '')
+              ) is null
+        order by uc.created_at desc
+        limit :limit
+        """, nativeQuery = true)
+    List<UUID> findMissingFieldCardIds(
+            @Param("userId") UUID userId,
+            @Param("userDeckId") UUID userDeckId,
+            @Param("field") String field,
+            @Param("limit") int limit
+    );
+
+    @Query("""
+        select uc
+        from UserCardEntity uc
+        where uc.userId = :userId
+          and uc.userDeckId = :userDeckId
+          and uc.userCardId in :cardIds
+        """)
+    List<UserCardEntity> findByUserIdAndUserDeckIdAndUserCardIdIn(
+            @Param("userId") UUID userId,
+            @Param("userDeckId") UUID userDeckId,
+            @Param("cardIds") List<UUID> cardIds
+    );
 }

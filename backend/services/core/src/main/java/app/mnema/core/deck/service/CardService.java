@@ -1,10 +1,13 @@
 package app.mnema.core.deck.service;
 
 import app.mnema.core.deck.domain.dto.FieldTemplateDTO;
+import app.mnema.core.deck.domain.dto.MissingFieldSummaryDTO;
+import app.mnema.core.deck.domain.dto.MissingFieldStatDTO;
 import app.mnema.core.deck.domain.dto.PublicCardDTO;
 import app.mnema.core.deck.domain.dto.UserCardDTO;
 import app.mnema.core.deck.domain.entity.*;
 import app.mnema.core.deck.domain.request.CreateCardRequest;
+import app.mnema.core.deck.domain.request.MissingFieldSummaryRequest;
 import app.mnema.core.deck.repository.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -23,6 +26,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -89,6 +93,61 @@ public class CardService {
         }
 
         return toUserCardDTO(card);
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('SCOPE_user.read')")
+    public MissingFieldSummaryDTO getMissingFieldSummary(UUID currentUserId,
+                                                         UUID userDeckId,
+                                                         MissingFieldSummaryRequest request) {
+        UserDeckEntity deck = userDeckRepository.findById(userDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+        if (!deck.getUserId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to deck " + userDeckId);
+        }
+        if (request == null || request.fields() == null || request.fields().isEmpty()) {
+            throw new IllegalArgumentException("fields are required");
+        }
+        int sampleLimit = request.sampleLimit() == null ? 0 : Math.max(0, Math.min(request.sampleLimit(), 20));
+        List<String> fields = request.fields().stream()
+                .filter(name -> name != null && !name.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+        if (fields.isEmpty()) {
+            throw new IllegalArgumentException("fields are required");
+        }
+
+        List<MissingFieldStatDTO> stats = new ArrayList<>();
+        for (String field : fields) {
+            long missingCount = userCardRepository.countMissingField(currentUserId, userDeckId, field);
+            List<UserCardDTO> samples = sampleLimit == 0
+                    ? List.of()
+                    : loadMissingSamples(currentUserId, userDeckId, field, sampleLimit);
+            stats.add(new MissingFieldStatDTO(field, missingCount, samples));
+        }
+        return new MissingFieldSummaryDTO(stats, sampleLimit);
+    }
+
+    private List<UserCardDTO> loadMissingSamples(UUID userId, UUID userDeckId, String field, int limit) {
+        List<UUID> ids = userCardRepository.findMissingFieldCardIds(userId, userDeckId, field, limit);
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        List<UserCardEntity> cards = userCardRepository.findByUserIdAndUserDeckIdAndUserCardIdIn(userId, userDeckId, ids);
+        if (cards.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, UserCardEntity> byId = cards.stream()
+                .collect(java.util.stream.Collectors.toMap(UserCardEntity::getUserCardId, card -> card));
+        List<UserCardDTO> ordered = new ArrayList<>();
+        for (UUID id : ids) {
+            UserCardEntity card = byId.get(id);
+            if (card != null) {
+                ordered.add(toUserCardDTO(card));
+            }
+        }
+        return ordered.isEmpty() ? List.of() : Collections.unmodifiableList(ordered);
     }
 
     // Просмотр публичных карт колоды по deck_id + version (если version null, берём последнюю)
