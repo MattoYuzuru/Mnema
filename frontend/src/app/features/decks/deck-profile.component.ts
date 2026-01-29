@@ -185,7 +185,70 @@ import { I18nService } from '../../core/services/i18n.service';
 
             <div class="ai-job-result">
               <div *ngIf="entry.resultLoading" class="loading-state">{{ 'deckProfile.aiJobsResultLoading' | translate }}</div>
-              <pre *ngIf="!entry.resultLoading && entry.resultSummary" class="ai-job-result-json">{{ formatJson(entry.resultSummary) }}</pre>
+              <ng-container *ngIf="!entry.resultLoading && entry.resultSummary as result">
+                <div *ngIf="isAuditResult(result)" class="ai-audit-report">
+                  <div class="ai-audit-header">
+                    <div>
+                      <div class="ai-audit-title">Audit report</div>
+                      <div class="ai-audit-sub">{{ result.aiSummary?.summary || 'Quality review summary' }}</div>
+                    </div>
+                  </div>
+
+                  <div class="ai-audit-grid">
+                    <div class="ai-audit-card">
+                      <div class="ai-audit-card-title">Key stats</div>
+                      <div class="ai-audit-stats">
+                        <div class="ai-audit-stat">
+                          <span>Total cards</span>
+                          <strong>{{ result.auditStats?.totalCards ?? '—' }}</strong>
+                        </div>
+                        <div class="ai-audit-stat">
+                          <span>Weak cards</span>
+                          <strong>{{ result.auditStats?.weakCards ?? '—' }}</strong>
+                        </div>
+                        <div class="ai-audit-stat">
+                          <span>Identical pairs</span>
+                          <strong>{{ result.auditStats?.identicalPairs ?? '—' }}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="ai-audit-card">
+                      <div class="ai-audit-card-title">Recommendations</div>
+                      <div class="ai-audit-list">
+                        <div *ngFor="let rec of (result.aiSummary?.recommendations || []); let i = index" class="ai-audit-item">
+                          <span class="ai-audit-index">{{ i + 1 }}</span>
+                          <span>{{ rec }}</span>
+                        </div>
+                        <div *ngIf="(result.aiSummary?.recommendations || []).length === 0" class="field-hint">No recommendations provided.</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="ai-audit-card">
+                    <div class="ai-audit-card-title">Issues to review</div>
+                    <div class="ai-audit-issues">
+                      <div *ngFor="let issue of (result.aiSummary?.issues || []); let i = index" class="ai-audit-issue">
+                        <span class="ai-audit-index">{{ i + 1 }}</span>
+                        <span>{{ issue }}</span>
+                      </div>
+                      <div *ngIf="(result.aiSummary?.issues || []).length === 0" class="field-hint">No critical issues detected.</div>
+                    </div>
+                  </div>
+
+                  <div class="ai-audit-card">
+                    <div class="ai-audit-card-title">Next actions</div>
+                    <div class="ai-audit-list">
+                      <div *ngFor="let next of (result.aiSummary?.nextActions || []); let i = index" class="ai-audit-item">
+                        <span class="ai-audit-index">{{ i + 1 }}</span>
+                        <span>{{ next }}</span>
+                      </div>
+                      <div *ngIf="(result.aiSummary?.nextActions || []).length === 0" class="field-hint">No next actions suggested.</div>
+                    </div>
+                  </div>
+                </div>
+                <pre *ngIf="!isAuditResult(result)" class="ai-job-result-json">{{ formatJson(result) }}</pre>
+              </ng-container>
               <div *ngIf="!entry.resultLoading && !entry.resultSummary && entry.job.status !== 'completed'" class="empty-state">
                 {{ 'deckProfile.aiJobsResultPending' | translate }}
               </div>
@@ -757,6 +820,85 @@ import { I18nService } from '../../core/services/i18n.service';
         max-width: 100%;
         white-space: pre-wrap;
         word-break: break-word;
+      }
+
+      .ai-audit-report {
+        display: grid;
+        gap: var(--spacing-md);
+        padding: var(--spacing-md);
+        border-radius: var(--border-radius-md);
+        background: var(--color-card-background);
+        border: 1px solid var(--glass-border);
+      }
+
+      .ai-audit-header {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+      }
+
+      .ai-audit-title {
+        font-weight: 600;
+        font-size: 1rem;
+      }
+
+      .ai-audit-sub {
+        color: var(--color-text-muted);
+        font-size: 0.9rem;
+      }
+
+      .ai-audit-grid {
+        display: grid;
+        gap: var(--spacing-md);
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .ai-audit-card {
+        border: 1px solid var(--glass-border);
+        border-radius: var(--border-radius-md);
+        padding: var(--spacing-sm);
+        background: var(--color-background);
+      }
+
+      .ai-audit-card-title {
+        font-weight: 600;
+        margin-bottom: var(--spacing-sm);
+      }
+
+      .ai-audit-stats {
+        display: grid;
+        gap: var(--spacing-xs);
+      }
+
+      .ai-audit-stat {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.85rem;
+      }
+
+      .ai-audit-list {
+        display: grid;
+        gap: var(--spacing-xs);
+      }
+
+      .ai-audit-item,
+      .ai-audit-issue {
+        display: grid;
+        grid-template-columns: 18px 1fr;
+        gap: var(--spacing-sm);
+        font-size: 0.85rem;
+      }
+
+      .ai-audit-index {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.2);
+        color: var(--color-text-secondary);
+        font-size: 0.7rem;
       }
 
       .choice-card.disabled {
@@ -1372,6 +1514,10 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         } catch {
             return '{}';
         }
+    }
+
+    isAuditResult(result: any): result is { mode: string } {
+        return !!result && typeof result === 'object' && result.mode === 'audit';
     }
 
     private loadAiJobs(): void {
