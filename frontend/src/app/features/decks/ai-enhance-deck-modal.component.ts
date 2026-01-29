@@ -2,7 +2,11 @@ import { Component, EventEmitter, Input, OnInit, Output, computed, signal } from
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AiApiService } from '../../core/services/ai-api.service';
+import { CardApiService } from '../../core/services/card-api.service';
+import { TemplateApiService } from '../../core/services/template-api.service';
 import { AiProviderCredential } from '../../core/models/ai.models';
+import { FieldTemplateDTO } from '../../core/models/template.models';
+import { MissingFieldStat } from '../../core/models/user-card.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 
 type EnhanceOption = { key: string; label: string; description: string; enabled: boolean };
@@ -74,6 +78,36 @@ type EnhanceOption = { key: string; label: string; description: string; enabled:
             </div>
           </div>
 
+          <div *ngIf="hasMissingFields()" class="missing-panel">
+            <label class="grid-label">Fields to fill</label>
+            <div *ngIf="missingLoading()" class="field-hint">Loading missing fields…</div>
+            <div *ngIf="!missingLoading() && missingError()" class="error-state" role="alert">
+              {{ missingError() }}
+            </div>
+            <div *ngIf="!missingLoading() && !missingError()" class="missing-list">
+              <label *ngFor="let stat of missingStats(); trackBy: trackMissingField" class="missing-row">
+                <input
+                  type="checkbox"
+                  [checked]="selectedMissingFields().has(stat.field)"
+                  (change)="toggleMissingField(stat.field)"
+                />
+                <span class="missing-label">{{ stat.field }}</span>
+                <span class="missing-count">{{ stat.missingCount }} missing</span>
+              </label>
+            </div>
+            <div class="form-field missing-limit">
+              <label for="ai-missing-limit">Cards to update</label>
+              <input
+                id="ai-missing-limit"
+                type="number"
+                min="1"
+                max="200"
+                [ngModel]="missingLimit()"
+                (ngModelChange)="onMissingLimitChange($event)"
+              />
+            </div>
+          </div>
+
           <div class="form-field">
             <label for="ai-enhance-notes">Notes (optional)</label>
             <textarea
@@ -128,6 +162,12 @@ type EnhanceOption = { key: string; label: string; description: string; enabled:
       .enhance-title { font-weight: 600; }
       .enhance-desc { font-size: 0.9rem; color: var(--color-text-secondary); }
       .chip { font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 999px; background: var(--color-background); border: 1px solid var(--border-color); color: var(--color-text-secondary); }
+      .missing-panel { margin-bottom: var(--spacing-lg); border: 1px solid var(--glass-border); border-radius: var(--border-radius-lg); padding: var(--spacing-md); background: var(--color-card-background); }
+      .missing-list { display: grid; gap: var(--spacing-sm); margin-top: var(--spacing-sm); }
+      .missing-row { display: grid; grid-template-columns: auto 1fr auto; gap: var(--spacing-sm); align-items: center; }
+      .missing-label { font-weight: 500; }
+      .missing-count { font-size: 0.85rem; color: var(--color-text-secondary); }
+      .missing-limit { margin-top: var(--spacing-md); max-width: 240px; }
       .error-state { margin-top: var(--spacing-md); color: var(--color-error); }
       .success-state { margin-top: var(--spacing-md); color: var(--color-success); }
       .modal-footer { display: flex; justify-content: flex-end; gap: var(--spacing-md); padding: var(--spacing-lg); border-top: 1px solid var(--glass-border); }
@@ -136,9 +176,12 @@ type EnhanceOption = { key: string; label: string; description: string; enabled:
 export class AiEnhanceDeckModalComponent implements OnInit {
     @Input() userDeckId = '';
     @Input() deckName = '';
+    @Input() templateId = '';
+    @Input() templateVersion: number | null = null;
     @Output() closed = new EventEmitter<void>();
 
     private storageKey = '';
+    private draftLoaded = false;
     providerKeys = signal<AiProviderCredential[]>([]);
     loadingProviders = signal(false);
     selectedCredentialId = signal('');
@@ -147,6 +190,13 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     creating = signal(false);
     createError = signal('');
     createSuccess = signal('');
+    loadingTemplate = signal(false);
+    templateFields = signal<FieldTemplateDTO[]>([]);
+    missingStats = signal<MissingFieldStat[]>([]);
+    missingLoading = signal(false);
+    missingError = signal('');
+    selectedMissingFields = signal<Set<string>>(new Set());
+    missingLimit = signal(50);
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
         if (!selectedId) return '';
@@ -162,13 +212,67 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         { key: 'tts', label: 'Generate missing audio', description: 'Create pronunciation for empty audio fields.', enabled: false }
     ]);
     selectedOptions = signal<Set<string>>(new Set(['audit']));
+    readonly hasMissingFields = computed(() => this.selectedOptions().has('missing_fields'));
+    readonly textFields = computed(() =>
+        this.templateFields().filter(field => this.isTextField(field.fieldType))
+    );
 
-    constructor(private aiApi: AiApiService) {}
+    constructor(
+        private aiApi: AiApiService,
+        private cardApi: CardApiService,
+        private templateApi: TemplateApiService
+    ) {}
 
     ngOnInit(): void {
         this.storageKey = `mnema_ai_enhance:${this.userDeckId || 'default'}`;
         this.restoreDraft();
         this.loadProviders();
+        this.loadTemplateFields();
+    }
+
+    loadTemplateFields(): void {
+        if (!this.templateId) {
+            return;
+        }
+        this.loadingTemplate.set(true);
+        this.templateApi.getTemplate(this.templateId, this.templateVersion).subscribe({
+            next: template => {
+                const fields = template.fields || [];
+                this.templateFields.set(fields);
+                this.loadingTemplate.set(false);
+                this.refreshMissingFields();
+            },
+            error: () => {
+                this.loadingTemplate.set(false);
+            }
+        });
+    }
+
+    refreshMissingFields(): void {
+        const fields = this.textFields().map(field => field.name);
+        if (!fields.length) {
+            return;
+        }
+        this.missingLoading.set(true);
+        this.missingError.set('');
+        this.cardApi.getMissingFieldSummary(this.userDeckId, fields, 3).subscribe({
+            next: summary => {
+                this.missingStats.set(summary.fields || []);
+                if (!this.draftLoaded) {
+                    const initial = new Set(
+                        (summary.fields || [])
+                            .filter(stat => stat.missingCount > 0)
+                            .map(stat => stat.field)
+                    );
+                    this.selectedMissingFields.set(initial);
+                }
+                this.missingLoading.set(false);
+            },
+            error: () => {
+                this.missingLoading.set(false);
+                this.missingError.set('Failed to load missing fields.');
+            }
+        });
     }
 
     loadProviders(): void {
@@ -197,13 +301,17 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             next.add(option.key);
         }
         this.selectedOptions.set(next);
+        if (next.has('missing_fields')) {
+            this.refreshMissingFields();
+        }
         this.persistDraft();
     }
 
     canSubmit(): boolean {
         return !this.creating()
             && !!this.selectedCredentialId()
-            && this.selectedOptions().size > 0;
+            && this.selectedOptions().size > 0
+            && (!this.selectedOptions().has('missing_fields') || this.selectedMissingFields().size > 0);
     }
 
     submit(): void {
@@ -214,6 +322,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
         const actions = Array.from(this.selectedOptions());
         const input = this.buildPrompt(actions);
+        const missingSelected = this.selectedOptions().has('missing_fields');
 
         this.aiApi.createJob({
             requestId: this.generateRequestId(),
@@ -224,7 +333,11 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                 model: this.modelName().trim() || undefined,
                 input,
                 actions,
-                mode: 'enhance_deck'
+                mode: missingSelected ? 'missing_fields' : 'enhance_deck',
+                ...(missingSelected ? {
+                    fields: Array.from(this.selectedMissingFields()),
+                    limit: this.missingLimit()
+                } : {})
             }
         }).subscribe({
             next: () => {
@@ -249,6 +362,30 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
     trackOption(_: number, option: EnhanceOption): string {
         return option.key;
+    }
+
+    trackMissingField(_: number, stat: MissingFieldStat): string {
+        return stat.field;
+    }
+
+    toggleMissingField(field: string): void {
+        const next = new Set(this.selectedMissingFields());
+        if (next.has(field)) {
+            next.delete(field);
+        } else {
+            next.add(field);
+        }
+        this.selectedMissingFields.set(next);
+        this.persistDraft();
+    }
+
+    onMissingLimitChange(value: number): void {
+        this.missingLimit.set(value);
+        this.persistDraft();
+    }
+
+    private isTextField(fieldType: string): boolean {
+        return ['text', 'rich_text', 'markdown', 'cloze'].includes(fieldType);
     }
 
     private normalizeProvider(provider?: string | null): string {
@@ -297,7 +434,9 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             providerCredentialId: this.selectedCredentialId(),
             modelName: this.modelName(),
             notes: this.notes(),
-            selectedOptions: Array.from(this.selectedOptions())
+            selectedOptions: Array.from(this.selectedOptions()),
+            missingFields: Array.from(this.selectedMissingFields()),
+            missingLimit: this.missingLimit()
         };
         try {
             localStorage.setItem(this.storageKey, JSON.stringify(payload));
@@ -311,11 +450,18 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             const raw = localStorage.getItem(this.storageKey);
             if (!raw) return;
             const payload = JSON.parse(raw);
+            this.draftLoaded = true;
             if (payload.providerCredentialId) this.selectedCredentialId.set(payload.providerCredentialId);
             if (payload.modelName) this.modelName.set(payload.modelName);
             if (payload.notes) this.notes.set(payload.notes);
             if (Array.isArray(payload.selectedOptions)) {
                 this.selectedOptions.set(new Set(payload.selectedOptions));
+            }
+            if (Array.isArray(payload.missingFields)) {
+                this.selectedMissingFields.set(new Set(payload.missingFields));
+            }
+            if (typeof payload.missingLimit === 'number') {
+                this.missingLimit.set(payload.missingLimit);
             }
         } catch {
         }

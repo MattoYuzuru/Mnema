@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Page } from '../models/page.models';
-import { UserCardDTO, CreateCardRequest } from '../models/user-card.models';
+import { UserCardDTO, CreateCardRequest, MissingFieldSummary } from '../models/user-card.models';
 import { appConfig } from '../../app.config';
 
 @Injectable({ providedIn: 'root' })
@@ -44,5 +44,12 @@ export class CardApiService {
             params = params.set('scope', scope);
         }
         return this.http.delete<void>(`${this.baseUrl}/${userDeckId}/cards/${cardId}`, { params });
+    }
+
+    getMissingFieldSummary(userDeckId: string, fields: string[], sampleLimit: number): Observable<MissingFieldSummary> {
+        return this.http.post<MissingFieldSummary>(`${this.baseUrl}/${userDeckId}/cards/missing-fields`, {
+            fields,
+            sampleLimit
+        });
     }
 }

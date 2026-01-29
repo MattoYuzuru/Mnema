@@ -257,6 +257,8 @@ import { I18nService } from '../../core/services/i18n.service';
       *ngIf="showAiEnhanceModal && deck"
       [userDeckId]="deck.userDeckId"
       [deckName]="deck.displayName"
+      [templateId]="publicDeck?.templateId || ''"
+      [templateVersion]="deck.templateVersion || null"
       (closed)="closeAiEnhanceModal()"
     ></app-ai-enhance-deck-modal>
 

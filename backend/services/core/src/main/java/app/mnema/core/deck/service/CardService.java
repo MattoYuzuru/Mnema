@@ -7,6 +7,7 @@ import app.mnema.core.deck.domain.dto.PublicCardDTO;
 import app.mnema.core.deck.domain.dto.UserCardDTO;
 import app.mnema.core.deck.domain.entity.*;
 import app.mnema.core.deck.domain.request.CreateCardRequest;
+import app.mnema.core.deck.domain.request.MissingFieldCardsRequest;
 import app.mnema.core.deck.domain.request.MissingFieldSummaryRequest;
 import app.mnema.core.deck.repository.*;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -142,6 +143,58 @@ public class CardService {
                 .collect(java.util.stream.Collectors.toMap(UserCardEntity::getUserCardId, card -> card));
         List<UserCardDTO> ordered = new ArrayList<>();
         for (UUID id : ids) {
+            UserCardEntity card = byId.get(id);
+            if (card != null) {
+                ordered.add(toUserCardDTO(card));
+            }
+        }
+        return ordered.isEmpty() ? List.of() : Collections.unmodifiableList(ordered);
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('SCOPE_user.read')")
+    public List<UserCardDTO> getMissingFieldCards(UUID currentUserId,
+                                                  UUID userDeckId,
+                                                  MissingFieldCardsRequest request) {
+        UserDeckEntity deck = userDeckRepository.findById(userDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+        if (!deck.getUserId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to deck " + userDeckId);
+        }
+        if (request == null || request.fields() == null || request.fields().isEmpty()) {
+            throw new IllegalArgumentException("fields are required");
+        }
+        int limit = request.limit() == null ? 50 : Math.max(1, Math.min(request.limit(), 200));
+        List<String> fields = request.fields().stream()
+                .filter(name -> name != null && !name.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+        if (fields.isEmpty()) {
+            throw new IllegalArgumentException("fields are required");
+        }
+
+        java.util.LinkedHashSet<UUID> merged = new java.util.LinkedHashSet<>();
+        for (String field : fields) {
+            if (merged.size() >= limit) {
+                break;
+            }
+            int remaining = limit - merged.size();
+            List<UUID> ids = userCardRepository.findMissingFieldCardIds(currentUserId, userDeckId, field, remaining);
+            merged.addAll(ids);
+        }
+        if (merged.isEmpty()) {
+            return List.of();
+        }
+        List<UserCardEntity> cards = userCardRepository.findByUserIdAndUserDeckIdAndUserCardIdIn(
+                currentUserId, userDeckId, new ArrayList<>(merged));
+        if (cards.isEmpty()) {
+            return List.of();
+        }
+        Map<UUID, UserCardEntity> byId = cards.stream()
+                .collect(java.util.stream.Collectors.toMap(UserCardEntity::getUserCardId, card -> card));
+        List<UserCardDTO> ordered = new ArrayList<>();
+        for (UUID id : merged) {
             UserCardEntity card = byId.get(id);
             if (card != null) {
                 ordered.add(toUserCardDTO(card));

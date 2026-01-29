@@ -15,3 +15,14 @@ export interface CreateCardRequest {
     orderIndex?: number;
     tags?: string[];
 }
+
+export interface MissingFieldStat {
+    field: string;
+    missingCount: number;
+    sampleCards: UserCardDTO[];
+}
+
+export interface MissingFieldSummary {
+    fields: MissingFieldStat[];
+    sampleLimit: number;
+}

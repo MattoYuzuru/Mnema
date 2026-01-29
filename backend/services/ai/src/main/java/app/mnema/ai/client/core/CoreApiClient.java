@@ -115,6 +115,21 @@ public class CoreApiClient {
         return response;
     }
 
+    public List<CoreUserCardResponse> getMissingFieldCards(UUID userDeckId,
+                                                           MissingFieldCardsRequest request,
+                                                           String accessToken) {
+        if (request == null || request.fields() == null || request.fields().isEmpty()) {
+            return List.of();
+        }
+        List<CoreUserCardResponse> response = restClient.post()
+                .uri("/decks/{userDeckId}/cards/missing-fields/cards", userDeckId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .body(request)
+                .retrieve()
+                .body(CARD_LIST_TYPE);
+        return response == null ? List.of() : response;
+    }
+
     private String bearer(String token) {
         if (token == null || token.isBlank()) {
             throw new IllegalStateException("Missing access token for core API");
@@ -182,6 +197,12 @@ public class CoreApiClient {
 
     public record CoreUserCardPage(
             List<CoreUserCardResponse> content
+    ) {
+    }
+
+    public record MissingFieldCardsRequest(
+            List<String> fields,
+            Integer limit
     ) {
     }
 
