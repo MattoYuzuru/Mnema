@@ -190,7 +190,7 @@ import { I18nService } from '../../core/services/i18n.service';
                   <div class="ai-audit-header">
                     <div>
                       <div class="ai-audit-title">Audit report</div>
-                      <div class="ai-audit-sub">{{ result.aiSummary?.summary || 'Quality review summary' }}</div>
+                      <div class="ai-audit-sub">{{ $any(result).aiSummary?.summary || 'Quality review summary' }}</div>
                     </div>
                   </div>
 
@@ -200,15 +200,15 @@ import { I18nService } from '../../core/services/i18n.service';
                       <div class="ai-audit-stats">
                         <div class="ai-audit-stat">
                           <span>Total cards</span>
-                          <strong>{{ result.auditStats?.totalCards ?? '—' }}</strong>
+                          <strong>{{ $any(result).auditStats?.totalCards ?? '—' }}</strong>
                         </div>
                         <div class="ai-audit-stat">
                           <span>Weak cards</span>
-                          <strong>{{ result.auditStats?.weakCards ?? '—' }}</strong>
+                          <strong>{{ $any(result).auditStats?.weakCards ?? '—' }}</strong>
                         </div>
                         <div class="ai-audit-stat">
                           <span>Identical pairs</span>
-                          <strong>{{ result.auditStats?.identicalPairs ?? '—' }}</strong>
+                          <strong>{{ $any(result).auditStats?.identicalPairs ?? '—' }}</strong>
                         </div>
                       </div>
                     </div>
@@ -216,11 +216,11 @@ import { I18nService } from '../../core/services/i18n.service';
                     <div class="ai-audit-card">
                       <div class="ai-audit-card-title">Recommendations</div>
                       <div class="ai-audit-list">
-                        <div *ngFor="let rec of (result.aiSummary?.recommendations || []); let i = index" class="ai-audit-item">
+                        <div *ngFor="let rec of ($any(result).aiSummary?.recommendations || []); let i = index" class="ai-audit-item">
                           <span class="ai-audit-index">{{ i + 1 }}</span>
                           <span>{{ rec }}</span>
                         </div>
-                        <div *ngIf="(result.aiSummary?.recommendations || []).length === 0" class="field-hint">No recommendations provided.</div>
+                        <div *ngIf="($any(result).aiSummary?.recommendations || []).length === 0" class="field-hint">No recommendations provided.</div>
                       </div>
                     </div>
                   </div>
@@ -228,22 +228,22 @@ import { I18nService } from '../../core/services/i18n.service';
                   <div class="ai-audit-card">
                     <div class="ai-audit-card-title">Issues to review</div>
                     <div class="ai-audit-issues">
-                      <div *ngFor="let issue of (result.aiSummary?.issues || []); let i = index" class="ai-audit-issue">
+                      <div *ngFor="let issue of ($any(result).aiSummary?.issues || []); let i = index" class="ai-audit-issue">
                         <span class="ai-audit-index">{{ i + 1 }}</span>
                         <span>{{ issue }}</span>
                       </div>
-                      <div *ngIf="(result.aiSummary?.issues || []).length === 0" class="field-hint">No critical issues detected.</div>
+                      <div *ngIf="($any(result).aiSummary?.issues || []).length === 0" class="field-hint">No critical issues detected.</div>
                     </div>
                   </div>
 
                   <div class="ai-audit-card">
                     <div class="ai-audit-card-title">Next actions</div>
                     <div class="ai-audit-list">
-                      <div *ngFor="let next of (result.aiSummary?.nextActions || []); let i = index" class="ai-audit-item">
+                      <div *ngFor="let next of ($any(result).aiSummary?.nextActions || []); let i = index" class="ai-audit-item">
                         <span class="ai-audit-index">{{ i + 1 }}</span>
                         <span>{{ next }}</span>
                       </div>
-                      <div *ngIf="(result.aiSummary?.nextActions || []).length === 0" class="field-hint">No next actions suggested.</div>
+                      <div *ngIf="($any(result).aiSummary?.nextActions || []).length === 0" class="field-hint">No next actions suggested.</div>
                     </div>
                   </div>
                 </div>
@@ -1516,8 +1516,8 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         }
     }
 
-    isAuditResult(result: any): result is { mode: string } {
-        return !!result && typeof result === 'object' && result.mode === 'audit';
+    isAuditResult(result: unknown): boolean {
+        return !!result && typeof result === 'object' && (result as any).mode === 'audit';
     }
 
     private loadAiJobs(): void {

@@ -8,6 +8,7 @@ import app.mnema.ai.client.core.CoreApiClient.CoreUserCardPage;
 import app.mnema.ai.client.core.CoreApiClient.CoreUserCardResponse;
 import app.mnema.ai.client.core.CoreApiClient.CoreUserDeckResponse;
 import app.mnema.ai.client.core.CoreApiClient.CreateCardRequestPayload;
+import app.mnema.ai.client.core.CoreApiClient.UpdateUserCardRequest;
 import app.mnema.ai.domain.entity.AiJobEntity;
 import app.mnema.ai.domain.entity.AiProviderCredentialEntity;
 import app.mnema.ai.domain.type.AiJobType;

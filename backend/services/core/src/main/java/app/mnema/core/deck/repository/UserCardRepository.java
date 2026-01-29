@@ -163,7 +163,8 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
 
     @Query(value = """
         with input_fields as (
-            select unnest(cast(:fields as text[])) with ordinality as field, ord
+            select f.field_name, f.ord
+            from unnest(cast(:fields as text[])) with ordinality as f(field_name, ord)
         ),
         cards as (
             select
@@ -172,8 +173,8 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
                     regexp_replace(
                         lower(
                             coalesce(
-                                nullif(jsonb_extract_path_text(uc.content_override, f.field), ''),
-                                nullif(jsonb_extract_path_text(pc.content, f.field), ''),
+                                nullif(jsonb_extract_path_text(uc.content_override, f.field_name), ''),
+                                nullif(jsonb_extract_path_text(pc.content, f.field_name), ''),
                                 ''
                             )
                         ),

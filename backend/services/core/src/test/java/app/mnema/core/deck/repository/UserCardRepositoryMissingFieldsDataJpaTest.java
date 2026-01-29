@@ -1,5 +1,7 @@
 package app.mnema.core.deck.repository;
 
+import app.mnema.core.deck.domain.entity.CardTemplateEntity;
+import app.mnema.core.deck.domain.entity.CardTemplateVersionEntity;
 import app.mnema.core.deck.domain.entity.PublicCardEntity;
 import app.mnema.core.deck.domain.entity.PublicDeckEntity;
 import app.mnema.core.deck.domain.entity.UserCardEntity;
@@ -37,6 +39,12 @@ class UserCardRepositoryMissingFieldsDataJpaTest extends PostgresIntegrationTest
     @Autowired
     private PublicCardRepository publicCardRepository;
 
+    @Autowired
+    private CardTemplateRepository cardTemplateRepository;
+
+    @Autowired
+    private CardTemplateVersionRepository cardTemplateVersionRepository;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
@@ -55,7 +63,33 @@ class UserCardRepositoryMissingFieldsDataJpaTest extends PostgresIntegrationTest
         deck = userDeckRepository.save(deck);
         UUID userDeckId = deck.getUserDeckId();
 
-        UUID templateId = UUID.randomUUID();
+        CardTemplateEntity template = new CardTemplateEntity(
+                null,
+                userId,
+                "Template",
+                null,
+                false,
+                now,
+                null,
+                objectMapper.createObjectNode(),
+                null,
+                null,
+                1
+        );
+        template = cardTemplateRepository.save(template);
+
+        CardTemplateVersionEntity version = new CardTemplateVersionEntity(
+                template.getTemplateId(),
+                1,
+                objectMapper.createObjectNode(),
+                null,
+                null,
+                now,
+                userId
+        );
+        cardTemplateVersionRepository.save(version);
+
+        UUID templateId = template.getTemplateId();
         PublicDeckEntity publicDeck = new PublicDeckEntity(
                 UUID.randomUUID(),
                 1,
