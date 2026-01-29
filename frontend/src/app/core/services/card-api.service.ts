@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Page } from '../models/page.models';
-import { UserCardDTO, CreateCardRequest, MissingFieldSummary } from '../models/user-card.models';
+import { UserCardDTO, CreateCardRequest, MissingFieldSummary, DuplicateGroup } from '../models/user-card.models';
 import { appConfig } from '../../app.config';
 
 @Injectable({ providedIn: 'root' })
@@ -50,6 +50,19 @@ export class CardApiService {
         return this.http.post<MissingFieldSummary>(`${this.baseUrl}/${userDeckId}/cards/missing-fields`, {
             fields,
             sampleLimit
+        });
+    }
+
+    getDuplicateGroups(
+        userDeckId: string,
+        fields: string[],
+        limitGroups = 10,
+        perGroupLimit = 5
+    ): Observable<DuplicateGroup[]> {
+        return this.http.post<DuplicateGroup[]>(`${this.baseUrl}/${userDeckId}/cards/duplicates`, {
+            fields,
+            limitGroups,
+            perGroupLimit
         });
     }
 }

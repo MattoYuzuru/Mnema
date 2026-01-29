@@ -160,4 +160,62 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
             @Param("userDeckId") UUID userDeckId,
             @Param("cardIds") List<UUID> cardIds
     );
+
+    @Query(value = """
+        with input_fields as (
+            select unnest(cast(:fields as text[])) with ordinality as field, ord
+        ),
+        cards as (
+            select
+                uc.user_card_id,
+                array_agg(
+                    regexp_replace(
+                        lower(
+                            coalesce(
+                                nullif(jsonb_extract_path_text(uc.content_override, f.field), ''),
+                                nullif(jsonb_extract_path_text(pc.content, f.field), ''),
+                                ''
+                            )
+                        ),
+                        '[^a-z0-9]+',
+                        '',
+                        'g'
+                    )
+                    order by f.ord
+                ) as norm_values
+            from app_core.user_cards uc
+            left join app_core.public_cards pc
+              on pc.card_id = uc.public_card_id
+            join input_fields f on true
+            where uc.user_id = :userId
+              and uc.subscription_id = :userDeckId
+              and uc.is_deleted = false
+            group by uc.user_card_id
+        ),
+        dup_groups as (
+            select
+                norm_values,
+                array_agg(user_card_id order by user_card_id) as card_ids,
+                count(*) as cnt
+            from cards
+            where array_to_string(norm_values, '') <> ''
+            group by norm_values
+            having count(*) > 1
+            order by cnt desc
+            limit :limitGroups
+        )
+        select card_ids, cnt
+        from dup_groups
+        """, nativeQuery = true)
+    List<DuplicateGroupProjection> findDuplicateGroups(
+            @Param("userId") UUID userId,
+            @Param("userDeckId") UUID userDeckId,
+            @Param("fields") String[] fields,
+            @Param("limitGroups") int limitGroups
+    );
+
+    interface DuplicateGroupProjection {
+        UUID[] getCardIds();
+        int getCnt();
+    }
 }

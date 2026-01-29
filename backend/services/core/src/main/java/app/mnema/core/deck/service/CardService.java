@@ -5,8 +5,10 @@ import app.mnema.core.deck.domain.dto.MissingFieldSummaryDTO;
 import app.mnema.core.deck.domain.dto.MissingFieldStatDTO;
 import app.mnema.core.deck.domain.dto.PublicCardDTO;
 import app.mnema.core.deck.domain.dto.UserCardDTO;
+import app.mnema.core.deck.domain.dto.DuplicateGroupDTO;
 import app.mnema.core.deck.domain.entity.*;
 import app.mnema.core.deck.domain.request.CreateCardRequest;
+import app.mnema.core.deck.domain.request.DuplicateSearchRequest;
 import app.mnema.core.deck.domain.request.MissingFieldCardsRequest;
 import app.mnema.core.deck.domain.request.MissingFieldSummaryRequest;
 import app.mnema.core.deck.repository.*;
@@ -29,6 +31,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -201,6 +204,74 @@ public class CardService {
             }
         }
         return ordered.isEmpty() ? List.of() : Collections.unmodifiableList(ordered);
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('SCOPE_user.read')")
+    public List<DuplicateGroupDTO> getDuplicateGroups(UUID currentUserId,
+                                                      UUID userDeckId,
+                                                      DuplicateSearchRequest request) {
+        UserDeckEntity deck = userDeckRepository.findById(userDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+        if (!deck.getUserId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to deck " + userDeckId);
+        }
+        if (request == null || request.fields() == null || request.fields().isEmpty()) {
+            throw new IllegalArgumentException("fields are required");
+        }
+        int limitGroups = request.limitGroups() == null ? 10 : Math.max(1, Math.min(request.limitGroups(), 50));
+        int perGroupLimit = request.perGroupLimit() == null ? 5 : Math.max(2, Math.min(request.perGroupLimit(), 20));
+        List<String> fields = request.fields().stream()
+                .filter(name -> name != null && !name.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+        if (fields.isEmpty()) {
+            throw new IllegalArgumentException("fields are required");
+        }
+
+        List<UserCardRepository.DuplicateGroupProjection> groups = userCardRepository.findDuplicateGroups(
+                currentUserId,
+                userDeckId,
+                fields.toArray(String[]::new),
+                limitGroups
+        );
+        if (groups.isEmpty()) {
+            return List.of();
+        }
+
+        List<DuplicateGroupDTO> result = new ArrayList<>();
+        for (UserCardRepository.DuplicateGroupProjection group : groups) {
+            UUID[] ids = group.getCardIds();
+            if (ids == null || ids.length == 0) {
+                continue;
+            }
+            List<UUID> limitedIds = new ArrayList<>();
+            for (int i = 0; i < ids.length && limitedIds.size() < perGroupLimit; i++) {
+                limitedIds.add(ids[i]);
+            }
+            List<UserCardEntity> cards = userCardRepository.findByUserIdAndUserDeckIdAndUserCardIdIn(
+                    currentUserId,
+                    userDeckId,
+                    limitedIds
+            );
+            if (cards.isEmpty()) {
+                continue;
+            }
+            Map<UUID, UserCardEntity> byId = cards.stream()
+                    .collect(Collectors.toMap(UserCardEntity::getUserCardId, card -> card));
+            List<UserCardDTO> ordered = new ArrayList<>();
+            for (UUID id : limitedIds) {
+                UserCardEntity card = byId.get(id);
+                if (card != null) {
+                    ordered.add(toUserCardDTO(card));
+                }
+            }
+            if (!ordered.isEmpty()) {
+                result.add(new DuplicateGroupDTO(group.getCnt(), Collections.unmodifiableList(ordered)));
+            }
+        }
+        return result.isEmpty() ? List.of() : Collections.unmodifiableList(result);
     }
 
     // Просмотр публичных карт колоды по deck_id + version (если version null, берём последнюю)

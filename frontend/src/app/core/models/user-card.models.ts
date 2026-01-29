@@ -26,3 +26,8 @@ export interface MissingFieldSummary {
     fields: MissingFieldStat[];
     sampleLimit: number;
 }
+
+export interface DuplicateGroup {
+    size: number;
+    cards: UserCardDTO[];
+}

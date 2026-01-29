@@ -6,7 +6,7 @@ import { CardApiService } from '../../core/services/card-api.service';
 import { TemplateApiService } from '../../core/services/template-api.service';
 import { AiProviderCredential } from '../../core/models/ai.models';
 import { FieldTemplateDTO } from '../../core/models/template.models';
-import { MissingFieldStat } from '../../core/models/user-card.models';
+import { MissingFieldStat, DuplicateGroup } from '../../core/models/user-card.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 
 type EnhanceOption = { key: string; label: string; description: string; enabled: boolean };
@@ -108,6 +108,63 @@ type EnhanceOption = { key: string; label: string; description: string; enabled:
             </div>
           </div>
 
+          <div *ngIf="hasDedup()" class="missing-panel">
+            <label class="grid-label">Duplicate detection fields</label>
+            <div *ngIf="dupesLoading()" class="field-hint">Loading duplicates…</div>
+            <div *ngIf="!dupesLoading() && dupesError()" class="error-state" role="alert">
+              {{ dupesError() }}
+            </div>
+            <div *ngIf="!dupesLoading() && !dupesError()" class="missing-list">
+              <label *ngFor="let field of textFields(); trackBy: trackField" class="missing-row">
+                <input
+                  type="checkbox"
+                  [checked]="selectedDedupFields().has(field.name)"
+                  (change)="toggleDedupField(field.name)"
+                />
+                <span class="missing-label">{{ field.label || field.name }}</span>
+              </label>
+              <div *ngIf="duplicateGroups().length === 0" class="field-hint">No obvious duplicates found.</div>
+            </div>
+            <div class="form-grid">
+              <div class="form-field">
+                <label for="ai-dedup-groups">Groups to show</label>
+                <input
+                  id="ai-dedup-groups"
+                  type="number"
+                  min="1"
+                  max="50"
+                  [ngModel]="dedupLimitGroups()"
+                  (ngModelChange)="onDedupLimitChange($event)"
+                />
+              </div>
+              <div class="form-field">
+                <label for="ai-dedup-per-group">Cards per group</label>
+                <input
+                  id="ai-dedup-per-group"
+                  type="number"
+                  min="2"
+                  max="20"
+                  [ngModel]="dedupPerGroup()"
+                  (ngModelChange)="onDedupPerGroupChange($event)"
+                />
+              </div>
+            </div>
+            <div *ngIf="duplicateGroups().length > 0" class="dup-results">
+              <div class="grid-label">Top duplicate groups</div>
+              <div class="dup-group" *ngFor="let group of duplicateGroups(); let i = index">
+                <div class="dup-title">Group {{ i + 1 }} · {{ group.size }} cards</div>
+                <div class="dup-cards">
+                  <div class="dup-card" *ngFor="let card of group.cards">
+                    <div class="dup-card-field" *ngFor="let field of selectedDedupFields()">
+                      <span class="dup-label">{{ field }}</span>
+                      <span class="dup-value">{{ (card.effectiveContent || {})[field] || '—' }}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="form-field">
             <label for="ai-enhance-notes">Notes (optional)</label>
             <textarea
@@ -168,6 +225,14 @@ type EnhanceOption = { key: string; label: string; description: string; enabled:
       .missing-label { font-weight: 500; }
       .missing-count { font-size: 0.85rem; color: var(--color-text-secondary); }
       .missing-limit { margin-top: var(--spacing-md); max-width: 240px; }
+      .dup-results { margin-top: var(--spacing-md); display: grid; gap: var(--spacing-md); }
+      .dup-group { border: 1px solid var(--glass-border); border-radius: var(--border-radius-md); padding: var(--spacing-sm); background: var(--color-background); }
+      .dup-title { font-weight: 600; margin-bottom: var(--spacing-sm); }
+      .dup-cards { display: grid; gap: var(--spacing-sm); }
+      .dup-card { border: 1px dashed var(--border-color); border-radius: var(--border-radius-md); padding: var(--spacing-sm); }
+      .dup-card-field { display: grid; grid-template-columns: 120px 1fr; gap: var(--spacing-sm); }
+      .dup-label { font-size: 0.8rem; color: var(--color-text-secondary); }
+      .dup-value { font-size: 0.9rem; color: var(--color-text-primary); word-break: break-word; }
       .error-state { margin-top: var(--spacing-md); color: var(--color-error); }
       .success-state { margin-top: var(--spacing-md); color: var(--color-success); }
       .modal-footer { display: flex; justify-content: flex-end; gap: var(--spacing-md); padding: var(--spacing-lg); border-top: 1px solid var(--glass-border); }
@@ -197,6 +262,12 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     missingError = signal('');
     selectedMissingFields = signal<Set<string>>(new Set());
     missingLimit = signal(50);
+    dupesLoading = signal(false);
+    dupesError = signal('');
+    duplicateGroups = signal<DuplicateGroup[]>([]);
+    selectedDedupFields = signal<Set<string>>(new Set());
+    dedupLimitGroups = signal(10);
+    dedupPerGroup = signal(5);
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
         if (!selectedId) return '';
@@ -208,11 +279,16 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     options = signal<EnhanceOption[]>([
         { key: 'audit', label: 'Deck audit', description: 'Find inconsistencies and weak cards.', enabled: true },
         { key: 'missing_fields', label: 'Fill missing fields', description: 'Suggest missing translations/examples.', enabled: true },
-        { key: 'dedup', label: 'Find duplicates', description: 'Detect near-duplicate cards.', enabled: false },
+        { key: 'dedup', label: 'Find duplicates', description: 'Detect near-duplicate cards.', enabled: true },
         { key: 'tts', label: 'Generate missing audio', description: 'Create pronunciation for empty audio fields.', enabled: false }
     ]);
     selectedOptions = signal<Set<string>>(new Set(['audit']));
     readonly hasMissingFields = computed(() => this.selectedOptions().has('missing_fields'));
+    readonly hasDedup = computed(() => this.selectedOptions().has('dedup'));
+    readonly hasAiActions = computed(() => {
+        const options = this.selectedOptions();
+        return options.has('missing_fields') || options.has('audit');
+    });
     readonly textFields = computed(() =>
         this.templateFields().filter(field => this.isTextField(field.fieldType))
     );
@@ -241,6 +317,9 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                 this.templateFields.set(fields);
                 this.loadingTemplate.set(false);
                 this.refreshMissingFields();
+                if (this.selectedOptions().has('dedup')) {
+                    this.refreshDuplicates();
+                }
             },
             error: () => {
                 this.loadingTemplate.set(false);
@@ -304,6 +383,9 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (next.has('missing_fields')) {
             this.refreshMissingFields();
         }
+        if (next.has('dedup')) {
+            this.refreshDuplicates();
+        }
         this.persistDraft();
     }
 
@@ -311,7 +393,9 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         return !this.creating()
             && !!this.selectedCredentialId()
             && this.selectedOptions().size > 0
-            && (!this.selectedOptions().has('missing_fields') || this.selectedMissingFields().size > 0);
+            && (!this.selectedOptions().has('missing_fields') || this.selectedMissingFields().size > 0)
+            && (!this.selectedOptions().has('dedup') || this.selectedDedupFields().size > 0)
+            && this.hasAiActions();
     }
 
     submit(): void {
@@ -323,6 +407,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         const actions = Array.from(this.selectedOptions());
         const input = this.buildPrompt(actions);
         const missingSelected = this.selectedOptions().has('missing_fields');
+        const dedupSelected = this.selectedOptions().has('dedup');
 
         this.aiApi.createJob({
             requestId: this.generateRequestId(),
@@ -364,6 +449,10 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         return option.key;
     }
 
+    trackField(_: number, field: FieldTemplateDTO): string {
+        return field.fieldId;
+    }
+
     trackMissingField(_: number, stat: MissingFieldStat): string {
         return stat.field;
     }
@@ -381,6 +470,52 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
     onMissingLimitChange(value: number): void {
         this.missingLimit.set(value);
+        this.persistDraft();
+    }
+
+    refreshDuplicates(): void {
+        const selected = this.selectedDedupFields();
+        const fields = selected.size > 0
+            ? Array.from(selected)
+            : this.textFields().map(field => field.name);
+        if (!fields.length) {
+            return;
+        }
+        this.dupesLoading.set(true);
+        this.dupesError.set('');
+        this.cardApi.getDuplicateGroups(this.userDeckId, fields, this.dedupLimitGroups(), this.dedupPerGroup()).subscribe({
+            next: groups => {
+                this.duplicateGroups.set(groups || []);
+                if (!this.draftLoaded) {
+                    this.selectedDedupFields.set(new Set(fields));
+                }
+                this.dupesLoading.set(false);
+            },
+            error: () => {
+                this.dupesLoading.set(false);
+                this.dupesError.set('Failed to load duplicates.');
+            }
+        });
+    }
+
+    toggleDedupField(field: string): void {
+        const next = new Set(this.selectedDedupFields());
+        if (next.has(field)) {
+            next.delete(field);
+        } else {
+            next.add(field);
+        }
+        this.selectedDedupFields.set(next);
+        this.persistDraft();
+    }
+
+    onDedupLimitChange(value: number): void {
+        this.dedupLimitGroups.set(value);
+        this.persistDraft();
+    }
+
+    onDedupPerGroupChange(value: number): void {
+        this.dedupPerGroup.set(value);
         this.persistDraft();
     }
 
@@ -436,7 +571,10 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             notes: this.notes(),
             selectedOptions: Array.from(this.selectedOptions()),
             missingFields: Array.from(this.selectedMissingFields()),
-            missingLimit: this.missingLimit()
+            missingLimit: this.missingLimit(),
+            dedupFields: Array.from(this.selectedDedupFields()),
+            dedupLimitGroups: this.dedupLimitGroups(),
+            dedupPerGroup: this.dedupPerGroup()
         };
         try {
             localStorage.setItem(this.storageKey, JSON.stringify(payload));
@@ -462,6 +600,15 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             }
             if (typeof payload.missingLimit === 'number') {
                 this.missingLimit.set(payload.missingLimit);
+            }
+            if (Array.isArray(payload.dedupFields)) {
+                this.selectedDedupFields.set(new Set(payload.dedupFields));
+            }
+            if (typeof payload.dedupLimitGroups === 'number') {
+                this.dedupLimitGroups.set(payload.dedupLimitGroups);
+            }
+            if (typeof payload.dedupPerGroup === 'number') {
+                this.dedupPerGroup.set(payload.dedupPerGroup);
             }
         } catch {
         }
