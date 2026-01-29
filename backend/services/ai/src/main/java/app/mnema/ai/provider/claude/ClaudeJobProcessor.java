@@ -16,6 +16,7 @@ import app.mnema.ai.repository.AiProviderCredentialRepository;
 import app.mnema.ai.service.AiJobProcessingResult;
 import app.mnema.ai.service.AiProviderProcessor;
 import app.mnema.ai.provider.anki.AnkiTemplateSupport;
+import app.mnema.ai.provider.audit.AuditAnalyzer;
 import app.mnema.ai.vault.EncryptedSecret;
 import app.mnema.ai.vault.SecretVault;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -37,6 +38,8 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
     private static final String PROVIDER = "anthropic";
     private static final String MODE_GENERATE_CARDS = "generate_cards";
     private static final String MODE_MISSING_FIELDS = "missing_fields";
+    private static final String MODE_AUDIT = "audit";
+    private static final String MODE_ENHANCE = "enhance_deck";
     private static final int MAX_CARDS = 50;
 
     private final ClaudeClient claudeClient;
@@ -84,6 +87,12 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
     private AiJobProcessingResult handleText(AiJobEntity job, String apiKey) {
         JsonNode params = safeParams(job);
         String mode = params.path("mode").asText();
+        if (MODE_AUDIT.equalsIgnoreCase(mode)) {
+            return handleAudit(job, apiKey, params);
+        }
+        if (MODE_ENHANCE.equalsIgnoreCase(mode) && hasAction(params, "audit")) {
+            return handleAudit(job, apiKey, params);
+        }
         if (MODE_MISSING_FIELDS.equalsIgnoreCase(mode)) {
             return handleMissingFields(job, apiKey, params);
         }
@@ -258,6 +267,58 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         );
     }
 
+    private AiJobProcessingResult handleAudit(AiJobEntity job, String apiKey, JsonNode params) {
+        if (job.getDeckId() == null) {
+            throw new IllegalStateException("Deck id is required for audit");
+        }
+        String accessToken = job.getUserAccessToken();
+        CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
+        if (deck.publicDeckId() == null) {
+            throw new IllegalStateException("Deck template not found");
+        }
+        CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
+        if (publicDeck.templateId() == null) {
+            throw new IllegalStateException("Template id not found");
+        }
+        Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
+        CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+
+        int sampleLimit = resolveAuditSampleLimit(params.path("sampleLimit"));
+        List<CoreUserCardResponse> cards = coreApiClient.getUserCards(job.getDeckId(), 1, sampleLimit, accessToken).content();
+        List<String> targetFields = resolveAllowedFields(params, template);
+        if (targetFields.isEmpty()) {
+            throw new IllegalStateException("No supported fields to audit");
+        }
+
+        AuditAnalyzer.AuditContext analysis = AuditAnalyzer.analyze(objectMapper, template, cards, targetFields);
+        String prompt = buildAuditPrompt(params, template, publicDeck, targetFields, cards, analysis);
+        String model = textOrDefault(params.path("model"), props.defaultModel());
+        Integer maxOutputTokens = resolveMaxTokens(params.path("maxOutputTokens"));
+
+        ClaudeResponseResult response = claudeClient.createMessage(
+                apiKey,
+                new ClaudeMessageRequest(model, prompt, maxOutputTokens)
+        );
+
+        JsonNode parsed = parseJsonResponse(response.outputText());
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("mode", MODE_AUDIT);
+        summary.put("deckId", job.getDeckId().toString());
+        summary.set("auditStats", analysis.summary());
+        summary.set("auditIssues", analysis.issues());
+        summary.set("aiSummary", parsed);
+
+        return new AiJobProcessingResult(
+                summary,
+                PROVIDER,
+                response.model(),
+                response.inputTokens(),
+                response.outputTokens(),
+                BigDecimal.ZERO,
+                job.getInputHash()
+        );
+    }
+
     private AiProviderCredentialEntity resolveCredential(AiJobEntity job) {
         JsonNode params = safeParams(job);
         UUID credentialId = parseUuid(params.path("providerCredentialId").asText(null));
@@ -331,6 +392,14 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         return Math.min(limit, 200);
     }
 
+    private int resolveAuditSampleLimit(JsonNode node) {
+        int limit = node != null && node.isInt() ? node.asInt() : 60;
+        if (limit < 10) {
+            limit = 10;
+        }
+        return Math.min(limit, 200);
+    }
+
     private List<String> resolveAllowedFields(JsonNode params, CoreTemplateResponse template) {
         JsonNode fieldsNode = params.path("fields");
         if (fieldsNode.isArray()) {
@@ -349,6 +418,19 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
             }
         }
         return resolveTemplateFields(template);
+    }
+
+    private boolean hasAction(JsonNode params, String action) {
+        JsonNode node = params.path("actions");
+        if (!node.isArray()) {
+            return false;
+        }
+        for (JsonNode item : node) {
+            if (item.isTextual() && action.equalsIgnoreCase(item.asText())) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private List<String> resolveTemplateFields(CoreTemplateResponse template) {
@@ -502,6 +584,73 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
             builder.append("  fields: ").append(card.effectiveContent().toString()).append("\n");
         }
 
+        if (userPrompt != null && !userPrompt.isBlank()) {
+            builder.append("User instructions: ").append(userPrompt.trim());
+        }
+        return builder.toString().trim();
+    }
+
+    private String buildAuditPrompt(JsonNode params,
+                                    CoreTemplateResponse template,
+                                    CorePublicDeckResponse publicDeck,
+                                    List<String> fields,
+                                    List<CoreUserCardResponse> cards,
+                                    AuditAnalyzer.AuditContext analysis) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("Audit this deck for quality issues and inconsistencies. ");
+        builder.append("Return JSON with keys: summary, issues, recommendations, nextActions. ");
+        builder.append("Be specific, concise, and reference field names. ");
+
+        String deckName = publicDeck == null ? null : publicDeck.name();
+        String deckDescription = publicDeck == null ? null : publicDeck.description();
+        String deckLanguage = publicDeck == null ? null : publicDeck.language();
+        if (deckName != null && !deckName.isBlank()) {
+            builder.append("Deck name: ").append(deckName.trim()).append(". ");
+        }
+        if (deckDescription != null && !deckDescription.isBlank()) {
+            builder.append("Deck description: ").append(deckDescription.trim()).append(". ");
+        }
+        if (deckLanguage != null && !deckLanguage.isBlank()) {
+            builder.append("Deck language: ").append(deckLanguage.trim()).append(". ");
+        }
+
+        if (template != null) {
+            String templateName = template.name();
+            String templateDescription = template.description();
+            if (templateName != null && !templateName.isBlank()) {
+                builder.append("Template name: ").append(templateName.trim()).append(". ");
+            }
+            if (templateDescription != null && !templateDescription.isBlank()) {
+                builder.append("Template description: ").append(templateDescription.trim()).append(". ");
+            }
+            String fieldHints = buildFieldHints(template, fields);
+            if (!fieldHints.isBlank()) {
+                builder.append("Field hints: ").append(fieldHints).append(". ");
+            }
+            String profile = formatAiProfile(template.aiProfile());
+            if (!profile.isBlank()) {
+                builder.append("Template AI profile: ").append(profile).append(". ");
+            }
+        }
+
+        builder.append("Audit stats JSON: ").append(analysis.summary().toString()).append(". ");
+        builder.append("Detected issues JSON: ").append(analysis.issues().toString()).append(". ");
+
+        builder.append("Sample cards:\n");
+        int shown = 0;
+        for (CoreUserCardResponse card : cards) {
+            if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
+                continue;
+            }
+            builder.append("- id: ").append(card.userCardId()).append("\n");
+            builder.append("  fields: ").append(card.effectiveContent().toString()).append("\n");
+            shown++;
+            if (shown >= 30) {
+                break;
+            }
+        }
+
+        String userPrompt = extractTextParam(params, "input", "prompt", "notes");
         if (userPrompt != null && !userPrompt.isBlank()) {
             builder.append("User instructions: ").append(userPrompt.trim());
         }
