@@ -159,6 +159,14 @@ type EnhanceOption = { key: string; label: string; description: string; enabled:
                       <span class="dup-label">{{ field }}</span>
                       <span class="dup-value">{{ (card.effectiveContent || {})[field] || '—' }}</span>
                     </div>
+                    <button
+                      type="button"
+                      class="dup-action"
+                      [disabled]="deletingCards().has(card.userCardId)"
+                      (click)="deleteDuplicate(card.userCardId)"
+                    >
+                      {{ deletingCards().has(card.userCardId) ? 'Deleting…' : 'Delete card' }}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -233,6 +241,8 @@ type EnhanceOption = { key: string; label: string; description: string; enabled:
       .dup-card-field { display: grid; grid-template-columns: 120px 1fr; gap: var(--spacing-sm); }
       .dup-label { font-size: 0.8rem; color: var(--color-text-secondary); }
       .dup-value { font-size: 0.9rem; color: var(--color-text-primary); word-break: break-word; }
+      .dup-action { margin-top: var(--spacing-sm); align-self: start; border: 1px solid var(--glass-border); border-radius: 999px; padding: 0.3rem 0.8rem; background: var(--color-card-background); color: var(--color-text-primary); cursor: pointer; }
+      .dup-action:disabled { opacity: 0.6; cursor: not-allowed; }
       .error-state { margin-top: var(--spacing-md); color: var(--color-error); }
       .success-state { margin-top: var(--spacing-md); color: var(--color-success); }
       .modal-footer { display: flex; justify-content: flex-end; gap: var(--spacing-md); padding: var(--spacing-lg); border-top: 1px solid var(--glass-border); }
@@ -268,6 +278,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     selectedDedupFields = signal<Set<string>>(new Set());
     dedupLimitGroups = signal(10);
     dedupPerGroup = signal(5);
+    deletingCards = signal<Set<string>>(new Set());
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
         if (!selectedId) return '';
@@ -517,6 +528,29 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     onDedupPerGroupChange(value: number): void {
         this.dedupPerGroup.set(value);
         this.persistDraft();
+    }
+
+    deleteDuplicate(cardId: string): void {
+        if (!cardId) return;
+        if (!confirm('Delete this card?')) return;
+        this.deletingCards.update(set => new Set(set).add(cardId));
+        this.cardApi.deleteUserCard(this.userDeckId, cardId, 'local').subscribe({
+            next: () => {
+                this.deletingCards.update(set => {
+                    const next = new Set(set);
+                    next.delete(cardId);
+                    return next;
+                });
+                this.refreshDuplicates();
+            },
+            error: () => {
+                this.deletingCards.update(set => {
+                    const next = new Set(set);
+                    next.delete(cardId);
+                    return next;
+                });
+            }
+        });
     }
 
     private isTextField(fieldType: string): boolean {
