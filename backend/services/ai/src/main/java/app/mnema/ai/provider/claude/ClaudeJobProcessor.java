@@ -39,6 +39,7 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
     private static final String PROVIDER = "anthropic";
     private static final String MODE_GENERATE_CARDS = "generate_cards";
     private static final String MODE_MISSING_FIELDS = "missing_fields";
+    private static final String MODE_MISSING_AUDIO = "missing_audio";
     private static final String MODE_AUDIT = "audit";
     private static final String MODE_ENHANCE = "enhance_deck";
     private static final int MAX_CARDS = 50;
@@ -93,6 +94,9 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         }
         if (MODE_ENHANCE.equalsIgnoreCase(mode) && hasAction(params, "audit")) {
             return handleAudit(job, apiKey, params);
+        }
+        if (MODE_MISSING_AUDIO.equalsIgnoreCase(mode)) {
+            throw new IllegalStateException("Claude provider does not support TTS");
         }
         if (MODE_MISSING_FIELDS.equalsIgnoreCase(mode)) {
             return handleMissingFields(job, apiKey, params);

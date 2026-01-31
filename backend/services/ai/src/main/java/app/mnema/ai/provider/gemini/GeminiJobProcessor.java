@@ -41,6 +41,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     private static final String PROVIDER = "gemini";
     private static final String MODE_GENERATE_CARDS = "generate_cards";
     private static final String MODE_MISSING_FIELDS = "missing_fields";
+    private static final String MODE_MISSING_AUDIO = "missing_audio";
     private static final String MODE_AUDIT = "audit";
     private static final String MODE_ENHANCE = "enhance_deck";
     private static final int MAX_CARDS = 50;
@@ -98,6 +99,9 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         }
         if (MODE_ENHANCE.equalsIgnoreCase(mode) && hasAction(params, "audit")) {
             return handleAudit(job, apiKey, params);
+        }
+        if (MODE_MISSING_AUDIO.equalsIgnoreCase(mode)) {
+            return handleMissingAudio(job, apiKey, params);
         }
         if (MODE_MISSING_FIELDS.equalsIgnoreCase(mode)) {
             return handleMissingFields(job, apiKey, params);
@@ -280,6 +284,79 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                 response.model(),
                 response.inputTokens(),
                 response.outputTokens(),
+                BigDecimal.ZERO,
+                job.getInputHash()
+        );
+    }
+
+    private AiJobProcessingResult handleMissingAudio(AiJobEntity job, String apiKey, JsonNode params) {
+        if (job.getDeckId() == null) {
+            throw new IllegalStateException("Deck id is required for missing audio generation");
+        }
+        if (!params.path("tts").path("enabled").asBoolean(false)) {
+            throw new IllegalStateException("TTS settings are required for missing audio generation");
+        }
+        String accessToken = job.getUserAccessToken();
+        CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
+        if (deck.publicDeckId() == null) {
+            throw new IllegalStateException("Deck template not found");
+        }
+        CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
+        if (publicDeck.templateId() == null) {
+            throw new IllegalStateException("Template id not found");
+        }
+        Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
+        CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+
+        List<String> audioFields = resolveAudioFields(template);
+        if (audioFields.isEmpty()) {
+            throw new IllegalStateException("No audio fields available");
+        }
+        List<String> targetFields = resolveAudioTargetFields(params, audioFields);
+        if (targetFields.isEmpty()) {
+            throw new IllegalStateException("No audio fields selected");
+        }
+        int limit = resolveLimit(params.path("limit"));
+        List<CoreUserCardResponse> missingCards = coreApiClient.getMissingFieldCards(
+                job.getDeckId(),
+                new CoreApiClient.MissingFieldCardsRequest(targetFields, limit),
+                accessToken
+        );
+        if (missingCards.isEmpty()) {
+            ObjectNode summary = objectMapper.createObjectNode();
+            summary.put("mode", MODE_MISSING_AUDIO);
+            summary.put("updatedCards", 0);
+            summary.put("ttsGenerated", 0);
+            summary.put("candidates", 0);
+            summary.put("deckId", job.getDeckId().toString());
+            return new AiJobProcessingResult(
+                    summary,
+                    PROVIDER,
+                    null,
+                    null,
+                    null,
+                    BigDecimal.ZERO,
+                    job.getInputHash()
+            );
+        }
+
+        TtsApplyResult ttsResult = applyTtsForMissingAudio(job, apiKey, params, missingCards, template, targetFields);
+
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("mode", MODE_MISSING_AUDIO);
+        summary.put("deckId", job.getDeckId().toString());
+        summary.put("updatedCards", ttsResult.updatedCards());
+        summary.put("ttsGenerated", ttsResult.generated());
+        summary.put("candidates", missingCards.size());
+        ArrayNode fieldsNode = summary.putArray("fields");
+        targetFields.forEach(fieldsNode::add);
+
+        return new AiJobProcessingResult(
+                summary,
+                PROVIDER,
+                ttsResult.model(),
+                null,
+                null,
                 BigDecimal.ZERO,
                 job.getInputHash()
         );
@@ -473,6 +550,25 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             }
         }
         return resolveTemplateFields(template);
+    }
+
+    private List<String> resolveAudioTargetFields(JsonNode params, List<String> audioFields) {
+        JsonNode fieldsNode = params.path("fields");
+        if (fieldsNode.isArray()) {
+            List<String> requested = new java.util.ArrayList<>();
+            for (JsonNode field : fieldsNode) {
+                String value = field.asText(null);
+                if (value != null && !value.isBlank()) {
+                    requested.add(value.trim());
+                }
+            }
+            if (!requested.isEmpty()) {
+                return requested.stream()
+                        .filter(audioFields::contains)
+                        .toList();
+            }
+        }
+        return audioFields;
     }
 
     private boolean hasAction(JsonNode params, String action) {
@@ -810,6 +906,26 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     private record MissingFieldUpdate(UUID userCardId, ObjectNode fields) {
     }
 
+    private boolean isMissingAudio(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return true;
+        }
+        if (node.isTextual()) {
+            return node.asText().trim().isEmpty();
+        }
+        if (node.isObject()) {
+            JsonNode mediaId = node.get("mediaId");
+            return mediaId == null || mediaId.asText().trim().isEmpty();
+        }
+        if (node.isArray()) {
+            return node.size() == 0;
+        }
+        return false;
+    }
+
+    private record TtsApplyResult(int generated, int updatedCards, String model) {
+    }
+
     private String buildFieldHints(CoreTemplateResponse template, List<String> fields) {
         if (template == null || template.fields() == null) {
             return "";
@@ -897,11 +1013,18 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     private JsonNode buildAuditSchema() {
         ObjectNode schema = objectMapper.createObjectNode();
         schema.put("type", "object");
+        schema.put("additionalProperties", false);
         ObjectNode properties = schema.putObject("properties");
         properties.putObject("summary").put("type", "string");
-        properties.putObject("issues").put("type", "array");
-        properties.putObject("recommendations").put("type", "array");
-        properties.putObject("nextActions").put("type", "array");
+        ObjectNode issuesNode = properties.putObject("issues");
+        issuesNode.put("type", "array");
+        issuesNode.putObject("items").put("type", "string");
+        ObjectNode recommendationsNode = properties.putObject("recommendations");
+        recommendationsNode.put("type", "array");
+        recommendationsNode.putObject("items").put("type", "string");
+        ObjectNode nextActionsNode = properties.putObject("nextActions");
+        nextActionsNode.put("type", "array");
+        nextActionsNode.putObject("items").put("type", "string");
         schema.putArray("required").add("summary").add("issues").add("recommendations").add("nextActions");
         return schema;
     }
@@ -1068,6 +1191,105 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             }
         }
         return generated;
+    }
+
+    private TtsApplyResult applyTtsForMissingAudio(AiJobEntity job,
+                                                   String apiKey,
+                                                   JsonNode params,
+                                                   List<CoreUserCardResponse> cards,
+                                                   CoreTemplateResponse template,
+                                                   List<String> targetFields) {
+        JsonNode ttsNode = params.path("tts");
+        if (!ttsNode.path("enabled").asBoolean(false)) {
+            return new TtsApplyResult(0, 0, null);
+        }
+        if (cards == null || cards.isEmpty()) {
+            return new TtsApplyResult(0, 0, null);
+        }
+        String accessToken = job.getUserAccessToken();
+        if (accessToken == null || accessToken.isBlank()) {
+            return new TtsApplyResult(0, 0, null);
+        }
+        List<String> audioFields = resolveAudioFields(template);
+        if (audioFields.isEmpty()) {
+            return new TtsApplyResult(0, 0, null);
+        }
+        List<String> textFields = resolveTextFields(template);
+        if (textFields.isEmpty()) {
+            return new TtsApplyResult(0, 0, null);
+        }
+
+        List<TtsMapping> mappings = resolveTtsMappings(ttsNode, textFields, audioFields, template).stream()
+                .filter(mapping -> targetFields.contains(mapping.targetField()))
+                .toList();
+        if (mappings.isEmpty()) {
+            return new TtsApplyResult(0, 0, null);
+        }
+
+        String model = textOrDefault(ttsNode.path("model"), props.defaultTtsModel());
+        String voice = textOrDefault(ttsNode.path("voice"), props.defaultVoice());
+        String mimeType = resolveMimeType(ttsNode.path("mimeType"), ttsNode.path("format"));
+        int maxChars = ttsNode.path("maxChars").isInt() ? ttsNode.path("maxChars").asInt() : 300;
+        if (maxChars < 1) {
+            maxChars = 1;
+        }
+
+        int generated = 0;
+        int updatedCards = 0;
+        for (CoreUserCardResponse card : cards) {
+            if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
+                continue;
+            }
+            ObjectNode updatedContent = card.effectiveContent().deepCopy();
+            boolean updated = false;
+            for (TtsMapping mapping : mappings) {
+                if (!isMissingAudio(updatedContent.get(mapping.targetField()))) {
+                    continue;
+                }
+                String text = extractTextValue(card.effectiveContent(), mapping.sourceField());
+                if (text == null || text.isBlank()) {
+                    continue;
+                }
+                if (text.length() > maxChars) {
+                    continue;
+                }
+                byte[] audio = geminiClient.createSpeech(
+                        apiKey,
+                        new GeminiSpeechRequest(model, text, voice, mimeType)
+                );
+                String contentType = mimeType != null && !mimeType.isBlank() ? mimeType : "audio/wav";
+                String extension = resolveAudioExtension(contentType);
+                String fileName = "ai-tts-" + job.getJobId() + "-" + card.userCardId() + "." + extension;
+                UUID mediaId = mediaApiClient.directUpload(
+                        job.getUserId(),
+                        "card_audio",
+                        contentType,
+                        fileName,
+                        audio.length,
+                        new ByteArrayInputStream(audio)
+                );
+                ObjectNode audioNode = objectMapper.createObjectNode();
+                audioNode.put("mediaId", mediaId.toString());
+                audioNode.put("kind", "audio");
+                updatedContent.set(mapping.targetField(), audioNode);
+                updated = true;
+                generated++;
+            }
+            if (updated) {
+                ankiSupport.applyIfPresent(updatedContent, template);
+                UpdateUserCardRequest update = new UpdateUserCardRequest(
+                        card.userCardId(),
+                        null,
+                        false,
+                        false,
+                        null,
+                        updatedContent
+                );
+                coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken);
+                updatedCards++;
+            }
+        }
+        return new TtsApplyResult(generated, updatedCards, model);
     }
 
     private List<String> resolveAudioFields(CoreTemplateResponse template) {
