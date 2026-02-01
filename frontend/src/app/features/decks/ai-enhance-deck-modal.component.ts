@@ -925,9 +925,9 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     private normalizeProvider(provider?: string | null): string {
         if (!provider) return '';
         const normalized = provider.trim().toLowerCase();
-        if (normalized === 'claude' || normalized.contains('anthropic')) return 'anthropic';
-        if (normalized.contains('openai')) return 'openai';
-        if (normalized.contains('gemini') || normalized.contains('google')) return 'gemini';
+        if (normalized === 'claude' || normalized.includes('anthropic')) return 'anthropic';
+        if (normalized.includes('openai')) return 'openai';
+        if (normalized.includes('gemini') || normalized.includes('google')) return 'gemini';
         return normalized;
     }
 

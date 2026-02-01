@@ -50,6 +50,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     private static final String MODE_ENHANCE = "enhance_deck";
     private static final String MODE_CARD_AUDIT = "card_audit";
     private static final String MODE_CARD_MISSING_FIELDS = "card_missing_fields";
+    private static final String MODE_CARD_MISSING_AUDIO = "card_missing_audio";
     private static final int MAX_CARDS = 50;
     private static final int DEFAULT_PCM_SAMPLE_RATE = 24000;
     private static final Pattern PCM_RATE_PATTERN = Pattern.compile("rate=([0-9]+)");
@@ -110,6 +111,9 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         }
         if (MODE_CARD_MISSING_FIELDS.equalsIgnoreCase(mode)) {
             return handleCardMissingFields(job, apiKey, params);
+        }
+        if (MODE_CARD_MISSING_AUDIO.equalsIgnoreCase(mode)) {
+            return handleCardMissingAudio(job, apiKey, params);
         }
         if (MODE_ENHANCE.equalsIgnoreCase(mode) && hasAction(params, "audit")) {
             return handleAudit(job, apiKey, params);
@@ -560,6 +564,97 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                 response.model(),
                 response.inputTokens(),
                 response.outputTokens(),
+                BigDecimal.ZERO,
+                job.getInputHash()
+        );
+    }
+
+    private AiJobProcessingResult handleCardMissingAudio(AiJobEntity job, String apiKey, JsonNode params) {
+        if (job.getDeckId() == null) {
+            throw new IllegalStateException("Deck id is required for card missing audio generation");
+        }
+        UUID cardId = parseUuid(params.path("cardId").asText(null));
+        if (cardId == null) {
+            throw new IllegalStateException("Card id is required for card missing audio generation");
+        }
+        if (!params.path("tts").path("enabled").asBoolean(false)) {
+            throw new IllegalStateException("TTS settings are required for missing audio generation");
+        }
+        String accessToken = job.getUserAccessToken();
+        CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
+        if (deck.publicDeckId() == null) {
+            throw new IllegalStateException("Deck template not found");
+        }
+        CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
+        if (publicDeck.templateId() == null) {
+            throw new IllegalStateException("Template id not found");
+        }
+        Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
+        CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+        List<String> audioFields = resolveAudioFields(template);
+        if (audioFields.isEmpty()) {
+            throw new IllegalStateException("No audio fields available");
+        }
+        List<String> targetFields = resolveAudioTargetFields(params, audioFields);
+        if (targetFields.isEmpty()) {
+            throw new IllegalStateException("No audio fields selected");
+        }
+
+        CoreApiClient.CoreUserCardDetail card = coreApiClient.getUserCard(job.getDeckId(), cardId, accessToken);
+        if (card.effectiveContent() == null || !card.effectiveContent().isObject()) {
+            throw new IllegalStateException("Card content is empty");
+        }
+        List<String> missingTargets = targetFields.stream()
+                .filter(field -> isMissingAudio(card.effectiveContent().get(field)))
+                .toList();
+        if (missingTargets.isEmpty()) {
+            ObjectNode summary = objectMapper.createObjectNode();
+            summary.put("mode", MODE_CARD_MISSING_AUDIO);
+            summary.put("deckId", job.getDeckId().toString());
+            summary.put("cardId", cardId.toString());
+            summary.put("updatedCards", 0);
+            summary.put("ttsGenerated", 0);
+            ArrayNode fieldsNode = summary.putArray("fields");
+            targetFields.forEach(fieldsNode::add);
+            return new AiJobProcessingResult(
+                    summary,
+                    PROVIDER,
+                    null,
+                    null,
+                    null,
+                    BigDecimal.ZERO,
+                    job.getInputHash()
+            );
+        }
+
+        TtsApplyResult ttsResult;
+        String ttsError = null;
+        try {
+            CoreUserCardResponse cardResponse = new CoreUserCardResponse(card.userCardId(), card.effectiveContent());
+            ttsResult = applyTtsForMissingAudio(job, apiKey, params, List.of(cardResponse), template, missingTargets);
+        } catch (Exception ex) {
+            ttsResult = new TtsApplyResult(0, 0, null);
+            ttsError = summarizeError(ex);
+        }
+
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("mode", MODE_CARD_MISSING_AUDIO);
+        summary.put("deckId", job.getDeckId().toString());
+        summary.put("cardId", cardId.toString());
+        summary.put("updatedCards", ttsResult.updatedCards());
+        summary.put("ttsGenerated", ttsResult.generated());
+        if (ttsError != null) {
+            summary.put("ttsError", ttsError);
+        }
+        ArrayNode fieldsNode = summary.putArray("fields");
+        missingTargets.forEach(fieldsNode::add);
+
+        return new AiJobProcessingResult(
+                summary,
+                PROVIDER,
+                ttsResult.model(),
+                null,
+                null,
                 BigDecimal.ZERO,
                 job.getInputHash()
         );
@@ -1181,7 +1276,6 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     private JsonNode buildCardAuditSchema() {
         ObjectNode schema = objectMapper.createObjectNode();
         schema.put("type", "object");
-        schema.put("additionalProperties", false);
         ObjectNode properties = schema.putObject("properties");
         properties.putObject("summary").put("type", "string");
         ObjectNode itemsNode = properties.putObject("items");
@@ -1193,7 +1287,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         itemProps.putObject("message").put("type", "string");
         itemProps.putObject("suggestion").put("type", "string");
         itemProps.putObject("severity").put("type", "string");
-        itemSchema.put("additionalProperties", false);
+        itemSchema.putArray("required").add("field").add("message").add("suggestion");
         schema.putArray("required").add("summary").add("items");
         return schema;
     }
@@ -1201,7 +1295,6 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     private JsonNode buildCardMissingFieldsSchema(List<String> fields) {
         ObjectNode schema = objectMapper.createObjectNode();
         schema.put("type", "object");
-        schema.put("additionalProperties", false);
         ObjectNode properties = schema.putObject("properties");
         for (String field : fields) {
             properties.putObject(field).put("type", "string");

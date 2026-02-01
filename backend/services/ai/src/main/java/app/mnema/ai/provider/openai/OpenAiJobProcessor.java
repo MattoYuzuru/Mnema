@@ -48,6 +48,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private static final String MODE_ENHANCE = "enhance_deck";
     private static final String MODE_CARD_AUDIT = "card_audit";
     private static final String MODE_CARD_MISSING_FIELDS = "card_missing_fields";
+    private static final String MODE_CARD_MISSING_AUDIO = "card_missing_audio";
     private static final int MAX_CARDS = 50;
 
     private final OpenAiClient openAiClient;
@@ -106,6 +107,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
         if (MODE_CARD_MISSING_FIELDS.equalsIgnoreCase(mode)) {
             return handleCardMissingFields(job, apiKey, params);
+        }
+        if (MODE_CARD_MISSING_AUDIO.equalsIgnoreCase(mode)) {
+            return handleCardMissingAudio(job, apiKey, params);
         }
         if (MODE_ENHANCE.equalsIgnoreCase(mode) && hasAction(params, "audit")) {
             return handleAudit(job, apiKey, params);
@@ -439,6 +443,97 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 response.model(),
                 response.inputTokens(),
                 response.outputTokens(),
+                BigDecimal.ZERO,
+                job.getInputHash()
+        );
+    }
+
+    private AiJobProcessingResult handleCardMissingAudio(AiJobEntity job, String apiKey, JsonNode params) {
+        if (job.getDeckId() == null) {
+            throw new IllegalStateException("Deck id is required for card missing audio generation");
+        }
+        UUID cardId = parseUuid(params.path("cardId").asText(null));
+        if (cardId == null) {
+            throw new IllegalStateException("Card id is required for card missing audio generation");
+        }
+        if (!params.path("tts").path("enabled").asBoolean(false)) {
+            throw new IllegalStateException("TTS settings are required for missing audio generation");
+        }
+        String accessToken = job.getUserAccessToken();
+        CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
+        if (deck.publicDeckId() == null) {
+            throw new IllegalStateException("Deck template not found");
+        }
+        CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
+        if (publicDeck.templateId() == null) {
+            throw new IllegalStateException("Template id not found");
+        }
+        Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
+        CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+        List<String> audioFields = resolveAudioFields(template);
+        if (audioFields.isEmpty()) {
+            throw new IllegalStateException("No audio fields available");
+        }
+        List<String> targetFields = resolveAudioTargetFields(params, audioFields);
+        if (targetFields.isEmpty()) {
+            throw new IllegalStateException("No audio fields selected");
+        }
+
+        CoreApiClient.CoreUserCardDetail card = coreApiClient.getUserCard(job.getDeckId(), cardId, accessToken);
+        if (card.effectiveContent() == null || !card.effectiveContent().isObject()) {
+            throw new IllegalStateException("Card content is empty");
+        }
+        List<String> missingTargets = targetFields.stream()
+                .filter(field -> isMissingAudio(card.effectiveContent().get(field)))
+                .toList();
+        if (missingTargets.isEmpty()) {
+            ObjectNode summary = objectMapper.createObjectNode();
+            summary.put("mode", MODE_CARD_MISSING_AUDIO);
+            summary.put("deckId", job.getDeckId().toString());
+            summary.put("cardId", cardId.toString());
+            summary.put("updatedCards", 0);
+            summary.put("ttsGenerated", 0);
+            ArrayNode fieldsNode = summary.putArray("fields");
+            targetFields.forEach(fieldsNode::add);
+            return new AiJobProcessingResult(
+                    summary,
+                    PROVIDER,
+                    null,
+                    null,
+                    null,
+                    BigDecimal.ZERO,
+                    job.getInputHash()
+            );
+        }
+
+        TtsApplyResult ttsResult;
+        String ttsError = null;
+        try {
+            CoreUserCardResponse cardResponse = new CoreUserCardResponse(card.userCardId(), card.effectiveContent());
+            ttsResult = applyTtsForMissingAudio(job, apiKey, params, List.of(cardResponse), template, missingTargets);
+        } catch (Exception ex) {
+            ttsResult = new TtsApplyResult(0, 0, null);
+            ttsError = summarizeError(ex);
+        }
+
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("mode", MODE_CARD_MISSING_AUDIO);
+        summary.put("deckId", job.getDeckId().toString());
+        summary.put("cardId", cardId.toString());
+        summary.put("updatedCards", ttsResult.updatedCards());
+        summary.put("ttsGenerated", ttsResult.generated());
+        if (ttsError != null) {
+            summary.put("ttsError", ttsError);
+        }
+        ArrayNode fieldsNode = summary.putArray("fields");
+        missingTargets.forEach(fieldsNode::add);
+
+        return new AiJobProcessingResult(
+                summary,
+                PROVIDER,
+                ttsResult.model(),
+                null,
+                null,
                 BigDecimal.ZERO,
                 job.getInputHash()
         );
@@ -842,6 +937,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         itemProps.putObject("suggestion").put("type", "string");
         itemProps.putObject("severity").put("type", "string");
         itemSchema.put("additionalProperties", false);
+        itemSchema.putArray("required").add("field").add("message").add("suggestion").add("severity");
         schema.putArray("required").add("summary").add("items");
 
         ObjectNode responseFormat = objectMapper.createObjectNode();
@@ -934,6 +1030,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             fieldProps.putObject(field).put("type", "string");
         }
         fieldsNode.put("additionalProperties", false);
+        ArrayNode fieldsRequired = fieldsNode.putArray("required");
+        for (String field : targetFields) {
+            fieldsRequired.add(field);
+        }
         items.putArray("required").add("userCardId").add("fields");
         items.put("additionalProperties", false);
         schema.put("additionalProperties", false);
@@ -975,7 +1075,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         builder.append("You are reviewing a single flashcard. Provide improvements only if they make the card clearer or more accurate. ");
         builder.append("Ignore any template quirks if the card content is solid. ");
         builder.append("Focus on clarity, correctness, examples, and language quality. ");
-        builder.append("Return JSON with 'summary' and an 'items' array. Each item should contain 'field', 'message', 'suggestion', and optional 'severity'. ");
+        builder.append("Return JSON with 'summary' and an 'items' array. Each item should contain 'field', 'message', 'suggestion', and 'severity' (low, medium, or high). ");
 
         if (publicDeck != null) {
             if (publicDeck.name() != null && !publicDeck.name().isBlank()) {
@@ -1727,6 +1827,17 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             return node.asText();
         }
         return null;
+    }
+
+    private String summarizeError(Exception ex) {
+        if (ex == null) {
+            return "Unknown error";
+        }
+        String message = ex.getMessage();
+        if (message == null || message.isBlank()) {
+            return ex.getClass().getSimpleName();
+        }
+        return message.length() > 500 ? message.substring(0, 500) : message;
     }
 
     private record TtsMapping(String sourceField, String targetField) {
