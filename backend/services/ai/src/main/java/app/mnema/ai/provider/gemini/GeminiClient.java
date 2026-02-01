@@ -63,7 +63,7 @@ public class GeminiClient {
         return new GeminiResponseResult(outputText, model, inputTokens, outputTokens, response);
     }
 
-    public byte[] createSpeech(String apiKey, GeminiSpeechRequest request) {
+    public GeminiResponseParser.AudioResult createSpeech(String apiKey, GeminiSpeechRequest request) {
         ObjectNode payload = objectMapper.createObjectNode();
         ArrayNode contents = payload.putArray("contents");
         ObjectNode user = contents.addObject();
@@ -74,9 +74,6 @@ public class GeminiClient {
         ObjectNode generationConfig = payload.putObject("generationConfig");
         ArrayNode modalities = generationConfig.putArray("responseModalities");
         modalities.add("AUDIO");
-        if (request.responseMimeType() != null && !request.responseMimeType().isBlank()) {
-            generationConfig.put("responseMimeType", request.responseMimeType());
-        }
         if (request.voice() != null && !request.voice().isBlank()) {
             ObjectNode speechConfig = generationConfig.putObject("speechConfig");
             ObjectNode voiceConfig = speechConfig.putObject("voiceConfig");
@@ -100,7 +97,7 @@ public class GeminiClient {
         if (audio == null || audio.data() == null || audio.data().length == 0) {
             throw new IllegalStateException("Gemini speech response is empty");
         }
-        return audio.data();
+        return audio;
     }
 
 }

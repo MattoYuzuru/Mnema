@@ -115,6 +115,18 @@ public class CoreApiClient {
         return response;
     }
 
+    public CoreUserCardDetail getUserCard(UUID userDeckId, UUID userCardId, String accessToken) {
+        CoreUserCardDetail response = restClient.get()
+                .uri("/decks/{userDeckId}/cards/{userCardId}", userDeckId, userCardId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .retrieve()
+                .body(CoreUserCardDetail.class);
+        if (response == null) {
+            throw new IllegalStateException("Core card response is empty");
+        }
+        return response;
+    }
+
     public List<CoreUserCardResponse> getMissingFieldCards(UUID userDeckId,
                                                            MissingFieldCardsRequest request,
                                                            String accessToken) {
@@ -181,6 +193,17 @@ public class CoreApiClient {
 
     public record CoreUserCardResponse(
             UUID userCardId,
+            JsonNode effectiveContent
+    ) {
+    }
+
+    public record CoreUserCardDetail(
+            UUID userCardId,
+            UUID publicCardId,
+            boolean isCustom,
+            boolean isDeleted,
+            String personalNote,
+            String[] tags,
             JsonNode effectiveContent
     ) {
     }

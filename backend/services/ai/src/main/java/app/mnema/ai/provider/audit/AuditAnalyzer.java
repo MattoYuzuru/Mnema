@@ -32,7 +32,9 @@ public final class AuditAnalyzer {
         ObjectNode summary = objectMapper.createObjectNode();
         ArrayNode fieldStats = summary.putArray("fieldStats");
         ArrayNode issues = objectMapper.createArrayNode();
-        summary.put("totalCards", cards == null ? 0 : cards.size());
+        int total = cards == null ? 0 : cards.size();
+        summary.put("totalCards", total);
+        summary.put("sampledCards", total);
 
         Map<String, FieldAccumulator> accumulators = new HashMap<>();
         for (String field : fields) {

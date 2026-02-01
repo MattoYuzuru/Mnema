@@ -3,7 +3,7 @@ import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AiApiService } from '../../core/services/ai-api.service';
 import { TemplateApiService } from '../../core/services/template-api.service';
-import { AiProviderCredential } from '../../core/models/ai.models';
+import { AiJobResponse, AiProviderCredential } from '../../core/models/ai.models';
 import { FieldTemplateDTO } from '../../core/models/template.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 
@@ -144,7 +144,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                     [ngModel]="ttsFormat()"
                     (ngModelChange)="onTtsFormatChange($event)"
                   >
-                    <option *ngFor="let format of formatOptions" [ngValue]="format">
+                    <option *ngFor="let format of ttsFormatOptions()" [ngValue]="format">
                       {{ format }}
                     </option>
                   </select>
@@ -270,6 +270,7 @@ export class AiAddCardsModalComponent implements OnInit {
     @Input() templateId = '';
     @Input() templateVersion: number | null = null;
     @Output() closed = new EventEmitter<void>();
+    @Output() jobCreated = new EventEmitter<AiJobResponse>();
 
     private storageKey = '';
     private draftLoaded = false;
@@ -309,6 +310,7 @@ export class AiAddCardsModalComponent implements OnInit {
 
     readonly voiceOptions = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer', 'custom'];
     readonly formatOptions = ['mp3', 'ogg', 'wav'];
+    readonly ttsFormatOptions = computed(() => this.selectedProvider() === 'gemini' ? ['wav'] : this.formatOptions);
     readonly hasAudioFields = computed(() => this.audioFields().length > 0);
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
@@ -440,8 +442,9 @@ export class AiAddCardsModalComponent implements OnInit {
                 ...(tts ? { tts } : {})
             }
         }).subscribe({
-            next: () => {
+            next: job => {
                 this.creating.set(false);
+                this.jobCreated.emit(job);
             },
             error: err => {
                 this.creating.set(false);
@@ -535,6 +538,10 @@ export class AiAddCardsModalComponent implements OnInit {
 
     onProviderChange(value: string): void {
         this.selectedCredentialId.set(value);
+        const allowed = this.ttsFormatOptions();
+        if (!allowed.includes(this.ttsFormat())) {
+            this.ttsFormat.set(allowed[0]);
+        }
         this.persistDraft();
     }
 
@@ -686,6 +693,10 @@ export class AiAddCardsModalComponent implements OnInit {
             }
             if (Array.isArray(payload.ttsMappings)) {
                 this.ttsMappings.set(payload.ttsMappings);
+            }
+            const allowedFormats = this.ttsFormatOptions();
+            if (!allowedFormats.includes(this.ttsFormat())) {
+                this.ttsFormat.set(allowedFormats[0]);
             }
         } catch {
         }

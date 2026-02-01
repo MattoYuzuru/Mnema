@@ -39,6 +39,10 @@ export interface AiJobResponse {
     startedAt?: string | null;
     completedAt?: string | null;
     errorMessage?: string | null;
+    providerCredentialId?: string | null;
+    provider?: string | null;
+    providerAlias?: string | null;
+    model?: string | null;
 }
 
 export interface AiJobResultResponse {

@@ -17,6 +17,10 @@ public record AiJobResponse(
         Instant updatedAt,
         Instant startedAt,
         Instant completedAt,
-        String errorMessage
+        String errorMessage,
+        UUID providerCredentialId,
+        String provider,
+        String providerAlias,
+        String model
 ) {
 }

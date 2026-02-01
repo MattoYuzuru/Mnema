@@ -33,9 +33,14 @@ export class CardApiService {
     patchUserCard(
         userDeckId: string,
         cardId: string,
-        body: Partial<UserCardDTO>
+        body: Partial<UserCardDTO>,
+        scope?: 'local' | 'global'
     ): Observable<UserCardDTO> {
-        return this.http.patch<UserCardDTO>(`${this.baseUrl}/${userDeckId}/cards/${cardId}`, body);
+        let params = new HttpParams();
+        if (scope) {
+            params = params.set('scope', scope);
+        }
+        return this.http.patch<UserCardDTO>(`${this.baseUrl}/${userDeckId}/cards/${cardId}`, body, { params });
     }
 
     deleteUserCard(userDeckId: string, cardId: string, scope?: 'local' | 'global'): Observable<void> {

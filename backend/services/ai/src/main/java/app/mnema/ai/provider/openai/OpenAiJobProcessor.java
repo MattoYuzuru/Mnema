@@ -46,6 +46,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private static final String MODE_MISSING_AUDIO = "missing_audio";
     private static final String MODE_AUDIT = "audit";
     private static final String MODE_ENHANCE = "enhance_deck";
+    private static final String MODE_CARD_AUDIT = "card_audit";
+    private static final String MODE_CARD_MISSING_FIELDS = "card_missing_fields";
     private static final int MAX_CARDS = 50;
 
     private final OpenAiClient openAiClient;
@@ -98,6 +100,12 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         String mode = params.path("mode").asText();
         if (MODE_AUDIT.equalsIgnoreCase(mode)) {
             return handleAudit(job, apiKey, params);
+        }
+        if (MODE_CARD_AUDIT.equalsIgnoreCase(mode)) {
+            return handleCardAudit(job, apiKey, params);
+        }
+        if (MODE_CARD_MISSING_FIELDS.equalsIgnoreCase(mode)) {
+            return handleCardMissingFields(job, apiKey, params);
         }
         if (MODE_ENHANCE.equalsIgnoreCase(mode) && hasAction(params, "audit")) {
             return handleAudit(job, apiKey, params);
@@ -309,6 +317,121 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         summary.set("auditStats", analysis.summary());
         summary.set("auditIssues", analysis.issues());
         summary.set("aiSummary", parsed);
+
+        return new AiJobProcessingResult(
+                summary,
+                PROVIDER,
+                response.model(),
+                response.inputTokens(),
+                response.outputTokens(),
+                BigDecimal.ZERO,
+                job.getInputHash()
+        );
+    }
+
+    private AiJobProcessingResult handleCardAudit(AiJobEntity job, String apiKey, JsonNode params) {
+        if (job.getDeckId() == null) {
+            throw new IllegalStateException("Deck id is required for card audit");
+        }
+        UUID cardId = parseUuid(params.path("cardId").asText(null));
+        if (cardId == null) {
+            throw new IllegalStateException("Card id is required for card audit");
+        }
+        String accessToken = job.getUserAccessToken();
+        CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
+        if (deck.publicDeckId() == null) {
+            throw new IllegalStateException("Deck template not found");
+        }
+        CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
+        if (publicDeck.templateId() == null) {
+            throw new IllegalStateException("Template id not found");
+        }
+        Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
+        CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+        CoreApiClient.CoreUserCardDetail card = coreApiClient.getUserCard(job.getDeckId(), cardId, accessToken);
+
+        String prompt = buildCardAuditPrompt(publicDeck, template, card);
+        ObjectNode responseFormat = buildCardAuditResponseFormat();
+        String model = textOrDefault(params.path("model"), props.defaultModel());
+        Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
+                ? params.path("maxOutputTokens").asInt()
+                : null;
+
+        OpenAiResponseResult response = openAiClient.createResponse(
+                apiKey,
+                new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
+        );
+
+        JsonNode parsed = parseJsonResponse(response.outputText());
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("mode", MODE_CARD_AUDIT);
+        summary.put("deckId", job.getDeckId().toString());
+        summary.put("cardId", cardId.toString());
+        summary.set("aiSummary", parsed);
+
+        return new AiJobProcessingResult(
+                summary,
+                PROVIDER,
+                response.model(),
+                response.inputTokens(),
+                response.outputTokens(),
+                BigDecimal.ZERO,
+                job.getInputHash()
+        );
+    }
+
+    private AiJobProcessingResult handleCardMissingFields(AiJobEntity job, String apiKey, JsonNode params) {
+        if (job.getDeckId() == null) {
+            throw new IllegalStateException("Deck id is required for card missing fields");
+        }
+        UUID cardId = parseUuid(params.path("cardId").asText(null));
+        if (cardId == null) {
+            throw new IllegalStateException("Card id is required for card missing fields");
+        }
+        String accessToken = job.getUserAccessToken();
+        CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
+        if (deck.publicDeckId() == null) {
+            throw new IllegalStateException("Deck template not found");
+        }
+        CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
+        if (publicDeck.templateId() == null) {
+            throw new IllegalStateException("Template id not found");
+        }
+        Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
+        CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+
+        List<String> targetFields = resolveAllowedFields(params, template);
+        if (targetFields.isEmpty()) {
+            throw new IllegalStateException("No supported fields to generate");
+        }
+
+        CoreApiClient.CoreUserCardDetail card = coreApiClient.getUserCard(job.getDeckId(), cardId, accessToken);
+        if (card.effectiveContent() == null || !card.effectiveContent().isObject()) {
+            throw new IllegalStateException("Card content is empty");
+        }
+
+        String prompt = buildCardMissingFieldsPrompt(publicDeck, template, card, targetFields);
+        ObjectNode responseFormat = buildCardMissingFieldsResponseFormat(targetFields);
+        String model = textOrDefault(params.path("model"), props.defaultModel());
+        Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
+                ? params.path("maxOutputTokens").asInt()
+                : null;
+
+        OpenAiResponseResult response = openAiClient.createResponse(
+                apiKey,
+                new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
+        );
+
+        JsonNode parsed = parseJsonResponse(response.outputText());
+        int updated = applyCardMissingFieldUpdate(job, accessToken, template, card, parsed, targetFields);
+
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("mode", MODE_CARD_MISSING_FIELDS);
+        summary.put("deckId", job.getDeckId().toString());
+        summary.put("cardId", cardId.toString());
+        summary.put("updated", updated);
+        ArrayNode fieldsNode = summary.putArray("fields");
+        targetFields.forEach(fieldsNode::add);
 
         return new AiJobProcessingResult(
                 summary,
@@ -622,6 +745,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         builder.append("Audit this deck for quality issues and inconsistencies. ");
         builder.append("Return JSON with keys: summary, issues, recommendations, nextActions. ");
         builder.append("Be specific, concise, and reference field names. ");
+        builder.append("You are given a sample of cards; do not assume the total deck size. ");
 
         String deckName = publicDeck == null ? null : publicDeck.name();
         String deckDescription = publicDeck == null ? null : publicDeck.description();
@@ -697,6 +821,32 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         ObjectNode responseFormat = objectMapper.createObjectNode();
         responseFormat.put("type", "json_schema");
         responseFormat.put("name", "mnema_audit");
+        responseFormat.set("schema", schema);
+        responseFormat.put("strict", true);
+        return responseFormat;
+    }
+
+    private ObjectNode buildCardAuditResponseFormat() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        schema.put("additionalProperties", false);
+        ObjectNode properties = schema.putObject("properties");
+        properties.putObject("summary").put("type", "string");
+        ObjectNode itemsNode = properties.putObject("items");
+        itemsNode.put("type", "array");
+        ObjectNode itemSchema = itemsNode.putObject("items");
+        itemSchema.put("type", "object");
+        ObjectNode itemProps = itemSchema.putObject("properties");
+        itemProps.putObject("field").put("type", "string");
+        itemProps.putObject("message").put("type", "string");
+        itemProps.putObject("suggestion").put("type", "string");
+        itemProps.putObject("severity").put("type", "string");
+        itemSchema.put("additionalProperties", false);
+        schema.putArray("required").add("summary").add("items");
+
+        ObjectNode responseFormat = objectMapper.createObjectNode();
+        responseFormat.put("type", "json_schema");
+        responseFormat.put("name", "mnema_card_audit");
         responseFormat.set("schema", schema);
         responseFormat.put("strict", true);
         return responseFormat;
@@ -795,6 +945,185 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         responseFormat.set("schema", schema);
         responseFormat.put("strict", true);
         return responseFormat;
+    }
+
+    private ObjectNode buildCardMissingFieldsResponseFormat(List<String> targetFields) {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        schema.put("additionalProperties", false);
+        ObjectNode properties = schema.putObject("properties");
+        for (String field : targetFields) {
+            properties.putObject(field).put("type", "string");
+        }
+        ArrayNode required = schema.putArray("required");
+        for (String field : targetFields) {
+            required.add(field);
+        }
+
+        ObjectNode responseFormat = objectMapper.createObjectNode();
+        responseFormat.put("type", "json_schema");
+        responseFormat.put("name", "mnema_card_missing_fields");
+        responseFormat.set("schema", schema);
+        responseFormat.put("strict", true);
+        return responseFormat;
+    }
+
+    private String buildCardAuditPrompt(CorePublicDeckResponse publicDeck,
+                                        CoreTemplateResponse template,
+                                        CoreApiClient.CoreUserCardDetail card) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("You are reviewing a single flashcard. Provide improvements only if they make the card clearer or more accurate. ");
+        builder.append("Ignore any template quirks if the card content is solid. ");
+        builder.append("Focus on clarity, correctness, examples, and language quality. ");
+        builder.append("Return JSON with 'summary' and an 'items' array. Each item should contain 'field', 'message', 'suggestion', and optional 'severity'. ");
+
+        if (publicDeck != null) {
+            if (publicDeck.name() != null && !publicDeck.name().isBlank()) {
+                builder.append("Deck name: ").append(publicDeck.name().trim()).append(". ");
+            }
+            if (publicDeck.description() != null && !publicDeck.description().isBlank()) {
+                builder.append("Deck description: ").append(publicDeck.description().trim()).append(". ");
+            }
+            if (publicDeck.language() != null && !publicDeck.language().isBlank()) {
+                builder.append("Deck language: ").append(publicDeck.language().trim()).append(". ");
+            }
+        }
+
+        if (template != null) {
+            if (template.name() != null && !template.name().isBlank()) {
+                builder.append("Template name: ").append(template.name().trim()).append(". ");
+            }
+            if (template.description() != null && !template.description().isBlank()) {
+                builder.append("Template description: ").append(template.description().trim()).append(". ");
+            }
+            String profile = formatAiProfile(template.aiProfile());
+            if (!profile.isBlank()) {
+                builder.append("Template AI profile: ").append(profile).append(". ");
+            }
+            builder.append("Template fields: ").append(formatTemplateFields(template)).append(". ");
+        }
+
+        if (card.tags() != null && card.tags().length > 0) {
+            builder.append("Card tags: ").append(String.join(", ", card.tags())).append(". ");
+        }
+        if (card.effectiveContent() != null) {
+            builder.append("Card content: ").append(card.effectiveContent().toString()).append(". ");
+        }
+
+        return builder.toString().trim();
+    }
+
+    private String buildCardMissingFieldsPrompt(CorePublicDeckResponse publicDeck,
+                                                CoreTemplateResponse template,
+                                                CoreApiClient.CoreUserCardDetail card,
+                                                List<String> targetFields) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("Fill missing fields for a single flashcard. ");
+        builder.append("Return JSON with only the fields that are missing. ");
+        builder.append("Only include fields from this list: ").append(String.join(", ", targetFields)).append(". ");
+        builder.append("Do not modify fields that already have values. ");
+
+        if (publicDeck != null) {
+            if (publicDeck.name() != null && !publicDeck.name().isBlank()) {
+                builder.append("Deck name: ").append(publicDeck.name().trim()).append(". ");
+            }
+            if (publicDeck.description() != null && !publicDeck.description().isBlank()) {
+                builder.append("Deck description: ").append(publicDeck.description().trim()).append(". ");
+            }
+            if (publicDeck.language() != null && !publicDeck.language().isBlank()) {
+                builder.append("Deck language: ").append(publicDeck.language().trim()).append(". ");
+            }
+        }
+
+        if (template != null) {
+            String fieldHints = buildFieldHints(template, targetFields);
+            if (!fieldHints.isBlank()) {
+                builder.append("Field hints: ").append(fieldHints).append(". ");
+            }
+            String profile = formatAiProfile(template.aiProfile());
+            if (!profile.isBlank()) {
+                builder.append("Template AI profile: ").append(profile).append(". ");
+            }
+        }
+
+        if (card.effectiveContent() != null) {
+            builder.append("Card content: ").append(card.effectiveContent().toString()).append(". ");
+        }
+
+        return builder.toString().trim();
+    }
+
+    private String formatTemplateFields(CoreTemplateResponse template) {
+        if (template == null || template.fields() == null || template.fields().isEmpty()) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (CoreFieldTemplate field : template.fields()) {
+            if (field == null || field.name() == null) {
+                continue;
+            }
+            builder.append(field.name());
+            if (field.label() != null && !field.label().isBlank()) {
+                builder.append(" (").append(field.label().trim()).append(")");
+            }
+            builder.append(": ").append(field.fieldType());
+            if (field.isRequired()) {
+                builder.append(", required");
+            }
+            if (field.isOnFront()) {
+                builder.append(", front");
+            }
+            builder.append("; ");
+        }
+        return builder.toString().trim();
+    }
+
+    private int applyCardMissingFieldUpdate(AiJobEntity job,
+                                            String accessToken,
+                                            CoreTemplateResponse template,
+                                            CoreApiClient.CoreUserCardDetail card,
+                                            JsonNode response,
+                                            List<String> targetFields) {
+        if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
+            return 0;
+        }
+        if (response == null || !response.isObject()) {
+            return 0;
+        }
+        ObjectNode updatedContent = card.effectiveContent().deepCopy();
+        boolean changed = false;
+        var allowed = new java.util.HashSet<>(targetFields);
+        var it = response.fields();
+        while (it.hasNext()) {
+            var entry = it.next();
+            String field = entry.getKey();
+            JsonNode value = entry.getValue();
+            if (!allowed.contains(field) || value == null || !value.isTextual()) {
+                continue;
+            }
+            String text = value.asText().trim();
+            if (text.isEmpty()) {
+                continue;
+            }
+            if (isMissingText(updatedContent.get(field))) {
+                updatedContent.put(field, text);
+                changed = true;
+            }
+        }
+        if (!changed) {
+            return 0;
+        }
+        ankiSupport.applyIfPresent(updatedContent, template);
+        UpdateUserCardRequest updateRequest = new UpdateUserCardRequest(
+                card.userCardId(),
+                null,
+                false,
+                false,
+                card.personalNote(),
+                updatedContent
+        );
+        coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken);
+        return 1;
     }
 
     private List<MissingFieldUpdate> parseMissingFieldUpdates(JsonNode response, List<String> allowedFields) {

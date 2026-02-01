@@ -178,7 +178,7 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
                                 ''
                             )
                         ),
-                        '[^a-z0-9]+',
+                        '[^\\p{L}\\p{N}]+',
                         '',
                         'g'
                     )

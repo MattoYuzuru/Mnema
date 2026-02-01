@@ -19,6 +19,7 @@ import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loa
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
 import { FlashcardViewComponent } from '../../shared/components/flashcard-view.component';
 import { ButtonComponent } from '../../shared/components/button.component';
+import { AiEnhanceCardModalComponent } from './ai-enhance-card-modal.component';
 import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
 import { MediaUploadComponent } from '../../shared/components/media-upload.component';
@@ -29,7 +30,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 @Component({
     selector: 'app-card-browser',
     standalone: true,
-    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, ConfirmationDialogComponent, TagChipComponent, TranslatePipe],
+    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, AiEnhanceCardModalComponent, InputComponent, TextareaComponent, MediaUploadComponent, ConfirmationDialogComponent, TagChipComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -178,6 +179,14 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               </svg>
               {{ 'cardBrowser.editCard' | translate }}
             </app-button>
+            <app-button
+              variant="ghost"
+              size="sm"
+              (click)="openAiEnhanceModal(currentCard!)"
+              *ngIf="currentCard && deck && publicDeck"
+            >
+              ✨ {{ 'cardBrowser.enhanceCard' | translate }}
+            </app-button>
             <app-button variant="ghost" size="sm" tone="danger" (click)="openDeleteModal(currentCard!)" *ngIf="currentCard">
               <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                 <path d="M3 6h18"/>
@@ -263,6 +272,17 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               [rows]="3"
               placeholder="Add a personal note (optional)"
             ></app-textarea>
+            <div class="global-edit" *ngIf="editingCard && canEditGlobally(editingCard)">
+              <label>
+                <input
+                  type="checkbox"
+                  [checked]="applyGlobalEdits"
+                  (change)="toggleGlobalEdit($event)"
+                />
+                {{ 'cardBrowser.editScopeGlobal' | translate }}
+              </label>
+              <p class="field-hint">{{ 'cardBrowser.editScopeGlobalHint' | translate }}</p>
+            </div>
           </form>
         </div>
         <div class="modal-footer">
@@ -303,6 +323,16 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         </div>
       </div>
     </div>
+
+    <app-ai-enhance-card-modal
+      *ngIf="showAiEnhanceModal && enhanceCardTarget && template"
+      [userDeckId]="userDeckId"
+      [deckName]="deck?.displayName || ''"
+      [deckDescription]="deck?.displayDescription || ''"
+      [card]="enhanceCardTarget"
+      [template]="template"
+      (closed)="closeAiEnhanceModal()"
+    ></app-ai-enhance-card-modal>
   `,
     styles: [`
       .card-browser {
@@ -742,6 +772,21 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         gap: var(--spacing-sm);
       }
 
+      .global-edit {
+        margin-top: var(--spacing-md);
+        padding: var(--spacing-sm) var(--spacing-md);
+        border-radius: var(--border-radius-md);
+        background: var(--color-card-background);
+        border: 1px dashed var(--glass-border);
+      }
+
+      .global-edit label {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        font-weight: 600;
+      }
+
       .tag-input {
         width: 100%;
         padding: var(--spacing-sm) var(--spacing-md);
@@ -879,6 +924,8 @@ export class CardBrowserComponent implements OnInit {
     editingCard: UserCardDTO | null = null;
     showDeleteConfirm = false;
     showScopePrompt = false;
+    showAiEnhanceModal = false;
+    enhanceCardTarget: UserCardDTO | null = null;
     editForm!: FormGroup;
     tagInputControl = new FormControl('', { nonNullable: true });
     tags: string[] = [];
@@ -895,6 +942,7 @@ export class CardBrowserComponent implements OnInit {
     searchActive = false;
     searchNoResults = false;
     searchResultCount = 0;
+    applyGlobalEdits = false;
     private unfilteredCards: UserCardDTO[] = [];
     private currentPage = 1;
     private hasMoreCards = true;
@@ -1194,6 +1242,7 @@ export class CardBrowserComponent implements OnInit {
 
     openEditModal(card: UserCardDTO): void {
         this.editingCard = card;
+        this.applyGlobalEdits = false;
         if (this.template) {
             const controls: { [key: string]: any } = {};
             this.template.fields?.forEach(field => {
@@ -1211,6 +1260,7 @@ export class CardBrowserComponent implements OnInit {
     closeEditModal(): void {
         this.showEditModal = false;
         this.editingCard = null;
+        this.applyGlobalEdits = false;
     }
 
     isMediaField(field: FieldTemplateDTO): boolean {
@@ -1285,7 +1335,8 @@ export class CardBrowserComponent implements OnInit {
             tags: this.tags
         };
 
-        this.cardApi.patchUserCard(this.userDeckId, this.editingCard.userCardId, updates).subscribe({
+        const scope = this.applyGlobalEdits ? 'global' : 'local';
+        this.cardApi.patchUserCard(this.userDeckId, this.editingCard.userCardId, updates, scope).subscribe({
             next: updatedCard => {
                 const index = this.cards.findIndex(c => c.userCardId === updatedCard.userCardId);
                 if (index !== -1) {
@@ -1294,12 +1345,28 @@ export class CardBrowserComponent implements OnInit {
                 this.saving = false;
                 this.showEditModal = false;
                 this.editingCard = null;
+                this.applyGlobalEdits = false;
             },
             error: err => {
                 console.error('Failed to update card:', err);
                 this.saving = false;
             }
         });
+    }
+
+    toggleGlobalEdit(event: Event): void {
+        const input = event.target as HTMLInputElement | null;
+        this.applyGlobalEdits = !!input?.checked;
+    }
+
+    openAiEnhanceModal(card: UserCardDTO): void {
+        this.enhanceCardTarget = card;
+        this.showAiEnhanceModal = true;
+    }
+
+    closeAiEnhanceModal(): void {
+        this.showAiEnhanceModal = false;
+        this.enhanceCardTarget = null;
     }
 
     openDeleteModal(card: UserCardDTO): void {
@@ -1369,6 +1436,10 @@ export class CardBrowserComponent implements OnInit {
     }
 
     private canDeleteGlobally(card: UserCardDTO): boolean {
+        return this.isAuthor && !!this.publicDeck && !card.isCustom;
+    }
+
+    canEditGlobally(card: UserCardDTO): boolean {
         return this.isAuthor && !!this.publicDeck && !card.isCustom;
     }
 }

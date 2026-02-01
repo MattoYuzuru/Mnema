@@ -117,10 +117,19 @@ public class UserCardController {
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID userDeckId,
             @PathVariable UUID cardId,
-            @RequestBody UserCardDTO dto
+            @RequestBody UserCardDTO dto,
+            @RequestParam(defaultValue = "local") String scope
     ) {
         var userId = currentUserProvider.getUserId(jwt);
-        return cardService.updateUserCard(userId, userDeckId, cardId, dto);
+        boolean updateGlobally;
+        if ("global".equalsIgnoreCase(scope)) {
+            updateGlobally = true;
+        } else if ("local".equalsIgnoreCase(scope)) {
+            updateGlobally = false;
+        } else {
+            throw new IllegalArgumentException("Unknown scope: " + scope);
+        }
+        return cardService.updateUserCard(userId, userDeckId, cardId, dto, updateGlobally);
     }
 
     // DELETE /decks/{userDeckId}/cards/{cardId}

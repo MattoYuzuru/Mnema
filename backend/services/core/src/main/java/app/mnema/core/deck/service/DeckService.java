@@ -439,6 +439,10 @@ public class DeckService {
                 continue;
             }
 
+            if (uc.getTags() == null && oldPublic.getTags() != null) {
+                uc.setTags(oldPublic.getTags());
+            }
+
             String chk = normalizeChecksum(oldPublic.getChecksum());
             if (chk == null) {
                 continue;

@@ -7,6 +7,7 @@ import app.mnema.ai.domain.entity.AiJobEntity;
 import app.mnema.ai.domain.type.AiJobStatus;
 import app.mnema.ai.domain.type.AiJobType;
 import app.mnema.ai.repository.AiJobRepository;
+import app.mnema.ai.repository.AiProviderCredentialRepository;
 import app.mnema.ai.security.CurrentUserProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -33,15 +34,18 @@ public class AiJobService {
     private final AiJobRepository jobRepository;
     private final CurrentUserProvider currentUserProvider;
     private final AiQuotaService quotaService;
+    private final AiProviderCredentialRepository credentialRepository;
     private final ObjectMapper objectMapper;
 
     public AiJobService(AiJobRepository jobRepository,
                         CurrentUserProvider currentUserProvider,
                         AiQuotaService quotaService,
+                        AiProviderCredentialRepository credentialRepository,
                         ObjectMapper objectMapper) {
         this.jobRepository = jobRepository;
         this.currentUserProvider = currentUserProvider;
         this.quotaService = quotaService;
+        this.credentialRepository = credentialRepository;
         this.objectMapper = objectMapper;
     }
 
@@ -215,6 +219,7 @@ public class AiJobService {
     }
 
     private AiJobResponse toResponse(AiJobEntity job) {
+        ProviderInfo providerInfo = resolveProviderInfo(job);
         return new AiJobResponse(
                 job.getJobId(),
                 job.getRequestId(),
@@ -226,7 +231,52 @@ public class AiJobService {
                 job.getUpdatedAt(),
                 job.getStartedAt(),
                 job.getCompletedAt(),
-                job.getErrorMessage()
+                job.getErrorMessage(),
+                providerInfo.credentialId(),
+                providerInfo.provider(),
+                providerInfo.alias(),
+                providerInfo.model()
         );
+    }
+
+    private ProviderInfo resolveProviderInfo(AiJobEntity job) {
+        JsonNode params = job.getParamsJson();
+        if (params == null || params.isNull()) {
+            return new ProviderInfo(null, null, null, null);
+        }
+        UUID credentialId = parseUuid(params.path("providerCredentialId").asText(null));
+        String model = textOrNull(params.path("model"));
+        if (model == null) {
+            model = textOrNull(params.path("tts").path("model"));
+        }
+        final String resolvedModel = model;
+        if (credentialId == null) {
+            return new ProviderInfo(null, null, null, resolvedModel);
+        }
+        return credentialRepository.findByIdAndUserId(credentialId, job.getUserId())
+                .map(credential -> new ProviderInfo(credentialId, credential.getProvider(), credential.getAlias(), resolvedModel))
+                .orElseGet(() -> new ProviderInfo(credentialId, null, null, resolvedModel));
+    }
+
+    private UUID parseUuid(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
+    }
+
+    private String textOrNull(JsonNode node) {
+        if (node != null && node.isTextual()) {
+            String value = node.asText().trim();
+            return value.isEmpty() ? null : value;
+        }
+        return null;
+    }
+
+    private record ProviderInfo(UUID credentialId, String provider, String alias, String model) {
     }
 }

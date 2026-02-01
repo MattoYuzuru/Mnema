@@ -675,13 +675,23 @@ public class CardService {
     public UserCardDTO updateUserCard(UUID currentUserId,
                                       UUID userDeckId,
                                       UUID userCardId,
-                                      UserCardDTO dto) {
+                                      UserCardDTO dto,
+                                      boolean updateGlobally) {
 
         UserCardEntity card = userCardRepository.findById(userCardId)
                 .orElseThrow(() -> new IllegalArgumentException("User card not found: " + userCardId));
 
         if (!card.getUserDeckId().equals(userDeckId) || !card.getUserId().equals(currentUserId)) {
             throw new SecurityException("Access denied to card " + userCardId);
+        }
+
+        if (updateGlobally) {
+            UserDeckEntity userDeck = userDeckRepository.findById(userDeckId)
+                    .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+            if (!userDeck.getUserId().equals(currentUserId)) {
+                throw new SecurityException("Access denied to deck " + userDeckId);
+            }
+            return updateUserCardGlobally(currentUserId, userDeck, card, dto);
         }
 
         card.setPersonalNote(dto.personalNote());
@@ -704,6 +714,169 @@ public class CardService {
         }
 
         card.setUpdatedAt(Instant.now());
+
+        UserCardEntity saved = userCardRepository.save(card);
+        return toUserCardDTO(saved);
+    }
+
+    private UserCardDTO updateUserCardGlobally(UUID currentUserId,
+                                               UserDeckEntity userDeck,
+                                               UserCardEntity card,
+                                               UserCardDTO dto) {
+        UUID publicDeckId = userDeck.getPublicDeckId();
+        if (publicDeckId == null) {
+            throw new IllegalStateException("Local deck has no public source");
+        }
+        if (card.getPublicCardId() == null) {
+            throw new IllegalArgumentException("Custom card cannot be updated globally");
+        }
+
+        PublicDeckEntity latestDeck = publicDeckRepository.findLatestByDeckId(publicDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + publicDeckId));
+        if (!latestDeck.getAuthorId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to public deck " + publicDeckId);
+        }
+
+        PublicCardEntity linkedPublicCard = publicCardRepository.findByCardId(card.getPublicCardId())
+                .orElseThrow(() -> new IllegalArgumentException("Public card not found: " + card.getPublicCardId()));
+
+        List<PublicCardEntity> latestCards = publicCardRepository
+                .findByDeckIdAndDeckVersion(publicDeckId, latestDeck.getVersion());
+
+        String targetChecksum = normalizeChecksum(linkedPublicCard.getChecksum());
+        if (targetChecksum == null) {
+            targetChecksum = computeChecksum(linkedPublicCard.getContent());
+        }
+
+        UUID matchingCardId = null;
+        int checksumMatches = 0;
+        PublicCardEntity checksumMatchCard = null;
+        PublicCardEntity cardIdMatch = null;
+
+        for (PublicCardEntity pc : latestCards) {
+            if (pc.getCardId().equals(card.getPublicCardId())) {
+                matchingCardId = pc.getCardId();
+                cardIdMatch = pc;
+            }
+
+            String latestChecksum = normalizeChecksum(pc.getChecksum());
+            if (latestChecksum == null) {
+                latestChecksum = computeChecksum(pc.getContent());
+            }
+
+            if (targetChecksum != null && targetChecksum.equals(latestChecksum)) {
+                checksumMatches++;
+                checksumMatchCard = pc;
+            }
+        }
+
+        boolean matchByCardId = matchingCardId != null;
+        if (!matchByCardId) {
+            if (targetChecksum == null) {
+                throw new IllegalStateException("Public card checksum missing for update");
+            }
+            if (checksumMatches == 0) {
+                throw new IllegalStateException("Public card not found in latest version");
+            }
+            if (checksumMatches > 1) {
+                throw new IllegalStateException("Public card checksum is not unique in latest version");
+            }
+        }
+
+        PublicCardEntity targetLatestCard = matchByCardId ? cardIdMatch : checksumMatchCard;
+        if (targetLatestCard == null) {
+            throw new IllegalStateException("Public card not found in latest version");
+        }
+
+        JsonNode updatedContent = dto.effectiveContent();
+        if (updatedContent == null || updatedContent.isNull()) {
+            throw new IllegalArgumentException("Updated content must not be null");
+        }
+        if (!updatedContent.isObject()) {
+            throw new IllegalArgumentException("Updated content must be an object");
+        }
+
+        String[] updatedTags = dto.tags() != null ? dto.tags() : targetLatestCard.getTags();
+        validateTags(updatedTags);
+        String updatedChecksum = computeChecksum(updatedContent);
+
+        Instant now = Instant.now();
+        int newVersion = latestDeck.getVersion() + 1;
+
+        PublicDeckEntity newDeckVersion = new PublicDeckEntity(
+                latestDeck.getDeckId(),
+                newVersion,
+                latestDeck.getAuthorId(),
+                latestDeck.getName(),
+                latestDeck.getDescription(),
+                latestDeck.getIconMediaId(),
+                latestDeck.getTemplateId(),
+                latestDeck.getTemplateVersion(),
+                latestDeck.isPublicFlag(),
+                latestDeck.isListed(),
+                latestDeck.getLanguageCode(),
+                latestDeck.getTags(),
+                latestDeck.getCreatedAt(),
+                now,
+                now,
+                latestDeck.getForkedFromDeck()
+        );
+
+        PublicDeckEntity savedNewDeck = publicDeckRepository.save(newDeckVersion);
+
+        List<PublicCardEntity> clonedCards = new ArrayList<>(latestCards.size());
+        PublicCardEntity updatedClone = null;
+
+        for (PublicCardEntity old : latestCards) {
+            String oldChecksum = normalizeChecksum(old.getChecksum());
+            if (oldChecksum == null) {
+                oldChecksum = computeChecksum(old.getContent());
+            }
+            boolean isTarget = matchByCardId
+                    ? old.getCardId().equals(matchingCardId)
+                    : targetChecksum != null && targetChecksum.equals(oldChecksum);
+
+            JsonNode content = isTarget ? updatedContent : old.getContent();
+            String[] tags = isTarget ? updatedTags : old.getTags();
+            String checksum = isTarget ? updatedChecksum : oldChecksum;
+
+            PublicCardEntity clone = new PublicCardEntity(
+                    savedNewDeck.getDeckId(),
+                    savedNewDeck.getVersion(),
+                    savedNewDeck,
+                    content,
+                    old.getOrderIndex(),
+                    tags,
+                    old.getCreatedAt(),
+                    isTarget ? now : old.getUpdatedAt(),
+                    old.isActive(),
+                    checksum
+            );
+            if (isTarget) {
+                updatedClone = clone;
+            }
+            clonedCards.add(clone);
+        }
+
+        if (!clonedCards.isEmpty()) {
+            publicCardRepository.saveAll(clonedCards);
+        }
+
+        if (updatedClone == null || updatedClone.getCardId() == null) {
+            throw new IllegalStateException("Failed to create updated public card");
+        }
+
+        userDeck.setCurrentVersion(savedNewDeck.getVersion());
+        userDeck.setTemplateVersion(savedNewDeck.getTemplateVersion());
+        userDeck.setLastSyncedAt(now);
+        userDeckRepository.save(userDeck);
+
+        card.setPersonalNote(dto.personalNote());
+        card.setContentOverride(null);
+        card.setDeleted(dto.isDeleted());
+        card.setPublicCardId(updatedClone.getCardId());
+        card.setTags(null);
+        card.setUpdatedAt(now);
 
         UserCardEntity saved = userCardRepository.save(card);
         return toUserCardDTO(saved);

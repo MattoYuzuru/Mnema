@@ -133,9 +133,14 @@ import { I18nService } from '../../core/services/i18n.service';
             <h2>{{ 'deckProfile.aiJobsTitle' | translate }}</h2>
             <p>{{ 'deckProfile.aiJobsDescription' | translate }}</p>
           </div>
-          <app-button variant="ghost" size="sm" (click)="refreshAiJobs()" [disabled]="aiJobsLoading">
-            {{ 'deckProfile.aiJobsRefresh' | translate }}
-          </app-button>
+          <div class="ai-jobs-actions">
+            <app-button variant="ghost" size="sm" (click)="toggleAiJobsVisibility()" [disabled]="aiJobs.length === 0">
+              {{ showOnlyLatestAiJob ? 'Show all jobs' : 'Show latest job' }}
+            </app-button>
+            <app-button variant="ghost" size="sm" (click)="refreshAiJobs()" [disabled]="aiJobsLoading">
+              {{ 'deckProfile.aiJobsRefresh' | translate }}
+            </app-button>
+          </div>
         </div>
 
         <div *ngIf="aiJobsLoading" class="loading-state">{{ 'deckProfile.aiJobsLoading' | translate }}</div>
@@ -146,8 +151,8 @@ import { I18nService } from '../../core/services/i18n.service';
           {{ 'deckProfile.aiJobsEmpty' | translate }}
         </div>
 
-        <div *ngIf="aiJobs.length > 0" class="ai-job-list" aria-live="polite">
-          <div *ngFor="let entry of aiJobs; trackBy: trackAiJob" class="ai-job-card">
+        <div *ngIf="visibleAiJobs.length > 0" class="ai-job-list" aria-live="polite">
+          <div *ngFor="let entry of visibleAiJobs; trackBy: trackAiJob" class="ai-job-card">
             <div class="ai-job-header">
               <div>
                 <div class="ai-job-title">{{ formatAiJobType(entry.job.type) }}</div>
@@ -159,6 +164,8 @@ import { I18nService } from '../../core/services/i18n.service';
                     {{ formatStatus(entry.job.status) }}
                   </span>
                   <span class="ai-job-date">{{ entry.job.createdAt | date:'medium' }}</span>
+                  <span *ngIf="formatAiJobProvider(entry.job)" class="ai-job-key">{{ formatAiJobProvider(entry.job) }}</span>
+                  <span *ngIf="entry.job.model" class="ai-job-model">{{ entry.job.model }}</span>
                 </div>
               </div>
               <app-button
@@ -199,8 +206,8 @@ import { I18nService } from '../../core/services/i18n.service';
                       <div class="ai-audit-card-title">Key stats</div>
                       <div class="ai-audit-stats">
                         <div class="ai-audit-stat">
-                          <span>Total cards</span>
-                          <strong>{{ $any(result).auditStats?.totalCards ?? '—' }}</strong>
+                          <span>Sampled cards</span>
+                          <strong>{{ $any(result).auditStats?.sampledCards ?? $any(result).auditStats?.totalCards ?? '—' }}</strong>
                         </div>
                         <div class="ai-audit-stat">
                           <span>Weak cards</span>
@@ -313,6 +320,7 @@ import { I18nService } from '../../core/services/i18n.service';
       [deckName]="deck.displayName"
       [templateId]="publicDeck?.templateId || ''"
       [templateVersion]="deck.templateVersion || null"
+      (jobCreated)="onAiJobCreated($event)"
       (closed)="closeAiAddModal()"
     ></app-ai-add-cards-modal>
 
@@ -322,6 +330,7 @@ import { I18nService } from '../../core/services/i18n.service';
       [deckName]="deck.displayName"
       [templateId]="publicDeck?.templateId || ''"
       [templateVersion]="deck.templateVersion || null"
+      (jobCreated)="onAiJobCreated($event)"
       (closed)="closeAiEnhanceModal()"
     ></app-ai-enhance-deck-modal>
 
@@ -708,6 +717,13 @@ import { I18nService } from '../../core/services/i18n.service';
         margin-bottom: var(--spacing-lg);
       }
 
+      .ai-jobs-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        flex-wrap: wrap;
+      }
+
       .ai-jobs-header h2 {
         margin: 0 0 var(--spacing-xs) 0;
         font-size: 1.3rem;
@@ -750,6 +766,16 @@ import { I18nService } from '../../core/services/i18n.service';
         align-items: center;
         font-size: 0.85rem;
         color: var(--color-text-muted);
+      }
+
+      .ai-job-key,
+      .ai-job-model {
+        padding: 0.1rem 0.55rem;
+        border-radius: 999px;
+        border: 1px solid var(--glass-border);
+        background: var(--color-background);
+        color: var(--color-text-secondary);
+        font-size: 0.78rem;
       }
 
       .ai-job-status-pill {
@@ -1309,6 +1335,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     exportStatusKey: string | null = null;
     exportJob: ImportJobResponse | null = null;
     aiJobs: AiJobEntry[] = [];
+    showOnlyLatestAiJob = false;
     aiJobsLoading = false;
     aiJobsError = '';
     cancelingAiJobs = new Set<string>();
@@ -1465,6 +1492,34 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         this.loadAiJobs();
     }
 
+    onAiJobCreated(job: AiJobResponse): void {
+        if (!job) {
+            return;
+        }
+        this.upsertAiJob(job);
+        if (job.status === 'queued' || job.status === 'processing') {
+            this.startAiPolling(job.jobId);
+        }
+    }
+
+    get visibleAiJobs(): AiJobEntry[] {
+        if (!this.showOnlyLatestAiJob) {
+            return this.aiJobs;
+        }
+        if (this.aiJobs.length === 0) {
+            return [];
+        }
+        const completed = this.aiJobs.filter(entry => entry.job.status === 'completed');
+        const target = (completed.length > 0 ? completed : this.aiJobs).reduce((latest, current) => {
+            return this.resolveJobTimestamp(current.job) > this.resolveJobTimestamp(latest.job) ? current : latest;
+        });
+        return target ? [target] : [];
+    }
+
+    toggleAiJobsVisibility(): void {
+        this.showOnlyLatestAiJob = !this.showOnlyLatestAiJob;
+    }
+
     cancelAiJob(jobId: string): void {
         if (this.cancelingAiJobs.has(jobId)) {
             return;
@@ -1484,6 +1539,24 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
 
     trackAiJob(_: number, entry: AiJobEntry): string {
         return entry.job.jobId;
+    }
+
+    formatAiJobProvider(job: AiJobResponse): string {
+        const alias = job.providerAlias?.trim();
+        const provider = job.provider?.trim();
+        if (alias && provider) {
+            return `${provider} · ${alias}`;
+        }
+        if (alias) {
+            return alias;
+        }
+        if (provider) {
+            return provider;
+        }
+        if (job.providerCredentialId) {
+            return `Key ${job.providerCredentialId.slice(0, 8)}`;
+        }
+        return '';
     }
 
     formatAiJobType(type: AiJobType): string {
@@ -1586,6 +1659,19 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                 }
             }
         });
+    }
+
+    private resolveJobTimestamp(job: AiJobResponse): number {
+        const candidates = [job.completedAt, job.startedAt, job.updatedAt, job.createdAt]
+            .filter(Boolean) as string[];
+        let max = 0;
+        for (const value of candidates) {
+            const parsed = Date.parse(value);
+            if (!Number.isNaN(parsed) && parsed > max) {
+                max = parsed;
+            }
+        }
+        return max;
     }
 
     private fetchAiResult(jobId: string): void {
