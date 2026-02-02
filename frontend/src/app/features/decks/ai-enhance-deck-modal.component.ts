@@ -12,6 +12,8 @@ import { ButtonComponent } from '../../shared/components/button.component';
 type EnhanceOption = { key: string; label: string; description: string; enabled: boolean };
 type TtsMapping = { sourceField: string; targetField: string };
 type DedupAttempt = { fields: string[]; limitGroups: number; perGroupLimit: number };
+type MissingFieldRow = { field: string; label: string; fieldType: string; missingCount: number };
+type FieldLimitMap = Record<string, number>;
 
 @Component({
     selector: 'app-ai-enhance-deck-modal',
@@ -78,9 +80,6 @@ type DedupAttempt = { fields: string[]; limitGroups: number; perGroupLimit: numb
                 <span *ngIf="!option.enabled" class="chip">Unavailable</span>
               </label>
             </div>
-            <p *ngIf="invalidAiCombo()" class="field-hint">
-              Run missing fields and audio separately for now.
-            </p>
           </div>
 
           <div *ngIf="hasMissingFields()" class="missing-panel">
@@ -90,61 +89,65 @@ type DedupAttempt = { fields: string[]; limitGroups: number; perGroupLimit: numb
               {{ missingError() }}
             </div>
             <div *ngIf="!missingLoading() && !missingError()" class="missing-list">
-              <label *ngFor="let stat of missingStats(); trackBy: trackMissingField" class="missing-row">
+              <div class="media-toggles">
+                <label class="toggle">
+                  <input
+                    type="checkbox"
+                    [checked]="ttsEnabled()"
+                    (change)="onTtsEnabledChange($any($event.target).checked)"
+                    [disabled]="!ttsSupported() || !hasAudioFields()"
+                  />
+                  <span>Generate audio</span>
+                </label>
+                <label class="toggle">
+                  <input
+                    type="checkbox"
+                    [checked]="imageEnabled()"
+                    (change)="onImageEnabledChange($any($event.target).checked)"
+                    [disabled]="!imageSupported() || !hasImageFields()"
+                  />
+                  <span>Generate images</span>
+                </label>
+                <label class="toggle">
+                  <input
+                    type="checkbox"
+                    [checked]="videoEnabled()"
+                    (change)="onVideoEnabledChange($any($event.target).checked)"
+                    [disabled]="!videoSupported() || !hasVideoFields()"
+                  />
+                  <span>Generate video / GIF</span>
+                </label>
+              </div>
+              <div *ngIf="hasAudioFields() && !ttsSupported()" class="field-hint">TTS is supported for OpenAI and Gemini providers.</div>
+              <div *ngIf="hasImageFields() && !imageSupported()" class="field-hint">Image generation is supported for OpenAI and Gemini providers.</div>
+              <div *ngIf="hasVideoFields() && !videoSupported()" class="field-hint">Video generation is supported for OpenAI providers.</div>
+              <label *ngFor="let stat of missingRows(); trackBy: trackMissingField" class="missing-row">
                 <input
                   type="checkbox"
                   [checked]="selectedMissingFields().has(stat.field)"
                   (change)="toggleMissingField(stat.field)"
+                  [disabled]="!isFieldSelectable(stat.field)"
                 />
-                <span class="missing-label">{{ stat.field }}</span>
-                <span class="missing-count">{{ stat.missingCount }} missing</span>
-              </label>
-            </div>
-            <div class="form-field missing-limit">
-              <label for="ai-missing-limit">Cards to update</label>
-              <input
-                id="ai-missing-limit"
-                type="number"
-                min="1"
-                max="200"
-                [ngModel]="missingLimit()"
-                (ngModelChange)="onMissingLimitChange($event)"
-              />
-            </div>
-          </div>
-
-          <div *ngIf="hasTts()" class="missing-panel">
-            <label class="grid-label">Missing audio fields</label>
-            <div *ngIf="audioMissingLoading()" class="field-hint">Loading audio fields…</div>
-            <div *ngIf="!audioMissingLoading() && audioMissingError()" class="error-state" role="alert">
-              {{ audioMissingError() }}
-            </div>
-            <div *ngIf="!audioMissingLoading() && !audioMissingError()" class="missing-list">
-              <label *ngFor="let stat of audioMissingStats(); trackBy: trackMissingField" class="missing-row">
+                <div>
+                  <div class="missing-label">{{ stat.label }}</div>
+                  <div class="missing-meta">{{ stat.fieldType }}</div>
+                </div>
                 <input
-                  type="checkbox"
-                  [checked]="selectedAudioFields().has(stat.field)"
-                  (change)="toggleAudioField(stat.field)"
+                  class="missing-limit-input"
+                  type="number"
+                  min="1"
+                  max="200"
+                  [ngModel]="getFieldLimit(stat.field)"
+                  (ngModelChange)="onFieldLimitChange(stat.field, $event)"
+                  [disabled]="!selectedMissingFields().has(stat.field)"
                 />
-                <span class="missing-label">{{ stat.field }}</span>
                 <span class="missing-count">{{ stat.missingCount }} missing</span>
               </label>
-              <div *ngIf="audioMissingStats().length === 0" class="field-hint">No audio fields found.</div>
-            </div>
-            <div class="form-field missing-limit">
-              <label for="ai-tts-limit">Cards to update</label>
-              <input
-                id="ai-tts-limit"
-                type="number"
-                min="1"
-                max="200"
-                [ngModel]="ttsLimit()"
-                (ngModelChange)="onTtsLimitChange($event)"
-              />
+              <div *ngIf="missingRows().length === 0" class="field-hint">No missing fields detected.</div>
             </div>
           </div>
 
-          <div *ngIf="hasTts()" class="tts-section">
+          <div *ngIf="hasMissingFields() && ttsEnabled() && hasAudioFields()" class="tts-section">
             <label class="grid-label">Audio generation</label>
             <div *ngIf="!ttsSupported()" class="field-hint">TTS is supported for OpenAI and Gemini providers.</div>
             <div *ngIf="ttsSupported()" class="tts-panel">
@@ -230,6 +233,98 @@ type DedupAttempt = { fields: string[]; limitGroups: number; perGroupLimit: numb
                   </div>
                 </div>
                 <button type="button" class="add-mapping" (click)="addTtsMapping()">Add mapping</button>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="hasMissingFields() && imageEnabled() && hasImageFields()" class="tts-section">
+            <label class="grid-label">Image generation</label>
+            <div *ngIf="!imageSupported()" class="field-hint">Image generation is supported for OpenAI and Gemini providers.</div>
+            <div *ngIf="imageSupported()" class="tts-panel">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="ai-image-model">Image model</label>
+                  <input
+                    id="ai-image-model"
+                    type="text"
+                    [ngModel]="imageModel()"
+                    (ngModelChange)="onImageModelChange($event)"
+                    placeholder="model-name"
+                  />
+                </div>
+                <div class="form-field">
+                  <label for="ai-image-size">Size</label>
+                  <input
+                    id="ai-image-size"
+                    type="text"
+                    [ngModel]="imageSize()"
+                    (ngModelChange)="onImageSizeChange($event)"
+                    placeholder="1024x1024"
+                  />
+                </div>
+                <div class="form-field">
+                  <label for="ai-image-format">Format</label>
+                  <select
+                    id="ai-image-format"
+                    [ngModel]="imageFormat()"
+                    (ngModelChange)="onImageFormatChange($event)"
+                  >
+                    <option [ngValue]="'png'">png</option>
+                    <option [ngValue]="'jpg'">jpg</option>
+                    <option [ngValue]="'webp'">webp</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="hasMissingFields() && videoEnabled() && hasVideoFields()" class="tts-section">
+            <label class="grid-label">Video generation</label>
+            <div *ngIf="!videoSupported()" class="field-hint">Video generation is supported for OpenAI providers.</div>
+            <div *ngIf="videoSupported()" class="tts-panel">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="ai-video-model">Video model</label>
+                  <input
+                    id="ai-video-model"
+                    type="text"
+                    [ngModel]="videoModel()"
+                    (ngModelChange)="onVideoModelChange($event)"
+                    placeholder="model-name"
+                  />
+                </div>
+                <div class="form-field">
+                  <label for="ai-video-duration">Duration (s)</label>
+                  <input
+                    id="ai-video-duration"
+                    type="number"
+                    min="1"
+                    max="20"
+                    [ngModel]="videoDurationSeconds()"
+                    (ngModelChange)="onVideoDurationChange($event)"
+                  />
+                </div>
+                <div class="form-field">
+                  <label for="ai-video-resolution">Resolution</label>
+                  <input
+                    id="ai-video-resolution"
+                    type="text"
+                    [ngModel]="videoResolution()"
+                    (ngModelChange)="onVideoResolutionChange($event)"
+                    placeholder="1280x720"
+                  />
+                </div>
+                <div class="form-field">
+                  <label for="ai-video-format">Format</label>
+                  <select
+                    id="ai-video-format"
+                    [ngModel]="videoFormat()"
+                    (ngModelChange)="onVideoFormatChange($event)"
+                  >
+                    <option [ngValue]="'mp4'">mp4</option>
+                    <option [ngValue]="'gif'">gif</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -323,10 +418,13 @@ type DedupAttempt = { fields: string[]; limitGroups: number; perGroupLimit: numb
       .chip { font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 999px; background: var(--color-background); border: 1px solid var(--border-color); color: var(--color-text-secondary); }
       .missing-panel { margin-bottom: var(--spacing-lg); border: 1px solid var(--glass-border); border-radius: var(--border-radius-lg); padding: var(--spacing-md); background: var(--color-card-background); }
       .missing-list { display: grid; gap: var(--spacing-sm); margin-top: var(--spacing-sm); }
-      .missing-row { display: grid; grid-template-columns: auto 1fr auto; gap: var(--spacing-sm); align-items: center; }
+      .missing-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: var(--spacing-sm); align-items: center; }
       .missing-label { font-weight: 500; }
+      .missing-meta { font-size: 0.8rem; color: var(--color-text-secondary); }
       .missing-count { font-size: 0.85rem; color: var(--color-text-secondary); }
-      .missing-limit { margin-top: var(--spacing-md); max-width: 240px; }
+      .missing-limit-input { width: 88px; padding: 0.35rem 0.4rem; border-radius: var(--border-radius-md); border: 1px solid var(--border-color); background: var(--color-background); color: var(--color-text-primary); }
+      .media-toggles { display: flex; flex-wrap: wrap; gap: var(--spacing-md); align-items: center; }
+      .toggle { display: inline-flex; gap: var(--spacing-xs); align-items: center; font-weight: 500; }
       .tts-section { margin-bottom: var(--spacing-lg); }
       .tts-panel { margin-top: var(--spacing-md); padding: var(--spacing-md); border-radius: var(--border-radius-md); border: 1px solid var(--border-color); background: var(--color-background); }
       .tts-mapping { margin-top: var(--spacing-md); }
@@ -376,18 +474,23 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     missingLoading = signal(false);
     missingError = signal('');
     selectedMissingFields = signal<Set<string>>(new Set());
-    missingLimit = signal(50);
-    audioMissingStats = signal<MissingFieldStat[]>([]);
-    audioMissingLoading = signal(false);
-    audioMissingError = signal('');
-    selectedAudioFields = signal<Set<string>>(new Set());
-    ttsLimit = signal(50);
+    fieldLimits = signal<FieldLimitMap>({});
+    ttsEnabled = signal(true);
+    imageEnabled = signal(true);
+    videoEnabled = signal(false);
     ttsModel = signal('');
     ttsVoicePreset = signal('alloy');
     ttsVoiceCustom = signal('');
     ttsFormat = signal('mp3');
     ttsMaxChars = signal(300);
     ttsMappings = signal<TtsMapping[]>([]);
+    imageModel = signal('');
+    imageSize = signal('1024x1024');
+    imageFormat = signal('png');
+    videoModel = signal('');
+    videoResolution = signal('1280x720');
+    videoDurationSeconds = signal(5);
+    videoFormat = signal('mp4');
     dupesLoading = signal(false);
     dupesError = signal('');
     dupesMessage = signal('');
@@ -407,6 +510,8 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
     readonly ttsSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
+    readonly imageSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
+    readonly videoSupported = computed(() => this.selectedProvider() === 'openai');
     readonly voiceOptions = computed(() => {
         const provider = this.selectedProvider();
         if (provider === 'gemini') {
@@ -422,8 +527,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
     private readonly optionDescriptions: Record<string, string> = {
         ['audit']: 'Find inconsistencies and weak cards.',
-        ['missing_fields']: 'Suggest missing translations/examples.',
-        ['tts']: 'Create pronunciation for empty audio fields.'
+        ['missing_fields']: 'Fill empty text, audio, image, and video fields.'
     };
 
     private readonly openAiVoices = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer'];
@@ -462,19 +566,13 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
     options = signal<EnhanceOption[]>([
         { key: 'audit', label: 'Deck audit', description: this.optionDescriptions['audit'], enabled: true },
-        { key: 'missing_fields', label: 'Fill missing fields', description: this.optionDescriptions['missing_fields'], enabled: true },
-        { key: 'tts', label: 'Generate missing audio', description: this.optionDescriptions['tts'], enabled: true }
+        { key: 'missing_fields', label: 'Fill missing fields', description: this.optionDescriptions['missing_fields'], enabled: true }
     ]);
     selectedOptions = signal<Set<string>>(new Set(['audit']));
     readonly hasMissingFields = computed(() => this.selectedOptions().has('missing_fields'));
-    readonly hasTts = computed(() => this.selectedOptions().has('tts'));
     readonly hasAiActions = computed(() => {
         const options = this.selectedOptions();
-        return options.has('missing_fields') || options.has('audit') || options.has('tts');
-    });
-    readonly invalidAiCombo = computed(() => {
-        const options = this.selectedOptions();
-        return options.has('missing_fields') && options.has('tts');
+        return options.has('missing_fields') || options.has('audit');
     });
     readonly textFields = computed(() =>
         this.templateFields().filter(field => this.isTextField(field.fieldType))
@@ -482,14 +580,24 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     readonly audioFields = computed(() =>
         this.templateFields().filter(field => field.fieldType === 'audio')
     );
+    readonly imageFields = computed(() =>
+        this.templateFields().filter(field => field.fieldType === 'image')
+    );
+    readonly videoFields = computed(() =>
+        this.templateFields().filter(field => field.fieldType === 'video')
+    );
     readonly hasAudioFields = computed(() => this.audioFields().length > 0);
+    readonly hasImageFields = computed(() => this.imageFields().length > 0);
+    readonly hasVideoFields = computed(() => this.videoFields().length > 0);
     readonly ttsTargetFields = computed(() => {
-        const selected = this.selectedAudioFields();
+        const selected = this.selectedMissingFields();
+        const audioFields = this.audioFields();
         if (selected.size === 0) {
-            return this.audioFields();
+            return audioFields;
         }
-        return this.audioFields().filter(field => selected.has(field.name));
+        return audioFields.filter(field => selected.has(field.name));
     });
+    readonly missingRows = computed<MissingFieldRow[]>(() => this.buildMissingRows());
 
     constructor(
         private aiApi: AiApiService,
@@ -513,19 +621,10 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             next: template => {
                 const fields = template.fields || [];
                 this.templateFields.set(fields);
-                const validAudio = new Set(this.audioFields().map(field => field.name));
-                if (validAudio.size > 0) {
-                    const filteredAudio = Array.from(this.selectedAudioFields()).filter(name => validAudio.has(name));
-                    this.selectedAudioFields.set(new Set(filteredAudio));
-                } else {
-                    this.selectedAudioFields.set(new Set());
-                }
+                this.reconcileSelectedMissingFields();
                 this.loadingTemplate.set(false);
                 this.refreshMissingFields();
                 this.reconcileTtsMappings();
-                if (this.selectedOptions().has('tts')) {
-                    this.refreshMissingAudio();
-                }
             },
             error: () => {
                 this.loadingTemplate.set(false);
@@ -534,12 +633,14 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     }
 
     refreshMissingFields(): void {
-        const fields = this.textFields().map(field => field.name);
+        const fields = this.templateFields()
+            .filter(field => this.isSupportedFieldType(field.fieldType))
+            .map(field => field.name);
         if (!fields.length) {
             this.missingStats.set([]);
             this.selectedMissingFields.set(new Set());
             this.deselectOption('missing_fields');
-            this.setOptionState('missing_fields', false, 'No text fields available.');
+            this.setOptionState('missing_fields', false, 'No supported fields available.');
             return;
         }
         this.missingLoading.set(true);
@@ -555,6 +656,8 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                     );
                     this.selectedMissingFields.set(initial);
                 }
+                this.applyDefaultFieldLimits(stats);
+                this.reconcileSelectedMissingFields();
                 if (!hasMissing) {
                     this.selectedMissingFields.set(new Set());
                     this.deselectOption('missing_fields');
@@ -567,47 +670,6 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             error: () => {
                 this.missingLoading.set(false);
                 this.missingError.set('Failed to load missing fields.');
-            }
-        });
-    }
-
-    refreshMissingAudio(): void {
-        const fields = this.audioFields().map(field => field.name);
-        if (!fields.length) {
-            this.audioMissingStats.set([]);
-            this.audioMissingLoading.set(false);
-            this.audioMissingError.set('');
-            this.selectedAudioFields.set(new Set());
-            this.deselectOption('tts');
-            this.setOptionState('tts', false, 'No audio fields available.');
-            return;
-        }
-        this.audioMissingLoading.set(true);
-        this.audioMissingError.set('');
-        this.cardApi.getMissingFieldSummary(this.userDeckId, fields, 3).subscribe({
-            next: summary => {
-                const stats = summary.fields || [];
-                this.audioMissingStats.set(stats);
-                const hasMissing = stats.some(stat => stat.missingCount > 0);
-                if (!this.draftLoaded) {
-                    const initial = new Set(
-                        stats.filter(stat => stat.missingCount > 0).map(stat => stat.field)
-                    );
-                    this.selectedAudioFields.set(initial);
-                }
-                if (!hasMissing) {
-                    this.selectedAudioFields.set(new Set());
-                    this.deselectOption('tts');
-                    this.setOptionState('tts', false, 'No missing audio detected.');
-                } else {
-                    this.setOptionState('tts', true);
-                }
-                this.audioMissingLoading.set(false);
-                this.reconcileTtsMappings();
-            },
-            error: () => {
-                this.audioMissingLoading.set(false);
-                this.audioMissingError.set('Failed to load missing audio fields.');
             }
         });
     }
@@ -642,10 +704,6 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (next.has('missing_fields')) {
             this.refreshMissingFields();
         }
-        if (next.has('tts')) {
-            this.refreshMissingAudio();
-            this.reconcileTtsMappings();
-        }
         this.persistDraft();
     }
 
@@ -654,9 +712,8 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             && !!this.selectedCredentialId()
             && this.selectedOptions().size > 0
             && (!this.selectedOptions().has('missing_fields') || this.selectedMissingFields().size > 0)
-            && (!this.selectedOptions().has('tts') || this.isTtsReady())
-            && this.hasAiActions()
-            && !this.invalidAiCombo();
+            && (!this.selectedOptions().has('missing_fields') || this.isMissingFieldsReady())
+            && this.hasAiActions();
     }
 
     submit(): void {
@@ -668,8 +725,10 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         const actions = Array.from(this.selectedOptions());
         const input = this.buildPrompt(actions);
         const missingSelected = this.selectedOptions().has('missing_fields');
-        const ttsSelected = this.selectedOptions().has('tts');
-        const tts = ttsSelected ? this.buildTtsParams() : null;
+        const tts = this.ttsEnabled() ? this.buildTtsParams() : null;
+        const image = this.imageEnabled() ? this.buildImageParams() : null;
+        const video = this.videoEnabled() ? this.buildVideoParams() : null;
+        const fieldLimits = missingSelected ? this.buildFieldLimitsPayload() : [];
 
         this.aiApi.createJob({
             requestId: this.generateRequestId(),
@@ -680,15 +739,12 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                 model: this.modelName().trim() || undefined,
                 input,
                 actions,
-                mode: missingSelected ? 'missing_fields' : (ttsSelected ? 'missing_audio' : 'enhance_deck'),
+                mode: missingSelected ? 'missing_fields' : 'enhance_deck',
                 ...(missingSelected ? {
-                    fields: Array.from(this.selectedMissingFields()),
-                    limit: this.missingLimit()
-                } : {}),
-                ...(ttsSelected ? {
-                    fields: Array.from(this.selectedAudioFields()),
-                    limit: this.ttsLimit(),
-                    ...(tts ? { tts } : {})
+                    fieldLimits,
+                    ...(tts ? { tts } : {}),
+                    ...(image ? { image } : {}),
+                    ...(video ? { video } : {})
                 } : {})
             }
         }).subscribe({
@@ -721,8 +777,8 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         return field.fieldId;
     }
 
-    trackMissingField(_: number, stat: MissingFieldStat): string {
-        return stat.field;
+    trackMissingField(_: number, row: MissingFieldRow): string {
+        return row.field;
     }
 
     toggleMissingField(field: string): void {
@@ -731,30 +787,89 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             next.delete(field);
         } else {
             next.add(field);
+            if (typeof this.fieldLimits()[field] !== 'number') {
+                const stats = this.missingStats().find(item => item.field === field);
+                const limit = stats ? Math.min(stats.missingCount, 50) : 10;
+                this.fieldLimits.set({ ...this.fieldLimits(), [field]: limit });
+            }
         }
         this.selectedMissingFields.set(next);
         this.persistDraft();
     }
 
-    onMissingLimitChange(value: number): void {
-        this.missingLimit.set(value);
+    onFieldLimitChange(field: string, value: number): void {
+        const next = { ...this.fieldLimits() };
+        const normalized = Math.max(1, Math.min(Number(value) || 1, 200));
+        next[field] = normalized;
+        this.fieldLimits.set(next);
         this.persistDraft();
     }
 
-    toggleAudioField(field: string): void {
-        const next = new Set(this.selectedAudioFields());
-        if (next.has(field)) {
-            next.delete(field);
-        } else {
-            next.add(field);
+    getFieldLimit(field: string): number {
+        const limit = this.fieldLimits()[field];
+        if (typeof limit === 'number' && limit > 0) {
+            return limit;
         }
-        this.selectedAudioFields.set(next);
+        return 10;
+    }
+
+    onTtsEnabledChange(enabled: boolean): void {
+        this.ttsEnabled.set(enabled);
+        if (!enabled) {
+            this.removeFieldsByType('audio');
+        }
         this.reconcileTtsMappings();
         this.persistDraft();
     }
 
-    onTtsLimitChange(value: number): void {
-        this.ttsLimit.set(value);
+    onImageEnabledChange(enabled: boolean): void {
+        this.imageEnabled.set(enabled);
+        if (!enabled) {
+            this.removeFieldsByType('image');
+        }
+        this.persistDraft();
+    }
+
+    onVideoEnabledChange(enabled: boolean): void {
+        this.videoEnabled.set(enabled);
+        if (!enabled) {
+            this.removeFieldsByType('video');
+        }
+        this.persistDraft();
+    }
+
+    onImageModelChange(value: string): void {
+        this.imageModel.set(value);
+        this.persistDraft();
+    }
+
+    onImageSizeChange(value: string): void {
+        this.imageSize.set(value);
+        this.persistDraft();
+    }
+
+    onImageFormatChange(value: string): void {
+        this.imageFormat.set(value);
+        this.persistDraft();
+    }
+
+    onVideoModelChange(value: string): void {
+        this.videoModel.set(value);
+        this.persistDraft();
+    }
+
+    onVideoResolutionChange(value: string): void {
+        this.videoResolution.set(value);
+        this.persistDraft();
+    }
+
+    onVideoDurationChange(value: number): void {
+        this.videoDurationSeconds.set(Math.max(1, Math.min(Number(value) || 1, 20)));
+        this.persistDraft();
+    }
+
+    onVideoFormatChange(value: string): void {
+        this.videoFormat.set(value);
         this.persistDraft();
     }
 
@@ -922,6 +1037,177 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         return sorted[0]?.name || '';
     }
 
+    private buildMissingRows(): MissingFieldRow[] {
+        const stats = new Map(this.missingStats().map(item => [item.field, item.missingCount]));
+        return this.templateFields()
+            .filter(field => stats.has(field.name))
+            .map(field => ({
+                field: field.name,
+                label: field.label || field.name,
+                fieldType: this.resolveFieldTypeLabel(field.fieldType),
+                missingCount: stats.get(field.name) || 0
+            }))
+            .filter(row => row.missingCount > 0);
+    }
+
+    private resolveFieldTypeLabel(fieldType: string): string {
+        switch (fieldType) {
+            case 'audio':
+                return 'Audio';
+            case 'image':
+                return 'Image';
+            case 'video':
+                return 'Video';
+            case 'markdown':
+                return 'Markdown';
+            case 'rich_text':
+                return 'Rich text';
+            case 'cloze':
+                return 'Cloze';
+            default:
+                return 'Text';
+        }
+    }
+
+    private isSupportedFieldType(fieldType: string): boolean {
+        return ['text', 'rich_text', 'markdown', 'cloze', 'audio', 'image', 'video'].includes(fieldType);
+    }
+
+    private applyDefaultFieldLimits(stats: MissingFieldStat[]): void {
+        if (!stats || stats.length === 0) {
+            return;
+        }
+        const next = { ...this.fieldLimits() };
+        for (const stat of stats) {
+            if (!stat?.field || stat.missingCount <= 0) {
+                continue;
+            }
+            if (typeof next[stat.field] === 'number') {
+                continue;
+            }
+            next[stat.field] = Math.min(stat.missingCount, 50);
+        }
+        this.fieldLimits.set(next);
+    }
+
+    private buildFieldLimitsPayload(): Array<{ field: string; limit: number }> {
+        const limits = this.fieldLimits();
+        const payload: Array<{ field: string; limit: number }> = [];
+        for (const field of this.selectedMissingFields()) {
+            const limit = limits[field];
+            if (typeof limit === 'number' && limit > 0) {
+                payload.push({ field, limit });
+            }
+        }
+        return payload;
+    }
+
+    private buildImageParams(): Record<string, unknown> | null {
+        if (!this.imageSupported() || !this.imageEnabled()) {
+            return null;
+        }
+        return {
+            enabled: true,
+            model: this.imageModel().trim() || undefined,
+            size: this.imageSize().trim() || undefined,
+            format: this.imageFormat()
+        };
+    }
+
+    private buildVideoParams(): Record<string, unknown> | null {
+        if (!this.videoSupported() || !this.videoEnabled()) {
+            return null;
+        }
+        return {
+            enabled: true,
+            model: this.videoModel().trim() || undefined,
+            durationSeconds: this.videoDurationSeconds(),
+            resolution: this.videoResolution().trim() || undefined,
+            format: this.videoFormat()
+        };
+    }
+
+    private isMissingFieldsReady(): boolean {
+        const selected = this.selectedMissingFields();
+        if (selected.size === 0) {
+            return false;
+        }
+        const audioSelected = this.audioFields().some(field => selected.has(field.name));
+        const imageSelected = this.imageFields().some(field => selected.has(field.name));
+        const videoSelected = this.videoFields().some(field => selected.has(field.name));
+        if (audioSelected) {
+            if (!this.ttsEnabled() || !this.ttsSupported()) {
+                return false;
+            }
+            if (!this.buildTtsParams()) {
+                return false;
+            }
+        }
+        if (imageSelected && (!this.imageEnabled() || !this.imageSupported())) {
+            return false;
+        }
+        if (videoSelected && (!this.videoEnabled() || !this.videoSupported())) {
+            return false;
+        }
+        return this.buildFieldLimitsPayload().length > 0;
+    }
+
+    private isFieldSelectable(fieldName: string): boolean {
+        const field = this.templateFields().find(item => item.name === fieldName);
+        if (!field) return false;
+        if (!this.selectedProvider()) {
+            return true;
+        }
+        if (field.fieldType === 'audio') {
+            return this.ttsEnabled() && this.ttsSupported();
+        }
+        if (field.fieldType === 'image') {
+            return this.imageEnabled() && this.imageSupported();
+        }
+        if (field.fieldType === 'video') {
+            return this.videoEnabled() && this.videoSupported();
+        }
+        return true;
+    }
+
+    private removeFieldsByType(fieldType: string): void {
+        const removed = new Set(
+            this.templateFields().filter(field => field.fieldType === fieldType).map(field => field.name)
+        );
+        if (removed.size === 0) {
+            return;
+        }
+        const next = new Set(this.selectedMissingFields());
+        let changed = false;
+        removed.forEach(field => {
+            if (next.delete(field)) {
+                changed = true;
+            }
+        });
+        if (changed) {
+            this.selectedMissingFields.set(next);
+        }
+    }
+
+    private reconcileSelectedMissingFields(): void {
+        const known = new Set(this.templateFields().map(field => field.name));
+        const next = new Set(Array.from(this.selectedMissingFields()).filter(field => known.has(field) && this.isFieldSelectable(field)));
+        if (next.size !== this.selectedMissingFields().size) {
+            this.selectedMissingFields.set(next);
+        }
+        const limits = { ...this.fieldLimits() };
+        let limitsChanged = false;
+        Object.keys(limits).forEach(key => {
+            if (!known.has(key)) {
+                delete limits[key];
+                limitsChanged = true;
+            }
+        });
+        if (limitsChanged) {
+            this.fieldLimits.set(limits);
+        }
+    }
+
     private normalizeProvider(provider?: string | null): string {
         if (!provider) return '';
         const normalized = provider.trim().toLowerCase();
@@ -972,6 +1258,18 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             this.ttsFormat.set(allowed[0]);
         }
         this.syncVoicePreset();
+        if (!this.ttsSupported()) {
+            this.ttsEnabled.set(false);
+            this.removeFieldsByType('audio');
+        }
+        if (!this.imageSupported()) {
+            this.imageEnabled.set(false);
+            this.removeFieldsByType('image');
+        }
+        if (!this.videoSupported()) {
+            this.videoEnabled.set(false);
+            this.removeFieldsByType('video');
+        }
         this.persistDraft();
     }
 
@@ -1005,19 +1303,6 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         }
     }
 
-    private isTtsReady(): boolean {
-        if (!this.hasTts()) {
-            return true;
-        }
-        if (!this.ttsSupported() || !this.hasAudioFields()) {
-            return false;
-        }
-        if (this.selectedAudioFields().size === 0) {
-            return false;
-        }
-        return this.buildTtsParams() !== null;
-    }
-
     private syncVoicePreset(): void {
         const provider = this.selectedProvider();
         const options = this.voiceOptions();
@@ -1042,7 +1327,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     }
 
     private buildTtsParams(): Record<string, unknown> | null {
-        if (!this.hasTts()) {
+        if (!this.ttsEnabled()) {
             return null;
         }
         if (!this.hasAudioFields() || !this.ttsSupported()) {
@@ -1091,14 +1376,22 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             notes: this.notes(),
             selectedOptions: Array.from(this.selectedOptions()),
             missingFields: Array.from(this.selectedMissingFields()),
-            missingLimit: this.missingLimit(),
-            audioFields: Array.from(this.selectedAudioFields()),
-            ttsLimit: this.ttsLimit(),
+            fieldLimits: this.fieldLimits(),
+            ttsEnabled: this.ttsEnabled(),
+            imageEnabled: this.imageEnabled(),
+            videoEnabled: this.videoEnabled(),
             ttsModel: this.ttsModel(),
             ttsVoice: this.resolveVoice(),
             ttsFormat: this.ttsFormat(),
             ttsMaxChars: this.ttsMaxChars(),
-            ttsMappings: this.ttsMappings()
+            ttsMappings: this.ttsMappings(),
+            imageModel: this.imageModel(),
+            imageSize: this.imageSize(),
+            imageFormat: this.imageFormat(),
+            videoModel: this.videoModel(),
+            videoResolution: this.videoResolution(),
+            videoDurationSeconds: this.videoDurationSeconds(),
+            videoFormat: this.videoFormat()
         };
         try {
             localStorage.setItem(this.storageKey, JSON.stringify(payload));
@@ -1124,14 +1417,17 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             if (Array.isArray(payload.missingFields)) {
                 this.selectedMissingFields.set(new Set(payload.missingFields));
             }
-            if (typeof payload.missingLimit === 'number') {
-                this.missingLimit.set(payload.missingLimit);
+            if (payload.fieldLimits && typeof payload.fieldLimits === 'object') {
+                this.fieldLimits.set(payload.fieldLimits);
             }
-            if (Array.isArray(payload.audioFields)) {
-                this.selectedAudioFields.set(new Set(payload.audioFields));
+            if (typeof payload.ttsEnabled === 'boolean') {
+                this.ttsEnabled.set(payload.ttsEnabled);
             }
-            if (typeof payload.ttsLimit === 'number') {
-                this.ttsLimit.set(payload.ttsLimit);
+            if (typeof payload.imageEnabled === 'boolean') {
+                this.imageEnabled.set(payload.imageEnabled);
+            }
+            if (typeof payload.videoEnabled === 'boolean') {
+                this.videoEnabled.set(payload.videoEnabled);
             }
             if (payload.ttsModel) this.ttsModel.set(payload.ttsModel);
             if (payload.ttsFormat) this.ttsFormat.set(payload.ttsFormat);
@@ -1147,6 +1443,13 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             if (Array.isArray(payload.ttsMappings)) {
                 this.ttsMappings.set(payload.ttsMappings);
             }
+            if (payload.imageModel) this.imageModel.set(payload.imageModel);
+            if (payload.imageSize) this.imageSize.set(payload.imageSize);
+            if (payload.imageFormat) this.imageFormat.set(payload.imageFormat);
+            if (payload.videoModel) this.videoModel.set(payload.videoModel);
+            if (payload.videoResolution) this.videoResolution.set(payload.videoResolution);
+            if (payload.videoDurationSeconds) this.videoDurationSeconds.set(payload.videoDurationSeconds);
+            if (payload.videoFormat) this.videoFormat.set(payload.videoFormat);
             const allowedFormats = this.ttsFormatOptions();
             if (!allowedFormats.includes(this.ttsFormat())) {
                 this.ttsFormat.set(allowedFormats[0]);

@@ -102,9 +102,11 @@ type TtsMapping = { sourceField: string; targetField: string };
                 type="checkbox"
                 [checked]="ttsEnabled()"
                 (change)="onTtsEnabledChange($any($event.target).checked)"
+                [disabled]="!ttsSupported()"
               />
               <span>Generate audio (TTS)</span>
             </label>
+            <div *ngIf="!ttsSupported()" class="field-hint">TTS is supported for OpenAI and Gemini providers.</div>
 
             <div *ngIf="ttsEnabled()" class="tts-panel">
               <div class="form-grid">
@@ -189,6 +191,98 @@ type TtsMapping = { sourceField: string; targetField: string };
                   </div>
                 </div>
                 <button type="button" class="add-mapping" (click)="addTtsMapping()">Add mapping</button>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="selectedImageFields().length > 0" class="tts-section">
+            <label class="tts-toggle">Image generation</label>
+            <div *ngIf="!imageSupported()" class="field-hint">Image generation is supported for OpenAI and Gemini providers.</div>
+            <div *ngIf="imageSupported()" class="tts-panel">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="ai-image-model">Image model</label>
+                  <input
+                    id="ai-image-model"
+                    type="text"
+                    [ngModel]="imageModel()"
+                    (ngModelChange)="onImageModelChange($event)"
+                    placeholder="model-name"
+                  />
+                </div>
+                <div class="form-field">
+                  <label for="ai-image-size">Size</label>
+                  <input
+                    id="ai-image-size"
+                    type="text"
+                    [ngModel]="imageSize()"
+                    (ngModelChange)="onImageSizeChange($event)"
+                    placeholder="1024x1024"
+                  />
+                </div>
+                <div class="form-field">
+                  <label for="ai-image-format">Format</label>
+                  <select
+                    id="ai-image-format"
+                    [ngModel]="imageFormat()"
+                    (ngModelChange)="onImageFormatChange($event)"
+                  >
+                    <option [ngValue]="'png'">png</option>
+                    <option [ngValue]="'jpg'">jpg</option>
+                    <option [ngValue]="'webp'">webp</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="selectedVideoFields().length > 0" class="tts-section">
+            <label class="tts-toggle">Video generation</label>
+            <div *ngIf="!videoSupported()" class="field-hint">Video generation is supported for OpenAI providers.</div>
+            <div *ngIf="videoSupported()" class="tts-panel">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="ai-video-model">Video model</label>
+                  <input
+                    id="ai-video-model"
+                    type="text"
+                    [ngModel]="videoModel()"
+                    (ngModelChange)="onVideoModelChange($event)"
+                    placeholder="model-name"
+                  />
+                </div>
+                <div class="form-field">
+                  <label for="ai-video-duration">Duration (s)</label>
+                  <input
+                    id="ai-video-duration"
+                    type="number"
+                    min="1"
+                    max="20"
+                    [ngModel]="videoDurationSeconds()"
+                    (ngModelChange)="onVideoDurationChange($event)"
+                  />
+                </div>
+                <div class="form-field">
+                  <label for="ai-video-resolution">Resolution</label>
+                  <input
+                    id="ai-video-resolution"
+                    type="text"
+                    [ngModel]="videoResolution()"
+                    (ngModelChange)="onVideoResolutionChange($event)"
+                    placeholder="1280x720"
+                  />
+                </div>
+                <div class="form-field">
+                  <label for="ai-video-format">Format</label>
+                  <select
+                    id="ai-video-format"
+                    [ngModel]="videoFormat()"
+                    (ngModelChange)="onVideoFormatChange($event)"
+                  >
+                    <option [ngValue]="'mp4'">mp4</option>
+                    <option [ngValue]="'gif'">gif</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -307,11 +401,21 @@ export class AiAddCardsModalComponent implements OnInit {
     ttsFormat = signal('mp3');
     ttsMaxChars = signal(300);
     ttsMappings = signal<TtsMapping[]>([]);
+    imageModel = signal('');
+    imageSize = signal('1024x1024');
+    imageFormat = signal('png');
+    videoModel = signal('');
+    videoResolution = signal('1280x720');
+    videoDurationSeconds = signal(5);
+    videoFormat = signal('mp4');
 
     readonly voiceOptions = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer', 'custom'];
     readonly formatOptions = ['mp3', 'ogg', 'wav'];
     readonly ttsFormatOptions = computed(() => this.selectedProvider() === 'gemini' ? ['wav'] : this.formatOptions);
+    readonly ttsSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
     readonly hasAudioFields = computed(() => this.audioFields().length > 0);
+    readonly imageSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
+    readonly videoSupported = computed(() => this.selectedProvider() === 'openai');
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
         if (!selectedId) return '';
@@ -320,6 +424,12 @@ export class AiAddCardsModalComponent implements OnInit {
     });
     readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
+    readonly selectedImageFields = computed(() =>
+        this.templateFields().filter(field => field.fieldType === 'image' && this.selectedFields().has(field.name))
+    );
+    readonly selectedVideoFields = computed(() =>
+        this.templateFields().filter(field => field.fieldType === 'video' && this.selectedFields().has(field.name))
+    );
 
     constructor(private aiApi: AiApiService, private templateApi: TemplateApiService) {}
 
@@ -356,40 +466,32 @@ export class AiAddCardsModalComponent implements OnInit {
             next: template => {
                 const fields = template.fields || [];
                 this.templateFields.set(fields);
-        const options = fields.map(field => this.toFieldOption(field));
-        const textFields = fields.filter(field => this.isTextField(field.fieldType));
-        const audioFields = fields.filter(field => field.fieldType === 'audio');
-        this.textFields.set(textFields);
-        this.audioFields.set(audioFields);
-        if (options.length > 0) {
-            this.fieldOptions.set(options);
-            if (!this.draftLoaded) {
-                const initial = textFields.slice(0, 2).map(field => field.name);
-                if (initial.length > 0) {
-                    this.selectedFields.set(new Set(initial));
+                const textFields = fields.filter(field => this.isTextField(field.fieldType));
+                const audioFields = fields.filter(field => field.fieldType === 'audio');
+                this.textFields.set(textFields);
+                this.audioFields.set(audioFields);
+                this.refreshFieldOptions();
+                if (!this.draftLoaded) {
+                    const initial = textFields.slice(0, 2).map(field => field.name);
+                    if (initial.length > 0) {
+                        this.selectedFields.set(new Set(initial));
+                    }
                 }
-            }
-        }
-        if (this.draftLoaded) {
-            const validKeys = new Set(options.map(option => option.key));
-            const filtered = Array.from(this.selectedFields()).filter(key => validKeys.has(key));
-            if (filtered.length > 0) {
-                this.selectedFields.set(new Set(filtered));
-            }
-            const validText = new Set(textFields.map(field => field.name));
-            const validAudio = new Set(audioFields.map(field => field.name));
-            const filteredMappings = this.ttsMappings().filter(mapping =>
-                validText.has(mapping.sourceField) && validAudio.has(mapping.targetField)
-            );
-            this.ttsMappings.set(filteredMappings);
-        }
-        if (audioFields.length > 0 && this.ttsMappings().length === 0) {
-            const defaultSource = this.resolveDefaultSourceField(textFields);
-            const defaultTarget = audioFields[0]?.name || '';
-            if (defaultSource && defaultTarget) {
-                this.ttsMappings.set([{ sourceField: defaultSource, targetField: defaultTarget }]);
-            }
-        }
+                if (this.draftLoaded) {
+                    const validText = new Set(textFields.map(field => field.name));
+                    const validAudio = new Set(audioFields.map(field => field.name));
+                    const filteredMappings = this.ttsMappings().filter(mapping =>
+                        validText.has(mapping.sourceField) && validAudio.has(mapping.targetField)
+                    );
+                    this.ttsMappings.set(filteredMappings);
+                }
+                if (audioFields.length > 0 && this.ttsMappings().length === 0) {
+                    const defaultSource = this.resolveDefaultSourceField(textFields);
+                    const defaultTarget = audioFields[0]?.name || '';
+                    if (defaultSource && defaultTarget) {
+                        this.ttsMappings.set([{ sourceField: defaultSource, targetField: defaultTarget }]);
+                    }
+                }
                 this.loadingTemplate.set(false);
             },
             error: () => {
@@ -410,6 +512,19 @@ export class AiAddCardsModalComponent implements OnInit {
         this.persistDraft();
     }
 
+    private refreshFieldOptions(): void {
+        const options = this.templateFields().map(field => this.toFieldOption(field));
+        if (options.length === 0) {
+            return;
+        }
+        this.fieldOptions.set(options);
+        const enabledKeys = new Set(options.filter(option => option.enabled).map(option => option.key));
+        const filtered = Array.from(this.selectedFields()).filter(key => enabledKeys.has(key));
+        if (filtered.length > 0) {
+            this.selectedFields.set(new Set(filtered));
+        }
+    }
+
     canSubmit(): boolean {
         return !this.creating()
             && !!this.selectedCredentialId()
@@ -427,6 +542,8 @@ export class AiAddCardsModalComponent implements OnInit {
         const fields = Array.from(this.selectedFields());
         const input = this.buildPrompt(fields);
         const tts = this.buildTtsParams();
+        const image = this.buildImageParams(fields);
+        const video = this.buildVideoParams(fields);
 
         this.aiApi.createJob({
             requestId: this.generateRequestId(),
@@ -439,7 +556,9 @@ export class AiAddCardsModalComponent implements OnInit {
                 fields,
                 count: this.cardsCount(),
                 mode: 'generate_cards',
-                ...(tts ? { tts } : {})
+                ...(tts ? { tts } : {}),
+                ...(image ? { image } : {}),
+                ...(video ? { video } : {})
             }
         }).subscribe({
             next: job => {
@@ -479,12 +598,29 @@ export class AiAddCardsModalComponent implements OnInit {
         return {
             key: field.name,
             label,
-            enabled: this.isTextField(field.fieldType)
+            enabled: this.isFieldOptionEnabled(field.fieldType)
         };
     }
 
     private isTextField(fieldType: string): boolean {
         return ['text', 'rich_text', 'markdown', 'cloze'].includes(fieldType);
+    }
+
+    private isPromptFieldType(fieldType: string): boolean {
+        return ['text', 'rich_text', 'markdown', 'cloze', 'image', 'video'].includes(fieldType);
+    }
+
+    private isFieldOptionEnabled(fieldType: string): boolean {
+        if (!this.isPromptFieldType(fieldType)) {
+            return false;
+        }
+        if (fieldType === 'image') {
+            return this.imageSupported();
+        }
+        if (fieldType === 'video') {
+            return this.videoSupported();
+        }
+        return true;
     }
 
     private resolveDefaultSourceField(fields: FieldTemplateDTO[]): string {
@@ -542,6 +678,10 @@ export class AiAddCardsModalComponent implements OnInit {
         if (!allowed.includes(this.ttsFormat())) {
             this.ttsFormat.set(allowed[0]);
         }
+        if (!this.ttsSupported()) {
+            this.ttsEnabled.set(false);
+        }
+        this.refreshFieldOptions();
         this.persistDraft();
     }
 
@@ -593,6 +733,41 @@ export class AiAddCardsModalComponent implements OnInit {
         this.persistDraft();
     }
 
+    onImageModelChange(value: string): void {
+        this.imageModel.set(value);
+        this.persistDraft();
+    }
+
+    onImageSizeChange(value: string): void {
+        this.imageSize.set(value);
+        this.persistDraft();
+    }
+
+    onImageFormatChange(value: string): void {
+        this.imageFormat.set(value);
+        this.persistDraft();
+    }
+
+    onVideoModelChange(value: string): void {
+        this.videoModel.set(value);
+        this.persistDraft();
+    }
+
+    onVideoDurationChange(value: number): void {
+        this.videoDurationSeconds.set(Math.max(1, Math.min(Number(value) || 1, 20)));
+        this.persistDraft();
+    }
+
+    onVideoResolutionChange(value: string): void {
+        this.videoResolution.set(value);
+        this.persistDraft();
+    }
+
+    onVideoFormatChange(value: string): void {
+        this.videoFormat.set(value);
+        this.persistDraft();
+    }
+
     addTtsMapping(): void {
         const source = this.resolveDefaultSourceField(this.textFields());
         const target = this.audioFields()[0]?.name || '';
@@ -626,7 +801,7 @@ export class AiAddCardsModalComponent implements OnInit {
     }
 
     private buildTtsParams(): Record<string, unknown> | null {
-        if (!this.hasAudioFields() || !this.ttsEnabled()) {
+        if (!this.hasAudioFields() || !this.ttsEnabled() || !this.ttsSupported()) {
             return null;
         }
         const mappings = this.ttsMappings()
@@ -644,6 +819,39 @@ export class AiAddCardsModalComponent implements OnInit {
         };
     }
 
+    private buildImageParams(fields: string[]): Record<string, unknown> | null {
+        if (!this.imageSupported()) {
+            return null;
+        }
+        const hasImage = this.templateFields().some(field => field.fieldType === 'image' && fields.includes(field.name));
+        if (!hasImage) {
+            return null;
+        }
+        return {
+            enabled: true,
+            model: this.imageModel().trim() || undefined,
+            size: this.imageSize().trim() || undefined,
+            format: this.imageFormat()
+        };
+    }
+
+    private buildVideoParams(fields: string[]): Record<string, unknown> | null {
+        if (!this.videoSupported()) {
+            return null;
+        }
+        const hasVideo = this.templateFields().some(field => field.fieldType === 'video' && fields.includes(field.name));
+        if (!hasVideo) {
+            return null;
+        }
+        return {
+            enabled: true,
+            model: this.videoModel().trim() || undefined,
+            durationSeconds: this.videoDurationSeconds(),
+            resolution: this.videoResolution().trim() || undefined,
+            format: this.videoFormat()
+        };
+    }
+
     private persistDraft(): void {
         if (!this.storageKey) return;
         const payload = {
@@ -657,7 +865,14 @@ export class AiAddCardsModalComponent implements OnInit {
             ttsVoice: this.resolveVoice(),
             ttsFormat: this.ttsFormat(),
             ttsMaxChars: this.ttsMaxChars(),
-            ttsMappings: this.ttsMappings()
+            ttsMappings: this.ttsMappings(),
+            imageModel: this.imageModel(),
+            imageSize: this.imageSize(),
+            imageFormat: this.imageFormat(),
+            videoModel: this.videoModel(),
+            videoResolution: this.videoResolution(),
+            videoDurationSeconds: this.videoDurationSeconds(),
+            videoFormat: this.videoFormat()
         };
         try {
             localStorage.setItem(this.storageKey, JSON.stringify(payload));
@@ -694,6 +909,13 @@ export class AiAddCardsModalComponent implements OnInit {
             if (Array.isArray(payload.ttsMappings)) {
                 this.ttsMappings.set(payload.ttsMappings);
             }
+            if (payload.imageModel) this.imageModel.set(payload.imageModel);
+            if (payload.imageSize) this.imageSize.set(payload.imageSize);
+            if (payload.imageFormat) this.imageFormat.set(payload.imageFormat);
+            if (payload.videoModel) this.videoModel.set(payload.videoModel);
+            if (payload.videoResolution) this.videoResolution.set(payload.videoResolution);
+            if (payload.videoDurationSeconds) this.videoDurationSeconds.set(payload.videoDurationSeconds);
+            if (payload.videoFormat) this.videoFormat.set(payload.videoFormat);
             const allowedFormats = this.ttsFormatOptions();
             if (!allowedFormats.includes(this.ttsFormat())) {
                 this.ttsFormat.set(allowedFormats[0]);

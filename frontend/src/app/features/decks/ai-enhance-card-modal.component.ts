@@ -58,32 +58,45 @@ interface CardAuditSummary {
 
           <div class="missing-panel" *ngIf="missingFields().length > 0">
             <label class="grid-label">{{ 'cardEnhance.missingFields' | translate }}</label>
+            <div class="missing-toggles">
+              <label class="toggle">
+                <input
+                  type="checkbox"
+                  [checked]="ttsEnabled()"
+                  (change)="onTtsEnabledChange($any($event.target).checked)"
+                  [disabled]="!ttsSupported() || missingAudioFields().length === 0"
+                />
+                <span>Generate audio</span>
+              </label>
+              <label class="toggle">
+                <input
+                  type="checkbox"
+                  [checked]="imageEnabled()"
+                  (change)="onImageEnabledChange($any($event.target).checked)"
+                  [disabled]="!imageSupported() || missingImageFields().length === 0"
+                />
+                <span>Generate images</span>
+              </label>
+              <label class="toggle">
+                <input
+                  type="checkbox"
+                  [checked]="videoEnabled()"
+                  (change)="onVideoEnabledChange($any($event.target).checked)"
+                  [disabled]="!videoSupported() || missingVideoFields().length === 0"
+                />
+                <span>Generate video / GIF</span>
+              </label>
+            </div>
+            <div *ngIf="missingAudioFields().length > 0 && !ttsSupported()" class="field-hint">
+              {{ 'cardEnhance.audioUnavailable' | translate }}
+            </div>
             <div class="missing-list">
               <div class="missing-row" *ngFor="let field of missingFields(); trackBy: trackField">
                 <span class="missing-label">{{ field.label || field.name }}</span>
+                <span class="missing-type">{{ fieldTypeLabel(field.fieldType) }}</span>
               </div>
             </div>
-            <app-button
-              variant="secondary"
-              size="sm"
-              (click)="runFillMissingFields()"
-              [disabled]="runningFill() || !selectedCredentialId()"
-            >
-              {{ runningFill() ? ('cardEnhance.filling' | translate) : ('cardEnhance.fillMissing' | translate) }}
-            </app-button>
-          </div>
-
-          <div class="missing-panel" *ngIf="missingAudioFields().length > 0">
-            <label class="grid-label">{{ 'cardEnhance.missingAudio' | translate }}</label>
-            <div class="missing-list">
-              <div class="missing-row" *ngFor="let field of missingAudioFields(); trackBy: trackField">
-                <span class="missing-label">{{ field.label || field.name }}</span>
-              </div>
-            </div>
-            <div *ngIf="!ttsSupported()" class="field-hint">
-              {{ 'cardEnhance.audioUnavailable' | translate }}
-            </div>
-            <div *ngIf="ttsSupported()" class="form-grid tts-form">
+            <div *ngIf="missingAudioFields().length > 0 && ttsEnabled() && ttsSupported()" class="form-grid tts-form">
               <div class="form-field">
                 <label for="ai-card-voice">{{ 'cardEnhance.voice' | translate }}</label>
                 <select
@@ -105,13 +118,47 @@ interface CardAuditSummary {
                 />
               </div>
             </div>
+            <div *ngIf="missingImageFields().length > 0 && imageEnabled() && imageSupported()" class="form-grid tts-form">
+              <div class="form-field">
+                <label for="ai-card-image-model">Image model</label>
+                <input
+                  id="ai-card-image-model"
+                  type="text"
+                  [ngModel]="imageModel()"
+                  (ngModelChange)="onImageModelChange($event)"
+                  placeholder="model-name"
+                />
+              </div>
+              <div class="form-field">
+                <label for="ai-card-image-size">Size</label>
+                <input
+                  id="ai-card-image-size"
+                  type="text"
+                  [ngModel]="imageSize()"
+                  (ngModelChange)="onImageSizeChange($event)"
+                  placeholder="1024x1024"
+                />
+              </div>
+            </div>
+            <div *ngIf="missingVideoFields().length > 0 && videoEnabled() && videoSupported()" class="form-grid tts-form">
+              <div class="form-field">
+                <label for="ai-card-video-model">Video model</label>
+                <input
+                  id="ai-card-video-model"
+                  type="text"
+                  [ngModel]="videoModel()"
+                  (ngModelChange)="onVideoModelChange($event)"
+                  placeholder="model-name"
+                />
+              </div>
+            </div>
             <app-button
               variant="secondary"
               size="sm"
-              (click)="runFillMissingAudio()"
-              [disabled]="runningAudio() || !selectedCredentialId() || !ttsSupported()"
+              (click)="runFillMissingFields()"
+              [disabled]="runningFill() || !selectedCredentialId()"
             >
-              {{ runningAudio() ? ('cardEnhance.generatingAudio' | translate) : ('cardEnhance.fillMissingAudio' | translate) }}
+              {{ runningFill() ? ('cardEnhance.filling' | translate) : ('cardEnhance.fillMissing' | translate) }}
             </app-button>
           </div>
 
@@ -246,14 +293,33 @@ interface CardAuditSummary {
         gap: var(--spacing-xs);
       }
 
+      .missing-toggles {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-md);
+      }
+
+      .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+        font-weight: 600;
+      }
+
       .missing-row {
         display: flex;
         justify-content: space-between;
+        gap: var(--spacing-sm);
         padding: var(--spacing-xs) 0;
       }
 
       .missing-label {
         font-weight: 600;
+      }
+
+      .missing-type {
+        font-size: 0.8rem;
+        color: var(--color-text-secondary);
       }
 
       .grid-label {
@@ -316,13 +382,22 @@ export class AiEnhanceCardModalComponent implements OnInit {
 
     runningAudit = signal(false);
     runningFill = signal(false);
-    runningAudio = signal(false);
     auditError = signal('');
     auditSummary = signal<CardAuditSummary | null>(null);
     auditUpdatedAt = signal<string | null>(null);
 
+    ttsEnabled = signal(true);
     ttsVoicePreset = signal('alloy');
     ttsVoiceCustom = signal('');
+    imageEnabled = signal(true);
+    videoEnabled = signal(false);
+    imageModel = signal('');
+    imageSize = signal('1024x1024');
+    imageFormat = signal('png');
+    videoModel = signal('');
+    videoResolution = signal('1280x720');
+    videoDurationSeconds = signal(5);
+    videoFormat = signal('mp4');
 
     private storageKey = '';
 
@@ -333,6 +408,8 @@ export class AiEnhanceCardModalComponent implements OnInit {
         return this.normalizeProvider(provider);
     });
     readonly ttsSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
+    readonly imageSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
+    readonly videoSupported = computed(() => this.selectedProvider() === 'openai');
     readonly voiceOptions = computed(() => {
         const provider = this.selectedProvider();
         if (provider === 'gemini') {
@@ -403,6 +480,15 @@ export class AiEnhanceCardModalComponent implements OnInit {
     onProviderChange(value: string): void {
         this.selectedCredentialId.set(value);
         this.syncVoicePreset();
+        if (!this.ttsSupported()) {
+            this.ttsEnabled.set(false);
+        }
+        if (!this.imageSupported()) {
+            this.imageEnabled.set(false);
+        }
+        if (!this.videoSupported()) {
+            this.videoEnabled.set(false);
+        }
     }
 
     onTtsVoicePresetChange(value: string): void {
@@ -414,6 +500,30 @@ export class AiEnhanceCardModalComponent implements OnInit {
 
     onTtsVoiceCustomChange(value: string): void {
         this.ttsVoiceCustom.set(value);
+    }
+
+    onTtsEnabledChange(enabled: boolean): void {
+        this.ttsEnabled.set(enabled);
+    }
+
+    onImageEnabledChange(enabled: boolean): void {
+        this.imageEnabled.set(enabled);
+    }
+
+    onVideoEnabledChange(enabled: boolean): void {
+        this.videoEnabled.set(enabled);
+    }
+
+    onImageModelChange(value: string): void {
+        this.imageModel.set(value);
+    }
+
+    onImageSizeChange(value: string): void {
+        this.imageSize.set(value);
+    }
+
+    onVideoModelChange(value: string): void {
+        this.videoModel.set(value);
     }
 
     runAudit(): void {
@@ -441,11 +551,16 @@ export class AiEnhanceCardModalComponent implements OnInit {
 
     runFillMissingFields(): void {
         if (!this.card || !this.selectedCredentialId()) return;
-        const missing = this.missingFields().map(field => field.name);
+        const missing = this.missingFields()
+            .filter(field => this.isFieldSelectedForFill(field))
+            .map(field => field.name);
         if (missing.length === 0) return;
         this.runningFill.set(true);
         this.auditError.set('');
         const requestId = this.generateRequestId();
+        const tts = this.buildTtsParams(missing);
+        const image = this.buildImageParams(missing);
+        const video = this.buildVideoParams(missing);
         this.aiApi.createJob({
             requestId,
             deckId: this.userDeckId,
@@ -454,7 +569,10 @@ export class AiEnhanceCardModalComponent implements OnInit {
                 providerCredentialId: this.selectedCredentialId(),
                 mode: 'card_missing_fields',
                 cardId: this.card.userCardId,
-                fields: missing
+                fields: missing,
+                ...(tts ? { tts } : {}),
+                ...(image ? { image } : {}),
+                ...(video ? { video } : {})
             }
         }).subscribe({
             next: job => this.pollJob(job, 'fill'),
@@ -465,42 +583,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
         });
     }
 
-    runFillMissingAudio(): void {
-        if (!this.card || !this.selectedCredentialId()) return;
-        if (!this.ttsSupported()) {
-            this.auditError.set('TTS is not available for this provider');
-            return;
-        }
-        const missing = this.missingAudioFields().map(field => field.name);
-        if (missing.length === 0) return;
-        this.runningAudio.set(true);
-        this.auditError.set('');
-        const requestId = this.generateRequestId();
-        this.aiApi.createJob({
-            requestId,
-            deckId: this.userDeckId,
-            type: 'generic',
-            params: {
-                providerCredentialId: this.selectedCredentialId(),
-                mode: 'card_missing_audio',
-                cardId: this.card.userCardId,
-                fields: missing,
-                tts: {
-                    enabled: true,
-                    voice: this.resolveVoice(),
-                    format: this.resolveAudioFormat()
-                }
-            }
-        }).subscribe({
-            next: job => this.pollJob(job, 'audio'),
-            error: err => {
-                this.runningAudio.set(false);
-                this.auditError.set(err?.error?.message || 'Failed to start audio generation');
-            }
-        });
-    }
-
-    private pollJob(job: AiJobResponse, action: 'audit' | 'fill' | 'audio'): void {
+    private pollJob(job: AiJobResponse, action: 'audit' | 'fill'): void {
         const poll = () => {
             this.aiApi.getJob(job.jobId).subscribe({
                 next: updated => {
@@ -513,9 +596,6 @@ export class AiEnhanceCardModalComponent implements OnInit {
                                 } else if (action === 'fill') {
                                     this.runningFill.set(false);
                                     this.refreshCard();
-                                } else {
-                                    this.runningAudio.set(false);
-                                    this.refreshCard();
                                 }
                             },
                             error: () => {
@@ -524,8 +604,6 @@ export class AiEnhanceCardModalComponent implements OnInit {
                                     this.auditError.set('Failed to load audit results');
                                 } else if (action === 'fill') {
                                     this.runningFill.set(false);
-                                } else {
-                                    this.runningAudio.set(false);
                                 }
                             }
                         });
@@ -538,9 +616,6 @@ export class AiEnhanceCardModalComponent implements OnInit {
                         } else if (action === 'fill') {
                             this.runningFill.set(false);
                             this.auditError.set('Fill missing fields failed');
-                        } else {
-                            this.runningAudio.set(false);
-                            this.auditError.set('Audio generation failed');
                         }
                         return;
                     }
@@ -553,9 +628,6 @@ export class AiEnhanceCardModalComponent implements OnInit {
                     } else if (action === 'fill') {
                         this.runningFill.set(false);
                         this.auditError.set('Fill missing fields failed');
-                    } else {
-                        this.runningAudio.set(false);
-                        this.auditError.set('Audio generation failed');
                     }
                 }
             });
@@ -625,15 +697,48 @@ export class AiEnhanceCardModalComponent implements OnInit {
     missingFields(): FieldTemplateDTO[] {
         if (!this.card || !this.template) return [];
         return (this.template.fields || []).filter(field =>
-            this.isTextField(field.fieldType) && this.isMissingTextField(field.name)
+            this.isSupportedFieldType(field.fieldType) && this.isMissingField(field)
         );
     }
 
     missingAudioFields(): FieldTemplateDTO[] {
         if (!this.card || !this.template) return [];
         return (this.template.fields || []).filter(field =>
-            this.isAudioField(field.fieldType) && this.isMissingAudioField(field.name)
+            field.fieldType === 'audio' && this.isMissingMediaField(field.name)
         );
+    }
+
+    missingImageFields(): FieldTemplateDTO[] {
+        if (!this.card || !this.template) return [];
+        return (this.template.fields || []).filter(field =>
+            field.fieldType === 'image' && this.isMissingMediaField(field.name)
+        );
+    }
+
+    missingVideoFields(): FieldTemplateDTO[] {
+        if (!this.card || !this.template) return [];
+        return (this.template.fields || []).filter(field =>
+            field.fieldType === 'video' && this.isMissingMediaField(field.name)
+        );
+    }
+
+    fieldTypeLabel(fieldType: string): string {
+        switch (fieldType) {
+            case 'audio':
+                return 'Audio';
+            case 'image':
+                return 'Image';
+            case 'video':
+                return 'Video';
+            case 'markdown':
+                return 'Markdown';
+            case 'rich_text':
+                return 'Rich text';
+            case 'cloze':
+                return 'Cloze';
+            default:
+                return 'Text';
+        }
     }
 
     voiceLabel(voice: string): string {
@@ -646,8 +751,8 @@ export class AiEnhanceCardModalComponent implements OnInit {
         return ['text', 'rich_text', 'markdown', 'cloze'].includes(fieldType);
     }
 
-    private isAudioField(fieldType: string): boolean {
-        return fieldType === 'audio';
+    private isSupportedFieldType(fieldType: string): boolean {
+        return ['text', 'rich_text', 'markdown', 'cloze', 'audio', 'image', 'video'].includes(fieldType);
     }
 
     private isMissingTextField(fieldName: string): boolean {
@@ -659,12 +764,19 @@ export class AiEnhanceCardModalComponent implements OnInit {
         return value === null || value === undefined;
     }
 
-    private isMissingAudioField(fieldName: string): boolean {
-        if (!this.card || !this.card.effectiveContent) return true;
-        return this.isMissingAudioValue(this.card.effectiveContent[fieldName]);
+    private isMissingField(field: FieldTemplateDTO): boolean {
+        if (this.isTextField(field.fieldType)) {
+            return this.isMissingTextField(field.name);
+        }
+        return this.isMissingMediaField(field.name);
     }
 
-    private isMissingAudioValue(value: unknown): boolean {
+    private isMissingMediaField(fieldName: string): boolean {
+        if (!this.card || !this.card.effectiveContent) return true;
+        return this.isMissingMediaValue(this.card.effectiveContent[fieldName]);
+    }
+
+    private isMissingMediaValue(value: unknown): boolean {
         if (value === null || value === undefined) {
             return true;
         }
@@ -707,6 +819,70 @@ export class AiEnhanceCardModalComponent implements OnInit {
 
     private resolveAudioFormat(): string {
         return this.selectedProvider() === 'gemini' ? 'wav' : 'mp3';
+    }
+
+    private isFieldSelectedForFill(field: FieldTemplateDTO): boolean {
+        if (field.fieldType === 'audio') {
+            return this.ttsEnabled() && this.ttsSupported();
+        }
+        if (field.fieldType === 'image') {
+            return this.imageEnabled() && this.imageSupported();
+        }
+        if (field.fieldType === 'video') {
+            return this.videoEnabled() && this.videoSupported();
+        }
+        return true;
+    }
+
+    private buildTtsParams(missingFields: string[]): Record<string, unknown> | null {
+        if (!this.ttsEnabled() || !this.ttsSupported()) {
+            return null;
+        }
+        const audioFields = this.missingAudioFields().map(field => field.name);
+        if (audioFields.length === 0) {
+            return null;
+        }
+        if (!audioFields.some(field => missingFields.includes(field))) {
+            return null;
+        }
+        return {
+            enabled: true,
+            voice: this.resolveVoice(),
+            format: this.resolveAudioFormat()
+        };
+    }
+
+    private buildImageParams(missingFields: string[]): Record<string, unknown> | null {
+        if (!this.imageEnabled() || !this.imageSupported()) {
+            return null;
+        }
+        const imageFields = this.missingImageFields().map(field => field.name);
+        if (!imageFields.some(field => missingFields.includes(field))) {
+            return null;
+        }
+        return {
+            enabled: true,
+            model: this.imageModel().trim() || undefined,
+            size: this.imageSize().trim() || undefined,
+            format: this.imageFormat()
+        };
+    }
+
+    private buildVideoParams(missingFields: string[]): Record<string, unknown> | null {
+        if (!this.videoEnabled() || !this.videoSupported()) {
+            return null;
+        }
+        const videoFields = this.missingVideoFields().map(field => field.name);
+        if (!videoFields.some(field => missingFields.includes(field))) {
+            return null;
+        }
+        return {
+            enabled: true,
+            model: this.videoModel().trim() || undefined,
+            durationSeconds: this.videoDurationSeconds(),
+            resolution: this.videoResolution().trim() || undefined,
+            format: this.videoFormat()
+        };
     }
 
     private refreshCard(): void {
