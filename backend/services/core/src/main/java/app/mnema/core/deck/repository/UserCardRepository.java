@@ -117,7 +117,9 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
           and uc.is_deleted = false
           and coalesce(
                 nullif(jsonb_extract_path_text(uc.content_override, :field), ''),
-                nullif(jsonb_extract_path_text(pc.content, :field), '')
+                nullif(jsonb_extract_path_text(pc.content, :field), ''),
+                nullif(jsonb_extract_path_text(uc.content_override, :field, 'mediaId'), ''),
+                nullif(jsonb_extract_path_text(pc.content, :field, 'mediaId'), '')
               ) is null
         """, nativeQuery = true)
     long countMissingField(
@@ -136,7 +138,9 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
           and uc.is_deleted = false
           and coalesce(
                 nullif(jsonb_extract_path_text(uc.content_override, :field), ''),
-                nullif(jsonb_extract_path_text(pc.content, :field), '')
+                nullif(jsonb_extract_path_text(pc.content, :field), ''),
+                nullif(jsonb_extract_path_text(uc.content_override, :field, 'mediaId'), ''),
+                nullif(jsonb_extract_path_text(pc.content, :field, 'mediaId'), '')
               ) is null
         order by uc.created_at desc
         limit :limit

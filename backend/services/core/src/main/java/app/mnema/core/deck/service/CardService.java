@@ -164,27 +164,45 @@ public class CardService {
         if (!deck.getUserId().equals(currentUserId)) {
             throw new SecurityException("Access denied to deck " + userDeckId);
         }
-        if (request == null || request.fields() == null || request.fields().isEmpty()) {
-            throw new IllegalArgumentException("fields are required");
-        }
-        int limit = request.limit() == null ? 50 : Math.max(1, Math.min(request.limit(), 200));
-        List<String> fields = request.fields().stream()
-                .filter(name -> name != null && !name.isBlank())
-                .map(String::trim)
-                .distinct()
-                .toList();
-        if (fields.isEmpty()) {
+        if (request == null) {
             throw new IllegalArgumentException("fields are required");
         }
 
+        List<MissingFieldCardsRequest.FieldLimit> fieldLimits = request.fieldLimits() == null
+                ? List.of()
+                : request.fieldLimits().stream()
+                    .filter(limit -> limit != null && limit.field() != null && !limit.field().isBlank())
+                    .toList();
+
         java.util.LinkedHashSet<UUID> merged = new java.util.LinkedHashSet<>();
-        for (String field : fields) {
-            if (merged.size() >= limit) {
-                break;
+        if (!fieldLimits.isEmpty()) {
+            for (MissingFieldCardsRequest.FieldLimit limitEntry : fieldLimits) {
+                String field = limitEntry.field().trim();
+                int limit = limitEntry.limit() == null ? 50 : Math.max(1, Math.min(limitEntry.limit(), 200));
+                List<UUID> ids = userCardRepository.findMissingFieldCardIds(currentUserId, userDeckId, field, limit);
+                merged.addAll(ids);
             }
-            int remaining = limit - merged.size();
-            List<UUID> ids = userCardRepository.findMissingFieldCardIds(currentUserId, userDeckId, field, remaining);
-            merged.addAll(ids);
+        } else {
+            if (request.fields() == null || request.fields().isEmpty()) {
+                throw new IllegalArgumentException("fields are required");
+            }
+            int limit = request.limit() == null ? 50 : Math.max(1, Math.min(request.limit(), 200));
+            List<String> fields = request.fields().stream()
+                    .filter(name -> name != null && !name.isBlank())
+                    .map(String::trim)
+                    .distinct()
+                    .toList();
+            if (fields.isEmpty()) {
+                throw new IllegalArgumentException("fields are required");
+            }
+            for (String field : fields) {
+                if (merged.size() >= limit) {
+                    break;
+                }
+                int remaining = limit - merged.size();
+                List<UUID> ids = userCardRepository.findMissingFieldCardIds(currentUserId, userDeckId, field, remaining);
+                merged.addAll(ids);
+            }
         }
         if (merged.isEmpty()) {
             return List.of();
