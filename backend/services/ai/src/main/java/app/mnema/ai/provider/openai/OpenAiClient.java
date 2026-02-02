@@ -127,11 +127,11 @@ public class OpenAiClient {
         MultipartBodyBuilder builder = new MultipartBodyBuilder();
         builder.part("prompt", request.prompt());
         builder.part("model", request.model());
-        if (request.durationSeconds() != null && request.durationSeconds() > 0) {
-            builder.part("duration", request.durationSeconds().toString());
+        if (request.seconds() != null && request.seconds() > 0) {
+            builder.part("seconds", request.seconds().toString());
         }
-        if (request.resolution() != null && !request.resolution().isBlank()) {
-            builder.part("resolution", request.resolution());
+        if (request.size() != null && !request.size().isBlank()) {
+            builder.part("size", request.size());
         }
 
         JsonNode response = restClient.post()

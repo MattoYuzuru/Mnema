@@ -1932,10 +1932,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
                 continue;
             }
-            ObjectNode updatedContent = card.effectiveContent().deepCopy();
+            ObjectNode updatedContent = loadLatestContent(job.getJobId(), job.getDeckId(), card.userCardId(), accessToken, card.effectiveContent().deepCopy());
             boolean updated = false;
             for (TtsMapping mapping : mappings) {
-                String text = extractTextValue(card.effectiveContent(), mapping.sourceField());
+                String text = extractTextValue(updatedContent, mapping.sourceField());
                 if (text == null || text.isBlank()) {
                     continue;
                 }
@@ -2288,7 +2288,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             if (mediaPrompts == null || mediaPrompts.isEmpty()) {
                 continue;
             }
-            ObjectNode updatedContent = card.effectiveContent().deepCopy();
+            ObjectNode updatedContent = loadLatestContent(job.getJobId(), job.getDeckId(), card.userCardId(), accessToken, card.effectiveContent().deepCopy());
             boolean changed = false;
             for (Map.Entry<String, String> entry : mediaPrompts.entrySet()) {
                 String field = entry.getKey();
@@ -2395,7 +2395,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             durationSeconds = props.defaultVideoDurationSeconds();
         }
         if (durationSeconds == null || durationSeconds <= 0) {
-            durationSeconds = 5;
+            durationSeconds = 4;
+        }
+        if (!List.of(4, 8, 12).contains(durationSeconds)) {
+            durationSeconds = 4;
         }
         String resolution = textOrDefault(node.path("resolution"), props.defaultVideoResolution());
         if (resolution == null || resolution.isBlank()) {
@@ -2422,6 +2425,25 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 new ByteArrayInputStream(result.data())
         );
         return new MediaUpload(mediaId, contentType, fileName);
+    }
+
+    private ObjectNode loadLatestContent(UUID jobId,
+                                         UUID deckId,
+                                         UUID cardId,
+                                         String accessToken,
+                                         ObjectNode fallback) {
+        if (deckId == null || cardId == null || accessToken == null || accessToken.isBlank()) {
+            return fallback;
+        }
+        try {
+            CoreApiClient.CoreUserCardDetail detail = coreApiClient.getUserCard(deckId, cardId, accessToken);
+            if (detail != null && detail.effectiveContent() != null && detail.effectiveContent().isObject()) {
+                return detail.effectiveContent().deepCopy();
+            }
+        } catch (Exception ex) {
+            LOGGER.warn("OpenAI failed to load latest card content jobId={} cardId={}", jobId, cardId, ex);
+        }
+        return fallback;
     }
 
     private MediaUpload generateVideo(AiJobEntity job, String apiKey, VideoConfig config, String prompt) {

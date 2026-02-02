@@ -97,15 +97,6 @@ type TtsMapping = { sourceField: string; targetField: string };
           </div>
 
           <div *ngIf="hasAudioFields()" class="tts-section">
-            <label class="tts-toggle">
-              <input
-                type="checkbox"
-                [checked]="ttsEnabled()"
-                (change)="onTtsEnabledChange($any($event.target).checked)"
-                [disabled]="!ttsSupported()"
-              />
-              <span>Generate audio (TTS)</span>
-            </label>
             <div *ngIf="!ttsSupported()" class="field-hint">TTS is supported for OpenAI and Gemini providers.</div>
 
             <div *ngIf="ttsEnabled()" class="tts-panel">
@@ -127,8 +118,8 @@ type TtsMapping = { sourceField: string; targetField: string };
                     [ngModel]="ttsVoicePreset()"
                     (ngModelChange)="onTtsVoicePresetChange($event)"
                   >
-                    <option *ngFor="let voice of voiceOptions" [ngValue]="voice">
-                      {{ voice }}
+                    <option *ngFor="let voice of voiceOptions()" [ngValue]="voice">
+                      {{ voiceLabel(voice) }}
                     </option>
                   </select>
                   <input
@@ -429,7 +420,16 @@ export class AiAddCardsModalComponent implements OnInit {
     videoDurationSeconds = signal(5);
     videoFormat = signal('mp4');
 
-    readonly voiceOptions = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer', 'custom'];
+    readonly voiceOptions = computed(() => {
+        const provider = this.selectedProvider();
+        if (provider === 'gemini') {
+            return [...this.geminiVoices, 'custom'];
+        }
+        if (provider === 'openai') {
+            return [...this.openAiVoices, 'custom'];
+        }
+        return ['custom'];
+    });
     readonly formatOptions = ['mp3', 'ogg', 'wav'];
     readonly ttsFormatOptions = computed(() => this.selectedProvider() === 'gemini' ? ['wav'] : this.formatOptions);
     readonly ttsSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
@@ -453,6 +453,40 @@ export class AiAddCardsModalComponent implements OnInit {
     readonly imageModelOptions = computed(() => this.resolveImageModelOptions(this.selectedProvider()));
     readonly videoModelOptions = computed(() => this.resolveVideoModelOptions(this.selectedProvider()));
 
+    private readonly openAiVoices = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer'];
+    private readonly geminiVoices = [
+        'achernar',
+        'achird',
+        'algenib',
+        'algieba',
+        'alnilam',
+        'aoede',
+        'autonoe',
+        'callirrhoe',
+        'charon',
+        'despina',
+        'enceladus',
+        'erinome',
+        'fenrir',
+        'gacrux',
+        'iapetus',
+        'kore',
+        'laomedeia',
+        'leda',
+        'orus',
+        'puck',
+        'pulcherrima',
+        'rasalgethi',
+        'sadachbia',
+        'sadaltager',
+        'schedar',
+        'sulafat',
+        'umbriel',
+        'vindemiatrix',
+        'zephyr',
+        'zubenelgenubi'
+    ];
+
     constructor(private aiApi: AiApiService, private templateApi: TemplateApiService) {}
 
     ngOnInit(): void {
@@ -472,6 +506,7 @@ export class AiAddCardsModalComponent implements OnInit {
                     this.selectedCredentialId.set(active[0].id);
                 }
                 this.ensureDefaultMediaModels();
+                this.syncVoicePreset();
                 this.loadingProviders.set(false);
             },
             error: () => {
@@ -494,6 +529,7 @@ export class AiAddCardsModalComponent implements OnInit {
                 this.textFields.set(textFields);
                 this.audioFields.set(audioFields);
                 this.refreshFieldOptions();
+                this.updateTtsEnabled();
                 if (!this.draftLoaded) {
                     const initial = textFields.slice(0, 2).map(field => field.name);
                     if (initial.length > 0) {
@@ -515,6 +551,7 @@ export class AiAddCardsModalComponent implements OnInit {
                         this.ttsMappings.set([{ sourceField: defaultSource, targetField: defaultTarget }]);
                     }
                 }
+                this.updateTtsEnabled();
                 this.loadingTemplate.set(false);
             },
             error: () => {
@@ -532,6 +569,7 @@ export class AiAddCardsModalComponent implements OnInit {
             next.add(field.key);
         }
         this.selectedFields.set(next);
+        this.updateTtsEnabled();
         this.persistDraft();
     }
 
@@ -630,7 +668,7 @@ export class AiAddCardsModalComponent implements OnInit {
     }
 
     private isPromptFieldType(fieldType: string): boolean {
-        return ['text', 'rich_text', 'markdown', 'cloze', 'image', 'video'].includes(fieldType);
+        return ['text', 'rich_text', 'markdown', 'cloze', 'image', 'video', 'audio'].includes(fieldType);
     }
 
     private isFieldOptionEnabled(fieldType: string): boolean {
@@ -665,6 +703,23 @@ export class AiAddCardsModalComponent implements OnInit {
         if (normalized === 'claude') return 'anthropic';
         if (normalized === 'google' || normalized === 'google-gemini') return 'gemini';
         return normalized;
+    }
+
+    private syncVoicePreset(): void {
+        const options = this.voiceOptions();
+        if (!options.length) return;
+        if (options.includes(this.ttsVoicePreset())) return;
+        const fallback = options[0];
+        this.ttsVoicePreset.set(fallback);
+        if (fallback !== 'custom') {
+            this.ttsVoiceCustom.set('');
+        }
+    }
+
+    voiceLabel(voice: string): string {
+        if (!voice) return '';
+        if (voice === 'custom') return 'Custom';
+        return voice.charAt(0).toUpperCase() + voice.slice(1);
     }
 
     private resolveModelPlaceholder(provider: string): string {
@@ -733,6 +788,8 @@ export class AiAddCardsModalComponent implements OnInit {
             this.ttsEnabled.set(false);
         }
         this.ensureDefaultMediaModels();
+        this.syncVoicePreset();
+        this.updateTtsEnabled();
         this.refreshFieldOptions();
         this.persistDraft();
     }
@@ -749,11 +806,6 @@ export class AiAddCardsModalComponent implements OnInit {
 
     onPromptChange(value: string): void {
         this.prompt.set(value);
-        this.persistDraft();
-    }
-
-    onTtsEnabledChange(value: boolean): void {
-        this.ttsEnabled.set(value);
         this.persistDraft();
     }
 
@@ -863,9 +915,11 @@ export class AiAddCardsModalComponent implements OnInit {
 
     private resolveVoice(): string {
         if (this.ttsVoicePreset() === 'custom') {
-            return this.ttsVoiceCustom().trim();
+            const custom = this.ttsVoiceCustom().trim();
+            return this.selectedProvider() === 'gemini' ? custom.toLowerCase() : custom;
         }
-        return this.ttsVoicePreset();
+        const voice = this.ttsVoicePreset();
+        return this.selectedProvider() === 'gemini' ? voice.toLowerCase() : voice;
     }
 
     private buildTtsParams(): Record<string, unknown> | null {
@@ -885,6 +939,16 @@ export class AiAddCardsModalComponent implements OnInit {
             maxChars: this.ttsMaxChars(),
             mappings
         };
+    }
+
+    private updateTtsEnabled(): void {
+        if (!this.ttsSupported()) {
+            this.ttsEnabled.set(false);
+            return;
+        }
+        const audioNames = new Set(this.audioFields().map(field => field.name));
+        const hasSelectedAudio = Array.from(this.selectedFields()).some(field => audioNames.has(field));
+        this.ttsEnabled.set(hasSelectedAudio);
     }
 
     private buildImageParams(fields: string[]): Record<string, unknown> | null {
@@ -975,11 +1039,12 @@ export class AiAddCardsModalComponent implements OnInit {
             if (payload.ttsFormat) this.ttsFormat.set(payload.ttsFormat);
             if (payload.ttsMaxChars) this.ttsMaxChars.set(payload.ttsMaxChars);
             if (payload.ttsVoice) {
-                if (this.voiceOptions.includes(payload.ttsVoice)) {
+                const options = this.voiceOptions();
+                if (options.includes(payload.ttsVoice)) {
                     this.ttsVoicePreset.set(payload.ttsVoice);
                 } else {
-                    this.ttsVoicePreset.set('custom');
-                    this.ttsVoiceCustom.set(payload.ttsVoice);
+                    this.ttsVoicePreset.set(options[0] || 'custom');
+                    this.ttsVoiceCustom.set('');
                 }
             }
             if (Array.isArray(payload.ttsMappings)) {
@@ -999,6 +1064,8 @@ export class AiAddCardsModalComponent implements OnInit {
                 this.ttsFormat.set(allowedFormats[0]);
             }
             this.ensureDefaultMediaModels();
+            this.syncVoicePreset();
+            this.updateTtsEnabled();
         } catch {
         }
     }

@@ -1288,7 +1288,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             if (card == null || card.userCardId() == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
                 continue;
             }
-            ObjectNode updatedContent = card.effectiveContent().deepCopy();
+            ObjectNode updatedContent = loadLatestContent(job.getJobId(), job.getDeckId(), card.userCardId(), accessToken, card.effectiveContent().deepCopy());
             boolean changed = false;
             Set<String> allowed = allowedFieldsByCard.get(card.userCardId());
             var it = update.fields().fields();
@@ -2028,6 +2028,25 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         return new MediaUpload(mediaId, contentType, fileName);
     }
 
+    private ObjectNode loadLatestContent(UUID jobId,
+                                         UUID deckId,
+                                         UUID cardId,
+                                         String accessToken,
+                                         ObjectNode fallback) {
+        if (deckId == null || cardId == null || accessToken == null || accessToken.isBlank()) {
+            return fallback;
+        }
+        try {
+            CoreApiClient.CoreUserCardDetail detail = coreApiClient.getUserCard(deckId, cardId, accessToken);
+            if (detail != null && detail.effectiveContent() != null && detail.effectiveContent().isObject()) {
+                return detail.effectiveContent().deepCopy();
+            }
+        } catch (Exception ex) {
+            LOGGER.warn("Gemini failed to load latest card content jobId={} cardId={}", jobId, cardId, ex);
+        }
+        return fallback;
+    }
+
     private String resolveImageExtension(String mimeType, String format) {
         if (format != null && !format.isBlank()) {
             String trimmed = format.trim().toLowerCase();
@@ -2101,10 +2120,10 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
                 continue;
             }
-            ObjectNode updatedContent = card.effectiveContent().deepCopy();
+            ObjectNode updatedContent = loadLatestContent(job.getJobId(), job.getDeckId(), card.userCardId(), accessToken, card.effectiveContent().deepCopy());
             boolean updated = false;
             for (TtsMapping mapping : mappings) {
-                String text = extractTextValue(card.effectiveContent(), mapping.sourceField());
+                String text = extractTextValue(updatedContent, mapping.sourceField());
                 if (text == null || text.isBlank()) {
                     continue;
                 }
