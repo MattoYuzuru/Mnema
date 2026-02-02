@@ -121,12 +121,21 @@ interface CardAuditSummary {
             <div *ngIf="missingImageFields().length > 0 && imageEnabled() && imageSupported()" class="form-grid tts-form">
               <div class="form-field">
                 <label for="ai-card-image-model">Image model</label>
-                <input
+                <select
                   id="ai-card-image-model"
-                  type="text"
                   [ngModel]="imageModel()"
                   (ngModelChange)="onImageModelChange($event)"
-                  placeholder="model-name"
+                >
+                  <option *ngFor="let model of imageModelOptions()" [ngValue]="model">
+                    {{ model === 'custom' ? 'Custom' : model }}
+                  </option>
+                </select>
+                <input
+                  *ngIf="imageModel() === 'custom'"
+                  type="text"
+                  [ngModel]="imageModelCustom()"
+                  (ngModelChange)="onImageModelCustomChange($event)"
+                  placeholder="custom-image-model"
                 />
               </div>
               <div class="form-field">
@@ -143,12 +152,21 @@ interface CardAuditSummary {
             <div *ngIf="missingVideoFields().length > 0 && videoEnabled() && videoSupported()" class="form-grid tts-form">
               <div class="form-field">
                 <label for="ai-card-video-model">Video model</label>
-                <input
+                <select
                   id="ai-card-video-model"
-                  type="text"
                   [ngModel]="videoModel()"
                   (ngModelChange)="onVideoModelChange($event)"
-                  placeholder="model-name"
+                >
+                  <option *ngFor="let model of videoModelOptions()" [ngValue]="model">
+                    {{ model === 'custom' ? 'Custom' : model }}
+                  </option>
+                </select>
+                <input
+                  *ngIf="videoModel() === 'custom'"
+                  type="text"
+                  [ngModel]="videoModelCustom()"
+                  (ngModelChange)="onVideoModelCustomChange($event)"
+                  placeholder="custom-video-model"
                 />
               </div>
             </div>
@@ -392,9 +410,11 @@ export class AiEnhanceCardModalComponent implements OnInit {
     imageEnabled = signal(true);
     videoEnabled = signal(false);
     imageModel = signal('');
+    imageModelCustom = signal('');
     imageSize = signal('1024x1024');
     imageFormat = signal('png');
     videoModel = signal('');
+    videoModelCustom = signal('');
     videoResolution = signal('1280x720');
     videoDurationSeconds = signal(5);
     videoFormat = signal('mp4');
@@ -410,6 +430,8 @@ export class AiEnhanceCardModalComponent implements OnInit {
     readonly ttsSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
     readonly imageSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
     readonly videoSupported = computed(() => this.selectedProvider() === 'openai');
+    readonly imageModelOptions = computed(() => this.resolveImageModelOptions(this.selectedProvider()));
+    readonly videoModelOptions = computed(() => this.resolveVideoModelOptions(this.selectedProvider()));
     readonly voiceOptions = computed(() => {
         const provider = this.selectedProvider();
         if (provider === 'gemini') {
@@ -480,6 +502,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
     onProviderChange(value: string): void {
         this.selectedCredentialId.set(value);
         this.syncVoicePreset();
+        this.ensureDefaultMediaModels();
         if (!this.ttsSupported()) {
             this.ttsEnabled.set(false);
         }
@@ -516,6 +539,13 @@ export class AiEnhanceCardModalComponent implements OnInit {
 
     onImageModelChange(value: string): void {
         this.imageModel.set(value);
+        if (value !== 'custom') {
+            this.imageModelCustom.set('');
+        }
+    }
+
+    onImageModelCustomChange(value: string): void {
+        this.imageModelCustom.set(value);
     }
 
     onImageSizeChange(value: string): void {
@@ -524,6 +554,13 @@ export class AiEnhanceCardModalComponent implements OnInit {
 
     onVideoModelChange(value: string): void {
         this.videoModel.set(value);
+        if (value !== 'custom') {
+            this.videoModelCustom.set('');
+        }
+    }
+
+    onVideoModelCustomChange(value: string): void {
+        this.videoModelCustom.set(value);
     }
 
     runAudit(): void {
@@ -685,6 +722,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
                 if (!this.selectedCredentialId() && active.length > 0) {
                     this.selectedCredentialId.set(active[0].id);
                 }
+                this.ensureDefaultMediaModels();
                 this.syncVoicePreset();
                 this.loadingProviders.set(false);
             },
@@ -821,6 +859,34 @@ export class AiEnhanceCardModalComponent implements OnInit {
         return this.selectedProvider() === 'gemini' ? 'wav' : 'mp3';
     }
 
+    private resolveImageModelOptions(provider: string): string[] {
+        if (provider === 'openai') {
+            return ['gpt-image-1-mini', 'gpt-image-1', 'custom'];
+        }
+        if (provider === 'gemini') {
+            return ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'custom'];
+        }
+        return ['custom'];
+    }
+
+    private resolveVideoModelOptions(provider: string): string[] {
+        if (provider === 'openai') {
+            return ['sora-2', 'custom'];
+        }
+        return ['custom'];
+    }
+
+    private ensureDefaultMediaModels(): void {
+        const imageOptions = this.imageModelOptions();
+        if (!imageOptions.includes(this.imageModel())) {
+            this.imageModel.set(imageOptions[0]);
+        }
+        const videoOptions = this.videoModelOptions();
+        if (!videoOptions.includes(this.videoModel())) {
+            this.videoModel.set(videoOptions[0]);
+        }
+    }
+
     private isFieldSelectedForFill(field: FieldTemplateDTO): boolean {
         if (field.fieldType === 'audio') {
             return this.ttsEnabled() && this.ttsSupported();
@@ -860,9 +926,12 @@ export class AiEnhanceCardModalComponent implements OnInit {
         if (!imageFields.some(field => missingFields.includes(field))) {
             return null;
         }
+        const selectedModel = this.imageModel() === 'custom'
+            ? this.imageModelCustom().trim()
+            : this.imageModel().trim();
         return {
             enabled: true,
-            model: this.imageModel().trim() || undefined,
+            model: selectedModel || undefined,
             size: this.imageSize().trim() || undefined,
             format: this.imageFormat()
         };
@@ -876,9 +945,12 @@ export class AiEnhanceCardModalComponent implements OnInit {
         if (!videoFields.some(field => missingFields.includes(field))) {
             return null;
         }
+        const selectedModel = this.videoModel() === 'custom'
+            ? this.videoModelCustom().trim()
+            : this.videoModel().trim();
         return {
             enabled: true,
-            model: this.videoModel().trim() || undefined,
+            model: selectedModel || undefined,
             durationSeconds: this.videoDurationSeconds(),
             resolution: this.videoResolution().trim() || undefined,
             format: this.videoFormat()

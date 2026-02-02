@@ -95,8 +95,6 @@ public class OpenAiClient {
         if (request.format() != null && !request.format().isBlank()) {
             payload.put("output_format", request.format());
         }
-        payload.put("response_format", "b64_json");
-
         JsonNode response = restClient.post()
                 .uri("/v1/images/generations")
                 .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))

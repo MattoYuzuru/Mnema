@@ -25,6 +25,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
@@ -48,6 +50,7 @@ import java.util.UUID;
 public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private static final String PROVIDER = "openai";
+    private static final Logger LOGGER = LoggerFactory.getLogger(OpenAiJobProcessor.class);
     private static final String MODE_GENERATE_CARDS = "generate_cards";
     private static final String MODE_MISSING_FIELDS = "missing_fields";
     private static final String MODE_MISSING_AUDIO = "missing_audio";
@@ -1392,6 +1395,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                         changed = true;
                         imagesGenerated++;
                     } catch (Exception ex) {
+                        LOGGER.warn("OpenAI image generation failed jobId={} cardId={} field={} model={} promptLength={}",
+                                job.getJobId(),
+                                card.userCardId(),
+                                field,
+                                imageConfig.model(),
+                                text.length(),
+                                ex);
                     }
                 }
                 continue;
@@ -1407,6 +1417,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                         changed = true;
                         videosGenerated++;
                     } catch (Exception ex) {
+                        LOGGER.warn("OpenAI video generation failed jobId={} cardId={} field={} model={} promptLength={}",
+                                job.getJobId(),
+                                card.userCardId(),
+                                field,
+                                videoConfig.model(),
+                                text.length(),
+                                ex);
                     }
                 }
             }
@@ -1519,6 +1536,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                             changed = true;
                             imagesGenerated++;
                         } catch (Exception ex) {
+                            LOGGER.warn("OpenAI image generation failed jobId={} cardId={} field={} model={} promptLength={}",
+                                    job.getJobId(),
+                                    update.userCardId(),
+                                    field,
+                                    imageConfig.model(),
+                                    value.length(),
+                                    ex);
                         }
                     }
                     continue;
@@ -1534,6 +1558,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                             changed = true;
                             videosGenerated++;
                         } catch (Exception ex) {
+                            LOGGER.warn("OpenAI video generation failed jobId={} cardId={} field={} model={} promptLength={}",
+                                    job.getJobId(),
+                                    update.userCardId(),
+                                    field,
+                                    videoConfig.model(),
+                                    value.length(),
+                                    ex);
                         }
                     }
                 }
@@ -2276,6 +2307,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                         changed = true;
                         imagesGenerated++;
                     } catch (Exception ex) {
+                        LOGGER.warn("OpenAI image generation failed jobId={} cardId={} field={} model={} promptLength={}",
+                                job.getJobId(),
+                                card.userCardId(),
+                                field,
+                                imageConfig.model(),
+                                prompt.length(),
+                                ex);
                     }
                     continue;
                 }
@@ -2289,6 +2327,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                         changed = true;
                         videosGenerated++;
                     } catch (Exception ex) {
+                        LOGGER.warn("OpenAI video generation failed jobId={} cardId={} field={} model={} promptLength={}",
+                                job.getJobId(),
+                                card.userCardId(),
+                                field,
+                                videoConfig.model(),
+                                prompt.length(),
+                                ex);
                     }
                 }
             }
@@ -2318,7 +2363,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
         String model = textOrDefault(node.path("model"), props.defaultImageModel());
         if (model == null || model.isBlank()) {
-            model = "gpt-image-1";
+            model = "gpt-image-1-mini";
         }
         String size = textOrDefault(node.path("size"), props.defaultImageSize());
         if (size == null || size.isBlank()) {
@@ -2343,7 +2388,12 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (model == null || model.isBlank()) {
             model = "sora-2";
         }
-        Integer durationSeconds = node.path("durationSeconds").isInt() ? node.path("durationSeconds").asInt() : props.defaultVideoDurationSeconds();
+        Integer durationSeconds = node.path("durationSeconds").isInt()
+                ? Integer.valueOf(node.path("durationSeconds").asInt())
+                : null;
+        if (durationSeconds == null) {
+            durationSeconds = props.defaultVideoDurationSeconds();
+        }
         if (durationSeconds == null || durationSeconds <= 0) {
             durationSeconds = 5;
         }

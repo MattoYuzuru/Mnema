@@ -25,6 +25,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.ByteArrayInputStream;
@@ -44,6 +46,7 @@ import java.util.regex.Pattern;
 public class GeminiJobProcessor implements AiProviderProcessor {
 
     private static final String PROVIDER = "gemini";
+    private static final Logger LOGGER = LoggerFactory.getLogger(GeminiJobProcessor.class);
     private static final String MODE_GENERATE_CARDS = "generate_cards";
     private static final String MODE_MISSING_FIELDS = "missing_fields";
     private static final String MODE_MISSING_AUDIO = "missing_audio";
@@ -1317,6 +1320,13 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                         imagesGenerated++;
                         changed = true;
                     } catch (Exception ex) {
+                        LOGGER.warn("Gemini image generation failed jobId={} cardId={} field={} model={} promptLength={}",
+                                job.getJobId(),
+                                update.userCardId(),
+                                field,
+                                imageConfig.model(),
+                                value.length(),
+                                ex);
                     }
                 }
             }
@@ -1797,6 +1807,13 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                     imagesGenerated++;
                     changed = true;
                 } catch (Exception ex) {
+                    LOGGER.warn("Gemini image generation failed jobId={} cardId={} field={} model={} promptLength={}",
+                            job.getJobId(),
+                            card.userCardId(),
+                            field,
+                            imageConfig.model(),
+                            text.length(),
+                            ex);
                 }
             }
         }
@@ -1945,6 +1962,13 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                     imagesGenerated++;
                     changed = true;
                 } catch (Exception ex) {
+                    LOGGER.warn("Gemini image generation failed jobId={} cardId={} field={} model={} promptLength={}",
+                            job.getJobId(),
+                            card.userCardId(),
+                            field,
+                            imageConfig.model(),
+                            prompt.length(),
+                            ex);
                 }
             }
             if (!changed) {
@@ -1973,7 +1997,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         }
         String model = textOrDefault(node.path("model"), props.defaultImageModel());
         if (model == null || model.isBlank()) {
-            model = "imagen-3.0-generate-001";
+            model = "gemini-2.5-flash-image";
         }
         String format = textOrDefault(node.path("format"), "png");
         if (format == null || format.isBlank()) {

@@ -244,12 +244,21 @@ type FieldLimitMap = Record<string, number>;
               <div class="form-grid">
                 <div class="form-field">
                   <label for="ai-image-model">Image model</label>
-                  <input
+                  <select
                     id="ai-image-model"
-                    type="text"
                     [ngModel]="imageModel()"
                     (ngModelChange)="onImageModelChange($event)"
-                    placeholder="model-name"
+                  >
+                    <option *ngFor="let model of imageModelOptions()" [ngValue]="model">
+                      {{ model === 'custom' ? 'Custom' : model }}
+                    </option>
+                  </select>
+                  <input
+                    *ngIf="imageModel() === 'custom'"
+                    type="text"
+                    [ngModel]="imageModelCustom()"
+                    (ngModelChange)="onImageModelCustomChange($event)"
+                    placeholder="custom-image-model"
                   />
                 </div>
                 <div class="form-field">
@@ -285,12 +294,21 @@ type FieldLimitMap = Record<string, number>;
               <div class="form-grid">
                 <div class="form-field">
                   <label for="ai-video-model">Video model</label>
-                  <input
+                  <select
                     id="ai-video-model"
-                    type="text"
                     [ngModel]="videoModel()"
                     (ngModelChange)="onVideoModelChange($event)"
-                    placeholder="model-name"
+                  >
+                    <option *ngFor="let model of videoModelOptions()" [ngValue]="model">
+                      {{ model === 'custom' ? 'Custom' : model }}
+                    </option>
+                  </select>
+                  <input
+                    *ngIf="videoModel() === 'custom'"
+                    type="text"
+                    [ngModel]="videoModelCustom()"
+                    (ngModelChange)="onVideoModelCustomChange($event)"
+                    placeholder="custom-video-model"
                   />
                 </div>
                 <div class="form-field">
@@ -485,9 +503,11 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     ttsMaxChars = signal(300);
     ttsMappings = signal<TtsMapping[]>([]);
     imageModel = signal('');
+    imageModelCustom = signal('');
     imageSize = signal('1024x1024');
     imageFormat = signal('png');
     videoModel = signal('');
+    videoModelCustom = signal('');
     videoResolution = signal('1280x720');
     videoDurationSeconds = signal(5);
     videoFormat = signal('mp4');
@@ -512,6 +532,8 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     readonly ttsSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
     readonly imageSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
     readonly videoSupported = computed(() => this.selectedProvider() === 'openai');
+    readonly imageModelOptions = computed(() => this.resolveImageModelOptions(this.selectedProvider()));
+    readonly videoModelOptions = computed(() => this.resolveVideoModelOptions(this.selectedProvider()));
     readonly voiceOptions = computed(() => {
         const provider = this.selectedProvider();
         if (provider === 'gemini') {
@@ -683,6 +705,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                 if (!this.selectedCredentialId() && active.length > 0) {
                     this.selectedCredentialId.set(active[0].id);
                 }
+                this.ensureDefaultMediaModels();
                 this.syncVoicePreset();
                 this.loadingProviders.set(false);
             },
@@ -840,6 +863,14 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
     onImageModelChange(value: string): void {
         this.imageModel.set(value);
+        if (value !== 'custom') {
+            this.imageModelCustom.set('');
+        }
+        this.persistDraft();
+    }
+
+    onImageModelCustomChange(value: string): void {
+        this.imageModelCustom.set(value);
         this.persistDraft();
     }
 
@@ -855,6 +886,14 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
     onVideoModelChange(value: string): void {
         this.videoModel.set(value);
+        if (value !== 'custom') {
+            this.videoModelCustom.set('');
+        }
+        this.persistDraft();
+    }
+
+    onVideoModelCustomChange(value: string): void {
+        this.videoModelCustom.set(value);
         this.persistDraft();
     }
 
@@ -1106,9 +1145,12 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (!this.imageSupported() || !this.imageEnabled()) {
             return null;
         }
+        const selectedModel = this.imageModel() === 'custom'
+            ? this.imageModelCustom().trim()
+            : this.imageModel().trim();
         return {
             enabled: true,
-            model: this.imageModel().trim() || undefined,
+            model: selectedModel || undefined,
             size: this.imageSize().trim() || undefined,
             format: this.imageFormat()
         };
@@ -1118,9 +1160,12 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (!this.videoSupported() || !this.videoEnabled()) {
             return null;
         }
+        const selectedModel = this.videoModel() === 'custom'
+            ? this.videoModelCustom().trim()
+            : this.videoModel().trim();
         return {
             enabled: true,
-            model: this.videoModel().trim() || undefined,
+            model: selectedModel || undefined,
             durationSeconds: this.videoDurationSeconds(),
             resolution: this.videoResolution().trim() || undefined,
             format: this.videoFormat()
@@ -1152,7 +1197,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         return this.buildFieldLimitsPayload().length > 0;
     }
 
-    private isFieldSelectable(fieldName: string): boolean {
+    isFieldSelectable(fieldName: string): boolean {
         const field = this.templateFields().find(item => item.name === fieldName);
         if (!field) return false;
         if (!this.selectedProvider()) {
@@ -1257,6 +1302,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (!allowed.includes(this.ttsFormat())) {
             this.ttsFormat.set(allowed[0]);
         }
+        this.ensureDefaultMediaModels();
         this.syncVoicePreset();
         if (!this.ttsSupported()) {
             this.ttsEnabled.set(false);
@@ -1281,6 +1327,34 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     onNotesChange(value: string): void {
         this.notes.set(value);
         this.persistDraft();
+    }
+
+    private resolveImageModelOptions(provider: string): string[] {
+        if (provider === 'openai') {
+            return ['gpt-image-1-mini', 'gpt-image-1', 'custom'];
+        }
+        if (provider === 'gemini') {
+            return ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'custom'];
+        }
+        return ['custom'];
+    }
+
+    private resolveVideoModelOptions(provider: string): string[] {
+        if (provider === 'openai') {
+            return ['sora-2', 'custom'];
+        }
+        return ['custom'];
+    }
+
+    private ensureDefaultMediaModels(): void {
+        const imageOptions = this.imageModelOptions();
+        if (!imageOptions.includes(this.imageModel())) {
+            this.imageModel.set(imageOptions[0]);
+        }
+        const videoOptions = this.videoModelOptions();
+        if (!videoOptions.includes(this.videoModel())) {
+            this.videoModel.set(videoOptions[0]);
+        }
     }
 
     private setOptionState(key: string, enabled: boolean, description?: string): void {
@@ -1386,9 +1460,11 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             ttsMaxChars: this.ttsMaxChars(),
             ttsMappings: this.ttsMappings(),
             imageModel: this.imageModel(),
+            imageModelCustom: this.imageModelCustom(),
             imageSize: this.imageSize(),
             imageFormat: this.imageFormat(),
             videoModel: this.videoModel(),
+            videoModelCustom: this.videoModelCustom(),
             videoResolution: this.videoResolution(),
             videoDurationSeconds: this.videoDurationSeconds(),
             videoFormat: this.videoFormat()
@@ -1444,9 +1520,11 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                 this.ttsMappings.set(payload.ttsMappings);
             }
             if (payload.imageModel) this.imageModel.set(payload.imageModel);
+            if (payload.imageModelCustom) this.imageModelCustom.set(payload.imageModelCustom);
             if (payload.imageSize) this.imageSize.set(payload.imageSize);
             if (payload.imageFormat) this.imageFormat.set(payload.imageFormat);
             if (payload.videoModel) this.videoModel.set(payload.videoModel);
+            if (payload.videoModelCustom) this.videoModelCustom.set(payload.videoModelCustom);
             if (payload.videoResolution) this.videoResolution.set(payload.videoResolution);
             if (payload.videoDurationSeconds) this.videoDurationSeconds.set(payload.videoDurationSeconds);
             if (payload.videoFormat) this.videoFormat.set(payload.videoFormat);
@@ -1454,6 +1532,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             if (!allowedFormats.includes(this.ttsFormat())) {
                 this.ttsFormat.set(allowedFormats[0]);
             }
+            this.ensureDefaultMediaModels();
         } catch {
         }
     }
