@@ -8,6 +8,7 @@ public record GeminiProps(
         String defaultModel,
         String defaultTtsModel,
         String defaultVoice,
-        String defaultTtsMimeType
+        String defaultTtsMimeType,
+        String defaultImageModel
 ) {
 }

@@ -225,8 +225,14 @@ public class CoreApiClient {
 
     public record MissingFieldCardsRequest(
             List<String> fields,
-            Integer limit
+            Integer limit,
+            List<FieldLimit> fieldLimits
     ) {
+        public record FieldLimit(
+                String field,
+                Integer limit
+        ) {
+        }
     }
 
     public record CreateCardRequestPayload(

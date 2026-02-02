@@ -31,10 +31,17 @@ import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -50,6 +57,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private static final String MODE_CARD_MISSING_FIELDS = "card_missing_fields";
     private static final String MODE_CARD_MISSING_AUDIO = "card_missing_audio";
     private static final int MAX_CARDS = 50;
+    private static final Duration VIDEO_POLL_INTERVAL = Duration.ofSeconds(5);
+    private static final Duration VIDEO_POLL_TIMEOUT = Duration.ofMinutes(5);
 
     private final OpenAiClient openAiClient;
     private final OpenAiProps props;
@@ -142,16 +151,20 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
         CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
 
-        List<String> targetFields = resolveAllowedFields(params, template);
+        Map<String, String> fieldTypes = resolveFieldTypes(template);
+        List<String> promptFields = resolveAllowedFields(params, template);
+        List<String> audioFields = resolveAudioFields(template);
+        List<String> targetAudioFields = resolveAudioTargetFields(params, audioFields);
+
+        LinkedHashSet<String> targetFields = new LinkedHashSet<>();
+        targetFields.addAll(promptFields);
+        targetFields.addAll(targetAudioFields);
         if (targetFields.isEmpty()) {
             throw new IllegalStateException("No supported fields to generate");
         }
-        int limit = resolveLimit(params.path("limit"));
-        List<CoreUserCardResponse> missingCards = coreApiClient.getMissingFieldCards(
-                job.getDeckId(),
-                new CoreApiClient.MissingFieldCardsRequest(targetFields, limit),
-                accessToken
-        );
+
+        MissingCardSelection selection = selectMissingCards(job.getDeckId(), targetFields, params, accessToken);
+        List<CoreUserCardResponse> missingCards = selection.cards();
         if (missingCards.isEmpty()) {
             ObjectNode summary = objectMapper.createObjectNode();
             summary.put("mode", MODE_MISSING_FIELDS);
@@ -169,37 +182,73 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             );
         }
 
-        String userPrompt = extractTextParam(params, "input", "prompt", "notes");
-        String prompt = buildMissingFieldsPrompt(userPrompt, template, publicDeck, targetFields, missingCards, job.getDeckId(), accessToken);
-        ObjectNode responseFormat = buildMissingFieldsResponseFormat(targetFields);
-        String model = textOrDefault(params.path("model"), props.defaultModel());
-        Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
-                ? params.path("maxOutputTokens").asInt()
-                : null;
+        List<CoreUserCardResponse> promptCards = promptFields.isEmpty()
+                ? List.of()
+                : filterCardsForPrompt(missingCards, promptFields, fieldTypes, selection.allowedFieldsByCard());
 
-        OpenAiResponseResult response = openAiClient.createResponse(
-                apiKey,
-                new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
-        );
+        OpenAiResponseResult response = null;
+        MediaApplyResult mediaResult = new MediaApplyResult(0, 0, 0);
+        if (!promptCards.isEmpty()) {
+            String userPrompt = extractTextParam(params, "input", "prompt", "notes");
+            String prompt = buildMissingFieldsPrompt(userPrompt, template, publicDeck, promptFields, promptCards, job.getDeckId(), accessToken);
+            ObjectNode responseFormat = buildMissingFieldsResponseFormat(promptFields);
+            String model = textOrDefault(params.path("model"), props.defaultModel());
+            Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
+                    ? params.path("maxOutputTokens").asInt()
+                    : null;
 
-        JsonNode parsed = parseJsonResponse(response.outputText());
-        List<MissingFieldUpdate> updates = parseMissingFieldUpdates(parsed, targetFields);
-        int updated = applyMissingFieldUpdates(job, accessToken, template, missingCards, updates);
+            response = openAiClient.createResponse(
+                    apiKey,
+                    new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
+            );
+
+            JsonNode parsed = parseJsonResponse(response.outputText());
+            List<MissingFieldUpdate> updates = parseMissingFieldUpdates(parsed, promptFields);
+            ImageConfig imageConfig = resolveImageConfig(params, !promptFields.isEmpty());
+            VideoConfig videoConfig = resolveVideoConfig(params, !promptFields.isEmpty());
+            mediaResult = applyMissingFieldUpdates(job, apiKey, accessToken, template, promptCards, updates, fieldTypes, selection.allowedFieldsByCard(), imageConfig, videoConfig);
+        }
+
+        TtsApplyResult ttsResult = new TtsApplyResult(0, 0, null);
+        String ttsError = null;
+        if (!targetAudioFields.isEmpty()) {
+            if (!params.path("tts").path("enabled").asBoolean(false)) {
+                ttsError = "TTS settings are required for audio fields";
+            } else {
+                List<CoreUserCardResponse> audioCards = filterCardsForAudio(missingCards, targetAudioFields, selection.allowedFieldsByCard());
+                if (!audioCards.isEmpty()) {
+                    ttsResult = applyTtsForMissingAudio(job, apiKey, params, audioCards, template, targetAudioFields);
+                }
+            }
+        }
 
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("mode", MODE_MISSING_FIELDS);
         summary.put("deckId", job.getDeckId().toString());
-        summary.put("updatedCards", updated);
+        summary.put("updatedCards", mediaResult.updatedCards());
         summary.put("candidates", missingCards.size());
+        if (mediaResult.imagesGenerated() > 0) {
+            summary.put("imagesGenerated", mediaResult.imagesGenerated());
+        }
+        if (mediaResult.videosGenerated() > 0) {
+            summary.put("videosGenerated", mediaResult.videosGenerated());
+        }
+        if (!targetAudioFields.isEmpty()) {
+            summary.put("ttsGenerated", ttsResult.generated());
+            summary.put("ttsUpdatedCards", ttsResult.updatedCards());
+            if (ttsError != null) {
+                summary.put("ttsError", ttsError);
+            }
+        }
         ArrayNode fieldsNode = summary.putArray("fields");
         targetFields.forEach(fieldsNode::add);
 
         return new AiJobProcessingResult(
                 summary,
                 PROVIDER,
-                response.model(),
-                response.inputTokens(),
-                response.outputTokens(),
+                response == null ? null : response.model(),
+                response == null ? null : response.inputTokens(),
+                response == null ? null : response.outputTokens(),
                 BigDecimal.ZERO,
                 job.getInputHash()
         );
@@ -235,7 +284,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         int limit = resolveLimit(params.path("limit"));
         List<CoreUserCardResponse> missingCards = coreApiClient.getMissingFieldCards(
                 job.getDeckId(),
-                new CoreApiClient.MissingFieldCardsRequest(targetFields, limit),
+                new CoreApiClient.MissingFieldCardsRequest(targetFields, limit, null),
                 accessToken
         );
         if (missingCards.isEmpty()) {
@@ -404,8 +453,11 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
         CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
 
-        List<String> targetFields = resolveAllowedFields(params, template);
-        if (targetFields.isEmpty()) {
+        Map<String, String> fieldTypes = resolveFieldTypes(template);
+        List<String> promptFields = resolveAllowedFields(params, template);
+        List<String> audioFields = resolveAudioFields(template);
+        List<String> targetAudioFields = resolveAudioTargetFields(params, audioFields);
+        if (promptFields.isEmpty() && targetAudioFields.isEmpty()) {
             throw new IllegalStateException("No supported fields to generate");
         }
 
@@ -414,35 +466,71 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             throw new IllegalStateException("Card content is empty");
         }
 
-        String prompt = buildCardMissingFieldsPrompt(publicDeck, template, card, targetFields);
-        ObjectNode responseFormat = buildCardMissingFieldsResponseFormat(targetFields);
-        String model = textOrDefault(params.path("model"), props.defaultModel());
-        Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
-                ? params.path("maxOutputTokens").asInt()
-                : null;
+        OpenAiResponseResult response = null;
+        MediaApplyResult mediaResult = new MediaApplyResult(0, 0, 0);
+        if (!promptFields.isEmpty()) {
+            String prompt = buildCardMissingFieldsPrompt(publicDeck, template, card, promptFields);
+            ObjectNode responseFormat = buildCardMissingFieldsResponseFormat(promptFields);
+            String model = textOrDefault(params.path("model"), props.defaultModel());
+            Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
+                    ? params.path("maxOutputTokens").asInt()
+                    : null;
 
-        OpenAiResponseResult response = openAiClient.createResponse(
-                apiKey,
-                new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
-        );
+            response = openAiClient.createResponse(
+                    apiKey,
+                    new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
+            );
 
-        JsonNode parsed = parseJsonResponse(response.outputText());
-        int updated = applyCardMissingFieldUpdate(job, accessToken, template, card, parsed, targetFields);
+            JsonNode parsed = parseJsonResponse(response.outputText());
+            ImageConfig imageConfig = resolveImageConfig(params, true);
+            VideoConfig videoConfig = resolveVideoConfig(params, true);
+            mediaResult = applyCardMissingFieldUpdate(job, apiKey, accessToken, template, card, parsed, promptFields, fieldTypes, imageConfig, videoConfig);
+        }
+
+        TtsApplyResult ttsResult = new TtsApplyResult(0, 0, null);
+        String ttsError = null;
+        if (!targetAudioFields.isEmpty()) {
+            if (!params.path("tts").path("enabled").asBoolean(false)) {
+                ttsError = "TTS settings are required for audio fields";
+            } else {
+                CoreUserCardResponse cardResponse = new CoreUserCardResponse(card.userCardId(), card.effectiveContent());
+                List<CoreUserCardResponse> audioCards = filterCardsForAudio(List.of(cardResponse), targetAudioFields, Map.of());
+                if (!audioCards.isEmpty()) {
+                    ttsResult = applyTtsForMissingAudio(job, apiKey, params, audioCards, template, targetAudioFields);
+                }
+            }
+        }
 
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("mode", MODE_CARD_MISSING_FIELDS);
         summary.put("deckId", job.getDeckId().toString());
         summary.put("cardId", cardId.toString());
-        summary.put("updated", updated);
+        summary.put("updated", mediaResult.updatedCards());
+        if (mediaResult.imagesGenerated() > 0) {
+            summary.put("imagesGenerated", mediaResult.imagesGenerated());
+        }
+        if (mediaResult.videosGenerated() > 0) {
+            summary.put("videosGenerated", mediaResult.videosGenerated());
+        }
+        if (!targetAudioFields.isEmpty()) {
+            summary.put("ttsGenerated", ttsResult.generated());
+            summary.put("ttsUpdatedCards", ttsResult.updatedCards());
+            if (ttsError != null) {
+                summary.put("ttsError", ttsError);
+            }
+        }
         ArrayNode fieldsNode = summary.putArray("fields");
-        targetFields.forEach(fieldsNode::add);
+        LinkedHashSet<String> allFields = new LinkedHashSet<>();
+        allFields.addAll(promptFields);
+        allFields.addAll(targetAudioFields);
+        allFields.forEach(fieldsNode::add);
 
         return new AiJobProcessingResult(
                 summary,
                 PROVIDER,
-                response.model(),
-                response.inputTokens(),
-                response.outputTokens(),
+                response == null ? null : response.model(),
+                response == null ? null : response.inputTokens(),
+                response == null ? null : response.outputTokens(),
                 BigDecimal.ZERO,
                 job.getInputHash()
         );
@@ -604,13 +692,20 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         );
 
         JsonNode parsed = parseJsonResponse(response.outputText());
-        List<CreateCardRequestPayload> cardRequests = buildCardRequests(parsed, allowedFields, template);
+        Map<String, String> fieldTypes = resolveFieldTypes(template);
+        List<CardDraft> drafts = buildCardDrafts(parsed, allowedFields, template, fieldTypes);
+        List<CreateCardRequestPayload> cardRequests = drafts.stream()
+                .map(draft -> new CreateCardRequestPayload(draft.content(), null, null, null, null, null))
+                .toList();
         List<CreateCardRequestPayload> limitedRequests = cardRequests.stream()
                 .limit(count)
                 .toList();
 
         List<CoreUserCardResponse> createdCards = coreApiClient.addCards(job.getDeckId(), limitedRequests, accessToken);
         int ttsGenerated = applyTtsIfNeeded(job, apiKey, params, createdCards, template);
+        ImageConfig imageConfig = resolveImageConfig(params, true);
+        VideoConfig videoConfig = resolveVideoConfig(params, true);
+        MediaApplyResult mediaResult = applyMediaPromptsToNewCards(job, apiKey, accessToken, template, createdCards, drafts, fieldTypes, imageConfig, videoConfig);
 
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("mode", MODE_GENERATE_CARDS);
@@ -620,6 +715,12 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         summary.put("createdCards", limitedRequests.size());
         if (ttsGenerated > 0) {
             summary.put("ttsGenerated", ttsGenerated);
+        }
+        if (mediaResult.imagesGenerated() > 0) {
+            summary.put("imagesGenerated", mediaResult.imagesGenerated());
+        }
+        if (mediaResult.videosGenerated() > 0) {
+            summary.put("videosGenerated", mediaResult.videosGenerated());
         }
         ArrayNode fieldsNode = summary.putArray("fields");
         for (String field : allowedFields) {
@@ -761,18 +862,24 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     }
 
     private List<String> resolveAllowedFields(JsonNode params, CoreTemplateResponse template) {
+        List<String> requested = extractRequestedFields(params);
         List<String> templateFields = template.fields() == null
                 ? List.of()
                 : template.fields().stream()
-                .filter(this::isTextField)
-                .map(CoreFieldTemplate::name)
-                .filter(name -> name != null && !name.isBlank())
-                .distinct()
-                .toList();
-
-        List<String> requested = extractStringArray(params.path("fields"));
+                    .filter(this::isPromptField)
+                    .map(CoreFieldTemplate::name)
+                    .filter(name -> name != null && !name.isBlank())
+                    .distinct()
+                    .toList();
         if (requested.isEmpty()) {
-            return templateFields;
+            return template.fields() == null
+                    ? List.of()
+                    : template.fields().stream()
+                        .filter(this::isTextField)
+                        .map(CoreFieldTemplate::name)
+                        .filter(name -> name != null && !name.isBlank())
+                        .distinct()
+                        .toList();
         }
         return requested.stream()
                 .filter(templateFields::contains)
@@ -781,7 +888,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     }
 
     private List<String> resolveAudioTargetFields(JsonNode params, List<String> audioFields) {
-        List<String> requested = extractStringArray(params.path("fields"));
+        List<String> requested = extractRequestedFields(params);
         if (requested.isEmpty()) {
             return audioFields;
         }
@@ -791,12 +898,53 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 .toList();
     }
 
+    private List<String> extractRequestedFields(JsonNode params) {
+        List<String> requested = extractStringArray(params.path("fields"));
+        if (!requested.isEmpty()) {
+            return requested;
+        }
+        return new ArrayList<>(extractFieldLimits(params).keySet());
+    }
+
+    private Map<String, Integer> extractFieldLimits(JsonNode params) {
+        JsonNode limitsNode = params.path("fieldLimits");
+        if (!limitsNode.isArray()) {
+            return Map.of();
+        }
+        Map<String, Integer> limits = new LinkedHashMap<>();
+        for (JsonNode item : limitsNode) {
+            if (!item.isObject()) {
+                continue;
+            }
+            String field = item.path("field").asText(null);
+            if (field == null || field.isBlank()) {
+                continue;
+            }
+            int limit = item.path("limit").isInt() ? item.path("limit").asInt() : 0;
+            if (limit <= 0) {
+                continue;
+            }
+            limits.put(field.trim(), Math.min(limit, 200));
+        }
+        return limits;
+    }
+
     private boolean isTextField(CoreFieldTemplate field) {
         if (field == null || field.fieldType() == null) {
             return false;
         }
         return switch (field.fieldType()) {
             case "text", "rich_text", "markdown", "cloze" -> true;
+            default -> false;
+        };
+    }
+
+    private boolean isPromptField(CoreFieldTemplate field) {
+        if (field == null || field.fieldType() == null) {
+            return false;
+        }
+        return switch (field.fieldType()) {
+            case "text", "rich_text", "markdown", "cloze", "image", "video" -> true;
             default -> false;
         };
     }
@@ -960,6 +1108,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         builder.append("Return JSON with an 'updates' array. Each update must include 'userCardId' and 'fields'. ");
         builder.append("Only include fields from this list: ").append(String.join(", ", targetFields)).append(". ");
         builder.append("Do not modify fields that already have values. If unsure, leave the field empty. ");
+        if (hasFieldType(template, targetFields, "image") || hasFieldType(template, targetFields, "video")) {
+            builder.append("For image or video fields, return a short visual prompt describing the scene. ");
+            builder.append("Do not include URLs, markdown, or file names. ");
+            if (hasFieldType(template, targetFields, "video")) {
+                builder.append("For video fields, describe a short 3-6 second clip. ");
+            }
+        }
 
         String deckName = publicDeck == null ? null : publicDeck.name();
         String deckDescription = publicDeck == null ? null : publicDeck.description();
@@ -1122,6 +1277,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         builder.append("Return JSON with only the fields that are missing. ");
         builder.append("Only include fields from this list: ").append(String.join(", ", targetFields)).append(". ");
         builder.append("Do not modify fields that already have values. ");
+        if (hasFieldType(template, targetFields, "image") || hasFieldType(template, targetFields, "video")) {
+            builder.append("For image or video fields, return a short visual prompt describing the scene. ");
+            builder.append("Do not include URLs, markdown, or file names. ");
+            if (hasFieldType(template, targetFields, "video")) {
+                builder.append("For video fields, describe a short 3-6 second clip. ");
+            }
+        }
 
         if (publicDeck != null) {
             if (publicDeck.name() != null && !publicDeck.name().isBlank()) {
@@ -1178,20 +1340,26 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         return builder.toString().trim();
     }
 
-    private int applyCardMissingFieldUpdate(AiJobEntity job,
-                                            String accessToken,
-                                            CoreTemplateResponse template,
-                                            CoreApiClient.CoreUserCardDetail card,
-                                            JsonNode response,
-                                            List<String> targetFields) {
+    private MediaApplyResult applyCardMissingFieldUpdate(AiJobEntity job,
+                                                         String apiKey,
+                                                         String accessToken,
+                                                         CoreTemplateResponse template,
+                                                         CoreApiClient.CoreUserCardDetail card,
+                                                         JsonNode response,
+                                                         List<String> targetFields,
+                                                         Map<String, String> fieldTypes,
+                                                         ImageConfig imageConfig,
+                                                         VideoConfig videoConfig) {
         if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
-            return 0;
+            return new MediaApplyResult(0, 0, 0);
         }
         if (response == null || !response.isObject()) {
-            return 0;
+            return new MediaApplyResult(0, 0, 0);
         }
         ObjectNode updatedContent = card.effectiveContent().deepCopy();
         boolean changed = false;
+        int imagesGenerated = 0;
+        int videosGenerated = 0;
         var allowed = new java.util.HashSet<>(targetFields);
         var it = response.fields();
         while (it.hasNext()) {
@@ -1205,13 +1373,46 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             if (text.isEmpty()) {
                 continue;
             }
-            if (isMissingText(updatedContent.get(field))) {
-                updatedContent.put(field, text);
-                changed = true;
+            String fieldType = fieldTypes.get(field);
+            if (fieldType == null || isTextFieldType(fieldType)) {
+                if (isMissingText(updatedContent.get(field))) {
+                    updatedContent.put(field, text);
+                    changed = true;
+                }
+                continue;
+            }
+            if ("image".equals(fieldType)) {
+                if (!imageConfig.enabled()) {
+                    continue;
+                }
+                if (isMissingMedia(updatedContent.get(field))) {
+                    try {
+                        MediaUpload upload = generateImage(job, apiKey, imageConfig, text);
+                        updatedContent.set(field, buildMediaNode(upload.mediaId(), "image"));
+                        changed = true;
+                        imagesGenerated++;
+                    } catch (Exception ex) {
+                    }
+                }
+                continue;
+            }
+            if ("video".equals(fieldType)) {
+                if (!videoConfig.enabled()) {
+                    continue;
+                }
+                if (isMissingMedia(updatedContent.get(field))) {
+                    try {
+                        MediaUpload upload = generateVideo(job, apiKey, videoConfig, text);
+                        updatedContent.set(field, buildMediaNode(upload.mediaId(), "video"));
+                        changed = true;
+                        videosGenerated++;
+                    } catch (Exception ex) {
+                    }
+                }
             }
         }
         if (!changed) {
-            return 0;
+            return new MediaApplyResult(0, imagesGenerated, videosGenerated);
         }
         ankiSupport.applyIfPresent(updatedContent, template);
         UpdateUserCardRequest updateRequest = new UpdateUserCardRequest(
@@ -1223,7 +1424,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 updatedContent
         );
         coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken);
-        return 1;
+        return new MediaApplyResult(1, imagesGenerated, videosGenerated);
     }
 
     private List<MissingFieldUpdate> parseMissingFieldUpdates(JsonNode response, List<String> allowedFields) {
@@ -1264,18 +1465,25 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         return updates;
     }
 
-    private int applyMissingFieldUpdates(AiJobEntity job,
-                                         String accessToken,
-                                         CoreTemplateResponse template,
-                                         List<CoreUserCardResponse> cards,
-                                         List<MissingFieldUpdate> updates) {
+    private MediaApplyResult applyMissingFieldUpdates(AiJobEntity job,
+                                                      String apiKey,
+                                                      String accessToken,
+                                                      CoreTemplateResponse template,
+                                                      List<CoreUserCardResponse> cards,
+                                                      List<MissingFieldUpdate> updates,
+                                                      Map<String, String> fieldTypes,
+                                                      Map<UUID, Set<String>> allowedFieldsByCard,
+                                                      ImageConfig imageConfig,
+                                                      VideoConfig videoConfig) {
         if (updates.isEmpty()) {
-            return 0;
+            return new MediaApplyResult(0, 0, 0);
         }
         Map<UUID, CoreUserCardResponse> cardMap = cards.stream()
                 .filter(card -> card != null && card.userCardId() != null)
                 .collect(java.util.stream.Collectors.toMap(CoreUserCardResponse::userCardId, card -> card, (a, b) -> a));
         int updated = 0;
+        int imagesGenerated = 0;
+        int videosGenerated = 0;
         for (MissingFieldUpdate update : updates) {
             CoreUserCardResponse card = cardMap.get(update.userCardId());
             if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
@@ -1283,14 +1491,51 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             }
             ObjectNode updatedContent = card.effectiveContent().deepCopy();
             boolean changed = false;
+            Set<String> allowed = allowedFieldsByCard.get(update.userCardId());
             var it = update.fields().fields();
             while (it.hasNext()) {
                 var entry = it.next();
                 String field = entry.getKey();
+                if (allowed != null && !allowed.isEmpty() && !allowed.contains(field)) {
+                    continue;
+                }
                 String value = entry.getValue().asText();
-                if (isMissingText(updatedContent.get(field))) {
-                    updatedContent.put(field, value);
-                    changed = true;
+                String fieldType = fieldTypes.get(field);
+                if (fieldType == null || isTextFieldType(fieldType)) {
+                    if (isMissingText(updatedContent.get(field))) {
+                        updatedContent.put(field, value);
+                        changed = true;
+                    }
+                    continue;
+                }
+                if ("image".equals(fieldType)) {
+                    if (!imageConfig.enabled() || value == null || value.isBlank()) {
+                        continue;
+                    }
+                    if (isMissingMedia(updatedContent.get(field))) {
+                        try {
+                            MediaUpload upload = generateImage(job, apiKey, imageConfig, value.trim());
+                            updatedContent.set(field, buildMediaNode(upload.mediaId(), "image"));
+                            changed = true;
+                            imagesGenerated++;
+                        } catch (Exception ex) {
+                        }
+                    }
+                    continue;
+                }
+                if ("video".equals(fieldType)) {
+                    if (!videoConfig.enabled() || value == null || value.isBlank()) {
+                        continue;
+                    }
+                    if (isMissingMedia(updatedContent.get(field))) {
+                        try {
+                            MediaUpload upload = generateVideo(job, apiKey, videoConfig, value.trim());
+                            updatedContent.set(field, buildMediaNode(upload.mediaId(), "video"));
+                            changed = true;
+                            videosGenerated++;
+                        } catch (Exception ex) {
+                        }
+                    }
                 }
             }
             if (!changed) {
@@ -1308,7 +1553,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken);
             updated++;
         }
-        return updated;
+        return new MediaApplyResult(updated, imagesGenerated, videosGenerated);
     }
 
     private boolean isMissingText(JsonNode node) {
@@ -1322,26 +1567,41 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     }
 
     private boolean isMissingAudio(JsonNode node) {
-        if (node == null || node.isNull()) {
-            return true;
-        }
-        if (node.isTextual()) {
-            return node.asText().trim().isEmpty();
-        }
-        if (node.isObject()) {
-            JsonNode mediaId = node.get("mediaId");
-            return mediaId == null || mediaId.asText().trim().isEmpty();
-        }
-        if (node.isArray()) {
-            return node.size() == 0;
-        }
-        return false;
+        return isMissingMedia(node);
     }
 
     private record MissingFieldUpdate(UUID userCardId, ObjectNode fields) {
     }
 
+    private record CardDraft(ObjectNode content, Map<String, String> mediaPrompts) {
+    }
+
     private record TtsApplyResult(int generated, int updatedCards, String model) {
+    }
+
+    private record MediaApplyResult(int updatedCards, int imagesGenerated, int videosGenerated) {
+    }
+
+    private record MissingCardSelection(List<CoreUserCardResponse> cards,
+                                        Map<UUID, Set<String>> allowedFieldsByCard) {
+    }
+
+    private record ImageConfig(boolean enabled,
+                               String model,
+                               String size,
+                               String quality,
+                               String style,
+                               String format) {
+    }
+
+    private record VideoConfig(boolean enabled,
+                               String model,
+                               Integer durationSeconds,
+                               String resolution,
+                               String format) {
+    }
+
+    private record MediaUpload(UUID mediaId, String contentType, String fileName) {
     }
 
     private String buildCardsPrompt(String userPrompt,
@@ -1358,6 +1618,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         builder.append("Use only these fields: ").append(fieldList).append(". ");
         builder.append("Create exactly ").append(count).append(" cards. ");
         builder.append("If a field is unknown or not applicable, return an empty string for that field. ");
+        if (hasFieldType(template, fields, "image") || hasFieldType(template, fields, "video")) {
+            builder.append("For image or video fields, return a short visual prompt describing the scene. ");
+            builder.append("Do not include URLs, markdown, or file names. ");
+            if (hasFieldType(template, fields, "video")) {
+                builder.append("For video fields, describe a short 3-6 second clip. ");
+            }
+        }
 
         String deckName = publicDeck == null ? null : publicDeck.name();
         String deckDescription = publicDeck == null ? null : publicDeck.description();
@@ -1448,20 +1715,22 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
     }
 
-    private List<CreateCardRequestPayload> buildCardRequests(JsonNode response,
-                                                             List<String> fields,
-                                                             CoreTemplateResponse template) {
+    private List<CardDraft> buildCardDrafts(JsonNode response,
+                                            List<String> fields,
+                                            CoreTemplateResponse template,
+                                            Map<String, String> fieldTypes) {
         JsonNode cardsNode = response.path("cards");
         if (!cardsNode.isArray()) {
             throw new IllegalStateException("AI response missing cards array");
         }
-        List<CreateCardRequestPayload> requests = new java.util.ArrayList<>();
+        List<CardDraft> drafts = new java.util.ArrayList<>();
         for (JsonNode cardNode : cardsNode) {
             JsonNode fieldsNode = cardNode.path("fields");
             if (!fieldsNode.isObject()) {
                 continue;
             }
             ObjectNode content = objectMapper.createObjectNode();
+            Map<String, String> mediaPrompts = new LinkedHashMap<>();
             boolean hasValue = false;
             for (String field : fields) {
                 JsonNode valueNode = fieldsNode.get(field);
@@ -1471,8 +1740,14 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 if (valueNode.isTextual()) {
                     String value = valueNode.asText().trim();
                     if (!value.isEmpty()) {
-                        content.put(field, value);
-                        hasValue = true;
+                        String fieldType = fieldTypes.get(field);
+                        if (fieldType == null || isTextFieldType(fieldType)) {
+                            content.put(field, value);
+                            hasValue = true;
+                        } else if ("image".equals(fieldType) || "video".equals(fieldType)) {
+                            mediaPrompts.put(field, value);
+                            hasValue = true;
+                        }
                     }
                 }
             }
@@ -1480,9 +1755,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 continue;
             }
             ankiSupport.applyIfPresent(content, template);
-            requests.add(new CreateCardRequestPayload(content, null, null, null, null, null));
+            drafts.add(new CardDraft(content, mediaPrompts));
         }
-        return requests;
+        return drafts;
     }
 
     private String buildFieldHints(CoreTemplateResponse template, List<String> fields) {
@@ -1509,6 +1784,26 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             }
         }
         return builder.toString();
+    }
+
+    private boolean hasFieldType(CoreTemplateResponse template, List<String> fields, String targetType) {
+        if (template == null || template.fields() == null || fields == null || fields.isEmpty()) {
+            return false;
+        }
+        for (String fieldName : fields) {
+            if (fieldName == null) {
+                continue;
+            }
+            for (CoreFieldTemplate field : template.fields()) {
+                if (field == null || field.name() == null || field.fieldType() == null) {
+                    continue;
+                }
+                if (fieldName.equals(field.name()) && targetType.equals(field.fieldType())) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     private String formatAiProfile(JsonNode aiProfile) {
@@ -1770,6 +2065,373 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 .map(CoreFieldTemplate::name)
                 .filter(name -> name != null && !name.isBlank())
                 .toList();
+    }
+
+    private Map<String, String> resolveFieldTypes(CoreTemplateResponse template) {
+        if (template == null || template.fields() == null) {
+            return Map.of();
+        }
+        Map<String, String> map = new HashMap<>();
+        for (CoreFieldTemplate field : template.fields()) {
+            if (field == null || field.name() == null || field.name().isBlank()) {
+                continue;
+            }
+            if (field.fieldType() != null && !field.fieldType().isBlank()) {
+                map.put(field.name(), field.fieldType());
+            }
+        }
+        return map;
+    }
+
+    private boolean isTextFieldType(String fieldType) {
+        if (fieldType == null) {
+            return true;
+        }
+        return switch (fieldType) {
+            case "text", "rich_text", "markdown", "cloze" -> true;
+            default -> false;
+        };
+    }
+
+    private boolean isMissingMedia(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return true;
+        }
+        if (node.isTextual()) {
+            return node.asText().trim().isEmpty();
+        }
+        if (node.isObject()) {
+            JsonNode mediaId = node.get("mediaId");
+            return mediaId == null || mediaId.asText().trim().isEmpty();
+        }
+        if (node.isArray()) {
+            return node.size() == 0;
+        }
+        return false;
+    }
+
+    private ObjectNode buildMediaNode(UUID mediaId, String kind) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put("mediaId", mediaId.toString());
+        node.put("kind", kind);
+        return node;
+    }
+
+    private MissingCardSelection selectMissingCards(UUID deckId,
+                                                    Set<String> targetFields,
+                                                    JsonNode params,
+                                                    String accessToken) {
+        Map<String, Integer> fieldLimits = extractFieldLimits(params);
+        if (!fieldLimits.isEmpty()) {
+            LinkedHashMap<String, Integer> filtered = new LinkedHashMap<>();
+            for (Map.Entry<String, Integer> entry : fieldLimits.entrySet()) {
+                if (targetFields.contains(entry.getKey())) {
+                    filtered.put(entry.getKey(), entry.getValue());
+                }
+            }
+            return selectMissingCardsWithLimits(deckId, filtered, accessToken);
+        }
+        int limit = resolveLimit(params.path("limit"));
+        List<CoreUserCardResponse> cards = coreApiClient.getMissingFieldCards(
+                deckId,
+                new CoreApiClient.MissingFieldCardsRequest(new ArrayList<>(targetFields), limit, null),
+                accessToken
+        );
+        return new MissingCardSelection(cards, Map.of());
+    }
+
+    private MissingCardSelection selectMissingCardsWithLimits(UUID deckId,
+                                                              Map<String, Integer> fieldLimits,
+                                                              String accessToken) {
+        if (fieldLimits.isEmpty()) {
+            return new MissingCardSelection(List.of(), Map.of());
+        }
+        LinkedHashMap<UUID, CoreUserCardResponse> cards = new LinkedHashMap<>();
+        Map<UUID, Set<String>> allowedFields = new HashMap<>();
+        for (Map.Entry<String, Integer> entry : fieldLimits.entrySet()) {
+            String field = entry.getKey();
+            int limit = Math.max(1, Math.min(entry.getValue(), 200));
+            List<CoreUserCardResponse> missing = coreApiClient.getMissingFieldCards(
+                    deckId,
+                    new CoreApiClient.MissingFieldCardsRequest(List.of(field), limit, null),
+                    accessToken
+            );
+            for (CoreUserCardResponse card : missing) {
+                if (card == null || card.userCardId() == null) {
+                    continue;
+                }
+                cards.putIfAbsent(card.userCardId(), card);
+                allowedFields.computeIfAbsent(card.userCardId(), __ -> new LinkedHashSet<>()).add(field);
+            }
+        }
+        return new MissingCardSelection(new ArrayList<>(cards.values()), allowedFields);
+    }
+
+    private List<CoreUserCardResponse> filterCardsForPrompt(List<CoreUserCardResponse> cards,
+                                                            List<String> fields,
+                                                            Map<String, String> fieldTypes,
+                                                            Map<UUID, Set<String>> allowedFieldsByCard) {
+        if (fields.isEmpty()) {
+            return List.of();
+        }
+        List<CoreUserCardResponse> result = new ArrayList<>();
+        for (CoreUserCardResponse card : cards) {
+            if (card == null || card.userCardId() == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
+                continue;
+            }
+            Set<String> allowed = allowedFieldsByCard.get(card.userCardId());
+            boolean needsPrompt = false;
+            for (String field : fields) {
+                if (allowed != null && !allowed.isEmpty() && !allowed.contains(field)) {
+                    continue;
+                }
+                String fieldType = fieldTypes.get(field);
+                JsonNode value = card.effectiveContent().get(field);
+                boolean missing = (fieldType == null || isTextFieldType(fieldType))
+                        ? isMissingText(value)
+                        : isMissingMedia(value);
+                if (missing) {
+                    needsPrompt = true;
+                    break;
+                }
+            }
+            if (needsPrompt) {
+                result.add(card);
+            }
+        }
+        return result;
+    }
+
+    private List<CoreUserCardResponse> filterCardsForAudio(List<CoreUserCardResponse> cards,
+                                                           List<String> audioFields,
+                                                           Map<UUID, Set<String>> allowedFieldsByCard) {
+        if (audioFields.isEmpty()) {
+            return List.of();
+        }
+        List<CoreUserCardResponse> result = new ArrayList<>();
+        for (CoreUserCardResponse card : cards) {
+            if (card == null || card.userCardId() == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
+                continue;
+            }
+            Set<String> allowed = allowedFieldsByCard.get(card.userCardId());
+            boolean needsAudio = false;
+            for (String field : audioFields) {
+                if (allowed != null && !allowed.isEmpty() && !allowed.contains(field)) {
+                    continue;
+                }
+                if (isMissingAudio(card.effectiveContent().get(field))) {
+                    needsAudio = true;
+                    break;
+                }
+            }
+            if (needsAudio) {
+                result.add(card);
+            }
+        }
+        return result;
+    }
+
+    private MediaApplyResult applyMediaPromptsToNewCards(AiJobEntity job,
+                                                         String apiKey,
+                                                         String accessToken,
+                                                         CoreTemplateResponse template,
+                                                         List<CoreUserCardResponse> createdCards,
+                                                         List<CardDraft> drafts,
+                                                         Map<String, String> fieldTypes,
+                                                         ImageConfig imageConfig,
+                                                         VideoConfig videoConfig) {
+        if (createdCards == null || createdCards.isEmpty() || drafts == null || drafts.isEmpty()) {
+            return new MediaApplyResult(0, 0, 0);
+        }
+        int updated = 0;
+        int imagesGenerated = 0;
+        int videosGenerated = 0;
+        int limit = Math.min(createdCards.size(), drafts.size());
+        for (int i = 0; i < limit; i++) {
+            CoreUserCardResponse card = createdCards.get(i);
+            CardDraft draft = drafts.get(i);
+            if (card == null || card.userCardId() == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
+                continue;
+            }
+            Map<String, String> mediaPrompts = draft.mediaPrompts();
+            if (mediaPrompts == null || mediaPrompts.isEmpty()) {
+                continue;
+            }
+            ObjectNode updatedContent = card.effectiveContent().deepCopy();
+            boolean changed = false;
+            for (Map.Entry<String, String> entry : mediaPrompts.entrySet()) {
+                String field = entry.getKey();
+                String prompt = entry.getValue();
+                if (prompt == null || prompt.isBlank()) {
+                    continue;
+                }
+                String fieldType = fieldTypes.get(field);
+                if ("image".equals(fieldType)) {
+                    if (!imageConfig.enabled() || !isMissingMedia(updatedContent.get(field))) {
+                        continue;
+                    }
+                    try {
+                        MediaUpload upload = generateImage(job, apiKey, imageConfig, prompt.trim());
+                        updatedContent.set(field, buildMediaNode(upload.mediaId(), "image"));
+                        changed = true;
+                        imagesGenerated++;
+                    } catch (Exception ex) {
+                    }
+                    continue;
+                }
+                if ("video".equals(fieldType)) {
+                    if (!videoConfig.enabled() || !isMissingMedia(updatedContent.get(field))) {
+                        continue;
+                    }
+                    try {
+                        MediaUpload upload = generateVideo(job, apiKey, videoConfig, prompt.trim());
+                        updatedContent.set(field, buildMediaNode(upload.mediaId(), "video"));
+                        changed = true;
+                        videosGenerated++;
+                    } catch (Exception ex) {
+                    }
+                }
+            }
+            if (!changed) {
+                continue;
+            }
+            ankiSupport.applyIfPresent(updatedContent, template);
+            UpdateUserCardRequest update = new UpdateUserCardRequest(
+                    card.userCardId(),
+                    null,
+                    false,
+                    false,
+                    null,
+                    updatedContent
+            );
+            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken);
+            updated++;
+        }
+        return new MediaApplyResult(updated, imagesGenerated, videosGenerated);
+    }
+
+    private ImageConfig resolveImageConfig(JsonNode params, boolean hasPromptFields) {
+        JsonNode node = params.path("image");
+        boolean enabled = hasPromptFields;
+        if (node.path("enabled").isBoolean()) {
+            enabled = node.path("enabled").asBoolean();
+        }
+        String model = textOrDefault(node.path("model"), props.defaultImageModel());
+        if (model == null || model.isBlank()) {
+            model = "gpt-image-1";
+        }
+        String size = textOrDefault(node.path("size"), props.defaultImageSize());
+        if (size == null || size.isBlank()) {
+            size = "1024x1024";
+        }
+        String quality = textOrDefault(node.path("quality"), props.defaultImageQuality());
+        String style = textOrDefault(node.path("style"), props.defaultImageStyle());
+        String format = textOrDefault(node.path("format"), props.defaultImageFormat());
+        if (format == null || format.isBlank()) {
+            format = "png";
+        }
+        return new ImageConfig(enabled, model, size, quality, style, format);
+    }
+
+    private VideoConfig resolveVideoConfig(JsonNode params, boolean hasPromptFields) {
+        JsonNode node = params.path("video");
+        boolean enabled = hasPromptFields;
+        if (node.path("enabled").isBoolean()) {
+            enabled = node.path("enabled").asBoolean();
+        }
+        String model = textOrDefault(node.path("model"), props.defaultVideoModel());
+        if (model == null || model.isBlank()) {
+            model = "sora-2";
+        }
+        Integer durationSeconds = node.path("durationSeconds").isInt() ? node.path("durationSeconds").asInt() : props.defaultVideoDurationSeconds();
+        if (durationSeconds == null || durationSeconds <= 0) {
+            durationSeconds = 5;
+        }
+        String resolution = textOrDefault(node.path("resolution"), props.defaultVideoResolution());
+        if (resolution == null || resolution.isBlank()) {
+            resolution = "1280x720";
+        }
+        String format = textOrDefault(node.path("format"), "mp4");
+        return new VideoConfig(enabled, model, durationSeconds, resolution, format);
+    }
+
+    private MediaUpload generateImage(AiJobEntity job, String apiKey, ImageConfig config, String prompt) {
+        OpenAiImageResult result = openAiClient.createImage(
+                apiKey,
+                new OpenAiImageRequest(config.model(), prompt, config.size(), config.quality(), config.style(), config.format())
+        );
+        String contentType = result.mimeType() == null || result.mimeType().isBlank() ? "image/png" : result.mimeType();
+        String extension = resolveExtensionFromMimeType(contentType, config.format());
+        String fileName = "ai-image-" + job.getJobId() + "-" + UUID.randomUUID() + "." + extension;
+        UUID mediaId = mediaApiClient.directUpload(
+                job.getUserId(),
+                "card_image",
+                contentType,
+                fileName,
+                result.data().length,
+                new ByteArrayInputStream(result.data())
+        );
+        return new MediaUpload(mediaId, contentType, fileName);
+    }
+
+    private MediaUpload generateVideo(AiJobEntity job, String apiKey, VideoConfig config, String prompt) {
+        OpenAiVideoJob videoJob = openAiClient.createVideoJob(
+                apiKey,
+                new OpenAiVideoRequest(config.model(), prompt, config.durationSeconds(), config.resolution())
+        );
+        OpenAiVideoJob completed = waitForVideoCompletion(apiKey, videoJob);
+        byte[] data = openAiClient.downloadVideoContent(apiKey, completed.id());
+        String format = config.format() == null ? "mp4" : config.format().toLowerCase();
+        String contentType = "gif".equals(format) ? "image/gif" : "video/mp4";
+        String extension = "gif".equals(format) ? "gif" : "mp4";
+        String fileName = "ai-video-" + job.getJobId() + "-" + UUID.randomUUID() + "." + extension;
+        UUID mediaId = mediaApiClient.directUpload(
+                job.getUserId(),
+                "card_video",
+                contentType,
+                fileName,
+                data.length,
+                new ByteArrayInputStream(data)
+        );
+        return new MediaUpload(mediaId, contentType, fileName);
+    }
+
+    private OpenAiVideoJob waitForVideoCompletion(String apiKey, OpenAiVideoJob job) {
+        if (job == null || job.id() == null || job.id().isBlank()) {
+            throw new IllegalStateException("OpenAI video job id is missing");
+        }
+        OpenAiVideoJob current = job;
+        Instant start = Instant.now();
+        while (Duration.between(start, Instant.now()).compareTo(VIDEO_POLL_TIMEOUT) < 0) {
+            if (current.isCompleted()) {
+                return current;
+            }
+            if (current.isFailed()) {
+                String error = current.error() == null ? "OpenAI video failed" : current.error();
+                throw new IllegalStateException(error);
+            }
+            try {
+                Thread.sleep(VIDEO_POLL_INTERVAL.toMillis());
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("Video generation interrupted");
+            }
+            current = openAiClient.getVideoJob(apiKey, job.id());
+        }
+        throw new IllegalStateException("Video generation timed out");
+    }
+
+    private String resolveExtensionFromMimeType(String mimeType, String fallbackFormat) {
+        if (mimeType == null || mimeType.isBlank()) {
+            return fallbackFormat != null && !fallbackFormat.isBlank() ? fallbackFormat : "png";
+        }
+        return switch (mimeType.toLowerCase()) {
+            case "image/jpeg" -> "jpg";
+            case "image/webp" -> "webp";
+            case "image/gif" -> "gif";
+            case "video/mp4" -> "mp4";
+            default -> "png";
+        };
     }
 
     private List<TtsMapping> resolveTtsMappings(JsonNode ttsNode,

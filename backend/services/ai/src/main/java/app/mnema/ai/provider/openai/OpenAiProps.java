@@ -8,6 +8,14 @@ public record OpenAiProps(
         String defaultModel,
         String defaultTtsModel,
         String defaultVoice,
-        String defaultTtsFormat
+        String defaultTtsFormat,
+        String defaultImageModel,
+        String defaultImageSize,
+        String defaultImageQuality,
+        String defaultImageStyle,
+        String defaultImageFormat,
+        String defaultVideoModel,
+        Integer defaultVideoDurationSeconds,
+        String defaultVideoResolution
 ) {
 }

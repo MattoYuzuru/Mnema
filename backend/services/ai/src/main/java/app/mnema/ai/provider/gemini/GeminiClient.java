@@ -100,4 +100,39 @@ public class GeminiClient {
         return audio;
     }
 
+    public GeminiImageResult createImage(String apiKey, GeminiImageRequest request) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        ArrayNode contents = payload.putArray("contents");
+        ObjectNode user = contents.addObject();
+        user.put("role", "user");
+        ArrayNode parts = user.putArray("parts");
+        parts.addObject().put("text", request.prompt());
+
+        ObjectNode generationConfig = payload.putObject("generationConfig");
+        ArrayNode modalities = generationConfig.putArray("responseModalities");
+        modalities.add("IMAGE");
+
+        JsonNode response = restClient.post()
+                .uri("/v1beta/models/{model}:generateContent", request.model())
+                .header("x-goog-api-key", apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(payload)
+                .retrieve()
+                .body(JsonNode.class);
+
+        if (response == null) {
+            throw new IllegalStateException("Gemini image response is empty");
+        }
+
+        GeminiResponseParser.InlineDataResult inline = GeminiResponseParser.extractInlineData(response);
+        if (inline == null || inline.data() == null || inline.data().length == 0) {
+            throw new IllegalStateException("Gemini image response is empty");
+        }
+        String model = response.path("modelVersion").asText(null);
+        if (model == null || model.isBlank()) {
+            model = response.path("model").asText(null);
+        }
+        return new GeminiImageResult(inline.data(), inline.mimeType(), model);
+    }
+
 }

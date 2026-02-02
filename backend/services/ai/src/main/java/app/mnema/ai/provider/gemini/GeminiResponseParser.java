@@ -35,6 +35,17 @@ public final class GeminiResponseParser {
     }
 
     public static AudioResult extractAudio(JsonNode response) {
+        InlineDataResult inline = extractInlineData(response);
+        if (inline == null) {
+            return null;
+        }
+        return new AudioResult(inline.data(), inline.mimeType());
+    }
+
+    public record AudioResult(byte[] data, String mimeType) {
+    }
+
+    public static InlineDataResult extractInlineData(JsonNode response) {
         if (response == null) {
             return null;
         }
@@ -50,9 +61,9 @@ public final class GeminiResponseParser {
         }
         String mimeType = inline.path("mimeType").asText(null);
         byte[] decoded = Base64.getDecoder().decode(data);
-        return new AudioResult(decoded, mimeType);
+        return new InlineDataResult(decoded, mimeType);
     }
 
-    public record AudioResult(byte[] data, String mimeType) {
+    public record InlineDataResult(byte[] data, String mimeType) {
     }
 }

@@ -219,7 +219,7 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         int limit = resolveLimit(params.path("limit"));
         List<CoreUserCardResponse> missingCards = coreApiClient.getMissingFieldCards(
                 job.getDeckId(),
-                new CoreApiClient.MissingFieldCardsRequest(targetFields, limit),
+                new CoreApiClient.MissingFieldCardsRequest(targetFields, limit, null),
                 accessToken
         );
         if (missingCards.isEmpty()) {
