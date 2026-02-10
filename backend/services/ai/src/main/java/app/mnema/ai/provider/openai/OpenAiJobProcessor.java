@@ -28,13 +28,17 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.io.ByteArrayInputStream;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.Duration;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -47,6 +51,8 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class OpenAiJobProcessor implements AiProviderProcessor {
@@ -69,6 +75,11 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private static final int MAX_IMPORT_BATCH = 50;
     private static final Duration VIDEO_POLL_INTERVAL = Duration.ofSeconds(5);
     private static final Duration VIDEO_POLL_TIMEOUT = Duration.ofMinutes(5);
+    private static final Pattern RETRY_IN_PATTERN = Pattern.compile("retry in\\s*([0-9]+(?:\\.[0-9]+)?)s", Pattern.CASE_INSENSITIVE);
+    private static final int DEFAULT_TTS_REQUESTS_PER_MINUTE = 60;
+    private static final int DEFAULT_TTS_MAX_RETRIES = 5;
+    private static final long DEFAULT_TTS_RETRY_INITIAL_DELAY_MS = 2000L;
+    private static final long DEFAULT_TTS_RETRY_MAX_DELAY_MS = 30000L;
 
     private final OpenAiClient openAiClient;
     private final OpenAiProps props;
@@ -79,6 +90,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private final CoreApiClient coreApiClient;
     private final ObjectMapper objectMapper;
     private final AnkiTemplateSupport ankiSupport;
+    private final Object ttsThrottleLock = new Object();
+    private long nextTtsRequestAtMs = 0L;
 
     public OpenAiJobProcessor(OpenAiClient openAiClient,
                               OpenAiProps props,
@@ -443,7 +456,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             mediaResult = applyMissingFieldUpdates(job, apiKey, accessToken, template, promptCards, updates, fieldTypes, selection.allowedFieldsByCard(), imageConfig, videoConfig, updateScope);
         }
 
-        TtsApplyResult ttsResult = new TtsApplyResult(0, 0, null);
+        TtsApplyResult ttsResult = new TtsApplyResult(0, 0, null, null);
         String ttsError = null;
         if (!targetAudioFields.isEmpty()) {
             if (!params.path("tts").path("enabled").asBoolean(false)) {
@@ -452,6 +465,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 List<CoreUserCardResponse> audioCards = filterCardsForAudio(missingCards, targetAudioFields, selection.allowedFieldsByCard());
                 if (!audioCards.isEmpty()) {
                     ttsResult = applyTtsForMissingAudio(job, apiKey, params, audioCards, template, targetAudioFields, updateScope);
+                    if (ttsError == null && ttsResult.error() != null) {
+                        ttsError = ttsResult.error();
+                    }
                 }
             }
         }
@@ -548,6 +564,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         summary.put("updatedCards", ttsResult.updatedCards());
         summary.put("ttsGenerated", ttsResult.generated());
         summary.put("candidates", missingCards.size());
+        if (ttsResult.error() != null) {
+            summary.put("ttsError", ttsResult.error());
+        }
         ArrayNode fieldsNode = summary.putArray("fields");
         targetFields.forEach(fieldsNode::add);
 
@@ -724,7 +743,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             mediaResult = applyCardMissingFieldUpdate(job, apiKey, accessToken, template, card, parsed, promptFields, fieldTypes, imageConfig, videoConfig, updateScope);
         }
 
-        TtsApplyResult ttsResult = new TtsApplyResult(0, 0, null);
+        TtsApplyResult ttsResult = new TtsApplyResult(0, 0, null, null);
         String ttsError = null;
         if (!targetAudioFields.isEmpty()) {
             if (!params.path("tts").path("enabled").asBoolean(false)) {
@@ -739,6 +758,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 List<CoreUserCardResponse> audioCards = filterCardsForAudio(List.of(cardResponse), targetAudioFields, Map.of());
                 if (!audioCards.isEmpty()) {
                     ttsResult = applyTtsForMissingAudio(job, apiKey, params, audioCards, template, targetAudioFields, updateScope);
+                    if (ttsError == null && ttsResult.error() != null) {
+                        ttsError = ttsResult.error();
+                    }
                 }
             }
         }
@@ -848,8 +870,11 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             );
             ttsResult = applyTtsForMissingAudio(job, apiKey, params, List.of(cardResponse), template, missingTargets, updateScope);
         } catch (Exception ex) {
-            ttsResult = new TtsApplyResult(0, 0, null);
+            ttsResult = new TtsApplyResult(0, 0, null, null);
             ttsError = summarizeError(ex);
+        }
+        if (ttsError == null && ttsResult.error() != null) {
+            ttsError = ttsResult.error();
         }
 
         ObjectNode summary = objectMapper.createObjectNode();
@@ -951,7 +976,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 .toList();
 
         List<CoreUserCardResponse> createdCards = coreApiClient.addCards(job.getDeckId(), limitedRequests, accessToken);
-        int ttsGenerated = applyTtsIfNeeded(job, apiKey, params, createdCards, template, updateScope);
+        TtsApplyResult ttsResult = applyTtsIfNeeded(job, apiKey, params, createdCards, template, updateScope);
         ImageConfig imageConfig = resolveImageConfig(params, true);
         VideoConfig videoConfig = resolveVideoConfig(params, true);
         MediaApplyResult mediaResult = applyMediaPromptsToNewCards(job, apiKey, accessToken, template, createdCards, drafts, fieldTypes, imageConfig, videoConfig, updateScope);
@@ -962,8 +987,11 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         summary.put("templateId", publicDeck.templateId().toString());
         summary.put("requestedCards", count);
         summary.put("createdCards", limitedRequests.size());
-        if (ttsGenerated > 0) {
-            summary.put("ttsGenerated", ttsGenerated);
+        if (ttsResult.generated() > 0) {
+            summary.put("ttsGenerated", ttsResult.generated());
+        }
+        if (ttsResult.error() != null) {
+            summary.put("ttsError", ttsResult.error());
         }
         if (mediaResult.imagesGenerated() > 0) {
             summary.put("imagesGenerated", mediaResult.imagesGenerated());
@@ -997,9 +1025,12 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         String voice = textOrDefault(params.path("voice"), props.defaultVoice());
         String format = textOrDefault(params.path("format"), props.defaultTtsFormat());
 
-        byte[] audio = openAiClient.createSpeech(
+        byte[] audio = createSpeechWithRetry(
+                job,
                 apiKey,
-                new OpenAiSpeechRequest(model, text, voice, format)
+                new OpenAiSpeechRequest(model, text, voice, format),
+                null,
+                null
         );
 
         String contentType = resolveAudioContentType(format);
@@ -1922,7 +1953,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private record CardDraft(ObjectNode content, Map<String, String> mediaPrompts) {
     }
 
-    private record TtsApplyResult(int generated, int updatedCards, String model) {
+    private record TtsApplyResult(int generated, int updatedCards, String model, String error) {
     }
 
     private record MediaApplyResult(int updatedCards, int imagesGenerated, int videosGenerated) {
@@ -2204,35 +2235,35 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
     }
 
-    private int applyTtsIfNeeded(AiJobEntity job,
-                                 String apiKey,
-                                 JsonNode params,
-                                 List<CoreUserCardResponse> createdCards,
-                                 CoreTemplateResponse template,
-                                 String updateScope) {
+    private TtsApplyResult applyTtsIfNeeded(AiJobEntity job,
+                                            String apiKey,
+                                            JsonNode params,
+                                            List<CoreUserCardResponse> createdCards,
+                                            CoreTemplateResponse template,
+                                            String updateScope) {
         JsonNode ttsNode = params.path("tts");
         if (!ttsNode.path("enabled").asBoolean(false)) {
-            return 0;
+            return new TtsApplyResult(0, 0, null, null);
         }
         if (createdCards == null || createdCards.isEmpty()) {
-            return 0;
+            return new TtsApplyResult(0, 0, null, null);
         }
         String accessToken = job.getUserAccessToken();
         if (accessToken == null || accessToken.isBlank()) {
-            return 0;
+            return new TtsApplyResult(0, 0, null, null);
         }
         List<String> audioFields = resolveAudioFields(template);
         if (audioFields.isEmpty()) {
-            return 0;
+            return new TtsApplyResult(0, 0, null, null);
         }
         List<String> textFields = resolveTextFields(template);
         if (textFields.isEmpty()) {
-            return 0;
+            return new TtsApplyResult(0, 0, null, null);
         }
 
         List<TtsMapping> mappings = resolveTtsMappings(ttsNode, textFields, audioFields, template);
         if (mappings.isEmpty()) {
-            return 0;
+            return new TtsApplyResult(0, 0, null, null);
         }
 
         String model = textOrDefault(ttsNode.path("model"), props.defaultTtsModel());
@@ -2244,6 +2275,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
 
         int generated = 0;
+        int updatedCards = 0;
+        String ttsError = null;
         for (CoreUserCardResponse card : createdCards) {
             if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
                 continue;
@@ -2258,10 +2291,26 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 if (text.length() > maxChars) {
                     continue;
                 }
-                byte[] audio = openAiClient.createSpeech(
-                        apiKey,
-                        new OpenAiSpeechRequest(model, text, voice, format)
-                );
+                byte[] audio;
+                try {
+                    audio = createSpeechWithRetry(
+                            job,
+                            apiKey,
+                            new OpenAiSpeechRequest(model, text, voice, format),
+                            card.userCardId(),
+                            mapping.targetField()
+                    );
+                } catch (Exception ex) {
+                    if (ttsError == null) {
+                        ttsError = summarizeError(ex);
+                        LOGGER.warn("OpenAI TTS failed jobId={} cardId={} field={} error={}",
+                                job.getJobId(),
+                                card.userCardId(),
+                                mapping.targetField(),
+                                ttsError);
+                    }
+                    continue;
+                }
                 String contentType = resolveAudioContentType(format);
                 String fileName = "ai-tts-" + job.getJobId() + "-" + card.userCardId() + "." + format;
                 UUID mediaId = mediaApiClient.directUpload(
@@ -2290,9 +2339,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 );
                 String cardScope = resolveCardUpdateScope(updateScope, card);
                 coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken, cardScope);
+                updatedCards++;
             }
         }
-        return generated;
+        return new TtsApplyResult(generated, updatedCards, model, ttsError);
     }
 
     private TtsApplyResult applyTtsForMissingAudio(AiJobEntity job,
@@ -2304,29 +2354,29 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                    String updateScope) {
         JsonNode ttsNode = params.path("tts");
         if (!ttsNode.path("enabled").asBoolean(false)) {
-            return new TtsApplyResult(0, 0, null);
+            return new TtsApplyResult(0, 0, null, null);
         }
         if (cards == null || cards.isEmpty()) {
-            return new TtsApplyResult(0, 0, null);
+            return new TtsApplyResult(0, 0, null, null);
         }
         String accessToken = job.getUserAccessToken();
         if (accessToken == null || accessToken.isBlank()) {
-            return new TtsApplyResult(0, 0, null);
+            return new TtsApplyResult(0, 0, null, null);
         }
         List<String> audioFields = resolveAudioFields(template);
         if (audioFields.isEmpty()) {
-            return new TtsApplyResult(0, 0, null);
+            return new TtsApplyResult(0, 0, null, null);
         }
         List<String> textFields = resolveTextFields(template);
         if (textFields.isEmpty()) {
-            return new TtsApplyResult(0, 0, null);
+            return new TtsApplyResult(0, 0, null, null);
         }
 
         List<TtsMapping> mappings = resolveTtsMappings(ttsNode, textFields, audioFields, template).stream()
                 .filter(mapping -> targetFields.contains(mapping.targetField()))
                 .toList();
         if (mappings.isEmpty()) {
-            return new TtsApplyResult(0, 0, null);
+            return new TtsApplyResult(0, 0, null, null);
         }
 
         String model = textOrDefault(ttsNode.path("model"), props.defaultTtsModel());
@@ -2339,6 +2389,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
         int generated = 0;
         int updatedCards = 0;
+        String ttsError = null;
         for (CoreUserCardResponse card : cards) {
             if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
                 continue;
@@ -2356,10 +2407,26 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 if (text.length() > maxChars) {
                     continue;
                 }
-                byte[] audio = openAiClient.createSpeech(
-                        apiKey,
-                        new OpenAiSpeechRequest(model, text, voice, format)
-                );
+                byte[] audio;
+                try {
+                    audio = createSpeechWithRetry(
+                            job,
+                            apiKey,
+                            new OpenAiSpeechRequest(model, text, voice, format),
+                            card.userCardId(),
+                            mapping.targetField()
+                    );
+                } catch (Exception ex) {
+                    if (ttsError == null) {
+                        ttsError = summarizeError(ex);
+                        LOGGER.warn("OpenAI TTS failed jobId={} cardId={} field={} error={}",
+                                job.getJobId(),
+                                card.userCardId(),
+                                mapping.targetField(),
+                                ttsError);
+                    }
+                    continue;
+                }
                 String contentType = resolveAudioContentType(format);
                 String fileName = "ai-tts-" + job.getJobId() + "-" + card.userCardId() + "." + format;
                 UUID mediaId = mediaApiClient.directUpload(
@@ -2392,7 +2459,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 updatedCards++;
             }
         }
-        return new TtsApplyResult(generated, updatedCards, model);
+        return new TtsApplyResult(generated, updatedCards, model, ttsError);
     }
 
     private List<String> resolveAudioFields(CoreTemplateResponse template) {
@@ -2882,6 +2949,179 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             return node.asText();
         }
         return null;
+    }
+
+    private byte[] createSpeechWithRetry(AiJobEntity job,
+                                         String apiKey,
+                                         OpenAiSpeechRequest request,
+                                         UUID cardId,
+                                         String targetField) {
+        int maxRetries = resolveTtsMaxRetries();
+        long delayMs = resolveTtsRetryInitialDelayMs();
+        long maxDelayMs = resolveTtsRetryMaxDelayMs();
+        int attempts = 0;
+        while (true) {
+            throttleTtsRequests();
+            try {
+                return openAiClient.createSpeech(apiKey, request);
+            } catch (RestClientResponseException ex) {
+                if (!isRetryableStatus(ex.getRawStatusCode())) {
+                    throw ex;
+                }
+                if (attempts >= maxRetries) {
+                    throw ex;
+                }
+                long waitMs = resolveRetryAfterMs(ex);
+                if (waitMs <= 0) {
+                    waitMs = delayMs;
+                    delayMs = Math.min(delayMs * 2, maxDelayMs);
+                } else {
+                    delayMs = Math.min(Math.max(delayMs, waitMs), maxDelayMs);
+                }
+                LOGGER.warn("OpenAI TTS rate limited jobId={} cardId={} field={} status={} waitMs={}",
+                        job.getJobId(),
+                        cardId,
+                        targetField,
+                        ex.getRawStatusCode(),
+                        waitMs);
+                if (!sleepQuietly(waitMs)) {
+                    throw new IllegalStateException("OpenAI TTS retry interrupted");
+                }
+                attempts++;
+            }
+        }
+    }
+
+    private void throttleTtsRequests() {
+        int rpm = resolveTtsRequestsPerMinute();
+        if (rpm <= 0) {
+            return;
+        }
+        long intervalMs = (long) Math.ceil(60000.0 / rpm);
+        long sleepMs = 0L;
+        long now = System.currentTimeMillis();
+        synchronized (ttsThrottleLock) {
+            if (nextTtsRequestAtMs > now) {
+                sleepMs = nextTtsRequestAtMs - now;
+                nextTtsRequestAtMs += intervalMs;
+            } else {
+                nextTtsRequestAtMs = now + intervalMs;
+            }
+        }
+        if (sleepMs > 0 && !sleepQuietly(sleepMs)) {
+            throw new IllegalStateException("OpenAI TTS throttling interrupted");
+        }
+    }
+
+    private int resolveTtsRequestsPerMinute() {
+        Integer rpm = props.ttsRequestsPerMinute();
+        if (rpm == null) {
+            return DEFAULT_TTS_REQUESTS_PER_MINUTE;
+        }
+        return Math.max(rpm, 0);
+    }
+
+    private int resolveTtsMaxRetries() {
+        Integer retries = props.ttsMaxRetries();
+        if (retries == null) {
+            return DEFAULT_TTS_MAX_RETRIES;
+        }
+        return Math.max(retries, 0);
+    }
+
+    private long resolveTtsRetryInitialDelayMs() {
+        Long delay = props.ttsRetryInitialDelayMs();
+        if (delay == null || delay < 0) {
+            return DEFAULT_TTS_RETRY_INITIAL_DELAY_MS;
+        }
+        return delay;
+    }
+
+    private long resolveTtsRetryMaxDelayMs() {
+        Long delay = props.ttsRetryMaxDelayMs();
+        long fallback = DEFAULT_TTS_RETRY_MAX_DELAY_MS;
+        if (delay == null || delay < 0) {
+            delay = fallback;
+        }
+        long initial = resolveTtsRetryInitialDelayMs();
+        return Math.max(delay, initial);
+    }
+
+    private boolean isRetryableStatus(int status) {
+        return status == 429 || status == 500 || status == 502 || status == 503 || status == 504;
+    }
+
+    private long resolveRetryAfterMs(RestClientResponseException ex) {
+        if (ex == null) {
+            return 0L;
+        }
+        Long headerMs = parseRetryAfterHeader(ex.getResponseHeaders());
+        if (headerMs != null) {
+            return headerMs;
+        }
+        Long bodyMs = parseRetryAfterMessage(ex.getResponseBodyAsString());
+        if (bodyMs != null) {
+            return bodyMs;
+        }
+        Long messageMs = parseRetryAfterMessage(ex.getMessage());
+        return messageMs == null ? 0L : messageMs;
+    }
+
+    private Long parseRetryAfterHeader(HttpHeaders headers) {
+        if (headers == null) {
+            return null;
+        }
+        String value = headers.getFirst("Retry-After");
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String trimmed = value.trim();
+        try {
+            long seconds = Long.parseLong(trimmed);
+            if (seconds >= 0) {
+                return seconds * 1000L;
+            }
+        } catch (NumberFormatException ignored) {
+        }
+        try {
+            Instant retryAt = DateTimeFormatter.RFC_1123_DATE_TIME.parse(trimmed, Instant::from);
+            long delta = retryAt.toEpochMilli() - System.currentTimeMillis();
+            return Math.max(delta, 0L);
+        } catch (DateTimeParseException ignored) {
+            return null;
+        }
+    }
+
+    static Long parseRetryAfterMessage(String message) {
+        if (message == null || message.isBlank()) {
+            return null;
+        }
+        Matcher matcher = RETRY_IN_PATTERN.matcher(message);
+        if (!matcher.find()) {
+            return null;
+        }
+        try {
+            double seconds = Double.parseDouble(matcher.group(1));
+            if (seconds < 0) {
+                return null;
+            }
+            return Math.round(seconds * 1000.0);
+        } catch (NumberFormatException ex) {
+            return null;
+        }
+    }
+
+    private boolean sleepQuietly(long delayMs) {
+        if (delayMs <= 0) {
+            return true;
+        }
+        try {
+            Thread.sleep(delayMs);
+            return true;
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            return false;
+        }
     }
 
     private String summarizeError(Exception ex) {
