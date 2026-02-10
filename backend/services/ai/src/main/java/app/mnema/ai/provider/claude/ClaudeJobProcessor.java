@@ -402,14 +402,9 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
             if ("local".equals(normalized)) {
                 return "local";
             }
-            if (!"auto".equals(normalized)) {
-                return "local";
-            }
-        }
-        if (deck == null || deck.publicDeckId() == null || publicDeck == null || publicDeck.authorId() == null) {
             return "local";
         }
-        return publicDeck.authorId().equals(job.getUserId()) ? "global" : "local";
+        return "local";
     }
 
     private String resolveCardUpdateScope(String updateScope, CoreUserCardResponse card) {
