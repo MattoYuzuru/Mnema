@@ -99,7 +99,8 @@ public class MediaPolicy {
                 "text/plain"
         );
         Set<String> aiImportTypes = Set.of(
-                "text/plain"
+                "text/plain",
+                "application/pdf"
         );
 
         map.put(MediaKind.avatar, new MediaLimit(
