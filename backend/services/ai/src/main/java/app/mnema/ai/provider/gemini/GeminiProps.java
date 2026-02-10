@@ -9,6 +9,10 @@ public record GeminiProps(
         String defaultTtsModel,
         String defaultVoice,
         String defaultTtsMimeType,
-        String defaultImageModel
+        String defaultImageModel,
+        Integer ttsRequestsPerMinute,
+        Integer ttsMaxRetries,
+        Long ttsRetryInitialDelayMs,
+        Long ttsRetryMaxDelayMs
 ) {
 }
