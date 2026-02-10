@@ -2,6 +2,7 @@ package app.mnema.ai.service;
 
 import app.mnema.ai.client.media.MediaApiClient;
 import app.mnema.ai.client.media.MediaResolved;
+import app.mnema.ai.support.ImportPdfExtractor;
 import app.mnema.ai.support.ImportTextDecoder;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -28,15 +29,18 @@ public class AiImportContentService {
     private final MediaApiClient mediaApiClient;
     private final HttpClient httpClient;
     private final long maxBytes;
+    private final long maxPdfBytes;
     private final int maxChars;
     private final Duration timeout;
 
     public AiImportContentService(MediaApiClient mediaApiClient,
                                   @Value("${app.ai.import.max-bytes:10485760}") long maxBytes,
+                                  @Value("${app.ai.import.pdf-max-bytes:31457280}") long maxPdfBytes,
                                   @Value("${app.ai.import.max-chars:200000}") int maxChars,
                                   @Value("${app.ai.import.download-timeout-seconds:30}") long timeoutSeconds) {
         this.mediaApiClient = mediaApiClient;
         this.maxBytes = Math.max(maxBytes, MB);
+        this.maxPdfBytes = Math.max(maxPdfBytes, MB);
         this.maxChars = Math.max(maxChars, 1000);
         this.timeout = Duration.ofSeconds(Math.max(timeoutSeconds, 5));
         this.httpClient = HttpClient.newBuilder()
@@ -55,11 +59,32 @@ public class AiImportContentService {
             throw new IllegalStateException("Source media URL is missing");
         }
         String mimeType = normalizeMimeType(resolved.mimeType());
-        if (mimeType == null || !mimeType.startsWith("text/")) {
+        if (mimeType == null || !(mimeType.startsWith("text/") || "application/pdf".equals(mimeType))) {
             throw new IllegalStateException("Unsupported source media type: " + resolved.mimeType());
         }
         long declaredSize = resolved.sizeBytes() == null ? -1 : resolved.sizeBytes();
-        DownloadResult download = downloadLimited(url);
+        boolean isPdf = "application/pdf".equals(mimeType);
+        DownloadResult download = downloadLimited(url, resolveMaxBytes(mimeType));
+        if (isPdf) {
+            if (download.truncated()) {
+                throw new IllegalStateException("PDF is too large to parse. Please upload a smaller file.");
+            }
+            ImportPdfExtractor.PdfText pdfText = ImportPdfExtractor.extract(download.bytes(), maxChars);
+            String text = normalizeText(pdfText.text());
+            boolean truncated = pdfText.truncated();
+            if (text.isBlank()) {
+                throw new IllegalStateException("PDF text is empty");
+            }
+            return new ImportTextPayload(
+                    text,
+                    mimeType,
+                    declaredSize,
+                    truncated,
+                    text.length(),
+                    "pdf",
+                    MAX_PREVIEW_CARDS
+            );
+        }
         ImportTextDecoder.DecodedText decoded = ImportTextDecoder.decode(download.bytes(), encoding);
         String text = normalizeText(decoded.text());
         boolean truncated = download.truncated();
@@ -96,7 +121,7 @@ public class AiImportContentService {
         return item;
     }
 
-    private DownloadResult downloadLimited(String url) {
+    private DownloadResult downloadLimited(String url, long limitBytes) {
         try {
             HttpRequest request = HttpRequest.newBuilder(URI.create(url))
                     .timeout(timeout)
@@ -107,7 +132,7 @@ public class AiImportContentService {
                 throw new IllegalStateException("Failed to download source media");
             }
             try (InputStream inputStream = response.body()) {
-                return readLimited(inputStream, maxBytes);
+                return readLimited(inputStream, limitBytes);
             }
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to download source media", ex);
@@ -155,6 +180,13 @@ public class AiImportContentService {
             normalized = normalized.substring(0, idx).trim();
         }
         return normalized.isBlank() ? null : normalized;
+    }
+
+    private long resolveMaxBytes(String mimeType) {
+        if ("application/pdf".equals(mimeType)) {
+            return maxPdfBytes;
+        }
+        return maxBytes;
     }
 
     public record ImportTextPayload(

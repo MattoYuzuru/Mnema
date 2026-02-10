@@ -35,6 +35,9 @@ dependencies {
 	// DTO validation
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 
+	// PDF parsing
+	implementation("org.apache.pdfbox:pdfbox:3.0.2")
+
 	// Cache + Redis
 	implementation("org.springframework.boot:spring-boot-starter-cache")
 	implementation("org.springframework.boot:spring-boot-starter-data-redis")
