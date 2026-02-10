@@ -218,6 +218,7 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         }
         Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
         CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+        String updateScope = resolveUpdateScope(job, deck, publicDeck, params);
 
         List<String> targetFields = resolveAllowedFields(params, template);
         if (targetFields.isEmpty()) {

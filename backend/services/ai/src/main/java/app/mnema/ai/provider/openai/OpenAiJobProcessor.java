@@ -688,6 +688,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
         Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
         CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+        String updateScope = resolveUpdateScope(job, deck, publicDeck, params);
 
         Map<String, String> fieldTypes = resolveFieldTypes(template);
         List<String> promptFields = resolveAllowedFields(params, template);
