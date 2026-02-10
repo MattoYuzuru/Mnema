@@ -7,7 +7,9 @@ import {
     CreateAiProviderRequest,
     CreateAiJobRequest,
     AiJobResponse,
-    AiJobResultResponse
+    AiJobResultResponse,
+    AiImportPreviewRequest,
+    AiImportGenerateRequest
 } from '../models/ai.models';
 
 @Injectable({ providedIn: 'root' })
@@ -51,5 +53,13 @@ export class AiApiService {
 
     cancelJob(jobId: string): Observable<AiJobResponse> {
         return this.http.post<AiJobResponse>(`${this.baseUrl}/jobs/${jobId}/cancel`, {});
+    }
+
+    createImportPreview(request: AiImportPreviewRequest): Observable<AiJobResponse> {
+        return this.http.post<AiJobResponse>(`${this.baseUrl}/imports/preview`, request);
+    }
+
+    createImportGenerate(request: AiImportGenerateRequest): Observable<AiJobResponse> {
+        return this.http.post<AiJobResponse>(`${this.baseUrl}/imports/generate`, request);
     }
 }

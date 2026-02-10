@@ -50,3 +50,42 @@ export interface AiJobResultResponse {
     status: AiJobStatus;
     resultSummary: unknown;
 }
+
+export interface AiImportPreviewRequest {
+    requestId: string;
+    deckId: string;
+    sourceMediaId: string;
+    providerCredentialId?: string | null;
+    model?: string | null;
+    sourceType?: string | null;
+    encoding?: string | null;
+    language?: string | null;
+    instructions?: string | null;
+}
+
+export interface AiImportGenerateRequest {
+    requestId: string;
+    deckId: string;
+    sourceMediaId: string;
+    fields: string[];
+    count: number;
+    providerCredentialId?: string | null;
+    model?: string | null;
+    sourceType?: string | null;
+    encoding?: string | null;
+    language?: string | null;
+    instructions?: string | null;
+    tts?: Record<string, unknown> | null;
+    image?: Record<string, unknown> | null;
+    video?: Record<string, unknown> | null;
+}
+
+export interface AiImportPreviewSummary {
+    mode?: string;
+    summary?: string;
+    estimatedCount?: number;
+    truncated?: boolean;
+    sourceBytes?: number;
+    sourceChars?: number;
+    detectedCharset?: string;
+}

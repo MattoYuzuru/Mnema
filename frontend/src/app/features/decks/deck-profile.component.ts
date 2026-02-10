@@ -22,6 +22,7 @@ import { ButtonComponent } from '../../shared/components/button.component';
 import { AddCardsModalComponent } from './add-cards-modal.component';
 import { AiAddCardsModalComponent } from './ai-add-cards-modal.component';
 import { AiEnhanceDeckModalComponent } from './ai-enhance-deck-modal.component';
+import { AiImportModalComponent } from './ai-import-modal.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { InputComponent } from '../../shared/components/input.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
@@ -32,7 +33,7 @@ import { I18nService } from '../../core/services/i18n.service';
 @Component({
     selector: 'app-deck-profile',
     standalone: true,
-    imports: [NgIf, NgFor, DatePipe, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, AiAddCardsModalComponent, AiEnhanceDeckModalComponent, ConfirmationDialogComponent, InputComponent, ImportDeckModalComponent, TranslatePipe],
+    imports: [NgIf, NgFor, DatePipe, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, AiAddCardsModalComponent, AiEnhanceDeckModalComponent, AiImportModalComponent, ConfirmationDialogComponent, InputComponent, ImportDeckModalComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -117,13 +118,13 @@ import { I18nService } from '../../core/services/i18n.service';
               <p>{{ 'deckProfile.aiEnhanceDescription' | translate }}</p>
             </div>
           </button>
-          <div class="ai-feature-card disabled" aria-disabled="true">
+          <button class="ai-feature-card" (click)="openAiImportModal()">
             <div class="ai-feature-icon">📷</div>
             <div>
               <h3>{{ 'deckProfile.aiImportTitle' | translate }}</h3>
               <p>{{ 'deckProfile.aiImportDescription' | translate }}</p>
             </div>
-          </div>
+          </button>
         </div>
       </section>
 
@@ -288,7 +289,7 @@ import { I18nService } from '../../core/services/i18n.service';
               <h3>{{ 'deckProfile.aiAddCardsTitle' | translate }}</h3>
               <p>{{ 'deckProfile.aiAddCardsDescription' | translate }}</p>
             </div>
-            <div class="choice-card disabled" aria-disabled="true">
+            <div class="choice-card ai-choice" (click)="startAiImport()">
               <div class="choice-icon">📷</div>
               <h3>{{ 'deckProfile.aiImportTitle' | translate }}</h3>
               <p>{{ 'deckProfile.aiImportDescription' | translate }}</p>
@@ -333,6 +334,16 @@ import { I18nService } from '../../core/services/i18n.service';
       (jobCreated)="onAiJobCreated($event)"
       (closed)="closeAiEnhanceModal()"
     ></app-ai-enhance-deck-modal>
+
+    <app-ai-import-modal
+      *ngIf="showAiImportModal && deck"
+      [userDeckId]="deck.userDeckId"
+      [deckName]="deck.displayName"
+      [templateId]="publicDeck?.templateId || ''"
+      [templateVersion]="deck.templateVersion || null"
+      (jobCreated)="onAiJobCreated($event)"
+      (closed)="closeAiImportModal()"
+    ></app-ai-import-modal>
 
     <div *ngIf="showEditModal && deck" class="modal-overlay" (click)="closeEditModal()">
       <div class="modal-content" (click)="$event.stopPropagation()">
@@ -1326,6 +1337,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     showAddCardsChoice = false;
     showAiAddModal = false;
     showAiEnhanceModal = false;
+    showAiImportModal = false;
     showImportModal = false;
     showEditModal = false;
     showDeleteConfirm = false;
@@ -1459,6 +1471,11 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         this.showAiAddModal = true;
     }
 
+    startAiImport(): void {
+        this.showAddCardsChoice = false;
+        this.showAiImportModal = true;
+    }
+
     closeImportModal(): void {
         this.showImportModal = false;
     }
@@ -1477,6 +1494,14 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
 
     closeAiEnhanceModal(): void {
         this.showAiEnhanceModal = false;
+    }
+
+    openAiImportModal(): void {
+        this.showAiImportModal = true;
+    }
+
+    closeAiImportModal(): void {
+        this.showAiImportModal = false;
     }
 
     closeAddCards(): void {

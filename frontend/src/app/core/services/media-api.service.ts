@@ -4,7 +4,7 @@ import { Observable, of } from 'rxjs';
 import { map } from 'rxjs/operators';
 import { appConfig } from '../../app.config';
 
-export type MediaKind = 'avatar' | 'deck_icon' | 'card_image' | 'card_audio' | 'card_video' | 'import_file';
+export type MediaKind = 'avatar' | 'deck_icon' | 'card_image' | 'card_audio' | 'card_video' | 'import_file' | 'ai_import';
 
 export interface CreateUploadRequest {
     kind: MediaKind;
