@@ -15,7 +15,8 @@ public final class ImportPdfExtractor {
             return new PdfText("", false);
         }
         int limit = Math.max(maxChars, 1);
-        try (PDDocument document = Loader.loadPDF(bytes, MemoryUsageSetting.setupTempFileOnly())) {
+        MemoryUsageSetting memory = MemoryUsageSetting.setupTempFileOnly();
+        try (PDDocument document = Loader.loadPDF(bytes, null, null, null, memory.streamCache)) {
             if (document.isEncrypted()) {
                 throw new IllegalStateException("Encrypted PDF is not supported");
             }
