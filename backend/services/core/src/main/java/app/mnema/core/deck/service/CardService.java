@@ -45,6 +45,7 @@ public class CardService {
     private final UserCardRepository userCardRepository;
     private final PublicCardRepository publicCardRepository;
     private final PublicDeckRepository publicDeckRepository;
+    private final DeckUpdateSessionRepository deckUpdateSessionRepository;
     private final FieldTemplateRepository fieldTemplateRepository;
     private final ObjectMapper objectMapper;
 
@@ -52,12 +53,14 @@ public class CardService {
                        UserCardRepository userCardRepository,
                        PublicCardRepository publicCardRepository,
                        PublicDeckRepository publicDeckRepository,
+                       DeckUpdateSessionRepository deckUpdateSessionRepository,
                        FieldTemplateRepository fieldTemplateRepository,
                        ObjectMapper objectMapper) {
         this.userDeckRepository = userDeckRepository;
         this.userCardRepository = userCardRepository;
         this.publicCardRepository = publicCardRepository;
         this.publicDeckRepository = publicDeckRepository;
+        this.deckUpdateSessionRepository = deckUpdateSessionRepository;
         this.fieldTemplateRepository = fieldTemplateRepository;
         this.objectMapper = objectMapper;
     }
@@ -376,7 +379,7 @@ public class CardService {
     public UserCardDTO addNewCardToDeck(UUID currentUserId,
                                         UUID userDeckId,
                                         CreateCardRequest request) {
-        List<UserCardDTO> created = addNewCardsToDeckBatch(currentUserId, userDeckId, List.of(request));
+        List<UserCardDTO> created = addNewCardsToDeckBatch(currentUserId, userDeckId, List.of(request), null);
         return created.getFirst();
     }
 
@@ -387,7 +390,8 @@ public class CardService {
     @PreAuthorize("hasAuthority('SCOPE_user.write')")
     public List<UserCardDTO> addNewCardsToDeckBatch(UUID currentUserId,
                                                     UUID userDeckId,
-                                                    List<CreateCardRequest> requests) {
+                                                    List<CreateCardRequest> requests,
+                                                    UUID operationId) {
         if (requests == null || requests.isEmpty()) {
             return List.of();
         }
@@ -475,6 +479,115 @@ public class CardService {
       - order_index для добавляемых карт выставляется в конец, чтобы не плодить коллизии 1/2, 1/2 и т.п.
      */
 
+        PublicDeckEntity targetDeck;
+        int maxOrderIndex;
+
+        // operationId позволяет нескольким батчам добавляться в одну версию
+        if (operationId != null) {
+            DeckUpdateSessionEntity session = deckUpdateSessionRepository
+                    .findByDeckIdAndOperationId(publicDeckId, operationId)
+                    .orElse(null);
+
+            if (session != null) {
+                if (!session.getAuthorId().equals(currentUserId)) {
+                    throw new SecurityException("Access denied to deck " + publicDeckId);
+                }
+                if (!latestDeck.getVersion().equals(session.getTargetVersion())) {
+                    throw new IllegalStateException("Deck version changed during batch operation");
+                }
+                targetDeck = publicDeckRepository
+                        .findByDeckIdAndVersion(publicDeckId, session.getTargetVersion())
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "Public deck not found: deckId=" + publicDeckId + ", version=" + session.getTargetVersion()
+                        ));
+                maxOrderIndex = resolveMaxOrderIndex(publicDeckId, session.getTargetVersion());
+                targetDeck.setUpdatedAt(now);
+                publicDeckRepository.save(targetDeck);
+                session.setUpdatedAt(now);
+                deckUpdateSessionRepository.save(session);
+            } else {
+                NewDeckVersion newVersion = createNewDeckVersion(latestDeck, now);
+                targetDeck = newVersion.deck();
+                maxOrderIndex = newVersion.maxOrderIndex();
+                deckUpdateSessionRepository.save(new DeckUpdateSessionEntity(
+                        publicDeckId,
+                        operationId,
+                        currentUserId,
+                        targetDeck.getVersion(),
+                        now,
+                        now
+                ));
+            }
+        } else {
+            NewDeckVersion newVersion = createNewDeckVersion(latestDeck, now);
+            targetDeck = newVersion.deck();
+            maxOrderIndex = newVersion.maxOrderIndex();
+        }
+
+        // Добавляем новые публичные карты в конец
+        int nextOrderIndex = maxOrderIndex + 1;
+
+        List<PublicCardEntity> newPublicCards = new ArrayList<>(requests.size());
+        for (CreateCardRequest request : requests) {
+            validateTags(request.tags());
+            if (request.content() == null || request.content().isNull()) {
+                throw new IllegalArgumentException("Public card content must not be null");
+            }
+
+            String checksum = computeChecksum(request.content());
+
+            PublicCardEntity pc = new PublicCardEntity(
+                    targetDeck.getDeckId(),
+                    targetDeck.getVersion(),
+                    targetDeck,
+                    request.content(),
+                    nextOrderIndex++,
+                    request.tags(),
+                    now,
+                    null,
+                    true,
+                    checksum
+            );
+
+            newPublicCards.add(pc);
+        }
+
+        List<PublicCardEntity> savedNewPublicCards =
+                newPublicCards.isEmpty() ? List.of() : publicCardRepository.saveAll(newPublicCards);
+
+        // Обновляем текущую версию в user_decks автора
+        userDeck.setCurrentVersion(targetDeck.getVersion());
+        userDeck.setTemplateVersion(targetDeck.getTemplateVersion());
+        userDeck.setLastSyncedAt(now);
+        userDeckRepository.save(userDeck);
+
+        // Создаём user_cards для новых публичных карт (старые user_cards не трогаем)
+        long offsetNanos = 0L;
+        for (int i = 0; i < savedNewPublicCards.size(); i++) {
+            PublicCardEntity publicCard = savedNewPublicCards.get(i);
+            CreateCardRequest request = requests.get(i);
+
+            Instant createdAt = now.plusNanos(offsetNanos++);
+            UserCardEntity userCard = new UserCardEntity(
+                    currentUserId,
+                    userDeckId,
+                    publicCard.getCardId(),
+                    false,
+                    false,
+                    request.personalNote(),
+                    null,
+                    request.contentOverride(),
+                    createdAt,
+                    null
+            );
+
+            result.add(toUserCardDTO(userCardRepository.save(userCard)));
+        }
+
+        return result;
+    }
+
+    private NewDeckVersion createNewDeckVersion(PublicDeckEntity latestDeck, Instant now) {
         int newVersion = latestDeck.getVersion() + 1;
 
         PublicDeckEntity newDeckVersion = new PublicDeckEntity(
@@ -536,67 +649,15 @@ public class CardService {
             publicCardRepository.saveAll(clonedOldCards);
         }
 
-        // Добавляем новые публичные карты в конец
-        int nextOrderIndex = maxOrderIndex + 1;
+        return new NewDeckVersion(savedNewDeck, maxOrderIndex);
+    }
 
-        List<PublicCardEntity> newPublicCards = new ArrayList<>(requests.size());
-        for (CreateCardRequest request : requests) {
-            validateTags(request.tags());
-            if (request.content() == null || request.content().isNull()) {
-                throw new IllegalArgumentException("Public card content must not be null");
-            }
+    private int resolveMaxOrderIndex(UUID deckId, Integer deckVersion) {
+        Integer maxOrderIndex = publicCardRepository.findMaxOrderIndex(deckId, deckVersion);
+        return maxOrderIndex == null ? 0 : maxOrderIndex;
+    }
 
-            String checksum = computeChecksum(request.content());
-
-            PublicCardEntity pc = new PublicCardEntity(
-                    savedNewDeck.getDeckId(),
-                    savedNewDeck.getVersion(),
-                    savedNewDeck,
-                    request.content(),
-                    nextOrderIndex++,
-                    request.tags(),
-                    now,
-                    null,
-                    true,
-                    checksum
-            );
-
-            newPublicCards.add(pc);
-        }
-
-        List<PublicCardEntity> savedNewPublicCards =
-                newPublicCards.isEmpty() ? List.of() : publicCardRepository.saveAll(newPublicCards);
-
-        // Обновляем текущую версию в user_decks автора
-        userDeck.setCurrentVersion(savedNewDeck.getVersion());
-        userDeck.setTemplateVersion(savedNewDeck.getTemplateVersion());
-        userDeck.setLastSyncedAt(now);
-        userDeckRepository.save(userDeck);
-
-        // Создаём user_cards для новых публичных карт (старые user_cards не трогаем)
-        long offsetNanos = 0L;
-        for (int i = 0; i < savedNewPublicCards.size(); i++) {
-            PublicCardEntity publicCard = savedNewPublicCards.get(i);
-            CreateCardRequest request = requests.get(i);
-
-            Instant createdAt = now.plusNanos(offsetNanos++);
-            UserCardEntity userCard = new UserCardEntity(
-                    currentUserId,
-                    userDeckId,
-                    publicCard.getCardId(),
-                    false,
-                    false,
-                    request.personalNote(),
-                    null,
-                    request.contentOverride(),
-                    createdAt,
-                    null
-            );
-
-            result.add(toUserCardDTO(userCardRepository.save(userCard)));
-        }
-
-        return result;
+    private record NewDeckVersion(PublicDeckEntity deck, int maxOrderIndex) {
     }
 
     private void validateTags(String[] tags) {

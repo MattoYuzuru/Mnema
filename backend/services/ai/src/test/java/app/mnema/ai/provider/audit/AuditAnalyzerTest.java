@@ -21,7 +21,7 @@ class AuditAnalyzerTest {
         ObjectNode content = objectMapper.createObjectNode();
         content.put("front", "A");
         content.put("back", "");
-        CoreUserCardResponse card = new CoreUserCardResponse(cardId, content);
+        CoreUserCardResponse card = new CoreUserCardResponse(cardId, null, true, content);
 
         CoreTemplateResponse template = new CoreTemplateResponse(
                 UUID.randomUUID(),

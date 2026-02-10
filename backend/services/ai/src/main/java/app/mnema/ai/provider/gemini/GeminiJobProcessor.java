@@ -473,7 +473,12 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                 .map(draft -> new CreateCardRequestPayload(draft.content(), null, null, null, null, null))
                 .toList();
 
-        List<CoreUserCardResponse> createdCards = coreApiClient.addCards(job.getDeckId(), limitedRequests, accessToken);
+        List<CoreUserCardResponse> createdCards = coreApiClient.addCards(
+                job.getDeckId(),
+                limitedRequests,
+                accessToken,
+                job.getJobId()
+        );
         ImageConfig imageConfig = resolveImageConfig(params, true);
         MediaApplyResult mediaResult = applyMediaPromptsToNewCards(job, apiKey, accessToken, template, createdCards, drafts, fieldTypes, imageConfig, updateScope);
         TtsApplyResult ttsResult;

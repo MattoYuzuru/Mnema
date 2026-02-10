@@ -50,6 +50,9 @@ class CardServiceTest {
     @Mock
     PublicDeckRepository publicDeckRepository;
 
+    @Mock
+    DeckUpdateSessionRepository deckUpdateSessionRepository;
+
     @Spy
     ObjectMapper objectMapper = new ObjectMapper();
 
@@ -348,9 +351,6 @@ class CardServiceTest {
                     }
                     return entities;
                 });
-
-        when(publicCardRepository.findByCardId(any()))
-                .thenAnswer(invocation -> Optional.ofNullable(lastSavedPublicCardRef.get()));
 
         when(userCardRepository.save(any(UserCardEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));

@@ -143,7 +143,12 @@ public class ImportProcessor {
 
                 if (batch.size() >= batchSize) {
                     List<app.mnema.importer.client.core.CoreUserCardResponse> created =
-                            coreApiClient.addCardsBatch(job.getUserAccessToken(), targetDeck.userDeckId(), batch);
+                            coreApiClient.addCardsBatch(
+                                    job.getUserAccessToken(),
+                                    targetDeck.userDeckId(),
+                                    batch,
+                                    job.getJobId()
+                            );
                     processed += created == null ? 0 : created.size();
                     seedProgress(job, targetDeck.userDeckId(), created, progressBatch, now);
                     batch.clear();
@@ -154,7 +159,12 @@ public class ImportProcessor {
 
             if (!batch.isEmpty()) {
                 List<app.mnema.importer.client.core.CoreUserCardResponse> created =
-                        coreApiClient.addCardsBatch(job.getUserAccessToken(), targetDeck.userDeckId(), batch);
+                        coreApiClient.addCardsBatch(
+                                job.getUserAccessToken(),
+                                targetDeck.userDeckId(),
+                                batch,
+                                job.getJobId()
+                        );
                 processed += created == null ? 0 : created.size();
                 seedProgress(job, targetDeck.userDeckId(), created, progressBatch, now);
                 updateProgress(job.getJobId(), processed);

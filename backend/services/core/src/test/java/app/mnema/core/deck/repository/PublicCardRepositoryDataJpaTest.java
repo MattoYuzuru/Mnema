@@ -218,7 +218,7 @@ class PublicCardRepositoryDataJpaTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void findByCardId_findsCardByGeneratedId() {
+    void findFirstByCardIdOrderByDeckVersionDesc_findsCardByGeneratedId() {
         PublicDeckEntity deck = createDeck();
 
         ObjectNode content = objectMapper.createObjectNode();
@@ -240,7 +240,7 @@ class PublicCardRepositoryDataJpaTest extends PostgresIntegrationTest {
 
         PublicCardEntity saved = publicCardRepository.save(card);
 
-        var found = publicCardRepository.findByCardId(saved.getCardId());
+        var found = publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(saved.getCardId());
 
         assertThat(found).isPresent();
         assertThat(found.get().getCardId()).isEqualTo(saved.getCardId());

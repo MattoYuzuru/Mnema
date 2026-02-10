@@ -206,7 +206,7 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
                                 ''
                             )
                         ),
-                        '[^\\p{L}\\p{N}]+',
+                        '[^[:alnum:]]+',
                         '',
                         'g'
                     )

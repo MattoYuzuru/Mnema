@@ -105,10 +105,11 @@ public class UserCardController {
     public List<UserCardDTO> addCardsBatch(
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID userDeckId,
-            @RequestBody List<CreateCardRequest> requests
+            @RequestBody List<CreateCardRequest> requests,
+            @RequestParam(required = false) UUID operationId
     ) {
         var userId = currentUserProvider.getUserId(jwt);
-        return cardService.addNewCardsToDeckBatch(userId, userDeckId, requests);
+        return cardService.addNewCardsToDeckBatch(userId, userDeckId, requests, operationId);
     }
 
     // PATCH /decks/{userDeckId}/cards/{cardId}

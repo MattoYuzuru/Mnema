@@ -76,11 +76,20 @@ public class CoreApiClient {
     public List<CoreUserCardResponse> addCards(UUID userDeckId,
                                                List<CreateCardRequestPayload> requests,
                                                String accessToken) {
+        return addCards(userDeckId, requests, accessToken, null);
+    }
+
+    public List<CoreUserCardResponse> addCards(UUID userDeckId,
+                                               List<CreateCardRequestPayload> requests,
+                                               String accessToken,
+                                               UUID operationId) {
         if (requests == null || requests.isEmpty()) {
             return List.of();
         }
         List<CoreUserCardResponse> response = restClient.post()
-                .uri("/decks/{userDeckId}/cards/batch", userDeckId)
+                .uri(uriBuilder -> uriBuilder.path("/decks/{userDeckId}/cards/batch")
+                        .queryParamIfPresent("operationId", java.util.Optional.ofNullable(operationId))
+                        .build(userDeckId))
                 .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
                 .body(requests)
                 .retrieve()

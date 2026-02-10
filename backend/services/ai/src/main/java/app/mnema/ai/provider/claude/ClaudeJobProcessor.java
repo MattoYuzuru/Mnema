@@ -179,7 +179,7 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
                 .limit(count)
                 .toList();
 
-        coreApiClient.addCards(job.getDeckId(), limitedRequests, accessToken);
+        coreApiClient.addCards(job.getDeckId(), limitedRequests, accessToken, job.getJobId());
 
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("mode", MODE_GENERATE_CARDS);

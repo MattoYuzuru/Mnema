@@ -975,7 +975,12 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 .limit(count)
                 .toList();
 
-        List<CoreUserCardResponse> createdCards = coreApiClient.addCards(job.getDeckId(), limitedRequests, accessToken);
+        List<CoreUserCardResponse> createdCards = coreApiClient.addCards(
+                job.getDeckId(),
+                limitedRequests,
+                accessToken,
+                job.getJobId()
+        );
         TtsApplyResult ttsResult = applyTtsIfNeeded(job, apiKey, params, createdCards, template, updateScope);
         ImageConfig imageConfig = resolveImageConfig(params, true);
         VideoConfig videoConfig = resolveVideoConfig(params, true);
