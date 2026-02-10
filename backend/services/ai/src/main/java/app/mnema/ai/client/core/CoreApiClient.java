@@ -1,12 +1,16 @@
 package app.mnema.ai.client.core;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 
 @Component
@@ -14,6 +18,7 @@ public class CoreApiClient {
 
     private static final ParameterizedTypeReference<List<CoreUserCardResponse>> CARD_LIST_TYPE =
             new ParameterizedTypeReference<>() {};
+    private static final Logger LOGGER = LoggerFactory.getLogger(CoreApiClient.class);
 
     private final RestClient restClient;
 
@@ -95,6 +100,23 @@ public class CoreApiClient {
                                                UpdateUserCardRequest request,
                                                String accessToken,
                                                String scope) {
+        try {
+            return doUpdateUserCard(userDeckId, userCardId, request, accessToken, scope);
+        } catch (RestClientResponseException ex) {
+            if (scope != null && scope.equalsIgnoreCase("global") && shouldFallbackGlobalUpdate(ex)) {
+                LOGGER.warn("Global card update failed, retrying locally deckId={} cardId={} status={} reason={}",
+                        userDeckId, userCardId, ex.getRawStatusCode(), summarizeError(ex));
+                return doUpdateUserCard(userDeckId, userCardId, request, accessToken, "local");
+            }
+            throw ex;
+        }
+    }
+
+    private CoreUserCardResponse doUpdateUserCard(UUID userDeckId,
+                                                  UUID userCardId,
+                                                  UpdateUserCardRequest request,
+                                                  String accessToken,
+                                                  String scope) {
         CoreUserCardResponse response = restClient.patch()
                 .uri(uriBuilder -> {
                     uriBuilder.path("/decks/{userDeckId}/cards/{userCardId}");
@@ -111,6 +133,33 @@ public class CoreApiClient {
             throw new IllegalStateException("Core card update response is empty");
         }
         return response;
+    }
+
+    private boolean shouldFallbackGlobalUpdate(RestClientResponseException ex) {
+        String body = ex.getResponseBodyAsString();
+        String message = body == null || body.isBlank() ? ex.getMessage() : body;
+        if (message == null) {
+            return false;
+        }
+        String normalized = message.toLowerCase(Locale.ROOT);
+        return normalized.contains("checksum is not unique")
+                || normalized.contains("public card not found in latest version")
+                || normalized.contains("public card checksum is not unique");
+    }
+
+    private String summarizeError(RestClientResponseException ex) {
+        if (ex == null) {
+            return "unknown";
+        }
+        String message = ex.getResponseBodyAsString();
+        if (message == null || message.isBlank()) {
+            message = ex.getMessage();
+        }
+        if (message == null) {
+            return "unknown";
+        }
+        message = message.replaceAll("\\s+", " ").trim();
+        return message.length() > 200 ? message.substring(0, 200) : message;
     }
 
     public CoreUserCardPage getUserCards(UUID userDeckId, int page, int limit, String accessToken) {
