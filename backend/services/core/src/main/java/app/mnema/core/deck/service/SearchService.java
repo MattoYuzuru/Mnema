@@ -193,9 +193,9 @@ public class SearchService {
             return Map.of();
         }
 
-        List<PublicCardEntity> cards = publicCardRepository.findAllByCardIdInOrderByDeckVersionDesc(publicCardIds);
+        List<PublicCardEntity> publicCards = publicCardRepository.findAllByCardIdInOrderByDeckVersionDesc(publicCardIds);
         Map<UUID, PublicCardEntity> map = new HashMap<>();
-        for (PublicCardEntity card : cards) {
+        for (PublicCardEntity card : publicCards) {
             map.putIfAbsent(card.getCardId(), card);
         }
         return map;
