@@ -1,6 +1,7 @@
 package app.mnema.ai.client.media;
 
 import org.springframework.core.io.InputStreamResource;
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
@@ -8,6 +9,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.io.InputStream;
+import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Component
@@ -51,8 +54,32 @@ public class MediaApiClient {
         return response.mediaId();
     }
 
+    public List<MediaResolved> resolve(List<UUID> mediaIds, String accessToken) {
+        Map<String, Object> payload = Map.of("mediaIds", mediaIds);
+        RestClient.RequestBodySpec request = restClient.post()
+                .uri("/resolve")
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(payload);
+        String token = resolveAuthToken(accessToken);
+        if (token != null) {
+            request.header(HttpHeaders.AUTHORIZATION, bearer(token));
+        }
+        return request.retrieve()
+                .body(new ParameterizedTypeReference<List<MediaResolved>>() {});
+    }
+
     private String bearer(String token) {
         return "Bearer " + token;
+    }
+
+    private String resolveAuthToken(String accessToken) {
+        if (accessToken != null && !accessToken.isBlank()) {
+            return accessToken;
+        }
+        if (props.internalToken() != null && !props.internalToken().isBlank()) {
+            return props.internalToken();
+        }
+        return null;
     }
 
     private static class SizedInputStreamResource extends InputStreamResource {

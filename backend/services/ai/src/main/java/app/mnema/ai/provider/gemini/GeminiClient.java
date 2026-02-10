@@ -74,6 +74,9 @@ public class GeminiClient {
         ObjectNode generationConfig = payload.putObject("generationConfig");
         ArrayNode modalities = generationConfig.putArray("responseModalities");
         modalities.add("AUDIO");
+        if (request.responseMimeType() != null && !request.responseMimeType().isBlank()) {
+            generationConfig.put("responseMimeType", request.responseMimeType());
+        }
         if (request.voice() != null && !request.voice().isBlank()) {
             ObjectNode speechConfig = generationConfig.putObject("speechConfig");
             ObjectNode voiceConfig = speechConfig.putObject("voiceConfig");

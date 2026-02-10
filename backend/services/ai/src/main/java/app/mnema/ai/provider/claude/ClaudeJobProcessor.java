@@ -30,6 +30,7 @@ import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -42,6 +43,8 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
     private static final String MODE_MISSING_AUDIO = "missing_audio";
     private static final String MODE_AUDIT = "audit";
     private static final String MODE_ENHANCE = "enhance_deck";
+    private static final String MODE_IMPORT_PREVIEW = "import_preview";
+    private static final String MODE_IMPORT_GENERATE = "import_generate";
     private static final int MAX_CARDS = 50;
 
     private final ClaudeClient claudeClient;
@@ -89,6 +92,9 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
     private AiJobProcessingResult handleText(AiJobEntity job, String apiKey) {
         JsonNode params = safeParams(job);
         String mode = params.path("mode").asText();
+        if (MODE_IMPORT_PREVIEW.equalsIgnoreCase(mode) || MODE_IMPORT_GENERATE.equalsIgnoreCase(mode)) {
+            throw new IllegalStateException("Claude provider does not support import yet");
+        }
         if (MODE_AUDIT.equalsIgnoreCase(mode)) {
             return handleAudit(job, apiKey, params);
         }
@@ -149,6 +155,7 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         }
         Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
         CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+        String updateScope = resolveUpdateScope(job, deck, publicDeck, params);
 
         int count = resolveCount(params);
         var allowedFields = resolveAllowedFields(params, template);
@@ -251,7 +258,7 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
 
         JsonNode parsed = parseJsonResponse(response.outputText());
         List<MissingFieldUpdate> updates = parseMissingFieldUpdates(parsed, targetFields);
-        int updated = applyMissingFieldUpdates(job, accessToken, template, missingCards, updates);
+        int updated = applyMissingFieldUpdates(job, accessToken, template, missingCards, updates, updateScope);
 
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("mode", MODE_MISSING_FIELDS);
@@ -368,6 +375,50 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         }
         String value = node.asText(null);
         return value == null || value.isBlank() ? fallback : value.trim();
+    }
+
+    private String textOrNull(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        String value = node.asText(null);
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String resolveUpdateScope(AiJobEntity job,
+                                      CoreUserDeckResponse deck,
+                                      CorePublicDeckResponse publicDeck,
+                                      JsonNode params) {
+        String requested = textOrNull(params.path("updateScope"));
+        if (requested == null) {
+            requested = textOrNull(params.path("scope"));
+        }
+        if (requested != null) {
+            String normalized = requested.trim().toLowerCase(Locale.ROOT);
+            if ("global".equals(normalized)) {
+                return "global";
+            }
+            if ("local".equals(normalized)) {
+                return "local";
+            }
+            if (!"auto".equals(normalized)) {
+                return "local";
+            }
+        }
+        if (deck == null || deck.publicDeckId() == null || publicDeck == null || publicDeck.authorId() == null) {
+            return "local";
+        }
+        return publicDeck.authorId().equals(job.getUserId()) ? "global" : "local";
+    }
+
+    private String resolveCardUpdateScope(String updateScope, CoreUserCardResponse card) {
+        if (updateScope == null || !updateScope.equalsIgnoreCase("global")) {
+            return updateScope;
+        }
+        if (card == null || card.publicCardId() == null) {
+            return "local";
+        }
+        return "global";
     }
 
     private Integer resolveMaxTokens(JsonNode node) {
@@ -704,7 +755,8 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
                                          String accessToken,
                                          CoreTemplateResponse template,
                                          List<CoreUserCardResponse> cards,
-                                         List<MissingFieldUpdate> updates) {
+                                         List<MissingFieldUpdate> updates,
+                                         String updateScope) {
         if (updates.isEmpty()) {
             return 0;
         }
@@ -741,7 +793,8 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
                     null,
                     updatedContent
             );
-            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken);
+            String cardScope = resolveCardUpdateScope(updateScope, card);
+            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope);
             updated++;
         }
         return updated;

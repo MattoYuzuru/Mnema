@@ -49,19 +49,33 @@ public final class GeminiResponseParser {
         if (response == null) {
             return null;
         }
-        JsonNode inline = response.path("candidates")
-                .path(0)
-                .path("content")
-                .path("parts")
-                .path(0)
-                .path("inlineData");
-        String data = inline.path("data").asText(null);
-        if (data == null || data.isBlank()) {
+        JsonNode candidates = response.path("candidates");
+        if (!candidates.isArray()) {
             return null;
         }
-        String mimeType = inline.path("mimeType").asText(null);
-        byte[] decoded = Base64.getDecoder().decode(data);
-        return new InlineDataResult(decoded, mimeType);
+        for (JsonNode candidate : candidates) {
+            JsonNode parts = candidate.path("content").path("parts");
+            if (!parts.isArray()) {
+                continue;
+            }
+            for (JsonNode part : parts) {
+                JsonNode inline = part.path("inlineData");
+                if (inline.isMissingNode() || inline.isNull()) {
+                    inline = part.path("inline_data");
+                }
+                String data = inline.path("data").asText(null);
+                if (data == null || data.isBlank()) {
+                    continue;
+                }
+                String mimeType = inline.path("mimeType").asText(null);
+                if (mimeType == null || mimeType.isBlank()) {
+                    mimeType = inline.path("mime_type").asText(null);
+                }
+                byte[] decoded = Base64.getDecoder().decode(data);
+                return new InlineDataResult(decoded, mimeType);
+            }
+        }
+        return null;
     }
 
     public record InlineDataResult(byte[] data, String mimeType) {

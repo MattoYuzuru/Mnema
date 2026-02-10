@@ -87,8 +87,22 @@ public class CoreApiClient {
                                                UUID userCardId,
                                                UpdateUserCardRequest request,
                                                String accessToken) {
+        return updateUserCard(userDeckId, userCardId, request, accessToken, null);
+    }
+
+    public CoreUserCardResponse updateUserCard(UUID userDeckId,
+                                               UUID userCardId,
+                                               UpdateUserCardRequest request,
+                                               String accessToken,
+                                               String scope) {
         CoreUserCardResponse response = restClient.patch()
-                .uri("/decks/{userDeckId}/cards/{userCardId}", userDeckId, userCardId)
+                .uri(uriBuilder -> {
+                    uriBuilder.path("/decks/{userDeckId}/cards/{userCardId}");
+                    if (scope != null && !scope.isBlank()) {
+                        uriBuilder.queryParam("scope", scope);
+                    }
+                    return uriBuilder.build(userDeckId, userCardId);
+                })
                 .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
                 .body(request)
                 .retrieve()
@@ -160,6 +174,7 @@ public class CoreApiClient {
     public record CorePublicDeckResponse(
             UUID deckId,
             Integer version,
+            UUID authorId,
             String name,
             String description,
             String language,
@@ -193,6 +208,8 @@ public class CoreApiClient {
 
     public record CoreUserCardResponse(
             UUID userCardId,
+            UUID publicCardId,
+            boolean isCustom,
             JsonNode effectiveContent
     ) {
     }

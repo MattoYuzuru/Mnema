@@ -15,6 +15,7 @@ import app.mnema.ai.domain.entity.AiProviderCredentialEntity;
 import app.mnema.ai.domain.type.AiJobType;
 import app.mnema.ai.domain.type.AiProviderStatus;
 import app.mnema.ai.repository.AiProviderCredentialRepository;
+import app.mnema.ai.service.AiImportContentService;
 import app.mnema.ai.service.AiJobProcessingResult;
 import app.mnema.ai.service.AiProviderProcessor;
 import app.mnema.ai.provider.anki.AnkiTemplateSupport;
@@ -36,6 +37,7 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -55,15 +57,53 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     private static final String MODE_CARD_AUDIT = "card_audit";
     private static final String MODE_CARD_MISSING_FIELDS = "card_missing_fields";
     private static final String MODE_CARD_MISSING_AUDIO = "card_missing_audio";
+    private static final String MODE_IMPORT_PREVIEW = "import_preview";
+    private static final String MODE_IMPORT_GENERATE = "import_generate";
     private static final int MAX_CARDS = 50;
+    private static final int MAX_IMPORT_CARDS = 500;
+    private static final int MIN_IMPORT_BATCH = 10;
+    private static final int MAX_IMPORT_BATCH = 50;
     private static final int DEFAULT_PCM_SAMPLE_RATE = 24000;
     private static final Pattern PCM_RATE_PATTERN = Pattern.compile("rate=([0-9]+)");
+    private static final Map<String, String> GEMINI_VOICES = Map.ofEntries(
+            Map.entry("zephyr", "Zephyr"),
+            Map.entry("puck", "Puck"),
+            Map.entry("charon", "Charon"),
+            Map.entry("kore", "Kore"),
+            Map.entry("fenrir", "Fenrir"),
+            Map.entry("leda", "Leda"),
+            Map.entry("orus", "Orus"),
+            Map.entry("aoede", "Aoede"),
+            Map.entry("callirrhoe", "Callirrhoe"),
+            Map.entry("autonoe", "Autonoe"),
+            Map.entry("enceladus", "Enceladus"),
+            Map.entry("iapetus", "Iapetus"),
+            Map.entry("umbriel", "Umbriel"),
+            Map.entry("algieba", "Algieba"),
+            Map.entry("despina", "Despina"),
+            Map.entry("erinome", "Erinome"),
+            Map.entry("algenib", "Algenib"),
+            Map.entry("rasalgethi", "Rasalgethi"),
+            Map.entry("laomedeia", "Laomedeia"),
+            Map.entry("achernar", "Achernar"),
+            Map.entry("alnilam", "Alnilam"),
+            Map.entry("schedar", "Schedar"),
+            Map.entry("gacrux", "Gacrux"),
+            Map.entry("pulcherrima", "Pulcherrima"),
+            Map.entry("achird", "Achird"),
+            Map.entry("zubenelgenubi", "Zubenelgenubi"),
+            Map.entry("vindemiatrix", "Vindemiatrix"),
+            Map.entry("sadachbia", "Sadachbia"),
+            Map.entry("sadaltager", "Sadaltager"),
+            Map.entry("sulafat", "Sulafat")
+    );
 
     private final GeminiClient geminiClient;
     private final GeminiProps props;
     private final SecretVault secretVault;
     private final AiProviderCredentialRepository credentialRepository;
     private final MediaApiClient mediaApiClient;
+    private final AiImportContentService importContentService;
     private final CoreApiClient coreApiClient;
     private final ObjectMapper objectMapper;
     private final AnkiTemplateSupport ankiSupport;
@@ -73,6 +113,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                               SecretVault secretVault,
                               AiProviderCredentialRepository credentialRepository,
                               MediaApiClient mediaApiClient,
+                              AiImportContentService importContentService,
                               CoreApiClient coreApiClient,
                               ObjectMapper objectMapper) {
         this.geminiClient = geminiClient;
@@ -80,6 +121,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         this.secretVault = secretVault;
         this.credentialRepository = credentialRepository;
         this.mediaApiClient = mediaApiClient;
+        this.importContentService = importContentService;
         this.coreApiClient = coreApiClient;
         this.objectMapper = objectMapper;
         this.ankiSupport = new AnkiTemplateSupport(objectMapper);
@@ -110,6 +152,12 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         if (MODE_AUDIT.equalsIgnoreCase(mode)) {
             return handleAudit(job, apiKey, params);
         }
+        if (MODE_IMPORT_PREVIEW.equalsIgnoreCase(mode)) {
+            return handleImportPreview(job, apiKey, params);
+        }
+        if (MODE_IMPORT_GENERATE.equalsIgnoreCase(mode)) {
+            return handleImportGenerate(job, apiKey, params);
+        }
         if (MODE_CARD_AUDIT.equalsIgnoreCase(mode)) {
             return handleCardAudit(job, apiKey, params);
         }
@@ -132,6 +180,213 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             return handleGenerateCards(job, apiKey, params);
         }
         return handleFreeformText(job, apiKey, params);
+    }
+
+    private AiJobProcessingResult handleImportPreview(AiJobEntity job, String apiKey, JsonNode params) {
+        UUID sourceMediaId = parseUuid(params.path("sourceMediaId").asText(null));
+        String encoding = textOrNull(params.path("encoding"));
+        String accessToken = job.getUserAccessToken();
+        AiImportContentService.ImportTextPayload payload = importContentService.loadText(sourceMediaId, encoding, accessToken);
+
+        String prompt = buildImportPreviewPrompt(payload, params);
+        JsonNode responseSchema = buildImportPreviewSchema(payload.maxRecommendedCards());
+        String model = textOrDefault(params.path("model"), props.defaultModel());
+        Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
+                ? params.path("maxOutputTokens").asInt()
+                : null;
+
+        GeminiResponseResult response = geminiClient.createResponse(
+                apiKey,
+                new GeminiResponseRequest(model, prompt, maxOutputTokens, "application/json", responseSchema)
+        );
+
+        JsonNode parsed = parseJsonResponse(response.outputText());
+        String summaryText = textOrDefault(parsed.path("summary"), "");
+        int estimatedCount = resolveEstimatedCount(parsed.path("estimatedCount"), payload.maxRecommendedCards());
+
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("mode", MODE_IMPORT_PREVIEW);
+        summary.put("summary", summaryText);
+        summary.put("estimatedCount", estimatedCount);
+        summary.put("truncated", payload.truncated());
+        summary.put("sourceBytes", payload.sizeBytes());
+        summary.put("sourceChars", payload.charCount());
+        summary.put("detectedCharset", payload.detectedCharset());
+
+        return new AiJobProcessingResult(
+                summary,
+                PROVIDER,
+                response.model(),
+                response.inputTokens(),
+                response.outputTokens(),
+                BigDecimal.ZERO,
+                job.getInputHash()
+        );
+    }
+
+    private AiJobProcessingResult handleImportGenerate(AiJobEntity job, String apiKey, JsonNode params) {
+        UUID sourceMediaId = parseUuid(params.path("sourceMediaId").asText(null));
+        String encoding = textOrNull(params.path("encoding"));
+        String accessToken = job.getUserAccessToken();
+        AiImportContentService.ImportTextPayload payload = importContentService.loadText(sourceMediaId, encoding, accessToken);
+
+        ObjectNode updatedParams = params.isObject()
+                ? ((ObjectNode) params).deepCopy()
+                : objectMapper.createObjectNode();
+        updatedParams.put("mode", MODE_GENERATE_CARDS);
+        updatedParams.put("countLimit", MAX_IMPORT_CARDS);
+        updatedParams.put("input", buildImportGeneratePrompt(payload, params));
+        int requested = params.path("count").asInt(10);
+        int total = Math.min(Math.max(requested, 1), MAX_IMPORT_CARDS);
+        int batchSize = resolveImportBatchSize(params);
+        if (total <= batchSize) {
+            updatedParams.put("count", total);
+            return handleGenerateCards(job, apiKey, updatedParams);
+        }
+        return handleGenerateCardsBatched(job, apiKey, updatedParams, total, batchSize);
+    }
+
+    private AiJobProcessingResult handleGenerateCardsBatched(AiJobEntity job,
+                                                             String apiKey,
+                                                             ObjectNode baseParams,
+                                                             int totalCount,
+                                                             int batchSize) {
+        int remaining = totalCount;
+        int totalCreated = 0;
+        int totalImages = 0;
+        int totalTts = 0;
+        String ttsError = null;
+        Integer tokensIn = null;
+        Integer tokensOut = null;
+        BigDecimal cost = BigDecimal.ZERO;
+        String model = null;
+        String templateId = null;
+        JsonNode fieldsNode = null;
+
+        while (remaining > 0) {
+            int count = Math.min(batchSize, remaining);
+            ObjectNode batchParams = baseParams.deepCopy();
+            batchParams.put("count", count);
+            AiJobProcessingResult batchResult = handleGenerateCards(job, apiKey, batchParams);
+            model = batchResult.model();
+            if (batchResult.tokensIn() != null) {
+                tokensIn = (tokensIn == null ? 0 : tokensIn) + batchResult.tokensIn();
+            }
+            if (batchResult.tokensOut() != null) {
+                tokensOut = (tokensOut == null ? 0 : tokensOut) + batchResult.tokensOut();
+            }
+            if (batchResult.costEstimate() != null) {
+                cost = cost.add(batchResult.costEstimate());
+            }
+            JsonNode summary = batchResult.resultSummary();
+            if (summary != null && summary.isObject()) {
+                if (templateId == null && summary.hasNonNull("templateId")) {
+                    templateId = summary.get("templateId").asText();
+                }
+                if (fieldsNode == null && summary.has("fields")) {
+                    fieldsNode = summary.get("fields");
+                }
+                totalCreated += summary.path("createdCards").asInt(0);
+                totalImages += summary.path("imagesGenerated").asInt(0);
+                totalTts += summary.path("ttsGenerated").asInt(0);
+                if (ttsError == null && summary.hasNonNull("ttsError")) {
+                    ttsError = summary.get("ttsError").asText();
+                }
+            }
+            remaining -= count;
+        }
+
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("mode", MODE_GENERATE_CARDS);
+        summary.put("deckId", job.getDeckId().toString());
+        if (templateId != null) {
+            summary.put("templateId", templateId);
+        }
+        summary.put("requestedCards", totalCount);
+        summary.put("createdCards", totalCreated);
+        if (totalImages > 0) {
+            summary.put("imagesGenerated", totalImages);
+        }
+        if (totalTts > 0) {
+            summary.put("ttsGenerated", totalTts);
+        }
+        if (ttsError != null) {
+            summary.put("ttsError", ttsError);
+        }
+        if (fieldsNode != null) {
+            summary.set("fields", fieldsNode);
+        }
+
+        return new AiJobProcessingResult(
+                summary,
+                PROVIDER,
+                model,
+                tokensIn,
+                tokensOut,
+                cost,
+                job.getInputHash()
+        );
+    }
+
+    private String buildImportPreviewPrompt(AiImportContentService.ImportTextPayload payload, JsonNode params) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("You are an expert study assistant. ");
+        builder.append("Summarize the source material in 3-6 sentences and estimate a reasonable number of flashcards to create. ");
+        builder.append("Return JSON with keys summary and estimatedCount. ");
+        builder.append("EstimatedCount must be a positive integer. ");
+        String language = textOrNull(params.path("language"));
+        if (language != null) {
+            builder.append("Language hint: ").append(language).append(". ");
+        }
+        String instructions = textOrNull(params.path("instructions"));
+        if (instructions != null) {
+            builder.append("User instructions: ").append(instructions).append(". ");
+        }
+        if (payload.truncated()) {
+            builder.append("Note: the source may be truncated. ");
+        }
+        builder.append("Source material:\n").append(payload.text());
+        return builder.toString().trim();
+    }
+
+    private String buildImportGeneratePrompt(AiImportContentService.ImportTextPayload payload, JsonNode params) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("Source material:\n").append(payload.text()).append("\n\n");
+        builder.append("Create flashcards from this material. If a selected field is missing, infer or create a helpful value.");
+        String language = textOrNull(params.path("language"));
+        if (language != null) {
+            builder.append(" Language hint: ").append(language).append(".");
+        }
+        String instructions = textOrNull(params.path("instructions"));
+        if (instructions != null) {
+            builder.append(" User instructions: ").append(instructions).append(".");
+        }
+        if (payload.truncated()) {
+            builder.append(" The source may be truncated.");
+        }
+        return builder.toString().trim();
+    }
+
+    private JsonNode buildImportPreviewSchema(int maxCards) {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        properties.putObject("summary").put("type", "string");
+        ObjectNode countNode = properties.putObject("estimatedCount");
+        countNode.put("type", "integer");
+        countNode.put("minimum", 1);
+        ArrayNode required = schema.putArray("required");
+        required.add("summary");
+        required.add("estimatedCount");
+        return schema;
+    }
+
+    private int resolveEstimatedCount(JsonNode node, int maxCards) {
+        int count = node != null && node.isInt() ? node.asInt() : 1;
+        if (count < 1) {
+            count = 1;
+        }
+        return count;
     }
 
     private AiJobProcessingResult handleFreeformText(AiJobEntity job, String apiKey, JsonNode params) {
@@ -178,6 +433,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         }
         Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
         CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+        String updateScope = resolveUpdateScope(job, deck, publicDeck, params);
 
         int count = resolveCount(params);
         var allowedFields = resolveAllowedFields(params, template);
@@ -208,11 +464,11 @@ public class GeminiJobProcessor implements AiProviderProcessor {
 
         List<CoreUserCardResponse> createdCards = coreApiClient.addCards(job.getDeckId(), limitedRequests, accessToken);
         ImageConfig imageConfig = resolveImageConfig(params, true);
-        MediaApplyResult mediaResult = applyMediaPromptsToNewCards(job, apiKey, accessToken, template, createdCards, drafts, fieldTypes, imageConfig);
+        MediaApplyResult mediaResult = applyMediaPromptsToNewCards(job, apiKey, accessToken, template, createdCards, drafts, fieldTypes, imageConfig, updateScope);
         int ttsGenerated = 0;
         String ttsError = null;
         try {
-            ttsGenerated = applyTtsIfNeeded(job, apiKey, params, createdCards, template);
+            ttsGenerated = applyTtsIfNeeded(job, apiKey, params, createdCards, template, updateScope);
         } catch (Exception ex) {
             ttsError = summarizeError(ex);
         }
@@ -263,6 +519,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         }
         Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
         CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+        String updateScope = resolveUpdateScope(job, deck, publicDeck, params);
 
         Map<String, String> fieldTypes = resolveFieldTypes(template);
         List<String> promptFields = resolveAllowedFields(params, template);
@@ -318,7 +575,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             JsonNode parsed = parseJsonResponse(response.outputText());
             List<MissingFieldUpdate> updates = parseMissingFieldUpdates(parsed, promptFields);
             ImageConfig imageConfig = resolveImageConfig(params, !promptFields.isEmpty());
-            mediaResult = applyMissingFieldUpdates(job, apiKey, accessToken, template, promptCards, updates, fieldTypes, selection.allowedFieldsByCard(), imageConfig);
+            mediaResult = applyMissingFieldUpdates(job, apiKey, accessToken, template, promptCards, updates, fieldTypes, selection.allowedFieldsByCard(), imageConfig, updateScope);
         }
 
         TtsApplyResult ttsResult = new TtsApplyResult(0, 0, null);
@@ -329,7 +586,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             } else {
                 List<CoreUserCardResponse> audioCards = filterCardsForAudio(missingCards, targetAudioFields, selection.allowedFieldsByCard());
                 if (!audioCards.isEmpty()) {
-                    ttsResult = applyTtsForMissingAudio(job, apiKey, params, audioCards, template, targetAudioFields);
+                    ttsResult = applyTtsForMissingAudio(job, apiKey, params, audioCards, template, targetAudioFields, updateScope);
                 }
             }
         }
@@ -381,6 +638,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         }
         Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
         CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+        String updateScope = resolveUpdateScope(job, deck, publicDeck, params);
 
         List<String> audioFields = resolveAudioFields(template);
         if (audioFields.isEmpty()) {
@@ -417,7 +675,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         TtsApplyResult ttsResult;
         String ttsError = null;
         try {
-            ttsResult = applyTtsForMissingAudio(job, apiKey, params, missingCards, template, targetFields);
+            ttsResult = applyTtsForMissingAudio(job, apiKey, params, missingCards, template, targetFields, updateScope);
         } catch (Exception ex) {
             ttsResult = new TtsApplyResult(0, 0, null);
             ttsError = summarizeError(ex);
@@ -571,33 +829,59 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         }
         Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
         CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+        String updateScope = resolveUpdateScope(job, deck, publicDeck, params);
 
-        List<String> targetFields = resolveAllowedFields(params, template);
-        if (targetFields.isEmpty()) {
+        Map<String, String> fieldTypes = resolveFieldTypes(template);
+        List<String> promptFields = resolveAllowedFields(params, template);
+        List<String> audioFields = resolveAudioFields(template);
+        List<String> targetAudioFields = resolveAudioTargetFields(params, audioFields);
+        if (promptFields.isEmpty() && targetAudioFields.isEmpty()) {
             throw new IllegalStateException("No supported fields to generate");
         }
-        Map<String, String> fieldTypes = resolveFieldTypes(template);
 
         CoreApiClient.CoreUserCardDetail card = coreApiClient.getUserCard(job.getDeckId(), cardId, accessToken);
         if (card.effectiveContent() == null || !card.effectiveContent().isObject()) {
             throw new IllegalStateException("Card content is empty");
         }
 
-        String prompt = buildCardMissingFieldsPrompt(publicDeck, template, card, targetFields);
-        JsonNode responseSchema = buildCardMissingFieldsSchema(targetFields);
-        String model = textOrDefault(params.path("model"), props.defaultModel());
-        Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
-                ? params.path("maxOutputTokens").asInt()
-                : null;
+        GeminiResponseResult response = null;
+        MediaApplyResult mediaResult = new MediaApplyResult(0, 0);
+        if (!promptFields.isEmpty()) {
+            String prompt = buildCardMissingFieldsPrompt(publicDeck, template, card, promptFields);
+            JsonNode responseSchema = buildCardMissingFieldsSchema(promptFields);
+            String model = textOrDefault(params.path("model"), props.defaultModel());
+            Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
+                    ? params.path("maxOutputTokens").asInt()
+                    : null;
 
-        GeminiResponseResult response = geminiClient.createResponse(
-                apiKey,
-                new GeminiResponseRequest(model, prompt, maxOutputTokens, "application/json", responseSchema)
-        );
+            response = geminiClient.createResponse(
+                    apiKey,
+                    new GeminiResponseRequest(model, prompt, maxOutputTokens, "application/json", responseSchema)
+            );
 
-        JsonNode parsed = parseJsonResponse(response.outputText());
-        ImageConfig imageConfig = resolveImageConfig(params, true);
-        MediaApplyResult mediaResult = applyCardMissingFieldUpdate(job, apiKey, accessToken, template, card, parsed, targetFields, fieldTypes, imageConfig);
+            JsonNode parsed = parseJsonResponse(response.outputText());
+            ImageConfig imageConfig = resolveImageConfig(params, true);
+            mediaResult = applyCardMissingFieldUpdate(job, apiKey, accessToken, template, card, parsed, promptFields, fieldTypes, imageConfig, updateScope);
+        }
+
+        TtsApplyResult ttsResult = new TtsApplyResult(0, 0, null);
+        String ttsError = null;
+        if (!targetAudioFields.isEmpty()) {
+            if (!params.path("tts").path("enabled").asBoolean(false)) {
+                ttsError = "TTS settings are required for audio fields";
+            } else {
+                CoreUserCardResponse cardResponse = new CoreUserCardResponse(
+                        card.userCardId(),
+                        card.publicCardId(),
+                        card.isCustom(),
+                        card.effectiveContent()
+                );
+                List<CoreUserCardResponse> audioCards = filterCardsForAudio(List.of(cardResponse), targetAudioFields, Map.of());
+                if (!audioCards.isEmpty()) {
+                    ttsResult = applyTtsForMissingAudio(job, apiKey, params, audioCards, template, targetAudioFields, updateScope);
+                }
+            }
+        }
 
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("mode", MODE_CARD_MISSING_FIELDS);
@@ -607,15 +891,25 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         if (mediaResult.imagesGenerated() > 0) {
             summary.put("imagesGenerated", mediaResult.imagesGenerated());
         }
+        if (!targetAudioFields.isEmpty()) {
+            summary.put("ttsGenerated", ttsResult.generated());
+            summary.put("ttsUpdatedCards", ttsResult.updatedCards());
+            if (ttsError != null) {
+                summary.put("ttsError", ttsError);
+            }
+        }
         ArrayNode fieldsNode = summary.putArray("fields");
-        targetFields.forEach(fieldsNode::add);
+        java.util.LinkedHashSet<String> allFields = new java.util.LinkedHashSet<>();
+        allFields.addAll(promptFields);
+        allFields.addAll(targetAudioFields);
+        allFields.forEach(fieldsNode::add);
 
         return new AiJobProcessingResult(
                 summary,
                 PROVIDER,
-                response.model(),
-                response.inputTokens(),
-                response.outputTokens(),
+                response == null ? null : response.model(),
+                response == null ? null : response.inputTokens(),
+                response == null ? null : response.outputTokens(),
                 BigDecimal.ZERO,
                 job.getInputHash()
         );
@@ -643,6 +937,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         }
         Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
         CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+        String updateScope = resolveUpdateScope(job, deck, publicDeck, params);
         List<String> audioFields = resolveAudioFields(template);
         if (audioFields.isEmpty()) {
             throw new IllegalStateException("No audio fields available");
@@ -682,8 +977,13 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         TtsApplyResult ttsResult;
         String ttsError = null;
         try {
-            CoreUserCardResponse cardResponse = new CoreUserCardResponse(card.userCardId(), card.effectiveContent());
-            ttsResult = applyTtsForMissingAudio(job, apiKey, params, List.of(cardResponse), template, missingTargets);
+            CoreUserCardResponse cardResponse = new CoreUserCardResponse(
+                    card.userCardId(),
+                    card.publicCardId(),
+                    card.isCustom(),
+                    card.effectiveContent()
+            );
+            ttsResult = applyTtsForMissingAudio(job, apiKey, params, List.of(cardResponse), template, missingTargets, updateScope);
         } catch (Exception ex) {
             ttsResult = new TtsApplyResult(0, 0, null);
             ttsError = summarizeError(ex);
@@ -804,12 +1104,82 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         return value == null || value.isBlank() ? fallback : value.trim();
     }
 
+    private String textOrNull(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        String value = node.asText(null);
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
+    private String resolveUpdateScope(AiJobEntity job,
+                                      CoreUserDeckResponse deck,
+                                      CorePublicDeckResponse publicDeck,
+                                      JsonNode params) {
+        String requested = textOrNull(params.path("updateScope"));
+        if (requested == null) {
+            requested = textOrNull(params.path("scope"));
+        }
+        if (requested != null) {
+            String normalized = requested.trim().toLowerCase(Locale.ROOT);
+            if ("global".equals(normalized)) {
+                return "global";
+            }
+            if ("local".equals(normalized)) {
+                return "local";
+            }
+            if (!"auto".equals(normalized)) {
+                return "local";
+            }
+        }
+        if (deck == null || deck.publicDeckId() == null || publicDeck == null || publicDeck.authorId() == null) {
+            return "local";
+        }
+        return publicDeck.authorId().equals(job.getUserId()) ? "global" : "local";
+    }
+
+    private String resolveCardUpdateScope(String updateScope, CoreUserCardResponse card) {
+        if (updateScope == null || !updateScope.equalsIgnoreCase("global")) {
+            return updateScope;
+        }
+        if (card == null || card.publicCardId() == null) {
+            return "local";
+        }
+        return "global";
+    }
+
+    private String resolveCardUpdateScope(String updateScope, CoreApiClient.CoreUserCardDetail card) {
+        if (updateScope == null || !updateScope.equalsIgnoreCase("global")) {
+            return updateScope;
+        }
+        if (card == null || card.publicCardId() == null) {
+            return "local";
+        }
+        return "global";
+    }
+
     private int resolveCount(JsonNode params) {
         int requested = params.path("count").asInt(10);
         if (requested < 1) {
             requested = 1;
         }
-        return Math.min(requested, MAX_CARDS);
+        int limit = params.path("countLimit").asInt(MAX_CARDS);
+        if (limit < 1) {
+            limit = 1;
+        }
+        return Math.min(requested, limit);
+    }
+
+    private int resolveImportBatchSize(JsonNode params) {
+        int fields = params.path("fields").isArray() ? params.path("fields").size() : 0;
+        int batchSize = fields > 0 ? 200 / fields : MAX_IMPORT_BATCH;
+        if (batchSize < MIN_IMPORT_BATCH) {
+            batchSize = MIN_IMPORT_BATCH;
+        }
+        if (batchSize > MAX_IMPORT_BATCH) {
+            batchSize = MAX_IMPORT_BATCH;
+        }
+        return batchSize;
     }
 
     private int resolveLimit(JsonNode node) {
@@ -1274,7 +1644,8 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                                                       List<MissingFieldUpdate> updates,
                                                       Map<String, String> fieldTypes,
                                                       Map<UUID, Set<String>> allowedFieldsByCard,
-                                                      ImageConfig imageConfig) {
+                                                      ImageConfig imageConfig,
+                                                      String updateScope) {
         if (updates.isEmpty()) {
             return new MediaApplyResult(0, 0);
         }
@@ -1342,7 +1713,8 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                     null,
                     updatedContent
             );
-            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken);
+            String cardScope = resolveCardUpdateScope(updateScope, card);
+            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope);
             updated++;
         }
         return new MediaApplyResult(updated, imagesGenerated);
@@ -1553,8 +1925,6 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         ObjectNode properties = schema.putObject("properties");
         ObjectNode cards = properties.putObject("cards");
         cards.put("type", "array");
-        cards.put("minItems", count);
-        cards.put("maxItems", count);
         ObjectNode items = cards.putObject("items");
         items.put("type", "object");
         ObjectNode itemProps = items.putObject("properties");
@@ -1766,7 +2136,8 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                                                          JsonNode response,
                                                          List<String> targetFields,
                                                          Map<String, String> fieldTypes,
-                                                         ImageConfig imageConfig) {
+                                                         ImageConfig imageConfig,
+                                                         String updateScope) {
         if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
             return new MediaApplyResult(0, 0);
         }
@@ -1829,7 +2200,8 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                 card.personalNote(),
                 updatedContent
         );
-        coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken);
+        String cardScope = resolveCardUpdateScope(updateScope, card);
+        coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope);
         return new MediaApplyResult(1, imagesGenerated);
     }
 
@@ -1924,7 +2296,8 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                                                          List<CoreUserCardResponse> createdCards,
                                                          List<CardDraft> drafts,
                                                          Map<String, String> fieldTypes,
-                                                         ImageConfig imageConfig) {
+                                                         ImageConfig imageConfig,
+                                                         String updateScope) {
         if (createdCards == null || createdCards.isEmpty() || drafts == null || drafts.isEmpty()) {
             return new MediaApplyResult(0, 0);
         }
@@ -1983,7 +2356,8 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                     null,
                     updatedContent
             );
-            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken);
+            String cardScope = resolveCardUpdateScope(updateScope, card);
+            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken, cardScope);
             updated++;
         }
         return new MediaApplyResult(updated, imagesGenerated);
@@ -2081,7 +2455,8 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                                  String apiKey,
                                  JsonNode params,
                                  List<CoreUserCardResponse> createdCards,
-                                 CoreTemplateResponse template) {
+                                 CoreTemplateResponse template,
+                                 String updateScope) {
         JsonNode ttsNode = params.path("tts");
         if (!ttsNode.path("enabled").asBoolean(false)) {
             return 0;
@@ -2162,7 +2537,8 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                         null,
                         updatedContent
                 );
-                coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken);
+                String cardScope = resolveCardUpdateScope(updateScope, card);
+                coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken, cardScope);
             }
         }
         return generated;
@@ -2173,7 +2549,8 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                                                    JsonNode params,
                                                    List<CoreUserCardResponse> cards,
                                                    CoreTemplateResponse template,
-                                                   List<String> targetFields) {
+                                                   List<String> targetFields,
+                                                   String updateScope) {
         JsonNode ttsNode = params.path("tts");
         if (!ttsNode.path("enabled").asBoolean(false)) {
             return new TtsApplyResult(0, 0, null);
@@ -2261,7 +2638,8 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                         null,
                         updatedContent
                 );
-                coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken);
+                String cardScope = resolveCardUpdateScope(updateScope, card);
+                coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken, cardScope);
                 updatedCards++;
             }
         }
@@ -2401,7 +2779,11 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             return null;
         }
         String trimmed = voice.trim();
-        return trimmed.isEmpty() ? null : trimmed.toLowerCase();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        String normalized = trimmed.toLowerCase(Locale.ROOT);
+        return GEMINI_VOICES.getOrDefault(normalized, trimmed);
     }
 
     private String summarizeError(Exception ex) {
@@ -2422,7 +2804,11 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         }
         String mimeType = audio.mimeType();
         if (mimeType == null || mimeType.isBlank()) {
-            mimeType = requestedMimeType;
+            if (requestedMimeType != null && requestedMimeType.toLowerCase(Locale.ROOT).contains("pcm")) {
+                mimeType = requestedMimeType;
+            } else {
+                mimeType = "audio/pcm;rate=" + DEFAULT_PCM_SAMPLE_RATE;
+            }
         }
         byte[] data = audio.data();
         if (mimeType != null && mimeType.toLowerCase().contains("pcm")) {
