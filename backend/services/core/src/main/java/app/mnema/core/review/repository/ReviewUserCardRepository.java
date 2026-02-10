@@ -49,7 +49,11 @@ public interface ReviewUserCardRepository extends JpaRepository<ReviewUserCardEn
             select uc.user_card_id
             from app_core.user_cards uc
             left join app_core.sr_card_states s on s.user_card_id = uc.user_card_id
-            left join app_core.public_cards pc on pc.card_id = uc.public_card_id
+            left join app_core.user_decks ud on ud.user_deck_id = uc.subscription_id
+            left join app_core.public_cards pc
+              on pc.card_id = uc.public_card_id
+             and pc.deck_id = ud.public_deck_id
+             and pc.deck_version = ud.current_version
             where uc.subscription_id = :deckId
               and uc.user_id = :userId
               and uc.is_deleted = false

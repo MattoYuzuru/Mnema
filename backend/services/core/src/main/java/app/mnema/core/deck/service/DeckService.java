@@ -330,7 +330,7 @@ public class DeckService {
       Модель данных:
       - public_decks хранит immutable версии колоды.
       - public_cards хранит snapshot карт внутри каждой версии.
-      - card_id в public_cards генерируется заново при клонировании в новую версию и глобально уникален.
+      - card_id в public_cards стабилен для "логической карты" и повторяется между версиями.
       - user_cards ссылаются на public_cards через public_card_id = card_id и не знают deck_version.
 
       Проблема:
@@ -338,7 +338,7 @@ public class DeckService {
       - Если при sync просто "добавить карты последней версии", будут дубли: старые user_cards останутся, новые добавятся.
 
       Решение:
-      - Используем public_cards.checksum как стабильный идентификатор "логической карты" между версиями.
+      - Используем public_cards.checksum как fallback-идентификатор, если card_id не совпал (legacy/edge cases).
       - При sync делаем две фазы:
         1) Rewire: если checksum user-старой public-card совпадает с checksum публичной карты в latest версии,
            обновляем user_cards.public_card_id на card_id из latest версии.

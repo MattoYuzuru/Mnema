@@ -25,8 +25,12 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
     @Query(value = """
         select uc.*
         from app_core.user_cards uc
+        left join app_core.user_decks ud
+          on ud.user_deck_id = uc.subscription_id
         left join app_core.public_cards pc
           on pc.card_id = uc.public_card_id
+         and pc.deck_id = ud.public_deck_id
+         and pc.deck_version = ud.current_version
         where uc.user_id = :userId
           and uc.subscription_id = :userDeckId
           and uc.is_deleted = false
@@ -57,8 +61,12 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
         """, countQuery = """
         select count(*)
         from app_core.user_cards uc
+        left join app_core.user_decks ud
+          on ud.user_deck_id = uc.subscription_id
         left join app_core.public_cards pc
           on pc.card_id = uc.public_card_id
+         and pc.deck_id = ud.public_deck_id
+         and pc.deck_version = ud.current_version
         where uc.user_id = :userId
           and uc.subscription_id = :userDeckId
           and uc.is_deleted = false
@@ -83,8 +91,12 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
     @Query(value = """
         select uc.*
         from app_core.user_cards uc
+        left join app_core.user_decks ud
+          on ud.user_deck_id = uc.subscription_id
         left join app_core.public_cards pc
           on pc.card_id = uc.public_card_id
+         and pc.deck_id = ud.public_deck_id
+         and pc.deck_version = ud.current_version
         where uc.user_id = :userId
           and uc.subscription_id = :userDeckId
           and uc.is_deleted = false
@@ -93,8 +105,12 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
         """, countQuery = """
         select count(*)
         from app_core.user_cards uc
+        left join app_core.user_decks ud
+          on ud.user_deck_id = uc.subscription_id
         left join app_core.public_cards pc
           on pc.card_id = uc.public_card_id
+         and pc.deck_id = ud.public_deck_id
+         and pc.deck_version = ud.current_version
         where uc.user_id = :userId
           and uc.subscription_id = :userDeckId
           and uc.is_deleted = false
@@ -110,8 +126,12 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
     @Query(value = """
         select count(*)
         from app_core.user_cards uc
+        left join app_core.user_decks ud
+          on ud.user_deck_id = uc.subscription_id
         left join app_core.public_cards pc
           on pc.card_id = uc.public_card_id
+         and pc.deck_id = ud.public_deck_id
+         and pc.deck_version = ud.current_version
         where uc.user_id = :userId
           and uc.subscription_id = :userDeckId
           and uc.is_deleted = false
@@ -131,8 +151,12 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
     @Query(value = """
         select uc.user_card_id
         from app_core.user_cards uc
+        left join app_core.user_decks ud
+          on ud.user_deck_id = uc.subscription_id
         left join app_core.public_cards pc
           on pc.card_id = uc.public_card_id
+         and pc.deck_id = ud.public_deck_id
+         and pc.deck_version = ud.current_version
         where uc.user_id = :userId
           and uc.subscription_id = :userDeckId
           and uc.is_deleted = false
@@ -189,8 +213,12 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
                     order by f.ord
                 ) as norm_values
             from app_core.user_cards uc
+            left join app_core.user_decks ud
+              on ud.user_deck_id = uc.subscription_id
             left join app_core.public_cards pc
               on pc.card_id = uc.public_card_id
+             and pc.deck_id = ud.public_deck_id
+             and pc.deck_version = ud.current_version
             join input_fields f on true
             where uc.user_id = :userId
               and uc.subscription_id = :userDeckId
