@@ -109,7 +109,7 @@ interface EncodingOption {
               (dragleave)="onDragLeave($event)"
               (drop)="onDrop($event)"
             >
-              <input type="file" accept=".txt,text/plain" (change)="onFileChange($event)" hidden #fileInput />
+              <input type="file" accept=".txt,.pdf,text/plain,application/pdf" (change)="onFileChange($event)" hidden #fileInput />
               <div class="dropzone-content">
                 <span class="dropzone-icon">⬆️</span>
                 <div class="dropzone-text">
