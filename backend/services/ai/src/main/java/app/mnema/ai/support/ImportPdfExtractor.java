@@ -1,5 +1,6 @@
 package app.mnema.ai.support;
 
+import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.io.MemoryUsageSetting;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.text.PDFTextStripper;
@@ -14,7 +15,7 @@ public final class ImportPdfExtractor {
             return new PdfText("", false);
         }
         int limit = Math.max(maxChars, 1);
-        try (PDDocument document = PDDocument.load(bytes, MemoryUsageSetting.setupTempFileOnly())) {
+        try (PDDocument document = Loader.loadPDF(bytes, MemoryUsageSetting.setupTempFileOnly())) {
             if (document.isEncrypted()) {
                 throw new IllegalStateException("Encrypted PDF is not supported");
             }
