@@ -98,6 +98,9 @@ public class MediaPolicy {
                 "text/csv",
                 "text/plain"
         );
+        Set<String> aiImportTypes = Set.of(
+                "text/plain"
+        );
 
         map.put(MediaKind.avatar, new MediaLimit(
                 5 * MB,
@@ -145,6 +148,14 @@ public class MediaPolicy {
                 null,
                 null,
                 importFileTypes
+        ));
+
+        map.put(MediaKind.ai_import, new MediaLimit(
+                300 * MB,
+                null,
+                null,
+                null,
+                aiImportTypes
         ));
 
         return map;
