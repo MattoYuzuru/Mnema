@@ -144,7 +144,8 @@ public class CoreApiClient {
         String normalized = message.toLowerCase(Locale.ROOT);
         return normalized.contains("checksum is not unique")
                 || normalized.contains("public card not found in latest version")
-                || normalized.contains("public card checksum is not unique");
+                || normalized.contains("public card checksum is not unique")
+                || normalized.contains("failed to create updated public card");
     }
 
     private String summarizeError(RestClientResponseException ex) {
