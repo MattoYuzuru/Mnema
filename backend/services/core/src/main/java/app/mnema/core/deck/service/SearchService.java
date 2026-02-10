@@ -26,6 +26,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -192,8 +193,12 @@ public class SearchService {
             return Map.of();
         }
 
-        return publicCardRepository.findAllByCardIdIn(publicCardIds).stream()
-                .collect(Collectors.toMap(PublicCardEntity::getCardId, card -> card));
+        List<PublicCardEntity> cards = publicCardRepository.findAllByCardIdInOrderByDeckVersionDesc(publicCardIds);
+        Map<UUID, PublicCardEntity> map = new HashMap<>();
+        for (PublicCardEntity card : cards) {
+            map.putIfAbsent(card.getCardId(), card);
+        }
+        return map;
     }
 
     private UserCardDTO toUserCardDTO(UserCardEntity card, Map<UUID, PublicCardEntity> publicCardsById) {

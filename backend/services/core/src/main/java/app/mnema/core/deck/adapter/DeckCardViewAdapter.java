@@ -58,8 +58,7 @@ public class DeckCardViewAdapter implements CardViewPort {
 
         Map<UUID, PublicCardEntity> publicById = publicCardIds.isEmpty()
                 ? Map.of()
-                : publicCardRepository.findAllByCardIdIn(publicCardIds).stream()
-                .collect(Collectors.toMap(PublicCardEntity::getCardId, Function.identity()));
+                : resolveLatestPublicCards(publicCardIds);
 
         // Собираем результат в исходном порядке userCardIds
         List<CardView> result = new ArrayList<>(userCardIds.size());
@@ -99,5 +98,14 @@ public class DeckCardViewAdapter implements CardViewPort {
         ObjectNode out = base.deepCopy();
         override.properties().forEach(e -> out.set(e.getKey(), e.getValue()));
         return out;
+    }
+
+    private Map<UUID, PublicCardEntity> resolveLatestPublicCards(Set<UUID> publicCardIds) {
+        List<PublicCardEntity> cards = publicCardRepository.findAllByCardIdInOrderByDeckVersionDesc(publicCardIds);
+        Map<UUID, PublicCardEntity> map = new HashMap<>();
+        for (PublicCardEntity card : cards) {
+            map.putIfAbsent(card.getCardId(), card);
+        }
+        return map;
     }
 }

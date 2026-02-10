@@ -30,13 +30,13 @@ public interface PublicCardRepository extends JpaRepository<PublicCardEntity, Pu
             Pageable pageable
     );
 
-    Optional<PublicCardEntity> findByCardId(UUID cardId);
+    Optional<PublicCardEntity> findFirstByCardIdOrderByDeckVersionDesc(UUID cardId);
 
     long countByDeckIdAndDeckVersion(UUID deckId, Integer deckVersion);
 
     long countByDeckIdAndDeckVersionAndActiveTrue(UUID deckId, Integer deckVersion);
 
-    List<PublicCardEntity> findByCardIdIn(List<UUID> cardIds);
+    List<PublicCardEntity> findAllByCardIdInOrderByDeckVersionDesc(Collection<UUID> cardIds);
 
     List<PublicCardEntity> findAllByCardIdIn(Collection<UUID> cardIds);
 }

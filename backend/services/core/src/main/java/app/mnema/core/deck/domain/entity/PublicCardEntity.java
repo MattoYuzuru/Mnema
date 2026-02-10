@@ -23,7 +23,6 @@ public class PublicCardEntity {
     private Integer deckVersion;
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
     @Column(name = "card_id", nullable = false)
     private UUID cardId;
 
@@ -76,6 +75,7 @@ public class PublicCardEntity {
             UUID deckId,
             Integer deckVersion,
             PublicDeckEntity deck,
+            UUID cardId,
             JsonNode content,
             Integer orderIndex,
             String[] tags,
@@ -87,6 +87,7 @@ public class PublicCardEntity {
         this.deckId = deckId;
         this.deckVersion = deckVersion;
         this.deck = deck;
+        this.cardId = cardId == null ? UUID.randomUUID() : cardId;
         this.content = content;
         this.orderIndex = orderIndex;
         this.tags = tags;
@@ -94,6 +95,33 @@ public class PublicCardEntity {
         this.updatedAt = updatedAt;
         this.active = active;
         this.checksum = checksum;
+    }
+
+    public PublicCardEntity(
+            UUID deckId,
+            Integer deckVersion,
+            PublicDeckEntity deck,
+            JsonNode content,
+            Integer orderIndex,
+            String[] tags,
+            Instant createdAt,
+            Instant updatedAt,
+            boolean active,
+            String checksum
+    ) {
+        this(
+                deckId,
+                deckVersion,
+                deck,
+                UUID.randomUUID(),
+                content,
+                orderIndex,
+                tags,
+                createdAt,
+                updatedAt,
+                active,
+                checksum
+        );
     }
 
     // --- Геттеры ---

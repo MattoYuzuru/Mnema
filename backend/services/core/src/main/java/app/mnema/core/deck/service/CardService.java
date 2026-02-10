@@ -319,7 +319,7 @@ public class CardService {
     // Получить одну публичную карту по cardId
     @Transactional(readOnly = true)
     public PublicCardDTO getPublicCardById(UUID cardId) {
-        PublicCardEntity card = publicCardRepository.findByCardId(cardId)
+        PublicCardEntity card = publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(cardId)
                 .orElseThrow(() -> new IllegalArgumentException("Public card not found: " + cardId));
 
         PublicDeckEntity deck = publicDeckRepository
@@ -520,6 +520,7 @@ public class CardService {
                     savedNewDeck.getDeckId(),
                     savedNewDeck.getVersion(),
                     savedNewDeck,
+                    old.getCardId(),
                     old.getContent(),
                     old.getOrderIndex(),
                     old.getTags(),
@@ -720,7 +721,7 @@ public class CardService {
         if (dto.tags() != null) {
             validateTags(dto.tags());
             if (card.getPublicCardId() != null) {
-                var publicCardOpt = publicCardRepository.findByCardId(card.getPublicCardId());
+                var publicCardOpt = publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(card.getPublicCardId());
                 if (publicCardOpt.isPresent() && tagsEqual(dto.tags(), publicCardOpt.get().getTags())) {
                     card.setTags(null);
                 } else {
@@ -755,7 +756,7 @@ public class CardService {
             throw new SecurityException("Access denied to public deck " + publicDeckId);
         }
 
-        PublicCardEntity linkedPublicCard = publicCardRepository.findByCardId(card.getPublicCardId())
+        PublicCardEntity linkedPublicCard = publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(card.getPublicCardId())
                 .orElseThrow(() -> new IllegalArgumentException("Public card not found: " + card.getPublicCardId()));
 
         List<PublicCardEntity> latestCards = publicCardRepository
@@ -862,6 +863,7 @@ public class CardService {
                     savedNewDeck.getDeckId(),
                     savedNewDeck.getVersion(),
                     savedNewDeck,
+                    old.getCardId(),
                     content,
                     old.getOrderIndex(),
                     tags,
@@ -954,7 +956,7 @@ public class CardService {
             throw new IllegalArgumentException("Custom card cannot be deleted globally");
         }
 
-        PublicCardEntity linkedPublicCard = publicCardRepository.findByCardId(publicCardId)
+        PublicCardEntity linkedPublicCard = publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(publicCardId)
                 .orElseThrow(() -> new IllegalArgumentException("Public card not found: " + publicCardId));
 
         if (!linkedPublicCard.getDeckId().equals(publicDeckId)) {
@@ -1069,6 +1071,7 @@ public class CardService {
                     savedNewDeck.getDeckId(),
                     savedNewDeck.getVersion(),
                     savedNewDeck,
+                    old.getCardId(),
                     old.getContent(),
                     old.getOrderIndex(),
                     old.getTags(),
@@ -1097,7 +1100,7 @@ public class CardService {
     private UserCardDTO toUserCardDTO(UserCardEntity c) {
         PublicCardEntity publicCard = null;
         if (c.getPublicCardId() != null) {
-            publicCard = publicCardRepository.findByCardId(c.getPublicCardId()).orElse(null);
+            publicCard = publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(c.getPublicCardId()).orElse(null);
         }
 
         JsonNode effective = buildEffectiveContent(c, publicCard);

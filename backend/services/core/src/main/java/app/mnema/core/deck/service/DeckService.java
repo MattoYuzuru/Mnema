@@ -395,7 +395,7 @@ public class DeckService {
 
         List<PublicCardEntity> linkedPublicCards = linkedPublicCardIds.isEmpty()
                 ? List.of()
-                : publicCardRepository.findByCardIdIn(linkedPublicCardIds);
+                : publicCardRepository.findAllByCardIdInOrderByDeckVersionDesc(linkedPublicCardIds);
 
         Map<UUID, PublicCardEntity> linkedByCardId = new HashMap<>();
         for (PublicCardEntity pc : linkedPublicCards) {
