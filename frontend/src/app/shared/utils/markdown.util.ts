@@ -10,8 +10,9 @@ export function markdownToHtml(markdown: string): string {
     html = processLists(html);
 
     html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
     html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-    html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+    html = html.replace(/(^|[^_])_(?!_)(.+?)_(?!_)/g, '$1<em>$2</em>');
     html = html.replace(/`(.+?)`/g, '<code>$1</code>');
     html = html.replace(/\n/g, '<br>');
 
