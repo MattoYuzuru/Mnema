@@ -417,6 +417,16 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         return "global";
     }
 
+    private UUID resolveUpdateOperationId(String updateScope, AiJobEntity job) {
+        if (updateScope == null || !updateScope.equalsIgnoreCase("global")) {
+            return null;
+        }
+        if (job == null) {
+            return null;
+        }
+        return job.getJobId();
+    }
+
     private Integer resolveMaxTokens(JsonNode node) {
         if (node != null && node.isInt()) {
             int value = node.asInt();
@@ -790,7 +800,8 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
                     updatedContent
             );
             String cardScope = resolveCardUpdateScope(updateScope, card);
-            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope);
+            UUID operationId = resolveUpdateOperationId(cardScope, job);
+            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope, operationId);
             updated++;
         }
         return updated;

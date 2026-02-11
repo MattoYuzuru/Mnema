@@ -844,7 +844,8 @@ public class CardService {
                                       UUID userDeckId,
                                       UUID userCardId,
                                       UserCardDTO dto,
-                                      boolean updateGlobally) {
+                                      boolean updateGlobally,
+                                      UUID operationId) {
 
         UserCardEntity card = userCardRepository.findById(userCardId)
                 .orElseThrow(() -> new IllegalArgumentException("User card not found: " + userCardId));
@@ -859,7 +860,7 @@ public class CardService {
             if (!userDeck.getUserId().equals(currentUserId)) {
                 throw new SecurityException("Access denied to deck " + userDeckId);
             }
-            return updateUserCardGlobally(currentUserId, userDeck, card, dto);
+            return updateUserCardGlobally(currentUserId, userDeck, card, dto, operationId);
         }
 
         card.setPersonalNote(dto.personalNote());
@@ -890,7 +891,8 @@ public class CardService {
     private UserCardDTO updateUserCardGlobally(UUID currentUserId,
                                                UserDeckEntity userDeck,
                                                UserCardEntity card,
-                                               UserCardDTO dto) {
+                                               UserCardDTO dto,
+                                               UUID operationId) {
         UUID publicDeckId = userDeck.getPublicDeckId();
         if (publicDeckId == null) {
             throw new IllegalStateException("Local deck has no public source");
@@ -908,13 +910,50 @@ public class CardService {
         PublicCardEntity linkedPublicCard = publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(card.getPublicCardId())
                 .orElseThrow(() -> new IllegalArgumentException("Public card not found: " + card.getPublicCardId()));
 
-        List<PublicCardEntity> latestCards = publicCardRepository
-                .findByDeckIdAndDeckVersion(publicDeckId, latestDeck.getVersion());
+        JsonNode updatedContent = dto.effectiveContent();
+        if (updatedContent == null || updatedContent.isNull()) {
+            throw new IllegalArgumentException("Updated content must not be null");
+        }
+        if (!updatedContent.isObject()) {
+            throw new IllegalArgumentException("Updated content must be an object");
+        }
 
         String targetChecksum = normalizeChecksum(linkedPublicCard.getChecksum());
         if (targetChecksum == null) {
             targetChecksum = computeChecksum(linkedPublicCard.getContent());
         }
+
+        if (operationId != null) {
+            Instant now = Instant.now();
+            GlobalUpdateContext updateContext = resolveGlobalUpdateContext(currentUserId, userDeck, latestDeck, operationId, now);
+            PublicCardEntity targetCard = resolveTargetUpdateCard(updateContext.cards(), card.getPublicCardId(), targetChecksum);
+            String[] updatedTags = dto.tags() != null ? dto.tags() : targetCard.getTags();
+            validateTags(updatedTags);
+            String updatedChecksum = computeChecksum(updatedContent);
+
+            targetCard.setContent(updatedContent);
+            targetCard.setTags(updatedTags);
+            targetCard.setChecksum(updatedChecksum);
+            targetCard.setUpdatedAt(now);
+            publicCardRepository.save(targetCard);
+
+            PublicDeckEntity targetDeck = updateContext.deck();
+            targetDeck.setUpdatedAt(now);
+            publicDeckRepository.save(targetDeck);
+
+            card.setPersonalNote(dto.personalNote());
+            card.setContentOverride(null);
+            card.setDeleted(dto.isDeleted());
+            card.setPublicCardId(targetCard.getCardId());
+            card.setTags(null);
+            card.setUpdatedAt(now);
+
+            UserCardEntity saved = userCardRepository.save(card);
+            return toUserCardDTO(saved);
+        }
+
+        List<PublicCardEntity> latestCards = publicCardRepository
+                .findByDeckIdAndDeckVersion(publicDeckId, latestDeck.getVersion());
 
         UUID matchingCardId = null;
         int checksumMatches = 0;
@@ -954,14 +993,6 @@ public class CardService {
         PublicCardEntity targetLatestCard = matchByCardId ? cardIdMatch : checksumMatchCard;
         if (targetLatestCard == null) {
             throw new IllegalStateException("Public card not found in latest version");
-        }
-
-        JsonNode updatedContent = dto.effectiveContent();
-        if (updatedContent == null || updatedContent.isNull()) {
-            throw new IllegalArgumentException("Updated content must not be null");
-        }
-        if (!updatedContent.isObject()) {
-            throw new IllegalArgumentException("Updated content must be an object");
         }
 
         String[] updatedTags = dto.tags() != null ? dto.tags() : targetLatestCard.getTags();
@@ -1106,6 +1137,94 @@ public class CardService {
 
         applyGlobalDuplicateDeletion(currentUserId, userDeck, Set.of(), List.of(card), now, operationId);
         userCardRepository.save(card);
+    }
+
+    private GlobalUpdateContext resolveGlobalUpdateContext(UUID currentUserId,
+                                                          UserDeckEntity deck,
+                                                          PublicDeckEntity latestDeck,
+                                                          UUID operationId,
+                                                          Instant now) {
+        UUID publicDeckId = deck.getPublicDeckId();
+        if (publicDeckId == null) {
+            throw new IllegalStateException("Local deck has no public source");
+        }
+
+        DeckUpdateSessionEntity session = deckUpdateSessionRepository
+                .findByDeckIdAndOperationId(publicDeckId, operationId)
+                .orElse(null);
+        if (session != null) {
+            if (!session.getAuthorId().equals(currentUserId)) {
+                throw new SecurityException("Access denied to deck " + publicDeckId);
+            }
+            PublicDeckEntity targetDeck = publicDeckRepository
+                    .findByDeckIdAndVersion(publicDeckId, session.getTargetVersion())
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "Public deck not found: deckId=" + publicDeckId + ", version=" + session.getTargetVersion()
+                    ));
+            targetDeck.setUpdatedAt(now);
+            publicDeckRepository.save(targetDeck);
+            session.setUpdatedAt(now);
+            deckUpdateSessionRepository.save(session);
+            List<PublicCardEntity> targetCards = publicCardRepository
+                    .findByDeckIdAndDeckVersion(publicDeckId, targetDeck.getVersion());
+            return new GlobalUpdateContext(targetDeck, targetCards);
+        }
+
+        NewDeckVersion newVersion = createNewDeckVersion(latestDeck, now);
+        deckUpdateSessionRepository.save(new DeckUpdateSessionEntity(
+                publicDeckId,
+                operationId,
+                currentUserId,
+                newVersion.deck().getVersion(),
+                now,
+                now
+        ));
+        deck.setCurrentVersion(newVersion.deck().getVersion());
+        deck.setTemplateVersion(newVersion.deck().getTemplateVersion());
+        deck.setLastSyncedAt(now);
+        userDeckRepository.save(deck);
+        List<PublicCardEntity> targetCards = publicCardRepository
+                .findByDeckIdAndDeckVersion(publicDeckId, newVersion.deck().getVersion());
+        return new GlobalUpdateContext(newVersion.deck(), targetCards);
+    }
+
+    private PublicCardEntity resolveTargetUpdateCard(List<PublicCardEntity> cards,
+                                                     UUID publicCardId,
+                                                     String targetChecksum) {
+        PublicCardEntity cardIdMatch = null;
+        PublicCardEntity checksumMatchCard = null;
+        int checksumMatches = 0;
+
+        for (PublicCardEntity pc : cards) {
+            if (pc.getCardId().equals(publicCardId)) {
+                cardIdMatch = pc;
+            }
+            String checksum = normalizeChecksum(pc.getChecksum());
+            if (checksum == null) {
+                checksum = computeChecksum(pc.getContent());
+            }
+            if (targetChecksum != null && targetChecksum.equals(checksum)) {
+                checksumMatches++;
+                checksumMatchCard = pc;
+            }
+        }
+
+        if (cardIdMatch != null) {
+            return cardIdMatch;
+        }
+        if (targetChecksum == null) {
+            throw new IllegalStateException("Public card checksum missing for update");
+        }
+        if (checksumMatches == 0) {
+            throw new IllegalStateException("Public card not found in latest version");
+        }
+        if (checksumMatches > 1) {
+            throw new IllegalStateException("Public card checksum is not unique in latest version");
+        }
+        if (checksumMatchCard == null) {
+            throw new IllegalStateException("Public card not found in latest version");
+        }
+        return checksumMatchCard;
     }
 
     private List<String> resolveScoreFields(UserDeckEntity deck, List<String> fallback) {
@@ -1330,6 +1449,9 @@ public class CardService {
     }
 
     private record GlobalDeleteContext(PublicDeckEntity deck, List<PublicCardEntity> cards) {
+    }
+
+    private record GlobalUpdateContext(PublicDeckEntity deck, List<PublicCardEntity> cards) {
     }
 
     // ==== Приватные мапперы и утилиты ==== //

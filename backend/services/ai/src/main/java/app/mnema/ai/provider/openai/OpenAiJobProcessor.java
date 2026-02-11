@@ -1542,6 +1542,16 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         return "global";
     }
 
+    private UUID resolveUpdateOperationId(String updateScope, AiJobEntity job) {
+        if (updateScope == null || !updateScope.equalsIgnoreCase("global")) {
+            return null;
+        }
+        if (job == null) {
+            return null;
+        }
+        return job.getJobId();
+    }
+
     private int resolveCount(JsonNode params) {
         int count = params.path("count").isInt() ? params.path("count").asInt() : 10;
         if (count < 1) {
@@ -2160,7 +2170,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 updatedContent
         );
         String cardScope = resolveCardUpdateScope(updateScope, card);
-        coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope);
+        UUID operationId = resolveUpdateOperationId(cardScope, job);
+        coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope, operationId);
         return new MediaApplyResult(1, imagesGenerated, videosGenerated);
     }
 
@@ -2303,7 +2314,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     updatedContent
             );
             String cardScope = resolveCardUpdateScope(updateScope, card);
-            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope);
+            UUID operationId = resolveUpdateOperationId(cardScope, job);
+            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope, operationId);
             updated++;
         }
         return new MediaApplyResult(updated, imagesGenerated, videosGenerated);
@@ -2714,7 +2726,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                         updatedContent
                 );
                 String cardScope = resolveCardUpdateScope(updateScope, card);
-                coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken, cardScope);
+                UUID operationId = resolveUpdateOperationId(cardScope, job);
+                coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken, cardScope, operationId);
                 updatedCards++;
             }
         }
@@ -2831,7 +2844,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                         updatedContent
                 );
                 String cardScope = resolveCardUpdateScope(updateScope, card);
-                coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken, cardScope);
+                UUID operationId = resolveUpdateOperationId(cardScope, job);
+                coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken, cardScope, operationId);
                 updatedCards++;
             }
         }
@@ -3113,7 +3127,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     updatedContent
             );
             String cardScope = resolveCardUpdateScope(updateScope, card);
-            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken, cardScope);
+            UUID operationId = resolveUpdateOperationId(cardScope, job);
+            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken, cardScope, operationId);
             updated++;
         }
         return new MediaApplyResult(updated, imagesGenerated, videosGenerated);

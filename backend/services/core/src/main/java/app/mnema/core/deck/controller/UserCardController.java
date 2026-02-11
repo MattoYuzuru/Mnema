@@ -132,7 +132,8 @@ public class UserCardController {
             @PathVariable UUID userDeckId,
             @PathVariable UUID cardId,
             @RequestBody UserCardDTO dto,
-            @RequestParam(defaultValue = "local") String scope
+            @RequestParam(defaultValue = "local") String scope,
+            @RequestParam(required = false) UUID operationId
     ) {
         var userId = currentUserProvider.getUserId(jwt);
         boolean updateGlobally;
@@ -143,7 +144,7 @@ public class UserCardController {
         } else {
             throw new IllegalArgumentException("Unknown scope: " + scope);
         }
-        return cardService.updateUserCard(userId, userDeckId, cardId, dto, updateGlobally);
+        return cardService.updateUserCard(userId, userDeckId, cardId, dto, updateGlobally, operationId);
     }
 
     // DELETE /decks/{userDeckId}/cards/{cardId}

@@ -101,7 +101,7 @@ public class CoreApiClient {
                                                UUID userCardId,
                                                UpdateUserCardRequest request,
                                                String accessToken) {
-        return updateUserCard(userDeckId, userCardId, request, accessToken, null);
+        return updateUserCard(userDeckId, userCardId, request, accessToken, null, null);
     }
 
     public CoreUserCardResponse updateUserCard(UUID userDeckId,
@@ -109,13 +109,22 @@ public class CoreApiClient {
                                                UpdateUserCardRequest request,
                                                String accessToken,
                                                String scope) {
+        return updateUserCard(userDeckId, userCardId, request, accessToken, scope, null);
+    }
+
+    public CoreUserCardResponse updateUserCard(UUID userDeckId,
+                                               UUID userCardId,
+                                               UpdateUserCardRequest request,
+                                               String accessToken,
+                                               String scope,
+                                               UUID operationId) {
         try {
-            return doUpdateUserCard(userDeckId, userCardId, request, accessToken, scope);
+            return doUpdateUserCard(userDeckId, userCardId, request, accessToken, scope, operationId);
         } catch (RestClientResponseException ex) {
             if (scope != null && scope.equalsIgnoreCase("global") && shouldFallbackGlobalUpdate(ex)) {
                 LOGGER.warn("Global card update failed, retrying locally deckId={} cardId={} status={} reason={}",
                         userDeckId, userCardId, ex.getRawStatusCode(), summarizeError(ex));
-                return doUpdateUserCard(userDeckId, userCardId, request, accessToken, "local");
+                return doUpdateUserCard(userDeckId, userCardId, request, accessToken, "local", null);
             }
             throw ex;
         }
@@ -125,12 +134,16 @@ public class CoreApiClient {
                                                   UUID userCardId,
                                                   UpdateUserCardRequest request,
                                                   String accessToken,
-                                                  String scope) {
+                                                  String scope,
+                                                  UUID operationId) {
         CoreUserCardResponse response = restClient.patch()
                 .uri(uriBuilder -> {
                     uriBuilder.path("/decks/{userDeckId}/cards/{userCardId}");
                     if (scope != null && !scope.isBlank()) {
                         uriBuilder.queryParam("scope", scope);
+                    }
+                    if (operationId != null) {
+                        uriBuilder.queryParam("operationId", operationId);
                     }
                     return uriBuilder.build(userDeckId, userCardId);
                 })
