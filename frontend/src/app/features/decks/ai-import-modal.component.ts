@@ -15,7 +15,7 @@ import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
-type ImportSourceKind = 'text' | 'pdf' | 'image' | 'audio' | 'unknown';
+type ImportSourceKind = 'text' | 'pdf' | 'docx' | 'image' | 'audio' | 'unknown';
 
 interface ImportFileInfo {
     mediaId: string;
@@ -114,7 +114,7 @@ interface EncodingOption {
               (dragleave)="onDragLeave($event)"
               (drop)="onDrop($event)"
             >
-              <input type="file" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp,.mp3,.wav,.ogg,.m4a,.flac,.webm,text/plain,application/pdf,image/*,audio/*" (change)="onFileChange($event)" hidden #fileInput />
+              <input type="file" accept=".txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,.mp3,.wav,.ogg,.m4a,.flac,.webm,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*,audio/*" (change)="onFileChange($event)" hidden #fileInput />
               <div class="dropzone-content">
                 <span class="dropzone-icon">⬆️</span>
                 <div class="dropzone-text">
@@ -1181,10 +1181,12 @@ export class AiImportModalComponent implements OnInit {
         if (mimeType.startsWith('image/')) return 'image';
         if (mimeType.startsWith('audio/')) return 'audio';
         if (mimeType === 'application/pdf') return 'pdf';
+        if (mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') return 'docx';
         if (mimeType.startsWith('text/')) return 'text';
 
         const name = file.name.toLowerCase();
         if (name.endsWith('.pdf')) return 'pdf';
+        if (name.endsWith('.docx')) return 'docx';
         if (name.endsWith('.txt')) return 'text';
         if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp')) return 'image';
         if (name.endsWith('.mp3') || name.endsWith('.wav') || name.endsWith('.ogg') || name.endsWith('.m4a') || name.endsWith('.flac') || name.endsWith('.webm')) return 'audio';
@@ -1761,6 +1763,8 @@ export class AiImportModalComponent implements OnInit {
                 return 'aiImport.sourceType.text';
             case 'pdf':
                 return 'aiImport.sourceType.pdf';
+            case 'docx':
+                return 'aiImport.sourceType.docx';
             case 'image':
                 return 'aiImport.sourceType.image';
             case 'audio':
