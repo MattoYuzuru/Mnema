@@ -61,6 +61,7 @@ export interface AiImportPreviewRequest {
     encoding?: string | null;
     language?: string | null;
     instructions?: string | null;
+    stt?: Record<string, unknown> | null;
 }
 
 export interface AiImportGenerateRequest {
@@ -75,6 +76,7 @@ export interface AiImportGenerateRequest {
     encoding?: string | null;
     language?: string | null;
     instructions?: string | null;
+    stt?: Record<string, unknown> | null;
     tts?: Record<string, unknown> | null;
     image?: Record<string, unknown> | null;
     video?: Record<string, unknown> | null;
@@ -88,4 +90,10 @@ export interface AiImportPreviewSummary {
     sourceBytes?: number;
     sourceChars?: number;
     detectedCharset?: string;
+    sourceType?: string;
+    extraction?: string;
+    sourcePages?: number;
+    ocrPages?: number;
+    audioDurationSeconds?: number;
+    audioChunks?: number;
 }

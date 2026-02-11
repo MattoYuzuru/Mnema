@@ -15,10 +15,15 @@ import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
+type ImportSourceKind = 'text' | 'pdf' | 'image' | 'audio' | 'unknown';
+
 interface ImportFileInfo {
     mediaId: string;
     fileName: string;
     sizeBytes: number;
+    mimeType: string;
+    sourceType: ImportSourceKind;
+    durationSeconds?: number;
 }
 
 interface FieldOption {
@@ -77,7 +82,7 @@ interface EncodingOption {
                   {{ 'aiImport.providerUnsupported' | translate }}
                 </p>
               </div>
-              <div class="form-field">
+              <div class="form-field" *ngIf="showEncoding()">
                 <label for="ai-import-encoding">{{ 'aiImport.encodingLabel' | translate }}</label>
                 <select
                   id="ai-import-encoding"
@@ -109,7 +114,7 @@ interface EncodingOption {
               (dragleave)="onDragLeave($event)"
               (drop)="onDrop($event)"
             >
-              <input type="file" accept=".txt,.pdf,text/plain,application/pdf" (change)="onFileChange($event)" hidden #fileInput />
+              <input type="file" accept=".txt,.pdf,.png,.jpg,.jpeg,.webp,.mp3,.wav,.ogg,.m4a,.flac,.webm,text/plain,application/pdf,image/*,audio/*" (change)="onFileChange($event)" hidden #fileInput />
               <div class="dropzone-content">
                 <span class="dropzone-icon">⬆️</span>
                 <div class="dropzone-text">
@@ -127,8 +132,48 @@ interface EncodingOption {
             <div *ngIf="fileInfo() && !uploading()" class="file-info">
               <span class="file-name">{{ fileInfo()?.fileName }}</span>
               <span class="file-size">{{ formatBytes(fileInfo()?.sizeBytes || 0) }}</span>
+              <span class="file-type">{{ sourceTypeLabel(fileInfo()?.sourceType) | translate }}</span>
+              <span *ngIf="fileInfo()?.durationSeconds" class="file-duration">
+                {{ formatDuration(fileInfo()?.durationSeconds || 0) }}
+              </span>
             </div>
             <p class="field-hint">{{ 'aiImport.sizeHint' | translate }}</p>
+            <p *ngIf="isAudioSource()" class="field-hint">{{ 'aiImport.audioLimitHint' | translate }}</p>
+
+            <div class="record-panel">
+              <div class="record-info">
+                <strong>{{ 'aiImport.recordTitle' | translate }}</strong>
+                <span class="field-hint">{{ 'aiImport.recordHint' | translate }}</span>
+              </div>
+              <div class="record-actions">
+                <button type="button" class="record-btn" (click)="startRecording()" [disabled]="recording() || !recordingSupported()">
+                  {{ 'aiImport.recordStart' | translate }}
+                </button>
+                <button type="button" class="record-btn stop" (click)="stopRecording()" [disabled]="!recording()">
+                  {{ 'aiImport.recordStop' | translate }}
+                </button>
+              </div>
+            </div>
+            <div *ngIf="!recordingSupported()" class="field-hint">{{ 'aiImport.recordUnavailable' | translate }}</div>
+            <div *ngIf="recording()" class="status-line">
+              {{ 'aiImport.recording' | translate }} {{ formatDuration(recordingSeconds()) }}
+            </div>
+            <div *ngIf="recordingError()" class="error-state" role="alert">{{ recordingError() }}</div>
+
+            <div *ngIf="isAudioSource()" class="stt-panel">
+              <div class="form-grid">
+                <div class="form-field">
+                  <label for="ai-stt-model">{{ 'aiImport.sttModelLabel' | translate }}</label>
+                  <input
+                    id="ai-stt-model"
+                    type="text"
+                    [ngModel]="sttModel()"
+                    (ngModelChange)="onSttModelChange($event)"
+                    [placeholder]="sttModelPlaceholder()"
+                  />
+                </div>
+              </div>
+            </div>
           </section>
 
           <section class="section-card">
@@ -160,6 +205,17 @@ interface EncodingOption {
                 />
                 <span class="meta-hint">/ {{ maxCards }}</span>
               </div>
+              <div *ngIf="previewSummary()?.sourceType" class="field-hint">
+                {{ 'aiImport.sourceTypeLabel' | translate }} {{ sourceTypeLabel(previewSummary()?.sourceType) | translate }}
+              </div>
+              <div *ngIf="previewSummary()?.extraction === 'ocr'" class="field-hint">
+                {{ 'aiImport.ocrApplied' | translate }}
+                <span *ngIf="previewSummary()?.ocrPages">({{ previewSummary()?.ocrPages }}/{{ previewSummary()?.sourcePages || previewSummary()?.ocrPages }})</span>
+              </div>
+              <div *ngIf="previewSummary()?.audioDurationSeconds" class="field-hint">
+                {{ 'aiImport.audioDuration' | translate }} {{ formatDuration(previewSummary()?.audioDurationSeconds || 0) }}
+                <span *ngIf="previewSummary()?.audioChunks">· {{ previewSummary()?.audioChunks }} {{ 'aiImport.audioChunks' | translate }}</span>
+              </div>
               <div class="field-hint">
                 {{ 'aiImport.aiEstimate' | translate }} {{ previewSummary()?.estimatedCount }}
               </div>
@@ -173,6 +229,10 @@ interface EncodingOption {
               <div *ngIf="previewSummary()?.truncated" class="field-hint">
                 {{ 'aiImport.truncatedHint' | translate }}
               </div>
+              <label *ngIf="requiresConfirmation()" class="confirmation-line">
+                <input type="checkbox" [ngModel]="confirmLarge()" (ngModelChange)="confirmLarge.set($event)" />
+                <span>{{ 'aiImport.confirmLarge' | translate }}</span>
+              </label>
             </div>
           </section>
 
@@ -507,6 +567,58 @@ interface EncodingOption {
       .file-info { display: flex; gap: var(--spacing-md); font-size: 0.9rem; align-items: center; }
       .file-name { font-weight: 600; }
       .file-size { color: var(--color-text-secondary); }
+      .file-type,
+      .file-duration {
+        color: var(--color-text-secondary);
+        font-size: 0.85rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+      }
+
+      .record-panel {
+        margin-top: var(--spacing-md);
+        padding: var(--spacing-md);
+        border-radius: var(--border-radius-md);
+        border: 1px solid var(--glass-border);
+        background: var(--color-surface);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        flex-wrap: wrap;
+      }
+
+      .record-info {
+        display: grid;
+        gap: 2px;
+      }
+
+      .record-actions {
+        display: flex;
+        gap: var(--spacing-sm);
+      }
+
+      .record-btn {
+        border: 1px solid var(--glass-border);
+        background: var(--glass-surface);
+        padding: 6px 12px;
+        border-radius: 999px;
+        cursor: pointer;
+        font-weight: 600;
+      }
+
+      .record-btn.stop {
+        border-color: var(--color-error);
+        color: var(--color-error);
+      }
+
+      .stt-panel {
+        margin-top: var(--spacing-md);
+        padding: var(--spacing-md);
+        border-radius: var(--border-radius-md);
+        border: 1px solid var(--border-color);
+        background: var(--color-background);
+      }
 
       .preview-actions { display: flex; align-items: center; gap: var(--spacing-sm); }
       .preview-summary { display: grid; gap: var(--spacing-sm); }
@@ -516,6 +628,14 @@ interface EncodingOption {
       .meta-hint { color: var(--color-text-secondary); }
       .warning-hint { display: flex; flex-wrap: wrap; gap: 4px; color: var(--color-text-secondary); }
       .warning-hint .hint-number { font-weight: 600; color: var(--color-text-primary); }
+      .confirmation-line {
+        display: inline-flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        font-size: 0.9rem;
+        color: var(--color-text-secondary);
+        margin-top: var(--spacing-xs);
+      }
 
       .field-grid {
         display: grid;
@@ -646,6 +766,9 @@ interface EncodingOption {
 })
 export class AiImportModalComponent implements OnInit {
     private static readonly MAX_CARDS = 500;
+    private static readonly MAX_AUDIO_SECONDS = 300;
+    private static readonly CONFIRM_AUDIO_SECONDS = 120;
+    private static readonly CONFIRM_OCR_PAGES = 5;
     @Input() userDeckId = '';
     @Input() deckName = '';
     @Input() templateId = '';
@@ -671,6 +794,7 @@ export class AiImportModalComponent implements OnInit {
     previewing = signal(false);
     previewError = signal('');
     previewSummary = signal<AiImportPreviewSummary | null>(null);
+    confirmLarge = signal(false);
     estimatedCount = signal(10);
     createError = signal('');
     creating = signal(false);
@@ -698,6 +822,11 @@ export class AiImportModalComponent implements OnInit {
     videoResolution = signal('720p');
     videoFormat = signal('mp4');
 
+    sttModel = signal('');
+    recording = signal(false);
+    recordingSeconds = signal(0);
+    recordingError = signal('');
+
     readonly maxCards = AiImportModalComponent.MAX_CARDS;
 
     readonly encodingOptions: EncodingOption[] = [
@@ -723,7 +852,29 @@ export class AiImportModalComponent implements OnInit {
     });
     readonly importSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
+    readonly sttModelPlaceholder = computed(() => this.resolveSttModelPlaceholder(this.selectedProvider()));
     readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
+    readonly selectedSourceType = computed(() => this.fileInfo()?.sourceType || 'unknown');
+    readonly showEncoding = computed(() => {
+        const sourceType = this.selectedSourceType();
+        return sourceType === 'text' || sourceType === 'pdf' || sourceType === 'unknown';
+    });
+    readonly isAudioSource = computed(() => this.selectedSourceType() === 'audio');
+    readonly isImageSource = computed(() => this.selectedSourceType() === 'image');
+    readonly requiresConfirmation = computed(() => {
+        const summary = this.previewSummary();
+        if (!summary) return false;
+        if (summary.audioDurationSeconds && summary.audioDurationSeconds >= AiImportModalComponent.CONFIRM_AUDIO_SECONDS) {
+            return true;
+        }
+        if (summary.ocrPages && summary.ocrPages >= AiImportModalComponent.CONFIRM_OCR_PAGES) {
+            return true;
+        }
+        if (summary.sourcePages && summary.sourcePages >= AiImportModalComponent.CONFIRM_OCR_PAGES) {
+            return true;
+        }
+        return false;
+    });
     readonly selectedImageFields = computed(() =>
         this.templateFields().filter(field => field.fieldType === 'image' && this.selectedFields().has(field.name))
     );
@@ -766,6 +917,9 @@ export class AiImportModalComponent implements OnInit {
         'zephyr',
         'zubenelgenubi'
     ];
+    private mediaRecorder: MediaRecorder | null = null;
+    private recordingChunks: BlobPart[] = [];
+    private recordingTimer: number | null = null;
 
     constructor(
         private aiApi: AiApiService,
@@ -869,14 +1023,35 @@ export class AiImportModalComponent implements OnInit {
         this.uploadProgress.set(0);
         this.previewError.set('');
         this.previewSummary.set(null);
+        this.confirmLarge.set(false);
+        this.recordingError.set('');
         try {
+            const sourceType = this.resolveSourceType(file);
+            if (sourceType === 'unknown') {
+                this.previewError.set('Unsupported file type');
+                return;
+            }
+            if (sourceType !== 'audio') {
+                this.sttModel.set('');
+            }
+            let durationSeconds: number | undefined;
+            if (sourceType === 'audio') {
+                durationSeconds = await this.resolveAudioDuration(file);
+                if (durationSeconds && durationSeconds > AiImportModalComponent.MAX_AUDIO_SECONDS) {
+                    this.previewError.set('Audio is too long. Please upload a shorter file.');
+                    return;
+                }
+            }
             const mediaId = await this.mediaApi.uploadFile(file, 'ai_import', progress => {
                 this.uploadProgress.set(progress);
             });
             this.fileInfo.set({
                 mediaId,
                 fileName: file.name,
-                sizeBytes: file.size
+                sizeBytes: file.size,
+                mimeType: file.type || '',
+                sourceType,
+                durationSeconds
             });
         } catch (err) {
             console.error('AI import upload failed', err);
@@ -886,12 +1061,143 @@ export class AiImportModalComponent implements OnInit {
         }
     }
 
+    recordingSupported(): boolean {
+        return typeof MediaRecorder !== 'undefined'
+            && !!navigator?.mediaDevices?.getUserMedia;
+    }
+
+    async startRecording(): Promise<void> {
+        if (this.recording()) {
+            return;
+        }
+        if (!this.recordingSupported()) {
+            this.recordingError.set('Audio recording is not supported');
+            return;
+        }
+        this.recordingError.set('');
+        this.recordingSeconds.set(0);
+        this.recordingChunks = [];
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            const mimeType = this.resolveRecordingMimeType();
+            const recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+            this.mediaRecorder = recorder;
+            recorder.ondataavailable = event => {
+                if (event.data && event.data.size > 0) {
+                    this.recordingChunks.push(event.data);
+                }
+            };
+            recorder.onstop = () => {
+                stream.getTracks().forEach(track => track.stop());
+                this.handleRecordingStop(mimeType || recorder.mimeType);
+            };
+            recorder.start();
+            this.recording.set(true);
+            this.startRecordingTimer();
+        } catch (err) {
+            console.error('Audio recording failed', err);
+            this.recordingError.set('Failed to start recording');
+            this.recording.set(false);
+        }
+    }
+
+    stopRecording(): void {
+        if (!this.recording() || !this.mediaRecorder) {
+            return;
+        }
+        this.mediaRecorder.stop();
+        this.recording.set(false);
+        this.stopRecordingTimer();
+    }
+
+    private handleRecordingStop(mimeType: string): void {
+        this.stopRecordingTimer();
+        this.recording.set(false);
+        if (!this.recordingChunks.length) {
+            this.recordingError.set('Recording is empty');
+            this.mediaRecorder = null;
+            return;
+        }
+        const blobType = mimeType || 'audio/webm';
+        const blob = new Blob(this.recordingChunks, { type: blobType });
+        this.mediaRecorder = null;
+        this.recordingChunks = [];
+        if (!blob.size) {
+            this.recordingError.set('Recording is empty');
+            return;
+        }
+        const extension = blobType.includes('ogg') ? 'ogg' : 'webm';
+        const file = new File([blob], `mnema-recording-${Date.now()}.${extension}`, { type: blobType });
+        this.uploadFile(file).catch(() => {});
+    }
+
+    private startRecordingTimer(): void {
+        this.stopRecordingTimer();
+        this.recordingTimer = window.setInterval(() => {
+            const next = this.recordingSeconds() + 1;
+            this.recordingSeconds.set(next);
+            if (next >= AiImportModalComponent.MAX_AUDIO_SECONDS) {
+                this.stopRecording();
+            }
+        }, 1000);
+    }
+
+    private stopRecordingTimer(): void {
+        if (this.recordingTimer !== null) {
+            clearInterval(this.recordingTimer);
+            this.recordingTimer = null;
+        }
+    }
+
+    private resolveRecordingMimeType(): string | null {
+        const candidates = [
+            'audio/webm;codecs=opus',
+            'audio/ogg;codecs=opus',
+            'audio/webm'
+        ];
+        return candidates.find(type => MediaRecorder.isTypeSupported(type)) || null;
+    }
+
+    private async resolveAudioDuration(file: File): Promise<number | undefined> {
+        return new Promise(resolve => {
+            const audio = new Audio();
+            const url = URL.createObjectURL(file);
+            audio.preload = 'metadata';
+            audio.src = url;
+            audio.onloadedmetadata = () => {
+                const duration = Number.isFinite(audio.duration) ? Math.ceil(audio.duration) : undefined;
+                URL.revokeObjectURL(url);
+                resolve(duration);
+            };
+            audio.onerror = () => {
+                URL.revokeObjectURL(url);
+                resolve(undefined);
+            };
+        });
+    }
+
+    private resolveSourceType(file: File): ImportSourceKind {
+        const mimeType = (file.type || '').toLowerCase();
+        if (mimeType.startsWith('image/')) return 'image';
+        if (mimeType.startsWith('audio/')) return 'audio';
+        if (mimeType === 'application/pdf') return 'pdf';
+        if (mimeType.startsWith('text/')) return 'text';
+
+        const name = file.name.toLowerCase();
+        if (name.endsWith('.pdf')) return 'pdf';
+        if (name.endsWith('.txt')) return 'text';
+        if (name.endsWith('.png') || name.endsWith('.jpg') || name.endsWith('.jpeg') || name.endsWith('.webp')) return 'image';
+        if (name.endsWith('.mp3') || name.endsWith('.wav') || name.endsWith('.ogg') || name.endsWith('.m4a') || name.endsWith('.flac') || name.endsWith('.webm')) return 'audio';
+        return 'unknown';
+    }
+
     runPreview(): void {
         if (!this.canPreview()) {
             return;
         }
         const fileInfo = this.fileInfo();
         if (!fileInfo) return;
+        const stt = this.buildSttParams();
         this.previewing.set(true);
         this.previewError.set('');
         this.previewSummary.set(null);
@@ -902,9 +1208,10 @@ export class AiImportModalComponent implements OnInit {
             sourceMediaId: fileInfo.mediaId,
             providerCredentialId: this.selectedCredentialId() || undefined,
             model: this.modelName().trim() || undefined,
-            sourceType: 'txt',
-            encoding: this.encoding() === 'auto' ? undefined : this.encoding(),
-            instructions: this.notes?.trim() || undefined
+            sourceType: fileInfo.sourceType,
+            encoding: this.showEncoding() && this.encoding() !== 'auto' ? this.encoding() : undefined,
+            instructions: this.notes?.trim() || undefined,
+            ...(stt ? { stt } : {})
         }).subscribe({
             next: job => this.pollPreview(job),
             error: err => {
@@ -953,6 +1260,7 @@ export class AiImportModalComponent implements OnInit {
             return;
         }
         this.previewSummary.set(summary);
+        this.confirmLarge.set(false);
         const estimate = summary.estimatedCount ?? 10;
         this.estimatedCount.set(this.clampCount(estimate));
     }
@@ -970,6 +1278,7 @@ export class AiImportModalComponent implements OnInit {
         const tts = this.buildTtsParams();
         const image = this.buildImageParams(fields);
         const video = this.buildVideoParams(fields);
+        const stt = this.buildSttParams();
 
         this.aiApi.createImportGenerate({
             requestId: this.generateRequestId(),
@@ -979,9 +1288,10 @@ export class AiImportModalComponent implements OnInit {
             count: this.clampCount(this.estimatedCount()),
             providerCredentialId: this.selectedCredentialId() || undefined,
             model: this.modelName().trim() || undefined,
-            sourceType: 'txt',
-            encoding: this.encoding() === 'auto' ? undefined : this.encoding(),
+            sourceType: fileInfo.sourceType,
+            encoding: this.showEncoding() && this.encoding() !== 'auto' ? this.encoding() : undefined,
             instructions: this.notes?.trim() || undefined,
+            ...(stt ? { stt } : {}),
             ...(tts ? { tts } : {}),
             ...(image ? { image } : {}),
             ...(video ? { video } : {})
@@ -1012,6 +1322,7 @@ export class AiImportModalComponent implements OnInit {
             && !!this.selectedCredentialId()
             && this.importSupported()
             && this.selectedFields().size > 0
+            && (!this.requiresConfirmation() || this.confirmLarge())
             && !this.creating();
     }
 
@@ -1023,6 +1334,10 @@ export class AiImportModalComponent implements OnInit {
 
     onModelChange(value: string): void {
         this.modelName.set(value);
+    }
+
+    onSttModelChange(value: string): void {
+        this.sttModel.set(value);
     }
 
     toggleField(option: FieldOption): void {
@@ -1237,6 +1552,19 @@ export class AiImportModalComponent implements OnInit {
         };
     }
 
+    private buildSttParams(): Record<string, unknown> | null {
+        if (!this.isAudioSource()) {
+            return null;
+        }
+        const model = this.sttModel().trim();
+        if (!model) {
+            return null;
+        }
+        return {
+            model
+        };
+    }
+
     private buildImageParams(fields: string[]): Record<string, unknown> | null {
         if (!fields.some(field => this.selectedImageFields().some(item => item.name === field))) {
             return null;
@@ -1380,6 +1708,16 @@ export class AiImportModalComponent implements OnInit {
         return 'tts-model';
     }
 
+    private resolveSttModelPlaceholder(provider: string): string {
+        if (provider === 'openai') {
+            return 'gpt-4o-mini-transcribe';
+        }
+        if (provider === 'gemini') {
+            return 'gemini-2.0-flash';
+        }
+        return 'stt-model';
+    }
+
     private normalizeProvider(provider?: string | null): string {
         if (!provider) return '';
         const normalized = provider.trim().toLowerCase();
@@ -1410,6 +1748,28 @@ export class AiImportModalComponent implements OnInit {
         return `${size.toFixed(size >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
     }
 
+    formatDuration(totalSeconds: number): string {
+        if (!totalSeconds || totalSeconds <= 0) return '0:00';
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = Math.floor(totalSeconds % 60);
+        return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+    }
+
+    sourceTypeLabel(sourceType?: ImportSourceKind | string | null): string {
+        switch (sourceType) {
+            case 'text':
+                return 'aiImport.sourceType.text';
+            case 'pdf':
+                return 'aiImport.sourceType.pdf';
+            case 'image':
+                return 'aiImport.sourceType.image';
+            case 'audio':
+                return 'aiImport.sourceType.audio';
+            default:
+                return 'aiImport.sourceType.unknown';
+        }
+    }
+
     trackProvider(_: number, key: AiProviderCredential): string {
         return key.id;
     }
@@ -1419,6 +1779,9 @@ export class AiImportModalComponent implements OnInit {
     }
 
     close(): void {
+        if (this.recording()) {
+            this.stopRecording();
+        }
         this.closed.emit();
     }
 
