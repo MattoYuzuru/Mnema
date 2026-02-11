@@ -41,6 +41,7 @@ interface CardAuditSummary {
               <label for="ai-card-enhance-provider">{{ 'cardEnhance.provider' | translate }}</label>
               <select
                 id="ai-card-enhance-provider"
+                class="glass-select"
                 [ngModel]="selectedCredentialId()"
                 (ngModelChange)="onProviderChange($event)"
                 [disabled]="loadingProviders() || providerKeys().length === 0"
@@ -101,6 +102,7 @@ interface CardAuditSummary {
                 <label for="ai-card-voice">{{ 'cardEnhance.voice' | translate }}</label>
                 <select
                   id="ai-card-voice"
+                  class="glass-select"
                   [ngModel]="ttsVoicePreset()"
                   (ngModelChange)="onTtsVoicePresetChange($event)"
                 >
@@ -123,6 +125,7 @@ interface CardAuditSummary {
                 <label for="ai-card-image-model">Image model</label>
                 <select
                   id="ai-card-image-model"
+                  class="glass-select"
                   [ngModel]="imageModel()"
                   (ngModelChange)="onImageModelChange($event)"
                 >
@@ -154,6 +157,7 @@ interface CardAuditSummary {
                 <label for="ai-card-video-model">Video model</label>
                 <select
                   id="ai-card-video-model"
+                  class="glass-select"
                   [ngModel]="videoModel()"
                   (ngModelChange)="onVideoModelChange($event)"
                 >
@@ -276,7 +280,7 @@ interface CardAuditSummary {
         gap: var(--spacing-xs);
       }
 
-      .form-field select {
+      .form-field select:not(.glass-select) {
         padding: var(--spacing-sm);
         border-radius: var(--border-radius-md);
         border: 1px solid var(--border-color);
@@ -392,6 +396,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
     @Input() deckDescription = '';
     @Input() card: UserCardDTO | null = null;
     @Input() template: CardTemplateDTO | null = null;
+    @Output() cardUpdated = new EventEmitter<UserCardDTO>();
     @Output() closed = new EventEmitter<void>();
 
     providerKeys = signal<AiProviderCredential[]>([]);
@@ -962,6 +967,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
         this.cardApi.getUserCard(this.userDeckId, this.card.userCardId).subscribe({
             next: updated => {
                 this.card = updated;
+                this.cardUpdated.emit(updated);
             },
             error: () => {
             }

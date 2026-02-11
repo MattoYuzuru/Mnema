@@ -331,6 +331,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       [deckDescription]="deck?.displayDescription || ''"
       [card]="enhanceCardTarget"
       [template]="template"
+      (cardUpdated)="onAiCardUpdated($event)"
       (closed)="closeAiEnhanceModal()"
     ></app-ai-enhance-card-modal>
   `,
@@ -1367,6 +1368,21 @@ export class CardBrowserComponent implements OnInit {
     closeAiEnhanceModal(): void {
         this.showAiEnhanceModal = false;
         this.enhanceCardTarget = null;
+    }
+
+    onAiCardUpdated(updated: UserCardDTO): void {
+        const index = this.cards.findIndex(card => card.userCardId === updated.userCardId);
+        if (index !== -1) {
+            this.cards[index] = updated;
+            this.currentCardIndex = index;
+        }
+        const unfilteredIndex = this.unfilteredCards.findIndex(card => card.userCardId === updated.userCardId);
+        if (unfilteredIndex !== -1) {
+            this.unfilteredCards[unfilteredIndex] = updated;
+        }
+        if (this.enhanceCardTarget?.userCardId === updated.userCardId) {
+            this.enhanceCardTarget = updated;
+        }
     }
 
     openDeleteModal(card: UserCardDTO): void {

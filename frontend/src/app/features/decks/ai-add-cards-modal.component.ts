@@ -43,6 +43,7 @@ type TtsMapping = { sourceField: string; targetField: string };
               <label for="ai-provider-key">Provider key</label>
               <select
                 id="ai-provider-key"
+                class="glass-select"
                 [ngModel]="selectedCredentialId()"
                 (ngModelChange)="onProviderChange($event)"
                 [disabled]="loadingProviders() || providerKeys().length === 0"
@@ -83,15 +84,16 @@ type TtsMapping = { sourceField: string; targetField: string };
 
           <div class="field-options">
             <label>Fields to generate</label>
-            <div class="chips">
-              <label *ngFor="let field of fieldOptions(); trackBy: trackField" class="chip" [class.disabled]="!field.enabled">
+            <div class="field-grid">
+              <label *ngFor="let field of fieldOptions(); trackBy: trackField" class="field-option" [class.disabled]="!field.enabled">
                 <input
+                  class="field-checkbox"
                   type="checkbox"
                   [checked]="selectedFields().has(field.key)"
                   (change)="toggleField(field)"
                   [disabled]="!field.enabled"
                 />
-                <span>{{ field.label }}</span>
+                <span class="field-label">{{ field.label }}</span>
               </label>
             </div>
           </div>
@@ -115,6 +117,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                   <label for="ai-tts-voice">Voice</label>
                   <select
                     id="ai-tts-voice"
+                    class="glass-select"
                     [ngModel]="ttsVoicePreset()"
                     (ngModelChange)="onTtsVoicePresetChange($event)"
                   >
@@ -134,6 +137,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                   <label for="ai-tts-format">Format</label>
                   <select
                     id="ai-tts-format"
+                    class="glass-select"
                     [ngModel]="ttsFormat()"
                     (ngModelChange)="onTtsFormatChange($event)"
                   >
@@ -160,6 +164,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                 <div class="mapping-list">
                   <div *ngFor="let mapping of ttsMappings(); let i = index" class="mapping-row">
                     <select
+                      class="glass-select"
                       [ngModel]="mapping.sourceField"
                       (ngModelChange)="onTtsSourceChange(i, $event)"
                     >
@@ -169,6 +174,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                     </select>
                     <span class="mapping-arrow">→</span>
                     <select
+                      class="glass-select"
                       [ngModel]="mapping.targetField"
                       (ngModelChange)="onTtsTargetChange(i, $event)"
                     >
@@ -195,6 +201,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                   <label for="ai-image-model">Image model</label>
                   <select
                     id="ai-image-model"
+                    class="glass-select"
                     [ngModel]="imageModel()"
                     (ngModelChange)="onImageModelChange($event)"
                   >
@@ -224,6 +231,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                   <label for="ai-image-format">Format</label>
                   <select
                     id="ai-image-format"
+                    class="glass-select"
                     [ngModel]="imageFormat()"
                     (ngModelChange)="onImageFormatChange($event)"
                   >
@@ -245,6 +253,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                   <label for="ai-video-model">Video model</label>
                   <select
                     id="ai-video-model"
+                    class="glass-select"
                     [ngModel]="videoModel()"
                     (ngModelChange)="onVideoModelChange($event)"
                   >
@@ -285,6 +294,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                   <label for="ai-video-format">Format</label>
                   <select
                     id="ai-video-format"
+                    class="glass-select"
                     [ngModel]="videoFormat()"
                     (ngModelChange)="onVideoFormatChange($event)"
                   >
@@ -345,20 +355,79 @@ type TtsMapping = { sourceField: string; targetField: string };
       .form-grid { display: grid; gap: var(--spacing-md); grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: var(--spacing-md); }
       .form-field { display: flex; flex-direction: column; gap: var(--spacing-xs); }
       .form-field input,
-      .form-field select,
       .form-field textarea { padding: var(--spacing-sm); border-radius: var(--border-radius-md); border: 1px solid var(--border-color); background: var(--color-background); color: var(--color-text-primary); }
       .field-hint { font-size: 0.85rem; color: var(--color-text-secondary); margin: 0; }
       .field-options { margin-bottom: var(--spacing-lg); }
-      .chips { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); margin-top: var(--spacing-sm); }
-      .chip { display: inline-flex; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); border-radius: 999px; border: 1px solid var(--border-color); background: var(--color-background); }
-      .chip.disabled { opacity: 0.6; }
+      .field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--spacing-sm); margin-top: var(--spacing-sm); }
+      .field-option {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: var(--spacing-sm);
+        padding: 0.55rem 0.75rem;
+        border-radius: var(--border-radius-md);
+        border: 1px solid var(--glass-border);
+        background: linear-gradient(135deg, var(--glass-surface), var(--color-card-background));
+        backdrop-filter: blur(calc(var(--glass-blur) * 0.5)) saturate(140%);
+        box-shadow: var(--shadow-sm);
+        transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+        cursor: pointer;
+        width: 100%;
+      }
+      .field-option.disabled { opacity: 0.6; cursor: not-allowed; box-shadow: none; }
+      .field-option:not(.disabled):hover { border-color: var(--color-primary-accent); box-shadow: var(--accent-shadow); transform: translateY(-1px); }
+      .field-checkbox {
+        appearance: none;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 1px solid var(--glass-border-strong);
+        background: var(--glass-surface-strong);
+        display: grid;
+        place-items: center;
+        box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.12);
+        cursor: pointer;
+        padding: 0;
+        flex: 0 0 20px;
+        min-width: 20px;
+        min-height: 20px;
+        max-width: 20px;
+        max-height: 20px;
+        align-self: center;
+        box-sizing: border-box;
+        line-height: 1;
+      }
+      .field-checkbox:checked {
+        border-color: var(--color-primary-accent);
+        background: linear-gradient(135deg, var(--color-primary-accent), var(--color-secondary-accent));
+      }
+      .field-checkbox:checked::after {
+        content: "";
+        width: 6px;
+        height: 10px;
+        border-right: 2px solid rgba(255, 255, 255, 0.95);
+        border-bottom: 2px solid rgba(255, 255, 255, 0.95);
+        transform: translateY(-1px) rotate(45deg);
+        box-sizing: border-box;
+      }
+      .field-checkbox:focus-visible { outline: none; box-shadow: var(--focus-ring); }
+      .field-option:focus-within { border-color: var(--color-primary-accent); }
+      .field-option.disabled .field-checkbox { cursor: not-allowed; opacity: 0.7; }
+      .field-label {
+        font-weight: 600;
+        color: var(--color-text-primary);
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
       .tts-section { margin-bottom: var(--spacing-lg); }
       .tts-toggle { display: inline-flex; align-items: center; gap: var(--spacing-sm); font-weight: 600; }
       .tts-panel { margin-top: var(--spacing-md); padding: var(--spacing-md); border-radius: var(--border-radius-md); border: 1px solid var(--border-color); background: var(--color-background); }
       .tts-mapping { margin-top: var(--spacing-md); }
       .mapping-list { display: grid; gap: var(--spacing-sm); margin-top: var(--spacing-sm); }
       .mapping-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: var(--spacing-sm); align-items: center; }
-      .mapping-row select { padding: var(--spacing-xs) var(--spacing-sm); }
+      .mapping-row select:not(.glass-select) { padding: var(--spacing-xs) var(--spacing-sm); }
       .mapping-arrow { font-weight: 600; color: var(--color-text-secondary); }
       .remove-mapping { background: none; border: 1px solid var(--border-color); border-radius: 999px; width: 28px; height: 28px; cursor: pointer; }
       .add-mapping { margin-top: var(--spacing-sm); background: none; border: 1px dashed var(--border-color); border-radius: var(--border-radius-md); padding: var(--spacing-xs) var(--spacing-sm); cursor: pointer; }

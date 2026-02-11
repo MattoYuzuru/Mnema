@@ -37,6 +37,7 @@ type FieldLimitMap = Record<string, number>;
               <label for="ai-enhance-provider">Provider key</label>
               <select
                 id="ai-enhance-provider"
+                class="glass-select"
                 [ngModel]="selectedCredentialId()"
                 (ngModelChange)="onProviderChange($event)"
                 [disabled]="loadingProviders() || providerKeys().length === 0"
@@ -166,6 +167,7 @@ type FieldLimitMap = Record<string, number>;
                   <label for="ai-tts-voice">Voice</label>
                   <select
                     id="ai-tts-voice"
+                    class="glass-select"
                     [ngModel]="ttsVoicePreset()"
                     (ngModelChange)="onTtsVoicePresetChange($event)"
                   >
@@ -185,6 +187,7 @@ type FieldLimitMap = Record<string, number>;
                   <label for="ai-tts-format">Format</label>
                   <select
                     id="ai-tts-format"
+                    class="glass-select"
                     [ngModel]="ttsFormat()"
                     (ngModelChange)="onTtsFormatChange($event)"
                   >
@@ -211,6 +214,7 @@ type FieldLimitMap = Record<string, number>;
                 <div class="mapping-list">
                   <div *ngFor="let mapping of ttsMappings(); let i = index" class="mapping-row">
                     <select
+                      class="glass-select"
                       [ngModel]="mapping.sourceField"
                       (ngModelChange)="onTtsSourceChange(i, $event)"
                     >
@@ -220,6 +224,7 @@ type FieldLimitMap = Record<string, number>;
                     </select>
                     <span class="mapping-arrow">→</span>
                     <select
+                      class="glass-select"
                       [ngModel]="mapping.targetField"
                       (ngModelChange)="onTtsTargetChange(i, $event)"
                     >
@@ -246,6 +251,7 @@ type FieldLimitMap = Record<string, number>;
                   <label for="ai-image-model">Image model</label>
                   <select
                     id="ai-image-model"
+                    class="glass-select"
                     [ngModel]="imageModel()"
                     (ngModelChange)="onImageModelChange($event)"
                   >
@@ -275,6 +281,7 @@ type FieldLimitMap = Record<string, number>;
                   <label for="ai-image-format">Format</label>
                   <select
                     id="ai-image-format"
+                    class="glass-select"
                     [ngModel]="imageFormat()"
                     (ngModelChange)="onImageFormatChange($event)"
                   >
@@ -296,6 +303,7 @@ type FieldLimitMap = Record<string, number>;
                   <label for="ai-video-model">Video model</label>
                   <select
                     id="ai-video-model"
+                    class="glass-select"
                     [ngModel]="videoModel()"
                     (ngModelChange)="onVideoModelChange($event)"
                   >
@@ -336,6 +344,7 @@ type FieldLimitMap = Record<string, number>;
                   <label for="ai-video-format">Format</label>
                   <select
                     id="ai-video-format"
+                    class="glass-select"
                     [ngModel]="videoFormat()"
                     (ngModelChange)="onVideoFormatChange($event)"
                   >
@@ -423,7 +432,6 @@ type FieldLimitMap = Record<string, number>;
       .form-grid { display: grid; gap: var(--spacing-md); grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); margin-bottom: var(--spacing-lg); }
       .form-field { display: flex; flex-direction: column; gap: var(--spacing-xs); }
       .form-field input,
-      .form-field select,
       .form-field textarea { padding: var(--spacing-sm); border-radius: var(--border-radius-md); border: 1px solid var(--border-color); background: var(--color-background); color: var(--color-text-primary); }
       .field-hint { font-size: 0.85rem; color: var(--color-text-secondary); margin: 0; }
       .enhance-grid { margin-bottom: var(--spacing-lg); }
@@ -448,7 +456,7 @@ type FieldLimitMap = Record<string, number>;
       .tts-mapping { margin-top: var(--spacing-md); }
       .mapping-list { display: grid; gap: var(--spacing-sm); margin-top: var(--spacing-sm); }
       .mapping-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; gap: var(--spacing-sm); align-items: center; }
-      .mapping-row select { padding: var(--spacing-xs) var(--spacing-sm); }
+      .mapping-row select:not(.glass-select) { padding: var(--spacing-xs) var(--spacing-sm); }
       .mapping-arrow { font-weight: 600; color: var(--color-text-secondary); }
       .remove-mapping { background: none; border: 1px solid var(--border-color); border-radius: 999px; width: 28px; height: 28px; cursor: pointer; }
       .add-mapping { margin-top: var(--spacing-sm); background: var(--color-card-background); border: 1px dashed var(--border-color); border-radius: var(--border-radius-md); padding: var(--spacing-xs) var(--spacing-sm); cursor: pointer; color: var(--color-text-primary); }

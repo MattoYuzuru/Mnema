@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, OnInit, Output, computed, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, computed, effect, signal } from '@angular/core';
 import { NgFor, NgIf, NgClass } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AiApiService } from '../../core/services/ai-api.service';
@@ -26,6 +26,33 @@ interface ImportFileInfo {
     durationSeconds?: number;
 }
 
+interface ImportDraft {
+    fileInfo: ImportFileInfo | null;
+    selectedCredentialId: string;
+    encoding: string;
+    modelName: string;
+    notes: string;
+    selectedFields: string[];
+    estimatedCount: number;
+    confirmLarge: boolean;
+    ttsModel: string;
+    ttsVoicePreset: string;
+    ttsVoiceCustom: string;
+    ttsFormat: string;
+    ttsMaxChars: number;
+    ttsMappings: TtsMapping[];
+    imageModel: string;
+    imageModelCustom: string;
+    imageSize: string;
+    imageFormat: string;
+    videoModel: string;
+    videoModelCustom: string;
+    videoDurationSeconds: number;
+    videoResolution: string;
+    videoFormat: string;
+    sttModel: string;
+}
+
 interface FieldOption {
     key: string;
     label: string;
@@ -48,24 +75,35 @@ interface EncodingOption {
     standalone: true,
     imports: [NgIf, NgFor, NgClass, FormsModule, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe],
     template: `
-    <div class="modal-overlay" (click)="close()">
+    <div class="modal-overlay" (click)="close(false)">
       <div class="modal-content ai-modal" (click)="$event.stopPropagation()">
         <div class="modal-header">
           <div>
             <h2>{{ 'aiImport.title' | translate }}</h2>
             <p class="subtitle">{{ 'aiImport.subtitle' | translate }}</p>
           </div>
-          <button class="close-btn" (click)="close()">&times;</button>
+          <button class="close-btn" (click)="close(true)">&times;</button>
         </div>
 
         <div class="modal-body">
           <section class="section-card">
             <h3>{{ 'aiImport.providerTitle' | translate }}</h3>
+            <div class="ai-source">
+              <div class="source-card active">
+                <div class="source-title">{{ 'aiImport.sourceOwnTitle' | translate }}</div>
+                <div class="source-meta">{{ 'aiImport.sourceOwnDesc' | translate }}</div>
+              </div>
+              <div class="source-card disabled" aria-disabled="true">
+                <div class="source-title">{{ 'aiImport.sourceSubscriptionTitle' | translate }}</div>
+                <div class="source-meta">{{ 'aiImport.sourceSubscriptionDesc' | translate }}</div>
+              </div>
+            </div>
             <div class="form-grid">
               <div class="form-field">
                 <label for="ai-import-provider">{{ 'aiImport.providerLabel' | translate }}</label>
                 <select
                   id="ai-import-provider"
+                  class="glass-select"
                   [ngModel]="selectedCredentialId()"
                   (ngModelChange)="onProviderChange($event)"
                   [disabled]="loadingProviders() || providerKeys().length === 0"
@@ -86,6 +124,7 @@ interface EncodingOption {
                 <label for="ai-import-encoding">{{ 'aiImport.encodingLabel' | translate }}</label>
                 <select
                   id="ai-import-encoding"
+                  class="glass-select"
                   [ngModel]="encoding()"
                   (ngModelChange)="encoding.set($event)"
                 >
@@ -274,14 +313,15 @@ interface EncodingOption {
                     />
                   </div>
                   <div class="form-field">
-                    <label for="ai-tts-voice">{{ 'aiImport.ttsVoiceLabel' | translate }}</label>
-                    <select
-                      id="ai-tts-voice"
-                      [ngModel]="ttsVoicePreset()"
-                      (ngModelChange)="onTtsVoicePresetChange($event)"
-                    >
-                      <option *ngFor="let voice of voiceOptions()" [ngValue]="voice">{{ voiceLabel(voice) }}</option>
-                    </select>
+                  <label for="ai-tts-voice">{{ 'aiImport.ttsVoiceLabel' | translate }}</label>
+                  <select
+                    id="ai-tts-voice"
+                    class="glass-select"
+                    [ngModel]="ttsVoicePreset()"
+                    (ngModelChange)="onTtsVoicePresetChange($event)"
+                  >
+                    <option *ngFor="let voice of voiceOptions()" [ngValue]="voice">{{ voiceLabel(voice) }}</option>
+                  </select>
                     <input
                       *ngIf="ttsVoicePreset() === 'custom'"
                       type="text"
@@ -291,14 +331,15 @@ interface EncodingOption {
                     />
                   </div>
                   <div class="form-field">
-                    <label for="ai-tts-format">{{ 'aiImport.ttsFormatLabel' | translate }}</label>
-                    <select
-                      id="ai-tts-format"
-                      [ngModel]="ttsFormat()"
-                      (ngModelChange)="onTtsFormatChange($event)"
-                    >
-                      <option *ngFor="let format of ttsFormatOptions()" [ngValue]="format">{{ format }}</option>
-                    </select>
+                  <label for="ai-tts-format">{{ 'aiImport.ttsFormatLabel' | translate }}</label>
+                  <select
+                    id="ai-tts-format"
+                    class="glass-select"
+                    [ngModel]="ttsFormat()"
+                    (ngModelChange)="onTtsFormatChange($event)"
+                  >
+                    <option *ngFor="let format of ttsFormatOptions()" [ngValue]="format">{{ format }}</option>
+                  </select>
                   </div>
                   <div class="form-field">
                     <label for="ai-tts-max-chars">{{ 'aiImport.ttsMaxCharsLabel' | translate }}</label>
@@ -315,6 +356,7 @@ interface EncodingOption {
                 <div class="tts-mapping">
                   <div *ngFor="let mapping of ttsMappings(); let i = index" class="mapping-row">
                     <select
+                      class="glass-select"
                       [ngModel]="mapping.sourceField"
                       (ngModelChange)="onTtsSourceChange(i, $event)"
                     >
@@ -324,6 +366,7 @@ interface EncodingOption {
                     </select>
                     <span class="mapping-arrow">→</span>
                     <select
+                      class="glass-select"
                       [ngModel]="mapping.targetField"
                       (ngModelChange)="onTtsTargetChange(i, $event)"
                     >
@@ -348,14 +391,15 @@ interface EncodingOption {
               <div *ngIf="imageSupported()" class="tts-panel">
                 <div class="form-grid">
                   <div class="form-field">
-                    <label for="ai-image-model">{{ 'aiImport.imageModelLabel' | translate }}</label>
-                    <select
-                      id="ai-image-model"
-                      [ngModel]="imageModel()"
-                      (ngModelChange)="onImageModelChange($event)"
-                    >
-                      <option *ngFor="let model of imageModelOptions()" [ngValue]="model">
-                        {{ model === 'custom' ? 'Custom' : model }}
+                  <label for="ai-image-model">{{ 'aiImport.imageModelLabel' | translate }}</label>
+                  <select
+                    id="ai-image-model"
+                    class="glass-select"
+                    [ngModel]="imageModel()"
+                    (ngModelChange)="onImageModelChange($event)"
+                  >
+                    <option *ngFor="let model of imageModelOptions()" [ngValue]="model">
+                      {{ model === 'custom' ? 'Custom' : model }}
                       </option>
                     </select>
                     <input
@@ -377,14 +421,15 @@ interface EncodingOption {
                     />
                   </div>
                   <div class="form-field">
-                    <label for="ai-image-format">{{ 'aiImport.imageFormatLabel' | translate }}</label>
-                    <select
-                      id="ai-image-format"
-                      [ngModel]="imageFormat()"
-                      (ngModelChange)="onImageFormatChange($event)"
-                    >
-                      <option [ngValue]="'png'">png</option>
-                      <option [ngValue]="'jpg'">jpg</option>
+                  <label for="ai-image-format">{{ 'aiImport.imageFormatLabel' | translate }}</label>
+                  <select
+                    id="ai-image-format"
+                    class="glass-select"
+                    [ngModel]="imageFormat()"
+                    (ngModelChange)="onImageFormatChange($event)"
+                  >
+                    <option [ngValue]="'png'">png</option>
+                    <option [ngValue]="'jpg'">jpg</option>
                       <option [ngValue]="'webp'">webp</option>
                     </select>
                   </div>
@@ -398,14 +443,15 @@ interface EncodingOption {
               <div *ngIf="videoSupported()" class="tts-panel">
                 <div class="form-grid">
                   <div class="form-field">
-                    <label for="ai-video-model">{{ 'aiImport.videoModelLabel' | translate }}</label>
-                    <select
-                      id="ai-video-model"
-                      [ngModel]="videoModel()"
-                      (ngModelChange)="onVideoModelChange($event)"
-                    >
-                      <option *ngFor="let model of videoModelOptions()" [ngValue]="model">
-                        {{ model === 'custom' ? 'Custom' : model }}
+                  <label for="ai-video-model">{{ 'aiImport.videoModelLabel' | translate }}</label>
+                  <select
+                    id="ai-video-model"
+                    class="glass-select"
+                    [ngModel]="videoModel()"
+                    (ngModelChange)="onVideoModelChange($event)"
+                  >
+                    <option *ngFor="let model of videoModelOptions()" [ngValue]="model">
+                      {{ model === 'custom' ? 'Custom' : model }}
                       </option>
                     </select>
                     <input
@@ -438,14 +484,15 @@ interface EncodingOption {
                     />
                   </div>
                   <div class="form-field">
-                    <label for="ai-video-format">{{ 'aiImport.videoFormatLabel' | translate }}</label>
-                    <select
-                      id="ai-video-format"
-                      [ngModel]="videoFormat()"
-                      (ngModelChange)="onVideoFormatChange($event)"
-                    >
-                      <option [ngValue]="'mp4'">mp4</option>
-                      <option [ngValue]="'gif'">gif</option>
+                  <label for="ai-video-format">{{ 'aiImport.videoFormatLabel' | translate }}</label>
+                  <select
+                    id="ai-video-format"
+                    class="glass-select"
+                    [ngModel]="videoFormat()"
+                    (ngModelChange)="onVideoFormatChange($event)"
+                  >
+                    <option [ngValue]="'mp4'">mp4</option>
+                    <option [ngValue]="'gif'">gif</option>
                     </select>
                   </div>
                 </div>
@@ -458,7 +505,8 @@ interface EncodingOption {
             <app-textarea
               [label]="'aiImport.notesLabel' | translate"
               [placeholder]="'aiImport.notesPlaceholder' | translate"
-              [(ngModel)]="notes"
+              [ngModel]="notes()"
+              (ngModelChange)="onNotesChange($event)"
               [rows]="3"
             ></app-textarea>
           </section>
@@ -467,7 +515,7 @@ interface EncodingOption {
         </div>
 
         <div class="modal-footer">
-          <app-button variant="ghost" (click)="close()">{{ 'aiImport.close' | translate }}</app-button>
+          <app-button variant="ghost" (click)="close(true)">{{ 'aiImport.close' | translate }}</app-button>
           <app-button
             variant="primary"
             (click)="createCards()"
@@ -485,9 +533,9 @@ interface EncodingOption {
         inset: 0;
         background: rgba(10, 15, 24, 0.55);
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         justify-content: center;
-        padding: var(--spacing-lg);
+        padding: calc(var(--spacing-2xl) + 1rem) var(--spacing-lg) var(--spacing-lg);
         z-index: 40;
         backdrop-filter: blur(12px) saturate(140%);
       }
@@ -523,6 +571,27 @@ interface EncodingOption {
         display: flex;
         flex-direction: column;
         gap: var(--spacing-xl);
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+
+      .modal-body::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .modal-body::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .modal-body::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      .modal-body::-webkit-scrollbar-thumb:hover {
+        background: var(--border-color-hover);
       }
 
       .section-card {
@@ -532,6 +601,35 @@ interface EncodingOption {
         background: var(--color-card-background);
         display: grid;
         gap: var(--spacing-md);
+      }
+
+      .ai-source {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: var(--spacing-md);
+      }
+
+      .source-card {
+        border: 1px solid var(--glass-border);
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-md);
+        background: var(--glass-surface);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .source-card.disabled {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+
+      .source-title {
+        font-weight: 600;
+        margin-bottom: var(--spacing-xs);
+      }
+
+      .source-meta {
+        font-size: 0.9rem;
+        color: var(--color-text-secondary);
       }
 
       .form-grid {
@@ -605,6 +703,7 @@ interface EncodingOption {
         border-radius: 999px;
         cursor: pointer;
         font-weight: 600;
+        color: var(--color-text-primary);
       }
 
       .record-btn.stop {
@@ -644,7 +743,8 @@ interface EncodingOption {
       }
 
       .field-option {
-        display: inline-flex;
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
         align-items: center;
         gap: var(--spacing-sm);
         padding: 0.55rem 0.75rem;
@@ -655,6 +755,7 @@ interface EncodingOption {
         box-shadow: var(--shadow-sm);
         transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
         cursor: pointer;
+        width: 100%;
       }
 
       .field-option:not(.disabled):hover {
@@ -728,10 +829,13 @@ interface EncodingOption {
       .field-label {
         font-weight: 600;
         color: var(--color-text-primary);
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
 
       .field-required {
-        margin-left: auto;
         font-size: 0.65rem;
         letter-spacing: 0.08em;
         text-transform: uppercase;
@@ -798,10 +902,12 @@ export class AiImportModalComponent implements OnInit {
     estimatedCount = signal(10);
     createError = signal('');
     creating = signal(false);
+    private readonly draftReady = signal(false);
+    private storageKey = '';
 
     encoding = signal('auto');
     modelName = signal('');
-    notes = '';
+    notes = signal('');
 
     ttsEnabled = signal(false);
     ttsModel = signal('');
@@ -928,6 +1034,9 @@ export class AiImportModalComponent implements OnInit {
     ) {}
 
     ngOnInit(): void {
+        this.storageKey = `mnema_ai_import:${this.userDeckId || 'default'}`;
+        this.startDraftSync();
+        this.restoreDraft();
         this.loadProviders();
         this.loadTemplateFields();
     }
@@ -940,6 +1049,8 @@ export class AiImportModalComponent implements OnInit {
                 this.providerKeys.set(active);
                 if (!this.selectedCredentialId() && active.length > 0) {
                     this.selectedCredentialId.set(active[0].id);
+                } else if (this.selectedCredentialId() && !active.some(key => key.id === this.selectedCredentialId())) {
+                    this.selectedCredentialId.set(active[0]?.id || '');
                 }
                 this.ensureDefaultMediaModels();
                 this.syncVoicePreset();
@@ -1212,7 +1323,7 @@ export class AiImportModalComponent implements OnInit {
             model: this.modelName().trim() || undefined,
             sourceType: fileInfo.sourceType,
             encoding: this.showEncoding() && this.encoding() !== 'auto' ? this.encoding() : undefined,
-            instructions: this.notes?.trim() || undefined,
+            instructions: this.notes().trim() || undefined,
             ...(stt ? { stt } : {})
         }).subscribe({
             next: job => this.pollPreview(job),
@@ -1292,7 +1403,7 @@ export class AiImportModalComponent implements OnInit {
             model: this.modelName().trim() || undefined,
             sourceType: fileInfo.sourceType,
             encoding: this.showEncoding() && this.encoding() !== 'auto' ? this.encoding() : undefined,
-            instructions: this.notes?.trim() || undefined,
+            instructions: this.notes().trim() || undefined,
             ...(stt ? { stt } : {}),
             ...(tts ? { tts } : {}),
             ...(image ? { image } : {}),
@@ -1301,7 +1412,7 @@ export class AiImportModalComponent implements OnInit {
             next: job => {
                 this.creating.set(false);
                 this.jobCreated.emit(job);
-                this.close();
+                this.close(true);
             },
             error: err => {
                 this.creating.set(false);
@@ -1336,6 +1447,10 @@ export class AiImportModalComponent implements OnInit {
 
     onModelChange(value: string): void {
         this.modelName.set(value);
+    }
+
+    onNotesChange(value: string): void {
+        this.notes.set(value);
     }
 
     onSttModelChange(value: string): void {
@@ -1774,6 +1889,155 @@ export class AiImportModalComponent implements OnInit {
         }
     }
 
+    private startDraftSync(): void {
+        effect(() => {
+            if (!this.draftReady()) {
+                return;
+            }
+            const draft = this.buildDraftSnapshot();
+            this.persistDraft(draft);
+        });
+    }
+
+    private buildDraftSnapshot(): ImportDraft {
+        return {
+            fileInfo: this.fileInfo(),
+            selectedCredentialId: this.selectedCredentialId(),
+            encoding: this.encoding(),
+            modelName: this.modelName(),
+            notes: this.notes(),
+            selectedFields: Array.from(this.selectedFields()),
+            estimatedCount: this.estimatedCount(),
+            confirmLarge: this.confirmLarge(),
+            ttsModel: this.ttsModel(),
+            ttsVoicePreset: this.ttsVoicePreset(),
+            ttsVoiceCustom: this.ttsVoiceCustom(),
+            ttsFormat: this.ttsFormat(),
+            ttsMaxChars: this.ttsMaxChars(),
+            ttsMappings: this.ttsMappings(),
+            imageModel: this.imageModel(),
+            imageModelCustom: this.imageModelCustom(),
+            imageSize: this.imageSize(),
+            imageFormat: this.imageFormat(),
+            videoModel: this.videoModel(),
+            videoModelCustom: this.videoModelCustom(),
+            videoDurationSeconds: this.videoDurationSeconds(),
+            videoResolution: this.videoResolution(),
+            videoFormat: this.videoFormat(),
+            sttModel: this.sttModel()
+        };
+    }
+
+    private persistDraft(draft: ImportDraft): void {
+        if (!this.storageKey) {
+            return;
+        }
+        try {
+            localStorage.setItem(this.storageKey, JSON.stringify(draft));
+        } catch {
+        }
+    }
+
+    private restoreDraft(): void {
+        if (!this.storageKey) {
+            this.draftReady.set(true);
+            return;
+        }
+        try {
+            const raw = localStorage.getItem(this.storageKey);
+            if (!raw) {
+                this.draftReady.set(true);
+                return;
+            }
+            const draft = JSON.parse(raw) as ImportDraft;
+            if (draft.fileInfo) {
+                this.fileInfo.set(draft.fileInfo);
+            }
+            if (draft.selectedCredentialId) {
+                this.selectedCredentialId.set(draft.selectedCredentialId);
+            }
+            if (draft.encoding) {
+                this.encoding.set(draft.encoding);
+            }
+            if (draft.modelName) {
+                this.modelName.set(draft.modelName);
+            }
+            if (draft.notes) {
+                this.notes.set(draft.notes);
+            }
+            if (draft.selectedFields?.length) {
+                this.selectedFields.set(new Set(draft.selectedFields));
+            }
+            if (Number.isFinite(draft.estimatedCount)) {
+                this.estimatedCount.set(this.clampCount(Number(draft.estimatedCount)));
+            }
+            if (typeof draft.confirmLarge === 'boolean') {
+                this.confirmLarge.set(draft.confirmLarge);
+            }
+            if (draft.ttsModel) {
+                this.ttsModel.set(draft.ttsModel);
+            }
+            if (draft.ttsVoicePreset) {
+                this.ttsVoicePreset.set(draft.ttsVoicePreset);
+            }
+            if (draft.ttsVoiceCustom) {
+                this.ttsVoiceCustom.set(draft.ttsVoiceCustom);
+            }
+            if (draft.ttsFormat) {
+                this.ttsFormat.set(draft.ttsFormat);
+            }
+            if (Number.isFinite(draft.ttsMaxChars)) {
+                this.ttsMaxChars.set(Number(draft.ttsMaxChars));
+            }
+            if (draft.ttsMappings?.length) {
+                this.ttsMappings.set(draft.ttsMappings.filter(mapping => !!mapping.sourceField && !!mapping.targetField));
+            }
+            if (draft.imageModel) {
+                this.imageModel.set(draft.imageModel);
+            }
+            if (draft.imageModelCustom) {
+                this.imageModelCustom.set(draft.imageModelCustom);
+            }
+            if (draft.imageSize) {
+                this.imageSize.set(draft.imageSize);
+            }
+            if (draft.imageFormat) {
+                this.imageFormat.set(draft.imageFormat);
+            }
+            if (draft.videoModel) {
+                this.videoModel.set(draft.videoModel);
+            }
+            if (draft.videoModelCustom) {
+                this.videoModelCustom.set(draft.videoModelCustom);
+            }
+            if (Number.isFinite(draft.videoDurationSeconds)) {
+                this.videoDurationSeconds.set(Number(draft.videoDurationSeconds));
+            }
+            if (draft.videoResolution) {
+                this.videoResolution.set(draft.videoResolution);
+            }
+            if (draft.videoFormat) {
+                this.videoFormat.set(draft.videoFormat);
+            }
+            if (draft.sttModel) {
+                this.sttModel.set(draft.sttModel);
+            }
+        } catch {
+        } finally {
+            this.draftReady.set(true);
+        }
+    }
+
+    private clearDraft(): void {
+        if (!this.storageKey) {
+            return;
+        }
+        try {
+            localStorage.removeItem(this.storageKey);
+        } catch {
+        }
+    }
+
     trackProvider(_: number, key: AiProviderCredential): string {
         return key.id;
     }
@@ -1782,9 +2046,12 @@ export class AiImportModalComponent implements OnInit {
         return option.key;
     }
 
-    close(): void {
+    close(clearDraft: boolean = true): void {
         if (this.recording()) {
             this.stopRecording();
+        }
+        if (clearDraft) {
+            this.clearDraft();
         }
         this.closed.emit();
     }

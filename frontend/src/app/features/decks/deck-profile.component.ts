@@ -119,7 +119,7 @@ import { I18nService } from '../../core/services/i18n.service';
             </div>
           </button>
           <button class="ai-feature-card" (click)="openAiImportModal()">
-            <div class="ai-feature-icon">📷</div>
+            <div class="ai-feature-icon">📂</div>
             <div>
               <h3>{{ 'deckProfile.aiImportTitle' | translate }}</h3>
               <p>{{ 'deckProfile.aiImportDescription' | translate }}</p>
@@ -290,7 +290,7 @@ import { I18nService } from '../../core/services/i18n.service';
               <p>{{ 'deckProfile.aiAddCardsDescription' | translate }}</p>
             </div>
             <div class="choice-card ai-choice" (click)="startAiImport()">
-              <div class="choice-icon">📷</div>
+              <div class="choice-icon">📂</div>
               <h3>{{ 'deckProfile.aiImportTitle' | translate }}</h3>
               <p>{{ 'deckProfile.aiImportDescription' | translate }}</p>
             </div>
@@ -346,7 +346,7 @@ import { I18nService } from '../../core/services/i18n.service';
     ></app-ai-import-modal>
 
     <div *ngIf="showEditModal && deck" class="modal-overlay" (click)="closeEditModal()">
-      <div class="modal-content" (click)="$event.stopPropagation()">
+      <div class="modal-content edit-deck-modal" (click)="$event.stopPropagation()">
         <div class="modal-header">
           <h2>{{ 'deckProfile.editDeck' | translate }}</h2>
           <button class="close-btn" (click)="closeEditModal()">&times;</button>
@@ -749,6 +749,30 @@ import { I18nService } from '../../core/services/i18n.service';
         display: grid;
         gap: var(--spacing-md);
         min-width: 0;
+        max-height: clamp(260px, 55vh, 560px);
+        overflow-y: auto;
+        padding-right: var(--spacing-xs);
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+
+      .ai-job-list::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .ai-job-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .ai-job-list::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      .ai-job-list::-webkit-scrollbar-thumb:hover {
+        background: var(--border-color-hover);
       }
 
       .ai-job-card {
@@ -996,6 +1020,30 @@ import { I18nService } from '../../core/services/i18n.service';
       .modal-body {
         padding: var(--spacing-lg);
         overflow-y: auto;
+      }
+
+      .edit-deck-modal .modal-body {
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+
+      .edit-deck-modal .modal-body::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .edit-deck-modal .modal-body::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .edit-deck-modal .modal-body::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      .edit-deck-modal .modal-body::-webkit-scrollbar-thumb:hover {
+        background: var(--border-color-hover);
       }
 
       .modal-hint {
