@@ -572,7 +572,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         boolean truncated = false;
         int index = 0;
         for (AudioChunkingService.AudioChunk chunk : chunking.chunks()) {
-            String fileName = "import-audio-" + index + ".wav";
+            String fileName = resolveAudioFileName(index, chunk.mimeType());
             String chunkText = openAiClient.createTranscription(
                     apiKey,
                     new OpenAiTranscriptionRequest(
@@ -721,6 +721,38 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             return language.trim();
         }
         return fallback;
+    }
+
+    private String resolveAudioFileName(int index, String mimeType) {
+        return "import-audio-" + index + resolveAudioExtension(mimeType);
+    }
+
+    private String resolveAudioExtension(String mimeType) {
+        String normalized = normalizeMimeType(mimeType);
+        if (normalized == null || normalized.isBlank()) {
+            return ".bin";
+        }
+        return switch (normalized) {
+            case "audio/mpeg", "audio/mp3" -> ".mp3";
+            case "audio/mp4", "audio/x-m4a" -> ".m4a";
+            case "audio/ogg" -> ".ogg";
+            case "audio/wav", "audio/x-wav" -> ".wav";
+            case "audio/webm" -> ".webm";
+            case "audio/flac" -> ".flac";
+            default -> ".bin";
+        };
+    }
+
+    private String normalizeMimeType(String mimeType) {
+        if (mimeType == null) {
+            return null;
+        }
+        String normalized = mimeType.trim().toLowerCase(Locale.ROOT);
+        int separator = normalized.indexOf(';');
+        if (separator >= 0) {
+            normalized = normalized.substring(0, separator).trim();
+        }
+        return normalized;
     }
 
     private JsonNode buildImportPreviewSchema(int maxCards) {

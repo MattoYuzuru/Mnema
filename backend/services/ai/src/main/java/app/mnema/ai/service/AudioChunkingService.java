@@ -46,10 +46,11 @@ public class AudioChunkingService {
         if (bytes == null || bytes.length == 0) {
             throw new IllegalStateException("Audio is empty");
         }
+        String normalizedMimeType = normalizeMimeType(mimeType);
         Path input = null;
         Path outputDir = null;
         try {
-            String extension = resolveExtension(mimeType);
+            String extension = resolveExtension(normalizedMimeType);
             input = Files.createTempFile("mnema-audio-", extension);
             Files.write(input, bytes);
 
@@ -61,7 +62,7 @@ public class AudioChunkingService {
                 throw new IllegalStateException("Audio is too long. Please upload a shorter file.");
             }
             if (durationSeconds <= chunkSeconds) {
-                List<AudioChunk> chunks = List.of(new AudioChunk(bytes, mimeType, false));
+                List<AudioChunk> chunks = List.of(new AudioChunk(bytes, normalizedMimeType, false));
                 return new AudioChunkingResult(chunks, durationSeconds, chunks.size());
             }
 
@@ -145,10 +146,11 @@ public class AudioChunkingService {
     }
 
     private String resolveExtension(String mimeType) {
-        if (mimeType == null) {
+        String normalized = normalizeMimeType(mimeType);
+        if (normalized == null) {
             return ".bin";
         }
-        return switch (mimeType.toLowerCase(Locale.ROOT)) {
+        return switch (normalized) {
             case "audio/mpeg", "audio/mp3" -> ".mp3";
             case "audio/mp4", "audio/x-m4a" -> ".m4a";
             case "audio/ogg" -> ".ogg";
@@ -157,6 +159,18 @@ public class AudioChunkingService {
             case "audio/flac" -> ".flac";
             default -> ".bin";
         };
+    }
+
+    private String normalizeMimeType(String mimeType) {
+        if (mimeType == null) {
+            return null;
+        }
+        String normalized = mimeType.trim().toLowerCase(Locale.ROOT);
+        int separator = normalized.indexOf(';');
+        if (separator >= 0) {
+            normalized = normalized.substring(0, separator).trim();
+        }
+        return normalized;
     }
 
     private String summarizeOutput(String output) {
