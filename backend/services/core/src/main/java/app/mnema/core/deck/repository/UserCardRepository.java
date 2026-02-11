@@ -4,6 +4,7 @@ import app.mnema.core.deck.domain.entity.UserCardEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -250,5 +251,124 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
     interface DuplicateGroupProjection {
         UUID[] getCardIds();
         int getCnt();
+    }
+
+    @Query(value = """
+        with input_fields as (
+            select f.field_name, f.ord
+            from unnest(cast(:fields as text[])) with ordinality as f(field_name, ord)
+        ),
+        score_fields as (
+            select f.field_name, f.ord
+            from unnest(cast(:scoreFields as text[])) with ordinality as f(field_name, ord)
+        ),
+        cards as (
+            select
+                uc.user_card_id,
+                uc.public_card_id,
+                uc.created_at,
+                array_agg(
+                    regexp_replace(
+                        lower(
+                            coalesce(
+                                nullif(jsonb_extract_path_text(uc.content_override, f.field_name), ''),
+                                nullif(jsonb_extract_path_text(pc.content, f.field_name), ''),
+                                ''
+                            )
+                        ),
+                        '[^[:alnum:]]+',
+                        '',
+                        'g'
+                    )
+                    order by f.ord
+                ) as norm_values
+            from app_core.user_cards uc
+            left join app_core.user_decks ud
+              on ud.user_deck_id = uc.subscription_id
+            left join app_core.public_cards pc
+              on pc.card_id = uc.public_card_id
+             and pc.deck_id = ud.public_deck_id
+             and pc.deck_version = ud.current_version
+            join input_fields f on true
+            where uc.user_id = :userId
+              and uc.subscription_id = :userDeckId
+              and uc.is_deleted = false
+            group by uc.user_card_id, uc.public_card_id, uc.created_at
+        ),
+        scores as (
+            select
+                uc.user_card_id,
+                sum(
+                    case when coalesce(
+                        nullif(jsonb_extract_path_text(uc.content_override, sf.field_name), ''),
+                        nullif(jsonb_extract_path_text(pc.content, sf.field_name), ''),
+                        nullif(jsonb_extract_path_text(uc.content_override, sf.field_name, 'mediaId'), ''),
+                        nullif(jsonb_extract_path_text(pc.content, sf.field_name, 'mediaId'), '')
+                    ) is null then 0 else 1 end
+                ) as filled_count
+            from app_core.user_cards uc
+            left join app_core.user_decks ud
+              on ud.user_deck_id = uc.subscription_id
+            left join app_core.public_cards pc
+              on pc.card_id = uc.public_card_id
+             and pc.deck_id = ud.public_deck_id
+             and pc.deck_version = ud.current_version
+            join score_fields sf on true
+            where uc.user_id = :userId
+              and uc.subscription_id = :userDeckId
+              and uc.is_deleted = false
+            group by uc.user_card_id
+        ),
+        dup_groups as (
+            select
+                norm_values,
+                count(*) as cnt
+            from cards
+            where array_to_string(norm_values, '') <> ''
+            group by norm_values
+            having count(*) > 1
+        ),
+        ranked as (
+            select
+                c.user_card_id,
+                c.public_card_id,
+                row_number() over (
+                    partition by c.norm_values
+                    order by s.filled_count desc, c.created_at asc, c.user_card_id asc
+                ) as rn
+            from cards c
+            join dup_groups d on c.norm_values = d.norm_values
+            join scores s on s.user_card_id = c.user_card_id
+        )
+        select user_card_id, public_card_id, rn
+        from ranked
+        """, nativeQuery = true)
+    List<DuplicateResolutionProjection> findDuplicateResolutionCandidates(
+            @Param("userId") UUID userId,
+            @Param("userDeckId") UUID userDeckId,
+            @Param("fields") String[] fields,
+            @Param("scoreFields") String[] scoreFields
+    );
+
+    @Modifying
+    @Query("""
+        update UserCardEntity uc
+           set uc.deleted = true,
+               uc.updatedAt = :updatedAt
+         where uc.userId = :userId
+           and uc.userDeckId = :userDeckId
+           and uc.userCardId in :cardIds
+        """)
+    int markDeletedByIds(
+            @Param("userId") UUID userId,
+            @Param("userDeckId") UUID userDeckId,
+            @Param("cardIds") List<UUID> cardIds,
+            @Param("updatedAt") java.time.Instant updatedAt
+    );
+
+    interface DuplicateResolutionProjection {
+        UUID getUserCardId();
+        UUID getPublicCardId();
+        int getRn();
     }
 }

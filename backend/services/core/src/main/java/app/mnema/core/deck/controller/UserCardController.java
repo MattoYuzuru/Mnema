@@ -3,7 +3,9 @@ package app.mnema.core.deck.controller;
 import app.mnema.core.deck.domain.dto.UserCardDTO;
 import app.mnema.core.deck.domain.dto.MissingFieldSummaryDTO;
 import app.mnema.core.deck.domain.dto.DuplicateGroupDTO;
+import app.mnema.core.deck.domain.dto.DuplicateResolveResultDTO;
 import app.mnema.core.deck.domain.request.CreateCardRequest;
+import app.mnema.core.deck.domain.request.DuplicateResolveRequest;
 import app.mnema.core.deck.domain.request.DuplicateSearchRequest;
 import app.mnema.core.deck.domain.request.MissingFieldCardsRequest;
 import app.mnema.core.deck.domain.request.MissingFieldSummaryRequest;
@@ -87,6 +89,17 @@ public class UserCardController {
         return cardService.getDuplicateGroups(userId, userDeckId, request);
     }
 
+    // POST /decks/{userDeckId}/cards/duplicates/resolve
+    @PostMapping("/duplicates/resolve")
+    public DuplicateResolveResultDTO resolveDuplicateGroups(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID userDeckId,
+            @RequestBody DuplicateResolveRequest request
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        return cardService.resolveDuplicateGroups(userId, userDeckId, request);
+    }
+
     // POST /decks/{userDeckId}/cards
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -140,7 +153,8 @@ public class UserCardController {
             @AuthenticationPrincipal Jwt jwt,
             @PathVariable UUID userDeckId,
             @PathVariable UUID cardId,
-            @RequestParam(defaultValue = "local") String scope
+            @RequestParam(defaultValue = "local") String scope,
+            @RequestParam(required = false) UUID operationId
     ) {
         var userId = currentUserProvider.getUserId(jwt);
         boolean deleteGlobally;
@@ -151,6 +165,6 @@ public class UserCardController {
         } else {
             throw new IllegalArgumentException("Unknown delete scope: " + scope);
         }
-        cardService.deleteUserCard(userId, userDeckId, cardId, deleteGlobally);
+        cardService.deleteUserCard(userId, userDeckId, cardId, deleteGlobally, operationId);
     }
 }

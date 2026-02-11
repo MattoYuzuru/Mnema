@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Page } from '../models/page.models';
-import { UserCardDTO, CreateCardRequest, MissingFieldSummary, DuplicateGroup } from '../models/user-card.models';
+import { UserCardDTO, CreateCardRequest, MissingFieldSummary, DuplicateGroup, DuplicateResolveResult } from '../models/user-card.models';
 import { appConfig } from '../../app.config';
 
 @Injectable({ providedIn: 'root' })
@@ -43,10 +43,13 @@ export class CardApiService {
         return this.http.patch<UserCardDTO>(`${this.baseUrl}/${userDeckId}/cards/${cardId}`, body, { params });
     }
 
-    deleteUserCard(userDeckId: string, cardId: string, scope?: 'local' | 'global'): Observable<void> {
+    deleteUserCard(userDeckId: string, cardId: string, scope?: 'local' | 'global', operationId?: string): Observable<void> {
         let params = new HttpParams();
         if (scope) {
             params = params.set('scope', scope);
+        }
+        if (operationId) {
+            params = params.set('operationId', operationId);
         }
         return this.http.delete<void>(`${this.baseUrl}/${userDeckId}/cards/${cardId}`, { params });
     }
@@ -68,6 +71,19 @@ export class CardApiService {
             fields,
             limitGroups,
             perGroupLimit
+        });
+    }
+
+    resolveDuplicateGroups(
+        userDeckId: string,
+        fields: string[],
+        scope: 'local' | 'global' = 'local',
+        operationId?: string
+    ): Observable<DuplicateResolveResult> {
+        return this.http.post<DuplicateResolveResult>(`${this.baseUrl}/${userDeckId}/cards/duplicates/resolve`, {
+            fields,
+            scope,
+            operationId
         });
     }
 }

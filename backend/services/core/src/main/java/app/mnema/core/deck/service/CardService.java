@@ -6,8 +6,11 @@ import app.mnema.core.deck.domain.dto.MissingFieldStatDTO;
 import app.mnema.core.deck.domain.dto.PublicCardDTO;
 import app.mnema.core.deck.domain.dto.UserCardDTO;
 import app.mnema.core.deck.domain.dto.DuplicateGroupDTO;
+import app.mnema.core.deck.domain.dto.DuplicateResolveResultDTO;
 import app.mnema.core.deck.domain.entity.*;
+import app.mnema.core.deck.domain.type.CardFieldType;
 import app.mnema.core.deck.domain.request.CreateCardRequest;
+import app.mnema.core.deck.domain.request.DuplicateResolveRequest;
 import app.mnema.core.deck.domain.request.DuplicateSearchRequest;
 import app.mnema.core.deck.domain.request.MissingFieldCardsRequest;
 import app.mnema.core.deck.domain.request.MissingFieldSummaryRequest;
@@ -28,8 +31,12 @@ import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -293,6 +300,87 @@ public class CardService {
             }
         }
         return result.isEmpty() ? List.of() : Collections.unmodifiableList(result);
+    }
+
+    @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
+    public DuplicateResolveResultDTO resolveDuplicateGroups(UUID currentUserId,
+                                                            UUID userDeckId,
+                                                            DuplicateResolveRequest request) {
+        UserDeckEntity deck = userDeckRepository.findById(userDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+        if (!deck.getUserId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to deck " + userDeckId);
+        }
+        if (request == null || request.fields() == null || request.fields().isEmpty()) {
+            throw new IllegalArgumentException("fields are required");
+        }
+
+        String scope = request.scope() == null ? "local" : request.scope().trim();
+        boolean globalRequested = "global".equalsIgnoreCase(scope);
+        if (!globalRequested && !"local".equalsIgnoreCase(scope)) {
+            throw new IllegalArgumentException("Unknown scope: " + scope);
+        }
+
+        List<String> fields = request.fields().stream()
+                .filter(name -> name != null && !name.isBlank())
+                .map(String::trim)
+                .distinct()
+                .toList();
+        if (fields.isEmpty()) {
+            throw new IllegalArgumentException("fields are required");
+        }
+
+        List<String> scoreFields = resolveScoreFields(deck, fields);
+        List<UserCardRepository.DuplicateResolutionProjection> candidates = userCardRepository
+                .findDuplicateResolutionCandidates(
+                        currentUserId,
+                        userDeckId,
+                        fields.toArray(String[]::new),
+                        scoreFields.toArray(String[]::new)
+                );
+        if (candidates.isEmpty()) {
+            return new DuplicateResolveResultDTO(0, 0, 0, false);
+        }
+
+        List<UUID> toDelete = new ArrayList<>();
+        Set<UUID> kept = new HashSet<>();
+        Set<UUID> keptPublicCardIds = new HashSet<>();
+        for (UserCardRepository.DuplicateResolutionProjection candidate : candidates) {
+            if (candidate.getRn() == 1) {
+                kept.add(candidate.getUserCardId());
+                if (candidate.getPublicCardId() != null) {
+                    keptPublicCardIds.add(candidate.getPublicCardId());
+                }
+            } else {
+                toDelete.add(candidate.getUserCardId());
+            }
+        }
+
+        if (toDelete.isEmpty()) {
+            return new DuplicateResolveResultDTO(kept.size(), 0, kept.size(), false);
+        }
+
+        Instant now = Instant.now();
+        boolean globalApplied = false;
+        if (globalRequested) {
+            List<UserCardEntity> deleteCards = userCardRepository.findByUserIdAndUserDeckIdAndUserCardIdIn(
+                    currentUserId,
+                    userDeckId,
+                    toDelete
+            );
+            globalApplied = applyGlobalDuplicateDeletion(
+                    currentUserId,
+                    deck,
+                    keptPublicCardIds,
+                    deleteCards,
+                    now,
+                    request.operationId()
+            );
+        }
+
+        userCardRepository.markDeletedByIds(currentUserId, userDeckId, toDelete, now);
+        return new DuplicateResolveResultDTO(kept.size(), toDelete.size(), kept.size(), globalApplied);
     }
 
     // Просмотр публичных карт колоды по deck_id + version (если version null, берём последнюю)
@@ -967,7 +1055,7 @@ public class CardService {
     @Transactional
     @PreAuthorize("hasAuthority('SCOPE_user.write')")
     public void deleteUserCard(UUID currentUserId, UUID userDeckId, UUID userCardId) {
-        deleteUserCard(currentUserId, userDeckId, userCardId, false);
+        deleteUserCard(currentUserId, userDeckId, userCardId, false, null);
     }
 
     @Transactional
@@ -976,6 +1064,16 @@ public class CardService {
                                UUID userDeckId,
                                UUID userCardId,
                                boolean deleteGlobally) {
+        deleteUserCard(currentUserId, userDeckId, userCardId, deleteGlobally, null);
+    }
+
+    @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
+    public void deleteUserCard(UUID currentUserId,
+                               UUID userDeckId,
+                               UUID userCardId,
+                               boolean deleteGlobally,
+                               UUID operationId) {
         UserDeckEntity userDeck = userDeckRepository.findById(userDeckId)
                 .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
 
@@ -998,8 +1096,58 @@ public class CardService {
             userCardRepository.save(card);
             return;
         }
+        UUID publicCardId = card.getPublicCardId();
+        if (publicCardId == null) {
+            throw new IllegalArgumentException("Custom card cannot be deleted globally");
+        }
 
-        UUID publicDeckId = userDeck.getPublicDeckId();
+        card.setDeleted(true);
+        card.setUpdatedAt(now);
+
+        applyGlobalDuplicateDeletion(currentUserId, userDeck, Set.of(), List.of(card), now, operationId);
+        userCardRepository.save(card);
+    }
+
+    private List<String> resolveScoreFields(UserDeckEntity deck, List<String> fallback) {
+        UUID publicDeckId = deck.getPublicDeckId();
+        if (publicDeckId == null) {
+            return fallback;
+        }
+        PublicDeckEntity publicDeck = publicDeckRepository.findLatestByDeckId(publicDeckId).orElse(null);
+        if (publicDeck == null) {
+            return fallback;
+        }
+        Integer templateVersion = deck.getTemplateVersion() != null ? deck.getTemplateVersion() : publicDeck.getTemplateVersion();
+        List<FieldTemplateEntity> fields = templateVersion == null
+                ? fieldTemplateRepository.findByTemplateIdOrderByOrderIndexAsc(publicDeck.getTemplateId())
+                : fieldTemplateRepository.findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(
+                publicDeck.getTemplateId(),
+                templateVersion
+        );
+        if (fields == null || fields.isEmpty()) {
+            return fallback;
+        }
+        List<String> scoreFields = fields.stream()
+                .filter(field -> field.getName() != null && !field.getName().isBlank())
+                .filter(field -> isScoreFieldType(field.getFieldType()))
+                .map(field -> field.getName().trim())
+                .distinct()
+                .toList();
+        return scoreFields.isEmpty() ? fallback : scoreFields;
+    }
+
+    private boolean isScoreFieldType(CardFieldType fieldType) {
+        if (fieldType == null) {
+            return false;
+        }
+        return fieldType != CardFieldType.tags;
+    }
+
+    private GlobalDeleteContext resolveGlobalDeleteContext(UUID currentUserId,
+                                                          UserDeckEntity deck,
+                                                          UUID operationId,
+                                                          Instant now) {
+        UUID publicDeckId = deck.getPublicDeckId();
         if (publicDeckId == null) {
             throw new IllegalStateException("Local deck has no public source");
         }
@@ -1012,148 +1160,176 @@ public class CardService {
             throw new SecurityException("Access denied to public deck " + publicDeckId);
         }
 
-        UUID publicCardId = card.getPublicCardId();
-        if (publicCardId == null) {
-            throw new IllegalArgumentException("Custom card cannot be deleted globally");
-        }
-
-        PublicCardEntity linkedPublicCard = publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(publicCardId)
-                .orElseThrow(() -> new IllegalArgumentException("Public card not found: " + publicCardId));
-
-        if (!linkedPublicCard.getDeckId().equals(publicDeckId)) {
-            throw new IllegalArgumentException("Public card does not belong to deck " + publicDeckId);
-        }
-
-        List<PublicCardEntity> latestCards = publicCardRepository
-                .findByDeckIdAndDeckVersion(publicDeckId, latestDeck.getVersion());
-
-        String targetChecksum = normalizeChecksum(linkedPublicCard.getChecksum());
-        if (targetChecksum == null) {
-            targetChecksum = computeChecksum(linkedPublicCard.getContent());
-        }
-
-        UUID matchingCardId = null;
-        int checksumMatches = 0;
-        PublicCardEntity checksumMatchCard = null;
-
-        for (PublicCardEntity pc : latestCards) {
-            if (pc.getCardId().equals(publicCardId)) {
-                matchingCardId = publicCardId;
+        if (operationId != null) {
+            DeckUpdateSessionEntity session = deckUpdateSessionRepository
+                    .findByDeckIdAndOperationId(publicDeckId, operationId)
+                    .orElse(null);
+            if (session != null) {
+                if (!session.getAuthorId().equals(currentUserId)) {
+                    throw new SecurityException("Access denied to deck " + publicDeckId);
+                }
+                PublicDeckEntity targetDeck = publicDeckRepository
+                        .findByDeckIdAndVersion(publicDeckId, session.getTargetVersion())
+                        .orElseThrow(() -> new IllegalArgumentException(
+                                "Public deck not found: deckId=" + publicDeckId + ", version=" + session.getTargetVersion()
+                        ));
+                session.setUpdatedAt(now);
+                deckUpdateSessionRepository.save(session);
+                List<PublicCardEntity> targetCards = publicCardRepository
+                        .findByDeckIdAndDeckVersion(publicDeckId, targetDeck.getVersion());
+                return new GlobalDeleteContext(targetDeck, targetCards);
             }
 
-            String latestChecksum = normalizeChecksum(pc.getChecksum());
-            if (latestChecksum == null) {
-                latestChecksum = computeChecksum(pc.getContent());
-            }
+            NewDeckVersion newVersion = createNewDeckVersion(latestDeck, now);
+            deckUpdateSessionRepository.save(new DeckUpdateSessionEntity(
+                    publicDeckId,
+                    operationId,
+                    currentUserId,
+                    newVersion.deck().getVersion(),
+                    now,
+                    now
+            ));
+            deck.setCurrentVersion(newVersion.deck().getVersion());
+            deck.setTemplateVersion(newVersion.deck().getTemplateVersion());
+            deck.setLastSyncedAt(now);
+            userDeckRepository.save(deck);
+            List<PublicCardEntity> targetCards = publicCardRepository
+                    .findByDeckIdAndDeckVersion(publicDeckId, newVersion.deck().getVersion());
+            return new GlobalDeleteContext(newVersion.deck(), targetCards);
+        }
 
-            if (targetChecksum != null && targetChecksum.equals(latestChecksum)) {
-                checksumMatches++;
-                checksumMatchCard = pc;
+        NewDeckVersion newVersion = createNewDeckVersion(latestDeck, now);
+        deck.setCurrentVersion(newVersion.deck().getVersion());
+        deck.setTemplateVersion(newVersion.deck().getTemplateVersion());
+        deck.setLastSyncedAt(now);
+        userDeckRepository.save(deck);
+        List<PublicCardEntity> targetCards = publicCardRepository
+                .findByDeckIdAndDeckVersion(publicDeckId, newVersion.deck().getVersion());
+        return new GlobalDeleteContext(newVersion.deck(), targetCards);
+    }
+
+    private boolean applyGlobalDuplicateDeletion(UUID currentUserId,
+                                                 UserDeckEntity deck,
+                                                 Set<UUID> keptPublicCardIds,
+                                                 List<UserCardEntity> deleteCards,
+                                                 Instant now,
+                                                 UUID operationId) {
+        if (deleteCards == null || deleteCards.isEmpty()) {
+            return false;
+        }
+
+        UUID publicDeckId = deck.getPublicDeckId();
+        if (publicDeckId == null) {
+            throw new IllegalStateException("Local deck has no public source");
+        }
+
+        Set<UUID> publicCardIdsToDeactivate = deleteCards.stream()
+                .map(UserCardEntity::getPublicCardId)
+                .filter(Objects::nonNull)
+                .filter(cardId -> !keptPublicCardIds.contains(cardId))
+                .collect(Collectors.toSet());
+
+        if (publicCardIdsToDeactivate.isEmpty()) {
+            return false;
+        }
+
+        GlobalDeleteContext deleteContext = resolveGlobalDeleteContext(currentUserId, deck, operationId, now);
+        List<PublicCardEntity> targetCards = deleteContext.cards();
+        if (targetCards.isEmpty()) {
+            return false;
+        }
+
+        Map<UUID, PublicCardEntity> targetByCardId = new HashMap<>();
+        Map<String, PublicCardEntity> targetByChecksum = new HashMap<>();
+        Set<String> duplicateChecksums = new HashSet<>();
+        Set<UUID> activeCardIds = new HashSet<>();
+
+        for (PublicCardEntity pc : targetCards) {
+            targetByCardId.put(pc.getCardId(), pc);
+            if (pc.isActive()) {
+                activeCardIds.add(pc.getCardId());
+            }
+            String checksum = normalizeChecksum(pc.getChecksum());
+            if (checksum == null) {
+                checksum = computeChecksum(pc.getContent());
+            }
+            if (checksum == null) {
+                continue;
+            }
+            PublicCardEntity prev = targetByChecksum.putIfAbsent(checksum, pc);
+            if (prev != null) {
+                duplicateChecksums.add(checksum);
             }
         }
 
-        boolean matchByCardId = matchingCardId != null;
-        if (!matchByCardId) {
-            if (targetChecksum == null) {
+        for (String dup : duplicateChecksums) {
+            targetByChecksum.remove(dup);
+        }
+
+        List<PublicCardEntity> linkedPublicCards = publicCardIdsToDeactivate.isEmpty()
+                ? List.of()
+                : publicCardRepository.findAllByCardIdInOrderByDeckVersionDesc(publicCardIdsToDeactivate);
+
+        Map<UUID, PublicCardEntity> linkedByCardId = new HashMap<>();
+        for (PublicCardEntity pc : linkedPublicCards) {
+            linkedByCardId.putIfAbsent(pc.getCardId(), pc);
+        }
+
+        Set<UUID> deactivateCardIds = new HashSet<>();
+        for (UUID publicCardId : publicCardIdsToDeactivate) {
+            PublicCardEntity target = targetByCardId.get(publicCardId);
+            if (target != null) {
+                deactivateCardIds.add(publicCardId);
+                continue;
+            }
+
+            PublicCardEntity linked = linkedByCardId.get(publicCardId);
+            if (linked == null) {
+                throw new IllegalArgumentException("Public card not found: " + publicCardId);
+            }
+            if (!linked.getDeckId().equals(publicDeckId)) {
+                throw new IllegalArgumentException("Public card does not belong to deck " + publicDeckId);
+            }
+
+            String checksum = normalizeChecksum(linked.getChecksum());
+            if (checksum == null) {
+                checksum = computeChecksum(linked.getContent());
+            }
+            if (checksum == null) {
                 throw new IllegalStateException("Public card checksum missing for deletion");
             }
-            if (checksumMatches == 0) {
+
+            PublicCardEntity match = targetByChecksum.get(checksum);
+            if (match == null) {
                 throw new IllegalStateException("Public card not found in latest version");
             }
-            if (checksumMatches > 1) {
-                throw new IllegalStateException("Public card checksum is not unique in latest version");
+            deactivateCardIds.add(match.getCardId());
+        }
+
+        deactivateCardIds.retainAll(activeCardIds);
+        if (deactivateCardIds.isEmpty()) {
+            return false;
+        }
+
+        boolean updated = false;
+        List<PublicCardEntity> changed = new ArrayList<>();
+        for (PublicCardEntity card : targetCards) {
+            if (deactivateCardIds.contains(card.getCardId()) && card.isActive()) {
+                card.setActive(false);
+                card.setUpdatedAt(now);
+                updated = true;
+                changed.add(card);
             }
         }
 
-        boolean alreadyInactive = false;
-        if (matchByCardId) {
-            for (PublicCardEntity pc : latestCards) {
-                if (pc.getCardId().equals(matchingCardId)) {
-                    alreadyInactive = !pc.isActive();
-                    break;
-                }
-            }
-        } else if (checksumMatchCard != null) {
-            alreadyInactive = !checksumMatchCard.isActive();
+        if (updated) {
+            publicCardRepository.saveAll(changed);
         }
 
-        card.setDeleted(true);
-        card.setUpdatedAt(now);
+        return updated;
+    }
 
-        if (alreadyInactive) {
-            userCardRepository.save(card);
-            return;
-        }
-
-        int newVersion = latestDeck.getVersion() + 1;
-
-        PublicDeckEntity newDeckVersion = new PublicDeckEntity(
-                latestDeck.getDeckId(),
-                newVersion,
-                latestDeck.getAuthorId(),
-                latestDeck.getName(),
-                latestDeck.getDescription(),
-                latestDeck.getIconMediaId(),
-                latestDeck.getTemplateId(),
-                latestDeck.getTemplateVersion(),
-                latestDeck.isPublicFlag(),
-                latestDeck.isListed(),
-                latestDeck.getLanguageCode(),
-                latestDeck.getTags(),
-                latestDeck.getCreatedAt(),
-                now,
-                now,
-                latestDeck.getForkedFromDeck()
-        );
-
-        PublicDeckEntity savedNewDeck = publicDeckRepository.save(newDeckVersion);
-
-        List<PublicCardEntity> clonedCards = new ArrayList<>(latestCards.size());
-        for (PublicCardEntity old : latestCards) {
-            String checksum = normalizeChecksum(old.getChecksum());
-            if (checksum == null) {
-                checksum = computeChecksum(old.getContent());
-            }
-
-            boolean active = old.isActive();
-            if (matchByCardId && old.getCardId().equals(matchingCardId)) {
-                active = false;
-            } else if (!matchByCardId && targetChecksum != null) {
-                String latestChecksum = normalizeChecksum(old.getChecksum());
-                if (latestChecksum == null) {
-                    latestChecksum = computeChecksum(old.getContent());
-                }
-                if (targetChecksum.equals(latestChecksum)) {
-                    active = false;
-                }
-            }
-
-            PublicCardEntity clone = new PublicCardEntity(
-                    savedNewDeck.getDeckId(),
-                    savedNewDeck.getVersion(),
-                    savedNewDeck,
-                    old.getCardId(),
-                    old.getContent(),
-                    old.getOrderIndex(),
-                    old.getTags(),
-                    old.getCreatedAt(),
-                    old.getUpdatedAt(),
-                    active,
-                    checksum
-            );
-            clonedCards.add(clone);
-        }
-
-        if (!clonedCards.isEmpty()) {
-            publicCardRepository.saveAll(clonedCards);
-        }
-
-        userDeck.setCurrentVersion(savedNewDeck.getVersion());
-        userDeck.setTemplateVersion(savedNewDeck.getTemplateVersion());
-        userDeck.setLastSyncedAt(now);
-        userDeckRepository.save(userDeck);
-
-        userCardRepository.save(card);
+    private record GlobalDeleteContext(PublicDeckEntity deck, List<PublicCardEntity> cards) {
     }
 
     // ==== Приватные мапперы и утилиты ==== //

@@ -67,18 +67,19 @@ type FieldLimitMap = Record<string, number>;
           <div class="enhance-grid">
             <label class="grid-label">Enhancement options</label>
             <div class="enhance-list">
-              <label *ngFor="let option of options(); trackBy: trackOption" class="enhance-card" [class.disabled]="!option.enabled">
+              <label *ngFor="let option of options(); trackBy: trackOption" class="field-option" [class.disabled]="!option.enabled">
                 <input
+                  class="field-checkbox"
                   type="checkbox"
                   [checked]="selectedOptions().has(option.key)"
                   (change)="toggleOption(option)"
                   [disabled]="!option.enabled"
                 />
-                <div>
-                  <div class="enhance-title">{{ option.label }}</div>
-                  <div class="enhance-desc">{{ option.description }}</div>
+                <div class="field-copy">
+                  <div class="field-label">{{ option.label }}</div>
+                  <div class="field-meta">{{ option.description }}</div>
                 </div>
-                <span *ngIf="!option.enabled" class="chip">Unavailable</span>
+                <span *ngIf="!option.enabled" class="field-required">Unavailable</span>
               </label>
             </div>
           </div>
@@ -122,27 +123,34 @@ type FieldLimitMap = Record<string, number>;
               <div *ngIf="hasAudioFields() && !ttsSupported()" class="field-hint">TTS is supported for OpenAI and Gemini providers.</div>
               <div *ngIf="hasImageFields() && !imageSupported()" class="field-hint">Image generation is supported for OpenAI and Gemini providers.</div>
               <div *ngIf="hasVideoFields() && !videoSupported()" class="field-hint">Video generation is supported for OpenAI providers.</div>
-              <label *ngFor="let stat of missingRows(); trackBy: trackMissingField" class="missing-row">
+              <label
+                *ngFor="let stat of missingRows(); trackBy: trackMissingField"
+                class="field-option missing-option"
+                [class.disabled]="!isFieldSelectable(stat.field)"
+              >
                 <input
+                  class="field-checkbox"
                   type="checkbox"
                   [checked]="selectedMissingFields().has(stat.field)"
                   (change)="toggleMissingField(stat.field)"
                   [disabled]="!isFieldSelectable(stat.field)"
                 />
-                <div>
-                  <div class="missing-label">{{ stat.label }}</div>
-                  <div class="missing-meta">{{ stat.fieldType }}</div>
+                <div class="field-copy">
+                  <div class="field-label">{{ stat.label }}</div>
+                  <div class="field-meta">{{ stat.fieldType }}</div>
                 </div>
-                <input
-                  class="missing-limit-input"
-                  type="number"
-                  min="1"
-                  max="200"
-                  [ngModel]="getFieldLimit(stat.field)"
-                  (ngModelChange)="onFieldLimitChange(stat.field, $event)"
-                  [disabled]="!selectedMissingFields().has(stat.field)"
-                />
-                <span class="missing-count">{{ stat.missingCount }} missing</span>
+                <div class="missing-tail">
+                  <input
+                    class="missing-limit-input"
+                    type="number"
+                    min="1"
+                    max="200"
+                    [ngModel]="getFieldLimit(stat.field)"
+                    (ngModelChange)="onFieldLimitChange(stat.field, $event)"
+                    [disabled]="!selectedMissingFields().has(stat.field)"
+                  />
+                  <span class="missing-count">{{ stat.missingCount }} missing</span>
+                </div>
               </label>
               <div *ngIf="missingRows().length === 0" class="field-hint">No missing fields detected.</div>
             </div>
@@ -357,11 +365,49 @@ type FieldLimitMap = Record<string, number>;
           </div>
 
           <div *ngIf="textFields().length > 0" class="missing-panel">
-            <label class="grid-label">Find duplicates</label>
-            <button type="button" class="find-duplicates" (click)="findDuplicates()" [disabled]="dupesLoading()">
-              {{ dupesLoading() ? 'Searching…' : 'Find duplicates' }}
-            </button>
+            <div class="dup-header">
+              <button
+                type="button"
+                class="find-duplicates"
+                (click)="findDuplicates()"
+                [disabled]="dupesLoading() || dupesResolving()"
+              >
+                {{ dupesLoading() ? 'Searching…' : 'Find duplicates' }}
+              </button>
+              <button
+                type="button"
+                class="resolve-duplicates"
+                (click)="resolveDuplicates()"
+                [disabled]="dupesLoading() || dupesResolving()"
+              >
+                {{ dupesResolving() ? 'Resolving…' : 'Auto-resolve duplicates' }}
+              </button>
+            </div>
+            <label class="field-option dup-scope">
+              <input
+                class="field-checkbox"
+                type="checkbox"
+                [checked]="dedupScope() === 'global'"
+                (change)="onDedupScopeChange($any($event.target).checked)"
+              />
+              <div class="field-copy">
+                <div class="field-label">Apply globally</div>
+                <div class="field-meta">Hide removed cards from future forks (author only).</div>
+              </div>
+            </label>
+            <div *ngIf="dedupScope() === 'global'" class="dup-hint">
+              Global changes are grouped into a single deck version while this dialog stays open.
+            </div>
+            <div *ngIf="duplicateGroups().length > 0" class="dup-hint">
+              Showing top {{ dedupLimitGroups }} groups (up to {{ dedupPerGroupLimit }} cards each). More groups may appear after deletions.
+            </div>
+            <div *ngIf="duplicateGroups().length > 0 && dedupFieldsLabel()" class="dup-hint">
+              Matching fields: {{ dedupFieldsLabel() }}
+            </div>
             <div *ngIf="dupesMessage()" class="field-hint">{{ dupesMessage() }}</div>
+            <div *ngIf="dupesResolveMessage()" class="success-state" role="status">
+              {{ dupesResolveMessage() }}
+            </div>
             <div *ngIf="dupesError()" class="error-state" role="alert">
               {{ dupesError() }}
             </div>
@@ -425,7 +471,22 @@ type FieldLimitMap = Record<string, number>;
       .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(8, 12, 22, 0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(12px) saturate(140%); }
       .modal-content { background: var(--color-surface-solid); border-radius: var(--border-radius-lg); max-height: 90vh; display: flex; flex-direction: column; border: 1px solid var(--glass-border); box-shadow: var(--shadow-lg); }
       .modal-header { display: flex; justify-content: space-between; align-items: center; padding: var(--spacing-lg); border-bottom: 1px solid var(--glass-border); }
-      .modal-body { padding: var(--spacing-lg); overflow-y: auto; }
+      .modal-body {
+        padding: var(--spacing-lg);
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+
+      .modal-body::-webkit-scrollbar { width: 8px; }
+      .modal-body::-webkit-scrollbar-track { background: transparent; }
+      .modal-body::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+      .modal-body::-webkit-scrollbar-thumb:hover { background: var(--border-color-hover); }
       .close-btn { background: none; border: none; font-size: 2rem; cursor: pointer; color: var(--color-text-secondary); line-height: 1; padding: 0; }
       .ai-modal { max-width: 720px; width: 92%; }
       .modal-hint { color: var(--color-text-muted); margin: 0 0 var(--spacing-lg) 0; }
@@ -437,16 +498,10 @@ type FieldLimitMap = Record<string, number>;
       .enhance-grid { margin-bottom: var(--spacing-lg); }
       .grid-label { font-weight: 600; }
       .enhance-list { display: grid; gap: var(--spacing-sm); margin-top: var(--spacing-sm); }
-      .enhance-card { display: grid; grid-template-columns: auto 1fr auto; gap: var(--spacing-md); align-items: start; padding: var(--spacing-md); border-radius: var(--border-radius-lg); border: 1px solid var(--glass-border); background: var(--color-card-background); }
-      .enhance-card.disabled { opacity: 0.6; }
-      .enhance-title { font-weight: 600; }
-      .enhance-desc { font-size: 0.9rem; color: var(--color-text-secondary); }
-      .chip { font-size: 0.75rem; padding: 0.2rem 0.6rem; border-radius: 999px; background: var(--color-background); border: 1px solid var(--border-color); color: var(--color-text-secondary); }
       .missing-panel { margin-bottom: var(--spacing-lg); border: 1px solid var(--glass-border); border-radius: var(--border-radius-lg); padding: var(--spacing-md); background: var(--color-card-background); }
       .missing-list { display: grid; gap: var(--spacing-sm); margin-top: var(--spacing-sm); }
-      .missing-row { display: grid; grid-template-columns: auto 1fr auto auto; gap: var(--spacing-sm); align-items: center; }
-      .missing-label { font-weight: 500; }
-      .missing-meta { font-size: 0.8rem; color: var(--color-text-secondary); }
+      .missing-option { align-items: center; }
+      .missing-tail { display: grid; gap: 0.25rem; justify-items: end; }
       .missing-count { font-size: 0.85rem; color: var(--color-text-secondary); }
       .missing-limit-input { width: 88px; padding: 0.35rem 0.4rem; border-radius: var(--border-radius-md); border: 1px solid var(--border-color); background: var(--color-background); color: var(--color-text-primary); }
       .media-toggles { display: flex; flex-wrap: wrap; gap: var(--spacing-md); align-items: center; }
@@ -460,7 +515,122 @@ type FieldLimitMap = Record<string, number>;
       .mapping-arrow { font-weight: 600; color: var(--color-text-secondary); }
       .remove-mapping { background: none; border: 1px solid var(--border-color); border-radius: 999px; width: 28px; height: 28px; cursor: pointer; }
       .add-mapping { margin-top: var(--spacing-sm); background: var(--color-card-background); border: 1px dashed var(--border-color); border-radius: var(--border-radius-md); padding: var(--spacing-xs) var(--spacing-sm); cursor: pointer; color: var(--color-text-primary); }
-      .find-duplicates { margin-top: var(--spacing-sm); background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: var(--spacing-xs) var(--spacing-md); cursor: pointer; color: var(--color-text-primary); }
+      .field-option {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: var(--spacing-sm);
+        padding: 0.55rem 0.75rem;
+        border-radius: var(--border-radius-md);
+        border: 1px solid var(--glass-border);
+        background: linear-gradient(135deg, var(--glass-surface), var(--color-card-background));
+        backdrop-filter: blur(calc(var(--glass-blur) * 0.5)) saturate(140%);
+        box-shadow: var(--shadow-sm);
+        transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+        cursor: pointer;
+        width: 100%;
+      }
+
+      .field-option:not(.disabled):hover {
+        border-color: var(--color-primary-accent);
+        box-shadow: var(--accent-shadow);
+        transform: translateY(-1px);
+      }
+
+      .field-option.disabled {
+        opacity: 0.55;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+      }
+
+      .field-option:focus-within { border-color: var(--color-primary-accent); }
+
+      .field-checkbox {
+        appearance: none;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        border: 1px solid var(--glass-border-strong);
+        background: var(--glass-surface-strong);
+        display: grid;
+        place-items: center;
+        box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.12);
+        cursor: pointer;
+        padding: 0;
+        flex: 0 0 20px;
+        min-width: 20px;
+        min-height: 20px;
+        max-width: 20px;
+        max-height: 20px;
+        align-self: center;
+        box-sizing: border-box;
+        line-height: 1;
+      }
+
+      .field-checkbox:checked {
+        border-color: var(--color-primary-accent);
+        background: linear-gradient(135deg, var(--color-primary-accent), var(--color-secondary-accent));
+      }
+
+      .field-checkbox:checked::after {
+        content: "";
+        width: 6px;
+        height: 10px;
+        border-right: 2px solid rgba(255, 255, 255, 0.95);
+        border-bottom: 2px solid rgba(255, 255, 255, 0.95);
+        transform: translateY(-1px) rotate(45deg);
+        box-sizing: border-box;
+      }
+
+      .field-checkbox:focus-visible {
+        outline: none;
+        box-shadow: var(--focus-ring);
+      }
+
+      .field-option.disabled .field-checkbox { cursor: not-allowed; opacity: 0.7; }
+
+      .field-copy { display: grid; gap: 0.1rem; min-width: 0; }
+      .field-label { font-weight: 600; color: var(--color-text-primary); min-width: 0; }
+      .field-meta { font-size: 0.85rem; color: var(--color-text-secondary); }
+      .field-required {
+        font-size: 0.65rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        padding: 0.15rem 0.45rem;
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        border: 1px solid var(--glass-border-strong);
+        background: var(--glass-surface);
+        color: var(--color-text-secondary);
+      }
+
+      .dup-header { display: flex; flex-wrap: wrap; gap: var(--spacing-sm); align-items: center; }
+      .dup-hint { font-size: 0.85rem; color: var(--color-text-secondary); margin: var(--spacing-sm) 0 0; }
+      .dup-scope { margin-top: var(--spacing-sm); }
+      .find-duplicates {
+        flex: 1 1 220px;
+        background: var(--color-card-background);
+        border: 1px solid var(--glass-border);
+        border-radius: var(--border-radius-lg);
+        padding: 0.7rem 1.4rem;
+        cursor: pointer;
+        color: var(--color-text-primary);
+        font-weight: 600;
+      }
+      .resolve-duplicates {
+        flex: 1 1 220px;
+        background: var(--glass-surface);
+        border: 1px solid var(--glass-border);
+        border-radius: var(--border-radius-lg);
+        padding: 0.7rem 1.4rem;
+        cursor: pointer;
+        color: var(--color-text-primary);
+        font-weight: 600;
+      }
+      .find-duplicates:disabled,
+      .resolve-duplicates:disabled { opacity: 0.6; cursor: not-allowed; }
       .dup-results { margin-top: var(--spacing-md); display: grid; gap: var(--spacing-md); }
       .dup-group { border: 1px solid var(--glass-border); border-radius: var(--border-radius-md); padding: var(--spacing-sm); background: var(--color-background); }
       .dup-title { font-weight: 600; margin-bottom: var(--spacing-sm); }
@@ -520,15 +690,21 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     videoDurationSeconds = signal(5);
     videoFormat = signal('mp4');
     dupesLoading = signal(false);
+    dupesResolving = signal(false);
     dupesError = signal('');
     dupesMessage = signal('');
+    dupesResolveMessage = signal('');
     duplicateGroups = signal<DuplicateGroup[]>([]);
     selectedDedupFields = signal<Set<string>>(new Set());
+    dedupScope = signal<'local' | 'global'>('local');
+    dedupOperationId = signal('');
     deletingCards = signal<Set<string>>(new Set());
     private lastDedupFields: string[] = [];
     private static readonly DEDUP_LIMIT_GROUPS = 10;
     private static readonly DEDUP_PER_GROUP = 5;
-    private static readonly DEDUP_ATTEMPTS_LIMIT = 6;
+    readonly dedupLimitGroups = AiEnhanceDeckModalComponent.DEDUP_LIMIT_GROUPS;
+    readonly dedupPerGroupLimit = AiEnhanceDeckModalComponent.DEDUP_PER_GROUP;
+    readonly dedupFieldsLabel = computed(() => Array.from(this.selectedDedupFields()).join(', '));
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
         if (!selectedId) return '';
@@ -979,8 +1155,10 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             return;
         }
         this.dupesLoading.set(true);
+        this.dupesResolving.set(false);
         this.dupesError.set('');
         this.dupesMessage.set('');
+        this.dupesResolveMessage.set('');
         this.duplicateGroups.set([]);
         this.runDedupAttempts(attempts, 0);
     }
@@ -1000,7 +1178,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         for (const field of all) {
             attempts.push(this.createDedupAttempt([field]));
         }
-        return attempts.slice(0, AiEnhanceDeckModalComponent.DEDUP_ATTEMPTS_LIMIT);
+        return attempts;
     }
 
     private createDedupAttempt(fields: string[]): DedupAttempt {
@@ -1011,10 +1189,16 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         };
     }
 
-    private runDedupAttempts(attempts: DedupAttempt[], index: number): void {
+    private runDedupAttempts(attempts: DedupAttempt[], index: number, hadError = false): void {
         if (index >= attempts.length) {
             this.dupesLoading.set(false);
-            this.dupesMessage.set('No duplicates found.');
+            if (hadError) {
+                this.dupesError.set('Failed to check duplicates. Please try again.');
+                this.dupesMessage.set('');
+            } else {
+                this.dupesError.set('');
+                this.dupesMessage.set('No duplicates found.');
+            }
             return;
         }
         const attempt = attempts[index];
@@ -1027,20 +1211,95 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                     this.dupesLoading.set(false);
                     this.dupesMessage.set('');
                 } else {
-                    this.runDedupAttempts(attempts, index + 1);
+                    this.runDedupAttempts(attempts, index + 1, hadError);
                 }
             },
             error: () => {
-                this.runDedupAttempts(attempts, index + 1);
+                this.runDedupAttempts(attempts, index + 1, true);
+            }
+        });
+    }
+
+    onDedupScopeChange(global: boolean): void {
+        this.dedupScope.set(global ? 'global' : 'local');
+        if (global) {
+            this.ensureDedupOperationId();
+        } else {
+            this.dedupOperationId.set('');
+        }
+    }
+
+    private ensureDedupOperationId(): string {
+        const existing = this.dedupOperationId();
+        if (existing) {
+            return existing;
+        }
+        const next = this.generateRequestId();
+        this.dedupOperationId.set(next);
+        return next;
+    }
+
+    resolveDuplicates(): void {
+        const fields = this.lastDedupFields.length > 0
+            ? this.lastDedupFields
+            : this.textFields().map(field => field.name);
+        if (fields.length === 0) {
+            return;
+        }
+        const scope = this.dedupScope();
+        const operationId = scope === 'global' ? this.ensureDedupOperationId() : undefined;
+        const scopeLine = scope === 'global'
+            ? 'This also hides removed cards from future forks.'
+            : 'Only your deck is affected.';
+        const fieldList = fields.join(', ');
+        const confirmed = confirm(
+            `Auto-resolve duplicates using fields:\n${fieldList}\n\n${scopeLine}\nOnly the best-filled card remains in each group.`
+        );
+        if (!confirmed) {
+            return;
+        }
+        this.dupesResolving.set(true);
+        this.dupesError.set('');
+        this.dupesMessage.set('');
+        this.dupesResolveMessage.set('');
+        this.selectedDedupFields.set(new Set(fields));
+        this.lastDedupFields = fields;
+        this.cardApi.resolveDuplicateGroups(this.userDeckId, fields, scope, operationId).subscribe({
+            next: result => {
+                this.dupesResolving.set(false);
+                if (result.deletedCards > 0) {
+                    const globalNote = result.globalApplied ? ' Global updates applied.' : '';
+                    this.dupesResolveMessage.set(
+                        `Removed ${result.deletedCards} duplicates across ${result.groupsProcessed} groups.${globalNote}`
+                    );
+                } else {
+                    this.dupesMessage.set('No duplicates found.');
+                }
+                const attempts = fields.length > 0 ? [this.createDedupAttempt(fields)] : this.buildDedupAttempts();
+                if (attempts.length > 0) {
+                    this.dupesLoading.set(true);
+                    this.runDedupAttempts(attempts, 0);
+                }
+            },
+            error: () => {
+                this.dupesResolving.set(false);
+                this.dupesError.set('Failed to resolve duplicates.');
             }
         });
     }
 
     deleteDuplicate(cardId: string): void {
         if (!cardId) return;
-        if (!confirm('Delete this card?')) return;
+        const scope = this.dedupScope();
+        const operationId = scope === 'global' ? this.ensureDedupOperationId() : undefined;
+        const warning = scope === 'global'
+            ? 'Delete this card globally? This hides it from future forks.'
+            : 'Delete this card from your deck?';
+        if (!confirm(warning)) return;
+        this.dupesError.set('');
+        this.dupesResolveMessage.set('');
         this.deletingCards.update(set => new Set(set).add(cardId));
-        this.cardApi.deleteUserCard(this.userDeckId, cardId, 'local').subscribe({
+        this.cardApi.deleteUserCard(this.userDeckId, cardId, scope, operationId).subscribe({
             next: () => {
                 this.deletingCards.update(set => {
                     const next = new Set(set);
@@ -1054,6 +1313,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                     this.dupesLoading.set(true);
                     this.dupesError.set('');
                     this.dupesMessage.set('');
+                    this.dupesResolveMessage.set('');
                     this.runDedupAttempts(attempts, 0);
                 }
             },
@@ -1063,6 +1323,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                     next.delete(cardId);
                     return next;
                 });
+                this.dupesError.set('Failed to delete duplicate.');
             }
         });
     }

@@ -31,3 +31,10 @@ export interface DuplicateGroup {
     size: number;
     cards: UserCardDTO[];
 }
+
+export interface DuplicateResolveResult {
+    groupsProcessed: number;
+    deletedCards: number;
+    keptCards: number;
+    globalApplied: boolean;
+}

@@ -165,6 +165,14 @@ public class PublicCardEntity {
         return active;
     }
 
+    public void setActive(boolean active) {
+        this.active = active;
+    }
+
+    public void setUpdatedAt(Instant updatedAt) {
+        this.updatedAt = updatedAt;
+    }
+
     public String getChecksum() {
         return checksum;
     }
