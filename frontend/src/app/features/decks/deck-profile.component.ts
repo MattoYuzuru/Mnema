@@ -25,6 +25,7 @@ import { AiEnhanceDeckModalComponent } from './ai-enhance-deck-modal.component';
 import { AiImportModalComponent } from './ai-import-modal.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { InputComponent } from '../../shared/components/input.component';
+import { TagChipComponent } from '../../shared/components/tag-chip.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 import { ImportDeckModalComponent } from '../import/import-deck-modal.component';
 import { markdownToHtml } from '../../shared/utils/markdown.util';
@@ -33,7 +34,7 @@ import { I18nService } from '../../core/services/i18n.service';
 @Component({
     selector: 'app-deck-profile',
     standalone: true,
-    imports: [NgIf, NgFor, DatePipe, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, AiAddCardsModalComponent, AiEnhanceDeckModalComponent, AiImportModalComponent, ConfirmationDialogComponent, InputComponent, ImportDeckModalComponent, TranslatePipe],
+    imports: [NgIf, NgFor, DatePipe, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, AiAddCardsModalComponent, AiEnhanceDeckModalComponent, AiImportModalComponent, ConfirmationDialogComponent, InputComponent, TagChipComponent, ImportDeckModalComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -41,6 +42,9 @@ import { I18nService } from '../../core/services/i18n.service';
       <header class="deck-header">
         <h1>{{ deck.displayName }}</h1>
         <div class="deck-description" [innerHTML]="formatDescription(deck.displayDescription)"></div>
+        <div *ngIf="publicDeck?.tags?.length" class="deck-tags">
+          <app-tag-chip *ngFor="let tag of publicDeck!.tags" [text]="tag"></app-tag-chip>
+        </div>
       </header>
 
       <div class="deck-meta">
@@ -63,6 +67,38 @@ import { I18nService } from '../../core/services/i18n.service';
         <div class="meta-item" *ngIf="!deck.publicDeckId">
           <span class="meta-label">{{ 'deckProfile.version' | translate }}:</span>
           <span class="meta-value">{{ deck.currentVersion }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">{{ 'deckProfile.createdAt' | translate }}:</span>
+          <span class="meta-value">{{ deck.createdAt | date:'mediumDate' }}</span>
+        </div>
+        <div class="meta-item" *ngIf="deck.lastSyncedAt">
+          <span class="meta-label">{{ 'deckProfile.lastSyncedAt' | translate }}:</span>
+          <span class="meta-value">{{ deck.lastSyncedAt | date:'mediumDate' }}</span>
+        </div>
+        <div class="meta-item" *ngIf="publicDeck?.language">
+          <span class="meta-label">{{ 'deckProfile.language' | translate }}:</span>
+          <span class="meta-value">{{ publicDeck?.language }}</span>
+        </div>
+        <div class="meta-item" *ngIf="publicDeck">
+          <span class="meta-label">{{ 'deckProfile.isPublic' | translate }}:</span>
+          <span class="meta-value">{{ publicDeck.isPublic ? ('deckProfile.yes' | translate) : ('deckProfile.no' | translate) }}</span>
+        </div>
+        <div class="meta-item" *ngIf="publicDeck">
+          <span class="meta-label">{{ 'deckProfile.isListed' | translate }}:</span>
+          <span class="meta-value">{{ publicDeck.isListed ? ('deckProfile.yes' | translate) : ('deckProfile.no' | translate) }}</span>
+        </div>
+        <div class="meta-item" *ngIf="publicDeck?.publishedAt">
+          <span class="meta-label">{{ 'deckProfile.publishedAt' | translate }}:</span>
+          <span class="meta-value">{{ publicDeck?.publishedAt | date:'mediumDate' }}</span>
+        </div>
+        <div class="meta-item" *ngIf="publicDeck?.updatedAt">
+          <span class="meta-label">{{ 'deckProfile.updatedAt' | translate }}:</span>
+          <span class="meta-value">{{ publicDeck?.updatedAt | date:'mediumDate' }}</span>
+        </div>
+        <div class="meta-item" *ngIf="publicDeck?.forkedFromDeck">
+          <span class="meta-label">{{ 'deckProfile.forkedFrom' | translate }}:</span>
+          <span class="meta-value">{{ publicDeck?.forkedFromDeck }}</span>
         </div>
       </div>
 
@@ -564,6 +600,13 @@ import { I18nService } from '../../core/services/i18n.service';
         color: var(--color-text-muted);
         margin: 0;
         line-height: 1.6;
+      }
+
+      .deck-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+        margin-top: var(--spacing-sm);
       }
 
       .deck-description h1,

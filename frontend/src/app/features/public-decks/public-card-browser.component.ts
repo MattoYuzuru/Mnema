@@ -1,6 +1,6 @@
 import { Component, OnInit, HostListener, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { NgIf, NgFor } from '@angular/common';
+import { NgIf, NgFor, DatePipe } from '@angular/common';
 import { forkJoin, of, Subscription } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { AuthService } from '../../auth.service';
@@ -22,7 +22,7 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
 @Component({
     selector: 'app-public-card-browser',
     standalone: true,
-    imports: [NgIf, NgFor, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, TranslatePipe, TagChipComponent],
+    imports: [NgIf, NgFor, DatePipe, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, TranslatePipe, TagChipComponent],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -34,118 +34,506 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
           <div *ngIf="deck?.tags?.length" class="deck-tags">
             <app-tag-chip *ngFor="let tag of deck!.tags" [text]="tag"></app-tag-chip>
           </div>
+          <div *ngIf="deck" class="deck-meta">
+            <div class="meta-item" *ngIf="deck.language">
+              <span class="meta-label">{{ 'deckProfile.language' | translate }}:</span>
+              <span class="meta-value">{{ deck.language }}</span>
+            </div>
+            <div class="meta-item" *ngIf="deck.publishedAt">
+              <span class="meta-label">{{ 'deckProfile.publishedAt' | translate }}:</span>
+              <span class="meta-value">{{ deck.publishedAt | date:'mediumDate' }}</span>
+            </div>
+            <div class="meta-item" *ngIf="deck.updatedAt">
+              <span class="meta-label">{{ 'deckProfile.updatedAt' | translate }}:</span>
+              <span class="meta-value">{{ deck.updatedAt | date:'mediumDate' }}</span>
+            </div>
+            <div class="meta-item" *ngIf="deck.forkedFromDeck">
+              <span class="meta-label">{{ 'deckProfile.forkedFrom' | translate }}:</span>
+              <span class="meta-value">{{ deck.forkedFromDeck }}</span>
+            </div>
+          </div>
           <p class="card-count">{{ cardCount }} {{ 'publicCardBrowser.cards' | translate }}</p>
         </div>
         <div class="header-right">
           <app-button *ngIf="canFork" variant="primary" size="md" (click)="forkDeck()">{{ 'button.fork' | translate }}</app-button>
-          <div class="view-mode-toggle">
-            <app-button [variant]="viewMode === 'list' ? 'primary' : 'ghost'" size="sm" (click)="setViewMode('list')">{{ 'cardBrowser.list' | translate }}</app-button>
-            <app-button [variant]="viewMode === 'cards' ? 'primary' : 'ghost'" size="sm" (click)="setViewMode('cards')">{{ 'cardBrowser.cardsView' | translate }}</app-button>
-          </div>
         </div>
       </header>
 
-      <div *ngIf="viewMode === 'list'" class="cards-toolbar">
-        <input
-          type="search"
-          class="card-search"
-          [placeholder]="'publicCardBrowser.searchPlaceholder' | translate"
-          [attr.aria-label]="'publicCardBrowser.searchPlaceholder' | translate"
-          [value]="searchQuery"
-          (input)="onSearchInput($event)"
-        />
-        <span *ngIf="searchQuery" class="search-meta">
-          {{ visibleCards.length }} / {{ totalCards || cards.length }} {{ 'publicCardBrowser.cards' | translate }}
-        </span>
-      </div>
-
-      <div *ngIf="viewMode === 'list' && visibleCards.length > 0" class="cards-table">
-        <div class="card-row header-row">
-          <div class="card-col">{{ 'publicCardBrowser.frontPreview' | translate }}</div>
-          <div class="card-col">{{ 'cardBrowser.tags' | translate }}</div>
-        </div>
-        <div *ngFor="let card of visibleCards; let index = index" class="card-row">
-          <button class="card-col card-preview" type="button" (click)="openCardFromList(index)">
-            {{ getFrontPreview(card) }}
-          </button>
-          <div class="card-col">
-            <span *ngFor="let tag of card.tags" class="tag-chip">{{ tag }}</span>
-          </div>
-        </div>
-      </div>
-
-      <div *ngIf="viewMode === 'cards' && cards.length > 0" class="card-view-mode">
-        <div class="card-navigation">
-          <app-button variant="ghost" size="sm" (click)="previousCard()" [disabled]="currentCardIndex === 0">{{ 'cardBrowser.previous' | translate }}</app-button>
-          <span class="card-counter">{{ currentCardIndex + 1 }} / {{ cardCount }}</span>
-          <app-button variant="ghost" size="sm" (click)="nextCard()" [disabled]="currentCardIndex >= cards.length - 1">{{ 'cardBrowser.next' | translate }}</app-button>
-        </div>
-
-        <div class="flashcard-container">
-          <div class="flashcard" (click)="toggleReveal()">
-            <div class="flashcard-content">
-              <div class="card-side front">
-                <app-flashcard-view *ngIf="template && currentCard" [template]="template" [content]="currentCard.content" side="front"></app-flashcard-view>
-              </div>
-              <div *ngIf="revealed" class="divider"></div>
-              <div class="card-side back" [class.preload]="!revealed">
-                <app-flashcard-view *ngIf="template && currentCard" [template]="template" [content]="currentCard.content" side="back"></app-flashcard-view>
-              </div>
+      <div *ngIf="cards.length > 0" class="browser-layout">
+        <aside class="cards-panel glass">
+          <div class="panel-header">
+            <div>
+              <h2>{{ 'cardBrowser.list' | translate }}</h2>
+              <p class="panel-meta">{{ cardCount }} {{ 'publicCardBrowser.cards' | translate }}</p>
             </div>
           </div>
-          <div class="flip-hint">
-            <p>{{ 'cardBrowser.clickToFlip' | translate }}</p>
-            <p>{{ 'cardBrowser.keyboardHint' | translate }}</p>
+
+          <div class="panel-search">
+            <input
+              type="search"
+              class="card-search"
+              [placeholder]="'publicCardBrowser.searchPlaceholder' | translate"
+              [attr.aria-label]="'publicCardBrowser.searchPlaceholder' | translate"
+              [value]="searchQuery"
+              (input)="onSearchInput($event)"
+            />
+            <span *ngIf="searchActive" class="search-meta">
+              {{ visibleCards.length }} / {{ totalCards || cards.length }} {{ 'publicCardBrowser.cards' | translate }}
+            </span>
           </div>
-        </div>
+
+          <div class="cards-list" (scroll)="onListScroll($event)">
+            <div *ngFor="let card of visibleCards; let index = index" class="cards-list-item" [class.active]="index === currentCardIndex">
+              <button class="card-preview" type="button" (click)="openCardFromList(index)">
+                <span class="card-index">{{ index + 1 }}</span>
+                <div class="card-preview-body">
+                  <span class="card-text">{{ getFrontPreview(card) }}</span>
+                  <div *ngIf="card.tags?.length" class="card-tags-inline">
+                    <app-tag-chip *ngFor="let tag of card.tags" [text]="tag"></app-tag-chip>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </aside>
+
+        <section class="preview-panel glass-strong">
+          <div class="preview-header">
+            <div>
+              <h2>{{ 'cardBrowser.cardsView' | translate }}</h2>
+              <p class="panel-meta">
+                {{ searchNoResults ? 0 : (currentCardIndex + 1) }} / {{ searchNoResults ? 0 : cardCount }}
+              </p>
+            </div>
+            <div class="preview-nav">
+              <app-button
+                variant="ghost"
+                size="sm"
+                (click)="previousCard()"
+                [disabled]="searchNoResults || currentCardIndex === 0"
+              >
+                {{ 'cardBrowser.previous' | translate }}
+              </app-button>
+              <app-button
+                variant="ghost"
+                size="sm"
+                (click)="nextCard()"
+                [disabled]="searchNoResults || currentCardIndex >= visibleCards.length - 1"
+              >
+                {{ 'cardBrowser.next' | translate }}
+              </app-button>
+            </div>
+          </div>
+
+          <div *ngIf="searchNoResults" class="no-results-panel">
+            <div class="no-results-card glass">
+              <h3>{{ 'publicCardBrowser.noSearchResults' | translate }}</h3>
+              <p>{{ 'publicCardBrowser.noSearchResultsDescription' | translate }}</p>
+            </div>
+          </div>
+
+          <div *ngIf="!searchNoResults && currentCard" class="flashcard-container">
+            <div class="flashcard glass" (click)="toggleReveal()">
+              <div class="flashcard-content">
+                <div class="card-side front">
+                  <app-flashcard-view *ngIf="template && currentCard" [template]="template" [content]="currentCard.content" side="front"></app-flashcard-view>
+                </div>
+                <div *ngIf="revealed" class="divider"></div>
+                <div class="card-side back" [class.preload]="!revealed">
+                  <app-flashcard-view *ngIf="template && currentCard" [template]="template" [content]="currentCard.content" side="back"></app-flashcard-view>
+                </div>
+              </div>
+            </div>
+            <div class="flip-hint">
+              <p>{{ 'cardBrowser.clickToFlip' | translate }}</p>
+              <p>{{ 'cardBrowser.keyboardHint' | translate }}</p>
+            </div>
+          </div>
+
+          <div *ngIf="!searchNoResults && currentCard?.tags?.length" class="card-tags-panel">
+            <app-tag-chip *ngFor="let tag of currentCard!.tags" [text]="tag"></app-tag-chip>
+          </div>
+        </section>
       </div>
 
       <app-empty-state
-        *ngIf="visibleCards.length === 0"
+        *ngIf="cards.length === 0"
         icon="📝"
-        [title]="searchQuery ? ('publicCardBrowser.noSearchResults' | translate) : ('publicCardBrowser.noCards' | translate)"
-        [description]="searchQuery ? ('publicCardBrowser.noSearchResultsDescription' | translate) : ('publicCardBrowser.noCardsDescription' | translate)"
+        [title]="searchNoResults ? ('publicCardBrowser.noSearchResults' | translate) : ('publicCardBrowser.noCards' | translate)"
+        [description]="searchNoResults ? ('publicCardBrowser.noSearchResultsDescription' | translate) : ('publicCardBrowser.noCardsDescription' | translate)"
       ></app-empty-state>
     </div>
   `,
     styles: [`
-      .public-card-browser { max-width: 72rem; margin: 0 auto; }
-      .page-header { margin-bottom: var(--spacing-xl); }
-      .header-left h1 { font-size: 2rem; margin: 0 0 var(--spacing-sm) 0; }
-      .deck-description { font-size: 1rem; color: var(--color-text-secondary); margin: 0 0 var(--spacing-xs) 0; line-height: 1.6; }
+      .public-card-browser {
+        max-width: 82rem;
+        margin: 0 auto;
+      }
+
+      .page-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: var(--spacing-xl);
+        margin-bottom: var(--spacing-xl);
+      }
+
+      .header-left {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+      }
+
+      .header-left h1 {
+        font-size: 2rem;
+        margin: 0;
+      }
+
+      .deck-description {
+        font-size: 1rem;
+        color: var(--color-text-secondary);
+        margin: 0;
+        line-height: 1.6;
+      }
+
       .deck-description h1,
       .deck-description h2,
-      .deck-description h3 { font-size: 1rem; margin: 0 0 var(--spacing-xs) 0; font-weight: 600; }
-      .deck-description ul { margin: 0 0 var(--spacing-xs) 0; padding-left: 1.2rem; }
-      .deck-description li { margin: 0; }
-      .deck-description pre { margin: 0 0 var(--spacing-xs) 0; padding: var(--spacing-sm); background: var(--color-background); border-radius: var(--border-radius-md); white-space: pre-wrap; }
-      .deck-description code { font-family: inherit; font-size: 0.9rem; background: var(--color-background); padding: 0 0.2rem; border-radius: var(--border-radius-sm); }
-      .deck-tags { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); margin-bottom: var(--spacing-xs); }
-      .card-count { font-size: 0.9rem; color: var(--color-text-muted); margin: 0 0 var(--spacing-md) 0; }
-      .header-right { display: flex; gap: var(--spacing-md); align-items: center; }
-      .view-mode-toggle { display: flex; gap: var(--spacing-xs); }
-      .cards-toolbar { display: flex; align-items: center; gap: var(--spacing-md); margin-bottom: var(--spacing-md); }
-      .card-search { flex: 1; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--border-color); border-radius: var(--border-radius-full); font-size: 0.9rem; background: var(--color-background); color: var(--color-text-primary); }
-      .card-search:focus { outline: none; border-color: var(--color-primary-accent); }
-      .search-meta { font-size: 0.85rem; color: var(--color-text-muted); white-space: nowrap; }
-      .cards-table { background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); overflow: hidden; }
-      .card-row { display: grid; grid-template-columns: 3fr 1fr; gap: var(--spacing-md); padding: var(--spacing-md); border-bottom: 1px solid var(--border-color); }
-      .card-row:last-child { border-bottom: none; }
-      .header-row { background: var(--color-background); font-weight: 600; }
-      .card-col { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .card-preview { text-align: left; background: none; border: none; padding: 0; color: var(--color-text-primary); cursor: pointer; font: inherit; }
-      .card-preview:hover { text-decoration: underline; }
-      .tag-chip { display: inline-block; padding: var(--spacing-xs) var(--spacing-sm); margin-right: var(--spacing-xs); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-full); font-size: 0.75rem; }
-      .card-view-mode { display: flex; flex-direction: column; gap: var(--spacing-xl); }
-      .card-navigation { display: flex; align-items: center; justify-content: center; gap: var(--spacing-lg); }
-      .card-counter { font-size: 1rem; font-weight: 600; color: var(--color-text-primary); min-width: 80px; text-align: center; }
-      .flashcard-container { display: flex; flex-direction: column; align-items: center; gap: var(--spacing-md); }
-      .flashcard { width: 100%; max-width: 42rem; min-height: 16rem; cursor: pointer; background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); padding: var(--spacing-xl); display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-md); }
-      .flashcard-content { width: 100%; display: flex; flex-direction: column; gap: var(--spacing-lg); position: relative; }
-      .card-side { width: 100%; }
-      .card-side.preload { position: absolute; left: -9999px; top: 0; height: 0; overflow: hidden; pointer-events: none; visibility: hidden; }
-      .divider { height: 1px; background: var(--border-color); margin: var(--spacing-md) 0; }
-      .flip-hint { font-size: 0.9rem; color: var(--color-text-muted); text-align: center; margin: 0; }
+      .deck-description h3 {
+        font-size: 1rem;
+        margin: 0 0 var(--spacing-xs) 0;
+        font-weight: 600;
+      }
+
+      .deck-description ul {
+        margin: 0 0 var(--spacing-xs) 0;
+        padding-left: 1.2rem;
+      }
+
+      .deck-description li {
+        margin: 0;
+      }
+
+      .deck-description pre {
+        margin: 0 0 var(--spacing-xs) 0;
+        padding: var(--spacing-sm);
+        background: var(--color-background);
+        border-radius: var(--border-radius-md);
+        white-space: pre-wrap;
+      }
+
+      .deck-description code {
+        font-family: inherit;
+        font-size: 0.9rem;
+        background: var(--color-background);
+        padding: 0 0.2rem;
+        border-radius: var(--border-radius-sm);
+      }
+
+      .deck-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+      }
+
+      .deck-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs) var(--spacing-lg);
+      }
+
+      .meta-item {
+        display: flex;
+        gap: var(--spacing-xs);
+        font-size: 0.9rem;
+        color: var(--color-text-muted);
+      }
+
+      .meta-label {
+        font-weight: 600;
+        color: var(--color-text-secondary);
+      }
+
+      .card-count {
+        font-size: 0.95rem;
+        color: var(--color-text-muted);
+        margin: 0;
+      }
+
+      .header-right {
+        display: flex;
+        gap: var(--spacing-md);
+        align-items: center;
+      }
+
+      .browser-layout {
+        display: grid;
+        grid-template-columns: minmax(240px, 300px) minmax(0, 1fr);
+        gap: var(--spacing-xl);
+        align-items: stretch;
+      }
+
+      .cards-panel {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+        padding: var(--spacing-lg);
+        border-radius: var(--border-radius-lg);
+        height: clamp(420px, 70vh, 760px);
+        min-height: 420px;
+      }
+
+      .panel-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+      }
+
+      .panel-header h2 {
+        font-size: 1.1rem;
+        margin: 0 0 var(--spacing-xs) 0;
+      }
+
+      .panel-meta {
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+        margin: 0;
+      }
+
+      .panel-search {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+      }
+
+      .card-search {
+        width: 100%;
+        padding: 0.7rem 1rem;
+        border: 1px solid var(--glass-border-strong);
+        border-radius: var(--border-radius-full);
+        font-size: 0.9rem;
+        background: var(--color-surface-solid);
+        color: var(--color-text-primary);
+        box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5);
+      }
+
+      .card-search:focus {
+        outline: none;
+        border-color: var(--color-primary-accent);
+        box-shadow: var(--focus-ring);
+      }
+
+      .search-meta {
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+        white-space: nowrap;
+        text-align: right;
+      }
+
+      .cards-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+        overflow-y: auto;
+        flex: 1;
+        min-height: 0;
+        padding-right: var(--spacing-xs);
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+
+      .cards-list::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .cards-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .cards-list::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      .cards-list::-webkit-scrollbar-thumb:hover {
+        background: var(--border-color-hover);
+      }
+
+      .cards-list-item {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm) var(--spacing-md);
+        border-radius: var(--border-radius-md);
+        border: 1px solid var(--glass-border);
+        background: var(--glass-surface-strong);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+      }
+
+      .cards-list-item.active {
+        border-color: var(--color-primary-accent);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .card-preview {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        text-align: left;
+        background: none;
+        border: none;
+        padding: 0;
+        color: var(--color-text-primary);
+        cursor: pointer;
+        font: inherit;
+        min-width: 0;
+        flex: 1;
+      }
+
+      .card-index {
+        font-size: 0.8rem;
+        color: var(--color-text-muted);
+        min-width: 1.5rem;
+      }
+
+      .card-text {
+        font-size: 0.9rem;
+        line-height: 1.3;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .card-preview-body {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+        min-width: 0;
+        flex: 1;
+      }
+
+      .card-tags-inline {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+      }
+
+      .flashcard-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: var(--spacing-md);
+      }
+
+      .no-results-panel {
+        display: flex;
+        flex: 1;
+        align-items: center;
+        justify-content: center;
+        padding: var(--spacing-lg);
+      }
+
+      .no-results-card {
+        width: 100%;
+        max-width: 30rem;
+        padding: var(--spacing-xl);
+        border-radius: var(--border-radius-lg);
+        text-align: center;
+      }
+
+      .no-results-card h3 {
+        margin: 0 0 var(--spacing-sm) 0;
+        font-size: 1.1rem;
+      }
+
+      .no-results-card p {
+        margin: 0;
+        color: var(--color-text-muted);
+      }
+
+      .flashcard {
+        width: 100%;
+        max-width: 42rem;
+        min-height: 16rem;
+        cursor: pointer;
+        border-radius: var(--border-radius-lg);
+        padding: var(--spacing-xl);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .flashcard-content {
+        width: 100%;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-lg);
+        position: relative;
+      }
+
+      .card-side {
+        width: 100%;
+      }
+
+      .card-side.preload {
+        position: absolute;
+        left: -9999px;
+        top: 0;
+        height: 0;
+        overflow: hidden;
+        pointer-events: none;
+        visibility: hidden;
+      }
+
+      .divider {
+        height: 1px;
+        background: var(--border-color);
+        margin: var(--spacing-md) 0;
+      }
+
+      .flip-hint {
+        font-size: 0.9rem;
+        color: var(--color-text-muted);
+        text-align: center;
+        margin: 0;
+      }
+
+      .card-tags-panel {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+        justify-content: center;
+        padding: var(--spacing-xs) 0;
+      }
+
+      .preview-panel {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-lg);
+        padding: var(--spacing-lg);
+        border-radius: var(--border-radius-lg);
+        min-height: 420px;
+      }
+
+      .preview-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+      }
+
+      .preview-header h2 {
+        font-size: 1.1rem;
+        margin: 0 0 var(--spacing-xs) 0;
+      }
+
+      .preview-nav {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-xs);
+      }
 
       @media (max-width: 768px) {
         .public-card-browser {
@@ -153,47 +541,31 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
         }
 
         .page-header {
-          display: flex;
           flex-direction: column;
+          align-items: flex-start;
           gap: var(--spacing-md);
         }
 
-        .header-right {
-          width: 100%;
-          flex-wrap: wrap;
-          justify-content: space-between;
+        .page-header h1 {
+          font-size: 1.5rem;
         }
 
-        .view-mode-toggle {
-          width: 100%;
-          flex-wrap: wrap;
-          justify-content: flex-start;
-        }
-
-        .cards-toolbar {
-          flex-direction: column;
-          align-items: stretch;
-        }
-
-        .cards-table {
-          overflow-x: auto;
-          -webkit-overflow-scrolling: touch;
-        }
-
-        .card-row {
+        .browser-layout {
           grid-template-columns: 1fr;
         }
 
-        .card-col {
-          white-space: normal;
+        .cards-panel {
+          height: auto;
         }
 
-        .card-navigation {
-          flex-wrap: wrap;
-          gap: var(--spacing-md);
+        .cards-list {
+          max-height: 40vh;
         }
 
-        .flashcard { min-height: 14rem; padding: var(--spacing-lg); }
+        .flashcard {
+          min-height: 14rem;
+          padding: var(--spacing-lg);
+        }
       }
 
       @media (max-width: 480px) {
@@ -201,11 +573,14 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
           padding: 0 var(--spacing-sm);
         }
 
-        .header-left h1 {
-          font-size: 1.5rem;
+        .page-header h1 {
+          font-size: 1.25rem;
         }
 
-        .flashcard { min-height: 12rem; padding: var(--spacing-md); }
+        .flashcard {
+          min-height: 12rem;
+          padding: var(--spacing-md);
+        }
       }
     `]
 })
@@ -218,7 +593,6 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     deck: PublicDeckDTO | null = null;
     template: CardTemplateDTO | null = null;
     deckId = '';
-    viewMode: 'list' | 'cards' = 'list';
     currentCardIndex = 0;
     revealed = false;
     totalCards = 0;
@@ -262,7 +636,8 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
 
     @HostListener('window:keydown', ['$event'])
     handleKeyDown(event: KeyboardEvent): void {
-        if (this.viewMode !== 'cards') return;
+        if (this.cards.length === 0 || !this.currentCard) return;
+        if (this.searchNoResults) return;
 
         const target = event.target as HTMLElement;
         if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
@@ -281,10 +656,10 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         }
     }
 
-    @HostListener('window:scroll')
-    handleScroll(): void {
-        if (this.viewMode !== 'list') return;
-        this.maybeLoadMoreOnScroll();
+    onListScroll(event: Event): void {
+        const target = event.target as HTMLElement | null;
+        if (!target) return;
+        this.maybeLoadMoreOnScroll(target);
     }
 
     private loadDeckData(): void {
@@ -402,10 +777,18 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     }
 
     get cardCount(): number {
-        if (this.searchQuery) {
+        if (this.searchActive) {
             return this.visibleCards.length;
         }
         return this.totalCards || this.cards.length;
+    }
+
+    get searchActive(): boolean {
+        return this.searchQuery.trim().length > 0;
+    }
+
+    get searchNoResults(): boolean {
+        return this.searchActive && this.visibleCards.length === 0;
     }
 
     get visibleCards(): PublicCardDTO[] {
@@ -415,15 +798,6 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         }
 
         return this.cards.filter(card => this.matchesSearch(card, query));
-    }
-
-    setViewMode(mode: 'list' | 'cards'): void {
-        this.viewMode = mode;
-        this.currentCardIndex = 0;
-        this.revealed = false;
-        if (mode === 'cards') {
-            this.maybePrefetchMoreCards();
-        }
     }
 
     previousCard(): void {
@@ -442,7 +816,7 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     }
 
     private maybePrefetchMoreCards(): void {
-        const cardPool = this.searchQuery ? this.visibleCards : this.cards;
+        const cardPool = this.searchActive ? this.visibleCards : this.cards;
         if (!this.hasMoreCards || this.loadingMore || cardPool.length === 0) {
             return;
         }
@@ -452,12 +826,12 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         }
     }
 
-    private maybeLoadMoreOnScroll(): void {
+    private maybeLoadMoreOnScroll(container: HTMLElement): void {
         if (!this.hasMoreCards || this.loadingMore || this.cards.length === 0) {
             return;
         }
-        const scrollPosition = window.scrollY + window.innerHeight;
-        const threshold = document.documentElement.scrollHeight * PublicCardBrowserComponent.PREFETCH_THRESHOLD;
+        const scrollPosition = container.scrollTop + container.clientHeight;
+        const threshold = container.scrollHeight * PublicCardBrowserComponent.PREFETCH_THRESHOLD;
         if (scrollPosition >= threshold) {
             this.loadMoreCards();
         }
@@ -543,7 +917,6 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         if (index < 0 || index >= this.visibleCards.length) {
             return;
         }
-        this.viewMode = 'cards';
         this.currentCardIndex = index;
         this.revealed = false;
         this.maybePrefetchMoreCards();
