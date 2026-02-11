@@ -145,12 +145,20 @@ public class PublicCardEntity {
         return content;
     }
 
+    public void setContent(JsonNode content) {
+        this.content = content;
+    }
+
     public Integer getOrderIndex() {
         return orderIndex;
     }
 
     public String[] getTags() {
         return tags;
+    }
+
+    public void setTags(String[] tags) {
+        this.tags = tags;
     }
 
     public Instant getCreatedAt() {
@@ -175,5 +183,9 @@ public class PublicCardEntity {
 
     public String getChecksum() {
         return checksum;
+    }
+
+    public void setChecksum(String checksum) {
+        this.checksum = checksum;
     }
 }
