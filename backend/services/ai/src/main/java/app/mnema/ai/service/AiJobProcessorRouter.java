@@ -94,6 +94,12 @@ public class AiJobProcessorRouter implements AiJobProcessor {
         if ("google".equals(normalized) || "google-gemini".equals(normalized)) {
             return "gemini";
         }
+        if ("xai".equals(normalized) || "x.ai".equals(normalized)) {
+            return "grok";
+        }
+        if ("dashscope".equals(normalized) || "aliyun".equals(normalized) || "alibaba".equals(normalized)) {
+            return "qwen";
+        }
         return normalized;
     }
 }
