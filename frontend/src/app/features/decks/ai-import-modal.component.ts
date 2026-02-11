@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, OnInit, Output, computed, effect, signal } from '@angular/core';
+import { Component, EventEmitter, Injector, Input, OnInit, Output, computed, effect, inject, signal } from '@angular/core';
 import { NgFor, NgIf, NgClass } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AiApiService } from '../../core/services/ai-api.service';
@@ -903,6 +903,7 @@ export class AiImportModalComponent implements OnInit {
     createError = signal('');
     creating = signal(false);
     private readonly draftReady = signal(false);
+    private readonly injector = inject(Injector);
     private storageKey = '';
 
     encoding = signal('auto');
@@ -1896,7 +1897,7 @@ export class AiImportModalComponent implements OnInit {
             }
             const draft = this.buildDraftSnapshot();
             this.persistDraft(draft);
-        });
+        }, { injector: this.injector });
     }
 
     private buildDraftSnapshot(): ImportDraft {

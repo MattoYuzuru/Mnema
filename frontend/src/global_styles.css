@@ -137,6 +137,12 @@ select {
     background-size: 0.65rem;
 }
 
+.glass-select option,
+.glass-select optgroup {
+    background-color: var(--color-surface-solid);
+    color: var(--color-text-primary);
+}
+
 .glass-select:focus {
     border-color: var(--color-primary-accent);
     box-shadow: var(--focus-ring);
