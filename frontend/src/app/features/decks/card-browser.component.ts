@@ -1396,7 +1396,7 @@ export class CardBrowserComponent implements OnInit {
 
     private hasPersonalNoteChange(formValue: Record<string, any>): boolean {
         if (!this.editingCard) return false;
-        const current = formValue.personalNote ?? '';
+        const current = formValue['personalNote'] ?? '';
         const original = this.editingCard.personalNote ?? '';
         return current !== original;
     }
