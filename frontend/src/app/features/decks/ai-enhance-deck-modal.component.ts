@@ -82,6 +82,21 @@ type FieldLimitMap = Record<string, number>;
                 <span *ngIf="!option.enabled" class="field-required">Unavailable</span>
               </label>
             </div>
+            <label class="field-option scope-option">
+              <input
+                class="field-checkbox"
+                type="checkbox"
+                [checked]="updateScope() === 'global'"
+                (change)="onUpdateScopeChange($any($event.target).checked)"
+              />
+              <div class="field-copy">
+                <div class="field-label">Apply improvements globally</div>
+                <div class="field-meta">Creates a new public deck version (author only).</div>
+              </div>
+            </label>
+            <div *ngIf="updateScope() === 'global'" class="field-hint">
+              Global updates may take longer and affect future forks.
+            </div>
           </div>
 
           <div *ngIf="hasMissingFields()" class="missing-panel">
@@ -498,6 +513,7 @@ type FieldLimitMap = Record<string, number>;
       .enhance-grid { margin-bottom: var(--spacing-lg); }
       .grid-label { font-weight: 600; }
       .enhance-list { display: grid; gap: var(--spacing-sm); margin-top: var(--spacing-sm); }
+      .scope-option { margin-top: var(--spacing-sm); }
       .missing-panel { margin-bottom: var(--spacing-lg); border: 1px solid var(--glass-border); border-radius: var(--border-radius-lg); padding: var(--spacing-md); background: var(--color-card-background); }
       .missing-list { display: grid; gap: var(--spacing-sm); margin-top: var(--spacing-sm); }
       .missing-option { align-items: center; }
@@ -698,10 +714,12 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     selectedDedupFields = signal<Set<string>>(new Set());
     dedupScope = signal<'local' | 'global'>('local');
     dedupOperationId = signal('');
+    updateScope = signal<'local' | 'global'>('local');
     deletingCards = signal<Set<string>>(new Set());
     private lastDedupFields: string[] = [];
     private static readonly DEDUP_LIMIT_GROUPS = 10;
     private static readonly DEDUP_PER_GROUP = 5;
+    private static readonly DEDUP_MAX_CYCLES = 10;
     readonly dedupLimitGroups = AiEnhanceDeckModalComponent.DEDUP_LIMIT_GROUPS;
     readonly dedupPerGroupLimit = AiEnhanceDeckModalComponent.DEDUP_PER_GROUP;
     readonly dedupFieldsLabel = computed(() => Array.from(this.selectedDedupFields()).join(', '));
@@ -947,6 +965,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                 input,
                 actions,
                 mode: missingSelected ? 'missing_fields' : 'enhance_deck',
+                updateScope: this.updateScope(),
                 ...(missingSelected ? {
                     fieldLimits,
                     ...(tts ? { tts } : {}),
@@ -1229,6 +1248,11 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         }
     }
 
+    onUpdateScopeChange(global: boolean): void {
+        this.updateScope.set(global ? 'global' : 'local');
+        this.persistDraft();
+    }
+
     private ensureDedupOperationId(): string {
         const existing = this.dedupOperationId();
         if (existing) {
@@ -1264,22 +1288,70 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         this.dupesResolveMessage.set('');
         this.selectedDedupFields.set(new Set(fields));
         this.lastDedupFields = fields;
-        this.cardApi.resolveDuplicateGroups(this.userDeckId, fields, scope, operationId).subscribe({
+        const attempts = this.buildAutoResolveAttempts();
+        if (attempts.length === 0) {
+            this.dupesResolving.set(false);
+            return;
+        }
+        this.runAutoResolveAttempts(attempts, 0, 0, 0, 0, scope, operationId);
+    }
+
+    private buildAutoResolveAttempts(): DedupAttempt[] {
+        const attempts = this.buildDedupAttempts();
+        if (this.lastDedupFields.length === 0) {
+            return attempts;
+        }
+        const preferred = this.createDedupAttempt(this.lastDedupFields);
+        const seen = new Set<string>();
+        const combined: DedupAttempt[] = [];
+        const pushAttempt = (attempt: DedupAttempt): void => {
+            const key = attempt.fields.join('|').toLowerCase();
+            if (seen.has(key)) {
+                return;
+            }
+            seen.add(key);
+            combined.push(attempt);
+        };
+        pushAttempt(preferred);
+        attempts.forEach(pushAttempt);
+        return combined;
+    }
+
+    private runAutoResolveAttempts(
+        attempts: DedupAttempt[],
+        index: number,
+        cycle: number,
+        cycleDeleted: number,
+        totalDeleted: number,
+        scope: 'local' | 'global',
+        operationId?: string
+    ): void {
+        if (index >= attempts.length) {
+            const updatedTotal = totalDeleted + cycleDeleted;
+            if (cycleDeleted > 0 && cycle + 1 < AiEnhanceDeckModalComponent.DEDUP_MAX_CYCLES) {
+                this.runAutoResolveAttempts(attempts, 0, cycle + 1, 0, updatedTotal, scope, operationId);
+                return;
+            }
+            this.dupesResolving.set(false);
+            if (updatedTotal > 0) {
+                this.dupesResolveMessage.set(`Removed ${updatedTotal} duplicates.`);
+            } else {
+                this.dupesMessage.set('No duplicates found.');
+            }
+            return;
+        }
+        const attempt = attempts[index];
+        this.selectedDedupFields.set(new Set(attempt.fields));
+        this.lastDedupFields = attempt.fields;
+        this.cardApi.resolveDuplicateGroups(this.userDeckId, attempt.fields, scope, operationId).subscribe({
             next: result => {
-                this.dupesResolving.set(false);
-                if (result.deletedCards > 0) {
-                    const globalNote = result.globalApplied ? ' Global updates applied.' : '';
-                    this.dupesResolveMessage.set(
-                        `Removed ${result.deletedCards} duplicates across ${result.groupsProcessed} groups.${globalNote}`
-                    );
-                } else {
-                    this.dupesMessage.set('No duplicates found.');
+                const deleted = result?.deletedCards ?? 0;
+                const nextCycleDeleted = cycleDeleted + deleted;
+                const nextTotal = totalDeleted + nextCycleDeleted;
+                if (nextTotal > 0) {
+                    this.dupesResolveMessage.set(`Removed ${nextTotal} duplicates so far.`);
                 }
-                const attempts = fields.length > 0 ? [this.createDedupAttempt(fields)] : this.buildDedupAttempts();
-                if (attempts.length > 0) {
-                    this.dupesLoading.set(true);
-                    this.runDedupAttempts(attempts, 0);
-                }
+                this.runAutoResolveAttempts(attempts, index + 1, cycle, nextCycleDeleted, totalDeleted, scope, operationId);
             },
             error: () => {
                 this.dupesResolving.set(false);
@@ -1720,6 +1792,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             selectedOptions: Array.from(this.selectedOptions()),
             missingFields: Array.from(this.selectedMissingFields()),
             fieldLimits: this.fieldLimits(),
+            updateScope: this.updateScope(),
             ttsEnabled: this.ttsEnabled(),
             imageEnabled: this.imageEnabled(),
             videoEnabled: this.videoEnabled(),
@@ -1764,6 +1837,9 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             }
             if (payload.fieldLimits && typeof payload.fieldLimits === 'object') {
                 this.fieldLimits.set(payload.fieldLimits);
+            }
+            if (payload.updateScope === 'global' || payload.updateScope === 'local') {
+                this.updateScope.set(payload.updateScope);
             }
             if (typeof payload.ttsEnabled === 'boolean') {
                 this.ttsEnabled.set(payload.ttsEnabled);

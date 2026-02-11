@@ -97,6 +97,19 @@ interface CardAuditSummary {
                 <span class="missing-type">{{ fieldTypeLabel(field.fieldType) }}</span>
               </div>
             </div>
+            <div class="scope-toggle">
+              <label class="toggle">
+                <input
+                  type="checkbox"
+                  [checked]="updateScope() === 'global'"
+                  (change)="onUpdateScopeChange($any($event.target).checked)"
+                />
+                <span>Apply globally (new public version)</span>
+              </label>
+              <div *ngIf="updateScope() === 'global'" class="field-hint">
+                Global updates are available for deck authors only.
+              </div>
+            </div>
             <div *ngIf="missingAudioFields().length > 0 && ttsEnabled() && ttsSupported()" class="form-grid tts-form">
               <div class="form-field">
                 <label for="ai-card-voice">{{ 'cardEnhance.voice' | translate }}</label>
@@ -321,6 +334,11 @@ interface CardAuditSummary {
         gap: var(--spacing-md);
       }
 
+      .scope-toggle {
+        display: grid;
+        gap: var(--spacing-xs);
+      }
+
       .toggle {
         display: inline-flex;
         align-items: center;
@@ -423,6 +441,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
     videoResolution = signal('1280x720');
     videoDurationSeconds = signal(5);
     videoFormat = signal('mp4');
+    updateScope = signal<'local' | 'global'>('local');
 
     private storageKey = '';
 
@@ -542,6 +561,10 @@ export class AiEnhanceCardModalComponent implements OnInit {
         this.videoEnabled.set(enabled);
     }
 
+    onUpdateScopeChange(global: boolean): void {
+        this.updateScope.set(global ? 'global' : 'local');
+    }
+
     onImageModelChange(value: string): void {
         this.imageModel.set(value);
         if (value !== 'custom') {
@@ -612,6 +635,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
                 mode: 'card_missing_fields',
                 cardId: this.card.userCardId,
                 fields: missing,
+                updateScope: this.updateScope(),
                 ...(tts ? { tts } : {}),
                 ...(image ? { image } : {}),
                 ...(video ? { video } : {})
