@@ -8,6 +8,8 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
+import java.util.Base64;
+
 @Component
 public class GeminiClient {
     
@@ -39,6 +41,47 @@ public class GeminiClient {
         if (request.responseSchema() != null && !request.responseSchema().isNull()) {
             generationConfig.set("responseSchema", request.responseSchema());
         }
+
+        JsonNode response = restClient.post()
+                .uri("/v1beta/models/{model}:generateContent", request.model())
+                .header("x-goog-api-key", apiKey)
+                .contentType(MediaType.APPLICATION_JSON)
+                .body(payload)
+                .retrieve()
+                .body(JsonNode.class);
+
+        if (response == null) {
+            throw new IllegalStateException("Gemini response is empty");
+        }
+
+        String outputText = GeminiResponseParser.extractText(response);
+        String model = response.path("modelVersion").asText(null);
+        if (model == null || model.isBlank()) {
+            model = response.path("model").asText(null);
+        }
+        JsonNode usage = response.path("usageMetadata");
+        Integer inputTokens = usage.hasNonNull("promptTokenCount") ? usage.get("promptTokenCount").asInt() : null;
+        Integer outputTokens = usage.hasNonNull("candidatesTokenCount") ? usage.get("candidatesTokenCount").asInt() : null;
+        return new GeminiResponseResult(outputText, model, inputTokens, outputTokens, response);
+    }
+
+    public GeminiResponseResult createResponseWithInlineData(String apiKey,
+                                                             GeminiResponseRequest request,
+                                                             byte[] data,
+                                                             String mimeType) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        ArrayNode contents = payload.putArray("contents");
+        ObjectNode user = contents.addObject();
+        user.put("role", "user");
+        ArrayNode parts = user.putArray("parts");
+        if (request.input() != null && !request.input().isBlank()) {
+            parts.addObject().put("text", request.input());
+        }
+        ObjectNode inlineData = parts.addObject().putObject("inline_data");
+        inlineData.put("mime_type", mimeType);
+        inlineData.put("data", Base64.getEncoder().encodeToString(data));
+
+        applyGenerationConfig(payload, request);
 
         JsonNode response = restClient.post()
                 .uri("/v1beta/models/{model}:generateContent", request.model())
@@ -133,6 +176,19 @@ public class GeminiClient {
             model = response.path("model").asText(null);
         }
         return new GeminiImageResult(inline.data(), inline.mimeType(), model);
+    }
+
+    private void applyGenerationConfig(ObjectNode payload, GeminiResponseRequest request) {
+        ObjectNode generationConfig = payload.putObject("generationConfig");
+        if (request.maxOutputTokens() != null && request.maxOutputTokens() > 0) {
+            generationConfig.put("maxOutputTokens", request.maxOutputTokens());
+        }
+        if (request.responseMimeType() != null && !request.responseMimeType().isBlank()) {
+            generationConfig.put("responseMimeType", request.responseMimeType());
+        }
+        if (request.responseSchema() != null && !request.responseSchema().isNull()) {
+            generationConfig.set("responseSchema", request.responseSchema());
+        }
     }
 
 }

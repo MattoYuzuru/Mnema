@@ -1,6 +1,7 @@
 package app.mnema.ai.controller.dto;
 
 import jakarta.validation.constraints.NotNull;
+import com.fasterxml.jackson.databind.JsonNode;
 
 import java.util.UUID;
 
@@ -13,6 +14,7 @@ public record AiImportPreviewRequest(
         String sourceType,
         String encoding,
         String language,
-        String instructions
+        String instructions,
+        JsonNode stt
 ) {
 }

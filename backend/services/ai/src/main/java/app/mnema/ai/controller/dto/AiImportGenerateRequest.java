@@ -20,6 +20,7 @@ public record AiImportGenerateRequest(
         String encoding,
         String language,
         String instructions,
+        JsonNode stt,
         JsonNode tts,
         JsonNode image,
         JsonNode video

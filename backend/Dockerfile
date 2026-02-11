@@ -72,6 +72,13 @@ ENTRYPOINT ["java","-jar","/app/app.jar"]
 
 FROM eclipse-temurin:21-jre AS ai-runtime
 WORKDIR /app
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+      ffmpeg \
+      tesseract-ocr \
+      tesseract-ocr-eng \
+      tesseract-ocr-rus \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /workspace/services/ai/build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]

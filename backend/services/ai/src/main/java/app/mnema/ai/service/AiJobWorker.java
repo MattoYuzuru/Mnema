@@ -11,10 +11,15 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import jakarta.annotation.PreDestroy;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
 
 @Service
 public class AiJobWorker {
@@ -30,6 +35,9 @@ public class AiJobWorker {
     private final int maxAttempts;
     private final long baseBackoffMs;
     private final long maxBackoffMs;
+    private final int concurrentJobs;
+    private final Semaphore jobSlots;
+    private final ExecutorService executor;
 
     public AiJobWorker(JdbcTemplate jdbcTemplate,
                        AiJobRepository jobRepository,
@@ -39,7 +47,8 @@ public class AiJobWorker {
                        @Value("${app.ai.jobs.lock-ttl-seconds:300}") long lockTtlSeconds,
                        @Value("${app.ai.jobs.max-attempts:3}") int maxAttempts,
                        @Value("${app.ai.jobs.backoff-ms:2000}") long baseBackoffMs,
-                       @Value("${app.ai.jobs.max-backoff-ms:30000}") long maxBackoffMs) {
+                       @Value("${app.ai.jobs.max-backoff-ms:30000}") long maxBackoffMs,
+                       @Value("${app.ai.jobs.concurrent-jobs:2}") int concurrentJobs) {
         this.jdbcTemplate = jdbcTemplate;
         this.jobRepository = jobRepository;
         this.jobProcessor = jobProcessor;
@@ -49,12 +58,21 @@ public class AiJobWorker {
         this.maxAttempts = Math.max(maxAttempts, 1);
         this.baseBackoffMs = Math.max(baseBackoffMs, 0);
         this.maxBackoffMs = Math.max(maxBackoffMs, this.baseBackoffMs);
+        this.concurrentJobs = Math.max(concurrentJobs, 1);
+        this.jobSlots = new Semaphore(this.concurrentJobs);
+        this.executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("ai-job-worker-", 0).factory());
     }
 
     @Scheduled(fixedDelayString = "${app.ai.jobs.poll-interval-ms:2000}")
     public void poll() {
-        Optional<AiJobEntity> jobOpt = claimNextJob();
-        jobOpt.ifPresent(this::handleJob);
+        while (jobSlots.tryAcquire()) {
+            Optional<AiJobEntity> jobOpt = claimNextJob();
+            if (jobOpt.isEmpty()) {
+                jobSlots.release();
+                return;
+            }
+            submitJob(jobOpt.get());
+        }
     }
 
     private void handleJob(AiJobEntity job) {
@@ -66,6 +84,22 @@ public class AiJobWorker {
             markCompleted(job, result);
         } catch (Exception ex) {
             log.warn("AI job failed jobId={} errorType={} message={}", job.getJobId(), ex.getClass().getSimpleName(), safeMessage(ex));
+            markFailed(job, ex);
+        }
+    }
+
+    private void submitJob(AiJobEntity job) {
+        try {
+            executor.execute(() -> {
+                try {
+                    handleJob(job);
+                } finally {
+                    jobSlots.release();
+                }
+            });
+        } catch (RejectedExecutionException ex) {
+            jobSlots.release();
+            log.warn("AI job executor rejected jobId={}", job.getJobId());
             markFailed(job, ex);
         }
     }
@@ -201,5 +235,10 @@ public class AiJobWorker {
         String trimmed = message.replaceAll("[\\r\\n]+", " ").trim();
         int max = 200;
         return trimmed.length() <= max ? trimmed : trimmed.substring(0, max) + "...";
+    }
+
+    @PreDestroy
+    public void shutdown() {
+        executor.shutdownNow();
     }
 }

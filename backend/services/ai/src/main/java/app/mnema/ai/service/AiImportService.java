@@ -36,6 +36,9 @@ public class AiImportService {
                 request.model(),
                 request.instructions());
         params.put("mode", MODE_IMPORT_PREVIEW);
+        if (request.stt() != null && !request.stt().isNull()) {
+            params.set("stt", request.stt());
+        }
         return jobService.createJob(jwt, accessToken, new CreateAiJobRequest(
                 request.requestId(),
                 request.deckId(),
@@ -63,6 +66,9 @@ public class AiImportService {
         }
         if (request.tts() != null && !request.tts().isNull()) {
             params.set("tts", request.tts());
+        }
+        if (request.stt() != null && !request.stt().isNull()) {
+            params.set("stt", request.stt());
         }
         if (request.image() != null && !request.image().isNull()) {
             params.set("image", request.image());

@@ -15,6 +15,7 @@ import app.mnema.ai.domain.entity.AiProviderCredentialEntity;
 import app.mnema.ai.domain.type.AiJobType;
 import app.mnema.ai.domain.type.AiProviderStatus;
 import app.mnema.ai.repository.AiProviderCredentialRepository;
+import app.mnema.ai.service.AudioChunkingService;
 import app.mnema.ai.service.AiImportContentService;
 import app.mnema.ai.service.AiJobProcessingResult;
 import app.mnema.ai.service.AiProviderProcessor;
@@ -28,6 +29,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClientResponseException;
@@ -74,6 +76,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     private static final int DEFAULT_TTS_MAX_RETRIES = 5;
     private static final long DEFAULT_TTS_RETRY_INITIAL_DELAY_MS = 2000L;
     private static final long DEFAULT_TTS_RETRY_MAX_DELAY_MS = 30000L;
+    private static final int DEFAULT_VISION_MAX_OUTPUT_TOKENS = 800;
     private static final Map<String, String> GEMINI_VOICES = Map.ofEntries(
             Map.entry("zephyr", "Zephyr"),
             Map.entry("puck", "Puck"),
@@ -113,29 +116,35 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     private final AiProviderCredentialRepository credentialRepository;
     private final MediaApiClient mediaApiClient;
     private final AiImportContentService importContentService;
+    private final AudioChunkingService audioChunkingService;
     private final CoreApiClient coreApiClient;
     private final ObjectMapper objectMapper;
     private final AnkiTemplateSupport ankiSupport;
+    private final int maxImportChars;
     private final Object ttsThrottleLock = new Object();
     private long nextTtsRequestAtMs = 0L;
 
     public GeminiJobProcessor(GeminiClient geminiClient,
                               GeminiProps props,
-                              SecretVault secretVault,
-                              AiProviderCredentialRepository credentialRepository,
-                              MediaApiClient mediaApiClient,
-                              AiImportContentService importContentService,
-                              CoreApiClient coreApiClient,
-                              ObjectMapper objectMapper) {
+                               SecretVault secretVault,
+                               AiProviderCredentialRepository credentialRepository,
+                               MediaApiClient mediaApiClient,
+                               AiImportContentService importContentService,
+                               AudioChunkingService audioChunkingService,
+                               CoreApiClient coreApiClient,
+                               ObjectMapper objectMapper,
+                               @Value("${app.ai.import.max-chars:200000}") int maxImportChars) {
         this.geminiClient = geminiClient;
         this.props = props;
         this.secretVault = secretVault;
         this.credentialRepository = credentialRepository;
         this.mediaApiClient = mediaApiClient;
         this.importContentService = importContentService;
+        this.audioChunkingService = audioChunkingService;
         this.coreApiClient = coreApiClient;
         this.objectMapper = objectMapper;
         this.ankiSupport = new AnkiTemplateSupport(objectMapper);
+        this.maxImportChars = Math.max(maxImportChars, 1000);
     }
 
     @Override
@@ -194,10 +203,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     }
 
     private AiJobProcessingResult handleImportPreview(AiJobEntity job, String apiKey, JsonNode params) {
-        UUID sourceMediaId = parseUuid(params.path("sourceMediaId").asText(null));
-        String encoding = textOrNull(params.path("encoding"));
-        String accessToken = job.getUserAccessToken();
-        AiImportContentService.ImportTextPayload payload = importContentService.loadText(sourceMediaId, encoding, accessToken);
+        AiImportContentService.ImportTextPayload payload = loadImportPayload(job, apiKey, params);
 
         String prompt = buildImportPreviewPrompt(payload, params);
         JsonNode responseSchema = buildImportPreviewSchema(payload.maxRecommendedCards());
@@ -223,6 +229,22 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         summary.put("sourceBytes", payload.sizeBytes());
         summary.put("sourceChars", payload.charCount());
         summary.put("detectedCharset", payload.detectedCharset());
+        summary.put("sourceType", resolveSourceType(payload.mimeType()));
+        if (payload.extraction() != null) {
+            summary.put("extraction", payload.extraction());
+        }
+        if (payload.sourcePages() != null) {
+            summary.put("sourcePages", payload.sourcePages());
+        }
+        if (payload.ocrPages() != null) {
+            summary.put("ocrPages", payload.ocrPages());
+        }
+        if (payload.audioDurationSeconds() != null) {
+            summary.put("audioDurationSeconds", payload.audioDurationSeconds());
+        }
+        if (payload.audioChunks() != null) {
+            summary.put("audioChunks", payload.audioChunks());
+        }
 
         return new AiJobProcessingResult(
                 summary,
@@ -236,10 +258,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     }
 
     private AiJobProcessingResult handleImportGenerate(AiJobEntity job, String apiKey, JsonNode params) {
-        UUID sourceMediaId = parseUuid(params.path("sourceMediaId").asText(null));
-        String encoding = textOrNull(params.path("encoding"));
-        String accessToken = job.getUserAccessToken();
-        AiImportContentService.ImportTextPayload payload = importContentService.loadText(sourceMediaId, encoding, accessToken);
+        AiImportContentService.ImportTextPayload payload = loadImportPayload(job, apiKey, params);
 
         ObjectNode updatedParams = params.isObject()
                 ? ((ObjectNode) params).deepCopy()
@@ -376,6 +395,215 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             builder.append(" The source may be truncated.");
         }
         return builder.toString().trim();
+    }
+
+    private AiImportContentService.ImportTextPayload loadImportPayload(AiJobEntity job, String apiKey, JsonNode params) {
+        UUID sourceMediaId = parseUuid(params.path("sourceMediaId").asText(null));
+        String encoding = textOrNull(params.path("encoding"));
+        String language = textOrNull(params.path("language"));
+        String accessToken = job.getUserAccessToken();
+        AiImportContentService.ImportSourcePayload source = importContentService.loadSource(sourceMediaId, accessToken);
+        String mimeType = source.mimeType();
+        if (mimeType == null) {
+            throw new IllegalStateException("Source media type is missing");
+        }
+        if (source.truncated() && !mimeType.startsWith("text/")) {
+            throw new IllegalStateException("Source file is too large to process. Please upload a smaller file.");
+        }
+        if (mimeType.startsWith("text/") || "application/pdf".equals(mimeType)) {
+            return importContentService.extractText(source, encoding, language);
+        }
+        if (mimeType.startsWith("image/")) {
+            return extractVisionPayload(apiKey, source, params);
+        }
+        if (mimeType.startsWith("audio/")) {
+            return transcribeAudioPayload(apiKey, source, params, language);
+        }
+        throw new IllegalStateException("Unsupported source media type: " + mimeType);
+    }
+
+    private AiImportContentService.ImportTextPayload extractVisionPayload(String apiKey,
+                                                                         AiImportContentService.ImportSourcePayload source,
+                                                                         JsonNode params) {
+        String model = textOrDefault(params.path("model"), props.defaultModel());
+        String prompt = buildVisionExtractPrompt(params);
+        JsonNode responseSchema = buildVisionSchema();
+        GeminiResponseResult response = geminiClient.createResponseWithInlineData(
+                apiKey,
+                new GeminiResponseRequest(model, prompt, DEFAULT_VISION_MAX_OUTPUT_TOKENS, "application/json", responseSchema),
+                source.bytes(),
+                source.mimeType()
+        );
+        JsonNode parsed = parseJsonResponse(response.outputText());
+        String extractedText = textOrDefault(parsed.path("text"), "");
+        String description = textOrDefault(parsed.path("description"), "");
+        String combined = buildVisionCombinedText(extractedText, description);
+        if (combined.isBlank()) {
+            throw new IllegalStateException("Image extraction returned empty text");
+        }
+        boolean truncated = false;
+        if (combined.length() > maxImportChars) {
+            combined = combined.substring(0, maxImportChars);
+            truncated = true;
+        }
+        return new AiImportContentService.ImportTextPayload(
+                combined,
+                source.mimeType(),
+                source.sizeBytes(),
+                truncated,
+                combined.length(),
+                null,
+                MAX_IMPORT_CARDS,
+                "vision",
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
+    private AiImportContentService.ImportTextPayload transcribeAudioPayload(String apiKey,
+                                                                            AiImportContentService.ImportSourcePayload source,
+                                                                            JsonNode params,
+                                                                            String language) {
+        AudioChunkingService.AudioChunkingResult chunking = audioChunkingService.prepareChunks(source.bytes(), source.mimeType());
+        String model = resolveSttModel(params);
+        String sttLanguage = resolveSttLanguage(params, language);
+        StringBuilder transcript = new StringBuilder();
+        boolean truncated = false;
+        for (AudioChunkingService.AudioChunk chunk : chunking.chunks()) {
+            String prompt = buildAudioPrompt(params);
+            GeminiResponseResult response = geminiClient.createResponseWithInlineData(
+                    apiKey,
+                    new GeminiResponseRequest(model, prompt, DEFAULT_VISION_MAX_OUTPUT_TOKENS, "application/json", buildAudioSchema()),
+                    chunk.bytes(),
+                    chunk.mimeType()
+            );
+            JsonNode parsed = parseJsonResponse(response.outputText());
+            String chunkText = textOrDefault(parsed.path("text"), "");
+            if (!chunkText.isBlank()) {
+                if (!transcript.isEmpty()) {
+                    transcript.append("\n");
+                }
+                transcript.append(chunkText.trim());
+            }
+            if (transcript.length() > maxImportChars) {
+                transcript.setLength(maxImportChars);
+                truncated = true;
+                break;
+            }
+        }
+        if (transcript.isEmpty()) {
+            throw new IllegalStateException("Audio transcription is empty");
+        }
+        return new AiImportContentService.ImportTextPayload(
+                transcript.toString(),
+                source.mimeType(),
+                source.sizeBytes(),
+                truncated,
+                transcript.length(),
+                null,
+                MAX_IMPORT_CARDS,
+                "stt",
+                null,
+                null,
+                chunking.durationSeconds(),
+                chunking.chunkCount()
+        );
+    }
+
+    private String buildVisionExtractPrompt(JsonNode params) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("Extract all visible text from this image and describe the non-text visual context. ");
+        builder.append("Return JSON with keys text and description. ");
+        builder.append("Text should preserve line breaks. Description should be 1-3 sentences. ");
+        String language = textOrNull(params.path("language"));
+        if (language != null) {
+            builder.append("Language hint: ").append(language).append(". ");
+        }
+        return builder.toString().trim();
+    }
+
+    private String buildAudioPrompt(JsonNode params) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("Transcribe the audio to plain text. ");
+        String language = textOrNull(params.path("language"));
+        if (language != null) {
+            builder.append("Language hint: ").append(language).append(". ");
+        }
+        return builder.toString().trim();
+    }
+
+    private JsonNode buildVisionSchema() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        properties.putObject("text").put("type", "string");
+        properties.putObject("description").put("type", "string");
+        schema.putArray("required").add("text").add("description");
+        return schema;
+    }
+
+    private JsonNode buildAudioSchema() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        ObjectNode properties = schema.putObject("properties");
+        properties.putObject("text").put("type", "string");
+        schema.putArray("required").add("text");
+        return schema;
+    }
+
+    private String buildVisionCombinedText(String extractedText, String description) {
+        String cleanText = extractedText == null ? "" : extractedText.trim();
+        String cleanDescription = description == null ? "" : description.trim();
+        if (cleanText.isBlank() && cleanDescription.isBlank()) {
+            return "";
+        }
+        if (cleanDescription.isBlank()) {
+            return cleanText;
+        }
+        if (cleanText.isBlank()) {
+            return "Visual context:\n" + cleanDescription;
+        }
+        return "Extracted text:\n" + cleanText + "\n\nVisual context:\n" + cleanDescription;
+    }
+
+    private String resolveSourceType(String mimeType) {
+        if (mimeType == null) {
+            return "unknown";
+        }
+        if (mimeType.startsWith("text/")) {
+            return "text";
+        }
+        if ("application/pdf".equals(mimeType)) {
+            return "pdf";
+        }
+        if (mimeType.startsWith("image/")) {
+            return "image";
+        }
+        if (mimeType.startsWith("audio/")) {
+            return "audio";
+        }
+        return "file";
+    }
+
+    private String resolveSttModel(JsonNode params) {
+        String model = textOrNull(params.path("stt").path("model"));
+        if (model != null && !model.isBlank()) {
+            return model.trim();
+        }
+        if (props.defaultSttModel() != null && !props.defaultSttModel().isBlank()) {
+            return props.defaultSttModel();
+        }
+        return "gemini-2.0-flash";
+    }
+
+    private String resolveSttLanguage(JsonNode params, String fallback) {
+        String language = textOrNull(params.path("stt").path("language"));
+        if (language != null && !language.isBlank()) {
+            return language.trim();
+        }
+        return fallback;
     }
 
     private JsonNode buildImportPreviewSchema(int maxCards) {

@@ -37,6 +37,7 @@ dependencies {
 
 	// PDF parsing
 	implementation("org.apache.pdfbox:pdfbox:3.0.2")
+	implementation("net.sourceforge.tess4j:tess4j:5.18.0")
 
 	// Cache + Redis
 	implementation("org.springframework.boot:spring-boot-starter-cache")

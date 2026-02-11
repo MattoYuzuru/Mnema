@@ -12,7 +12,7 @@ public final class ImportPdfExtractor {
 
     public static PdfText extract(byte[] bytes, int maxChars) {
         if (bytes == null || bytes.length == 0) {
-            return new PdfText("", false);
+            return new PdfText("", false, 0);
         }
         int limit = Math.max(maxChars, 1);
         MemoryUsageSetting memory = MemoryUsageSetting.setupTempFileOnly();
@@ -20,23 +20,24 @@ public final class ImportPdfExtractor {
             if (document.isEncrypted()) {
                 throw new IllegalStateException("Encrypted PDF is not supported");
             }
+            int pageCount = document.getNumberOfPages();
             PDFTextStripper stripper = new PDFTextStripper();
             stripper.setSortByPosition(true);
             String text = stripper.getText(document);
             if (text == null) {
-                return new PdfText("", false);
+                return new PdfText("", false, pageCount);
             }
             boolean truncated = false;
             if (text.length() > limit) {
                 text = text.substring(0, limit);
                 truncated = true;
             }
-            return new PdfText(text, truncated);
+            return new PdfText(text, truncated, pageCount);
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to parse PDF", ex);
         }
     }
 
-    public record PdfText(String text, boolean truncated) {
+    public record PdfText(String text, boolean truncated, int pageCount) {
     }
 }

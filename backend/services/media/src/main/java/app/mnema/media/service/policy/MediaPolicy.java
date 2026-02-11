@@ -100,7 +100,19 @@ public class MediaPolicy {
         );
         Set<String> aiImportTypes = Set.of(
                 "text/plain",
-                "application/pdf"
+                "application/pdf",
+                "image/jpeg",
+                "image/png",
+                "image/webp",
+                "audio/flac",
+                "audio/mpeg",
+                "audio/mp4",
+                "audio/mp3",
+                "audio/x-m4a",
+                "audio/ogg",
+                "audio/wav",
+                "audio/x-wav",
+                "audio/webm"
         );
 
         map.put(MediaKind.avatar, new MediaLimit(
