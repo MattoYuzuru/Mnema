@@ -99,7 +99,7 @@ type TtsMapping = { sourceField: string; targetField: string };
           </div>
 
           <div *ngIf="hasAudioFields()" class="tts-section">
-            <div *ngIf="!ttsSupported()" class="field-hint">TTS is supported for OpenAI and Gemini providers.</div>
+            <div *ngIf="!ttsSupported()" class="field-hint">TTS is supported for OpenAI, Gemini, and Qwen providers.</div>
 
             <div *ngIf="ttsEnabled()" class="tts-panel">
               <div class="form-grid">
@@ -194,7 +194,7 @@ type TtsMapping = { sourceField: string; targetField: string };
 
           <div *ngIf="selectedImageFields().length > 0" class="tts-section">
             <label class="tts-toggle">Image generation</label>
-            <div *ngIf="!imageSupported()" class="field-hint">Image generation is supported for OpenAI and Gemini providers.</div>
+            <div *ngIf="!imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, and Grok providers.</div>
             <div *ngIf="imageSupported()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
@@ -246,7 +246,7 @@ type TtsMapping = { sourceField: string; targetField: string };
 
           <div *ngIf="selectedVideoFields().length > 0" class="tts-section">
             <label class="tts-toggle">Video generation</label>
-            <div *ngIf="!videoSupported()" class="field-hint">Video generation is supported for OpenAI providers.</div>
+            <div *ngIf="!videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, and Grok providers.</div>
             <div *ngIf="videoSupported()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
@@ -494,17 +494,20 @@ export class AiAddCardsModalComponent implements OnInit {
         if (provider === 'gemini') {
             return [...this.geminiVoices, 'custom'];
         }
+        if (provider === 'qwen') {
+            return [...this.qwenVoices, 'custom'];
+        }
         if (provider === 'openai') {
             return [...this.openAiVoices, 'custom'];
         }
         return ['custom'];
     });
     readonly formatOptions = ['mp3', 'ogg', 'wav'];
-    readonly ttsFormatOptions = computed(() => this.selectedProvider() === 'gemini' ? ['wav'] : this.formatOptions);
-    readonly ttsSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
+    readonly ttsFormatOptions = computed(() => ['gemini', 'qwen'].includes(this.selectedProvider()) ? ['wav'] : this.formatOptions);
+    readonly ttsSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
     readonly hasAudioFields = computed(() => this.audioFields().length > 0);
-    readonly imageSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
-    readonly videoSupported = computed(() => this.selectedProvider() === 'openai');
+    readonly imageSupported = computed(() => ['openai', 'gemini', 'qwen', 'grok'].includes(this.selectedProvider()));
+    readonly videoSupported = computed(() => ['openai', 'qwen', 'grok'].includes(this.selectedProvider()));
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
         if (!selectedId) return '';
@@ -554,6 +557,57 @@ export class AiAddCardsModalComponent implements OnInit {
         'vindemiatrix',
         'zephyr',
         'zubenelgenubi'
+    ];
+    private readonly qwenVoices = [
+        'Cherry',
+        'Serena',
+        'Ethan',
+        'Chelsie',
+        'Momo',
+        'Vivian',
+        'Moon',
+        'Maia',
+        'Kai',
+        'Nofish',
+        'Bella',
+        'Jennifer',
+        'Ryan',
+        'Katerina',
+        'Aiden',
+        'Eldric Sage',
+        'Mia',
+        'Mochi',
+        'Bellona',
+        'Vincent',
+        'Bunny',
+        'Neil',
+        'Elias',
+        'Arthur',
+        'Nini',
+        'Ebona',
+        'Seren',
+        'Pip',
+        'Stella',
+        'Bodega',
+        'Sonrisa',
+        'Alek',
+        'Dolce',
+        'Sohee',
+        'Ono Anna',
+        'Lenn',
+        'Emilien',
+        'Andre',
+        'Radio Gol',
+        'Jada',
+        'Dylan',
+        'Li',
+        'Marcus',
+        'Roy',
+        'Peter',
+        'Sunny',
+        'Eric',
+        'Rocky',
+        'Kiki'
     ];
 
     constructor(private aiApi: AiApiService, private templateApi: TemplateApiService) {}
@@ -771,6 +825,8 @@ export class AiAddCardsModalComponent implements OnInit {
         const normalized = provider.trim().toLowerCase();
         if (normalized === 'claude') return 'anthropic';
         if (normalized === 'google' || normalized === 'google-gemini') return 'gemini';
+        if (normalized === 'xai' || normalized === 'x.ai') return 'grok';
+        if (normalized === 'dashscope' || normalized === 'aliyun' || normalized === 'alibaba') return 'qwen';
         return normalized;
     }
 
@@ -799,6 +855,10 @@ export class AiAddCardsModalComponent implements OnInit {
                 return 'gemini-2.0-flash';
             case 'anthropic':
                 return 'claude-3-5-sonnet-20241022';
+            case 'qwen':
+                return 'qwen2.5-3b-instruct';
+            case 'grok':
+                return 'grok-4-fast-non-reasoning';
             case 'deepseek':
                 return 'deepseek-chat';
             case 'gigachat':
@@ -814,6 +874,8 @@ export class AiAddCardsModalComponent implements OnInit {
                 return 'gpt-4o-mini-tts';
             case 'gemini':
                 return 'gemini-2.5-flash-preview-tts';
+            case 'qwen':
+                return 'qwen3-tts-flash';
             default:
                 return 'tts-model';
         }
@@ -826,12 +888,24 @@ export class AiAddCardsModalComponent implements OnInit {
         if (provider === 'gemini') {
             return ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'custom'];
         }
+        if (provider === 'qwen') {
+            return ['qwen-image-plus', 'qwen-image', 'qwen-image-max', 'custom'];
+        }
+        if (provider === 'grok') {
+            return ['grok-imagine-image', 'grok-imagine-image-pro', 'grok-2-image-latest', 'custom'];
+        }
         return ['custom'];
     }
 
     private resolveVideoModelOptions(provider: string): string[] {
         if (provider === 'openai') {
             return ['sora-2', 'custom'];
+        }
+        if (provider === 'qwen') {
+            return ['wan2.2-t2v-plus', 'wan2.5-t2v-preview', 'wan2.6-t2v', 'custom'];
+        }
+        if (provider === 'grok') {
+            return ['grok-imagine-video', 'custom'];
         }
         return ['custom'];
     }

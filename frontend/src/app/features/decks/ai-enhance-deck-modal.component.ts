@@ -135,9 +135,9 @@ type FieldLimitMap = Record<string, number>;
                   <span>Generate video / GIF</span>
                 </label>
               </div>
-              <div *ngIf="hasAudioFields() && !ttsSupported()" class="field-hint">TTS is supported for OpenAI and Gemini providers.</div>
-              <div *ngIf="hasImageFields() && !imageSupported()" class="field-hint">Image generation is supported for OpenAI and Gemini providers.</div>
-              <div *ngIf="hasVideoFields() && !videoSupported()" class="field-hint">Video generation is supported for OpenAI providers.</div>
+              <div *ngIf="hasAudioFields() && !ttsSupported()" class="field-hint">TTS is supported for OpenAI, Gemini, and Qwen providers.</div>
+              <div *ngIf="hasImageFields() && !imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, and Grok providers.</div>
+              <div *ngIf="hasVideoFields() && !videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, and Grok providers.</div>
               <label
                 *ngFor="let stat of missingRows(); trackBy: trackMissingField"
                 class="field-option missing-option"
@@ -173,7 +173,7 @@ type FieldLimitMap = Record<string, number>;
 
           <div *ngIf="hasMissingFields() && ttsEnabled() && hasAudioFields()" class="tts-section">
             <label class="grid-label">Audio generation</label>
-            <div *ngIf="!ttsSupported()" class="field-hint">TTS is supported for OpenAI and Gemini providers.</div>
+            <div *ngIf="!ttsSupported()" class="field-hint">TTS is supported for OpenAI, Gemini, and Qwen providers.</div>
             <div *ngIf="ttsSupported()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
@@ -267,7 +267,7 @@ type FieldLimitMap = Record<string, number>;
 
           <div *ngIf="hasMissingFields() && imageEnabled() && hasImageFields()" class="tts-section">
             <label class="grid-label">Image generation</label>
-            <div *ngIf="!imageSupported()" class="field-hint">Image generation is supported for OpenAI and Gemini providers.</div>
+            <div *ngIf="!imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, and Grok providers.</div>
             <div *ngIf="imageSupported()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
@@ -319,7 +319,7 @@ type FieldLimitMap = Record<string, number>;
 
           <div *ngIf="hasMissingFields() && videoEnabled() && hasVideoFields()" class="tts-section">
             <label class="grid-label">Video generation</label>
-            <div *ngIf="!videoSupported()" class="field-hint">Video generation is supported for OpenAI providers.</div>
+            <div *ngIf="!videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, and Grok providers.</div>
             <div *ngIf="videoSupported()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
@@ -731,9 +731,9 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     });
     readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
-    readonly ttsSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
-    readonly imageSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
-    readonly videoSupported = computed(() => this.selectedProvider() === 'openai');
+    readonly ttsSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
+    readonly imageSupported = computed(() => ['openai', 'gemini', 'qwen', 'grok'].includes(this.selectedProvider()));
+    readonly videoSupported = computed(() => ['openai', 'qwen', 'grok'].includes(this.selectedProvider()));
     readonly imageModelOptions = computed(() => this.resolveImageModelOptions(this.selectedProvider()));
     readonly videoModelOptions = computed(() => this.resolveVideoModelOptions(this.selectedProvider()));
     readonly voiceOptions = computed(() => {
@@ -741,13 +741,16 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (provider === 'gemini') {
             return [...this.geminiVoices, 'custom'];
         }
+        if (provider === 'qwen') {
+            return [...this.qwenVoices, 'custom'];
+        }
         if (provider === 'openai') {
             return [...this.openAiVoices, 'custom'];
         }
         return ['custom'];
     });
     readonly formatOptions = ['mp3', 'ogg', 'wav'];
-    readonly ttsFormatOptions = computed(() => this.selectedProvider() === 'gemini' ? ['wav'] : this.formatOptions);
+    readonly ttsFormatOptions = computed(() => ['gemini', 'qwen'].includes(this.selectedProvider()) ? ['wav'] : this.formatOptions);
 
     private readonly optionDescriptions: Record<string, string> = {
         ['audit']: 'Find inconsistencies and weak cards.',
@@ -786,6 +789,57 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         'vindemiatrix',
         'zephyr',
         'zubenelgenubi'
+    ];
+    private readonly qwenVoices = [
+        'Cherry',
+        'Serena',
+        'Ethan',
+        'Chelsie',
+        'Momo',
+        'Vivian',
+        'Moon',
+        'Maia',
+        'Kai',
+        'Nofish',
+        'Bella',
+        'Jennifer',
+        'Ryan',
+        'Katerina',
+        'Aiden',
+        'Eldric Sage',
+        'Mia',
+        'Mochi',
+        'Bellona',
+        'Vincent',
+        'Bunny',
+        'Neil',
+        'Elias',
+        'Arthur',
+        'Nini',
+        'Ebona',
+        'Seren',
+        'Pip',
+        'Stella',
+        'Bodega',
+        'Sonrisa',
+        'Alek',
+        'Dolce',
+        'Sohee',
+        'Ono Anna',
+        'Lenn',
+        'Emilien',
+        'Andre',
+        'Radio Gol',
+        'Jada',
+        'Dylan',
+        'Li',
+        'Marcus',
+        'Roy',
+        'Peter',
+        'Sunny',
+        'Eric',
+        'Rocky',
+        'Kiki'
     ];
 
     options = signal<EnhanceOption[]>([
@@ -1600,6 +1654,8 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (normalized === 'claude' || normalized.includes('anthropic')) return 'anthropic';
         if (normalized.includes('openai')) return 'openai';
         if (normalized.includes('gemini') || normalized.includes('google')) return 'gemini';
+        if (normalized === 'xai' || normalized === 'x.ai') return 'grok';
+        if (normalized === 'dashscope' || normalized === 'aliyun' || normalized === 'alibaba') return 'qwen';
         return normalized;
     }
 
@@ -1617,6 +1673,10 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                 return 'gemini-2.0-flash';
             case 'anthropic':
                 return 'claude-3-5-sonnet-20241022';
+            case 'qwen':
+                return 'qwen2.5-3b-instruct';
+            case 'grok':
+                return 'grok-4-fast-non-reasoning';
             case 'deepseek':
                 return 'deepseek-chat';
             case 'gigachat':
@@ -1632,6 +1692,8 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                 return 'gpt-4o-mini-tts';
             case 'gemini':
                 return 'gemini-2.5-flash-preview-tts';
+            case 'qwen':
+                return 'qwen3-tts-flash';
             default:
                 return 'tts-model';
         }
@@ -1677,12 +1739,24 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (provider === 'gemini') {
             return ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'custom'];
         }
+        if (provider === 'qwen') {
+            return ['qwen-image-plus', 'qwen-image', 'qwen-image-max', 'custom'];
+        }
+        if (provider === 'grok') {
+            return ['grok-imagine-image', 'grok-imagine-image-pro', 'grok-2-image-latest', 'custom'];
+        }
         return ['custom'];
     }
 
     private resolveVideoModelOptions(provider: string): string[] {
         if (provider === 'openai') {
             return ['sora-2', 'custom'];
+        }
+        if (provider === 'qwen') {
+            return ['wan2.2-t2v-plus', 'wan2.5-t2v-preview', 'wan2.6-t2v', 'custom'];
+        }
+        if (provider === 'grok') {
+            return ['grok-imagine-video', 'custom'];
         }
         return ['custom'];
     }
@@ -1725,6 +1799,8 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             ? 'kore'
             : provider === 'openai'
                 ? 'alloy'
+                : provider === 'qwen'
+                    ? 'Cherry'
                 : 'custom';
         if (!options.includes(this.ttsVoicePreset())) {
             this.ttsVoicePreset.set(fallback);
@@ -1854,7 +1930,10 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             if (payload.ttsFormat) this.ttsFormat.set(payload.ttsFormat);
             if (payload.ttsMaxChars) this.ttsMaxChars.set(payload.ttsMaxChars);
             if (payload.ttsVoice) {
-                if (this.openAiVoices.includes(payload.ttsVoice) || this.geminiVoices.includes(payload.ttsVoice)) {
+                const isPreset = this.openAiVoices.includes(payload.ttsVoice)
+                    || this.geminiVoices.includes(payload.ttsVoice)
+                    || this.qwenVoices.includes(payload.ttsVoice);
+                if (isPreset) {
                     this.ttsVoicePreset.set(payload.ttsVoice);
                 } else {
                     this.ttsVoicePreset.set('custom');

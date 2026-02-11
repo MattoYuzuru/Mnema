@@ -946,10 +946,10 @@ export class AiImportModalComponent implements OnInit {
     ];
 
     readonly formatOptions = ['mp3', 'ogg', 'wav'];
-    readonly ttsFormatOptions = computed(() => this.selectedProvider() === 'gemini' ? ['wav'] : this.formatOptions);
-    readonly ttsSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
-    readonly imageSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
-    readonly videoSupported = computed(() => this.selectedProvider() === 'openai');
+    readonly ttsFormatOptions = computed(() => ['gemini', 'qwen'].includes(this.selectedProvider()) ? ['wav'] : this.formatOptions);
+    readonly ttsSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
+    readonly imageSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
+    readonly videoSupported = computed(() => ['openai', 'qwen'].includes(this.selectedProvider()));
     readonly hasAudioFields = computed(() => this.audioFields().length > 0);
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
@@ -957,7 +957,7 @@ export class AiImportModalComponent implements OnInit {
         const provider = this.providerKeys().find(item => item.id === selectedId)?.provider;
         return this.normalizeProvider(provider);
     });
-    readonly importSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
+    readonly importSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
     readonly sttModelPlaceholder = computed(() => this.resolveSttModelPlaceholder(this.selectedProvider()));
     readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
@@ -1023,6 +1023,57 @@ export class AiImportModalComponent implements OnInit {
         'vindemiatrix',
         'zephyr',
         'zubenelgenubi'
+    ];
+    private readonly qwenVoices = [
+        'Cherry',
+        'Serena',
+        'Ethan',
+        'Chelsie',
+        'Momo',
+        'Vivian',
+        'Moon',
+        'Maia',
+        'Kai',
+        'Nofish',
+        'Bella',
+        'Jennifer',
+        'Ryan',
+        'Katerina',
+        'Aiden',
+        'Eldric Sage',
+        'Mia',
+        'Mochi',
+        'Bellona',
+        'Vincent',
+        'Bunny',
+        'Neil',
+        'Elias',
+        'Arthur',
+        'Nini',
+        'Ebona',
+        'Seren',
+        'Pip',
+        'Stella',
+        'Bodega',
+        'Sonrisa',
+        'Alek',
+        'Dolce',
+        'Sohee',
+        'Ono Anna',
+        'Lenn',
+        'Emilien',
+        'Andre',
+        'Radio Gol',
+        'Jada',
+        'Dylan',
+        'Li',
+        'Marcus',
+        'Roy',
+        'Peter',
+        'Sunny',
+        'Eric',
+        'Rocky',
+        'Kiki'
     ];
     private mediaRecorder: MediaRecorder | null = null;
     private recordingChunks: BlobPart[] = [];
@@ -1733,9 +1784,11 @@ export class AiImportModalComponent implements OnInit {
     private resolveVoice(): string {
         if (this.ttsVoicePreset() === 'custom') {
             const custom = this.ttsVoiceCustom().trim();
-            return custom || this.ttsVoicePreset();
+            const fallback = custom || this.ttsVoicePreset();
+            return this.selectedProvider() === 'gemini' ? fallback.toLowerCase() : fallback;
         }
-        return this.ttsVoicePreset();
+        const voice = this.ttsVoicePreset();
+        return this.selectedProvider() === 'gemini' ? voice.toLowerCase() : voice;
     }
 
     private ensureDefaultMediaModels(): void {
@@ -1771,6 +1824,9 @@ export class AiImportModalComponent implements OnInit {
         if (this.selectedProvider() === 'gemini') {
             return [...this.geminiVoices, 'custom'];
         }
+        if (this.selectedProvider() === 'qwen') {
+            return [...this.qwenVoices, 'custom'];
+        }
         if (this.selectedProvider() === 'openai') {
             return [...this.openAiVoices, 'custom'];
         }
@@ -1789,12 +1845,18 @@ export class AiImportModalComponent implements OnInit {
         if (provider === 'gemini') {
             return ['gemini-2.5-flash-image', 'custom'];
         }
+        if (provider === 'qwen') {
+            return ['qwen-image-plus', 'qwen-image', 'qwen-image-max', 'custom'];
+        }
         return ['custom'];
     }
 
     private resolveVideoModelOptions(provider: string): string[] {
         if (provider === 'openai') {
             return ['gpt-video-mini', 'custom'];
+        }
+        if (provider === 'qwen') {
+            return ['wan2.2-t2v-plus', 'wan2.5-t2v-preview', 'wan2.6-t2v', 'custom'];
         }
         return ['custom'];
     }
@@ -1807,6 +1869,10 @@ export class AiImportModalComponent implements OnInit {
                 return 'gemini-2.0-flash';
             case 'anthropic':
                 return 'claude-3-5-sonnet-20241022';
+            case 'qwen':
+                return 'qwen2.5-3b-instruct';
+            case 'grok':
+                return 'grok-4-fast-non-reasoning';
             case 'deepseek':
                 return 'deepseek-chat';
             case 'gigachat':
@@ -1823,6 +1889,9 @@ export class AiImportModalComponent implements OnInit {
         if (provider === 'gemini') {
             return 'gemini-2.5-flash-preview-tts';
         }
+        if (provider === 'qwen') {
+            return 'qwen3-tts-flash';
+        }
         return 'tts-model';
     }
 
@@ -1833,6 +1902,9 @@ export class AiImportModalComponent implements OnInit {
         if (provider === 'gemini') {
             return 'gemini-2.0-flash';
         }
+        if (provider === 'qwen') {
+            return 'qwen3-asr-flash';
+        }
         return 'stt-model';
     }
 
@@ -1841,6 +1913,8 @@ export class AiImportModalComponent implements OnInit {
         const normalized = provider.trim().toLowerCase();
         if (normalized === 'claude') return 'anthropic';
         if (normalized === 'google' || normalized === 'google-gemini') return 'gemini';
+        if (normalized === 'xai' || normalized === 'x.ai') return 'grok';
+        if (normalized === 'dashscope' || normalized === 'aliyun' || normalized === 'alibaba') return 'qwen';
         return normalized;
     }
 

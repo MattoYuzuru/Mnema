@@ -451,15 +451,18 @@ export class AiEnhanceCardModalComponent implements OnInit {
         const provider = this.providerKeys().find(item => item.id === selectedId)?.provider;
         return this.normalizeProvider(provider);
     });
-    readonly ttsSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
-    readonly imageSupported = computed(() => ['openai', 'gemini'].includes(this.selectedProvider()));
-    readonly videoSupported = computed(() => this.selectedProvider() === 'openai');
+    readonly ttsSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
+    readonly imageSupported = computed(() => ['openai', 'gemini', 'qwen', 'grok'].includes(this.selectedProvider()));
+    readonly videoSupported = computed(() => ['openai', 'qwen', 'grok'].includes(this.selectedProvider()));
     readonly imageModelOptions = computed(() => this.resolveImageModelOptions(this.selectedProvider()));
     readonly videoModelOptions = computed(() => this.resolveVideoModelOptions(this.selectedProvider()));
     readonly voiceOptions = computed(() => {
         const provider = this.selectedProvider();
         if (provider === 'gemini') {
             return [...this.geminiVoices, 'custom'];
+        }
+        if (provider === 'qwen') {
+            return [...this.qwenVoices, 'custom'];
         }
         if (provider === 'openai') {
             return [...this.openAiVoices, 'custom'];
@@ -499,6 +502,57 @@ export class AiEnhanceCardModalComponent implements OnInit {
         'vindemiatrix',
         'zephyr',
         'zubenelgenubi'
+    ];
+    private readonly qwenVoices = [
+        'Cherry',
+        'Serena',
+        'Ethan',
+        'Chelsie',
+        'Momo',
+        'Vivian',
+        'Moon',
+        'Maia',
+        'Kai',
+        'Nofish',
+        'Bella',
+        'Jennifer',
+        'Ryan',
+        'Katerina',
+        'Aiden',
+        'Eldric Sage',
+        'Mia',
+        'Mochi',
+        'Bellona',
+        'Vincent',
+        'Bunny',
+        'Neil',
+        'Elias',
+        'Arthur',
+        'Nini',
+        'Ebona',
+        'Seren',
+        'Pip',
+        'Stella',
+        'Bodega',
+        'Sonrisa',
+        'Alek',
+        'Dolce',
+        'Sohee',
+        'Ono Anna',
+        'Lenn',
+        'Emilien',
+        'Andre',
+        'Radio Gol',
+        'Jada',
+        'Dylan',
+        'Li',
+        'Marcus',
+        'Roy',
+        'Peter',
+        'Sunny',
+        'Eric',
+        'Rocky',
+        'Kiki'
     ];
 
     constructor(private aiApi: AiApiService, private cardApi: CardApiService) {}
@@ -863,6 +917,8 @@ export class AiEnhanceCardModalComponent implements OnInit {
         if (normalized === 'claude' || normalized.includes('anthropic')) return 'anthropic';
         if (normalized.includes('openai')) return 'openai';
         if (normalized.includes('gemini') || normalized.includes('google')) return 'gemini';
+        if (normalized === 'xai' || normalized === 'x.ai') return 'grok';
+        if (normalized === 'dashscope' || normalized === 'aliyun' || normalized === 'alibaba') return 'qwen';
         return normalized;
     }
 
@@ -879,13 +935,15 @@ export class AiEnhanceCardModalComponent implements OnInit {
 
     private resolveVoice(): string {
         if (this.ttsVoicePreset() === 'custom') {
-            return this.ttsVoiceCustom().trim();
+            const custom = this.ttsVoiceCustom().trim();
+            return this.selectedProvider() === 'gemini' ? custom.toLowerCase() : custom;
         }
-        return this.ttsVoicePreset();
+        const voice = this.ttsVoicePreset();
+        return this.selectedProvider() === 'gemini' ? voice.toLowerCase() : voice;
     }
 
     private resolveAudioFormat(): string {
-        return this.selectedProvider() === 'gemini' ? 'wav' : 'mp3';
+        return ['gemini', 'qwen'].includes(this.selectedProvider()) ? 'wav' : 'mp3';
     }
 
     private resolveImageModelOptions(provider: string): string[] {
@@ -895,12 +953,24 @@ export class AiEnhanceCardModalComponent implements OnInit {
         if (provider === 'gemini') {
             return ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'custom'];
         }
+        if (provider === 'qwen') {
+            return ['qwen-image-plus', 'qwen-image', 'qwen-image-max', 'custom'];
+        }
+        if (provider === 'grok') {
+            return ['grok-imagine-image', 'grok-imagine-image-pro', 'grok-2-image-latest', 'custom'];
+        }
         return ['custom'];
     }
 
     private resolveVideoModelOptions(provider: string): string[] {
         if (provider === 'openai') {
             return ['sora-2', 'custom'];
+        }
+        if (provider === 'qwen') {
+            return ['wan2.2-t2v-plus', 'wan2.5-t2v-preview', 'wan2.6-t2v', 'custom'];
+        }
+        if (provider === 'grok') {
+            return ['grok-imagine-video', 'custom'];
         }
         return ['custom'];
     }

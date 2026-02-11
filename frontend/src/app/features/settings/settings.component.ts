@@ -818,6 +818,8 @@ export class SettingsComponent implements OnInit {
         { label: 'OpenAI', value: 'openai' },
         { label: 'Google Gemini', value: 'gemini' },
         { label: 'Claude (Anthropic)', value: 'anthropic' },
+        { label: 'Qwen (Alibaba)', value: 'qwen' },
+        { label: 'Grok (xAI)', value: 'grok' },
         { label: 'DeepSeek', value: 'deepseek' },
         { label: 'GigaChat', value: 'gigachat' },
         { label: 'Custom', value: 'custom' }
