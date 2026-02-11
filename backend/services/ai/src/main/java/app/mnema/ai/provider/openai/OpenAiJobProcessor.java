@@ -19,6 +19,7 @@ import app.mnema.ai.service.AudioChunkingService;
 import app.mnema.ai.service.AiImportContentService;
 import app.mnema.ai.service.AiJobProcessingResult;
 import app.mnema.ai.service.AiProviderProcessor;
+import app.mnema.ai.support.ImportItemExtractor;
 import app.mnema.ai.provider.anki.AnkiTemplateSupport;
 import app.mnema.ai.provider.audit.AuditAnalyzer;
 import app.mnema.ai.vault.EncryptedSecret;
@@ -238,10 +239,22 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 : objectMapper.createObjectNode();
         updatedParams.put("mode", MODE_GENERATE_CARDS);
         updatedParams.put("countLimit", MAX_IMPORT_CARDS);
-        updatedParams.put("input", buildImportGeneratePrompt(payload, params));
         int requested = params.path("count").isInt() ? params.path("count").asInt() : 10;
         int total = Math.min(Math.max(requested, 1), MAX_IMPORT_CARDS);
         int batchSize = resolveImportBatchSize(params);
+        List<String> items = ImportItemExtractor.extractItems(payload.text());
+        if (!items.isEmpty()) {
+            int available = Math.min(items.size(), MAX_IMPORT_CARDS);
+            total = Math.min(total, available);
+            List<String> requestedItems = items.subList(0, total);
+            if (total <= batchSize) {
+                updatedParams.put("count", total);
+                updatedParams.put("input", buildImportGenerateItemsPrompt(requestedItems, params, payload.truncated()));
+                return handleGenerateCards(job, apiKey, updatedParams);
+            }
+            return handleGenerateCardsBatchedForItems(job, apiKey, updatedParams, requestedItems, batchSize, params, payload.truncated());
+        }
+        updatedParams.put("input", buildImportGeneratePrompt(payload, params));
         if (total <= batchSize) {
             updatedParams.put("count", total);
             return handleGenerateCards(job, apiKey, updatedParams);
@@ -331,6 +344,94 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         );
     }
 
+    private AiJobProcessingResult handleGenerateCardsBatchedForItems(AiJobEntity job,
+                                                                     String apiKey,
+                                                                     ObjectNode baseParams,
+                                                                     List<String> items,
+                                                                     int batchSize,
+                                                                     JsonNode params,
+                                                                     boolean truncated) {
+        int remaining = items.size();
+        int totalCreated = 0;
+        int totalImages = 0;
+        int totalTts = 0;
+        String ttsError = null;
+        Integer tokensIn = null;
+        Integer tokensOut = null;
+        BigDecimal cost = BigDecimal.ZERO;
+        String model = null;
+        String templateId = null;
+        JsonNode fieldsNode = null;
+        int offset = 0;
+
+        while (remaining > 0) {
+            int count = Math.min(batchSize, remaining);
+            List<String> batchItems = items.subList(offset, offset + count);
+            ObjectNode batchParams = baseParams.deepCopy();
+            batchParams.put("count", count);
+            batchParams.put("input", buildImportGenerateItemsPrompt(batchItems, params, truncated));
+            AiJobProcessingResult batchResult = handleGenerateCards(job, apiKey, batchParams);
+            model = batchResult.model();
+            if (batchResult.tokensIn() != null) {
+                tokensIn = (tokensIn == null ? 0 : tokensIn) + batchResult.tokensIn();
+            }
+            if (batchResult.tokensOut() != null) {
+                tokensOut = (tokensOut == null ? 0 : tokensOut) + batchResult.tokensOut();
+            }
+            if (batchResult.costEstimate() != null) {
+                cost = cost.add(batchResult.costEstimate());
+            }
+            JsonNode summary = batchResult.resultSummary();
+            if (summary != null && summary.isObject()) {
+                if (templateId == null && summary.hasNonNull("templateId")) {
+                    templateId = summary.get("templateId").asText();
+                }
+                if (fieldsNode == null && summary.has("fields")) {
+                    fieldsNode = summary.get("fields");
+                }
+                totalCreated += summary.path("createdCards").asInt(0);
+                totalImages += summary.path("imagesGenerated").asInt(0);
+                totalTts += summary.path("ttsGenerated").asInt(0);
+                if (ttsError == null && summary.hasNonNull("ttsError")) {
+                    ttsError = summary.get("ttsError").asText();
+                }
+            }
+            remaining -= count;
+            offset += count;
+        }
+
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("mode", MODE_GENERATE_CARDS);
+        summary.put("deckId", job.getDeckId().toString());
+        if (templateId != null) {
+            summary.put("templateId", templateId);
+        }
+        summary.put("requestedCards", items.size());
+        summary.put("createdCards", totalCreated);
+        if (totalImages > 0) {
+            summary.put("imagesGenerated", totalImages);
+        }
+        if (totalTts > 0) {
+            summary.put("ttsGenerated", totalTts);
+        }
+        if (ttsError != null) {
+            summary.put("ttsError", ttsError);
+        }
+        if (fieldsNode != null) {
+            summary.set("fields", fieldsNode);
+        }
+
+        return new AiJobProcessingResult(
+                summary,
+                PROVIDER,
+                model,
+                tokensIn,
+                tokensOut,
+                cost,
+                job.getInputHash()
+        );
+    }
+
     private String buildImportPreviewPrompt(AiImportContentService.ImportTextPayload payload, JsonNode params) {
         StringBuilder builder = new StringBuilder();
         builder.append("You are an expert study assistant. ");
@@ -349,6 +450,28 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             builder.append("Note: the source may be truncated. ");
         }
         builder.append("Source material:\n").append(payload.text());
+        return builder.toString().trim();
+    }
+
+    private String buildImportGenerateItemsPrompt(List<String> items, JsonNode params, boolean truncated) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("Items to convert into flashcards (use each item exactly once):");
+        for (int i = 0; i < items.size(); i++) {
+            builder.append("\n").append(i + 1).append(". ").append(items.get(i));
+        }
+        builder.append("\nCreate one card per item. Use the item text verbatim in the most relevant field.");
+        builder.append(" Do not invent new items or repeat any item.");
+        String language = textOrNull(params.path("language"));
+        if (language != null) {
+            builder.append(" Language hint: ").append(language).append(".");
+        }
+        String instructions = textOrNull(params.path("instructions"));
+        if (instructions != null) {
+            builder.append(" User instructions: ").append(instructions).append(".");
+        }
+        if (truncated) {
+            builder.append(" The item list may be truncated.");
+        }
         return builder.toString().trim();
     }
 
