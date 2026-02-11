@@ -287,7 +287,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         </div>
         <div class="modal-footer">
           <app-button variant="ghost" (click)="closeEditModal()" [disabled]="saving">{{ 'cardBrowser.cancel' | translate }}</app-button>
-          <app-button variant="primary" (click)="saveEdit()" [disabled]="editForm.invalid || saving">
+          <app-button variant="primary" (click)="saveEdit()" [disabled]="!canSaveEdit()">
             {{ saving ? ('cardBrowser.saving' | translate) : ('cardBrowser.save' | translate) }}
           </app-button>
         </div>
@@ -1322,20 +1322,42 @@ export class CardBrowserComponent implements OnInit {
         return true;
     }
 
+    canSaveEdit(): boolean {
+        if (this.saving || !this.editForm || !this.editingCard) return false;
+        if (this.editForm.valid) return true;
+        return this.canSaveTagsOnly();
+    }
+
     saveEdit(): void {
-        if (this.editForm.invalid || !this.editingCard) return;
+        if (!this.editingCard) return;
         if (!this.validateTags()) return;
 
-        this.saving = true;
         const formValue = this.editForm.value;
         const { personalNote, ...content } = formValue;
+        const contentChanged = this.hasContentChanges(formValue);
+        const noteChanged = this.hasPersonalNoteChange(formValue);
+        const tagsChanged = this.areTagsChanged();
+
+        if (this.editForm.invalid && (contentChanged || noteChanged)) {
+            return;
+        }
+        if (!contentChanged && !noteChanged && !tagsChanged) {
+            return;
+        }
 
         const updates: Partial<UserCardDTO> = {
-            effectiveContent: content,
-            personalNote: personalNote || null,
             tags: this.tags
         };
 
+        if (contentChanged) {
+            updates.effectiveContent = content;
+        }
+
+        if (noteChanged) {
+            updates.personalNote = personalNote || null;
+        }
+
+        this.saving = true;
         const scope = this.applyGlobalEdits ? 'global' : 'local';
         this.cardApi.patchUserCard(this.userDeckId, this.editingCard.userCardId, updates, scope).subscribe({
             next: updatedCard => {
@@ -1353,6 +1375,49 @@ export class CardBrowserComponent implements OnInit {
                 this.saving = false;
             }
         });
+    }
+
+    private canSaveTagsOnly(): boolean {
+        if (!this.editingCard || !this.editForm) return false;
+        const formValue = this.editForm.value;
+        if (this.hasContentChanges(formValue) || this.hasPersonalNoteChange(formValue)) {
+            return false;
+        }
+        return this.areTagsChanged();
+    }
+
+    private hasContentChanges(formValue: Record<string, any>): boolean {
+        if (!this.template || !this.editingCard) return false;
+        return (this.template.fields || []).some(field => !this.contentEquals(
+            formValue[field.name],
+            this.editingCard?.effectiveContent?.[field.name]
+        ));
+    }
+
+    private hasPersonalNoteChange(formValue: Record<string, any>): boolean {
+        if (!this.editingCard) return false;
+        const current = formValue.personalNote ?? '';
+        const original = this.editingCard.personalNote ?? '';
+        return current !== original;
+    }
+
+    private areTagsChanged(): boolean {
+        if (!this.editingCard) return false;
+        const next = this.normalizeTags(this.tags);
+        const original = this.normalizeTags(this.editingCard.tags);
+        return JSON.stringify(next) !== JSON.stringify(original);
+    }
+
+    private normalizeTags(tags?: string[] | null): string[] {
+        return (tags || [])
+            .map(tag => tag.trim())
+            .filter(tag => tag.length > 0)
+            .sort();
+    }
+
+    private contentEquals(a: CardContentValue | undefined, b: CardContentValue | undefined): boolean {
+        if (a === b) return true;
+        return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
     }
 
     toggleGlobalEdit(event: Event): void {
