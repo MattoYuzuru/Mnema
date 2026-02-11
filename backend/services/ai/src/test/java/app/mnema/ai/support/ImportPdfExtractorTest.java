@@ -20,6 +20,7 @@ class ImportPdfExtractorTest {
         ImportPdfExtractor.PdfText result = ImportPdfExtractor.extract(pdfBytes, 1000);
         assertTrue(result.text().contains("Hello PDF"));
         assertFalse(result.truncated());
+        assertTrue(result.pageCount() >= 1);
     }
 
     @Test
@@ -28,6 +29,7 @@ class ImportPdfExtractorTest {
         ImportPdfExtractor.PdfText result = ImportPdfExtractor.extract(pdfBytes, 4);
         assertTrue(result.text().length() <= 4);
         assertTrue(result.truncated());
+        assertTrue(result.pageCount() >= 1);
     }
 
     private byte[] createPdf(String text) throws Exception {
