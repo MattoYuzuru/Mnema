@@ -566,6 +566,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (mimeType.startsWith("text/")) {
             return "text";
         }
+        if ("application/vnd.openxmlformats-officedocument.wordprocessingml.document".equals(mimeType)) {
+            return "docx";
+        }
         if ("application/pdf".equals(mimeType)) {
             return "pdf";
         }

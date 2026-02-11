@@ -101,6 +101,7 @@ public class MediaPolicy {
         Set<String> aiImportTypes = Set.of(
                 "text/plain",
                 "application/pdf",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
                 "image/jpeg",
                 "image/png",
                 "image/webp",

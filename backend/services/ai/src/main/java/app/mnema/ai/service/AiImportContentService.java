@@ -2,6 +2,7 @@ package app.mnema.ai.service;
 
 import app.mnema.ai.client.media.MediaApiClient;
 import app.mnema.ai.client.media.MediaResolved;
+import app.mnema.ai.support.ImportDocxExtractor;
 import app.mnema.ai.support.ImportPdfExtractor;
 import app.mnema.ai.support.ImportTextDecoder;
 import org.slf4j.Logger;
@@ -97,7 +98,33 @@ public class AiImportContentService {
             throw new IllegalStateException("Source payload is missing");
         }
         String mimeType = source.mimeType();
+        boolean isDocx = "application/vnd.openxmlformats-officedocument.wordprocessingml.document".equals(mimeType);
         boolean isPdf = "application/pdf".equals(mimeType);
+        if (isDocx) {
+            if (source.truncated()) {
+                throw new IllegalStateException("DOCX is too large to parse. Please upload a smaller file.");
+            }
+            ImportDocxExtractor.DocxText docxText = ImportDocxExtractor.extract(source.bytes(), maxChars);
+            String text = normalizeText(docxText.text());
+            boolean truncated = docxText.truncated();
+            if (text.isBlank()) {
+                throw new IllegalStateException("DOCX text is empty");
+            }
+            return new ImportTextPayload(
+                    text,
+                    mimeType,
+                    source.sizeBytes(),
+                    truncated,
+                    text.length(),
+                    "docx",
+                    MAX_PREVIEW_CARDS,
+                    "docx",
+                    null,
+                    null,
+                    null,
+                    null
+            );
+        }
         if (isPdf) {
             if (source.truncated()) {
                 throw new IllegalStateException("PDF is too large to parse. Please upload a smaller file.");
@@ -253,6 +280,9 @@ public class AiImportContentService {
         if ("application/pdf".equals(mimeType)) {
             return maxPdfBytes;
         }
+        if ("application/vnd.openxmlformats-officedocument.wordprocessingml.document".equals(mimeType)) {
+            return maxBytes;
+        }
         if (mimeType != null && mimeType.startsWith("image/")) {
             return maxImageBytes;
         }
@@ -270,6 +300,7 @@ public class AiImportContentService {
             return true;
         }
         return "application/pdf".equals(mimeType)
+                || "application/vnd.openxmlformats-officedocument.wordprocessingml.document".equals(mimeType)
                 || mimeType.startsWith("image/")
                 || mimeType.startsWith("audio/");
     }
