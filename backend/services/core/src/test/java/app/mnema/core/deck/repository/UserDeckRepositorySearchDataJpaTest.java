@@ -47,6 +47,8 @@ class UserDeckRepositorySearchDataJpaTest extends PostgresIntegrationTest {
         deck.setPublicDeckId(publicDeckId);
         deck.setSubscribedVersion(1);
         deck.setCurrentVersion(1);
+        deck.setTemplateVersion(1);
+        deck.setSubscribedTemplateVersion(1);
         deck.setAutoUpdate(true);
         deck.setDisplayName("Spanish verbs");
         deck.setDisplayDescription("Basics for beginners");
@@ -59,6 +61,8 @@ class UserDeckRepositorySearchDataJpaTest extends PostgresIntegrationTest {
         archived.setPublicDeckId(archivedPublicDeckId);
         archived.setSubscribedVersion(1);
         archived.setCurrentVersion(1);
+        archived.setTemplateVersion(1);
+        archived.setSubscribedTemplateVersion(1);
         archived.setAutoUpdate(true);
         archived.setDisplayName("Spanish verbs archived");
         archived.setCreatedAt(now);
@@ -86,6 +90,8 @@ class UserDeckRepositorySearchDataJpaTest extends PostgresIntegrationTest {
         deck.setPublicDeckId(publicDeckId);
         deck.setSubscribedVersion(1);
         deck.setCurrentVersion(1);
+        deck.setTemplateVersion(1);
+        deck.setSubscribedTemplateVersion(1);
         deck.setAutoUpdate(true);
         deck.setDisplayName("Latin verbs");
         deck.setCreatedAt(now);
@@ -134,6 +140,7 @@ class UserDeckRepositorySearchDataJpaTest extends PostgresIntegrationTest {
             // If table is empty, fall through and create a minimal template.
         }
         if (existing != null) {
+            ensureTemplateVersion(existing);
             return existing;
         }
 
@@ -145,7 +152,21 @@ class UserDeckRepositorySearchDataJpaTest extends PostgresIntegrationTest {
                 "insert into card_templates (template_id, owner_id, name) values (?, ?, ?)",
                 id, ownerId, name
         );
+        ensureTemplateVersion(id);
 
         return id;
+    }
+
+    private void ensureTemplateVersion(UUID templateId) {
+        UUID ownerId = jdbcTemplate.queryForObject(
+                "select owner_id from card_templates where template_id = ?",
+                UUID.class,
+                templateId
+        );
+        jdbcTemplate.update(
+                "insert into card_template_versions (template_id, version, created_by) values (?, 1, ?) on conflict do nothing",
+                templateId,
+                ownerId
+        );
     }
 }

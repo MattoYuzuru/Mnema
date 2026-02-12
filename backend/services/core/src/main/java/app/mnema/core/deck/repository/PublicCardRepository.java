@@ -6,6 +6,7 @@ import app.mnema.core.deck.domain.entity.PublicCardEntity;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 import java.util.Collection;
@@ -30,13 +31,21 @@ public interface PublicCardRepository extends JpaRepository<PublicCardEntity, Pu
             Pageable pageable
     );
 
-    Optional<PublicCardEntity> findByCardId(UUID cardId);
+    Optional<PublicCardEntity> findFirstByCardIdOrderByDeckVersionDesc(UUID cardId);
 
     long countByDeckIdAndDeckVersion(UUID deckId, Integer deckVersion);
 
     long countByDeckIdAndDeckVersionAndActiveTrue(UUID deckId, Integer deckVersion);
 
-    List<PublicCardEntity> findByCardIdIn(List<UUID> cardIds);
+    @Query("""
+            select max(pc.orderIndex)
+            from PublicCardEntity pc
+            where pc.deckId = :deckId
+              and pc.deckVersion = :deckVersion
+            """)
+    Integer findMaxOrderIndex(UUID deckId, Integer deckVersion);
+
+    List<PublicCardEntity> findAllByCardIdInOrderByDeckVersionDesc(Collection<UUID> cardIds);
 
     List<PublicCardEntity> findAllByCardIdIn(Collection<UUID> cardIds);
 }

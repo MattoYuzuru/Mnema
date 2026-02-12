@@ -6,6 +6,7 @@ export interface UserCardDTO {
     isCustom: boolean;
     isDeleted: boolean;
     personalNote?: string | null;
+    tags?: string[] | null;
     effectiveContent: Record<string, CardContentValue>;
 }
 
@@ -13,4 +14,27 @@ export interface CreateCardRequest {
     content: Record<string, CardContentValue>;
     orderIndex?: number;
     tags?: string[];
+}
+
+export interface MissingFieldStat {
+    field: string;
+    missingCount: number;
+    sampleCards: UserCardDTO[];
+}
+
+export interface MissingFieldSummary {
+    fields: MissingFieldStat[];
+    sampleLimit: number;
+}
+
+export interface DuplicateGroup {
+    size: number;
+    cards: UserCardDTO[];
+}
+
+export interface DuplicateResolveResult {
+    groupsProcessed: number;
+    deletedCards: number;
+    keptCards: number;
+    globalApplied: boolean;
 }

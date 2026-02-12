@@ -43,6 +43,8 @@ class UserCardRepositoryDataJpaTest extends PostgresIntegrationTest {
         deck.setDisplayName("Test deck");
         deck.setAutoUpdate(true);
         deck.setCreatedAt(now);
+        deck.setTemplateVersion(1);
+        deck.setSubscribedTemplateVersion(1);
 
         deck = userDeckRepository.save(deck);
         UUID deckId = deck.getUserDeckId();
@@ -59,6 +61,7 @@ class UserCardRepositoryDataJpaTest extends PostgresIntegrationTest {
                 true,
                 false,
                 "older",
+                null,
                 content,
                 now.minusSeconds(60),
                 null
@@ -72,6 +75,7 @@ class UserCardRepositoryDataJpaTest extends PostgresIntegrationTest {
                 true,
                 false,
                 "newer",
+                null,
                 content,
                 now,
                 null
@@ -85,6 +89,7 @@ class UserCardRepositoryDataJpaTest extends PostgresIntegrationTest {
                 true,
                 true,
                 "deleted",
+                null,
                 content,
                 now.minusSeconds(30),
                 null

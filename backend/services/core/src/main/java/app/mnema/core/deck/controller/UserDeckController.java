@@ -97,6 +97,16 @@ public class UserDeckController {
         return deckService.syncUserDeckToLatestVersion(userId, userDeckId);
     }
 
+    // POST /decks/{userDeckId}/sync-template
+    @PostMapping("/{userDeckId}/sync-template")
+    public UserDeckDTO syncTemplate(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID userDeckId
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        return deckService.syncUserDeckTemplate(userId, userDeckId);
+    }
+
     // DELETE /decks/{userDeckId}
     @DeleteMapping("/{userDeckId}")
     @ResponseStatus(HttpStatus.NO_CONTENT)

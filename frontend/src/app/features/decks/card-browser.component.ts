@@ -1,7 +1,7 @@
 import { Component, OnInit, HostListener } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NgIf, NgFor } from '@angular/common';
-import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { ReactiveFormsModule, FormBuilder, FormGroup, Validators, FormControl } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { CardApiService } from '../../core/services/card-api.service';
 import { DeckApiService } from '../../core/services/deck-api.service';
@@ -19,16 +19,18 @@ import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loa
 import { EmptyStateComponent } from '../../shared/components/empty-state.component';
 import { FlashcardViewComponent } from '../../shared/components/flashcard-view.component';
 import { ButtonComponent } from '../../shared/components/button.component';
+import { AiEnhanceCardModalComponent } from './ai-enhance-card-modal.component';
 import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
 import { MediaUploadComponent } from '../../shared/components/media-upload.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
+import { TagChipComponent } from '../../shared/components/tag-chip.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-card-browser',
     standalone: true,
-    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, ConfirmationDialogComponent, TranslatePipe],
+    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, AiEnhanceCardModalComponent, InputComponent, TextareaComponent, MediaUploadComponent, ConfirmationDialogComponent, TagChipComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -72,7 +74,12 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             <div *ngFor="let card of cards; let index = index" class="cards-list-item" [class.active]="index === currentCardIndex">
               <button class="card-preview" type="button" (click)="openCardFromList(index)">
                 <span class="card-index">{{ index + 1 }}</span>
-                <span class="card-text">{{ getFrontPreview(card) }}</span>
+                <div class="card-preview-body">
+                  <span class="card-text">{{ getFrontPreview(card) }}</span>
+                  <div *ngIf="card.tags?.length" class="card-tags-inline">
+                    <app-tag-chip *ngFor="let tag of card.tags" [text]="tag"></app-tag-chip>
+                  </div>
+                </div>
               </button>
               <div class="card-item-actions">
                 <button class="icon-btn" (click)="openEditModal(card); $event.stopPropagation()" [title]="'cardBrowser.editCard' | translate">
@@ -160,6 +167,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             </div>
           </div>
 
+          <div *ngIf="!searchNoResults && currentCard?.tags?.length" class="card-tags-panel">
+            <app-tag-chip *ngFor="let tag of currentCard!.tags" [text]="tag"></app-tag-chip>
+          </div>
+
           <div class="card-actions" *ngIf="!searchNoResults && currentCard">
             <app-button variant="secondary" size="sm" (click)="openEditModal(currentCard!)" *ngIf="currentCard">
               <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -167,6 +178,14 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                 <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
               </svg>
               {{ 'cardBrowser.editCard' | translate }}
+            </app-button>
+            <app-button
+              variant="ghost"
+              size="sm"
+              (click)="openAiEnhanceModal(currentCard!)"
+              *ngIf="currentCard && deck && publicDeck"
+            >
+              ✨ {{ 'cardBrowser.enhanceCard' | translate }}
             </app-button>
             <app-button variant="ghost" size="sm" tone="danger" (click)="openDeleteModal(currentCard!)" *ngIf="currentCard">
               <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
@@ -226,17 +245,49 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                 [rows]="4"
               ></app-textarea>
             </div>
+            <div class="tag-editor">
+              <label>{{ 'cardBrowser.tags' | translate }}</label>
+              <input
+                type="text"
+                class="tag-input"
+                [formControl]="tagInputControl"
+                (keydown.enter)="addTag($event)"
+                [placeholder]="'cardBrowser.tagsPlaceholder' | translate"
+                [attr.maxlength]="maxTagLength"
+                [attr.aria-label]="'cardBrowser.tags' | translate"
+              />
+              <div *ngIf="tags.length > 0" class="tags-list">
+                <app-tag-chip
+                  *ngFor="let tag of tags; let i = index"
+                  [text]="tag"
+                  [removable]="true"
+                  (remove)="removeTag(i)"
+                ></app-tag-chip>
+              </div>
+              <p *ngIf="tagErrorKey" class="error-message">{{ tagErrorKey | translate }}</p>
+            </div>
             <app-textarea
               [label]="'cardBrowser.personalNote' | translate"
               formControlName="personalNote"
               [rows]="3"
               placeholder="Add a personal note (optional)"
             ></app-textarea>
+            <div class="global-edit" *ngIf="editingCard && canEditGlobally(editingCard)">
+              <label>
+                <input
+                  type="checkbox"
+                  [checked]="applyGlobalEdits"
+                  (change)="toggleGlobalEdit($event)"
+                />
+                {{ 'cardBrowser.editScopeGlobal' | translate }}
+              </label>
+              <p class="field-hint">{{ 'cardBrowser.editScopeGlobalHint' | translate }}</p>
+            </div>
           </form>
         </div>
         <div class="modal-footer">
           <app-button variant="ghost" (click)="closeEditModal()" [disabled]="saving">{{ 'cardBrowser.cancel' | translate }}</app-button>
-          <app-button variant="primary" (click)="saveEdit()" [disabled]="editForm.invalid || saving">
+          <app-button variant="primary" (click)="saveEdit()" [disabled]="!canSaveEdit()">
             {{ saving ? ('cardBrowser.saving' | translate) : ('cardBrowser.save' | translate) }}
           </app-button>
         </div>
@@ -272,6 +323,17 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         </div>
       </div>
     </div>
+
+    <app-ai-enhance-card-modal
+      *ngIf="showAiEnhanceModal && enhanceCardTarget && template"
+      [userDeckId]="userDeckId"
+      [deckName]="deck?.displayName || ''"
+      [deckDescription]="deck?.displayDescription || ''"
+      [card]="enhanceCardTarget"
+      [template]="template"
+      (cardUpdated)="onAiCardUpdated($event)"
+      (closed)="closeAiEnhanceModal()"
+    ></app-ai-enhance-card-modal>
   `,
     styles: [`
       .card-browser {
@@ -445,6 +507,20 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         white-space: nowrap;
       }
 
+      .card-preview-body {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+        min-width: 0;
+        flex: 1;
+      }
+
+      .card-tags-inline {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+      }
+
       .flashcard-container {
         display: flex;
         flex-direction: column;
@@ -527,6 +603,14 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         color: var(--color-text-muted);
         text-align: center;
         margin: 0;
+      }
+
+      .card-tags-panel {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+        justify-content: center;
+        padding: var(--spacing-xs) 0;
       }
 
       .personal-note {
@@ -683,6 +767,55 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         flex-direction: column;
       }
 
+      .tag-editor {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+      }
+
+      .global-edit {
+        margin-top: var(--spacing-md);
+        padding: var(--spacing-sm) var(--spacing-md);
+        border-radius: var(--border-radius-md);
+        background: var(--color-card-background);
+        border: 1px dashed var(--glass-border);
+      }
+
+      .global-edit label {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        font-weight: 600;
+      }
+
+      .tag-input {
+        width: 100%;
+        padding: var(--spacing-sm) var(--spacing-md);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+        background: var(--color-card-background);
+        color: var(--color-text-primary);
+        transition: border-color 0.2s ease;
+      }
+
+      .tag-input:focus {
+        outline: none;
+        border-color: var(--color-primary-accent);
+        box-shadow: var(--focus-ring);
+      }
+
+      .tags-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+      }
+
+      .error-message {
+        margin: 0;
+        font-size: 0.85rem;
+        color: #dc2626;
+      }
+
       .checkbox-group {
         display: flex;
         align-items: center;
@@ -777,6 +910,8 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 export class CardBrowserComponent implements OnInit {
     private static readonly PAGE_SIZE = 50;
     private static readonly PREFETCH_THRESHOLD = 0.9;
+    private static readonly MAX_TAGS = 3;
+    private static readonly MAX_TAG_LENGTH = 25;
 
     loading = true;
     cards: UserCardDTO[] = [];
@@ -790,7 +925,13 @@ export class CardBrowserComponent implements OnInit {
     editingCard: UserCardDTO | null = null;
     showDeleteConfirm = false;
     showScopePrompt = false;
+    showAiEnhanceModal = false;
+    enhanceCardTarget: UserCardDTO | null = null;
     editForm!: FormGroup;
+    tagInputControl = new FormControl('', { nonNullable: true });
+    tags: string[] = [];
+    tagErrorKey = '';
+    readonly maxTagLength = CardBrowserComponent.MAX_TAG_LENGTH;
     saving = false;
     deleting = false;
     deleteTarget: UserCardDTO | null = null;
@@ -802,6 +943,7 @@ export class CardBrowserComponent implements OnInit {
     searchActive = false;
     searchNoResults = false;
     searchResultCount = 0;
+    applyGlobalEdits = false;
     private unfilteredCards: UserCardDTO[] = [];
     private currentPage = 1;
     private hasMoreCards = true;
@@ -891,8 +1033,9 @@ export class CardBrowserComponent implements OnInit {
             next: publicDeck => {
                 this.publicDeck = publicDeck;
                 this.isAuthor = publicDeck.authorId === this.currentUserId;
+                const templateVersion = this.deck?.templateVersion ?? publicDeck.templateVersion ?? null;
                 forkJoin({
-                    template: this.templateApi.getTemplate(publicDeck.templateId),
+                    template: this.templateApi.getTemplate(publicDeck.templateId, templateVersion),
                     cards: this.cardApi.getUserCards(this.userDeckId, 1, CardBrowserComponent.PAGE_SIZE),
                     size: this.deckApi.getUserDeckSize(this.userDeckId)
                 }).subscribe({
@@ -1100,6 +1243,7 @@ export class CardBrowserComponent implements OnInit {
 
     openEditModal(card: UserCardDTO): void {
         this.editingCard = card;
+        this.applyGlobalEdits = false;
         if (this.template) {
             const controls: { [key: string]: any } = {};
             this.template.fields?.forEach(field => {
@@ -1107,6 +1251,9 @@ export class CardBrowserComponent implements OnInit {
             });
             controls['personalNote'] = [card.personalNote || ''];
             this.editForm = this.fb.group(controls);
+            this.tags = [...(card.tags || [])];
+            this.tagInputControl.setValue('');
+            this.tagErrorKey = '';
             this.showEditModal = true;
         }
     }
@@ -1114,6 +1261,7 @@ export class CardBrowserComponent implements OnInit {
     closeEditModal(): void {
         this.showEditModal = false;
         this.editingCard = null;
+        this.applyGlobalEdits = false;
     }
 
     isMediaField(field: FieldTemplateDTO): boolean {
@@ -1135,19 +1283,83 @@ export class CardBrowserComponent implements OnInit {
         this.editForm.get(fieldName)?.markAsTouched();
     }
 
-    saveEdit(): void {
-        if (this.editForm.invalid || !this.editingCard) return;
+    addTag(event: Event): void {
+        event.preventDefault();
+        const tag = this.tagInputControl.value.trim();
+        if (!tag) {
+            return;
+        }
+        if (this.tags.length >= CardBrowserComponent.MAX_TAGS) {
+            this.tagErrorKey = 'validation.cardTagsLimit';
+            return;
+        }
+        if (tag.length > CardBrowserComponent.MAX_TAG_LENGTH) {
+            this.tagErrorKey = 'validation.tagTooLong';
+            return;
+        }
+        if (!this.tags.includes(tag)) {
+            this.tags.push(tag);
+        }
+        this.tagInputControl.setValue('');
+        this.tagErrorKey = '';
+    }
 
-        this.saving = true;
+    removeTag(index: number): void {
+        this.tags.splice(index, 1);
+        this.tagErrorKey = '';
+    }
+
+    private validateTags(): boolean {
+        if (this.tags.length > CardBrowserComponent.MAX_TAGS) {
+            this.tagErrorKey = 'validation.cardTagsLimit';
+            return false;
+        }
+        if (this.tags.some(tag => tag.length > CardBrowserComponent.MAX_TAG_LENGTH)) {
+            this.tagErrorKey = 'validation.tagTooLong';
+            return false;
+        }
+        this.tagErrorKey = '';
+        return true;
+    }
+
+    canSaveEdit(): boolean {
+        if (this.saving || !this.editForm || !this.editingCard) return false;
+        if (this.editForm.valid) return true;
+        return this.canSaveTagsOnly();
+    }
+
+    saveEdit(): void {
+        if (!this.editingCard) return;
+        if (!this.validateTags()) return;
+
         const formValue = this.editForm.value;
         const { personalNote, ...content } = formValue;
+        const contentChanged = this.hasContentChanges(formValue);
+        const noteChanged = this.hasPersonalNoteChange(formValue);
+        const tagsChanged = this.areTagsChanged();
+
+        if (this.editForm.invalid && (contentChanged || noteChanged)) {
+            return;
+        }
+        if (!contentChanged && !noteChanged && !tagsChanged) {
+            return;
+        }
 
         const updates: Partial<UserCardDTO> = {
-            effectiveContent: content,
-            personalNote: personalNote || null
+            tags: this.tags
         };
 
-        this.cardApi.patchUserCard(this.userDeckId, this.editingCard.userCardId, updates).subscribe({
+        if (contentChanged) {
+            updates.effectiveContent = content;
+        }
+
+        if (noteChanged) {
+            updates.personalNote = personalNote || null;
+        }
+
+        this.saving = true;
+        const scope = this.applyGlobalEdits ? 'global' : 'local';
+        this.cardApi.patchUserCard(this.userDeckId, this.editingCard.userCardId, updates, scope).subscribe({
             next: updatedCard => {
                 const index = this.cards.findIndex(c => c.userCardId === updatedCard.userCardId);
                 if (index !== -1) {
@@ -1156,12 +1368,86 @@ export class CardBrowserComponent implements OnInit {
                 this.saving = false;
                 this.showEditModal = false;
                 this.editingCard = null;
+                this.applyGlobalEdits = false;
             },
             error: err => {
                 console.error('Failed to update card:', err);
                 this.saving = false;
             }
         });
+    }
+
+    private canSaveTagsOnly(): boolean {
+        if (!this.editingCard || !this.editForm) return false;
+        const formValue = this.editForm.value;
+        if (this.hasContentChanges(formValue) || this.hasPersonalNoteChange(formValue)) {
+            return false;
+        }
+        return this.areTagsChanged();
+    }
+
+    private hasContentChanges(formValue: Record<string, any>): boolean {
+        if (!this.template || !this.editingCard) return false;
+        return (this.template.fields || []).some(field => !this.contentEquals(
+            formValue[field.name],
+            this.editingCard?.effectiveContent?.[field.name]
+        ));
+    }
+
+    private hasPersonalNoteChange(formValue: Record<string, any>): boolean {
+        if (!this.editingCard) return false;
+        const current = formValue['personalNote'] ?? '';
+        const original = this.editingCard.personalNote ?? '';
+        return current !== original;
+    }
+
+    private areTagsChanged(): boolean {
+        if (!this.editingCard) return false;
+        const next = this.normalizeTags(this.tags);
+        const original = this.normalizeTags(this.editingCard.tags);
+        return JSON.stringify(next) !== JSON.stringify(original);
+    }
+
+    private normalizeTags(tags?: string[] | null): string[] {
+        return (tags || [])
+            .map(tag => tag.trim())
+            .filter(tag => tag.length > 0)
+            .sort();
+    }
+
+    private contentEquals(a: CardContentValue | undefined, b: CardContentValue | undefined): boolean {
+        if (a === b) return true;
+        return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
+    }
+
+    toggleGlobalEdit(event: Event): void {
+        const input = event.target as HTMLInputElement | null;
+        this.applyGlobalEdits = !!input?.checked;
+    }
+
+    openAiEnhanceModal(card: UserCardDTO): void {
+        this.enhanceCardTarget = card;
+        this.showAiEnhanceModal = true;
+    }
+
+    closeAiEnhanceModal(): void {
+        this.showAiEnhanceModal = false;
+        this.enhanceCardTarget = null;
+    }
+
+    onAiCardUpdated(updated: UserCardDTO): void {
+        const index = this.cards.findIndex(card => card.userCardId === updated.userCardId);
+        if (index !== -1) {
+            this.cards[index] = updated;
+            this.currentCardIndex = index;
+        }
+        const unfilteredIndex = this.unfilteredCards.findIndex(card => card.userCardId === updated.userCardId);
+        if (unfilteredIndex !== -1) {
+            this.unfilteredCards[unfilteredIndex] = updated;
+        }
+        if (this.enhanceCardTarget?.userCardId === updated.userCardId) {
+            this.enhanceCardTarget = updated;
+        }
     }
 
     openDeleteModal(card: UserCardDTO): void {
@@ -1231,6 +1517,10 @@ export class CardBrowserComponent implements OnInit {
     }
 
     private canDeleteGlobally(card: UserCardDTO): boolean {
+        return this.isAuthor && !!this.publicDeck && !card.isCustom;
+    }
+
+    canEditGlobally(card: UserCardDTO): boolean {
         return this.isAuthor && !!this.publicDeck && !card.isCustom;
     }
 }

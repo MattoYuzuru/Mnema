@@ -36,6 +36,9 @@ public class CardTemplateEntity {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
+    @Column(name = "latest_version", nullable = false)
+    private Integer latestVersion;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "layout", columnDefinition = "jsonb")
     private JsonNode layout;
@@ -59,7 +62,8 @@ public class CardTemplateEntity {
                               Instant updatedAt,
                               JsonNode layout,
                               JsonNode aiProfile,
-                              String iconUrl) {
+                              String iconUrl,
+                              Integer latestVersion) {
         this.templateId = templateId;
         this.ownerId = ownerId;
         this.name = name;
@@ -70,6 +74,7 @@ public class CardTemplateEntity {
         this.layout = layout;
         this.aiProfile = aiProfile;
         this.iconUrl = iconUrl;
+        this.latestVersion = latestVersion;
     }
 
     public UUID getTemplateId() {
@@ -126,6 +131,14 @@ public class CardTemplateEntity {
 
     public void setUpdatedAt(Instant updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public Integer getLatestVersion() {
+        return latestVersion;
+    }
+
+    public void setLatestVersion(Integer latestVersion) {
+        this.latestVersion = latestVersion;
     }
 
     public JsonNode getLayout() {

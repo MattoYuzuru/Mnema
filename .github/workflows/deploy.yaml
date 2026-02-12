@@ -69,6 +69,12 @@ jobs:
             dockerfile: ./backend/Dockerfile
             target: import-runtime
 
+          - name: ai
+            kind: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            target: ai-runtime
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -171,6 +177,9 @@ jobs:
             AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
             AWS_BUCKET_NAME: "${AWS_BUCKET_NAME}"
             MEDIA_INTERNAL_TOKEN: "${MEDIA_INTERNAL_TOKEN}"
+            AI_VAULT_MASTER_KEY: "${AI_VAULT_MASTER_KEY}"
+            AI_VAULT_KEY_ID: "${AI_VAULT_KEY_ID}"
+            AI_PROVIDER: "${AI_PROVIDER}"
           YAML
         env:
           AUTH_ISSUER: ${{ secrets.AUTH_ISSUER }}
@@ -193,6 +202,9 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
           MEDIA_INTERNAL_TOKEN: ${{ secrets.MEDIA_INTERNAL_TOKEN }}
+          AI_VAULT_MASTER_KEY: ${{ secrets.AI_VAULT_MASTER_KEY }}
+          AI_VAULT_KEY_ID: ${{ secrets.AI_VAULT_KEY_ID }}
+          AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
 
       - name: Create/Update secret (grafana-secrets)
         run: |
@@ -288,7 +300,8 @@ jobs:
           tag="${{ steps.meta.outputs.TAG }}"
 
           deploy mnema-frontend frontend "${image_base}/frontend:${tag}" 600s
-          deploy mnema-auth     auth     "${image_base}/auth:${tag}"     1800s
+          deploy mnema-auth     auth     "${image_base}/auth:${tag}"     1200s
           deploy mnema-user     user     "${image_base}/user:${tag}"     1200s
           deploy mnema-core     core     "${image_base}/core:${tag}"     1200s
           deploy mnema-media    media    "${image_base}/media:${tag}"    1800s
+          deploy mnema-ai       ai       "${image_base}/ai:${tag}"       1800s

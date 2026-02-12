@@ -21,4 +21,8 @@ public interface ImportStream extends Closeable {
     default boolean isAnki() {
         return false;
     }
+
+    default ImportAnkiTemplate ankiTemplate() {
+        return null;
+    }
 }

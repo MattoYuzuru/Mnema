@@ -53,6 +53,7 @@ class PublicCardRepositoryDataJpaTest extends PostgresIntegrationTest {
             // если таблицы нет/другая ошибка – создадим запись ниже
         }
         if (existing != null) {
+            ensureTemplateVersion(existing);
             return existing;
         }
 
@@ -66,8 +67,22 @@ class PublicCardRepositoryDataJpaTest extends PostgresIntegrationTest {
                 "insert into card_templates (template_id, owner_id, name) values (?, ?, ?)",
                 id, ownerId, name
         );
+        ensureTemplateVersion(id);
 
         return id;
+    }
+
+    private void ensureTemplateVersion(UUID templateId) {
+        UUID ownerId = jdbcTemplate.queryForObject(
+                "select owner_id from card_templates where template_id = ?",
+                UUID.class,
+                templateId
+        );
+        jdbcTemplate.update(
+                "insert into card_template_versions (template_id, version, created_by) values (?, 1, ?) on conflict do nothing",
+                templateId,
+                ownerId
+        );
     }
 
     private PublicDeckEntity createDeck() {
@@ -203,7 +218,7 @@ class PublicCardRepositoryDataJpaTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void findByCardId_findsCardByGeneratedId() {
+    void findFirstByCardIdOrderByDeckVersionDesc_findsCardByGeneratedId() {
         PublicDeckEntity deck = createDeck();
 
         ObjectNode content = objectMapper.createObjectNode();
@@ -225,7 +240,7 @@ class PublicCardRepositoryDataJpaTest extends PostgresIntegrationTest {
 
         PublicCardEntity saved = publicCardRepository.save(card);
 
-        var found = publicCardRepository.findByCardId(saved.getCardId());
+        var found = publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(saved.getCardId());
 
         assertThat(found).isPresent();
         assertThat(found.get().getCardId()).isEqualTo(saved.getCardId());

@@ -1,0 +1,43 @@
+package app.mnema.ai.support;
+
+import org.apache.pdfbox.Loader;
+import org.apache.pdfbox.io.MemoryUsageSetting;
+import org.apache.pdfbox.pdmodel.PDDocument;
+import org.apache.pdfbox.text.PDFTextStripper;
+
+public final class ImportPdfExtractor {
+
+    private ImportPdfExtractor() {
+    }
+
+    public static PdfText extract(byte[] bytes, int maxChars) {
+        if (bytes == null || bytes.length == 0) {
+            return new PdfText("", false, 0);
+        }
+        int limit = Math.max(maxChars, 1);
+        MemoryUsageSetting memory = MemoryUsageSetting.setupTempFileOnly();
+        try (PDDocument document = Loader.loadPDF(bytes, null, null, null, memory.streamCache)) {
+            if (document.isEncrypted()) {
+                throw new IllegalStateException("Encrypted PDF is not supported");
+            }
+            int pageCount = document.getNumberOfPages();
+            PDFTextStripper stripper = new PDFTextStripper();
+            stripper.setSortByPosition(true);
+            String text = stripper.getText(document);
+            if (text == null) {
+                return new PdfText("", false, pageCount);
+            }
+            boolean truncated = false;
+            if (text.length() > limit) {
+                text = text.substring(0, limit);
+                truncated = true;
+            }
+            return new PdfText(text, truncated, pageCount);
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to parse PDF", ex);
+        }
+    }
+
+    public record PdfText(String text, boolean truncated, int pageCount) {
+    }
+}

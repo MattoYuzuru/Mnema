@@ -1,14 +1,16 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, computed, signal } from '@angular/core';
 import { Router } from '@angular/router';
-import { NgFor, NgIf } from '@angular/common';
+import { DatePipe, NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ThemeService } from '../../core/services/theme.service';
 import { I18nService, Language } from '../../core/services/i18n.service';
 import { PreferencesService } from '../../core/services/preferences.service';
 import { DeckApiService } from '../../core/services/deck-api.service';
+import { AiApiService } from '../../core/services/ai-api.service';
 import { UserApiService } from '../../user-api.service';
 import { AuthService } from '../../auth.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
+import { AiProviderCredential } from '../../core/models/ai.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
@@ -16,7 +18,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 @Component({
     selector: 'app-settings',
     standalone: true,
-    imports: [NgFor, NgIf, FormsModule, ButtonComponent, ConfirmationDialogComponent, TranslatePipe],
+    imports: [NgFor, NgIf, FormsModule, ButtonComponent, ConfirmationDialogComponent, TranslatePipe, DatePipe],
     template: `
     <div class="settings-page">
       <h1>{{ 'settings.title' | translate }}</h1>
@@ -113,6 +115,141 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         </div>
       </section>
 
+      <section class="settings-section ai-settings">
+        <h2>{{ 'settings.aiProviderKeysTitle' | translate }}</h2>
+        <p class="section-description">
+          {{ 'settings.aiProviderKeysDescription' | translate }}
+        </p>
+
+        <div class="ai-settings-grid">
+          <div class="ai-keys-panel" [attr.aria-busy]="providersLoading()">
+            <div class="ai-panel-header">
+              <h3>{{ 'settings.aiProviderKeysSavedTitle' | translate }}</h3>
+              <app-button variant="ghost" size="sm" (click)="loadProviders()" [disabled]="providersLoading()">
+                {{ 'settings.aiProviderKeysRefresh' | translate }}
+              </app-button>
+            </div>
+
+            <div *ngIf="providersLoading()" class="loading-state">{{ 'settings.aiProviderKeysLoading' | translate }}</div>
+            <div *ngIf="!providersLoading() && providerError()" class="error-state" role="alert">
+              {{ (providerError() || '') | translate }}
+            </div>
+            <div *ngIf="!providersLoading() && !providerError() && providerKeys().length === 0" class="empty-state">
+              {{ 'settings.aiProviderKeysEmpty' | translate }}
+            </div>
+
+            <div *ngIf="!providersLoading() && providerKeys().length > 0" class="ai-keys-list">
+              <div *ngFor="let key of providerKeys(); trackBy: trackProvider" class="ai-key-row">
+                <div class="ai-key-main">
+                  <div class="ai-key-title">
+                    <span class="ai-key-provider">{{ key.provider }}</span>
+                    <span *ngIf="key.alias" class="ai-key-alias">- {{ key.alias }}</span>
+                  </div>
+                  <div class="ai-key-meta">
+                    <span class="ai-key-secret" [attr.aria-label]="'settings.aiProviderKeysSecretStored' | translate">
+                      {{ maskedSecret() }}
+                    </span>
+                    <span class="ai-key-status" [class.active]="key.status === 'active'" [class.inactive]="key.status !== 'active'">
+                      {{ formatStatus(key.status) }}
+                    </span>
+                    <span class="ai-key-last-used">
+                      {{ 'settings.aiProviderKeysLastUsed' | translate }}
+                      <span *ngIf="key.lastUsedAt; else neverUsed">{{ key.lastUsedAt | date:'medium' }}</span>
+                      <ng-template #neverUsed>{{ 'settings.aiProviderKeysNever' | translate }}</ng-template>
+                    </span>
+                  </div>
+                </div>
+                <div class="ai-key-actions">
+                  <app-button
+                    variant="ghost"
+                    size="sm"
+                    tone="danger"
+                    (click)="openDeleteProvider(key)"
+                    [disabled]="deleteInFlight()"
+                  >
+                    {{ 'settings.aiProviderKeysDelete' | translate }}
+                  </app-button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="ai-form-panel">
+            <h3>{{ 'settings.aiProviderKeysAddTitle' | translate }}</h3>
+            <p class="form-help">{{ 'settings.aiProviderKeysAddHelp' | translate }}</p>
+            <form (ngSubmit)="createProvider()" class="ai-form">
+              <div class="form-field">
+                <label for="ai-provider">{{ 'settings.aiProviderKeysProviderLabel' | translate }}</label>
+                <select
+                  id="ai-provider"
+                  name="provider"
+                  [ngModel]="providerPreset()"
+                  (ngModelChange)="onProviderPresetChange($event)"
+                >
+                  <option *ngFor="let opt of providerOptions" [ngValue]="opt.value">
+                    {{ opt.label }}
+                  </option>
+                </select>
+                <input
+                  *ngIf="providerPreset() === 'custom'"
+                  name="providerCustom"
+                  type="text"
+                  [ngModel]="providerName()"
+                  (ngModelChange)="providerName.set($event)"
+                  [placeholder]="'settings.aiProviderKeysCustomPlaceholder' | translate"
+                  autocomplete="organization"
+                />
+              </div>
+
+              <div class="form-field">
+                <label for="ai-alias">{{ 'settings.aiProviderKeysAliasLabel' | translate }}</label>
+                <input
+                  id="ai-alias"
+                  name="alias"
+                  type="text"
+                  [ngModel]="providerAlias()"
+                  (ngModelChange)="providerAlias.set($event)"
+                  [placeholder]="'settings.aiProviderKeysAliasPlaceholder' | translate"
+                  autocomplete="off"
+                />
+              </div>
+
+              <div class="form-field">
+                <label for="ai-secret">{{ 'settings.aiProviderKeysSecretLabel' | translate }}</label>
+                <input
+                  id="ai-secret"
+                  name="secret"
+                  type="password"
+                  [ngModel]="providerSecret()"
+                  (ngModelChange)="providerSecret.set($event)"
+                  [placeholder]="'settings.aiProviderKeysSecretPlaceholder' | translate"
+                  required
+                  autocomplete="new-password"
+                />
+                <p class="field-hint">{{ 'settings.aiProviderKeysSecretHint' | translate }}</p>
+              </div>
+
+              <div class="form-actions">
+                <app-button
+                  type="submit"
+                  variant="primary"
+                  [disabled]="!canCreateProvider()"
+                >
+                  {{ creatingProvider() ? ('settings.aiProviderKeysSaving' | translate) : ('settings.aiProviderKeysSave' | translate) }}
+                </app-button>
+              </div>
+
+              <div *ngIf="createSuccess()" class="success-state" role="status" aria-live="polite">
+                {{ (createSuccess() || '') | translate }}
+              </div>
+              <div *ngIf="createError()" class="error-state" role="alert">
+                {{ (createError() || '') | translate }}
+              </div>
+            </form>
+          </div>
+        </div>
+      </section>
+
       <section class="settings-section">
         <h2>{{ 'settings.archive' | translate }}</h2>
         <p class="section-description">{{ 'settings.archiveDescription' | translate }}</p>
@@ -195,6 +332,18 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       cancelText="Cancel"
       (confirm)="confirmHardDelete()"
       (cancel)="closeHardDeleteConfirm()"
+    ></app-confirmation-dialog>
+
+    <app-confirmation-dialog
+      *ngIf="deleteProviderTarget()"
+      [open]="!!deleteProviderTarget()"
+      [title]="'settings.aiProviderKeysDeleteTitle' | translate"
+      [message]="'settings.aiProviderKeysDeleteMessage' | translate"
+      [confirmText]="'settings.aiProviderKeysDeleteConfirm' | translate"
+      [cancelText]="'settings.aiProviderKeysDeleteCancel' | translate"
+      confirmVariant="ghost"
+      (confirm)="confirmDeleteProvider()"
+      (cancel)="closeDeleteProvider()"
     ></app-confirmation-dialog>
   `,
     styles: [`
@@ -333,6 +482,170 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         align-items: center;
       }
 
+      .ai-settings-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+        gap: var(--spacing-xl);
+      }
+
+      .ai-keys-panel,
+      .ai-form-panel {
+        background: var(--color-background);
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+        padding: var(--spacing-lg);
+      }
+
+      .ai-panel-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: var(--spacing-md);
+      }
+
+      .ai-panel-header h3 {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      .ai-keys-list {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+      }
+
+      .ai-key-row {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        padding: var(--spacing-md);
+        border-radius: var(--border-radius-md);
+        border: 1px solid var(--border-color);
+        background: var(--color-card-background);
+      }
+
+      .ai-key-main {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+      }
+
+      .ai-key-title {
+        font-weight: 600;
+        display: flex;
+        gap: var(--spacing-xs);
+        align-items: center;
+      }
+
+      .ai-key-alias {
+        font-weight: 500;
+        color: var(--color-text-muted);
+      }
+
+      .ai-key-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+        align-items: center;
+      }
+
+      .ai-key-secret {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+        background: rgba(0, 0, 0, 0.06);
+        padding: 2px 8px;
+        border-radius: 999px;
+        letter-spacing: 0.1em;
+      }
+
+      .ai-key-status {
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        border: 1px solid transparent;
+      }
+
+      .ai-key-status.active {
+        background: rgba(34, 197, 94, 0.12);
+        color: #15803d;
+        border-color: rgba(34, 197, 94, 0.3);
+      }
+
+      .ai-key-status.inactive {
+        background: rgba(148, 163, 184, 0.2);
+        color: #475569;
+        border-color: rgba(148, 163, 184, 0.4);
+      }
+
+      .ai-key-actions {
+        display: flex;
+        align-items: center;
+      }
+
+      .ai-form-panel h3 {
+        margin: 0 0 var(--spacing-sm) 0;
+      }
+
+      .form-help {
+        margin: 0 0 var(--spacing-md) 0;
+        color: var(--color-text-muted);
+      }
+
+      .ai-form {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+      }
+
+      .form-field {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+      }
+
+      .form-field label {
+        font-weight: 600;
+        font-size: 0.9rem;
+      }
+
+      .form-field input {
+        padding: var(--spacing-sm) var(--spacing-md);
+        border-radius: var(--border-radius-md);
+        border: 1px solid var(--border-color);
+        background: var(--color-surface-solid);
+        color: var(--color-text-primary);
+      }
+
+      .form-field input:focus {
+        outline: none;
+        border-color: var(--color-primary-accent);
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+      }
+
+      .field-hint {
+        margin: 0;
+        font-size: 0.8rem;
+        color: var(--color-text-muted);
+      }
+
+      .form-actions {
+        display: flex;
+        justify-content: flex-start;
+      }
+
+      .success-state {
+        color: #15803d;
+        font-size: 0.9rem;
+      }
+
+      .error-state {
+        color: #dc2626;
+        font-size: 0.9rem;
+      }
+
       .danger-zone {
         border-color: #dc2626;
       }
@@ -340,8 +653,6 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       .danger-zone h2 {
         color: #dc2626;
       }
-
-      
 
       .modal-overlay {
         position: fixed;
@@ -445,6 +756,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           justify-content: flex-start;
         }
 
+        .ai-settings-grid {
+          grid-template-columns: 1fr;
+        }
+
         .modal-header,
         .modal-body,
         .modal-footer {
@@ -481,11 +796,41 @@ export class SettingsComponent implements OnInit {
     deleteAccountUsername = '';
     currentUsername = '';
 
+    readonly providerKeys = signal<AiProviderCredential[]>([]);
+    readonly providersLoading = signal(false);
+    readonly providerError = signal<string | null>(null);
+    readonly createError = signal<string | null>(null);
+    readonly createSuccess = signal<string | null>(null);
+    readonly creatingProvider = signal(false);
+    readonly deleteInFlight = signal(false);
+    readonly providerName = signal('');
+    readonly providerPreset = signal('openai');
+    readonly providerAlias = signal('');
+    readonly providerSecret = signal('');
+    readonly deleteProviderTarget = signal<AiProviderCredential | null>(null);
+    readonly canCreateProvider = computed(() =>
+        !this.creatingProvider() &&
+        this.providerName().trim().length > 0 &&
+        this.providerSecret().trim().length > 0
+    );
+
+    readonly providerOptions = [
+        { label: 'OpenAI', value: 'openai' },
+        { label: 'Google Gemini', value: 'gemini' },
+        { label: 'Claude (Anthropic)', value: 'anthropic' },
+        { label: 'Qwen (Alibaba)', value: 'qwen' },
+        { label: 'Grok (xAI)', value: 'grok' },
+        { label: 'DeepSeek', value: 'deepseek' },
+        { label: 'GigaChat', value: 'gigachat' },
+        { label: 'Custom', value: 'custom' }
+    ];
+
     constructor(
         public theme: ThemeService,
         public i18n: I18nService,
         public preferences: PreferencesService,
         private deckApi: DeckApiService,
+        private aiApi: AiApiService,
         private userApi: UserApiService,
         private auth: AuthService,
         private router: Router
@@ -493,6 +838,8 @@ export class SettingsComponent implements OnInit {
 
     ngOnInit(): void {
         this.loadArchivedDecks();
+        this.loadProviders();
+        this.providerName.set(this.providerPreset());
         this.userApi.getMe().subscribe({
             next: profile => {
                 this.currentUsername = profile.username;
@@ -511,6 +858,97 @@ export class SettingsComponent implements OnInit {
                 this.loadingArchive = false;
             }
         });
+    }
+
+    loadProviders(): void {
+        this.providersLoading.set(true);
+        this.providerError.set(null);
+        this.aiApi.listProviders().subscribe({
+            next: providers => {
+                this.providerKeys.set(providers);
+                this.providersLoading.set(false);
+            },
+            error: () => {
+                this.providerError.set('settings.aiProviderKeysLoadError');
+                this.providersLoading.set(false);
+            }
+        });
+    }
+
+    onProviderPresetChange(value: string): void {
+        this.providerPreset.set(value);
+        if (value === 'custom') {
+            this.providerName.set('');
+            return;
+        }
+        this.providerName.set(value);
+    }
+
+    createProvider(): void {
+        if (!this.canCreateProvider()) {
+            return;
+        }
+        this.creatingProvider.set(true);
+        this.createError.set(null);
+        this.createSuccess.set(null);
+        this.aiApi.createProvider({
+            provider: this.providerName().trim(),
+            alias: this.providerAlias().trim() || null,
+            secret: this.providerSecret()
+        }).subscribe({
+            next: provider => {
+                this.providerKeys.update(list => [provider, ...list]);
+                this.providerSecret.set('');
+                this.createSuccess.set('settings.aiProviderKeysSaved');
+                this.creatingProvider.set(false);
+            },
+            error: () => {
+                this.createError.set('settings.aiProviderKeysSaveError');
+                this.creatingProvider.set(false);
+            }
+        });
+    }
+
+    openDeleteProvider(provider: AiProviderCredential): void {
+        this.deleteProviderTarget.set(provider);
+    }
+
+    closeDeleteProvider(): void {
+        this.deleteProviderTarget.set(null);
+    }
+
+    confirmDeleteProvider(): void {
+        const target = this.deleteProviderTarget();
+        if (!target) {
+            return;
+        }
+        this.deleteInFlight.set(true);
+        this.aiApi.deleteProvider(target.id).subscribe({
+            next: () => {
+                this.providerKeys.update(list => list.filter(item => item.id !== target.id));
+                this.deleteInFlight.set(false);
+                this.closeDeleteProvider();
+            },
+            error: () => {
+                this.deleteInFlight.set(false);
+                this.closeDeleteProvider();
+            }
+        });
+    }
+
+    maskedSecret(): string {
+        return '********';
+    }
+
+    formatStatus(status: string): string {
+        if (!status) {
+            return 'Unknown';
+        }
+        return status.charAt(0).toUpperCase() + status.slice(1);
+    }
+
+    trackProvider(_: number, item: AiProviderCredential): string {
+        return item.id;
     }
 
     restoreDeck(userDeckId: string): void {

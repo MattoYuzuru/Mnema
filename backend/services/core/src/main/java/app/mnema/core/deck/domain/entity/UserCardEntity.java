@@ -36,6 +36,10 @@ public class UserCardEntity {
     @Column(name = "personal_note")
     private String personalNote;
 
+    @JdbcTypeCode(SqlTypes.ARRAY)
+    @Column(name = "tags", columnDefinition = "text[]")
+    private String[] tags;
+
     @JdbcTypeCode(SqlTypes.JSON)
     @Column(name = "content_override", columnDefinition = "jsonb")
     private JsonNode contentOverride;
@@ -56,6 +60,7 @@ public class UserCardEntity {
             boolean custom,
             boolean deleted,
             String personalNote,
+            String[] tags,
             JsonNode contentOverride,
             Instant createdAt,
             Instant updatedAt
@@ -66,6 +71,7 @@ public class UserCardEntity {
         this.custom = custom;
         this.deleted = deleted;
         this.personalNote = personalNote;
+        this.tags = tags;
         this.contentOverride = contentOverride;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
@@ -125,6 +131,14 @@ public class UserCardEntity {
 
     public void setPersonalNote(String personalNote) {
         this.personalNote = personalNote;
+    }
+
+    public String[] getTags() {
+        return tags;
+    }
+
+    public void setTags(String[] tags) {
+        this.tags = tags;
     }
 
     public JsonNode getContentOverride() {

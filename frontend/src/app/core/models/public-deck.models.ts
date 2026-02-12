@@ -7,6 +7,7 @@ export interface PublicDeckDTO {
     name: string;
     description: string;
     templateId: string;
+    templateVersion?: number | null;
     isPublic: boolean;
     isListed: boolean;
     language: string;

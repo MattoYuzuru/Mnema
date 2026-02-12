@@ -67,8 +67,15 @@ public class TemplateController {
 
     // GET /api/core/templates/{templateId}
     @GetMapping("/{templateId}")
-    public CardTemplateDTO getTemplateById(@PathVariable UUID templateId) {
-        return templateService.getCardTemplateById(templateId);
+    public CardTemplateDTO getTemplateById(@PathVariable UUID templateId,
+                                           @RequestParam(required = false) Integer version) {
+        return templateService.getCardTemplateById(templateId, version);
+    }
+
+    // GET /api/core/templates/{templateId}/versions
+    @GetMapping("/{templateId}/versions")
+    public List<Integer> getTemplateVersions(@PathVariable UUID templateId) {
+        return templateService.getTemplateVersions(templateId);
     }
 
     // PATCH /api/core/templates/{templateId}

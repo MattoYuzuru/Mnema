@@ -98,6 +98,23 @@ public class MediaPolicy {
                 "text/csv",
                 "text/plain"
         );
+        Set<String> aiImportTypes = Set.of(
+                "text/plain",
+                "application/pdf",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                "image/jpeg",
+                "image/png",
+                "image/webp",
+                "audio/flac",
+                "audio/mpeg",
+                "audio/mp4",
+                "audio/mp3",
+                "audio/x-m4a",
+                "audio/ogg",
+                "audio/wav",
+                "audio/x-wav",
+                "audio/webm"
+        );
 
         map.put(MediaKind.avatar, new MediaLimit(
                 5 * MB,
@@ -145,6 +162,14 @@ public class MediaPolicy {
                 null,
                 null,
                 importFileTypes
+        ));
+
+        map.put(MediaKind.ai_import, new MediaLimit(
+                300 * MB,
+                null,
+                null,
+                null,
+                aiImportTypes
         ));
 
         return map;

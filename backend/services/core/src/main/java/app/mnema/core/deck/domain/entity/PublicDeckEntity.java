@@ -38,6 +38,9 @@ public class PublicDeckEntity {
     @Column(name = "template_id", nullable = false)
     private UUID templateId;
 
+    @Column(name = "template_version", nullable = false)
+    private Integer templateVersion;
+
     @Column(name = "is_public", nullable = false)
     private boolean publicFlag;
 
@@ -79,6 +82,7 @@ public class PublicDeckEntity {
             String description,
             UUID iconMediaId,
             UUID templateId,
+            Integer templateVersion,
             boolean publicFlag,
             boolean listed,
             LanguageTag languageCode,
@@ -95,14 +99,52 @@ public class PublicDeckEntity {
         this.description = description;
         this.iconMediaId = iconMediaId;
         this.templateId = templateId;
+        this.templateVersion = templateVersion;
         this.publicFlag = publicFlag;
         this.listed = listed;
         this.languageCode = languageCode;
         this.tags = tags;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
-        this.publishedAt = publishedAt;
-        this.forkedFromDeck = forkedFromDeck;
+            this.publishedAt = publishedAt;
+            this.forkedFromDeck = forkedFromDeck;
+        }
+
+    public PublicDeckEntity(
+            UUID deckId,
+            Integer version,
+            UUID authorId,
+            String name,
+            String description,
+            UUID iconMediaId,
+            UUID templateId,
+            boolean publicFlag,
+            boolean listed,
+            LanguageTag languageCode,
+            String[] tags,
+            Instant createdAt,
+            Instant updatedAt,
+            Instant publishedAt,
+            UUID forkedFromDeck
+    ) {
+        this(
+                deckId,
+                version,
+                authorId,
+                name,
+                description,
+                iconMediaId,
+                templateId,
+                1,
+                publicFlag,
+                listed,
+                languageCode,
+                tags,
+                createdAt,
+                updatedAt,
+                publishedAt,
+                forkedFromDeck
+        );
     }
 
     public UUID getDeckId() {
@@ -131,6 +173,10 @@ public class PublicDeckEntity {
 
     public UUID getTemplateId() {
         return templateId;
+    }
+
+    public Integer getTemplateVersion() {
+        return templateVersion;
     }
 
     public boolean isPublicFlag() {
@@ -195,6 +241,10 @@ public class PublicDeckEntity {
 
     public void setTags(String[] tags) {
         this.tags = tags;
+    }
+
+    public void setTemplateVersion(Integer templateVersion) {
+        this.templateVersion = templateVersion;
     }
 
     public void setUpdatedAt(Instant updatedAt) {

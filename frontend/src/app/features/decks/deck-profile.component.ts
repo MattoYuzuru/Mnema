@@ -1,24 +1,31 @@
 import { Component, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { NgIf, NgFor } from '@angular/common';
+import { DatePipe, NgIf, NgFor } from '@angular/common';
 import { ReactiveFormsModule, FormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
+import { TemplateApiService } from '../../core/services/template-api.service';
 import { ReviewApiService } from '../../core/services/review-api.service';
 import { ImportApiService } from '../../core/services/import-api.service';
 import { MediaApiService } from '../../core/services/media-api.service';
+import { AiApiService } from '../../core/services/ai-api.service';
 import { UserApiService } from '../../user-api.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { ReviewDeckAlgorithmResponse } from '../../core/models/review.models';
 import { ImportJobResponse, ImportSourceType } from '../../core/models/import.models';
+import { AiJobResponse, AiJobStatus, AiJobType } from '../../core/models/ai.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { AddCardsModalComponent } from './add-cards-modal.component';
+import { AiAddCardsModalComponent } from './ai-add-cards-modal.component';
+import { AiEnhanceDeckModalComponent } from './ai-enhance-deck-modal.component';
+import { AiImportModalComponent } from './ai-import-modal.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { InputComponent } from '../../shared/components/input.component';
+import { TagChipComponent } from '../../shared/components/tag-chip.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 import { ImportDeckModalComponent } from '../import/import-deck-modal.component';
 import { markdownToHtml } from '../../shared/utils/markdown.util';
@@ -27,7 +34,7 @@ import { I18nService } from '../../core/services/i18n.service';
 @Component({
     selector: 'app-deck-profile',
     standalone: true,
-    imports: [NgIf, NgFor, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, ConfirmationDialogComponent, InputComponent, ImportDeckModalComponent, TranslatePipe],
+    imports: [NgIf, NgFor, DatePipe, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, AiAddCardsModalComponent, AiEnhanceDeckModalComponent, AiImportModalComponent, ConfirmationDialogComponent, InputComponent, TagChipComponent, ImportDeckModalComponent, TranslatePipe],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -35,6 +42,9 @@ import { I18nService } from '../../core/services/i18n.service';
       <header class="deck-header">
         <h1>{{ deck.displayName }}</h1>
         <div class="deck-description" [innerHTML]="formatDescription(deck.displayDescription)"></div>
+        <div *ngIf="publicDeck?.tags?.length" class="deck-tags">
+          <app-tag-chip *ngFor="let tag of publicDeck!.tags" [text]="tag"></app-tag-chip>
+        </div>
       </header>
 
       <div class="deck-meta">
@@ -50,9 +60,45 @@ import { I18nService } from '../../core/services/i18n.service';
           <span class="meta-label">{{ 'deckProfile.version' | translate }}:</span>
           <span class="meta-value">{{ deck.currentVersion }}<span *ngIf="latestPublicVersion !== null"> / {{ latestPublicVersion }}</span></span>
         </div>
+        <div class="meta-item" *ngIf="deck.templateVersion !== null && deck.templateVersion !== undefined">
+          <span class="meta-label">{{ 'deckProfile.templateVersion' | translate }}:</span>
+          <span class="meta-value">{{ deck.templateVersion }}<span *ngIf="latestTemplateVersion !== null"> / {{ latestTemplateVersion }}</span></span>
+        </div>
         <div class="meta-item" *ngIf="!deck.publicDeckId">
           <span class="meta-label">{{ 'deckProfile.version' | translate }}:</span>
           <span class="meta-value">{{ deck.currentVersion }}</span>
+        </div>
+        <div class="meta-item">
+          <span class="meta-label">{{ 'deckProfile.createdAt' | translate }}:</span>
+          <span class="meta-value">{{ deck.createdAt | date:'mediumDate' }}</span>
+        </div>
+        <div class="meta-item" *ngIf="deck.lastSyncedAt">
+          <span class="meta-label">{{ 'deckProfile.lastSyncedAt' | translate }}:</span>
+          <span class="meta-value">{{ deck.lastSyncedAt | date:'mediumDate' }}</span>
+        </div>
+        <div class="meta-item" *ngIf="publicDeck?.language">
+          <span class="meta-label">{{ 'deckProfile.language' | translate }}:</span>
+          <span class="meta-value">{{ publicDeck?.language }}</span>
+        </div>
+        <div class="meta-item" *ngIf="publicDeck">
+          <span class="meta-label">{{ 'deckProfile.isPublic' | translate }}:</span>
+          <span class="meta-value">{{ publicDeck.isPublic ? ('deckProfile.yes' | translate) : ('deckProfile.no' | translate) }}</span>
+        </div>
+        <div class="meta-item" *ngIf="publicDeck">
+          <span class="meta-label">{{ 'deckProfile.isListed' | translate }}:</span>
+          <span class="meta-value">{{ publicDeck.isListed ? ('deckProfile.yes' | translate) : ('deckProfile.no' | translate) }}</span>
+        </div>
+        <div class="meta-item" *ngIf="publicDeck?.publishedAt">
+          <span class="meta-label">{{ 'deckProfile.publishedAt' | translate }}:</span>
+          <span class="meta-value">{{ publicDeck?.publishedAt | date:'mediumDate' }}</span>
+        </div>
+        <div class="meta-item" *ngIf="publicDeck?.updatedAt">
+          <span class="meta-label">{{ 'deckProfile.updatedAt' | translate }}:</span>
+          <span class="meta-value">{{ publicDeck?.updatedAt | date:'mediumDate' }}</span>
+        </div>
+        <div class="meta-item" *ngIf="publicDeck?.forkedFromDeck">
+          <span class="meta-label">{{ 'deckProfile.forkedFrom' | translate }}:</span>
+          <span class="meta-value">{{ publicDeck?.forkedFromDeck }}</span>
         </div>
       </div>
 
@@ -66,11 +112,17 @@ import { I18nService } from '../../core/services/i18n.service';
         <app-button variant="secondary" (click)="openAddCardsChoice()">
           {{ 'deckProfile.addCards' | translate }}
         </app-button>
+        <app-button variant="secondary" (click)="openAiEnhanceModal()">
+          ✨ {{ 'deckProfile.aiEnhanceButton' | translate }}
+        </app-button>
         <app-button variant="secondary" (click)="openExportConfirm()" [disabled]="exporting">
           {{ exporting ? ('deckProfile.exporting' | translate) : ('deckProfile.export' | translate) }}
         </app-button>
         <app-button variant="ghost" (click)="sync()" *ngIf="needsUpdate()">
           {{ 'deckProfile.sync' | translate }}
+        </app-button>
+        <app-button variant="ghost" (click)="syncTemplate()" *ngIf="needsTemplateUpdate()">
+          {{ 'deckProfile.syncTemplate' | translate }}
         </app-button>
         <app-button variant="secondary" (click)="openEditModal()">
           {{ 'deckProfile.edit' | translate }}
@@ -81,6 +133,173 @@ import { I18nService } from '../../core/services/i18n.service';
       </div>
 
       <p *ngIf="exportStatusKey" class="export-status">{{ exportStatusKey | translate }}</p>
+
+      <section class="ai-feature-section">
+        <div class="ai-feature-header">
+          <h2>{{ 'deckProfile.aiFeaturesTitle' | translate }}</h2>
+          <p>{{ 'deckProfile.aiFeaturesDescription' | translate }}</p>
+        </div>
+        <div class="ai-feature-grid">
+          <button class="ai-feature-card" (click)="openAiAddModal()">
+            <div class="ai-feature-icon">✨</div>
+            <div>
+              <h3>{{ 'deckProfile.aiAddCardsTitle' | translate }}</h3>
+              <p>{{ 'deckProfile.aiAddCardsDescription' | translate }}</p>
+            </div>
+          </button>
+          <button class="ai-feature-card" (click)="openAiEnhanceModal()">
+            <div class="ai-feature-icon">🧠</div>
+            <div>
+              <h3>{{ 'deckProfile.aiEnhanceTitle' | translate }}</h3>
+              <p>{{ 'deckProfile.aiEnhanceDescription' | translate }}</p>
+            </div>
+          </button>
+          <button class="ai-feature-card" (click)="openAiImportModal()">
+            <div class="ai-feature-icon">📂</div>
+            <div>
+              <h3>{{ 'deckProfile.aiImportTitle' | translate }}</h3>
+              <p>{{ 'deckProfile.aiImportDescription' | translate }}</p>
+            </div>
+          </button>
+        </div>
+      </section>
+
+      <section class="ai-jobs-section">
+        <div class="ai-jobs-header">
+          <div>
+            <h2>{{ 'deckProfile.aiJobsTitle' | translate }}</h2>
+            <p>{{ 'deckProfile.aiJobsDescription' | translate }}</p>
+          </div>
+          <div class="ai-jobs-actions">
+            <app-button variant="ghost" size="sm" (click)="toggleAiJobsVisibility()" [disabled]="aiJobs.length === 0">
+              {{ showOnlyLatestAiJob ? 'Show all jobs' : 'Show latest job' }}
+            </app-button>
+            <app-button variant="ghost" size="sm" (click)="refreshAiJobs()" [disabled]="aiJobsLoading">
+              {{ 'deckProfile.aiJobsRefresh' | translate }}
+            </app-button>
+          </div>
+        </div>
+
+        <div *ngIf="aiJobsLoading" class="loading-state">{{ 'deckProfile.aiJobsLoading' | translate }}</div>
+        <div *ngIf="!aiJobsLoading && aiJobsError" class="error-state" role="alert">
+          {{ aiJobsError | translate }}
+        </div>
+        <div *ngIf="!aiJobsLoading && !aiJobsError && aiJobs.length === 0" class="empty-state">
+          {{ 'deckProfile.aiJobsEmpty' | translate }}
+        </div>
+
+        <div *ngIf="visibleAiJobs.length > 0" class="ai-job-list" aria-live="polite">
+          <div *ngFor="let entry of visibleAiJobs; trackBy: trackAiJob" class="ai-job-card">
+            <div class="ai-job-header">
+              <div>
+                <div class="ai-job-title">{{ formatAiJobType(entry.job.type) }}</div>
+                <div class="ai-job-meta">
+                  <span class="ai-job-status-pill"
+                        [class.completed]="entry.job.status === 'completed'"
+                        [class.failed]="entry.job.status === 'failed'"
+                        [class.canceled]="entry.job.status === 'canceled'">
+                    {{ formatStatus(entry.job.status) }}
+                  </span>
+                  <span class="ai-job-date">{{ entry.job.createdAt | date:'medium' }}</span>
+                  <span *ngIf="formatAiJobProvider(entry.job)" class="ai-job-key">{{ formatAiJobProvider(entry.job) }}</span>
+                  <span *ngIf="entry.job.model" class="ai-job-model">{{ entry.job.model }}</span>
+                </div>
+              </div>
+              <app-button
+                variant="ghost"
+                size="sm"
+                tone="danger"
+                [disabled]="!canCancelAiJob(entry.job.status) || cancelingAiJobs.has(entry.job.jobId)"
+                (click)="cancelAiJob(entry.job.jobId)"
+              >
+                {{ cancelingAiJobs.has(entry.job.jobId) ? ('deckProfile.aiJobsCanceling' | translate) : ('deckProfile.aiJobsCancel' | translate) }}
+              </app-button>
+            </div>
+
+            <div class="ai-job-status-row">
+              <span class="ai-job-progress-text">{{ entry.job.progress }}%</span>
+              <div class="ai-job-progress" role="progressbar" [attr.aria-valuenow]="entry.job.progress" aria-valuemin="0" aria-valuemax="100">
+                <div class="ai-job-progress-bar" [style.width.%]="entry.job.progress"></div>
+              </div>
+            </div>
+
+            <div *ngIf="entry.job.status === 'failed'" class="ai-job-error" role="alert">
+              {{ 'deckProfile.aiJobsFailed' | translate }}
+            </div>
+
+            <div class="ai-job-result">
+              <div *ngIf="entry.resultLoading" class="loading-state">{{ 'deckProfile.aiJobsResultLoading' | translate }}</div>
+              <ng-container *ngIf="!entry.resultLoading && entry.resultSummary as result">
+                <div *ngIf="isAuditResult(result)" class="ai-audit-report">
+                  <div class="ai-audit-header">
+                    <div>
+                      <div class="ai-audit-title">Audit report</div>
+                      <div class="ai-audit-sub">{{ $any(result).aiSummary?.summary || 'Quality review summary' }}</div>
+                    </div>
+                  </div>
+
+                  <div class="ai-audit-grid">
+                    <div class="ai-audit-card">
+                      <div class="ai-audit-card-title">Key stats</div>
+                      <div class="ai-audit-stats">
+                        <div class="ai-audit-stat">
+                          <span>Sampled cards</span>
+                          <strong>{{ $any(result).auditStats?.sampledCards ?? $any(result).auditStats?.totalCards ?? '—' }}</strong>
+                        </div>
+                        <div class="ai-audit-stat">
+                          <span>Weak cards</span>
+                          <strong>{{ $any(result).auditStats?.weakCards ?? '—' }}</strong>
+                        </div>
+                        <div class="ai-audit-stat">
+                          <span>Identical pairs</span>
+                          <strong>{{ $any(result).auditStats?.identicalPairs ?? '—' }}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="ai-audit-card">
+                      <div class="ai-audit-card-title">Recommendations</div>
+                      <div class="ai-audit-list">
+                        <div *ngFor="let rec of ($any(result).aiSummary?.recommendations || []); let i = index" class="ai-audit-item">
+                          <span class="ai-audit-index">{{ i + 1 }}</span>
+                          <span>{{ rec }}</span>
+                        </div>
+                        <div *ngIf="($any(result).aiSummary?.recommendations || []).length === 0" class="field-hint">No recommendations provided.</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="ai-audit-card">
+                    <div class="ai-audit-card-title">Issues to review</div>
+                    <div class="ai-audit-issues">
+                      <div *ngFor="let issue of ($any(result).aiSummary?.issues || []); let i = index" class="ai-audit-issue">
+                        <span class="ai-audit-index">{{ i + 1 }}</span>
+                        <span>{{ issue }}</span>
+                      </div>
+                      <div *ngIf="($any(result).aiSummary?.issues || []).length === 0" class="field-hint">No critical issues detected.</div>
+                    </div>
+                  </div>
+
+                  <div class="ai-audit-card">
+                    <div class="ai-audit-card-title">Next actions</div>
+                    <div class="ai-audit-list">
+                      <div *ngFor="let next of ($any(result).aiSummary?.nextActions || []); let i = index" class="ai-audit-item">
+                        <span class="ai-audit-index">{{ i + 1 }}</span>
+                        <span>{{ next }}</span>
+                      </div>
+                      <div *ngIf="($any(result).aiSummary?.nextActions || []).length === 0" class="field-hint">No next actions suggested.</div>
+                    </div>
+                  </div>
+                </div>
+                <pre *ngIf="!isAuditResult(result)" class="ai-job-result-json">{{ formatJson(result) }}</pre>
+              </ng-container>
+              <div *ngIf="!entry.resultLoading && !entry.resultSummary && entry.job.status !== 'completed'" class="empty-state">
+                {{ 'deckProfile.aiJobsResultPending' | translate }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
 
     <div *ngIf="showAddCardsChoice" class="modal-overlay" (click)="closeAddCardsChoice()">
@@ -101,6 +320,16 @@ import { I18nService } from '../../core/services/i18n.service';
               <h3>{{ 'deckProfile.addCardsImport' | translate }}</h3>
               <p>{{ 'deckProfile.addCardsImportDesc' | translate }}</p>
             </div>
+            <div class="choice-card ai-choice" (click)="startAiAdd()">
+              <div class="choice-icon">✨</div>
+              <h3>{{ 'deckProfile.aiAddCardsTitle' | translate }}</h3>
+              <p>{{ 'deckProfile.aiAddCardsDescription' | translate }}</p>
+            </div>
+            <div class="choice-card ai-choice" (click)="startAiImport()">
+              <div class="choice-icon">📂</div>
+              <h3>{{ 'deckProfile.aiImportTitle' | translate }}</h3>
+              <p>{{ 'deckProfile.aiImportDescription' | translate }}</p>
+            </div>
           </div>
         </div>
       </div>
@@ -110,6 +339,7 @@ import { I18nService } from '../../core/services/i18n.service';
       *ngIf="showAddCards && deck"
       [userDeckId]="deck.userDeckId"
       [publicDeckId]="deck.publicDeckId"
+      [templateVersion]="deck.templateVersion || null"
       (saved)="onCardsSaved()"
       (cancelled)="closeAddCards()"
     ></app-add-cards-modal>
@@ -121,8 +351,38 @@ import { I18nService } from '../../core/services/i18n.service';
       (closed)="closeImportModal()"
     ></app-import-deck-modal>
 
+    <app-ai-add-cards-modal
+      *ngIf="showAiAddModal && deck"
+      [userDeckId]="deck.userDeckId"
+      [deckName]="deck.displayName"
+      [templateId]="publicDeck?.templateId || ''"
+      [templateVersion]="deck.templateVersion || null"
+      (jobCreated)="onAiJobCreated($event)"
+      (closed)="closeAiAddModal()"
+    ></app-ai-add-cards-modal>
+
+    <app-ai-enhance-deck-modal
+      *ngIf="showAiEnhanceModal && deck"
+      [userDeckId]="deck.userDeckId"
+      [deckName]="deck.displayName"
+      [templateId]="publicDeck?.templateId || ''"
+      [templateVersion]="deck.templateVersion || null"
+      (jobCreated)="onAiJobCreated($event)"
+      (closed)="closeAiEnhanceModal()"
+    ></app-ai-enhance-deck-modal>
+
+    <app-ai-import-modal
+      *ngIf="showAiImportModal && deck"
+      [userDeckId]="deck.userDeckId"
+      [deckName]="deck.displayName"
+      [templateId]="publicDeck?.templateId || ''"
+      [templateVersion]="deck.templateVersion || null"
+      (jobCreated)="onAiJobCreated($event)"
+      (closed)="closeAiImportModal()"
+    ></app-ai-import-modal>
+
     <div *ngIf="showEditModal && deck" class="modal-overlay" (click)="closeEditModal()">
-      <div class="modal-content" (click)="$event.stopPropagation()">
+      <div class="modal-content edit-deck-modal" (click)="$event.stopPropagation()">
         <div class="modal-header">
           <h2>{{ 'deckProfile.editDeck' | translate }}</h2>
           <button class="close-btn" (click)="closeEditModal()">&times;</button>
@@ -342,6 +602,13 @@ import { I18nService } from '../../core/services/i18n.service';
         line-height: 1.6;
       }
 
+      .deck-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+        margin-top: var(--spacing-sm);
+      }
+
       .deck-description h1,
       .deck-description h2,
       .deck-description h3 {
@@ -402,6 +669,347 @@ import { I18nService } from '../../core/services/i18n.service';
         flex-wrap: wrap;
       }
 
+      .loading-state,
+      .empty-state {
+        color: var(--color-text-secondary);
+        font-size: 0.9rem;
+      }
+
+      .error-state {
+        color: #dc2626;
+        font-size: 0.9rem;
+      }
+
+      .ai-feature-section {
+        margin-top: var(--spacing-2xl);
+        padding: var(--spacing-xl);
+        background: var(--color-card-background);
+        border-radius: var(--border-radius-lg);
+        border: 1px solid var(--border-color);
+      }
+
+      .ai-feature-header h2 {
+        margin: 0 0 var(--spacing-xs) 0;
+        font-size: 1.4rem;
+      }
+
+      .ai-feature-header p {
+        margin: 0 0 var(--spacing-lg) 0;
+        color: var(--color-text-muted);
+      }
+
+      .ai-feature-grid {
+        display: grid;
+        gap: var(--spacing-md);
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .ai-feature-card {
+        display: flex;
+        align-items: flex-start;
+        gap: var(--spacing-md);
+        padding: var(--spacing-md);
+        border-radius: var(--border-radius-lg);
+        border: 1px solid var(--glass-border);
+        background: var(--color-background);
+        text-align: left;
+        cursor: pointer;
+        color: var(--color-text-primary);
+        transition: transform 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      .ai-feature-card h3 {
+        margin: 0 0 var(--spacing-xs) 0;
+        color: var(--color-text-primary);
+      }
+
+      .ai-feature-card p {
+        margin: 0;
+        color: var(--color-text-secondary);
+      }
+
+      .ai-feature-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .ai-feature-card.disabled {
+        opacity: 0.6;
+        cursor: not-allowed;
+        box-shadow: none;
+        transform: none;
+      }
+
+      .ai-feature-icon {
+        width: 44px;
+        height: 44px;
+        border-radius: 12px;
+        background: var(--color-surface-solid);
+        color: var(--color-text-primary);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.25rem;
+        line-height: 1;
+        border: 1px solid var(--border-color);
+        flex-shrink: 0;
+      }
+
+      .ai-jobs-section {
+        margin-top: var(--spacing-2xl);
+        padding: var(--spacing-xl);
+        background: var(--color-card-background);
+        border-radius: var(--border-radius-lg);
+        border: 1px solid var(--border-color);
+      }
+
+      .ai-jobs-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: var(--spacing-md);
+        margin-bottom: var(--spacing-lg);
+      }
+
+      .ai-jobs-actions {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        flex-wrap: wrap;
+      }
+
+      .ai-jobs-header h2 {
+        margin: 0 0 var(--spacing-xs) 0;
+        font-size: 1.3rem;
+      }
+
+      .ai-jobs-header p {
+        margin: 0;
+        color: var(--color-text-muted);
+      }
+
+      .ai-job-list {
+        display: grid;
+        gap: var(--spacing-md);
+        min-width: 0;
+        max-height: clamp(260px, 55vh, 560px);
+        overflow-y: auto;
+        padding-right: var(--spacing-xs);
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+
+      .ai-job-list::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .ai-job-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .ai-job-list::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      .ai-job-list::-webkit-scrollbar-thumb:hover {
+        background: var(--border-color-hover);
+      }
+
+      .ai-job-card {
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-md);
+        padding: var(--spacing-md);
+        background: var(--color-background);
+        min-width: 0;
+      }
+
+      .ai-job-header {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+        align-items: flex-start;
+      }
+
+      .ai-job-title {
+        font-weight: 600;
+      }
+
+      .ai-job-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        align-items: center;
+        font-size: 0.85rem;
+        color: var(--color-text-muted);
+      }
+
+      .ai-job-key,
+      .ai-job-model {
+        padding: 0.1rem 0.55rem;
+        border-radius: 999px;
+        border: 1px solid var(--glass-border);
+        background: var(--color-background);
+        color: var(--color-text-secondary);
+        font-size: 0.78rem;
+      }
+
+      .ai-job-status-pill {
+        padding: 2px 10px;
+        border-radius: 999px;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        font-size: 0.7rem;
+        background: rgba(148, 163, 184, 0.2);
+        color: #475569;
+      }
+
+      .ai-job-status-pill.completed {
+        background: rgba(34, 197, 94, 0.12);
+        color: #15803d;
+      }
+
+      .ai-job-status-pill.failed {
+        background: rgba(239, 68, 68, 0.12);
+        color: #b91c1c;
+      }
+
+      .ai-job-status-pill.canceled {
+        background: rgba(148, 163, 184, 0.2);
+        color: #475569;
+      }
+
+      .ai-job-status-row {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-md);
+        margin-top: var(--spacing-sm);
+        font-size: 0.85rem;
+      }
+
+      .ai-job-progress {
+        flex: 1;
+        height: 6px;
+        background: rgba(148, 163, 184, 0.2);
+        border-radius: 999px;
+        overflow: hidden;
+      }
+
+      .ai-job-progress-bar {
+        height: 100%;
+        background: var(--color-primary-accent);
+        transition: width 0.3s ease;
+      }
+
+      .ai-job-error {
+        margin-top: var(--spacing-sm);
+        color: #dc2626;
+        font-size: 0.85rem;
+      }
+
+      .ai-job-result {
+        margin-top: var(--spacing-md);
+      }
+
+      .ai-job-result-json {
+        margin: 0;
+        padding: var(--spacing-sm);
+        background: rgba(15, 23, 42, 0.04);
+        border-radius: var(--border-radius-md);
+        font-size: 0.8rem;
+        overflow: auto;
+        max-height: 200px;
+        max-width: 100%;
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+
+      .ai-audit-report {
+        display: grid;
+        gap: var(--spacing-md);
+        padding: var(--spacing-md);
+        border-radius: var(--border-radius-md);
+        background: var(--color-card-background);
+        border: 1px solid var(--glass-border);
+      }
+
+      .ai-audit-header {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-md);
+      }
+
+      .ai-audit-title {
+        font-weight: 600;
+        font-size: 1rem;
+      }
+
+      .ai-audit-sub {
+        color: var(--color-text-muted);
+        font-size: 0.9rem;
+      }
+
+      .ai-audit-grid {
+        display: grid;
+        gap: var(--spacing-md);
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      }
+
+      .ai-audit-card {
+        border: 1px solid var(--glass-border);
+        border-radius: var(--border-radius-md);
+        padding: var(--spacing-sm);
+        background: var(--color-background);
+      }
+
+      .ai-audit-card-title {
+        font-weight: 600;
+        margin-bottom: var(--spacing-sm);
+      }
+
+      .ai-audit-stats {
+        display: grid;
+        gap: var(--spacing-xs);
+      }
+
+      .ai-audit-stat {
+        display: flex;
+        justify-content: space-between;
+        font-size: 0.85rem;
+      }
+
+      .ai-audit-list {
+        display: grid;
+        gap: var(--spacing-xs);
+      }
+
+      .ai-audit-item,
+      .ai-audit-issue {
+        display: grid;
+        grid-template-columns: 18px 1fr;
+        gap: var(--spacing-sm);
+        font-size: 0.85rem;
+      }
+
+      .ai-audit-index {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        border-radius: 999px;
+        background: rgba(148, 163, 184, 0.2);
+        color: var(--color-text-secondary);
+        font-size: 0.7rem;
+      }
+
+      .choice-card.disabled {
+        opacity: 0.6;
+        pointer-events: none;
+      }
+
       .modal-overlay {
         position: fixed;
         top: 0;
@@ -455,6 +1063,30 @@ import { I18nService } from '../../core/services/i18n.service';
       .modal-body {
         padding: var(--spacing-lg);
         overflow-y: auto;
+      }
+
+      .edit-deck-modal .modal-body {
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+
+      .edit-deck-modal .modal-body::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .edit-deck-modal .modal-body::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .edit-deck-modal .modal-body::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      .edit-deck-modal .modal-body::-webkit-scrollbar-thumb:hover {
+        background: var(--border-color-hover);
       }
 
       .modal-hint {
@@ -762,12 +1394,14 @@ import { I18nService } from '../../core/services/i18n.service';
         width: 64px;
         height: 64px;
         border-radius: 50%;
-        background: #111827;
-        color: #fff;
+        background: var(--color-surface-solid);
+        color: var(--color-text-primary);
         display: flex;
         align-items: center;
         justify-content: center;
         font-size: 1.8rem;
+        line-height: 1;
+        border: 1px solid var(--border-color);
       }
     `]
 })
@@ -786,11 +1420,15 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     deck: UserDeckDTO | null = null;
     publicDeck: PublicDeckDTO | null = null;
     latestPublicVersion: number | null = null;
+    latestTemplateVersion: number | null = null;
     currentUserId: string | null = null;
     isAuthor = false;
     userDeckId = '';
     showAddCards = false;
     showAddCardsChoice = false;
+    showAiAddModal = false;
+    showAiEnhanceModal = false;
+    showAiImportModal = false;
     showImportModal = false;
     showEditModal = false;
     showDeleteConfirm = false;
@@ -799,6 +1437,11 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     exporting = false;
     exportStatusKey: string | null = null;
     exportJob: ImportJobResponse | null = null;
+    aiJobs: AiJobEntry[] = [];
+    showOnlyLatestAiJob = false;
+    aiJobsLoading = false;
+    aiJobsError = '';
+    cancelingAiJobs = new Set<string>();
     editForm!: FormGroup;
     tagError = '';
     tagInput = '';
@@ -812,17 +1455,20 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     private readonly editDraftKeyPrefix = 'mnema_edit_deck_draft:';
 
     private exportPollHandle: ReturnType<typeof setInterval> | null = null;
+    private aiJobPollers = new Map<string, number>();
 
     constructor(
         private route: ActivatedRoute,
         private router: Router,
         private deckApi: DeckApiService,
         private publicDeckApi: PublicDeckApiService,
+        private templateApi: TemplateApiService,
         private reviewApi: ReviewApiService,
         private userApi: UserApiService,
         private fb: FormBuilder,
         private importApi: ImportApiService,
         private mediaApi: MediaApiService,
+        private aiApi: AiApiService,
         private i18n: I18nService
     ) {}
 
@@ -830,11 +1476,14 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         this.userDeckId = this.route.snapshot.paramMap.get('userDeckId') || '';
         if (this.userDeckId) {
             this.loadDeck();
+            this.loadAiJobs();
         }
     }
 
     ngOnDestroy(): void {
         this.stopExportPolling();
+        this.aiJobPollers.forEach(id => window.clearInterval(id));
+        this.aiJobPollers.clear();
     }
 
     private loadDeck(): void {
@@ -865,6 +1514,16 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                 this.publicDeck = publicDeck;
                 this.latestPublicVersion = publicDeck.version;
                 this.isAuthor = publicDeck.authorId === this.currentUserId;
+                if (publicDeck.templateId) {
+                    this.templateApi.getTemplate(publicDeck.templateId).subscribe({
+                        next: template => {
+                            this.latestTemplateVersion = template.latestVersion ?? template.version ?? null;
+                        },
+                        error: () => {
+                            this.latestTemplateVersion = null;
+                        }
+                    });
+                }
                 this.loading = false;
             },
             error: err => {
@@ -898,8 +1557,42 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         this.showImportModal = true;
     }
 
+    startAiAdd(): void {
+        this.showAddCardsChoice = false;
+        this.showAiAddModal = true;
+    }
+
+    startAiImport(): void {
+        this.showAddCardsChoice = false;
+        this.showAiImportModal = true;
+    }
+
     closeImportModal(): void {
         this.showImportModal = false;
+    }
+
+    openAiAddModal(): void {
+        this.showAiAddModal = true;
+    }
+
+    closeAiAddModal(): void {
+        this.showAiAddModal = false;
+    }
+
+    openAiEnhanceModal(): void {
+        this.showAiEnhanceModal = true;
+    }
+
+    closeAiEnhanceModal(): void {
+        this.showAiEnhanceModal = false;
+    }
+
+    openAiImportModal(): void {
+        this.showAiImportModal = true;
+    }
+
+    closeAiImportModal(): void {
+        this.showAiImportModal = false;
     }
 
     closeAddCards(): void {
@@ -909,6 +1602,213 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     onCardsSaved(): void {
         this.showAddCards = false;
         console.log('Cards saved successfully');
+    }
+
+    refreshAiJobs(): void {
+        this.loadAiJobs();
+    }
+
+    onAiJobCreated(job: AiJobResponse): void {
+        if (!job) {
+            return;
+        }
+        this.upsertAiJob(job);
+        if (job.status === 'queued' || job.status === 'processing') {
+            this.startAiPolling(job.jobId);
+        }
+    }
+
+    get visibleAiJobs(): AiJobEntry[] {
+        if (!this.showOnlyLatestAiJob) {
+            return this.aiJobs;
+        }
+        if (this.aiJobs.length === 0) {
+            return [];
+        }
+        const completed = this.aiJobs.filter(entry => entry.job.status === 'completed');
+        const target = (completed.length > 0 ? completed : this.aiJobs).reduce((latest, current) => {
+            return this.resolveJobTimestamp(current.job) > this.resolveJobTimestamp(latest.job) ? current : latest;
+        });
+        return target ? [target] : [];
+    }
+
+    toggleAiJobsVisibility(): void {
+        this.showOnlyLatestAiJob = !this.showOnlyLatestAiJob;
+    }
+
+    cancelAiJob(jobId: string): void {
+        if (this.cancelingAiJobs.has(jobId)) {
+            return;
+        }
+        this.cancelingAiJobs.add(jobId);
+        this.aiApi.cancelJob(jobId).subscribe({
+            next: job => {
+                this.stopAiPolling(jobId);
+                this.upsertAiJob(job);
+                this.cancelingAiJobs.delete(jobId);
+            },
+            error: () => {
+                this.cancelingAiJobs.delete(jobId);
+            }
+        });
+    }
+
+    trackAiJob(_: number, entry: AiJobEntry): string {
+        return entry.job.jobId;
+    }
+
+    formatAiJobProvider(job: AiJobResponse): string {
+        const alias = job.providerAlias?.trim();
+        const provider = job.provider?.trim();
+        if (alias && provider) {
+            return `${provider} · ${alias}`;
+        }
+        if (alias) {
+            return alias;
+        }
+        if (provider) {
+            return provider;
+        }
+        if (job.providerCredentialId) {
+            return `Key ${job.providerCredentialId.slice(0, 8)}`;
+        }
+        return '';
+    }
+
+    formatAiJobType(type: AiJobType): string {
+        switch (type) {
+            case 'enrich':
+                return 'Enrich';
+            case 'tts':
+                return 'TTS';
+            default:
+                return 'AI Job';
+        }
+    }
+
+    canCancelAiJob(status: AiJobStatus): boolean {
+        return status === 'queued' || status === 'processing';
+    }
+
+    formatStatus(status: string): string {
+        if (!status) {
+            return 'Unknown';
+        }
+        return status.charAt(0).toUpperCase() + status.slice(1);
+    }
+
+    formatJson(value: unknown): string {
+        try {
+            return JSON.stringify(value ?? {}, null, 2);
+        } catch {
+            return '{}';
+        }
+    }
+
+    isAuditResult(result: unknown): boolean {
+        return !!result && typeof result === 'object' && (result as any).mode === 'audit';
+    }
+
+    private loadAiJobs(): void {
+        if (!this.userDeckId) {
+            return;
+        }
+        this.aiJobsLoading = true;
+        this.aiJobsError = '';
+        this.aiJobPollers.forEach(id => window.clearInterval(id));
+        this.aiJobPollers.clear();
+        this.aiApi.listJobs(this.userDeckId).subscribe({
+            next: jobs => {
+                this.aiJobs = jobs.map(job => ({ job, resultSummary: null, resultLoading: false }));
+                this.aiJobsLoading = false;
+                for (const entry of this.aiJobs) {
+                    if (entry.job.status === 'queued' || entry.job.status === 'processing') {
+                        this.startAiPolling(entry.job.jobId);
+                    } else if (entry.job.status === 'completed') {
+                        this.fetchAiResult(entry.job.jobId);
+                    }
+                }
+            },
+            error: () => {
+                this.aiJobsLoading = false;
+                this.aiJobsError = 'deckProfile.aiJobsLoadError';
+            }
+        });
+    }
+
+    private upsertAiJob(job: AiJobResponse): void {
+        const index = this.aiJobs.findIndex(entry => entry.job.jobId === job.jobId);
+        if (index === -1) {
+            this.aiJobs = [{ job, resultSummary: null, resultLoading: false }, ...this.aiJobs];
+            return;
+        }
+        const entry = this.aiJobs[index];
+        this.aiJobs[index] = { ...entry, job };
+    }
+
+    private startAiPolling(jobId: string): void {
+        if (this.aiJobPollers.has(jobId)) {
+            return;
+        }
+        this.refreshAiJob(jobId);
+        const id = window.setInterval(() => this.refreshAiJob(jobId), 3000);
+        this.aiJobPollers.set(jobId, id);
+    }
+
+    private stopAiPolling(jobId: string): void {
+        const id = this.aiJobPollers.get(jobId);
+        if (id) {
+            window.clearInterval(id);
+            this.aiJobPollers.delete(jobId);
+        }
+    }
+
+    private refreshAiJob(jobId: string): void {
+        this.aiApi.getJob(jobId).subscribe({
+            next: job => {
+                this.upsertAiJob(job);
+                if (job.status === 'completed' || job.status === 'failed' || job.status === 'canceled') {
+                    this.stopAiPolling(jobId);
+                    if (job.status === 'completed') {
+                        this.fetchAiResult(jobId);
+                    }
+                }
+            }
+        });
+    }
+
+    private resolveJobTimestamp(job: AiJobResponse): number {
+        const candidates = [job.completedAt, job.startedAt, job.updatedAt, job.createdAt]
+            .filter(Boolean) as string[];
+        let max = 0;
+        for (const value of candidates) {
+            const parsed = Date.parse(value);
+            if (!Number.isNaN(parsed) && parsed > max) {
+                max = parsed;
+            }
+        }
+        return max;
+    }
+
+    private fetchAiResult(jobId: string): void {
+        this.aiJobs = this.aiJobs.map(entry => entry.job.jobId === jobId
+            ? { ...entry, resultLoading: true }
+            : entry
+        );
+        this.aiApi.getJobResult(jobId).subscribe({
+            next: result => {
+                this.aiJobs = this.aiJobs.map(entry => entry.job.jobId === jobId
+                    ? { ...entry, resultLoading: false, resultSummary: result.resultSummary }
+                    : entry
+                );
+            },
+            error: () => {
+                this.aiJobs = this.aiJobs.map(entry => entry.job.jobId === jobId
+                    ? { ...entry, resultLoading: false }
+                    : entry
+                );
+            }
+        });
     }
 
     learn(): void {
@@ -930,6 +1830,25 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             },
             error: err => {
                 console.error('Failed to sync deck:', err);
+            }
+        });
+    }
+
+    needsTemplateUpdate(): boolean {
+        if (!this.deck) return false;
+        if (this.latestTemplateVersion === null) return false;
+        if (this.deck.templateVersion === null || this.deck.templateVersion === undefined) return false;
+        return this.deck.templateVersion < this.latestTemplateVersion;
+    }
+
+    syncTemplate(): void {
+        this.deckApi.syncDeckTemplate(this.userDeckId).subscribe({
+            next: updatedDeck => {
+                this.deck = updatedDeck;
+                console.log('Template synced successfully');
+            },
+            error: err => {
+                console.error('Failed to sync template:', err);
             }
         });
     }
@@ -1333,3 +2252,9 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         }
     }
 }
+
+type AiJobEntry = {
+    job: AiJobResponse;
+    resultSummary: unknown | null;
+    resultLoading: boolean;
+};

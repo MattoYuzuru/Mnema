@@ -34,6 +34,8 @@ class UserDeckRepositoryDataJpaTest extends PostgresIntegrationTest {
         active.setDisplayName("My active deck");
         active.setAutoUpdate(true);
         active.setCreatedAt(now);
+        active.setTemplateVersion(1);
+        active.setSubscribedTemplateVersion(1);
         userDeckRepository.save(active);
 
         UserDeckEntity archived = new UserDeckEntity();
@@ -42,6 +44,8 @@ class UserDeckRepositoryDataJpaTest extends PostgresIntegrationTest {
         archived.setDisplayName("Archived deck");
         archived.setAutoUpdate(true);
         archived.setCreatedAt(now);
+        archived.setTemplateVersion(1);
+        archived.setSubscribedTemplateVersion(1);
         userDeckRepository.save(archived);
 
         Page<UserDeckEntity> page = userDeckRepository
@@ -66,6 +70,8 @@ class UserDeckRepositoryDataJpaTest extends PostgresIntegrationTest {
         deck.setDisplayName("My active deck");
         deck.setAutoUpdate(true);
         deck.setCreatedAt(now);
+        deck.setTemplateVersion(1);
+        deck.setSubscribedTemplateVersion(1);
 
         userDeckRepository.save(deck);
 

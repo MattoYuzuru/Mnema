@@ -62,6 +62,7 @@ class UserCardControllerWebMvcTest {
                 false,
                 false,
                 "note",
+                new String[]{"tag1"},
                 content
         );
 
@@ -99,6 +100,7 @@ class UserCardControllerWebMvcTest {
                 true,
                 false,
                 "my note",
+                new String[]{"tag1"},
                 effectiveContent
         );
 

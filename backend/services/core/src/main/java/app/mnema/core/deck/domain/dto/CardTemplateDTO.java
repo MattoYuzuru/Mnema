@@ -8,6 +8,8 @@ import java.util.UUID;
 
 public record CardTemplateDTO(
         UUID templateId,
+        Integer version,
+        Integer latestVersion,
         UUID ownerId,
         String name,
         String description,

@@ -19,4 +19,12 @@ public interface FieldTemplateRepository extends JpaRepository<FieldTemplateEnti
     List<FieldTemplateEntity> findByTemplateIdOrderByOrderIndexAsc(UUID templateId);
 
     Optional<FieldTemplateEntity> findByFieldIdAndTemplateId(UUID fieldId, UUID templateId);
+
+    List<FieldTemplateEntity> findByTemplateIdAndTemplateVersion(UUID templateId, Integer templateVersion);
+
+    List<FieldTemplateEntity> findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(UUID templateId, Integer templateVersion);
+
+    Optional<FieldTemplateEntity> findByFieldIdAndTemplateIdAndTemplateVersion(UUID fieldId,
+                                                                               UUID templateId,
+                                                                               Integer templateVersion);
 }

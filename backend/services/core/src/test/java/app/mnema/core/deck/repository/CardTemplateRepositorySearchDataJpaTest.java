@@ -79,7 +79,8 @@ class CardTemplateRepositorySearchDataJpaTest extends PostgresIntegrationTest {
                 null,
                 null,
                 null,
-                null
+                null,
+                1
         );
 
         return cardTemplateRepository.save(template);

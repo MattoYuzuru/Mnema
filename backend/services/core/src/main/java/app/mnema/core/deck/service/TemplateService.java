@@ -3,8 +3,10 @@ package app.mnema.core.deck.service;
 import app.mnema.core.deck.domain.dto.CardTemplateDTO;
 import app.mnema.core.deck.domain.dto.FieldTemplateDTO;
 import app.mnema.core.deck.domain.entity.CardTemplateEntity;
+import app.mnema.core.deck.domain.entity.CardTemplateVersionEntity;
 import app.mnema.core.deck.domain.entity.FieldTemplateEntity;
 import app.mnema.core.deck.repository.CardTemplateRepository;
+import app.mnema.core.deck.repository.CardTemplateVersionRepository;
 import app.mnema.core.deck.repository.FieldTemplateRepository;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
@@ -33,11 +35,14 @@ public class TemplateService {
 
     private final CardTemplateRepository cardTemplateRepository;
     private final FieldTemplateRepository fieldTemplateRepository;
+    private final CardTemplateVersionRepository cardTemplateVersionRepository;
 
     public TemplateService(CardTemplateRepository cardTemplateRepository,
-                           FieldTemplateRepository fieldTemplateRepository) {
+                           FieldTemplateRepository fieldTemplateRepository,
+                           CardTemplateVersionRepository cardTemplateVersionRepository) {
         this.cardTemplateRepository = cardTemplateRepository;
         this.fieldTemplateRepository = fieldTemplateRepository;
+        this.cardTemplateVersionRepository = cardTemplateVersionRepository;
     }
 
     // GET /api/core/templates?page=1&limit=10 - получить все публичные шаблоны постранично
@@ -116,9 +121,10 @@ public class TemplateService {
                 dto.isPublic(),
                 Instant.now(),
                 null,
-                dto.layout(), // TODO
+                dto.layout(), // keep latest snapshot for compatibility
                 dto.aiProfile(),
-                dto.iconUrl()
+                dto.iconUrl(),
+                1
         );
 
         // 2. Сохраняем шаблон в БД
@@ -126,6 +132,18 @@ public class TemplateService {
 
         // 3. Сохраняем поля шаблона в БД (проставляя правильный templateId)
         UUID templateId = savedCardTemplate.getTemplateId();
+
+        // 4. Сохраняем версию шаблона
+        CardTemplateVersionEntity version = new CardTemplateVersionEntity(
+                templateId,
+                1,
+                dto.layout(),
+                dto.aiProfile(),
+                dto.iconUrl(),
+                Instant.now(),
+                currentUserId
+        );
+        cardTemplateVersionRepository.save(version);
 
         List<FieldTemplateEntity> cardFields = fieldDtos.stream()
                 .map(fieldDto -> {
@@ -141,7 +159,7 @@ public class TemplateService {
                             fieldDto.defaultValue(),
                             fieldDto.helpText()
                     );
-                    return toFieldTemplateEntity(normalized);
+                    return toFieldTemplateEntity(normalized, 1);
                 })
                 .toList();
 
@@ -154,22 +172,42 @@ public class TemplateService {
                 .map(this::toFieldTemplateDTO)
                 .toList();
 
-        return toCardTemplateDTO(savedCardTemplate, fieldTemplateDTOList);
+        return toCardTemplateDTO(savedCardTemplate, version, fieldTemplateDTOList);
     }
 
-    // GET /api/core/templates/{templateId} - получить шаблон по айди
+    // GET /api/core/templates/{templateId} - получить шаблон по айди (version optional)
     @PreAuthorize("hasAuthority('SCOPE_user.read')")
-    public CardTemplateDTO getCardTemplateById(UUID templateId) {
+    public CardTemplateDTO getCardTemplateById(UUID templateId, Integer version) {
         CardTemplateEntity entity = cardTemplateRepository.findById(templateId)
                 .orElseThrow(() -> new NoSuchElementException("Template not found: " + templateId));
 
+        int resolvedVersion = version != null ? version : entity.getLatestVersion();
+        CardTemplateVersionEntity templateVersion = cardTemplateVersionRepository
+                .findByTemplateIdAndVersion(templateId, resolvedVersion)
+                .orElseThrow(() -> new NoSuchElementException(
+                        "Template version not found: templateId=" + templateId + ", version=" + resolvedVersion
+                ));
+
         List<FieldTemplateDTO> fields = fieldTemplateRepository
-                .findByTemplateIdOrderByOrderIndexAsc(templateId)
+                .findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, resolvedVersion)
                 .stream()
                 .map(this::toFieldTemplateDTO)
                 .toList();
 
-        return toCardTemplateDTO(entity, fields);
+        return toCardTemplateDTO(entity, templateVersion, fields);
+    }
+
+    // GET /api/core/templates/{templateId}/versions - список версий
+    @PreAuthorize("hasAuthority('SCOPE_user.read')")
+    public List<Integer> getTemplateVersions(UUID templateId) {
+        cardTemplateRepository.findById(templateId)
+                .orElseThrow(() -> new NoSuchElementException("Template not found: " + templateId));
+
+        return cardTemplateVersionRepository
+                .findByTemplateIdOrderByVersionDesc(templateId)
+                .stream()
+                .map(CardTemplateVersionEntity::getVersion)
+                .toList();
     }
 
     // PATCH /api/core/templates/{templateId} - частично изменить шаблон (сам шаблон)
@@ -185,7 +223,7 @@ public class TemplateService {
                         "Template not found or access denied: " + templateId
                 ));
 
-        // Обновляем только то, что есть в dto (String/JSON) + флаг публичности
+        // Base meta updates
         if (dto.name() != null) {
             validateLength(dto.name(), MAX_TEMPLATE_NAME, "Template name");
             entity.setName(dto.name());
@@ -194,29 +232,41 @@ public class TemplateService {
             validateLength(dto.description(), MAX_TEMPLATE_DESCRIPTION, "Template description");
             entity.setDescription(dto.description());
         }
-        if (dto.layout() != null) {
-            entity.setLayout(dto.layout());
-        }
-        if (dto.aiProfile() != null) {
-            entity.setAiProfile(dto.aiProfile());
-        }
-        if (dto.iconUrl() != null) {
-            entity.setIconUrl(dto.iconUrl());
-        }
-
         entity.setPublic(dto.isPublic());
 
-        entity.setUpdatedAt(Instant.now());
+        CardTemplateVersionEntity latestVersion = resolveLatestVersion(entity);
 
-        CardTemplateEntity saved = cardTemplateRepository.save(entity);
+        boolean versionChange = dto.layout() != null || dto.aiProfile() != null || dto.iconUrl() != null;
+        if (!versionChange) {
+            entity.setUpdatedAt(Instant.now());
+            CardTemplateEntity saved = cardTemplateRepository.save(entity);
+
+            List<FieldTemplateDTO> fields = fieldTemplateRepository
+                    .findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, latestVersion.getVersion())
+                    .stream()
+                    .map(this::toFieldTemplateDTO)
+                    .toList();
+
+            return toCardTemplateDTO(saved, latestVersion, fields);
+        }
+
+        CardTemplateVersionEntity newVersion = createNewVersion(
+                entity,
+                latestVersion,
+                dto.layout() != null ? dto.layout() : latestVersion.getLayout(),
+                dto.aiProfile() != null ? dto.aiProfile() : latestVersion.getAiProfile(),
+                dto.iconUrl() != null ? dto.iconUrl() : latestVersion.getIconUrl(),
+                currentUserId,
+                null
+        );
 
         List<FieldTemplateDTO> fields = fieldTemplateRepository
-                .findByTemplateIdOrderByOrderIndexAsc(templateId)
+                .findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, newVersion.getVersion())
                 .stream()
                 .map(this::toFieldTemplateDTO)
                 .toList();
 
-        return toCardTemplateDTO(saved, fields);
+        return toCardTemplateDTO(entity, newVersion, fields);
     }
 
     // DELETE /api/core/templates/{templateId} - удалить шаблон (со всеми полями)
@@ -250,11 +300,13 @@ public class TemplateService {
                                                FieldTemplateDTO dto) {
 
         // Проверяем, что шаблон принадлежит текущему пользователю
-        cardTemplateRepository
+        CardTemplateEntity template = cardTemplateRepository
                 .findByOwnerIdAndTemplateId(currentUserId, templateId)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template not found or access denied: " + templateId
                 ));
+
+        CardTemplateVersionEntity latestVersion = resolveLatestVersion(template);
 
         FieldTemplateDTO normalized = new FieldTemplateDTO(
                 null,
@@ -270,16 +322,31 @@ public class TemplateService {
         );
 
         List<FieldTemplateDTO> existingFields = fieldTemplateRepository
-                .findByTemplateIdOrderByOrderIndexAsc(templateId)
+                .findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, latestVersion.getVersion())
                 .stream()
                 .map(this::toFieldTemplateDTO)
                 .toList();
         validateTemplateFields(mergeFields(existingFields, normalized));
 
-        FieldTemplateEntity entity = toFieldTemplateEntity(normalized);
-        FieldTemplateEntity saved = fieldTemplateRepository.save(entity);
+        List<FieldTemplateDTO> merged = mergeFields(existingFields, normalized);
 
-        return toFieldTemplateDTO(saved);
+        CardTemplateVersionEntity newVersion = createNewVersion(
+                template,
+                latestVersion,
+                latestVersion.getLayout(),
+                latestVersion.getAiProfile(),
+                latestVersion.getIconUrl(),
+                currentUserId,
+                merged
+        );
+
+        return fieldTemplateRepository
+                .findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, newVersion.getVersion())
+                .stream()
+                .map(this::toFieldTemplateDTO)
+                .filter(field -> field.name().equals(normalized.name()))
+                .findFirst()
+                .orElseThrow(() -> new NoSuchElementException("New field not found after version creation"));
     }
 
     // PATCH /api/core/templates/{templateId}/fields/{fieldId} - частично изменить поле в шаблоне
@@ -291,67 +358,68 @@ public class TemplateService {
                                                          FieldTemplateDTO dto) {
 
         // Проверяем права на шаблон
-        cardTemplateRepository
+        CardTemplateEntity template = cardTemplateRepository
                 .findByOwnerIdAndTemplateId(currentUserId, templateId)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template not found or access denied: " + templateId
                 ));
 
+        CardTemplateVersionEntity latestVersion = resolveLatestVersion(template);
+
         FieldTemplateEntity field = fieldTemplateRepository
-                .findByFieldIdAndTemplateId(fieldId, templateId)
+                .findByFieldIdAndTemplateIdAndTemplateVersion(fieldId, templateId, latestVersion.getVersion())
                 .orElseThrow(() -> new NoSuchElementException(
                         "Field not found in template: " + fieldId
                 ));
 
-        // Частичное обновление
-        if (dto.name() != null) {
-            field.setName(dto.name());
-        }
-        if (dto.label() != null) {
-            field.setLabel(dto.label());
-        }
-        if (dto.fieldType() != null) {
-            field.setFieldType(dto.fieldType());
-        }
-
-        field.setRequired(dto.isRequired());
-        field.setOnFront(dto.isOnFront());
-
-        if (dto.orderIndex() != null) {
-            field.setOrderIndex(dto.orderIndex());
-        }
-        if (dto.defaultValue() != null) {
-            field.setDefaultValue(dto.defaultValue());
-        }
-        if (dto.helpText() != null) {
-            field.setHelpText(dto.helpText());
-        }
+        String newName = dto.name() != null ? dto.name() : field.getName();
+        String newLabel = dto.label() != null ? dto.label() : field.getLabel();
+        var newFieldType = dto.fieldType() != null ? dto.fieldType() : field.getFieldType();
+        boolean newRequired = dto.isRequired();
+        boolean newOnFront = dto.isOnFront();
+        Integer newOrderIndex = dto.orderIndex() != null ? dto.orderIndex() : field.getOrderIndex();
+        String newDefaultValue = dto.defaultValue() != null ? dto.defaultValue() : field.getDefaultValue();
+        String newHelpText = dto.helpText() != null ? dto.helpText() : field.getHelpText();
 
         List<FieldTemplateDTO> updatedFields = fieldTemplateRepository
-                .findByTemplateIdOrderByOrderIndexAsc(templateId)
+                .findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, latestVersion.getVersion())
                 .stream()
                 .map(this::toFieldTemplateDTO)
                 .map(existing -> existing.fieldId().equals(fieldId)
                         ? new FieldTemplateDTO(
                         fieldId,
                         templateId,
-                        field.getName(),
-                        field.getLabel(),
-                        field.getFieldType(),
-                        field.isRequired(),
-                        field.isOnFront(),
-                        field.getOrderIndex(),
-                        field.getDefaultValue(),
-                        field.getHelpText()
+                        newName,
+                        newLabel,
+                        newFieldType,
+                        newRequired,
+                        newOnFront,
+                        newOrderIndex,
+                        newDefaultValue,
+                        newHelpText
                 )
                         : existing)
                 .toList();
 
         validateTemplateFields(updatedFields);
 
-        FieldTemplateEntity saved = fieldTemplateRepository.save(field);
+        CardTemplateVersionEntity newVersion = createNewVersion(
+                template,
+                latestVersion,
+                latestVersion.getLayout(),
+                latestVersion.getAiProfile(),
+                latestVersion.getIconUrl(),
+                currentUserId,
+                updatedFields
+        );
 
-        return toFieldTemplateDTO(saved);
+        return fieldTemplateRepository
+                .findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, newVersion.getVersion())
+                .stream()
+                .map(this::toFieldTemplateDTO)
+                .filter(updated -> updated.name().equals(field.getName()))
+                .findFirst()
+                .orElseThrow(() -> new NoSuchElementException("Updated field not found after version creation"));
     }
 
     // DELETE /api/core/templates/{templateId}/fields/{fieldId} - удалить поле из шаблона
@@ -362,20 +430,22 @@ public class TemplateService {
                                         UUID fieldId) {
 
         // Проверяем права на шаблон
-        cardTemplateRepository
+        CardTemplateEntity template = cardTemplateRepository
                 .findByOwnerIdAndTemplateId(currentUserId, templateId)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template not found or access denied: " + templateId
                 ));
 
+        CardTemplateVersionEntity latestVersion = resolveLatestVersion(template);
+
         FieldTemplateEntity field = fieldTemplateRepository
-                .findByFieldIdAndTemplateId(fieldId, templateId)
+                .findByFieldIdAndTemplateIdAndTemplateVersion(fieldId, templateId, latestVersion.getVersion())
                 .orElseThrow(() -> new NoSuchElementException(
                         "Field not found in template: " + fieldId
                 ));
 
         List<FieldTemplateDTO> remainingFields = fieldTemplateRepository
-                .findByTemplateIdOrderByOrderIndexAsc(templateId)
+                .findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, latestVersion.getVersion())
                 .stream()
                 .filter(existing -> !existing.getFieldId().equals(fieldId))
                 .map(this::toFieldTemplateDTO)
@@ -383,17 +453,26 @@ public class TemplateService {
 
         validateTemplateFields(remainingFields);
 
-        fieldTemplateRepository.delete(field);
+        createNewVersion(
+                template,
+                latestVersion,
+                latestVersion.getLayout(),
+                latestVersion.getAiProfile(),
+                latestVersion.getIconUrl(),
+                currentUserId,
+                remainingFields
+        );
     }
 
     // UTILS
 
-    private FieldTemplateEntity toFieldTemplateEntity(FieldTemplateDTO dto) {
+    private FieldTemplateEntity toFieldTemplateEntity(FieldTemplateDTO dto, int templateVersion) {
         Integer effectiveOrderIndex = dto.orderIndex() != null ? dto.orderIndex() : 0;
 
         return new FieldTemplateEntity(
                 dto.fieldId(),
                 dto.templateId(),
+                templateVersion,
                 dto.name(),
                 dto.label(),
                 dto.fieldType(),
@@ -420,19 +499,103 @@ public class TemplateService {
         );
     }
 
+    private CardTemplateVersionEntity resolveLatestVersion(CardTemplateEntity template) {
+        Integer latestVersion = template.getLatestVersion();
+        if (latestVersion != null) {
+            return cardTemplateVersionRepository
+                    .findByTemplateIdAndVersion(template.getTemplateId(), latestVersion)
+                    .orElseThrow(() -> new NoSuchElementException(
+                            "Template version not found: templateId=" + template.getTemplateId() + ", version=" + latestVersion
+                    ));
+        }
+        return cardTemplateVersionRepository.findTopByTemplateIdOrderByVersionDesc(template.getTemplateId())
+                .orElseThrow(() -> new NoSuchElementException(
+                        "Template version not found: templateId=" + template.getTemplateId()
+                ));
+    }
+
+    private CardTemplateVersionEntity createNewVersion(CardTemplateEntity template,
+                                                       CardTemplateVersionEntity latestVersion,
+                                                       com.fasterxml.jackson.databind.JsonNode layout,
+                                                       com.fasterxml.jackson.databind.JsonNode aiProfile,
+                                                       String iconUrl,
+                                                       UUID createdBy,
+                                                       List<FieldTemplateDTO> overrideFields) {
+        int newVersionNumber = latestVersion.getVersion() + 1;
+        Instant now = Instant.now();
+
+        CardTemplateVersionEntity newVersion = new CardTemplateVersionEntity(
+                template.getTemplateId(),
+                newVersionNumber,
+                layout,
+                aiProfile,
+                iconUrl,
+                now,
+                createdBy
+        );
+        cardTemplateVersionRepository.save(newVersion);
+
+        List<FieldTemplateDTO> fieldsForVersion;
+        if (overrideFields != null) {
+            fieldsForVersion = overrideFields;
+        } else {
+            fieldsForVersion = fieldTemplateRepository
+                    .findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(
+                            template.getTemplateId(),
+                            latestVersion.getVersion()
+                    )
+                    .stream()
+                    .map(this::toFieldTemplateDTO)
+                    .toList();
+        }
+
+        List<FieldTemplateEntity> clonedFields = fieldsForVersion.stream()
+                .map(field -> new FieldTemplateEntity(
+                        null,
+                        template.getTemplateId(),
+                        newVersionNumber,
+                        field.name(),
+                        field.label(),
+                        field.fieldType(),
+                        field.isRequired(),
+                        field.isOnFront(),
+                        field.orderIndex() != null ? field.orderIndex() : 0,
+                        field.defaultValue(),
+                        field.helpText()
+                ))
+                .toList();
+
+        if (!clonedFields.isEmpty()) {
+            fieldTemplateRepository.saveAll(clonedFields);
+        }
+
+        template.setLatestVersion(newVersionNumber);
+        template.setUpdatedAt(now);
+        template.setLayout(layout);
+        template.setAiProfile(aiProfile);
+        template.setIconUrl(iconUrl);
+        cardTemplateRepository.save(template);
+
+        return newVersion;
+    }
+
     private CardTemplateDTO toCardTemplateDTO(CardTemplateEntity entity,
+                                              CardTemplateVersionEntity version,
                                               List<FieldTemplateDTO> fields) {
+        Integer effectiveVersion = version != null ? version.getVersion() : entity.getLatestVersion();
         return new CardTemplateDTO(
                 entity.getTemplateId(),
+                effectiveVersion,
+                entity.getLatestVersion(),
                 entity.getOwnerId(),
                 entity.getName(),
                 entity.getDescription(),
                 entity.isPublic(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt(),
-                entity.getLayout(),
-                entity.getAiProfile(),
-                entity.getIconUrl(),
+                version != null ? version.getLayout() : entity.getLayout(),
+                version != null ? version.getAiProfile() : entity.getAiProfile(),
+                version != null ? version.getIconUrl() : entity.getIconUrl(),
                 fields
         );
     }
@@ -507,9 +670,26 @@ public class TemplateService {
                 .map(CardTemplateEntity::getTemplateId)
                 .toList();
 
+        List<CardTemplateVersionEntity> versions = cardTemplateVersionRepository.findByTemplateIdIn(templateIds);
+        Map<UUID, CardTemplateVersionEntity> latestByTemplate = new java.util.HashMap<>();
+        for (CardTemplateVersionEntity version : versions) {
+            if (version == null) {
+                continue;
+            }
+            CardTemplateVersionEntity existing = latestByTemplate.get(version.getTemplateId());
+            if (existing == null || version.getVersion() > existing.getVersion()) {
+                latestByTemplate.put(version.getTemplateId(), version);
+            }
+        }
+
         List<FieldTemplateEntity> fieldEntities = fieldTemplateRepository.findByTemplateIdIn(templateIds);
 
         Map<UUID, List<FieldTemplateDTO>> fieldsByTemplateId = fieldEntities.stream()
+                .filter(field -> {
+                    CardTemplateVersionEntity latest = latestByTemplate.get(field.getTemplateId());
+                    return latest != null && field.getTemplateVersion() != null
+                            && field.getTemplateVersion().equals(latest.getVersion());
+                })
                 .collect(Collectors.groupingBy(
                         FieldTemplateEntity::getTemplateId,
                         Collectors.mapping(this::toFieldTemplateDTO, Collectors.toList())
@@ -518,6 +698,7 @@ public class TemplateService {
         List<CardTemplateDTO> dtoList = templates.stream()
                 .map(entity -> toCardTemplateDTO(
                         entity,
+                        latestByTemplate.get(entity.getTemplateId()),
                         fieldsByTemplateId.getOrDefault(entity.getTemplateId(), List.of())
                 ))
                 .toList();

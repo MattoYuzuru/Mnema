@@ -5,9 +5,11 @@ import app.mnema.core.deck.domain.dto.PublicDeckDTO;
 import app.mnema.core.deck.domain.dto.UserDeckDTO;
 import app.mnema.core.deck.domain.entity.PublicCardEntity;
 import app.mnema.core.deck.domain.entity.PublicDeckEntity;
+import app.mnema.core.deck.domain.entity.CardTemplateEntity;
 import app.mnema.core.deck.domain.entity.UserCardEntity;
 import app.mnema.core.deck.domain.entity.UserDeckEntity;
 import app.mnema.core.deck.domain.type.SrAlgorithm;
+import app.mnema.core.deck.repository.CardTemplateRepository;
 import app.mnema.core.deck.repository.PublicCardRepository;
 import app.mnema.core.deck.repository.PublicDeckRepository;
 import app.mnema.core.deck.repository.UserCardRepository;
@@ -38,17 +40,20 @@ public class DeckService {
     private final UserCardRepository userCardRepository;
     private final PublicCardRepository publicCardRepository;
     private final PublicDeckRepository publicDeckRepository;
+    private final CardTemplateRepository cardTemplateRepository;
     private final MediaResolveCache mediaResolveCache;
 
     public DeckService(UserDeckRepository userDeckRepository,
                        UserCardRepository userCardRepository,
                        PublicCardRepository publicCardRepository,
                        PublicDeckRepository publicDeckRepository,
+                       CardTemplateRepository cardTemplateRepository,
                        MediaResolveCache mediaResolveCache) {
         this.userDeckRepository = userDeckRepository;
         this.userCardRepository = userCardRepository;
         this.publicCardRepository = publicCardRepository;
         this.publicDeckRepository = publicDeckRepository;
+        this.cardTemplateRepository = cardTemplateRepository;
         this.mediaResolveCache = mediaResolveCache;
     }
 
@@ -169,7 +174,8 @@ public class DeckService {
     public UserDeckDTO createNewDeck(UUID currentUserId, PublicDeckDTO publicDeckDTO) {
         validateDeckMeta(publicDeckDTO.name(), publicDeckDTO.description(), publicDeckDTO.tags());
 
-        PublicDeckEntity publicDeckEntity = toPublicDeckEntityForCreate(currentUserId, publicDeckDTO);
+        int templateVersion = resolveTemplateVersion(publicDeckDTO.templateId(), publicDeckDTO.templateVersion());
+        PublicDeckEntity publicDeckEntity = toPublicDeckEntityForCreate(currentUserId, publicDeckDTO, templateVersion);
         PublicDeckEntity savedPublicDeck = publicDeckRepository.save(publicDeckEntity);
 
         UserDeckEntity userDeck = new UserDeckEntity(
@@ -177,6 +183,8 @@ public class DeckService {
                 savedPublicDeck.getDeckId(),
                 savedPublicDeck.getVersion(),
                 savedPublicDeck.getVersion(),
+                savedPublicDeck.getTemplateVersion(),
+                savedPublicDeck.getTemplateVersion(),
                 true,
                 SrAlgorithm.fsrs_v6.toString(),
                 null,
@@ -322,7 +330,7 @@ public class DeckService {
       Модель данных:
       - public_decks хранит immutable версии колоды.
       - public_cards хранит snapshot карт внутри каждой версии.
-      - card_id в public_cards генерируется заново при клонировании в новую версию и глобально уникален.
+      - card_id в public_cards стабилен для "логической карты" и повторяется между версиями.
       - user_cards ссылаются на public_cards через public_card_id = card_id и не знают deck_version.
 
       Проблема:
@@ -330,7 +338,7 @@ public class DeckService {
       - Если при sync просто "добавить карты последней версии", будут дубли: старые user_cards останутся, новые добавятся.
 
       Решение:
-      - Используем public_cards.checksum как стабильный идентификатор "логической карты" между версиями.
+      - Используем public_cards.checksum как fallback-идентификатор, если card_id не совпал (legacy/edge cases).
       - При sync делаем две фазы:
         1) Rewire: если checksum user-старой public-card совпадает с checksum публичной карты в latest версии,
            обновляем user_cards.public_card_id на card_id из latest версии.
@@ -351,10 +359,14 @@ public class DeckService {
                 .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + publicDeckId));
 
         int latestVersion = latestDeck.getVersion();
+        Integer latestTemplateVersion = latestDeck.getTemplateVersion();
         Instant now = Instant.now();
 
         // Если уже на последней версии, просто обновляем last_synced_at
         if (Objects.equals(deck.getCurrentVersion(), latestVersion)) {
+            if (!Objects.equals(deck.getTemplateVersion(), latestTemplateVersion)) {
+                deck.setTemplateVersion(latestTemplateVersion);
+            }
             deck.setLastSyncedAt(now);
             return toUserDeckDTO(userDeckRepository.save(deck));
         }
@@ -383,7 +395,7 @@ public class DeckService {
 
         List<PublicCardEntity> linkedPublicCards = linkedPublicCardIds.isEmpty()
                 ? List.of()
-                : publicCardRepository.findByCardIdIn(linkedPublicCardIds);
+                : publicCardRepository.findAllByCardIdInOrderByDeckVersionDesc(linkedPublicCardIds);
 
         Map<UUID, PublicCardEntity> linkedByCardId = new HashMap<>();
         for (PublicCardEntity pc : linkedPublicCards) {
@@ -425,6 +437,10 @@ public class DeckService {
             PublicCardEntity oldPublic = linkedByCardId.get(oldPublicCardId);
             if (oldPublic == null) {
                 continue;
+            }
+
+            if (uc.getTags() == null && oldPublic.getTags() != null) {
+                uc.setTags(oldPublic.getTags());
             }
 
             String chk = normalizeChecksum(oldPublic.getChecksum());
@@ -487,6 +503,7 @@ public class DeckService {
                     false,
                     null,
                     null,
+                    null,
                     now,
                     null
             );
@@ -501,10 +518,44 @@ public class DeckService {
 
         // 6) Обновляем только current_version, subscribed_version не трогаем
         deck.setCurrentVersion(latestVersion);
+        deck.setTemplateVersion(latestTemplateVersion);
         deck.setLastSyncedAt(now);
 
         deck = userDeckRepository.save(deck);
         return toUserDeckDTO(deck);
+    }
+
+    // Ручной синк шаблона пользовательской колоды на последнюю версию шаблона
+    @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
+    public UserDeckDTO syncUserDeckTemplate(UUID currentUserId, UUID userDeckId) {
+        UserDeckEntity deck = userDeckRepository.findById(userDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+
+        if (!deck.getUserId().equals(currentUserId)) {
+            throw new SecurityException("Access denied to deck " + userDeckId);
+        }
+
+        if (deck.getPublicDeckId() == null) {
+            throw new IllegalStateException("Local deck has no public source");
+        }
+
+        Integer currentDeckVersion = deck.getCurrentVersion();
+        if (currentDeckVersion == null) {
+            throw new IllegalStateException("Deck version is not set for " + userDeckId);
+        }
+
+        PublicDeckEntity publicDeck = publicDeckRepository
+                .findByDeckIdAndVersion(deck.getPublicDeckId(), currentDeckVersion)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Public deck not found: deckId=" + deck.getPublicDeckId() + ", version=" + currentDeckVersion
+                ));
+
+        UUID templateId = publicDeck.getTemplateId();
+        Integer latestTemplateVersion = resolveTemplateVersion(templateId, null);
+        deck.setTemplateVersion(latestTemplateVersion);
+        deck.setLastSyncedAt(Instant.now());
+        return toUserDeckDTO(userDeckRepository.save(deck));
     }
 
     private String normalizeChecksum(String checksum) {
@@ -594,6 +645,8 @@ public class DeckService {
                 publicDeckId,
                 publicDeck.getVersion(),
                 publicDeck.getVersion(),
+                publicDeck.getTemplateVersion(),
+                publicDeck.getTemplateVersion(),
                 true,
                 SrAlgorithm.fsrs_v6.toString(),
                 null,
@@ -624,6 +677,7 @@ public class DeckService {
                     false,
                     null,
                     null,
+                    null,
                     now,
                     null
             );
@@ -637,7 +691,9 @@ public class DeckService {
         return toUserDeckDTO(userDeckEntity);
     }
 
-    private PublicDeckEntity toPublicDeckEntityForCreate(UUID authorId, PublicDeckDTO publicDeckDTO) {
+    private PublicDeckEntity toPublicDeckEntityForCreate(UUID authorId,
+                                                         PublicDeckDTO publicDeckDTO,
+                                                         int templateVersion) {
         Instant now = Instant.now();
         return new PublicDeckEntity(
                 UUID.randomUUID(),
@@ -647,6 +703,7 @@ public class DeckService {
                 publicDeckDTO.description(),
                 publicDeckDTO.iconMediaId(),
                 publicDeckDTO.templateId(),
+                templateVersion,
                 publicDeckDTO.isPublic(),
                 publicDeckDTO.isListed(),
                 publicDeckDTO.language(),
@@ -693,12 +750,29 @@ public class DeckService {
         }
     }
 
+    private int resolveTemplateVersion(UUID templateId, Integer templateVersion) {
+        if (templateVersion != null) {
+            return templateVersion;
+        }
+        if (templateId == null) {
+            return 1;
+        }
+        Optional<CardTemplateEntity> templateOpt = cardTemplateRepository.findById(templateId);
+        if (templateOpt == null || templateOpt.isEmpty()) {
+            return 1;
+        }
+        Integer latestVersion = templateOpt.get().getLatestVersion();
+        return latestVersion != null ? latestVersion : 1;
+    }
+
     private UserDeckEntity toUserDeckEntityForFork(UserDeckDTO userDeckDTO) {
         return new UserDeckEntity(
                 userDeckDTO.userId(),
                 userDeckDTO.publicDeckId(),
                 userDeckDTO.subscribedVersion(),
                 userDeckDTO.currentVersion(),
+                userDeckDTO.templateVersion(),
+                userDeckDTO.subscribedTemplateVersion(),
                 userDeckDTO.autoUpdate(),
                 userDeckDTO.algorithmId(),
                 userDeckDTO.algorithmParams(),
@@ -717,6 +791,8 @@ public class DeckService {
                 e.getPublicDeckId(),
                 e.getSubscribedVersion(),
                 e.getCurrentVersion(),
+                e.getTemplateVersion(),
+                e.getSubscribedTemplateVersion(),
                 e.isAutoUpdate(),
                 e.getAlgorithmId(),
                 e.getAlgorithmParams(),
@@ -738,6 +814,7 @@ public class DeckService {
                 e.getIconMediaId(),
                 iconUrl,
                 e.getTemplateId(),
+                e.getTemplateVersion(),
                 e.isPublicFlag(),
                 e.isListed(),
                 e.getLanguageCode(),

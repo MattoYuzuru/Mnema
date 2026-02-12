@@ -39,6 +39,10 @@ export class DeckApiService {
         return this.http.post<UserDeckDTO>(`${this.baseUrl}/${userDeckId}/sync`, {});
     }
 
+    syncDeckTemplate(userDeckId: string): Observable<UserDeckDTO> {
+        return this.http.post<UserDeckDTO>(`${this.baseUrl}/${userDeckId}/sync-template`, {});
+    }
+
     deleteDeck(userDeckId: string): Observable<void> {
         return this.http.delete<void>(`${this.baseUrl}/${userDeckId}`);
     }

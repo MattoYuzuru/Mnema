@@ -6,5 +6,6 @@ public enum MediaKind {
     card_image,
     card_audio,
     card_video,
-    import_file
+    import_file,
+    ai_import
 }

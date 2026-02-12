@@ -30,6 +30,12 @@ public class UserDeckEntity {
     @Column(name = "current_version")
     private Integer currentVersion;
 
+    @Column(name = "template_version")
+    private Integer templateVersion;
+
+    @Column(name = "subscribed_template_version")
+    private Integer subscribedTemplateVersion;
+
     @Column(name = "auto_update", nullable = false)
     private boolean autoUpdate;
 
@@ -67,6 +73,8 @@ public class UserDeckEntity {
             UUID publicDeckId,
             Integer subscribedVersion,
             Integer currentVersion,
+            Integer templateVersion,
+            Integer subscribedTemplateVersion,
             boolean autoUpdate,
             String algorithmId,
             JsonNode algorithmParams,
@@ -80,6 +88,8 @@ public class UserDeckEntity {
         this.publicDeckId = publicDeckId;
         this.subscribedVersion = subscribedVersion;
         this.currentVersion = currentVersion;
+        this.templateVersion = templateVersion;
+        this.subscribedTemplateVersion = subscribedTemplateVersion;
         this.autoUpdate = autoUpdate;
         this.algorithmId = algorithmId;
         this.algorithmParams = algorithmParams;
@@ -88,6 +98,38 @@ public class UserDeckEntity {
         this.createdAt = createdAt;
         this.lastSyncedAt = lastSyncedAt;
         this.archived = archived;
+    }
+
+    public UserDeckEntity(
+            UUID userId,
+            UUID publicDeckId,
+            Integer subscribedVersion,
+            Integer currentVersion,
+            boolean autoUpdate,
+            String algorithmId,
+            JsonNode algorithmParams,
+            String displayName,
+            String displayDescription,
+            Instant createdAt,
+            Instant lastSyncedAt,
+            boolean archived
+    ) {
+        this(
+                userId,
+                publicDeckId,
+                subscribedVersion,
+                currentVersion,
+                1,
+                1,
+                autoUpdate,
+                algorithmId,
+                algorithmParams,
+                displayName,
+                displayDescription,
+                createdAt,
+                lastSyncedAt,
+                archived
+        );
     }
 
     public UUID getUserDeckId() {
@@ -108,6 +150,14 @@ public class UserDeckEntity {
 
     public Integer getCurrentVersion() {
         return currentVersion;
+    }
+
+    public Integer getTemplateVersion() {
+        return templateVersion;
+    }
+
+    public Integer getSubscribedTemplateVersion() {
+        return subscribedTemplateVersion;
     }
 
     public boolean isAutoUpdate() {
@@ -164,6 +214,14 @@ public class UserDeckEntity {
 
     public void setCurrentVersion(Integer currentVersion) {
         this.currentVersion = currentVersion;
+    }
+
+    public void setTemplateVersion(Integer templateVersion) {
+        this.templateVersion = templateVersion;
+    }
+
+    public void setSubscribedTemplateVersion(Integer subscribedTemplateVersion) {
+        this.subscribedTemplateVersion = subscribedTemplateVersion;
     }
 
     public void setAutoUpdate(boolean autoUpdate) {

@@ -1,0 +1,65 @@
+import { Injectable } from '@angular/core';
+import { HttpClient } from '@angular/common/http';
+import { Observable } from 'rxjs';
+import { appConfig } from '../../app.config';
+import {
+    AiProviderCredential,
+    CreateAiProviderRequest,
+    CreateAiJobRequest,
+    AiJobResponse,
+    AiJobResultResponse,
+    AiImportPreviewRequest,
+    AiImportGenerateRequest
+} from '../models/ai.models';
+
+@Injectable({ providedIn: 'root' })
+export class AiApiService {
+    private readonly baseUrl = appConfig.aiApiBaseUrl;
+
+    constructor(private http: HttpClient) {}
+
+    listProviders(): Observable<AiProviderCredential[]> {
+        return this.http.get<AiProviderCredential[]>(`${this.baseUrl}/providers`);
+    }
+
+    createProvider(request: CreateAiProviderRequest): Observable<AiProviderCredential> {
+        return this.http.post<AiProviderCredential>(`${this.baseUrl}/providers`, request);
+    }
+
+    deleteProvider(id: string): Observable<void> {
+        return this.http.delete<void>(`${this.baseUrl}/providers/${id}`);
+    }
+
+    createJob(request: CreateAiJobRequest): Observable<AiJobResponse> {
+        return this.http.post<AiJobResponse>(`${this.baseUrl}/jobs`, request);
+    }
+
+    getJob(jobId: string): Observable<AiJobResponse> {
+        return this.http.get<AiJobResponse>(`${this.baseUrl}/jobs/${jobId}`);
+    }
+
+    getJobResult(jobId: string): Observable<AiJobResultResponse> {
+        return this.http.get<AiJobResultResponse>(`${this.baseUrl}/jobs/${jobId}/results`);
+    }
+
+    listJobs(deckId: string, limit: number = 20): Observable<AiJobResponse[]> {
+        return this.http.get<AiJobResponse[]>(`${this.baseUrl}/jobs`, {
+            params: {
+                deckId,
+                limit
+            }
+        });
+    }
+
+    cancelJob(jobId: string): Observable<AiJobResponse> {
+        return this.http.post<AiJobResponse>(`${this.baseUrl}/jobs/${jobId}/cancel`, {});
+    }
+
+    createImportPreview(request: AiImportPreviewRequest): Observable<AiJobResponse> {
+        return this.http.post<AiJobResponse>(`${this.baseUrl}/imports/preview`, request);
+    }
+
+    createImportGenerate(request: AiImportGenerateRequest): Observable<AiJobResponse> {
+        return this.http.post<AiJobResponse>(`${this.baseUrl}/imports/generate`, request);
+    }
+}

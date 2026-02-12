@@ -143,7 +143,12 @@ public class ImportProcessor {
 
                 if (batch.size() >= batchSize) {
                     List<app.mnema.importer.client.core.CoreUserCardResponse> created =
-                            coreApiClient.addCardsBatch(job.getUserAccessToken(), targetDeck.userDeckId(), batch);
+                            coreApiClient.addCardsBatch(
+                                    job.getUserAccessToken(),
+                                    targetDeck.userDeckId(),
+                                    batch,
+                                    job.getJobId()
+                            );
                     processed += created == null ? 0 : created.size();
                     seedProgress(job, targetDeck.userDeckId(), created, progressBatch, now);
                     batch.clear();
@@ -154,7 +159,12 @@ public class ImportProcessor {
 
             if (!batch.isEmpty()) {
                 List<app.mnema.importer.client.core.CoreUserCardResponse> created =
-                        coreApiClient.addCardsBatch(job.getUserAccessToken(), targetDeck.userDeckId(), batch);
+                        coreApiClient.addCardsBatch(
+                                job.getUserAccessToken(),
+                                targetDeck.userDeckId(),
+                                batch,
+                                job.getJobId()
+                        );
                 processed += created == null ? 0 : created.size();
                 seedProgress(job, targetDeck.userDeckId(), created, progressBatch, now);
                 updateProgress(job.getJobId(), processed);
@@ -212,7 +222,7 @@ public class ImportProcessor {
                             deckName,
                             "Imported from " + job.getSourceType(),
                             false,
-                            buildTemplateLayout(templateFields, ankiMode),
+                            buildTemplateLayout(templateFields, ankiMode, stream.ankiTemplate()),
                             null,
                             null,
                             templateFields
@@ -501,12 +511,35 @@ public class ImportProcessor {
         return normalized;
     }
 
-    private JsonNode buildTemplateLayout(List<CoreFieldTemplate> fields, boolean ankiMode) {
+    private JsonNode buildTemplateLayout(List<CoreFieldTemplate> fields,
+                                         boolean ankiMode,
+                                         ImportAnkiTemplate ankiTemplate) {
         ObjectNode layout = objectMapper.createObjectNode();
         var front = layout.putArray("front");
         var back = layout.putArray("back");
         if (ankiMode) {
             layout.put("renderMode", "anki");
+            if (ankiTemplate != null) {
+                ObjectNode ankiNode = layout.putObject("anki");
+                if (ankiTemplate.frontTemplate() != null) {
+                    ankiNode.put("frontTemplate", ankiTemplate.frontTemplate());
+                }
+                if (ankiTemplate.backTemplate() != null) {
+                    ankiNode.put("backTemplate", ankiTemplate.backTemplate());
+                }
+                if (ankiTemplate.css() != null && !ankiTemplate.css().isBlank()) {
+                    ankiNode.put("css", ankiTemplate.css());
+                }
+                if (ankiTemplate.modelId() != null) {
+                    ankiNode.put("modelId", ankiTemplate.modelId());
+                }
+                if (ankiTemplate.modelName() != null) {
+                    ankiNode.put("modelName", ankiTemplate.modelName());
+                }
+                if (ankiTemplate.templateName() != null) {
+                    ankiNode.put("templateName", ankiTemplate.templateName());
+                }
+            }
         }
         fields.stream()
                 .sorted(Comparator.comparingInt(field -> field.orderIndex() == null ? Integer.MAX_VALUE : field.orderIndex()))

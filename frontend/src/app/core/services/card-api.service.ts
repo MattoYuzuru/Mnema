@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Page } from '../models/page.models';
-import { UserCardDTO, CreateCardRequest } from '../models/user-card.models';
+import { UserCardDTO, CreateCardRequest, MissingFieldSummary, DuplicateGroup, DuplicateResolveResult } from '../models/user-card.models';
 import { appConfig } from '../../app.config';
 
 @Injectable({ providedIn: 'root' })
@@ -33,16 +33,57 @@ export class CardApiService {
     patchUserCard(
         userDeckId: string,
         cardId: string,
-        body: Partial<UserCardDTO>
+        body: Partial<UserCardDTO>,
+        scope?: 'local' | 'global'
     ): Observable<UserCardDTO> {
-        return this.http.patch<UserCardDTO>(`${this.baseUrl}/${userDeckId}/cards/${cardId}`, body);
-    }
-
-    deleteUserCard(userDeckId: string, cardId: string, scope?: 'local' | 'global'): Observable<void> {
         let params = new HttpParams();
         if (scope) {
             params = params.set('scope', scope);
         }
+        return this.http.patch<UserCardDTO>(`${this.baseUrl}/${userDeckId}/cards/${cardId}`, body, { params });
+    }
+
+    deleteUserCard(userDeckId: string, cardId: string, scope?: 'local' | 'global', operationId?: string): Observable<void> {
+        let params = new HttpParams();
+        if (scope) {
+            params = params.set('scope', scope);
+        }
+        if (operationId) {
+            params = params.set('operationId', operationId);
+        }
         return this.http.delete<void>(`${this.baseUrl}/${userDeckId}/cards/${cardId}`, { params });
+    }
+
+    getMissingFieldSummary(userDeckId: string, fields: string[], sampleLimit: number): Observable<MissingFieldSummary> {
+        return this.http.post<MissingFieldSummary>(`${this.baseUrl}/${userDeckId}/cards/missing-fields`, {
+            fields,
+            sampleLimit
+        });
+    }
+
+    getDuplicateGroups(
+        userDeckId: string,
+        fields: string[],
+        limitGroups = 10,
+        perGroupLimit = 5
+    ): Observable<DuplicateGroup[]> {
+        return this.http.post<DuplicateGroup[]>(`${this.baseUrl}/${userDeckId}/cards/duplicates`, {
+            fields,
+            limitGroups,
+            perGroupLimit
+        });
+    }
+
+    resolveDuplicateGroups(
+        userDeckId: string,
+        fields: string[],
+        scope: 'local' | 'global' = 'local',
+        operationId?: string
+    ): Observable<DuplicateResolveResult> {
+        return this.http.post<DuplicateResolveResult>(`${this.baseUrl}/${userDeckId}/cards/duplicates/resolve`, {
+            fields,
+            scope,
+            operationId
+        });
     }
 }

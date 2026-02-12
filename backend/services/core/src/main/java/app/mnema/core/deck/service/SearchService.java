@@ -5,11 +5,13 @@ import app.mnema.core.deck.domain.dto.FieldTemplateDTO;
 import app.mnema.core.deck.domain.dto.UserCardDTO;
 import app.mnema.core.deck.domain.dto.UserDeckDTO;
 import app.mnema.core.deck.domain.entity.CardTemplateEntity;
+import app.mnema.core.deck.domain.entity.CardTemplateVersionEntity;
 import app.mnema.core.deck.domain.entity.FieldTemplateEntity;
 import app.mnema.core.deck.domain.entity.PublicCardEntity;
 import app.mnema.core.deck.domain.entity.UserCardEntity;
 import app.mnema.core.deck.domain.entity.UserDeckEntity;
 import app.mnema.core.deck.repository.CardTemplateRepository;
+import app.mnema.core.deck.repository.CardTemplateVersionRepository;
 import app.mnema.core.deck.repository.FieldTemplateRepository;
 import app.mnema.core.deck.repository.PublicCardRepository;
 import app.mnema.core.deck.repository.UserCardRepository;
@@ -24,6 +26,7 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -38,17 +41,20 @@ public class SearchService {
     private final PublicCardRepository publicCardRepository;
     private final CardTemplateRepository cardTemplateRepository;
     private final FieldTemplateRepository fieldTemplateRepository;
+    private final CardTemplateVersionRepository cardTemplateVersionRepository;
 
     public SearchService(UserDeckRepository userDeckRepository,
                          UserCardRepository userCardRepository,
                          PublicCardRepository publicCardRepository,
                          CardTemplateRepository cardTemplateRepository,
-                         FieldTemplateRepository fieldTemplateRepository) {
+                         FieldTemplateRepository fieldTemplateRepository,
+                         CardTemplateVersionRepository cardTemplateVersionRepository) {
         this.userDeckRepository = userDeckRepository;
         this.userCardRepository = userCardRepository;
         this.publicCardRepository = publicCardRepository;
         this.cardTemplateRepository = cardTemplateRepository;
         this.fieldTemplateRepository = fieldTemplateRepository;
+        this.cardTemplateVersionRepository = cardTemplateVersionRepository;
     }
 
     @Transactional(readOnly = true)
@@ -167,16 +173,16 @@ public class SearchService {
             return new PageImpl<>(List.of(), cardsPage.getPageable(), cardsPage.getTotalElements());
         }
 
-        Map<UUID, JsonNode> publicContentById = resolvePublicCardContent(cards);
+        Map<UUID, PublicCardEntity> publicCardsById = resolvePublicCards(cards);
 
         List<UserCardDTO> dtoList = cards.stream()
-                .map(card -> toUserCardDTO(card, publicContentById))
+                .map(card -> toUserCardDTO(card, publicCardsById))
                 .toList();
 
         return new PageImpl<>(dtoList, cardsPage.getPageable(), cardsPage.getTotalElements());
     }
 
-    private Map<UUID, JsonNode> resolvePublicCardContent(List<UserCardEntity> cards) {
+    private Map<UUID, PublicCardEntity> resolvePublicCards(List<UserCardEntity> cards) {
         List<UUID> publicCardIds = cards.stream()
                 .map(UserCardEntity::getPublicCardId)
                 .filter(Objects::nonNull)
@@ -187,12 +193,17 @@ public class SearchService {
             return Map.of();
         }
 
-        return publicCardRepository.findAllByCardIdIn(publicCardIds).stream()
-                .collect(Collectors.toMap(PublicCardEntity::getCardId, PublicCardEntity::getContent));
+        List<PublicCardEntity> publicCards = publicCardRepository.findAllByCardIdInOrderByDeckVersionDesc(publicCardIds);
+        Map<UUID, PublicCardEntity> map = new HashMap<>();
+        for (PublicCardEntity card : publicCards) {
+            map.putIfAbsent(card.getCardId(), card);
+        }
+        return map;
     }
 
-    private UserCardDTO toUserCardDTO(UserCardEntity card, Map<UUID, JsonNode> publicContentById) {
-        JsonNode effectiveContent = buildEffectiveContent(card, publicContentById);
+    private UserCardDTO toUserCardDTO(UserCardEntity card, Map<UUID, PublicCardEntity> publicCardsById) {
+        JsonNode effectiveContent = buildEffectiveContent(card, publicCardsById);
+        String[] tags = buildEffectiveTags(card, publicCardsById);
 
         return new UserCardDTO(
                 card.getUserCardId(),
@@ -200,18 +211,31 @@ public class SearchService {
                 card.isCustom(),
                 card.isDeleted(),
                 card.getPersonalNote(),
+                tags,
                 effectiveContent
         );
     }
 
-    private JsonNode buildEffectiveContent(UserCardEntity card, Map<UUID, JsonNode> publicContentById) {
+    private JsonNode buildEffectiveContent(UserCardEntity card, Map<UUID, PublicCardEntity> publicCardsById) {
         JsonNode override = card.getContentOverride();
         if (card.getPublicCardId() == null) {
             return override;
         }
 
-        JsonNode base = publicContentById.get(card.getPublicCardId());
+        PublicCardEntity publicCard = publicCardsById.get(card.getPublicCardId());
+        JsonNode base = publicCard == null ? null : publicCard.getContent();
         return mergeJson(base, override);
+    }
+
+    private String[] buildEffectiveTags(UserCardEntity card, Map<UUID, PublicCardEntity> publicCardsById) {
+        if (card.getTags() != null) {
+            return card.getTags();
+        }
+        if (card.getPublicCardId() == null) {
+            return null;
+        }
+        PublicCardEntity publicCard = publicCardsById.get(card.getPublicCardId());
+        return publicCard == null ? null : publicCard.getTags();
     }
 
     private JsonNode mergeJson(JsonNode base, JsonNode override) {
@@ -241,9 +265,26 @@ public class SearchService {
                 .map(CardTemplateEntity::getTemplateId)
                 .toList();
 
+        List<CardTemplateVersionEntity> versions = cardTemplateVersionRepository.findByTemplateIdIn(templateIds);
+        Map<UUID, CardTemplateVersionEntity> latestByTemplate = new java.util.HashMap<>();
+        for (CardTemplateVersionEntity version : versions) {
+            if (version == null) {
+                continue;
+            }
+            CardTemplateVersionEntity existing = latestByTemplate.get(version.getTemplateId());
+            if (existing == null || version.getVersion() > existing.getVersion()) {
+                latestByTemplate.put(version.getTemplateId(), version);
+            }
+        }
+
         List<FieldTemplateEntity> fieldEntities = fieldTemplateRepository.findByTemplateIdIn(templateIds);
 
         Map<UUID, List<FieldTemplateDTO>> fieldsByTemplateId = fieldEntities.stream()
+                .filter(field -> {
+                    CardTemplateVersionEntity latest = latestByTemplate.get(field.getTemplateId());
+                    return latest != null && field.getTemplateVersion() != null
+                            && field.getTemplateVersion().equals(latest.getVersion());
+                })
                 .collect(Collectors.groupingBy(
                         FieldTemplateEntity::getTemplateId,
                         Collectors.mapping(this::toFieldTemplateDTO, Collectors.toList())
@@ -252,6 +293,7 @@ public class SearchService {
         List<CardTemplateDTO> dtoList = templates.stream()
                 .map(entity -> toCardTemplateDTO(
                         entity,
+                        latestByTemplate.get(entity.getTemplateId()),
                         fieldsByTemplateId.getOrDefault(entity.getTemplateId(), List.of())
                 ))
                 .toList();
@@ -259,18 +301,23 @@ public class SearchService {
         return new PageImpl<>(dtoList, templatePage.getPageable(), templatePage.getTotalElements());
     }
 
-    private CardTemplateDTO toCardTemplateDTO(CardTemplateEntity entity, List<FieldTemplateDTO> fields) {
+    private CardTemplateDTO toCardTemplateDTO(CardTemplateEntity entity,
+                                              CardTemplateVersionEntity version,
+                                              List<FieldTemplateDTO> fields) {
+        Integer effectiveVersion = version != null ? version.getVersion() : entity.getLatestVersion();
         return new CardTemplateDTO(
                 entity.getTemplateId(),
+                effectiveVersion,
+                entity.getLatestVersion(),
                 entity.getOwnerId(),
                 entity.getName(),
                 entity.getDescription(),
                 entity.isPublic(),
                 entity.getCreatedAt(),
                 entity.getUpdatedAt(),
-                entity.getLayout(),
-                entity.getAiProfile(),
-                entity.getIconUrl(),
+                version != null ? version.getLayout() : entity.getLayout(),
+                version != null ? version.getAiProfile() : entity.getAiProfile(),
+                version != null ? version.getIconUrl() : entity.getIconUrl(),
                 fields
         );
     }
@@ -297,6 +344,8 @@ public class SearchService {
                 entity.getPublicDeckId(),
                 entity.getSubscribedVersion(),
                 entity.getCurrentVersion(),
+                entity.getTemplateVersion(),
+                entity.getSubscribedTemplateVersion(),
                 entity.isAutoUpdate(),
                 entity.getAlgorithmId(),
                 entity.getAlgorithmParams(),
