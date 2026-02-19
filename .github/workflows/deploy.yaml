@@ -390,4 +390,39 @@ jobs:
           image="ghcr.io/${{ steps.repo.outputs.REPO }}/ai:${{ steps.meta.outputs.TAG }}"
 
           kubectl -n "$NS" set image deploy/mnema-ai "ai=${image}"
-          kubectl -n "$NS" rollout status deploy/mnema-ai --timeout=1800s
+
+          rollout_with_recovery() {
+            local attempts=3
+
+            for attempt in $(seq 1 "$attempts"); do
+              if kubectl -n "$NS" rollout status deploy/mnema-ai --timeout=600s; then
+                return 0
+              fi
+
+              echo "mnema-ai rollout failed (attempt ${attempt}/${attempts}), collecting diagnostics..."
+              kubectl -n "$NS" get deploy mnema-ai -o wide || true
+              kubectl -n "$NS" get rs -l app=mnema-ai -o wide || true
+              kubectl -n "$NS" get pods -l app=mnema-ai -o wide || true
+              kubectl -n "$NS" get events --sort-by=.lastTimestamp | tail -n 40 || true
+
+              mapfile -t terminating_pods < <(
+                kubectl -n "$NS" get pods -l app=mnema-ai \
+                  -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.metadata.deletionTimestamp}{"\n"}{end}' \
+                  | awk -F'|' '$2 != "" {print $1}'
+              )
+
+              if [ "${#terminating_pods[@]}" -gt 0 ]; then
+                echo "Force deleting terminating pods:"
+                printf '%s\n' "${terminating_pods[@]}"
+                for pod in "${terminating_pods[@]}"; do
+                  kubectl -n "$NS" delete pod "$pod" --grace-period=0 --force || true
+                done
+              fi
+
+              sleep 10
+            done
+
+            return 1
+          }
+
+          rollout_with_recovery
