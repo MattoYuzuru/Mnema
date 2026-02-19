@@ -124,17 +124,17 @@ jobs:
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
-  apply-manifests:
+  apply-main-manifests:
     needs: build-and-push
     runs-on: ubuntu-latest
     env:
       NS: prod
-      KUBECONFIG: ${{ github.workspace }}/kubeconfig
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig-main
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-kubectl@v4
 
-      - name: Write kubeconfig
+      - name: Write kubeconfig (main cluster)
         run: echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
@@ -177,9 +177,6 @@ jobs:
             AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
             AWS_BUCKET_NAME: "${AWS_BUCKET_NAME}"
             MEDIA_INTERNAL_TOKEN: "${MEDIA_INTERNAL_TOKEN}"
-            AI_VAULT_MASTER_KEY: "${AI_VAULT_MASTER_KEY}"
-            AI_VAULT_KEY_ID: "${AI_VAULT_KEY_ID}"
-            AI_PROVIDER: "${AI_PROVIDER}"
           YAML
         env:
           AUTH_ISSUER: ${{ secrets.AUTH_ISSUER }}
@@ -202,9 +199,6 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
           MEDIA_INTERNAL_TOKEN: ${{ secrets.MEDIA_INTERNAL_TOKEN }}
-          AI_VAULT_MASTER_KEY: ${{ secrets.AI_VAULT_MASTER_KEY }}
-          AI_VAULT_KEY_ID: ${{ secrets.AI_VAULT_KEY_ID }}
-          AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
 
       - name: Create/Update secret (grafana-secrets)
         run: |
@@ -229,11 +223,20 @@ jobs:
             --from-file=k8s/observability/dashboards \
             --dry-run=client -o yaml | kubectl apply -f -
 
-      - name: Apply manifests
+      - name: Apply manifests (main cluster)
         run: |
-          # Для наглядности
-          echo "Workspace:" && ls -la && echo && ls -la k8s || true
-          kubectl -n "$NS" apply -f k8s/
+          kubectl apply -f k8s/cluster-issuers.yaml
+          kubectl -n "$NS" apply -f k8s/postgres.yaml
+          kubectl -n "$NS" apply -f k8s/redis.yaml
+          kubectl -n "$NS" apply -f k8s/frontend-deploy.yaml
+          kubectl -n "$NS" apply -f k8s/auth-deploy.yaml
+          kubectl -n "$NS" apply -f k8s/user-deploy.yaml
+          kubectl -n "$NS" apply -f k8s/core-deploy.yaml
+          kubectl -n "$NS" apply -f k8s/media-deploy.yaml
+          kubectl -n "$NS" apply -f k8s/import-deploy.yaml
+          kubectl -n "$NS" apply -f k8s/ingress.yaml
+          kubectl -n "$NS" apply -f k8s/auth-ingress.yaml
+          kubectl -n "$NS" delete deployment/mnema-ai service/mnema-ai --ignore-not-found=true
           kubectl apply -f k8s/observability/
 
       - name: Restart observability pods (config reload)
@@ -241,17 +244,70 @@ jobs:
           kubectl -n observability rollout restart daemonset/alloy
           kubectl -n observability rollout restart deployment/grafana
 
-  deploy:
-    needs: apply-manifests
+  apply-ai-manifests:
+    if: ${{ secrets.AI_KUBECONFIG_B64 != '' }}
+    needs: build-and-push
     runs-on: ubuntu-latest
     env:
       NS: prod
-      KUBECONFIG: ${{ github.workspace }}/kubeconfig
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig-ai
     steps:
       - uses: actions/checkout@v4
       - uses: azure/setup-kubectl@v4
 
-      - name: Write kubeconfig
+      - name: Write kubeconfig (ai cluster)
+        run: echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
+        env:
+          KUBECONFIG_B64: ${{ secrets.AI_KUBECONFIG_B64 }}
+
+      - name: Ensure namespace exists
+        run: kubectl apply -f k8s/namespace.yaml
+
+      - name: Create/Update secret (mnema-secrets)
+        run: |
+          cat <<YAML | kubectl apply -f -
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: mnema-secrets
+            namespace: ${NS}
+          type: Opaque
+          stringData:
+            AUTH_ISSUER_URI: "${AUTH_ISSUER_URI}"
+            POSTGRES_USER: "${POSTGRES_USER}"
+            POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+            MEDIA_INTERNAL_TOKEN: "${MEDIA_INTERNAL_TOKEN}"
+            AI_VAULT_MASTER_KEY: "${AI_VAULT_MASTER_KEY}"
+            AI_VAULT_KEY_ID: "${AI_VAULT_KEY_ID}"
+            AI_PROVIDER: "${AI_PROVIDER}"
+            AI_SPRING_DATASOURCE_URL: "${AI_SPRING_DATASOURCE_URL}"
+          YAML
+        env:
+          AUTH_ISSUER_URI: ${{ secrets.AUTH_ISSUER_URI }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.MEDIA_INTERNAL_TOKEN }}
+          AI_VAULT_MASTER_KEY: ${{ secrets.AI_VAULT_MASTER_KEY }}
+          AI_VAULT_KEY_ID: ${{ secrets.AI_VAULT_KEY_ID }}
+          AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
+          AI_SPRING_DATASOURCE_URL: ${{ secrets.AI_SPRING_DATASOURCE_URL }}
+
+      - name: Apply manifests (ai cluster)
+        run: |
+          kubectl -n "$NS" apply -f k8s/ai/ai-deploy.yaml
+          kubectl -n "$NS" apply -f k8s/ai/ingress.yaml
+
+  deploy-main:
+    needs: apply-main-manifests
+    runs-on: ubuntu-latest
+    env:
+      NS: prod
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig-main
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+
+      - name: Write kubeconfig (main cluster)
         run: echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
@@ -304,4 +360,36 @@ jobs:
           deploy mnema-user     user     "${image_base}/user:${tag}"     1200s
           deploy mnema-core     core     "${image_base}/core:${tag}"     1200s
           deploy mnema-media    media    "${image_base}/media:${tag}"    1800s
-          deploy mnema-ai       ai       "${image_base}/ai:${tag}"       1800s
+          deploy mnema-import   import   "${image_base}/import:${tag}"   1800s
+
+  deploy-ai:
+    if: ${{ secrets.AI_KUBECONFIG_B64 != '' }}
+    needs: apply-ai-manifests
+    runs-on: ubuntu-latest
+    env:
+      NS: prod
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig-ai
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/setup-kubectl@v4
+
+      - name: Write kubeconfig (ai cluster)
+        run: echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
+        env:
+          KUBECONFIG_B64: ${{ secrets.AI_KUBECONFIG_B64 }}
+
+      - name: Repo slug (lowercase)
+        id: repo
+        run: echo "REPO=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
+
+      - name: Compute image tag
+        id: meta
+        run: echo "TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Deploy ai service
+        run: |
+          set -euo pipefail
+          image="ghcr.io/${{ steps.repo.outputs.REPO }}/ai:${{ steps.meta.outputs.TAG }}"
+
+          kubectl -n "$NS" set image deploy/mnema-ai "ai=${image}"
+          kubectl -n "$NS" rollout status deploy/mnema-ai --timeout=1800s

@@ -52,10 +52,3 @@ spec:
                 name: mnema-import
                 port:
                   number: 80
-          - path: /api/ai
-            pathType: Prefix
-            backend:
-              service:
-                name: mnema-ai
-                port:
-                  number: 80

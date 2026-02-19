@@ -11,23 +11,13 @@ spec:
   template:
     metadata: { labels: { app: mnema-ai } }
     spec:
-      initContainers:
-        - name: wait-for-postgres
-          image: postgres:18
-          command: [ 'sh','-c','until pg_isready -h postgres.prod.svc.cluster.local -p 5432 -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do echo waiting for postgres; sleep 2; done' ]
-          env:
-            - name: POSTGRES_USER
-              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_USER } }
-            - name: POSTGRES_DB
-              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_DB } }
-
       containers:
         - name: ai
           image: ghcr.io/mattoyuzuru/mnema/ai:latest
           ports: [ { containerPort: 8080 } ]
           env:
             - name: SPRING_DATASOURCE_URL
-              value: jdbc:postgresql://postgres.prod.svc.cluster.local:5432/mnema
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: AI_SPRING_DATASOURCE_URL } }
             - name: SPRING_DATASOURCE_USERNAME
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_USER } }
             - name: SPRING_DATASOURCE_PASSWORD
@@ -35,15 +25,13 @@ spec:
             - name: AUTH_ISSUER_URI
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AUTH_ISSUER_URI } }
             - name: CORE_BASE_URL
-              value: http://mnema-core/api/core
+              value: https://mnema.app/api/core
             - name: MEDIA_BASE_URL
-              value: http://mnema-media/api/media
+              value: https://mnema.app/api/media
             - name: MEDIA_INTERNAL_TOKEN
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: MEDIA_INTERNAL_TOKEN } }
-            - name: REDIS_HOST
-              value: redis
-            - name: REDIS_PORT
-              value: "6379"
+            - name: SPRING_CACHE_TYPE
+              value: simple
             - name: APP_AI_VAULT_MASTER_KEY
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AI_VAULT_MASTER_KEY } }
             - name: APP_AI_VAULT_KEY_ID
