@@ -245,7 +245,6 @@ jobs:
           kubectl -n observability rollout restart deployment/grafana
 
   apply-ai-manifests:
-    if: ${{ secrets.AI_KUBECONFIG_B64 != '' }}
     needs: build-and-push
     runs-on: ubuntu-latest
     env:
@@ -363,7 +362,6 @@ jobs:
           deploy mnema-import   import   "${image_base}/import:${tag}"   1800s
 
   deploy-ai:
-    if: ${{ secrets.AI_KUBECONFIG_B64 != '' }}
     needs: apply-ai-manifests
     runs-on: ubuntu-latest
     env:
