@@ -3,8 +3,10 @@ package app.mnema.ai.support;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
+@Testcontainers(disabledWithoutDocker = true)
 public abstract class PostgresIntegrationTest {
 
     private static final PostgreSQLContainer<?> postgres =
