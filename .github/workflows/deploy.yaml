@@ -279,7 +279,6 @@ jobs:
             AI_VAULT_MASTER_KEY: "${AI_VAULT_MASTER_KEY}"
             AI_VAULT_KEY_ID: "${AI_VAULT_KEY_ID}"
             AI_PROVIDER: "${AI_PROVIDER}"
-            AI_SPRING_DATASOURCE_URL: "${AI_SPRING_DATASOURCE_URL}"
           YAML
         env:
           AUTH_ISSUER_URI: ${{ secrets.AUTH_ISSUER_URI }}
@@ -289,10 +288,11 @@ jobs:
           AI_VAULT_MASTER_KEY: ${{ secrets.AI_VAULT_MASTER_KEY }}
           AI_VAULT_KEY_ID: ${{ secrets.AI_VAULT_KEY_ID }}
           AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
-          AI_SPRING_DATASOURCE_URL: ${{ secrets.AI_SPRING_DATASOURCE_URL }}
 
       - name: Apply manifests (ai cluster)
         run: |
+          kubectl -n "$NS" apply -f k8s/ai/postgres.yaml
+          kubectl -n "$NS" rollout status statefulset/postgres --timeout=600s
           kubectl -n "$NS" apply -f k8s/ai/ai-deploy.yaml
           kubectl -n "$NS" apply -f k8s/ai/ingress.yaml
 

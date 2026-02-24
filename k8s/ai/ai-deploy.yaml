@@ -11,13 +11,20 @@ spec:
   template:
     metadata: { labels: { app: mnema-ai } }
     spec:
+      initContainers:
+        - name: wait-for-postgres
+          image: postgres:18
+          command: [ 'sh','-c','until pg_isready -h postgres.prod.svc.cluster.local -p 5432 -U "$POSTGRES_USER" -d "mnema"; do echo waiting for postgres; sleep 2; done' ]
+          env:
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_USER } }
       containers:
         - name: ai
           image: ghcr.io/mattoyuzuru/mnema/ai:latest
           ports: [ { containerPort: 8080 } ]
           env:
             - name: SPRING_DATASOURCE_URL
-              valueFrom: { secretKeyRef: { name: mnema-secrets, key: AI_SPRING_DATASOURCE_URL } }
+              value: jdbc:postgresql://postgres.prod.svc.cluster.local:5432/mnema
             - name: SPRING_DATASOURCE_USERNAME
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_USER } }
             - name: SPRING_DATASOURCE_PASSWORD
