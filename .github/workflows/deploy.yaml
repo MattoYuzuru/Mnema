@@ -291,10 +291,25 @@ jobs:
 
       - name: Apply manifests (ai cluster)
         run: |
+          kubectl apply -f k8s/cluster-issuers.yaml
+
+          # DB for ai cluster (fully inside NL cluster)
           kubectl -n "$NS" apply -f k8s/ai/postgres.yaml
           kubectl -n "$NS" rollout status statefulset/postgres --timeout=600s
+
           kubectl -n "$NS" apply -f k8s/ai/ai-deploy.yaml
           kubectl -n "$NS" apply -f k8s/ai/ingress.yaml
+          kubectl -n "$NS" apply -f k8s/ai/certificate.yaml
+
+      - name: Wait for ai TLS certificate
+        run: |
+          set -euo pipefail
+          if ! kubectl -n "$NS" wait --for=condition=Ready certificate/ai-mnema-app-tls --timeout=900s; then
+            kubectl -n "$NS" get certificate,certificaterequest,challenge,order || true
+            kubectl -n "$NS" describe certificate ai-mnema-app-tls || true
+            kubectl -n "$NS" get ingress mnema-ai -o wide || true
+            exit 1
+          fi
 
   deploy-main:
     needs: apply-main-manifests
