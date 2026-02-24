@@ -10,15 +10,18 @@ spec:
       protocol: TCP
       targetPort: 80
 ---
-apiVersion: v1
-kind: Endpoints
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
 metadata:
-  name: mnema-ai-bridge
+  name: mnema-ai-bridge-1
   namespace: prod
-subsets:
+  labels:
+    kubernetes.io/service-name: mnema-ai-bridge
+addressType: IPv4
+ports:
+  - name: http
+    protocol: TCP
+    port: 80
+endpoints:
   - addresses:
-      - ip: 66.248.207.147
-    ports:
-      - name: http
-        port: 80
-        protocol: TCP
+      - 66.248.207.147
