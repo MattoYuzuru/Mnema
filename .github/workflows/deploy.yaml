@@ -228,6 +228,7 @@ jobs:
           kubectl apply -f k8s/cluster-issuers.yaml
           kubectl -n "$NS" apply -f k8s/postgres.yaml
           kubectl -n "$NS" apply -f k8s/redis.yaml
+          kubectl -n "$NS" apply -f k8s/ai-bridge.yaml
           kubectl -n "$NS" apply -f k8s/frontend-deploy.yaml
           kubectl -n "$NS" apply -f k8s/auth-deploy.yaml
           kubectl -n "$NS" apply -f k8s/user-deploy.yaml
@@ -299,17 +300,6 @@ jobs:
 
           kubectl -n "$NS" apply -f k8s/ai/ai-deploy.yaml
           kubectl -n "$NS" apply -f k8s/ai/ingress.yaml
-          kubectl -n "$NS" apply -f k8s/ai/certificate.yaml
-
-      - name: Wait for ai TLS certificate
-        run: |
-          set -euo pipefail
-          if ! kubectl -n "$NS" wait --for=condition=Ready certificate/ai-mnema-app-tls --timeout=900s; then
-            kubectl -n "$NS" get certificate,certificaterequest,challenge,order || true
-            kubectl -n "$NS" describe certificate ai-mnema-app-tls || true
-            kubectl -n "$NS" get ingress mnema-ai -o wide || true
-            exit 1
-          fi
 
   deploy-main:
     needs: apply-main-manifests

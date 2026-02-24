@@ -3,17 +3,10 @@ kind: Ingress
 metadata:
   name: mnema-ai
   namespace: prod
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: traefik
-  tls:
-    - hosts:
-        - ai.mnema.app
-      secretName: ai-mnema-app-tls
   rules:
-    - host: ai.mnema.app
-      http:
+    - http:
         paths:
           - path: /api/ai
             pathType: Prefix
