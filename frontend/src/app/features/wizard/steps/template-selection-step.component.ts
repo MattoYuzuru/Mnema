@@ -116,15 +116,15 @@ type TemplateFilter = 'mine' | 'public';
     ></app-import-deck-modal>
   `,
     styles: [`
-      .step { display: flex; flex-direction: column; gap: var(--spacing-lg); }
+      .step { display: flex; flex-direction: column; gap: var(--spacing-lg); min-width: 0; }
       h2 { font-size: 1.5rem; font-weight: 600; margin: 0; }
       .subtitle { font-size: 1rem; color: var(--color-text-secondary); margin: 0; }
 
       .choice-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        grid-template-columns: repeat(auto-fit, minmax(min(14.5rem, 100%), 1fr));
         gap: var(--spacing-lg);
-        max-width: 800px;
+        max-width: 100%;
         margin: var(--spacing-xl) auto;
       }
 
@@ -133,6 +133,8 @@ type TemplateFilter = 'mine' | 'public';
         flex-direction: column;
         align-items: center;
         justify-content: center;
+        width: 100%;
+        min-width: 0;
         padding: var(--spacing-xxl);
         background: var(--color-card-background);
         border: 2px solid var(--border-color);
@@ -213,7 +215,7 @@ type TemplateFilter = 'mine' | 'public';
 
       .templates-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        grid-template-columns: repeat(auto-fill, minmax(min(14rem, 100%), 1fr));
         gap: var(--spacing-lg);
         margin-top: var(--spacing-lg);
       }
@@ -240,11 +242,23 @@ type TemplateFilter = 'mine' | 'public';
       .step-actions {
         display: flex;
         justify-content: space-between;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
         padding-top: var(--spacing-lg);
         border-top: 1px solid var(--border-color);
       }
 
-      @media (max-width: 768px) {
+      .step-actions app-button {
+        flex: 1 1 14rem;
+      }
+
+      @media (max-width: 1024px) {
+        .choice-grid {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 900px) {
         .choice-grid {
           grid-template-columns: 1fr;
           margin: var(--spacing-lg) 0;
@@ -275,7 +289,6 @@ type TemplateFilter = 'mine' | 'public';
 
         .step-actions {
           flex-direction: column;
-          gap: var(--spacing-sm);
         }
       }
 

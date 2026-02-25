@@ -69,15 +69,16 @@ import { I18nService } from '../../../core/services/i18n.service';
     </div>
   `,
     styles: [`
-      .step { display: flex; flex-direction: column; gap: var(--spacing-lg); }
+      .step { display: flex; flex-direction: column; gap: var(--spacing-lg); min-width: 0; }
       .card-form { display: flex; flex-direction: column; gap: var(--spacing-md); }
       .button-container { display: flex; justify-content: flex-end; width: 100%; }
       .pending-cards { margin-top: var(--spacing-lg); }
       .pending-cards h4 { font-size: 1rem; font-weight: 600; margin: 0 0 var(--spacing-sm) 0; }
       .card-item { display: flex; align-items: center; justify-content: space-between; padding: var(--spacing-sm) var(--spacing-md); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-sm); margin-bottom: var(--spacing-xs); }
-      .step-actions { display: flex; justify-content: space-between; padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
+      .step-actions { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--spacing-sm); padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
+      .step-actions app-button { flex: 1 1 14rem; }
 
-      @media (max-width: 768px) {
+      @media (max-width: 900px) {
         .card-item {
           flex-direction: column;
           align-items: flex-start;
@@ -94,7 +95,6 @@ import { I18nService } from '../../../core/services/i18n.service';
 
         .step-actions {
           flex-direction: column;
-          gap: var(--spacing-sm);
         }
       }
     `]

@@ -62,10 +62,12 @@ export interface WizardStep {
         display: flex;
         justify-content: space-between;
         gap: var(--spacing-sm);
+        min-width: 0;
       }
 
       .stepper-step {
         flex: 1;
+        min-width: 0;
         display: flex;
         flex-direction: column;
         align-items: center;
@@ -108,6 +110,7 @@ export interface WizardStep {
         font-weight: 500;
         color: var(--color-text-muted);
         text-align: center;
+        overflow-wrap: anywhere;
         transition: color 0.3s ease;
       }
 
@@ -117,6 +120,17 @@ export interface WizardStep {
 
       .stepper-step-completed .stepper-step-label {
         color: var(--color-text-primary);
+      }
+
+      @media (max-width: 900px) {
+        .stepper-steps {
+          gap: var(--spacing-xs);
+        }
+
+        .stepper-step-label {
+          font-size: 0.78rem;
+          line-height: 1.2;
+        }
       }
     `
     ]

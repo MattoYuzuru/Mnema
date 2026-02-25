@@ -4,6 +4,8 @@ import { BehaviorSubject, Observable } from 'rxjs';
 export interface UserPreferences {
     hideFieldLabels: boolean;
     showFrontSideAfterFlip: boolean;
+    mobileReviewButtonsMode: 'classic' | 'swipe-column';
+    mobileReviewButtonsSide: 'left' | 'right';
 }
 
 @Injectable({ providedIn: 'root' })
@@ -20,20 +22,33 @@ export class PreferencesService {
     }
 
     private loadPreferences(): UserPreferences {
+        const defaults = this.getDefaultPreferences();
         try {
             const saved = localStorage.getItem(this.storageKey);
             if (saved) {
-                return JSON.parse(saved);
+                const parsed = JSON.parse(saved) as Partial<UserPreferences>;
+                return {
+                    ...defaults,
+                    ...parsed,
+                    mobileReviewButtonsMode: parsed.mobileReviewButtonsMode === 'swipe-column'
+                        ? 'swipe-column'
+                        : 'classic',
+                    mobileReviewButtonsSide: parsed.mobileReviewButtonsSide === 'right'
+                        ? 'right'
+                        : 'left'
+                };
             }
         } catch {
         }
-        return this.getDefaultPreferences();
+        return defaults;
     }
 
     private getDefaultPreferences(): UserPreferences {
         return {
             hideFieldLabels: false,
-            showFrontSideAfterFlip: true
+            showFrontSideAfterFlip: true,
+            mobileReviewButtonsMode: 'swipe-column',
+            mobileReviewButtonsSide: 'left'
         };
     }
 
@@ -53,6 +68,26 @@ export class PreferencesService {
 
     setShowFrontSideAfterFlip(show: boolean): void {
         const updated = { ...this._preferencesSubject.value, showFrontSideAfterFlip: show };
+        this._preferencesSubject.next(updated);
+        this.savePreferences(updated);
+    }
+
+    get mobileReviewButtonsMode(): 'classic' | 'swipe-column' {
+        return this._preferencesSubject.value.mobileReviewButtonsMode;
+    }
+
+    setMobileReviewButtonsMode(mode: 'classic' | 'swipe-column'): void {
+        const updated = { ...this._preferencesSubject.value, mobileReviewButtonsMode: mode };
+        this._preferencesSubject.next(updated);
+        this.savePreferences(updated);
+    }
+
+    get mobileReviewButtonsSide(): 'left' | 'right' {
+        return this._preferencesSubject.value.mobileReviewButtonsSide;
+    }
+
+    setMobileReviewButtonsSide(side: 'left' | 'right'): void {
+        const updated = { ...this._preferencesSubject.value, mobileReviewButtonsSide: side };
         this._preferencesSubject.next(updated);
         this.savePreferences(updated);
     }

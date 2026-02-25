@@ -1,12 +1,13 @@
 import { Component, OnInit, OnDestroy, HostListener } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { NgIf } from '@angular/common';
+import { NgFor, NgIf } from '@angular/common';
 import { forkJoin } from 'rxjs';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
 import { TemplateApiService } from '../../core/services/template-api.service';
 import { ReviewApiService } from '../../core/services/review-api.service';
 import { PreferencesService } from '../../core/services/preferences.service';
+import { I18nService } from '../../core/services/i18n.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { CardTemplateDTO } from '../../core/models/template.models';
 import { ReviewClientFeatures, ReviewNextCardResponse, ReviewQueueDTO } from '../../core/models/review.models';
@@ -14,12 +15,20 @@ import { ButtonComponent } from '../../shared/components/button.component';
 import { FlashcardViewComponent } from '../../shared/components/flashcard-view.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
+type ReviewRating = 'AGAIN' | 'HARD' | 'GOOD' | 'EASY';
+
+interface ReviewAnswerOption {
+    rating: ReviewRating;
+    labelKey: string;
+    variant: 'ghost' | 'secondary' | 'primary';
+}
+
 @Component({
     selector: 'app-review-session',
     standalone: true,
-    imports: [NgIf, ButtonComponent, FlashcardViewComponent, TranslatePipe],
+    imports: [NgIf, NgFor, ButtonComponent, FlashcardViewComponent, TranslatePipe],
     template: `
-    <div class="review-session">
+    <div class="review-session" [class.mobile-swipe-enabled]="isMobileSwipeColumnMode()">
       <div *ngIf="sessionComplete" class="session-complete">
         <div class="complete-message">
           <h2>{{ 'review.sessionComplete' | translate }}</h2>
@@ -94,28 +103,27 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           <p class="keyboard-hint">{{ 'review.spaceToReveal' | translate }}</p>
         </div>
 
-        <div *ngIf="revealed && !isHlr()" class="answer-buttons">
-          <app-button variant="ghost" (click)="answer('AGAIN')">
-            {{ 'review.again' | translate }}{{ formatInterval('AGAIN') }}
-          </app-button>
-          <app-button variant="secondary" (click)="answer('HARD')">
-            {{ 'review.hard' | translate }}{{ formatInterval('HARD') }}
-          </app-button>
-          <app-button variant="primary" (click)="answer('GOOD')">
-            {{ 'review.good' | translate }}{{ formatInterval('GOOD') }}
-          </app-button>
-          <app-button variant="primary" (click)="answer('EASY')">
-            {{ 'review.easy' | translate }}{{ formatInterval('EASY') }}
-          </app-button>
-        </div>
+        <div *ngIf="revealed" class="answer-actions" [class.mobile-column-mode]="isMobileSwipeColumnMode()">
+          <div
+            class="answer-buttons"
+            [class.answer-buttons-mobile-column]="isMobileSwipeColumnMode()"
+            [class.answer-buttons-mobile-left]="isMobileSwipeColumnMode() && preferences.mobileReviewButtonsSide === 'left'"
+            [class.answer-buttons-mobile-right]="isMobileSwipeColumnMode() && preferences.mobileReviewButtonsSide === 'right'"
+            (pointerdown)="onAnswerRailPointerDown($event)"
+            (pointerup)="onAnswerRailPointerUp($event)"
+            (pointercancel)="onAnswerRailPointerCancel()"
+          >
+            <p *ngIf="isMobileSwipeColumnMode()" class="swipe-hint">{{ 'review.mobileSwipeHint' | translate }}</p>
 
-        <div *ngIf="revealed && isHlr()" class="answer-buttons">
-          <app-button variant="ghost" (click)="answer('AGAIN')">
-            {{ 'review.again' | translate }}{{ formatInterval('AGAIN') }}
-          </app-button>
-          <app-button variant="primary" (click)="answer('GOOD')">
-            {{ 'review.good' | translate }}{{ formatInterval('GOOD') }}
-          </app-button>
+            <app-button
+              *ngFor="let option of answerOptions"
+              [variant]="option.variant"
+              [fullWidth]="isMobileSwipeColumnMode()"
+              (click)="answer(option.rating)"
+            >
+              {{ option.labelKey | translate }}{{ formatInterval(option.rating) }}
+            </app-button>
+          </div>
         </div>
 
         <div *ngIf="revealed" class="keyboard-hint">
@@ -132,6 +140,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         flex-direction: column;
         gap: var(--spacing-xl);
         padding-top: var(--spacing-xl);
+      }
+
+      .review-session.mobile-swipe-enabled {
+        padding-bottom: calc(12.5rem + env(safe-area-inset-bottom, 0px));
       }
 
       .session-complete {
@@ -237,11 +249,50 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         justify-content: center;
       }
 
+      .answer-actions {
+        display: flex;
+        justify-content: center;
+      }
+
       .answer-buttons {
         display: flex;
         justify-content: center;
         gap: var(--spacing-md);
         flex-wrap: wrap;
+      }
+
+      .answer-buttons-mobile-column {
+        position: fixed;
+        bottom: calc(var(--spacing-lg) + env(safe-area-inset-bottom, 0px));
+        z-index: 80;
+        width: min(11rem, 46vw);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm);
+        border-radius: calc(var(--border-radius-lg) + 0.1rem);
+        border: 1px solid var(--glass-border);
+        background: var(--glass-surface-strong);
+        box-shadow: var(--shadow-md);
+        backdrop-filter: blur(calc(var(--glass-blur) + 4px)) saturate(160%);
+        touch-action: pan-y;
+        transition: left 0.22s ease, right 0.22s ease, transform 0.22s ease;
+      }
+
+      .answer-buttons-mobile-left {
+        left: max(var(--spacing-sm), env(safe-area-inset-left, 0px));
+      }
+
+      .answer-buttons-mobile-right {
+        right: max(var(--spacing-sm), env(safe-area-inset-right, 0px));
+      }
+
+      .swipe-hint {
+        margin: 0;
+        text-align: center;
+        font-size: 0.74rem;
+        line-height: 1.25;
+        color: var(--color-text-muted);
       }
 
       .show-answer-container {
@@ -312,9 +363,16 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           padding: var(--spacing-md);
         }
 
-        .answer-buttons {
+        .answer-buttons:not(.answer-buttons-mobile-column) {
           flex-direction: column;
           width: 100%;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .progress,
+        .answer-buttons-mobile-column {
+          transition: none;
         }
       }
     `]
@@ -328,7 +386,23 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
     sessionComplete = false;
     revealed = false;
     cardShownTime = 0;
+    isMobileViewport = false;
     private userDeckId = '';
+    private swipeStartX: number | null = null;
+    private swipeStartY: number | null = null;
+    private suppressAnswerClickUntil = 0;
+
+    private readonly quadAnswerOptions: ReadonlyArray<ReviewAnswerOption> = [
+        { rating: 'AGAIN', labelKey: 'review.again', variant: 'ghost' },
+        { rating: 'HARD', labelKey: 'review.hard', variant: 'secondary' },
+        { rating: 'GOOD', labelKey: 'review.good', variant: 'primary' },
+        { rating: 'EASY', labelKey: 'review.easy', variant: 'primary' }
+    ];
+
+    private readonly binaryAnswerOptions: ReadonlyArray<ReviewAnswerOption> = [
+        { rating: 'AGAIN', labelKey: 'review.again', variant: 'ghost' },
+        { rating: 'GOOD', labelKey: 'review.good', variant: 'primary' }
+    ];
 
     constructor(
         private route: ActivatedRoute,
@@ -337,10 +411,12 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
         private publicDeckApi: PublicDeckApiService,
         private templateApi: TemplateApiService,
         private reviewApi: ReviewApiService,
-        public preferences: PreferencesService
+        public preferences: PreferencesService,
+        private i18n: I18nService
     ) {}
 
     ngOnInit(): void {
+        this.updateMobileViewport();
         this.userDeckId = this.route.snapshot.paramMap.get('userDeckId') || '';
         if (this.userDeckId) {
             this.loadDeckAndStart();
@@ -348,6 +424,15 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
     }
 
     ngOnDestroy(): void {
+    }
+
+    get answerOptions(): ReadonlyArray<ReviewAnswerOption> {
+        return this.isHlr() ? this.binaryAnswerOptions : this.quadAnswerOptions;
+    }
+
+    @HostListener('window:resize')
+    onViewportResize(): void {
+        this.updateMobileViewport();
     }
 
     @HostListener('window:keydown', ['$event'])
@@ -388,6 +473,42 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
 
     revealAnswer(): void {
         this.revealed = true;
+    }
+
+    isMobileSwipeColumnMode(): boolean {
+        return this.isMobileViewport && this.preferences.mobileReviewButtonsMode === 'swipe-column';
+    }
+
+    onAnswerRailPointerDown(event: PointerEvent): void {
+        if (!this.isMobileSwipeColumnMode() || event.pointerType === 'mouse') {
+            return;
+        }
+        this.swipeStartX = event.clientX;
+        this.swipeStartY = event.clientY;
+    }
+
+    onAnswerRailPointerUp(event: PointerEvent): void {
+        if (!this.isMobileSwipeColumnMode() || this.swipeStartX === null || this.swipeStartY === null || event.pointerType === 'mouse') {
+            return;
+        }
+
+        const deltaX = event.clientX - this.swipeStartX;
+        const deltaY = event.clientY - this.swipeStartY;
+        this.resetSwipeState();
+
+        if (Math.abs(deltaX) < 48 || Math.abs(deltaX) < Math.abs(deltaY) * 1.2) {
+            return;
+        }
+
+        const nextSide: 'left' | 'right' = deltaX > 0 ? 'right' : 'left';
+        if (nextSide !== this.preferences.mobileReviewButtonsSide) {
+            this.preferences.setMobileReviewButtonsSide(nextSide);
+            this.suppressAnswerClickUntil = performance.now() + 220;
+        }
+    }
+
+    onAnswerRailPointerCancel(): void {
+        this.resetSwipeState();
     }
 
     private loadDeckAndStart(): void {
@@ -433,6 +554,8 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
         this.currentCard = nextCard;
         this.revealed = false;
         this.cardShownTime = performance.now();
+        this.suppressAnswerClickUntil = 0;
+        this.resetSwipeState();
     }
 
     get progressPercent(): number {
@@ -450,15 +573,19 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
         return queue.totalRemaining ?? (queue.newCount + queue.dueCount);
     }
 
-    formatInterval(rating: string): string {
+    formatInterval(rating: ReviewRating): string {
         if (!this.currentCard?.intervals) {
             return '';
         }
         const interval = this.currentCard.intervals[rating];
-        return interval?.display ? ` · ${interval.display}` : '';
+        return interval?.display ? ` · ${this.localizeIntervalDisplay(interval.display)}` : '';
     }
 
-    answer(rating: 'AGAIN' | 'HARD' | 'GOOD' | 'EASY'): void {
+    answer(rating: ReviewRating): void {
+        if (performance.now() < this.suppressAnswerClickUntil) {
+            return;
+        }
+
         if (!this.currentCard || !this.currentCard.userCardId) {
             return;
         }
@@ -494,5 +621,24 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
                 uiMode: this.isHlr() ? 'binary' : 'quad'
             }
         };
+    }
+
+    private updateMobileViewport(): void {
+        this.isMobileViewport = window.matchMedia('(max-width: 900px)').matches;
+    }
+
+    private resetSwipeState(): void {
+        this.swipeStartX = null;
+        this.swipeStartY = null;
+    }
+
+    private localizeIntervalDisplay(display: string): string {
+        const normalized = display.trim();
+        const localized = normalized.replace(/(\d+)\s*(mo|[smhdwy])/gi, (_, amount: string, unit: string) => {
+            const lowerUnit = unit.toLowerCase();
+            const translatedUnit = this.i18n.translate(`review.intervalUnit.${lowerUnit}`);
+            return `${amount} ${translatedUnit}`;
+        });
+        return localized;
     }
 }

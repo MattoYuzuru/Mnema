@@ -21,7 +21,7 @@ import { I18nService } from '../../core/services/i18n.service';
         <h1>{{ 'wizard.createNewDeck' | translate }}</h1>
         <app-wizard-stepper [steps]="steps" [currentStep]="state.currentStep - 1"></app-wizard-stepper>
       </header>
-      <div class="wizard-content" [ngSwitch]="state.currentStep">
+      <div class="deck-wizard-content" [ngSwitch]="state.currentStep">
         <app-template-selection-step *ngSwitchCase="1" (next)="wizardState.nextStep()"></app-template-selection-step>
         <app-deck-metadata-step *ngSwitchCase="2" (next)="wizardState.nextStep()" (back)="wizardState.previousStep()"></app-deck-metadata-step>
         <app-initial-content-step *ngSwitchCase="3" (next)="wizardState.nextStep()" (back)="wizardState.previousStep()"></app-initial-content-step>
@@ -30,12 +30,12 @@ import { I18nService } from '../../core/services/i18n.service';
     </div>
   `,
     styles: [`
-      .deck-wizard { max-width: 56rem; margin: 0 auto; padding: var(--spacing-xl); }
+      .deck-wizard { width: min(56rem, 100%); max-width: 56rem; margin: 0 auto; padding: var(--spacing-xl); }
       .wizard-header { margin-bottom: var(--spacing-xl); }
       .wizard-header h1 { font-size: 2rem; font-weight: 700; margin: 0 0 var(--spacing-lg) 0; }
-      .wizard-content { background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); padding: var(--spacing-xl); min-height: 400px; }
+      .deck-wizard-content { width: 100%; min-width: 0; background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-lg); padding: var(--spacing-xl); min-height: 400px; }
 
-      @media (max-width: 768px) {
+      @media (max-width: 900px) {
         .deck-wizard {
           padding: var(--spacing-lg) var(--spacing-md);
         }
@@ -44,17 +44,17 @@ import { I18nService } from '../../core/services/i18n.service';
           font-size: 1.5rem;
         }
 
-        .wizard-content {
+        .deck-wizard-content {
           padding: var(--spacing-lg);
         }
       }
 
-      @media (max-width: 480px) {
+      @media (max-width: 600px) {
         .deck-wizard {
           padding: var(--spacing-md) var(--spacing-sm);
         }
 
-        .wizard-content {
+        .deck-wizard-content {
           padding: var(--spacing-md);
           min-height: auto;
         }
