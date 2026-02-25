@@ -132,5 +132,15 @@ public interface ReviewUserCardRepository extends JpaRepository<ReviewUserCardEn
     long countActive(@Param("userId") UUID userId,
                      @Param("deckId") UUID deckId);
 
+    @Query("""
+        select count(d.userDeckId) > 0
+        from UserDeckEntity d
+        where d.userDeckId = :deckId
+          and d.userId = :userId
+          and d.archived = false
+        """)
+    boolean existsActiveDeck(@Param("userId") UUID userId,
+                             @Param("deckId") UUID deckId);
+
     Optional<ReviewUserCardEntity> findByUserCardIdAndUserId(UUID userCardId, UUID userId);
 }
