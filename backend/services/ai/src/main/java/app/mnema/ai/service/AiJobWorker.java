@@ -19,7 +19,10 @@ import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.TimeUnit;
 
 @Service
 public class AiJobWorker {
@@ -38,6 +41,7 @@ public class AiJobWorker {
     private final int concurrentJobs;
     private final Semaphore jobSlots;
     private final ExecutorService executor;
+    private final ScheduledExecutorService heartbeatScheduler;
 
     public AiJobWorker(JdbcTemplate jdbcTemplate,
                        AiJobRepository jobRepository,
@@ -61,6 +65,9 @@ public class AiJobWorker {
         this.concurrentJobs = Math.max(concurrentJobs, 1);
         this.jobSlots = new Semaphore(this.concurrentJobs);
         this.executor = Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("ai-job-worker-", 0).factory());
+        this.heartbeatScheduler = Executors.newSingleThreadScheduledExecutor(
+                Thread.ofPlatform().name("ai-job-heartbeat-", 0).factory()
+        );
     }
 
     @Scheduled(fixedDelayString = "${app.ai.jobs.poll-interval-ms:2000}")
@@ -79,12 +86,56 @@ public class AiJobWorker {
         if (isCanceled(job.getJobId())) {
             return;
         }
+        ScheduledFuture<?> heartbeat = scheduleLockHeartbeat(job.getJobId());
         try {
             AiJobProcessingResult result = jobProcessor.process(job);
             markCompleted(job, result);
         } catch (Exception ex) {
             log.warn("AI job failed jobId={} errorType={} message={}", job.getJobId(), ex.getClass().getSimpleName(), safeMessage(ex));
             markFailed(job, ex);
+        } finally {
+            heartbeat.cancel(false);
+        }
+    }
+
+    private ScheduledFuture<?> scheduleLockHeartbeat(UUID jobId) {
+        long intervalMs = resolveHeartbeatIntervalMs();
+        return heartbeatScheduler.scheduleAtFixedRate(
+                () -> touchLock(jobId),
+                intervalMs,
+                intervalMs,
+                TimeUnit.MILLISECONDS
+        );
+    }
+
+    private long resolveHeartbeatIntervalMs() {
+        long ttlMs = Math.max(lockTtl.toMillis(), 1_000L);
+        long intervalMs = ttlMs / 3L;
+        if (intervalMs < 5_000L) {
+            return 5_000L;
+        }
+        if (intervalMs > 30_000L) {
+            return 30_000L;
+        }
+        return intervalMs;
+    }
+
+    private void touchLock(UUID jobId) {
+        try {
+            jdbcTemplate.update(
+                    """
+                    update app_ai.ai_jobs
+                    set locked_at = now(),
+                        updated_at = now()
+                    where job_id = ?
+                      and status = 'processing'
+                      and locked_by = ?
+                    """,
+                    jobId,
+                    workerId
+            );
+        } catch (Exception ex) {
+            log.warn("AI job heartbeat failed jobId={} workerId={} error={}", jobId, workerId, safeMessage(ex));
         }
     }
 
@@ -239,6 +290,7 @@ public class AiJobWorker {
 
     @PreDestroy
     public void shutdown() {
+        heartbeatScheduler.shutdownNow();
         executor.shutdownNow();
     }
 }
