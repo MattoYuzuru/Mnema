@@ -6,7 +6,8 @@ metadata:
 spec:
   ingressClassName: traefik
   rules:
-    - http:
+    - host: mnema.app
+      http:
         paths:
           - path: /api/ai
             pathType: Prefix
