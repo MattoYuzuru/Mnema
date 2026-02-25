@@ -26,7 +26,16 @@ interface ChartBarPoint {
     <section class="stats-panel" [class.compact]="compact" [class.flat]="flat">
       <header class="stats-header">
         <div>
-          <h2>{{ titleKey | translate }}</h2>
+          <div class="heading-with-help">
+            <h2>{{ titleKey | translate }}</h2>
+            <a
+              class="help-link"
+              [href]="helpUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              [attr.aria-label]="'stats.guideAria' | translate"
+            >?</a>
+          </div>
           <p class="stats-subtitle">
             {{ (userDeckId ? 'stats.subtitleDeck' : 'stats.subtitleAccount') | translate }}
           </p>
@@ -247,6 +256,36 @@ interface ChartBarPoint {
       .stats-header h2 {
         margin: 0;
         font-size: 1.25rem;
+      }
+
+      .heading-with-help {
+        display: flex;
+        align-items: center;
+        gap: 0.45rem;
+      }
+
+      .help-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.25rem;
+        height: 1.25rem;
+        border-radius: 50%;
+        border: 1px solid color-mix(in srgb, var(--glass-border-strong) 80%, var(--border-color));
+        color: var(--color-text-secondary);
+        text-decoration: none;
+        font-size: 0.78rem;
+        line-height: 1;
+        font-weight: 600;
+        background: color-mix(in srgb, var(--glass-surface-strong) 82%, transparent);
+        backdrop-filter: blur(calc(var(--glass-blur) * 0.55)) saturate(165%);
+        transition: border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+      }
+
+      .help-link:hover {
+        color: var(--color-text-primary);
+        border-color: var(--color-primary-accent);
+        transform: translateY(-1px);
       }
 
       .stats-subtitle {
@@ -599,10 +638,13 @@ interface ChartBarPoint {
     ]
 })
 export class ReviewStatsPanelComponent implements OnInit, OnChanges {
+    private static readonly STATS_GUIDE_URL = 'https://github.com/MattoYuzuru/Mnema/wiki/How-to-use-statistics-for-better-learning';
+
     @Input() userDeckId: string | null = null;
     @Input() titleKey = 'stats.title';
     @Input() compact = false;
     @Input() flat = false;
+    @Input() helpUrl = ReviewStatsPanelComponent.STATS_GUIDE_URL;
 
     readonly loading = signal(false);
     readonly error = signal<string | null>(null);
