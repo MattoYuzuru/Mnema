@@ -103,7 +103,9 @@ import { I18nService } from '../../core/services/i18n.service';
         </div>
       </div>
 
-      <app-review-stats-panel [userDeckId]="deck.userDeckId" title="Deck analytics"></app-review-stats-panel>
+      <div class="deck-stats-block">
+        <app-review-stats-panel [userDeckId]="deck.userDeckId" titleKey="stats.deckTitle" [flat]="true"></app-review-stats-panel>
+      </div>
 
       <div class="deck-actions">
         <app-button variant="primary" size="md" (click)="learn()">
@@ -654,6 +656,10 @@ import { I18nService } from '../../core/services/i18n.service';
         border: 1px solid var(--border-color);
         border-radius: var(--border-radius-lg);
         margin-bottom: var(--spacing-xl);
+      }
+
+      .deck-stats-block {
+        margin-bottom: var(--spacing-2xl);
       }
 
       .meta-item {

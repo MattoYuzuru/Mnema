@@ -57,7 +57,7 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
             </div>
           </div>
 
-          <app-review-stats-panel title="Account analytics"></app-review-stats-panel>
+          <app-review-stats-panel titleKey="stats.accountTitle"></app-review-stats-panel>
 
           <form [formGroup]="form" (ngSubmit)="save()" class="edit-form">
             <h3>{{ 'profile.editProfile' | translate }}</h3>

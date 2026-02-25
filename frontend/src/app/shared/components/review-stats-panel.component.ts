@@ -3,101 +3,111 @@ import { NgFor, NgIf } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ReviewApiService } from '../../core/services/review-api.service';
 import { ReviewStatsDailyPoint, ReviewStatsForecastPoint, ReviewStatsHourlyPoint, ReviewStatsResponse } from '../../core/models/review.models';
+import { TranslatePipe } from '../pipes/translate.pipe';
+import { I18nService } from '../../core/services/i18n.service';
 
 type StatsMetric = 'reviews' | 'time';
 type StatsPreset = 7 | 30 | 90;
+type ChartScrollKey = 'daily' | 'hourly' | 'forecast';
 
 interface ChartBarPoint {
     label: string;
     secondaryLabel?: string;
     value: number;
     raw: number;
+    tooltip: string;
 }
 
 @Component({
     selector: 'app-review-stats-panel',
     standalone: true,
-    imports: [NgIf, NgFor],
+    imports: [NgIf, NgFor, TranslatePipe],
     template: `
-    <section class="stats-panel" [class.compact]="compact">
+    <section class="stats-panel" [class.compact]="compact" [class.flat]="flat">
       <header class="stats-header">
         <div>
-          <h2>{{ title }}</h2>
+          <h2>{{ titleKey | translate }}</h2>
           <p class="stats-subtitle">
-            Track retention, speed, and workload trends for {{ userDeckId ? 'this deck' : 'your account' }}.
+            {{ (userDeckId ? 'stats.subtitleDeck' : 'stats.subtitleAccount') | translate }}
           </p>
         </div>
         <div class="stats-actions">
-          <button type="button" (click)="setMetric('reviews')" [class.active]="metric() === 'reviews'">Reviews</button>
-          <button type="button" (click)="setMetric('time')" [class.active]="metric() === 'time'">Time</button>
+          <button type="button" (click)="setMetric('reviews')" [class.active]="metric() === 'reviews'">{{ 'stats.metricReviews' | translate }}</button>
+          <button type="button" (click)="setMetric('time')" [class.active]="metric() === 'time'">{{ 'stats.metricTime' | translate }}</button>
         </div>
       </header>
 
       <div class="stats-filters">
         <div class="preset-group">
-          <button type="button" (click)="applyPreset(7)" [class.active]="preset() === 7">7d</button>
-          <button type="button" (click)="applyPreset(30)" [class.active]="preset() === 30">30d</button>
-          <button type="button" (click)="applyPreset(90)" [class.active]="preset() === 90">90d</button>
+          <button type="button" (click)="applyPreset(7)" [class.active]="preset() === 7">{{ 'stats.range7d' | translate }}</button>
+          <button type="button" (click)="applyPreset(30)" [class.active]="preset() === 30">{{ 'stats.range30d' | translate }}</button>
+          <button type="button" (click)="applyPreset(90)" [class.active]="preset() === 90">{{ 'stats.range90d' | translate }}</button>
         </div>
         <label>
-          From
-          <input type="date" [value]="fromDate()" (change)="onFromDateChange($event)" />
+          {{ 'stats.filterFrom' | translate }}
+          <input class="stats-control" type="date" [value]="fromDate()" (change)="onFromDateChange($event)" />
         </label>
         <label>
-          To
-          <input type="date" [value]="toDate()" (change)="onToDateChange($event)" />
+          {{ 'stats.filterTo' | translate }}
+          <input class="stats-control" type="date" [value]="toDate()" (change)="onToDateChange($event)" />
         </label>
         <label>
-          Forecast
-          <select [value]="forecastDays()" (change)="onForecastDaysChange($event)">
-            <option value="14">14d</option>
-            <option value="30">30d</option>
-            <option value="60">60d</option>
+          {{ 'stats.filterForecast' | translate }}
+          <select class="stats-control glass-select" [value]="forecastDays()" (change)="onForecastDaysChange($event)">
+            <option value="14">{{ 'stats.range14d' | translate }}</option>
+            <option value="30">{{ 'stats.range30d' | translate }}</option>
+            <option value="60">{{ 'stats.range60d' | translate }}</option>
           </select>
         </label>
-        <button type="button" class="apply-btn" (click)="reload()">Apply</button>
+        <button type="button" class="apply-btn" (click)="reload()">{{ 'stats.apply' | translate }}</button>
       </div>
 
-      <div *ngIf="loading()" class="loading">Loading statistics…</div>
-      <div *ngIf="error()" class="error" role="alert">{{ error() }}</div>
+      <div *ngIf="loading()" class="loading">{{ 'stats.loading' | translate }}</div>
+      <div *ngIf="error()" class="error" role="alert">{{ error()! | translate }}</div>
 
       <ng-container *ngIf="!loading() && stats() as data">
         <div class="kpi-grid">
           <article class="kpi-card">
-            <span class="kpi-label">Reviews</span>
+            <span class="kpi-label">{{ 'stats.kpiReviews' | translate }}</span>
             <strong class="kpi-value">{{ data.overview.reviewCount }}</strong>
-            <small>{{ data.overview.reviewsPerDay }} / day</small>
+            <small>{{ data.overview.reviewsPerDay }} {{ 'stats.kpiPerDay' | translate }}</small>
           </article>
           <article class="kpi-card">
-            <span class="kpi-label">Success rate</span>
+            <span class="kpi-label">{{ 'stats.kpiSuccessRate' | translate }}</span>
             <strong class="kpi-value">{{ data.overview.successRatePercent }}%</strong>
-            <small>Again {{ data.overview.againRatePercent }}%</small>
+            <small>{{ 'stats.kpiAgain' | translate }} {{ data.overview.againRatePercent }}%</small>
           </article>
           <article class="kpi-card">
-            <span class="kpi-label">Avg response</span>
+            <span class="kpi-label">{{ 'stats.kpiAvgResponse' | translate }}</span>
             <strong class="kpi-value">{{ humanizeMs(data.overview.avgResponseMs) }}</strong>
-            <small>Median {{ humanizeMs(data.overview.medianResponseMs) }}</small>
+            <small>{{ 'stats.kpiMedian' | translate }} {{ humanizeMs(data.overview.medianResponseMs) }}</small>
           </article>
           <article class="kpi-card">
-            <span class="kpi-label">Queue now</span>
+            <span class="kpi-label">{{ 'stats.kpiQueueNow' | translate }}</span>
             <strong class="kpi-value">{{ data.queue.dueNow }}</strong>
-            <small>Due today {{ data.queue.dueToday }}</small>
+            <small>{{ 'stats.kpiDueToday' | translate }} {{ data.queue.dueToday }}</small>
           </article>
         </div>
 
         <article class="chart-card">
           <div class="chart-header">
-            <h3>Daily trend</h3>
-            <p>{{ metric() === 'reviews' ? 'Daily review volume' : 'Daily study time (seconds)' }}</p>
+            <h3>{{ 'stats.dailyTrend' | translate }}</h3>
+            <p>{{ (metric() === 'reviews' ? 'stats.dailyTrendReviews' : 'stats.dailyTrendTime') | translate }}</p>
           </div>
-          <div class="chart-scroll">
-            <div class="bar-chart daily">
+          <div class="chart-scroll"
+               [class.dragging]="isDragging('daily')"
+               (pointerdown)="onScrollPointerDown($event, 'daily')"
+               (pointermove)="onScrollPointerMove($event, 'daily')"
+               (pointerup)="onScrollPointerUp($event, 'daily')"
+               (pointercancel)="onScrollPointerUp($event, 'daily')"
+               (pointerleave)="onScrollPointerUp($event, 'daily')">
+            <div class="bar-chart daily" [style.--daily-cols]="dailyBars().length">
               <button
                 type="button"
                 class="bar-item"
                 *ngFor="let point of dailyBars(); let i = index; trackBy: trackByLabel"
                 [style.height.%]="heightPercent(point.value, dailyMax())"
-                [attr.aria-label]="point.label + ': ' + point.raw"
+                [attr.aria-label]="point.tooltip"
                 [class.active]="hoverDailyIndex() === i"
                 (mouseenter)="hoverDailyIndex.set(i)"
                 (focus)="hoverDailyIndex.set(i)"
@@ -108,66 +118,78 @@ interface ChartBarPoint {
               </button>
             </div>
           </div>
-          <p class="chart-footnote" *ngIf="dailyHoverPoint() as hovered">
-            {{ hovered.label }}: {{ hovered.raw }} {{ metric() === 'reviews' ? 'reviews' : 'sec' }}
-          </p>
+          <p class="chart-footnote" [class.muted]="!dailyHoverPoint()">{{ dailyFootnote() }}</p>
         </article>
 
         <div class="chart-grid">
           <article class="chart-card">
             <div class="chart-header">
-              <h3>Hourly load</h3>
-              <p>When you usually study</p>
+              <h3>{{ 'stats.hourlyLoad' | translate }}</h3>
+              <p>{{ 'stats.hourlyLoadHint' | translate }}</p>
             </div>
-            <div class="bar-chart hourly">
-              <button
-                type="button"
-                class="bar-item"
-                *ngFor="let point of hourlyBars(); let i = index; trackBy: trackByLabel"
-                [style.height.%]="heightPercent(point.value, hourlyMax())"
-                [class.active]="hoverHourlyIndex() === i"
-                (mouseenter)="hoverHourlyIndex.set(i)"
-                (focus)="hoverHourlyIndex.set(i)"
-                (mouseleave)="hoverHourlyIndex.set(-1)"
-                (blur)="hoverHourlyIndex.set(-1)"
-              >
-                <span class="bar-label">{{ point.label }}</span>
-              </button>
+            <div class="chart-scroll"
+                 [class.dragging]="isDragging('hourly')"
+                 (pointerdown)="onScrollPointerDown($event, 'hourly')"
+                 (pointermove)="onScrollPointerMove($event, 'hourly')"
+                 (pointerup)="onScrollPointerUp($event, 'hourly')"
+                 (pointercancel)="onScrollPointerUp($event, 'hourly')"
+                 (pointerleave)="onScrollPointerUp($event, 'hourly')">
+              <div class="bar-chart hourly" [style.--hourly-cols]="hourlyBars().length">
+                <button
+                  type="button"
+                  class="bar-item"
+                  *ngFor="let point of hourlyBars(); let i = index; trackBy: trackByLabel"
+                  [style.height.%]="heightPercent(point.value, hourlyMax())"
+                  [class.active]="hoverHourlyIndex() === i"
+                  [attr.aria-label]="point.tooltip"
+                  (mouseenter)="hoverHourlyIndex.set(i)"
+                  (focus)="hoverHourlyIndex.set(i)"
+                  (mouseleave)="hoverHourlyIndex.set(-1)"
+                  (blur)="hoverHourlyIndex.set(-1)"
+                >
+                  <span class="bar-label">{{ point.secondaryLabel || '' }}</span>
+                </button>
+              </div>
             </div>
-            <p class="chart-footnote" *ngIf="hourlyHoverPoint() as hovered">
-              {{ hovered.label }}: {{ hovered.raw }} reviews
-            </p>
+            <p class="chart-footnote" [class.muted]="!hourlyHoverPoint()">{{ hourlyFootnote() }}</p>
           </article>
 
           <article class="chart-card">
             <div class="chart-header">
-              <h3>Due forecast</h3>
-              <p>Expected due cards ahead</p>
+              <h3>{{ 'stats.dueForecast' | translate }}</h3>
+              <p>{{ 'stats.dueForecastHint' | translate }}</p>
             </div>
-            <div class="bar-chart forecast">
-              <button
-                type="button"
-                class="bar-item"
-                *ngFor="let point of forecastBars(); let i = index; trackBy: trackByLabel"
-                [style.height.%]="heightPercent(point.value, forecastMax())"
-                [class.active]="hoverForecastIndex() === i"
-                (mouseenter)="hoverForecastIndex.set(i)"
-                (focus)="hoverForecastIndex.set(i)"
-                (mouseleave)="hoverForecastIndex.set(-1)"
-                (blur)="hoverForecastIndex.set(-1)"
-              >
-                <span class="bar-label">{{ point.secondaryLabel || '' }}</span>
-              </button>
+            <div class="chart-scroll"
+                 [class.dragging]="isDragging('forecast')"
+                 (pointerdown)="onScrollPointerDown($event, 'forecast')"
+                 (pointermove)="onScrollPointerMove($event, 'forecast')"
+                 (pointerup)="onScrollPointerUp($event, 'forecast')"
+                 (pointercancel)="onScrollPointerUp($event, 'forecast')"
+                 (pointerleave)="onScrollPointerUp($event, 'forecast')">
+              <div class="bar-chart forecast" [style.--forecast-cols]="forecastBars().length">
+                <button
+                  type="button"
+                  class="bar-item"
+                  *ngFor="let point of forecastBars(); let i = index; trackBy: trackByLabel"
+                  [style.height.%]="heightPercent(point.value, forecastMax())"
+                  [class.active]="hoverForecastIndex() === i"
+                  [attr.aria-label]="point.tooltip"
+                  (mouseenter)="hoverForecastIndex.set(i)"
+                  (focus)="hoverForecastIndex.set(i)"
+                  (mouseleave)="hoverForecastIndex.set(-1)"
+                  (blur)="hoverForecastIndex.set(-1)"
+                >
+                  <span class="bar-label">{{ point.secondaryLabel || '' }}</span>
+                </button>
+              </div>
             </div>
-            <p class="chart-footnote" *ngIf="forecastHoverPoint() as hovered">
-              {{ hovered.label }}: {{ hovered.raw }} due
-            </p>
+            <p class="chart-footnote" [class.muted]="!forecastHoverPoint()">{{ forecastFootnote() }}</p>
           </article>
         </div>
 
         <div class="breakdown-grid">
           <article class="breakdown-card">
-            <h3>Answer buttons</h3>
+            <h3>{{ 'stats.answerButtons' | translate }}</h3>
             <ul>
               <li *ngFor="let point of data.ratings; trackBy: trackByRating">
                 <span class="label">{{ point.rating }}</span>
@@ -176,7 +198,7 @@ interface ChartBarPoint {
             </ul>
           </article>
           <article class="breakdown-card">
-            <h3>Sources</h3>
+            <h3>{{ 'stats.sources' | translate }}</h3>
             <ul>
               <li *ngFor="let point of data.sources; trackBy: trackBySource">
                 <span class="label">{{ point.source }}</span>
@@ -190,6 +212,10 @@ interface ChartBarPoint {
   `,
     styles: [
         `
+      :host {
+        display: block;
+      }
+
       .stats-panel {
         display: flex;
         flex-direction: column;
@@ -200,11 +226,15 @@ interface ChartBarPoint {
         background:
           linear-gradient(160deg, color-mix(in srgb, var(--color-card-background) 88%, white 12%), color-mix(in srgb, var(--color-card-background) 94%, transparent)),
           radial-gradient(120% 120% at 0% 0%, color-mix(in srgb, var(--color-primary-accent) 12%, transparent), transparent 60%);
-        box-shadow: 0 24px 48px -32px rgba(15, 23, 42, 0.45);
+        box-shadow: 0 18px 42px -34px rgba(15, 23, 42, 0.35);
       }
 
       .stats-panel.compact {
         padding: 1rem;
+      }
+
+      .stats-panel.flat {
+        box-shadow: none;
       }
 
       .stats-header {
@@ -265,22 +295,54 @@ interface ChartBarPoint {
         color: var(--color-text-secondary);
       }
 
-      .stats-filters input,
-      .stats-filters select {
-        border: 1px solid var(--border-color);
+      .stats-control {
+        appearance: none;
+        -webkit-appearance: none;
+        border: 1px solid color-mix(in srgb, var(--glass-border-strong) 80%, var(--border-color));
         border-radius: 0.6rem;
-        padding: 0.35rem 0.5rem;
-        background: var(--color-card-background);
+        padding: 0.42rem 0.58rem;
+        background: color-mix(in srgb, var(--glass-surface-strong) 86%, transparent);
+        backdrop-filter: blur(calc(var(--glass-blur) * 0.55)) saturate(165%);
         color: var(--color-text-primary);
+        transition: border-color 0.2s ease, box-shadow 0.2s ease, background-color 0.2s ease;
+      }
+
+      .stats-control:focus {
+        outline: none;
+        border-color: var(--color-primary-accent);
+        box-shadow: var(--focus-ring);
+      }
+
+      .stats-control[type='date'] {
+        min-width: 142px;
+        color-scheme: light dark;
+      }
+
+      .stats-control[type='date']::-webkit-calendar-picker-indicator {
+        opacity: 0.75;
+        cursor: pointer;
+      }
+
+      .stats-control[type='date']::-webkit-calendar-picker-indicator:hover {
+        opacity: 1;
+      }
+
+      .stats-control.glass-select {
+        min-width: 94px;
       }
 
       .apply-btn {
         border: 1px solid var(--border-color);
         border-radius: 0.65rem;
         padding: 0.45rem 0.8rem;
-        background: var(--color-card-background);
+        background: color-mix(in srgb, var(--glass-surface-strong) 86%, transparent);
+        backdrop-filter: blur(calc(var(--glass-blur) * 0.55)) saturate(165%);
         color: var(--color-text-primary);
         cursor: pointer;
+      }
+
+      .apply-btn:hover {
+        border-color: color-mix(in srgb, var(--border-color-hover) 90%, transparent);
       }
 
       .loading,
@@ -360,13 +422,47 @@ interface ChartBarPoint {
 
       .chart-scroll {
         overflow-x: auto;
+        overflow-y: hidden;
+        cursor: grab;
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+
+      .chart-scroll.dragging {
+        cursor: grabbing;
+        user-select: none;
+      }
+
+      .chart-scroll.dragging .bar-item {
+        pointer-events: none;
+      }
+
+      .chart-scroll::-webkit-scrollbar {
+        height: 8px;
+      }
+
+      .chart-scroll::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .chart-scroll::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      .chart-scroll::-webkit-scrollbar-thumb:hover {
+        background: var(--border-color-hover);
       }
 
       .bar-chart {
         display: grid;
         align-items: end;
         gap: 0.35rem;
-        min-height: 168px;
+        min-height: 176px;
+        padding-bottom: 1.2rem;
+        overflow: hidden;
       }
 
       .bar-chart.daily {
@@ -375,12 +471,13 @@ interface ChartBarPoint {
       }
 
       .bar-chart.hourly {
-        grid-template-columns: repeat(24, minmax(0, 1fr));
+        grid-template-columns: repeat(var(--hourly-cols, 24), minmax(18px, 1fr));
+        min-width: 640px;
       }
 
       .bar-chart.forecast {
-        grid-template-columns: repeat(var(--forecast-cols, 30), minmax(10px, 1fr));
-        min-width: 340px;
+        grid-template-columns: repeat(var(--forecast-cols, 30), minmax(16px, 1fr));
+        min-width: 520px;
       }
 
       .bar-item {
@@ -402,7 +499,7 @@ interface ChartBarPoint {
 
       .bar-label {
         position: absolute;
-        bottom: -1.1rem;
+        bottom: -0.95rem;
         left: 50%;
         transform: translateX(-50%);
         font-size: 0.64rem;
@@ -415,6 +512,12 @@ interface ChartBarPoint {
         min-height: 1.1rem;
         font-size: 0.82rem;
         color: var(--color-text-secondary);
+        opacity: 1;
+        transition: opacity 0.18s ease;
+      }
+
+      .chart-footnote.muted {
+        opacity: 0.74;
       }
 
       .breakdown-grid {
@@ -497,8 +600,9 @@ interface ChartBarPoint {
 })
 export class ReviewStatsPanelComponent implements OnInit, OnChanges {
     @Input() userDeckId: string | null = null;
-    @Input() title = 'Study analytics';
+    @Input() titleKey = 'stats.title';
     @Input() compact = false;
+    @Input() flat = false;
 
     readonly loading = signal(false);
     readonly error = signal<string | null>(null);
@@ -512,6 +616,9 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
     readonly hoverDailyIndex = signal(-1);
     readonly hoverHourlyIndex = signal(-1);
     readonly hoverForecastIndex = signal(-1);
+    readonly draggingDaily = signal(false);
+    readonly draggingHourly = signal(false);
+    readonly draggingForecast = signal(false);
 
     readonly dailyBars = computed(() => this.buildDailyBars(this.stats()?.daily ?? [], this.metric()));
     readonly dailyMax = computed(() => this.maxOf(this.dailyBars()));
@@ -525,8 +632,10 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
     readonly forecastHoverPoint = computed(() => this.pointByIndex(this.forecastBars(), this.hoverForecastIndex()));
 
     private readonly reviewApi = inject(ReviewApiService);
+    private readonly i18n = inject(I18nService);
     private readonly destroyRef = inject(DestroyRef);
     private readonly browserTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    private readonly dragState: Partial<Record<ChartScrollKey, { pointerId: number; startX: number; startScrollLeft: number }>> = {};
     private requestVersion = 0;
 
     ngOnInit(): void {
@@ -542,6 +651,10 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
     setMetric(next: StatsMetric): void {
         this.metric.set(next);
         this.hoverDailyIndex.set(-1);
+    }
+
+    isDragging(key: ChartScrollKey): boolean {
+        return this.dragSignal(key)();
     }
 
     applyPreset(days: StatsPreset): void {
@@ -573,6 +686,51 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
         }
     }
 
+    onScrollPointerDown(event: PointerEvent, key: ChartScrollKey): void {
+        if (event.pointerType === 'mouse' && event.button !== 0) {
+            return;
+        }
+        const target = event.currentTarget;
+        if (!(target instanceof HTMLElement)) {
+            return;
+        }
+        this.dragState[key] = {
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startScrollLeft: target.scrollLeft
+        };
+        this.dragSignal(key).set(true);
+        target.setPointerCapture(event.pointerId);
+    }
+
+    onScrollPointerMove(event: PointerEvent, key: ChartScrollKey): void {
+        const target = event.currentTarget;
+        if (!(target instanceof HTMLElement)) {
+            return;
+        }
+        const state = this.dragState[key];
+        if (!state || state.pointerId !== event.pointerId || !this.dragSignal(key)()) {
+            return;
+        }
+        target.scrollLeft = state.startScrollLeft - (event.clientX - state.startX);
+        event.preventDefault();
+    }
+
+    onScrollPointerUp(event: PointerEvent, key: ChartScrollKey): void {
+        const target = event.currentTarget;
+        if (target instanceof HTMLElement) {
+            try {
+                if (target.hasPointerCapture(event.pointerId)) {
+                    target.releasePointerCapture(event.pointerId);
+                }
+            } catch {
+                // no-op
+            }
+        }
+        delete this.dragState[key];
+        this.dragSignal(key).set(false);
+    }
+
     reload(): void {
         const from = this.fromDate();
         const to = this.toDate();
@@ -601,18 +759,14 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
                     this.hoverDailyIndex.set(-1);
                     this.hoverHourlyIndex.set(-1);
                     this.hoverForecastIndex.set(-1);
+                    this.loading.set(false);
                 },
                 error: () => {
                     if (version !== this.requestVersion) {
                         return;
                     }
-                    this.error.set('Failed to load statistics');
+                    this.error.set('stats.loadError');
                     this.stats.set(null);
-                },
-                complete: () => {
-                    if (version !== this.requestVersion) {
-                        return;
-                    }
                     this.loading.set(false);
                 }
             });
@@ -648,6 +802,31 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
         return `${seconds}s`;
     }
 
+    dailyFootnote(): string {
+        const point = this.dailyHoverPoint();
+        if (!point) {
+            return this.i18n.t('stats.hoverHint');
+        }
+        const unitKey = this.metric() === 'reviews' ? 'stats.unitReviews' : 'stats.unitSeconds';
+        return `${point.label}: ${point.raw} ${this.i18n.t(unitKey)}`;
+    }
+
+    hourlyFootnote(): string {
+        const point = this.hourlyHoverPoint();
+        if (!point) {
+            return this.i18n.t('stats.hoverHint');
+        }
+        return `${point.label}: ${point.raw} ${this.i18n.t('stats.unitReviews')}`;
+    }
+
+    forecastFootnote(): string {
+        const point = this.forecastHoverPoint();
+        if (!point) {
+            return this.i18n.t('stats.hoverHint');
+        }
+        return `${point.label}: ${point.raw} ${this.i18n.t('stats.unitDue')}`;
+    }
+
     private pointByIndex(points: ChartBarPoint[], index: number): ChartBarPoint | null {
         if (index < 0 || index >= points.length) {
             return null;
@@ -657,15 +836,18 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
 
     private buildDailyBars(points: ReviewStatsDailyPoint[], metric: StatsMetric): ChartBarPoint[] {
         const showEvery = points.length > 45 ? 8 : points.length > 30 ? 6 : points.length > 14 ? 4 : 2;
+        const unit = metric === 'reviews' ? this.i18n.t('stats.unitReviews') : this.i18n.t('stats.unitSeconds');
         return points.map((point, index) => {
             const value = metric === 'reviews'
                 ? point.reviewCount
                 : Math.round(point.totalResponseMs / 1000);
+            const label = this.formatDateLabel(point.date);
             return {
-                label: point.date,
+                label,
                 secondaryLabel: index % showEvery === 0 ? point.date.slice(5) : '',
                 value,
-                raw: value
+                raw: value,
+                tooltip: `${label}: ${value} ${unit}`
             };
         });
     }
@@ -678,10 +860,13 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
         const out: ChartBarPoint[] = [];
         for (let hour = 0; hour < 24; hour++) {
             const point = map.get(hour);
+            const label = `${hour.toString().padStart(2, '0')}:00`;
             out.push({
-                label: `${hour.toString().padStart(2, '0')}:00`,
+                label,
+                secondaryLabel: hour % 3 === 0 ? label : '',
                 value: point?.reviewCount ?? 0,
-                raw: point?.reviewCount ?? 0
+                raw: point?.reviewCount ?? 0,
+                tooltip: `${label}: ${point?.reviewCount ?? 0} ${this.i18n.t('stats.unitReviews')}`
             });
         }
         return out;
@@ -689,12 +874,16 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
 
     private buildForecastBars(points: ReviewStatsForecastPoint[]): ChartBarPoint[] {
         const showEvery = points.length > 40 ? 8 : points.length > 20 ? 4 : 2;
-        return points.map((point, index) => ({
-            label: point.date,
-            secondaryLabel: index % showEvery === 0 ? point.date.slice(5) : '',
-            value: point.dueCount,
-            raw: point.dueCount
-        }));
+        return points.map((point, index) => {
+            const label = this.formatDateLabel(point.date);
+            return {
+                label,
+                secondaryLabel: index % showEvery === 0 ? point.date.slice(5) : '',
+                value: point.dueCount,
+                raw: point.dueCount,
+                tooltip: `${label}: ${point.dueCount} ${this.i18n.t('stats.unitDue')}`
+            };
+        });
     }
 
     private maxOf(points: ChartBarPoint[]): number {
@@ -712,5 +901,20 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
         const month = `${date.getMonth() + 1}`.padStart(2, '0');
         const day = `${date.getDate()}`.padStart(2, '0');
         return `${year}-${month}-${day}`;
+    }
+
+    private formatDateLabel(isoDate: string): string {
+        if (!isoDate || isoDate.length < 10) {
+            return isoDate;
+        }
+        return isoDate.slice(0, 10);
+    }
+
+    private dragSignal(key: ChartScrollKey) {
+        return key === 'daily'
+            ? this.draggingDaily
+            : key === 'hourly'
+                ? this.draggingHourly
+                : this.draggingForecast;
     }
 }
