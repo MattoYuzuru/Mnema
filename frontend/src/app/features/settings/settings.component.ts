@@ -116,7 +116,16 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       </section>
 
       <section class="settings-section ai-settings">
-        <h2>{{ 'settings.aiProviderKeysTitle' | translate }}</h2>
+        <div class="section-heading-with-help">
+          <h2>{{ 'settings.aiProviderKeysTitle' | translate }}</h2>
+          <a
+            class="help-link"
+            href="https://github.com/MattoYuzuru/Mnema/wiki/AI-provider-keys-security-and-supported-models"
+            target="_blank"
+            rel="noopener noreferrer"
+            [attr.aria-label]="'settings.aiProviderKeysGuideAria' | translate"
+          >?</a>
+        </div>
         <p class="section-description">
           {{ 'settings.aiProviderKeysDescription' | translate }}
         </p>
@@ -368,6 +377,36 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       .settings-section h2 {
         font-size: 1.25rem;
         margin: 0 0 var(--spacing-md) 0;
+      }
+
+      .section-heading-with-help {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
+      .section-heading-with-help h2 {
+        margin-bottom: var(--spacing-md);
+      }
+
+      .help-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 1.1rem;
+        height: 1.1rem;
+        border-radius: 50%;
+        border: 1px solid var(--border-color);
+        color: var(--color-text-secondary);
+        text-decoration: none;
+        font-size: 0.7rem;
+        font-weight: 600;
+        transition: all 0.2s ease;
+      }
+
+      .help-link:hover {
+        color: var(--color-text-primary);
+        border-color: var(--color-text-primary);
       }
 
       .section-description {
