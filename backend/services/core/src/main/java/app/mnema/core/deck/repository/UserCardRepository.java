@@ -14,7 +14,7 @@ import java.util.UUID;
 
 @Repository
 public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> {
-    Page<UserCardEntity> findByUserDeckIdAndDeletedFalseOrderByCreatedAtAsc(
+    Page<UserCardEntity> findByUserDeckIdAndDeletedFalseOrderByCreatedAtAscUserCardIdAsc(
             UUID userDeckId,
             Pageable pageable
     );

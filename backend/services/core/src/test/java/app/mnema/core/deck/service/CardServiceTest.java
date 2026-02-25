@@ -132,7 +132,7 @@ class CardServiceTest {
 
         when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(deck));
         when(userCardRepository
-                .findByUserDeckIdAndDeletedFalseOrderByCreatedAtAsc(eq(deckId), any(Pageable.class)))
+                .findByUserDeckIdAndDeletedFalseOrderByCreatedAtAscUserCardIdAsc(eq(deckId), any(Pageable.class)))
                 .thenReturn(repoPage);
 
         Page<UserCardDTO> result = cardService.getUserCardsByDeck(userId, deckId, 1, 50);
@@ -141,7 +141,7 @@ class CardServiceTest {
         assertThat(result.getContent().getFirst().personalNote()).isEqualTo("note");
 
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
-        verify(userCardRepository).findByUserDeckIdAndDeletedFalseOrderByCreatedAtAsc(eq(deckId), pageableCaptor.capture());
+        verify(userCardRepository).findByUserDeckIdAndDeletedFalseOrderByCreatedAtAscUserCardIdAsc(eq(deckId), pageableCaptor.capture());
         assertThat(pageableCaptor.getValue().getPageNumber()).isEqualTo(0);
         assertThat(pageableCaptor.getValue().getPageSize()).isEqualTo(50);
     }

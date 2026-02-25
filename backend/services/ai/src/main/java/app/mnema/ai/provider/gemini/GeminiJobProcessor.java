@@ -1803,6 +1803,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         builder.append("Return an object with a 'cards' array. Each card must have a 'fields' object. ");
         builder.append("The fields object must contain exactly these keys: ").append(String.join(", ", fields)).append(". ");
         builder.append("Do not include any extra keys. ");
+        builder.append("Each card must cover a unique item and must not duplicate terms across the generated set. ");
         builder.append("If a field is unknown or not applicable, return an empty string for that field. ");
         if (hasFieldType(template, fields, "image")) {
             builder.append("For image fields, return a short visual prompt describing the image (not a URL). ");
@@ -3118,8 +3119,9 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         }
 
         String defaultSource = resolveDefaultSourceField(template, textFields);
-        String defaultTarget = audioFields.getFirst();
-        mappings.add(new TtsMapping(defaultSource, defaultTarget));
+        for (String target : audioFields) {
+            mappings.add(new TtsMapping(defaultSource, target));
+        }
         return mappings;
     }
 
@@ -3194,13 +3196,31 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     private String resolveTtsModel(JsonNode node) {
         String provided = textOrDefault(node, null);
         if (provided != null && !provided.isBlank()) {
-            String normalized = provided.trim().toLowerCase();
+            String normalized = provided.trim().toLowerCase(Locale.ROOT);
             if (normalized.contains("tts") || normalized.contains("speech")) {
-                return provided.trim();
+                return normalizeLegacyTtsModelAlias(provided);
             }
-            return props.defaultTtsModel();
         }
-        return textOrDefault(node, props.defaultTtsModel());
+        String fallback = props.defaultTtsModel();
+        if (fallback == null || fallback.isBlank()) {
+            fallback = "gemini-2.5-flash-preview-tts";
+        }
+        return normalizeLegacyTtsModelAlias(fallback);
+    }
+
+    static String normalizeLegacyTtsModelAlias(String model) {
+        if (model == null) {
+            return null;
+        }
+        String trimmed = model.trim();
+        if (trimmed.isEmpty()) {
+            return trimmed;
+        }
+        String normalized = trimmed.toLowerCase(Locale.ROOT);
+        if (normalized.endsWith("-tts") && !normalized.endsWith("-preview-tts")) {
+            return trimmed.substring(0, trimmed.length() - 4) + "-preview-tts";
+        }
+        return trimmed;
     }
 
     private String resolveTtsVoice(JsonNode node) {

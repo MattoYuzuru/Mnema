@@ -100,7 +100,7 @@ class UserCardRepositoryDataJpaTest extends PostgresIntegrationTest {
         userCardRepository.save(deleted);
 
         Page<UserCardEntity> page = userCardRepository
-                .findByUserDeckIdAndDeletedFalseOrderByCreatedAtAsc(
+                .findByUserDeckIdAndDeletedFalseOrderByCreatedAtAscUserCardIdAsc(
                         deckId,
                         PageRequest.of(0, 10)
                 );

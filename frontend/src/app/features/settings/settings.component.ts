@@ -428,23 +428,25 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         display: flex;
         align-items: center;
         gap: var(--spacing-sm);
+        margin-bottom: var(--spacing-md);
       }
 
       .section-heading-with-help h2 {
-        margin-bottom: var(--spacing-md);
+        margin: 0;
       }
 
       .help-link {
         display: inline-flex;
         align-items: center;
         justify-content: center;
-        width: 1.1rem;
-        height: 1.1rem;
+        width: 1.25rem;
+        height: 1.25rem;
         border-radius: 50%;
         border: 1px solid var(--border-color);
         color: var(--color-text-secondary);
         text-decoration: none;
-        font-size: 0.7rem;
+        font-size: 0.78rem;
+        line-height: 1;
         font-weight: 600;
         transition: all 0.2s ease;
       }

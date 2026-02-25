@@ -28,13 +28,14 @@ import { InputComponent } from '../../shared/components/input.component';
 import { TagChipComponent } from '../../shared/components/tag-chip.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 import { ImportDeckModalComponent } from '../import/import-deck-modal.component';
+import { ReviewStatsPanelComponent } from '../../shared/components/review-stats-panel.component';
 import { markdownToHtml } from '../../shared/utils/markdown.util';
 import { I18nService } from '../../core/services/i18n.service';
 
 @Component({
     selector: 'app-deck-profile',
     standalone: true,
-    imports: [NgIf, NgFor, DatePipe, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, AiAddCardsModalComponent, AiEnhanceDeckModalComponent, AiImportModalComponent, ConfirmationDialogComponent, InputComponent, TagChipComponent, ImportDeckModalComponent, TranslatePipe],
+    imports: [NgIf, NgFor, DatePipe, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, AiAddCardsModalComponent, AiEnhanceDeckModalComponent, AiImportModalComponent, ConfirmationDialogComponent, InputComponent, TagChipComponent, ImportDeckModalComponent, TranslatePipe, ReviewStatsPanelComponent],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -100,6 +101,10 @@ import { I18nService } from '../../core/services/i18n.service';
           <span class="meta-label">{{ 'deckProfile.forkedFrom' | translate }}:</span>
           <span class="meta-value">{{ publicDeck?.forkedFromDeck }}</span>
         </div>
+      </div>
+
+      <div class="deck-stats-block">
+        <app-review-stats-panel [userDeckId]="deck.userDeckId" titleKey="stats.deckTitle" [flat]="true"></app-review-stats-panel>
       </div>
 
       <div class="deck-actions">
@@ -651,6 +656,10 @@ import { I18nService } from '../../core/services/i18n.service';
         border: 1px solid var(--border-color);
         border-radius: var(--border-radius-lg);
         margin-bottom: var(--spacing-xl);
+      }
+
+      .deck-stats-block {
+        margin-bottom: var(--spacing-2xl);
       }
 
       .meta-item {

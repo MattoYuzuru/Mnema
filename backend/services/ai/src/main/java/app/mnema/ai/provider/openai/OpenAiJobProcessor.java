@@ -3337,8 +3337,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
 
         String defaultSource = resolveDefaultSourceField(template, textFields);
-        String defaultTarget = audioFields.getFirst();
-        mappings.add(new TtsMapping(defaultSource, defaultTarget));
+        for (String target : audioFields) {
+            mappings.add(new TtsMapping(defaultSource, target));
+        }
         return mappings;
     }
 

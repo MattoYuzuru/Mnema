@@ -91,7 +91,7 @@ public class CardService {
         Pageable pageable = PageRequest.of(page - 1, limit);
 
         return userCardRepository
-                .findByUserDeckIdAndDeletedFalseOrderByCreatedAtAsc(userDeckId, pageable)
+                .findByUserDeckIdAndDeletedFalseOrderByCreatedAtAscUserCardIdAsc(userDeckId, pageable)
                 .map(this::toUserCardDTO);
     }
 
