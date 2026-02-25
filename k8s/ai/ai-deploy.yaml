@@ -71,7 +71,9 @@ metadata:
   name: mnema-ai
   namespace: prod
 spec:
+  type: NodePort
   selector: { app: mnema-ai }
   ports:
     - port: 80
       targetPort: 8080
+      nodePort: 32088

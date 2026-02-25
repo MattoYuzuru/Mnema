@@ -299,7 +299,6 @@ jobs:
           kubectl -n "$NS" rollout status statefulset/postgres --timeout=600s
 
           kubectl -n "$NS" apply -f k8s/ai/ai-deploy.yaml
-          kubectl -n "$NS" apply -f k8s/ai/ingress.yaml
 
   deploy-main:
     needs: apply-main-manifests
