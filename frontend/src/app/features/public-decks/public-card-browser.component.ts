@@ -18,6 +18,7 @@ import { ButtonComponent } from '../../shared/components/button.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 import { TagChipComponent } from '../../shared/components/tag-chip.component';
 import { markdownToHtml } from '../../shared/utils/markdown.util';
+import { I18nService } from '../../core/services/i18n.service';
 
 @Component({
     selector: 'app-public-card-browser',
@@ -37,15 +38,15 @@ import { markdownToHtml } from '../../shared/utils/markdown.util';
           <div *ngIf="deck" class="deck-meta">
             <div class="meta-item" *ngIf="deck.language">
               <span class="meta-label">{{ 'deckProfile.language' | translate }}:</span>
-              <span class="meta-value">{{ deck.language }}</span>
+              <span class="meta-value">{{ formatLanguageCode(deck.language) }}</span>
             </div>
             <div class="meta-item" *ngIf="deck.publishedAt">
               <span class="meta-label">{{ 'deckProfile.publishedAt' | translate }}:</span>
-              <span class="meta-value">{{ deck.publishedAt | date:'mediumDate' }}</span>
+              <span class="meta-value">{{ formatMetaDate(deck.publishedAt) }}</span>
             </div>
             <div class="meta-item" *ngIf="deck.updatedAt">
               <span class="meta-label">{{ 'deckProfile.updatedAt' | translate }}:</span>
-              <span class="meta-value">{{ deck.updatedAt | date:'mediumDate' }}</span>
+              <span class="meta-value">{{ formatMetaDate(deck.updatedAt) }}</span>
             </div>
             <div class="meta-item" *ngIf="deck.forkedFromDeck">
               <span class="meta-label">{{ 'deckProfile.forkedFrom' | translate }}:</span>
@@ -612,6 +613,27 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         return markdownToHtml((description || '').trim());
     }
 
+    formatLanguageCode(code?: string | null): string {
+        const normalized = (code || '').trim().toLowerCase();
+        if (!normalized) {
+            return '-';
+        }
+        const translated = this.i18n.translate(`language.code.${normalized}`);
+        return translated === `language.code.${normalized}` ? code! : translated;
+    }
+
+    formatMetaDate(value?: string | null): string {
+        if (!value) {
+            return '-';
+        }
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            return value;
+        }
+        const locale = this.i18n.currentLanguage === 'ru' ? 'ru-RU' : 'en-US';
+        return new Intl.DateTimeFormat(locale, { dateStyle: 'long' }).format(parsed);
+    }
+
     constructor(
         private route: ActivatedRoute,
         private router: Router,
@@ -619,7 +641,8 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         private userApi: UserApiService,
         private deckApi: DeckApiService,
         private reviewApi: ReviewApiService,
-        public auth: AuthService
+        public auth: AuthService,
+        private i18n: I18nService
     ) {}
 
     ngOnInit(): void {

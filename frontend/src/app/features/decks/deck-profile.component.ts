@@ -51,7 +51,7 @@ import { I18nService } from '../../core/services/i18n.service';
       <div class="deck-meta">
         <div class="meta-item">
           <span class="meta-label">{{ 'deckProfile.algorithm' | translate }}:</span>
-          <span class="meta-value">{{ deck.algorithmId }}</span>
+          <span class="meta-value">{{ formatAlgorithmId(deck.algorithmId) }}</span>
         </div>
         <div class="meta-item">
           <span class="meta-label">{{ 'deckProfile.autoUpdate' | translate }}:</span>
@@ -71,15 +71,15 @@ import { I18nService } from '../../core/services/i18n.service';
         </div>
         <div class="meta-item">
           <span class="meta-label">{{ 'deckProfile.createdAt' | translate }}:</span>
-          <span class="meta-value">{{ deck.createdAt | date:'mediumDate' }}</span>
+          <span class="meta-value">{{ formatMetaDate(deck.createdAt) }}</span>
         </div>
         <div class="meta-item" *ngIf="deck.lastSyncedAt">
           <span class="meta-label">{{ 'deckProfile.lastSyncedAt' | translate }}:</span>
-          <span class="meta-value">{{ deck.lastSyncedAt | date:'mediumDate' }}</span>
+          <span class="meta-value">{{ formatMetaDate(deck.lastSyncedAt) }}</span>
         </div>
         <div class="meta-item" *ngIf="publicDeck?.language">
           <span class="meta-label">{{ 'deckProfile.language' | translate }}:</span>
-          <span class="meta-value">{{ publicDeck?.language }}</span>
+          <span class="meta-value">{{ formatLanguageCode(publicDeck?.language) }}</span>
         </div>
         <div class="meta-item" *ngIf="publicDeck">
           <span class="meta-label">{{ 'deckProfile.isPublic' | translate }}:</span>
@@ -91,11 +91,11 @@ import { I18nService } from '../../core/services/i18n.service';
         </div>
         <div class="meta-item" *ngIf="publicDeck?.publishedAt">
           <span class="meta-label">{{ 'deckProfile.publishedAt' | translate }}:</span>
-          <span class="meta-value">{{ publicDeck?.publishedAt | date:'mediumDate' }}</span>
+          <span class="meta-value">{{ formatMetaDate(publicDeck?.publishedAt) }}</span>
         </div>
         <div class="meta-item" *ngIf="publicDeck?.updatedAt">
           <span class="meta-label">{{ 'deckProfile.updatedAt' | translate }}:</span>
-          <span class="meta-value">{{ publicDeck?.updatedAt | date:'mediumDate' }}</span>
+          <span class="meta-value">{{ formatMetaDate(publicDeck?.updatedAt) }}</span>
         </div>
         <div class="meta-item" *ngIf="publicDeck?.forkedFromDeck">
           <span class="meta-label">{{ 'deckProfile.forkedFrom' | translate }}:</span>
@@ -461,10 +461,10 @@ import { I18nService } from '../../core/services/i18n.service';
               <div class="form-group">
                 <label>{{ 'deckProfile.language' | translate }}</label>
                 <select formControlName="language" class="language-select">
-                  <option value="en">English</option>
-                  <option value="ru">Русский (Russian)</option>
-                  <option value="jp">日本語 (Japanese)</option>
-                  <option value="sp">Español (Spanish)</option>
+                  <option value="en">{{ 'language.code.en' | translate }}</option>
+                  <option value="ru">{{ 'language.code.ru' | translate }}</option>
+                  <option value="jp">{{ 'language.code.jp' | translate }}</option>
+                  <option value="sp">{{ 'language.code.sp' | translate }}</option>
                 </select>
               </div>
               <div class="form-group">
@@ -511,9 +511,9 @@ import { I18nService } from '../../core/services/i18n.service';
                   >?</a>
                 </div>
                 <select formControlName="algorithmId" class="algorithm-select">
-                  <option value="sm2">SM-2</option>
-                  <option value="fsrs_v6">FSRS v6</option>
-                  <option value="hlr">HLR</option>
+                  <option value="sm2">{{ 'algorithm.sm2' | translate }}</option>
+                  <option value="fsrs_v6">{{ 'algorithm.fsrs_v6' | translate }}</option>
+                  <option value="hlr">{{ 'algorithm.hlr' | translate }}</option>
                 </select>
                 <p *ngIf="currentAlgorithm && currentAlgorithm.pendingMigrationCards > 0" class="migration-info">
                   {{ currentAlgorithm.pendingMigrationCards }} {{ 'deckProfile.pendingMigrationText' | translate }}
@@ -1458,6 +1458,36 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
 
     formatDescription(description?: string): string {
         return markdownToHtml((description || '').trim());
+    }
+
+    formatLanguageCode(code?: string | null): string {
+        const normalized = (code || '').trim().toLowerCase();
+        if (!normalized) {
+            return '-';
+        }
+        const translated = this.i18n.translate(`language.code.${normalized}`);
+        return translated === `language.code.${normalized}` ? code! : translated;
+    }
+
+    formatAlgorithmId(algorithmId?: string | null): string {
+        const normalized = (algorithmId || '').trim().toLowerCase();
+        if (!normalized) {
+            return '-';
+        }
+        const translated = this.i18n.translate(`algorithm.${normalized}`);
+        return translated === `algorithm.${normalized}` ? algorithmId! : translated;
+    }
+
+    formatMetaDate(value?: string | null): string {
+        if (!value) {
+            return '-';
+        }
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            return value;
+        }
+        const locale = this.i18n.currentLanguage === 'ru' ? 'ru-RU' : 'en-US';
+        return new Intl.DateTimeFormat(locale, { dateStyle: 'long' }).format(parsed);
     }
     currentAlgorithm: ReviewDeckAlgorithmResponse | null = null;
     originalAlgorithmId = '';

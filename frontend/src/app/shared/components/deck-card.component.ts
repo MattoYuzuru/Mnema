@@ -31,8 +31,8 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         </div>
 
         <div *ngIf="stats" class="deck-stats">
-          <span class="stat">{{ stats.cardCount || 0 }} cards</span>
-          <span *ngIf="stats.dueToday" class="stat stat-due">{{ stats.dueToday }} due today</span>
+          <span class="stat">{{ stats.cardCount || 0 }} {{ 'deckCard.cards' | translate }}</span>
+          <span *ngIf="stats.dueToday" class="stat stat-due">{{ stats.dueToday }} {{ 'deckCard.dueToday' | translate }}</span>
         </div>
       </div>
 
