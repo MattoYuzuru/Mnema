@@ -228,6 +228,10 @@ jobs:
           kubectl apply -f k8s/cluster-issuers.yaml
           kubectl -n "$NS" apply -f k8s/postgres.yaml
           kubectl -n "$NS" apply -f k8s/redis.yaml
+          kubectl -n "$NS" delete endpoints mnema-ai-bridge --ignore-not-found=true
+          kubectl -n "$NS" delete endpointslice \
+            -l kubernetes.io/service-name=mnema-ai-bridge,endpointslice.kubernetes.io/managed-by=endpointslicemirroring-controller.k8s.io \
+            --ignore-not-found=true
           kubectl -n "$NS" apply -f k8s/ai-bridge.yaml
           kubectl -n "$NS" apply -f k8s/frontend-deploy.yaml
           kubectl -n "$NS" apply -f k8s/auth-deploy.yaml

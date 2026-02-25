@@ -25,3 +25,5 @@ ports:
 endpoints:
   - addresses:
       - 66.248.207.147
+    conditions:
+      ready: true
