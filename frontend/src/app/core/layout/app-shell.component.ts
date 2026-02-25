@@ -1,5 +1,5 @@
-import { Component, OnInit, OnDestroy, signal } from '@angular/core';
-import { NavigationEnd, Router, RouterOutlet, RouterLink } from '@angular/router';
+import { Component, HostListener, OnDestroy, OnInit, signal } from '@angular/core';
+import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
 import { NgIf } from '@angular/common';
 import { Subscription, firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
@@ -17,7 +17,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
     imports: [RouterOutlet, RouterLink, NgIf, ButtonComponent, TranslatePipe],
     template: `
     <div class="app-shell">
-      <header class="header glass-strong">
+      <header class="header desktop-header glass-strong">
         <div class="header-left">
           <a routerLink="/" class="logo">
             <span class="logo-text">{{ 'app.name' | translate }}</span>
@@ -54,7 +54,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           </app-button>
 
           <div *ngIf="auth.status() === 'authenticated'; else loginBlock" class="user-menu">
-            <button class="user-menu-trigger" type="button" (click)="toggleUserMenu()">
+            <button class="user-menu-trigger" type="button" (click)="toggleUserMenu()" [attr.aria-expanded]="userMenuOpen()">
               <img *ngIf="userProfile()?.avatarUrl" [src]="userProfile()!.avatarUrl" [alt]="userProfile()!.username" class="user-avatar" />
               <div *ngIf="!userProfile()?.avatarUrl" class="user-initials">
                 {{ getUserInitials() }}
@@ -90,7 +90,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
           <ng-template #loginBlock>
             <div class="language-menu">
-              <button class="language-trigger" type="button" (click)="toggleLanguageMenu()">
+              <button class="language-trigger" type="button" (click)="toggleLanguageMenu()" [attr.aria-expanded]="languageMenuOpen()">
                 <svg class="language-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
                   <circle cx="12" cy="12" r="9"/>
                   <path d="M3 12h18"/>
@@ -120,6 +120,160 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           </ng-template>
         </div>
       </header>
+
+      <header class="mobile-header glass-strong">
+        <button
+          class="mobile-icon-btn"
+          type="button"
+          [attr.aria-expanded]="mobileMenuOpen()"
+          aria-controls="mobile-drawer"
+          [attr.aria-label]="'nav.openMenu' | translate"
+          (click)="toggleMobileMenu()"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </button>
+
+        <a routerLink="/" class="mobile-logo" (click)="closeMobileMenu()">
+          {{ 'app.name' | translate }}
+        </a>
+
+        <button
+          class="mobile-primary-link"
+          type="button"
+          [attr.aria-label]="auth.status() === 'authenticated' ? ('nav.studyNow' | translate) : ('nav.login' | translate)"
+          (click)="onMobilePrimaryAction()"
+        >
+          {{ auth.status() === 'authenticated' ? ('nav.studyNow' | translate) : ('nav.login' | translate) }}
+        </button>
+      </header>
+
+      <div class="mobile-menu-overlay" [class.open]="mobileMenuOpen()" (click)="closeMobileMenu()" aria-hidden="true"></div>
+
+      <aside
+        id="mobile-drawer"
+        class="mobile-drawer glass-strong"
+        [class.open]="mobileMenuOpen()"
+        role="dialog"
+        aria-modal="true"
+        [attr.aria-hidden]="!mobileMenuOpen()"
+      >
+        <div class="mobile-drawer-head">
+          <div class="mobile-drawer-brand">
+            <span class="drawer-title">{{ 'app.name' | translate }}</span>
+            <span class="drawer-subtitle">{{ auth.status() === 'authenticated' ? (userProfile()?.username || auth.user()?.email) : ('nav.guest' | translate) }}</span>
+          </div>
+          <button class="mobile-icon-btn" type="button" [attr.aria-label]="'nav.closeMenu' | translate" (click)="closeMobileMenu()">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
+            </svg>
+          </button>
+        </div>
+
+        <div class="mobile-search">
+          <label class="mobile-search-label">{{ 'nav.searchCatalog' | translate }}</label>
+          <div class="mobile-search-row">
+            <input
+              type="search"
+              class="global-search"
+              [value]="globalSearchQuery()"
+              [placeholder]="'publicDecks.searchPlaceholder' | translate"
+              [attr.aria-label]="'publicDecks.searchPlaceholder' | translate"
+              (input)="onGlobalSearchInput($event)"
+              (keydown.enter)="submitGlobalSearchAndClose()"
+            />
+            <button type="button" class="search-go" (click)="submitGlobalSearchAndClose()" [attr.aria-label]="'home.searchButton' | translate">↗</button>
+          </div>
+        </div>
+
+        <nav class="mobile-nav" [attr.aria-label]="'nav.menu' | translate">
+          <a routerLink="/" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.home' | translate }}</a>
+          <a routerLink="/public-decks" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.catalog' | translate }}</a>
+
+          <a *ngIf="auth.status() === 'authenticated'" routerLink="/my-study" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.myStudy' | translate }}</a>
+          <a *ngIf="auth.status() === 'authenticated'" routerLink="/decks" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.decks' | translate }}</a>
+          <a *ngIf="auth.status() === 'authenticated'" routerLink="/create-deck" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.createDeck' | translate }}</a>
+          <a *ngIf="auth.status() === 'authenticated'" routerLink="/templates" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.templates' | translate }}</a>
+          <a *ngIf="auth.status() === 'authenticated'" routerLink="/profile" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.profile' | translate }}</a>
+          <a *ngIf="auth.status() === 'authenticated'" routerLink="/settings" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.settings' | translate }}</a>
+
+          <a routerLink="/privacy" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.privacy' | translate }}</a>
+          <a routerLink="/terms" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.terms' | translate }}</a>
+        </nav>
+
+        <div class="mobile-drawer-footer">
+          <div class="mobile-preferences">
+            <div class="mobile-preference-row">
+              <span class="mobile-preference-title">{{ 'settings.language' | translate }}</span>
+              <div class="mobile-preference-controls">
+                <button class="language-chip" type="button" [class.active]="i18n.currentLanguage === 'ru'" (click)="setLanguage('ru')">RU</button>
+                <button class="language-chip" type="button" [class.active]="i18n.currentLanguage === 'en'" (click)="setLanguage('en')">EN</button>
+              </div>
+            </div>
+            <div class="mobile-preference-row">
+              <span class="mobile-preference-title">{{ 'settings.theme' | translate }}</span>
+              <div class="mobile-preference-controls">
+                <button
+                  class="theme-mode-chip"
+                  type="button"
+                  [class.active]="themeService.mode() === 'light'"
+                  [attr.aria-label]="'theme.light' | translate"
+                  [attr.title]="'theme.light' | translate"
+                  (click)="themeService.setMode('light')"
+                >
+                  ☀
+                </button>
+                <button
+                  class="theme-mode-chip"
+                  type="button"
+                  [class.active]="themeService.mode() === 'dark'"
+                  [attr.aria-label]="'theme.dark' | translate"
+                  [attr.title]="'theme.dark' | translate"
+                  (click)="themeService.setMode('dark')"
+                >
+                  ☾
+                </button>
+                <button
+                  class="accent-chip"
+                  type="button"
+                  [class.active]="themeService.accent() === 'neo'"
+                  (click)="themeService.setAccent('neo')"
+                >
+                  {{ 'theme.neo' | translate }}
+                </button>
+                <button
+                  class="accent-chip"
+                  type="button"
+                  [class.active]="themeService.accent() === 'vintage'"
+                  (click)="themeService.setAccent('vintage')"
+                >
+                  {{ 'theme.vintage' | translate }}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <app-button
+            *ngIf="auth.status() === 'authenticated'; else mobileLoginAction"
+            variant="ghost"
+            tone="danger"
+            [fullWidth]="true"
+            (click)="logoutFromMobileMenu()"
+          >
+            {{ 'nav.logout' | translate }}
+          </app-button>
+
+          <ng-template #mobileLoginAction>
+            <app-button variant="primary" [fullWidth]="true" (click)="loginFromMobileMenu()">
+              {{ 'nav.login' | translate }}
+            </app-button>
+          </ng-template>
+        </div>
+      </aside>
 
       <main class="main">
         <router-outlet></router-outlet>
@@ -164,6 +318,14 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         overflow: visible;
       }
 
+      .desktop-header {
+        display: flex;
+      }
+
+      .mobile-header {
+        display: none;
+      }
+
       .header-left {
         flex-shrink: 0;
       }
@@ -183,11 +345,6 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         -webkit-background-clip: text;
         background-clip: text;
         color: transparent;
-      }
-
-      .logo-image {
-        height: 2rem;
-        width: auto;
       }
 
       .header-center {
@@ -242,10 +399,6 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       .language-trigger:hover {
         border-color: var(--border-color-hover);
         background: var(--glass-surface-strong);
-      }
-
-      .language-icon {
-        display: block;
       }
 
       .language-current {
@@ -392,6 +545,272 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         flex-shrink: 0;
       }
 
+      .mobile-menu-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(9, 13, 24, 0.45);
+        z-index: 120;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.24s ease;
+      }
+
+      .mobile-menu-overlay.open {
+        opacity: 1;
+        pointer-events: auto;
+      }
+
+      .mobile-drawer {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 100dvh;
+        width: min(86vw, 22rem);
+        max-width: 22rem;
+        z-index: 130;
+        padding: calc(var(--spacing-md) + env(safe-area-inset-top, 0px)) var(--spacing-md) calc(var(--spacing-lg) + env(safe-area-inset-bottom, 0px));
+        border-right: 1px solid var(--glass-border);
+        transform: translateX(-106%);
+        transition: transform 0.25s ease;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+        pointer-events: none;
+      }
+
+      .mobile-drawer.open {
+        transform: translateX(0);
+        pointer-events: auto;
+      }
+
+      .mobile-drawer-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: var(--spacing-sm);
+      }
+
+      .mobile-drawer-brand {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+
+      .drawer-title {
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: 1.2rem;
+        letter-spacing: -0.02em;
+      }
+
+      .drawer-subtitle {
+        color: var(--color-text-muted);
+        font-size: 0.82rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .mobile-icon-btn {
+        width: 2.75rem;
+        height: 2.75rem;
+        padding: 0;
+        border: 1px solid var(--glass-border);
+        border-radius: 50%;
+        background: var(--glass-surface);
+        color: var(--color-text-primary);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+      }
+
+      .mobile-search {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+      }
+
+      .mobile-search-label {
+        font-size: 0.85rem;
+        color: var(--color-text-secondary);
+      }
+
+      .mobile-search-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: var(--spacing-xs);
+      }
+
+      .mobile-search-row .global-search {
+        min-height: 2.75rem;
+        height: 2.75rem;
+        padding-top: 0;
+        padding-bottom: 0;
+      }
+
+      .search-go {
+        border: 1px solid var(--glass-border-strong);
+        background: var(--glass-surface);
+        color: var(--color-text-primary);
+        border-radius: var(--border-radius-full);
+        width: 2.75rem;
+        height: 2.75rem;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1rem;
+        line-height: 1;
+        cursor: pointer;
+      }
+
+      .mobile-nav {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+        overflow: auto;
+      }
+
+      .mobile-nav-item {
+        min-height: 2.75rem;
+        display: flex;
+        align-items: center;
+        padding: 0.6rem 0.75rem;
+        border-radius: var(--border-radius-md);
+        border: 1px solid transparent;
+        color: var(--color-text-primary);
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .mobile-nav-item:hover,
+      .mobile-nav-item:focus-visible {
+        background: var(--glass-surface);
+        border-color: var(--glass-border);
+      }
+
+      .mobile-drawer-footer {
+        margin-top: auto;
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+      }
+
+      .mobile-preferences {
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+      }
+
+      .mobile-preference-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: var(--spacing-sm);
+        align-items: center;
+        min-height: 2.75rem;
+        padding: 0.6rem 0.75rem;
+      }
+
+      .mobile-preference-title {
+        color: var(--color-text-primary);
+        font-size: inherit;
+        font-weight: 600;
+      }
+
+      .mobile-preference-controls {
+        display: inline-flex;
+        justify-content: flex-end;
+        gap: var(--spacing-xs);
+        flex-wrap: nowrap;
+        min-width: 0;
+        overflow-x: auto;
+        scrollbar-width: none;
+      }
+
+      .mobile-preference-controls::-webkit-scrollbar {
+        display: none;
+      }
+
+      .language-chip {
+        min-width: 2.25rem;
+        height: 2rem;
+        padding: 0 0.55rem;
+        border: 1px solid var(--glass-border);
+        border-radius: var(--border-radius-full);
+        background: var(--glass-surface);
+        color: var(--color-text-secondary);
+        cursor: pointer;
+        font-weight: 700;
+        flex: 0 0 auto;
+      }
+
+      .language-chip.active {
+        border-color: var(--color-primary-accent);
+        color: var(--color-primary-accent);
+        background: rgba(14, 165, 233, 0.12);
+      }
+
+      .theme-mode-chip {
+        width: 2rem;
+        height: 2rem;
+        border: 1px solid var(--glass-border);
+        border-radius: 50%;
+        background: var(--glass-surface);
+        color: var(--color-text-secondary);
+        font-size: 1rem;
+        cursor: pointer;
+        flex: 0 0 auto;
+      }
+
+      .theme-mode-chip.active {
+        border-color: var(--color-primary-accent);
+        color: var(--color-primary-accent);
+        background: rgba(14, 165, 233, 0.12);
+      }
+
+      .accent-chip {
+        min-width: 3.55rem;
+        height: 2rem;
+        padding: 0 0.65rem;
+        border: 1px solid var(--glass-border);
+        border-radius: var(--border-radius-full);
+        background: var(--glass-surface);
+        color: var(--color-text-secondary);
+        font-size: 0.8rem;
+        font-weight: 700;
+        cursor: pointer;
+        flex: 0 0 auto;
+      }
+
+      .accent-chip.active {
+        border-color: var(--color-primary-accent);
+        color: var(--color-primary-accent);
+        background: rgba(14, 165, 233, 0.12);
+      }
+
+      .mobile-logo {
+        text-decoration: none;
+        font-family: var(--font-display);
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        color: var(--color-text-primary);
+      }
+
+      .mobile-primary-link {
+        min-height: 2.5rem;
+        padding: 0 0.85rem;
+        border: 1px solid var(--glass-border);
+        border-radius: var(--border-radius-full);
+        background: var(--glass-surface);
+        color: var(--color-text-primary);
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.01em;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+
       .main {
         flex: 1;
         padding: var(--spacing-xl);
@@ -428,28 +847,28 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         color: var(--color-text-primary);
       }
 
-      @media (max-width: 768px) {
-        .header {
-          padding: var(--spacing-sm) var(--spacing-md);
+      @media (min-width: 901px) {
+        .mobile-menu-overlay,
+        .mobile-drawer {
+          display: none;
+        }
+      }
+
+      @media (max-width: 900px) {
+        .desktop-header {
+          display: none;
+        }
+
+        .mobile-header {
+          position: sticky;
+          top: 0;
+          z-index: 110;
+          display: grid;
+          grid-template-columns: auto 1fr auto;
+          align-items: center;
           gap: var(--spacing-sm);
-        }
-
-        .header-center {
-          display: none;
-        }
-
-        .header-right {
-          flex-wrap: wrap;
-          justify-content: flex-end;
-          row-gap: var(--spacing-xs);
-        }
-
-        .language-current {
-          display: none;
-        }
-
-        .user-name {
-          display: none;
+          padding: calc(var(--spacing-xs) + env(safe-area-inset-top, 0px)) var(--spacing-sm) var(--spacing-xs);
+          border-bottom: 1px solid var(--glass-border);
         }
 
         .main {
@@ -473,20 +892,26 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       }
 
       @media (max-width: 480px) {
-        .header {
-          padding: var(--spacing-xs) var(--spacing-sm);
-        }
-
-        .logo {
-          font-size: 1rem;
-        }
-
-        .logo-image {
-          height: 1.5rem;
-        }
-
         .main {
           padding: var(--spacing-md) var(--spacing-sm);
+        }
+
+        .mobile-drawer {
+          width: min(92vw, 22rem);
+          padding-left: var(--spacing-sm);
+          padding-right: var(--spacing-sm);
+        }
+
+        .mobile-primary-link {
+          font-size: 0.78rem;
+          padding: 0 0.7rem;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .mobile-menu-overlay,
+        .mobile-drawer {
+          transition: none;
         }
       }
     `
@@ -496,6 +921,7 @@ export class AppShellComponent implements OnInit, OnDestroy {
     currentYear = new Date().getFullYear();
     userMenuOpen = signal(false);
     languageMenuOpen = signal(false);
+    mobileMenuOpen = signal(false);
     userProfile = signal<UserProfile | null>(null);
     globalSearchQuery = signal('');
     private authSubscription?: Subscription;
@@ -504,15 +930,16 @@ export class AppShellComponent implements OnInit, OnDestroy {
 
     constructor(
         public auth: AuthService,
-        private themeService: ThemeService,
+        public themeService: ThemeService,
         private router: Router,
         private userApi: UserApiService,
         private mediaApi: MediaApiService,
-        private i18n: I18nService
+        public i18n: I18nService
     ) {}
 
     ngOnInit(): void {
         this.auth.initFromUrlAndStorage();
+        this.themeService.mode();
 
         if (this.auth.status() === 'authenticated') {
             this.loadUserProfile();
@@ -539,13 +966,33 @@ export class AppShellComponent implements OnInit, OnDestroy {
         this.syncGlobalSearchFromUrl();
         this.routerSubscription = this.router.events
             .pipe(filter(event => event instanceof NavigationEnd))
-            .subscribe(() => this.syncGlobalSearchFromUrl());
+            .subscribe(() => {
+                this.syncGlobalSearchFromUrl();
+                this.closeAllMenus();
+            });
     }
 
     ngOnDestroy(): void {
         this.authSubscription?.unsubscribe();
         this.profileSubscription?.unsubscribe();
         this.routerSubscription?.unsubscribe();
+        document.body.style.overflow = '';
+    }
+
+    @HostListener('document:keydown.escape')
+    handleEscape(): void {
+        this.closeAllMenus();
+    }
+
+    @HostListener('document:click', ['$event'])
+    handleDocumentClick(event: MouseEvent): void {
+        const target = event.target as HTMLElement;
+        if (!target.closest('.user-menu')) {
+            this.closeUserMenu();
+        }
+        if (!target.closest('.language-menu')) {
+            this.languageMenuOpen.set(false);
+        }
     }
 
     loadUserProfile(): void {
@@ -584,6 +1031,7 @@ export class AppShellComponent implements OnInit, OnDestroy {
 
     toggleUserMenu(): void {
         this.userMenuOpen.set(!this.userMenuOpen());
+        this.languageMenuOpen.set(false);
     }
 
     closeUserMenu(): void {
@@ -592,6 +1040,7 @@ export class AppShellComponent implements OnInit, OnDestroy {
 
     toggleLanguageMenu(): void {
         this.languageMenuOpen.set(!this.languageMenuOpen());
+        this.userMenuOpen.set(false);
     }
 
     setLanguage(lang: Language): void {
@@ -613,6 +1062,37 @@ export class AppShellComponent implements OnInit, OnDestroy {
         void this.router.navigate(['/']);
     }
 
+    loginFromMobileMenu(): void {
+        this.closeMobileMenu();
+        void this.router.navigate(['/login']);
+    }
+
+    logoutFromMobileMenu(): void {
+        this.closeMobileMenu();
+        this.auth.logout();
+        void this.router.navigate(['/']);
+    }
+
+    onMobilePrimaryAction(): void {
+        if (this.auth.status() === 'authenticated') {
+            void this.router.navigate(['/my-study']);
+            return;
+        }
+        void this.router.navigate(['/login']);
+    }
+
+    toggleMobileMenu(): void {
+        this.setMobileMenuState(!this.mobileMenuOpen());
+    }
+
+    closeMobileMenu(): void {
+        this.setMobileMenuState(false);
+    }
+
+    navigateFromMobileMenu(): void {
+        this.closeMobileMenu();
+    }
+
     onGlobalSearchInput(event: Event): void {
         const input = event.target as HTMLInputElement;
         this.globalSearchQuery.set(input.value);
@@ -624,6 +1104,11 @@ export class AppShellComponent implements OnInit, OnDestroy {
         void this.router.navigate(['/public-decks'], { queryParams });
     }
 
+    submitGlobalSearchAndClose(): void {
+        this.submitGlobalSearch();
+        this.closeMobileMenu();
+    }
+
     private syncGlobalSearchFromUrl(): void {
         const tree = this.router.parseUrl(this.router.url);
         const primary = tree.root.children['primary'];
@@ -633,5 +1118,20 @@ export class AppShellComponent implements OnInit, OnDestroy {
         } else {
             this.globalSearchQuery.set('');
         }
+    }
+
+    private setMobileMenuState(open: boolean): void {
+        this.mobileMenuOpen.set(open);
+        document.body.style.overflow = open ? 'hidden' : '';
+        if (open) {
+            this.userMenuOpen.set(false);
+            this.languageMenuOpen.set(false);
+        }
+    }
+
+    private closeAllMenus(): void {
+        this.closeUserMenu();
+        this.languageMenuOpen.set(false);
+        this.closeMobileMenu();
     }
 }

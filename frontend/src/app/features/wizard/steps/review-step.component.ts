@@ -52,7 +52,7 @@ import { markdownToHtml } from '../../../shared/utils/markdown.util';
     </div>
   `,
     styles: [`
-      .step { display: flex; flex-direction: column; gap: var(--spacing-lg); }
+      .step { display: flex; flex-direction: column; gap: var(--spacing-lg); min-width: 0; }
       .review-section { padding: var(--spacing-lg); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); }
       .review-section h3 { font-size: 1.1rem; font-weight: 600; margin: 0 0 var(--spacing-md) 0; }
       .info-grid { display: flex; flex-direction: column; gap: var(--spacing-sm); }
@@ -68,13 +68,14 @@ import { markdownToHtml } from '../../../shared/utils/markdown.util';
       .markdown-preview code { font-family: inherit; font-size: 0.9rem; background: var(--color-card-background); padding: 0 0.2rem; border-radius: var(--border-radius-sm); }
       .card-preview { padding: var(--spacing-sm) var(--spacing-md); background: var(--color-card-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-sm); margin-bottom: var(--spacing-xs); }
       .more-cards { text-align: center; padding: var(--spacing-sm); color: var(--color-text-muted); }
-      .step-actions { display: flex; justify-content: space-between; padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
+      .step-actions { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--spacing-sm); padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
+      .step-actions app-button { flex: 1 1 14rem; }
       .action-buttons { display: flex; gap: var(--spacing-sm); }
+      .action-buttons app-button { flex: 1 1 12rem; }
 
-      @media (max-width: 768px) {
+      @media (max-width: 900px) {
         .step-actions {
           flex-direction: column;
-          gap: var(--spacing-sm);
         }
 
         .action-buttons {

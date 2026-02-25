@@ -113,6 +113,51 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             <span>{{ 'settings.showFrontSideAfterFlip' | translate }}</span>
           </label>
         </div>
+
+        <div class="mobile-review-block">
+          <h3>{{ 'settings.mobileReviewButtonsTitle' | translate }}</h3>
+          <p class="mobile-review-description">{{ 'settings.mobileReviewButtonsDescription' | translate }}</p>
+
+          <div class="control-group">
+            <label class="control-label">{{ 'settings.mobileReviewButtonsLayout' | translate }}</label>
+            <div class="button-group button-group-wrap">
+              <button
+                class="option-btn"
+                [class.active]="preferences.mobileReviewButtonsMode === 'swipe-column'"
+                (click)="preferences.setMobileReviewButtonsMode('swipe-column')"
+              >
+                {{ 'settings.mobileReviewButtonsLayoutSwipe' | translate }}
+              </button>
+              <button
+                class="option-btn"
+                [class.active]="preferences.mobileReviewButtonsMode === 'classic'"
+                (click)="preferences.setMobileReviewButtonsMode('classic')"
+              >
+                {{ 'settings.mobileReviewButtonsLayoutClassic' | translate }}
+              </button>
+            </div>
+          </div>
+
+          <div class="control-group" *ngIf="preferences.mobileReviewButtonsMode === 'swipe-column'">
+            <label class="control-label">{{ 'settings.mobileReviewButtonsSide' | translate }}</label>
+            <div class="button-group">
+              <button
+                class="option-btn"
+                [class.active]="preferences.mobileReviewButtonsSide === 'left'"
+                (click)="preferences.setMobileReviewButtonsSide('left')"
+              >
+                {{ 'settings.mobileReviewButtonsLeft' | translate }}
+              </button>
+              <button
+                class="option-btn"
+                [class.active]="preferences.mobileReviewButtonsSide === 'right'"
+                (click)="preferences.setMobileReviewButtonsSide('right')"
+              >
+                {{ 'settings.mobileReviewButtonsRight' | translate }}
+              </button>
+            </div>
+          </div>
+        </div>
       </section>
 
       <section class="settings-section ai-settings">
@@ -462,6 +507,30 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         display: flex;
         flex-direction: column;
         gap: var(--spacing-sm);
+      }
+
+      .mobile-review-block {
+        margin-top: var(--spacing-lg);
+        padding-top: var(--spacing-lg);
+        border-top: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+      }
+
+      .mobile-review-block h3 {
+        margin: 0;
+        font-size: 1rem;
+      }
+
+      .mobile-review-description {
+        margin: 0;
+        color: var(--color-text-muted);
+        font-size: 0.92rem;
+      }
+
+      .button-group-wrap {
+        flex-wrap: wrap;
       }
 
       .checkbox-label {

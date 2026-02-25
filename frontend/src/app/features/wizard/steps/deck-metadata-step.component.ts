@@ -91,7 +91,7 @@ import { I18nService } from '../../../core/services/i18n.service';
     </div>
   `,
     styles: [`
-      .step { display: flex; flex-direction: column; gap: var(--spacing-lg); }
+      .step { display: flex; flex-direction: column; gap: var(--spacing-lg); min-width: 0; }
       .form { display: flex; flex-direction: column; gap: var(--spacing-lg); }
       .form-group { display: flex; flex-direction: column; gap: var(--spacing-xs); }
       .markdown-field { display: flex; flex-direction: column; gap: var(--spacing-xs); }
@@ -128,13 +128,13 @@ import { I18nService } from '../../../core/services/i18n.service';
       .tag-chip { display: inline-flex; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-full); font-size: 0.85rem; }
       .tag-chip button { background: none; border: none; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0; }
       .checkbox-label { display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; font-size: 0.9rem; }
-      .step-actions { display: flex; justify-content: space-between; padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
+      .step-actions { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--spacing-sm); padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
+      .step-actions app-button { flex: 1 1 14rem; }
       .error-message { font-size: 0.85rem; color: #dc2626; }
 
-      @media (max-width: 768px) {
+      @media (max-width: 900px) {
         .step-actions {
           flex-direction: column;
-          gap: var(--spacing-sm);
         }
       }
     `]
