@@ -9,13 +9,14 @@ import { MediaApiService } from './core/services/media-api.service';
 import { ButtonComponent } from './shared/components/button.component';
 import { InputComponent } from './shared/components/input.component';
 import { TextareaComponent } from './shared/components/textarea.component';
+import { ReviewStatsPanelComponent } from './shared/components/review-stats-panel.component';
 
 import { TranslatePipe } from './shared/pipes/translate.pipe';
 
 @Component({
     standalone: true,
     selector: 'app-profile-page',
-    imports: [NgIf, ReactiveFormsModule, RouterLink, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe],
+    imports: [NgIf, ReactiveFormsModule, RouterLink, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe, ReviewStatsPanelComponent],
     template: `
     <section *ngIf="auth.status() === 'authenticated'; else notAuth" class="profile-page">
       <div class="profile-container">
@@ -55,6 +56,8 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
               <span *ngIf="profile.admin" class="admin-badge">{{ 'profile.admin' | translate }}</span>
             </div>
           </div>
+
+          <app-review-stats-panel title="Account analytics"></app-review-stats-panel>
 
           <form [formGroup]="form" (ngSubmit)="save()" class="edit-form">
             <h3>{{ 'profile.editProfile' | translate }}</h3>

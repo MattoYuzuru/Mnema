@@ -8,7 +8,9 @@ import {
     ReviewAnswerResponse,
     ReviewDeckAlgorithmResponse,
     ReviewSummaryResponse,
-    UpdateAlgorithmRequest
+    UpdateAlgorithmRequest,
+    ReviewStatsRequest,
+    ReviewStatsResponse
 } from '../models/review.models';
 
 @Injectable({ providedIn: 'root' })
@@ -35,5 +37,28 @@ export class ReviewApiService {
 
     updateDeckAlgorithm(userDeckId: string, request: UpdateAlgorithmRequest): Observable<ReviewDeckAlgorithmResponse> {
         return this.http.put<ReviewDeckAlgorithmResponse>(`${this.baseUrl}/decks/${userDeckId}/algorithm`, request);
+    }
+
+    getStats(request: ReviewStatsRequest): Observable<ReviewStatsResponse> {
+        const params: Record<string, string> = {};
+        if (request.userDeckId) {
+            params['userDeckId'] = request.userDeckId;
+        }
+        if (request.from) {
+            params['from'] = request.from;
+        }
+        if (request.to) {
+            params['to'] = request.to;
+        }
+        if (request.timeZone) {
+            params['timeZone'] = request.timeZone;
+        }
+        if (request.dayCutoffMinutes !== null && request.dayCutoffMinutes !== undefined) {
+            params['dayCutoffMinutes'] = String(request.dayCutoffMinutes);
+        }
+        if (request.forecastDays !== null && request.forecastDays !== undefined) {
+            params['forecastDays'] = String(request.forecastDays);
+        }
+        return this.http.get<ReviewStatsResponse>(`${this.baseUrl}/stats`, { params });
     }
 }
