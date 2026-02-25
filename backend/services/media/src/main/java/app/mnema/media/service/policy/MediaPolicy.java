@@ -117,7 +117,7 @@ public class MediaPolicy {
         );
 
         map.put(MediaKind.avatar, new MediaLimit(
-                5 * MB,
+                10 * MB,
                 null,
                 1024,
                 1024,
@@ -157,7 +157,7 @@ public class MediaPolicy {
         ));
 
         map.put(MediaKind.import_file, new MediaLimit(
-                200 * MB,
+                600 * MB,
                 null,
                 null,
                 null,
@@ -165,7 +165,7 @@ public class MediaPolicy {
         ));
 
         map.put(MediaKind.ai_import, new MediaLimit(
-                300 * MB,
+                600 * MB,
                 null,
                 null,
                 null,
