@@ -41,8 +41,32 @@ export interface ReviewClientFeatures {
 }
 
 export interface ReviewAnswerResponse {
-    userCardId: string;
+    userCardId?: string;
+    answeredCardId?: string;
     next: ReviewNextCardResponse;
+    completion?: ReviewCompletionDTO | null;
+}
+
+export interface ReviewCompletionDTO {
+    firstCompletionToday: boolean;
+    completionIndexToday: number;
+    reviewDay: string;
+    streak: ReviewCompletionStreakDTO;
+    session?: ReviewCompletionSessionDTO | null;
+}
+
+export interface ReviewCompletionStreakDTO {
+    previousStreakDays: number;
+    currentStreakDays: number;
+    longestStreakDays: number;
+}
+
+export interface ReviewCompletionSessionDTO {
+    startedAt: string;
+    endedAt: string;
+    durationMinutes: number;
+    reviewCount: number;
+    totalResponseMs: number;
 }
 
 export interface ReviewPreferencesDTO {
@@ -74,7 +98,18 @@ export interface ReviewStatsFilter {
     toDate: string;
     timeZone: string;
     dayCutoffMinutes: number;
+    sessionGapMinutes: number;
     forecastDays: number;
+}
+
+export interface ReviewStatsStreak {
+    currentStreakDays: number;
+    longestStreakDays: number;
+    todayStreakDays: number;
+    activeToday: boolean;
+    currentStreakStartDate: string | null;
+    currentStreakEndDate: string | null;
+    lastActiveDate: string | null;
 }
 
 export interface ReviewStatsOverview {
@@ -137,13 +172,34 @@ export interface ReviewStatsForecastPoint {
     dueCount: number;
 }
 
+export interface ReviewStatsSessionDayPoint {
+    date: string;
+    sessionCount: number;
+    firstSessionStartAt: string | null;
+    lastSessionEndAt: string | null;
+    studiedMinutes: number;
+    reviewCount: number;
+    totalResponseMs: number;
+}
+
+export interface ReviewStatsSessionWindowPoint {
+    startedAt: string;
+    endedAt: string;
+    durationMinutes: number;
+    reviewCount: number;
+    totalResponseMs: number;
+}
+
 export interface ReviewStatsResponse {
     scope: ReviewStatsScope;
     userDeckId?: string | null;
     filter: ReviewStatsFilter;
+    streak: ReviewStatsStreak;
     overview: ReviewStatsOverview;
     queue: ReviewStatsQueueSnapshot;
     daily: ReviewStatsDailyPoint[];
+    sessionDays: ReviewStatsSessionDayPoint[];
+    todaySessions: ReviewStatsSessionWindowPoint[];
     hourly: ReviewStatsHourlyPoint[];
     ratings: ReviewStatsRatingPoint[];
     sources: ReviewStatsSourcePoint[];
@@ -156,5 +212,6 @@ export interface ReviewStatsRequest {
     to?: string | null;
     timeZone?: string | null;
     dayCutoffMinutes?: number | null;
+    sessionGapMinutes?: number | null;
     forecastDays?: number | null;
 }

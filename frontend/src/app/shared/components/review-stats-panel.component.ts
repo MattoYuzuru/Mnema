@@ -2,7 +2,13 @@ import { Component, DestroyRef, Input, OnChanges, OnInit, SimpleChanges, compute
 import { NgFor, NgIf } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ReviewApiService } from '../../core/services/review-api.service';
-import { ReviewStatsDailyPoint, ReviewStatsForecastPoint, ReviewStatsHourlyPoint, ReviewStatsResponse } from '../../core/models/review.models';
+import {
+    ReviewStatsDailyPoint,
+    ReviewStatsForecastPoint,
+    ReviewStatsHourlyPoint,
+    ReviewStatsResponse,
+    ReviewStatsSessionWindowPoint
+} from '../../core/models/review.models';
 import { TranslatePipe } from '../pipes/translate.pipe';
 import { I18nService } from '../../core/services/i18n.service';
 
@@ -75,6 +81,27 @@ interface ChartBarPoint {
       <div *ngIf="error()" class="error" role="alert">{{ error()! | translate }}</div>
 
       <ng-container *ngIf="!loading() && stats() as data">
+        <article class="streak-card">
+          <div class="streak-badge" aria-hidden="true">🔥</div>
+          <div class="streak-content">
+            <p class="streak-label">{{ 'stats.streakTitle' | translate }}</p>
+            <h3>{{ data.streak.currentStreakDays }} {{ 'stats.streakDays' | translate }}</h3>
+            <p class="streak-subtitle">
+              {{ (data.streak.activeToday ? 'stats.streakActiveToday' : 'stats.streakInactiveToday') | translate }}
+            </p>
+          </div>
+          <div class="streak-meta">
+            <div class="streak-meta-item">
+              <span>{{ 'stats.streakBest' | translate }}</span>
+              <strong>{{ data.streak.longestStreakDays }}</strong>
+            </div>
+            <div class="streak-meta-item">
+              <span>{{ 'stats.streakTodaySessions' | translate }}</span>
+              <strong>{{ data.todaySessions.length }}</strong>
+            </div>
+          </div>
+        </article>
+
         <div class="kpi-grid">
           <article class="kpi-card">
             <span class="kpi-label">{{ 'stats.kpiReviews' | translate }}</span>
@@ -95,6 +122,11 @@ interface ChartBarPoint {
             <span class="kpi-label">{{ 'stats.kpiQueueNow' | translate }}</span>
             <strong class="kpi-value">{{ data.queue.dueNow }}</strong>
             <small>{{ 'stats.kpiDueToday' | translate }} {{ data.queue.dueToday }}</small>
+          </article>
+          <article class="kpi-card">
+            <span class="kpi-label">{{ 'stats.kpiTodayStudy' | translate }}</span>
+            <strong class="kpi-value">{{ humanizeMinutes(todayStudiedMinutes()) }}</strong>
+            <small>{{ 'stats.kpiTodayReviews' | translate }} {{ todayReviewCount() }}</small>
           </article>
         </div>
 
@@ -214,6 +246,29 @@ interface ChartBarPoint {
                 <span class="value">{{ point.reviewCount }} ({{ point.ratioPercent }}%)</span>
               </li>
             </ul>
+          </article>
+          <article class="breakdown-card sessions-card">
+            <h3>{{ 'stats.todaySessionsTitle' | translate }}</h3>
+            <p class="sessions-hint">{{ 'stats.todaySessionsHint' | translate }}</p>
+            <table *ngIf="data.todaySessions.length > 0; else emptyTodaySessions" class="sessions-table">
+              <thead>
+                <tr>
+                  <th>{{ 'stats.tableSession' | translate }}</th>
+                  <th>{{ 'stats.tableDuration' | translate }}</th>
+                  <th>{{ 'stats.tableReviews' | translate }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr *ngFor="let session of data.todaySessions; let i = index; trackBy: trackBySession">
+                  <td>{{ formatSessionRange(session) }}</td>
+                  <td>{{ humanizeMinutes(session.durationMinutes) }}</td>
+                  <td>{{ session.reviewCount }}</td>
+                </tr>
+              </tbody>
+            </table>
+            <ng-template #emptyTodaySessions>
+              <p class="sessions-empty">{{ 'stats.todaySessionsEmpty' | translate }}</p>
+            </ng-template>
           </article>
         </div>
       </ng-container>
@@ -399,9 +454,73 @@ interface ChartBarPoint {
         background: rgba(239, 68, 68, 0.1);
       }
 
+      .streak-card {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 0.9rem;
+        align-items: center;
+        border-radius: 1rem;
+        border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+        background:
+          linear-gradient(125deg, color-mix(in srgb, var(--color-card-background) 85%, transparent), color-mix(in srgb, var(--glass-surface-strong) 85%, transparent)),
+          radial-gradient(140% 120% at 0% 0%, color-mix(in srgb, var(--color-primary-accent) 22%, transparent), transparent 64%);
+        padding: 0.9rem;
+      }
+
+      .streak-badge {
+        width: 2.6rem;
+        height: 2.6rem;
+        border-radius: 0.85rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.35rem;
+        background: color-mix(in srgb, var(--color-primary-accent) 26%, transparent);
+        border: 1px solid color-mix(in srgb, var(--color-primary-accent) 32%, transparent);
+      }
+
+      .streak-content h3 {
+        margin: 0.1rem 0 0 0;
+        font-size: 1.45rem;
+        line-height: 1.2;
+      }
+
+      .streak-label {
+        margin: 0;
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--color-text-secondary);
+      }
+
+      .streak-subtitle {
+        margin: 0.2rem 0 0 0;
+        color: var(--color-text-secondary);
+        font-size: 0.84rem;
+      }
+
+      .streak-meta {
+        display: grid;
+        gap: 0.45rem;
+      }
+
+      .streak-meta-item {
+        display: grid;
+        justify-items: end;
+      }
+
+      .streak-meta-item span {
+        font-size: 0.72rem;
+        color: var(--color-text-secondary);
+      }
+
+      .streak-meta-item strong {
+        font-size: 1.05rem;
+      }
+
       .kpi-grid {
         display: grid;
-        grid-template-columns: repeat(4, minmax(0, 1fr));
+        grid-template-columns: repeat(5, minmax(0, 1fr));
         gap: 0.75rem;
       }
 
@@ -561,7 +680,7 @@ interface ChartBarPoint {
 
       .breakdown-grid {
         display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(3, minmax(0, 1fr));
         gap: 0.75rem;
       }
 
@@ -599,6 +718,42 @@ interface ChartBarPoint {
         color: var(--color-text-secondary);
       }
 
+      .sessions-card {
+        display: flex;
+        flex-direction: column;
+        gap: 0.45rem;
+      }
+
+      .sessions-hint {
+        margin: -0.2rem 0 0 0;
+        color: var(--color-text-secondary);
+        font-size: 0.82rem;
+      }
+
+      .sessions-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.86rem;
+      }
+
+      .sessions-table th,
+      .sessions-table td {
+        padding: 0.35rem 0.2rem;
+        border-bottom: 1px solid color-mix(in srgb, var(--border-color) 72%, transparent);
+        text-align: left;
+      }
+
+      .sessions-table th {
+        color: var(--color-text-secondary);
+        font-weight: 600;
+      }
+
+      .sessions-empty {
+        margin: 0;
+        font-size: 0.86rem;
+        color: var(--color-text-secondary);
+      }
+
       @media (max-width: 1024px) {
         .kpi-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -607,6 +762,19 @@ interface ChartBarPoint {
         .chart-grid,
         .breakdown-grid {
           grid-template-columns: 1fr;
+        }
+
+        .streak-card {
+          grid-template-columns: auto 1fr;
+        }
+
+        .streak-meta {
+          grid-column: span 2;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .streak-meta-item {
+          justify-items: start;
         }
       }
 
@@ -654,6 +822,7 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
     readonly fromDate = signal('');
     readonly toDate = signal('');
     readonly forecastDays = signal(30);
+    readonly sessionGapMinutes = signal(30);
 
     readonly hoverDailyIndex = signal(-1);
     readonly hoverHourlyIndex = signal(-1);
@@ -668,6 +837,8 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
     readonly hourlyMax = computed(() => this.maxOf(this.hourlyBars()));
     readonly forecastBars = computed(() => this.buildForecastBars(this.stats()?.forecast ?? []));
     readonly forecastMax = computed(() => this.maxOf(this.forecastBars()));
+    readonly todayStudiedMinutes = computed(() => (this.stats()?.todaySessions ?? []).reduce((sum, session) => sum + session.durationMinutes, 0));
+    readonly todayReviewCount = computed(() => (this.stats()?.todaySessions ?? []).reduce((sum, session) => sum + session.reviewCount, 0));
 
     readonly dailyHoverPoint = computed(() => this.pointByIndex(this.dailyBars(), this.hoverDailyIndex()));
     readonly hourlyHoverPoint = computed(() => this.pointByIndex(this.hourlyBars(), this.hoverHourlyIndex()));
@@ -789,6 +960,7 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
             from,
             to,
             timeZone: this.browserTimeZone,
+            sessionGapMinutes: this.sessionGapMinutes(),
             forecastDays: this.forecastDays()
         })
             .pipe(takeUntilDestroyed(this.destroyRef))
@@ -826,6 +998,10 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
         return item.source;
     }
 
+    trackBySession(index: number, item: ReviewStatsSessionWindowPoint): string {
+        return `${item.startedAt}-${item.endedAt}-${index}`;
+    }
+
     heightPercent(value: number, max: number): number {
         if (max <= 0) {
             return 4;
@@ -842,6 +1018,22 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
         }
         const seconds = Math.round(ms / 100) / 10;
         return `${seconds}s`;
+    }
+
+    humanizeMinutes(minutes: number): string {
+        if (!minutes || minutes <= 0) {
+            return '0m';
+        }
+        if (minutes < 60) {
+            return `${minutes}m`;
+        }
+        const hours = Math.floor(minutes / 60);
+        const rest = minutes % 60;
+        return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+    }
+
+    formatSessionRange(session: ReviewStatsSessionWindowPoint): string {
+        return `${this.formatClock(session.startedAt)} - ${this.formatClock(session.endedAt)}`;
     }
 
     dailyFootnote(): string {
@@ -950,6 +1142,17 @@ export class ReviewStatsPanelComponent implements OnInit, OnChanges {
             return isoDate;
         }
         return isoDate.slice(0, 10);
+    }
+
+    private formatClock(isoInstant: string): string {
+        if (!isoInstant) {
+            return '--:--';
+        }
+        const date = new Date(isoInstant);
+        if (Number.isNaN(date.getTime())) {
+            return '--:--';
+        }
+        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     }
 
     private dragSignal(key: ChartScrollKey) {

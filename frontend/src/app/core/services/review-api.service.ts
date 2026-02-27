@@ -56,6 +56,9 @@ export class ReviewApiService {
         if (request.dayCutoffMinutes !== null && request.dayCutoffMinutes !== undefined) {
             params['dayCutoffMinutes'] = String(request.dayCutoffMinutes);
         }
+        if (request.sessionGapMinutes !== null && request.sessionGapMinutes !== undefined) {
+            params['sessionGapMinutes'] = String(request.sessionGapMinutes);
+        }
         if (request.forecastDays !== null && request.forecastDays !== undefined) {
             params['forecastDays'] = String(request.forecastDays);
         }
