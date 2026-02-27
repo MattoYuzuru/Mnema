@@ -46,6 +46,10 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.SQLException;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -58,6 +62,10 @@ public class ExportProcessor {
     private static final String MEDIA_DIR = "media/";
     private static final String MANIFEST_FORMAT = "mnema";
     private static final int MANIFEST_VERSION = 1;
+    private static final String MNPKG_MANIFEST_TABLE = "manifest";
+    private static final String MNPKG_CARDS_TABLE = "cards";
+    private static final String MNPKG_MEDIA_TABLE = "media";
+    private static final String MNPKG_FILE_NAME = "deck-export.mnpkg";
 
     private static final String ORDER_COLUMN = "__order";
     private static final String ANKI_FRONT_COLUMN = "__anki_front";
@@ -100,7 +108,7 @@ public class ExportProcessor {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "userDeckId is required for export");
         }
         ImportSourceType format = job.getSourceType() == null ? ImportSourceType.csv : job.getSourceType();
-        if (format != ImportSourceType.csv && format != ImportSourceType.mnema) {
+        if (format != ImportSourceType.csv && format != ImportSourceType.mnema && format != ImportSourceType.mnpkg) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported export format");
         }
 
@@ -112,34 +120,37 @@ public class ExportProcessor {
         Path tempDir = null;
         try {
             tempDir = Files.createTempDirectory("mnema-export-");
-            Path csvFile = tempDir.resolve(CSV_NAME);
-            ExportScanResult scan;
+            ExportArtifact artifact;
             if (format == ImportSourceType.csv) {
+                Path csvFile = tempDir.resolve(CSV_NAME);
+                Path zipFile = tempDir.resolve("deck-export.zip");
                 writeCsv(job, fields, csvFile, userDeckId);
-                scan = null;
-            } else {
-                scan = writePackageCsv(job, fields, csvFile, userDeckId);
-            }
-
-            Path zipFile = tempDir.resolve("deck-export.zip");
-            if (format == ImportSourceType.csv) {
                 zipCsv(csvFile, zipFile);
-            } else {
+                artifact = new ExportArtifact(zipFile, "application/zip", "deck-export.zip");
+            } else if (format == ImportSourceType.mnema) {
+                Path csvFile = tempDir.resolve(CSV_NAME);
+                ExportScanResult scan = writePackageCsv(job, fields, csvFile, userDeckId);
                 Path manifestFile = tempDir.resolve(MANIFEST_NAME);
-                writeManifest(manifestFile, userDeck, publicDeck, template, scan != null && scan.hasAnki());
-                Map<UUID, MediaExportEntry> mediaEntries = resolveMediaEntries(scan == null ? Set.of() : scan.mediaIds());
+                writeManifest(manifestFile, userDeck, publicDeck, template, scan.hasAnki());
+                Map<UUID, MediaExportEntry> mediaEntries = resolveMediaEntries(scan.mediaIds());
                 Path mediaFile = tempDir.resolve(MEDIA_NAME);
                 writeMediaMap(mediaFile, mediaEntries);
+                Path zipFile = tempDir.resolve("deck-export.zip");
                 zipPackage(csvFile, manifestFile, mediaFile, mediaEntries, zipFile);
+                artifact = new ExportArtifact(zipFile, "application/zip", "deck-export.zip");
+            } else {
+                Path sqliteFile = tempDir.resolve(MNPKG_FILE_NAME);
+                writeMnpkg(job, fields, sqliteFile, userDeckId, userDeck, publicDeck, template);
+                artifact = new ExportArtifact(sqliteFile, "application/vnd.mnema.package+sqlite", MNPKG_FILE_NAME);
             }
 
-            try (InputStream inputStream = Files.newInputStream(zipFile)) {
+            try (InputStream inputStream = Files.newInputStream(artifact.path())) {
                 UUID mediaId = mediaApiClient.directUpload(
                         job.getUserId(),
                         "import_file",
-                        "application/zip",
-                        "deck-export.zip",
-                        Files.size(zipFile),
+                        artifact.contentType(),
+                        artifact.fileName(),
+                        Files.size(artifact.path()),
                         inputStream
                 );
                 updateResult(job.getJobId(), mediaId);
@@ -196,6 +207,190 @@ public class ExportProcessor {
             return value.asText();
         }
         return value.toString();
+    }
+
+    private void writeMnpkg(ImportJobEntity job,
+                            List<CoreFieldTemplate> fields,
+                            Path sqliteFile,
+                            UUID userDeckId,
+                            CoreUserDeckResponse userDeck,
+                            CorePublicDeckResponse publicDeck,
+                            CoreCardTemplateResponse template) throws IOException {
+        Connection connection = null;
+        try {
+            connection = DriverManager.getConnection("jdbc:sqlite:" + sqliteFile.toAbsolutePath());
+            initializeMnpkgSchema(connection);
+
+            MnpkgCardsResult cardsResult = writeMnpkgCards(connection, job, fields, userDeckId);
+            Map<UUID, MediaExportEntry> mediaEntries = resolveMediaEntries(cardsResult.mediaIds());
+            writeMnpkgMedia(connection, mediaEntries);
+
+            MnemaPackageManifest manifest = buildManifest(userDeck, publicDeck, template, cardsResult.hasAnki());
+            writeMnpkgManifest(connection, manifest);
+        } catch (SQLException ex) {
+            throw new IOException("Failed to write mnpkg sqlite package", ex);
+        } finally {
+            closeQuietly(connection);
+        }
+    }
+
+    private void initializeMnpkgSchema(Connection connection) throws SQLException {
+        try (PreparedStatement manifestTable = connection.prepareStatement(
+                     "create table if not exists " + MNPKG_MANIFEST_TABLE + " (" +
+                             "manifest_json text not null" +
+                             ")"
+             );
+             PreparedStatement cardsTable = connection.prepareStatement(
+                     "create table if not exists " + MNPKG_CARDS_TABLE + " (" +
+                             "row_index integer primary key autoincrement," +
+                             "order_index integer," +
+                             "fields_json text not null," +
+                             "anki_json text" +
+                             ")"
+             );
+             PreparedStatement mediaTable = connection.prepareStatement(
+                     "create table if not exists " + MNPKG_MEDIA_TABLE + " (" +
+                             "media_id text primary key," +
+                             "file_name text not null," +
+                             "kind text," +
+                             "mime_type text," +
+                             "size_bytes integer," +
+                             "payload blob not null" +
+                             ")"
+             )) {
+            manifestTable.execute();
+            cardsTable.execute();
+            mediaTable.execute();
+        }
+    }
+
+    private MnpkgCardsResult writeMnpkgCards(Connection connection,
+                                             ImportJobEntity job,
+                                             List<CoreFieldTemplate> fields,
+                                             UUID userDeckId) throws SQLException, IOException {
+        Set<UUID> mediaIds = new HashSet<>();
+        boolean hasAnki = false;
+        int orderIndex = 0;
+        int processed = 0;
+
+        try (PreparedStatement statement = connection.prepareStatement(
+                "insert into " + MNPKG_CARDS_TABLE + " (order_index, fields_json, anki_json) values (?, ?, ?)"
+        )) {
+            int page = 1;
+            while (true) {
+                CorePageResponse<CoreUserCardResponse> pageResult = coreApiClient.getUserCards(job.getUserAccessToken(), userDeckId, page, pageSize);
+                if (pageResult == null || pageResult.content() == null || pageResult.content().isEmpty()) {
+                    break;
+                }
+
+                for (CoreUserCardResponse card : pageResult.content()) {
+                    JsonNode content = card == null ? null : card.effectiveContent();
+                    ObjectNode fieldsNode = objectMapper.createObjectNode();
+                    for (CoreFieldTemplate field : fields) {
+                        String value = extractValue(content, field.name());
+                        fieldsNode.put(field.name(), value);
+                        collectMediaIds(content == null ? null : content.get(field.name()), mediaIds);
+                        if (value != null && !value.isBlank()) {
+                            collectMediaIdsFromText(value, mediaIds);
+                        }
+                    }
+
+                    ObjectNode ankiNode = null;
+                    AnkiColumns ankiColumns = extractAnkiColumns(content);
+                    if (ankiColumns != null) {
+                        hasAnki = true;
+                        ankiNode = objectMapper.createObjectNode();
+                        ankiNode.put("front", ankiColumns.front());
+                        ankiNode.put("back", ankiColumns.back());
+                        ankiNode.put("css", ankiColumns.css());
+                        ankiNode.put("modelId", ankiColumns.modelId());
+                        ankiNode.put("modelName", ankiColumns.modelName());
+                        ankiNode.put("templateName", ankiColumns.templateName());
+
+                        collectMediaIdsFromText(ankiColumns.front(), mediaIds);
+                        collectMediaIdsFromText(ankiColumns.back(), mediaIds);
+                        collectMediaIdsFromText(ankiColumns.css(), mediaIds);
+                    }
+
+                    statement.setInt(1, orderIndex);
+                    statement.setString(2, objectMapper.writeValueAsString(fieldsNode));
+                    if (ankiNode == null) {
+                        statement.setNull(3, java.sql.Types.VARCHAR);
+                    } else {
+                        statement.setString(3, objectMapper.writeValueAsString(ankiNode));
+                    }
+                    statement.executeUpdate();
+
+                    orderIndex++;
+                    processed++;
+                }
+
+                updateProgress(job.getJobId(), processed);
+                if (pageResult.last()) {
+                    break;
+                }
+                page++;
+            }
+        }
+
+        updateTotals(job.getJobId(), processed);
+        return new MnpkgCardsResult(mediaIds, hasAnki);
+    }
+
+    private void writeMnpkgMedia(Connection connection, Map<UUID, MediaExportEntry> mediaEntries) throws SQLException {
+        if (mediaEntries == null || mediaEntries.isEmpty()) {
+            return;
+        }
+        try (PreparedStatement statement = connection.prepareStatement(
+                "insert or replace into " + MNPKG_MEDIA_TABLE + " " +
+                        "(media_id, file_name, kind, mime_type, size_bytes, payload) values (?, ?, ?, ?, ?, ?)"
+        )) {
+            for (MediaExportEntry entry : mediaEntries.values()) {
+                if (entry == null || entry.url() == null || entry.url().isBlank()) {
+                    continue;
+                }
+                HttpRequest request = HttpRequest.newBuilder(URI.create(entry.url()))
+                        .timeout(Duration.ofSeconds(60))
+                        .GET()
+                        .build();
+                try {
+                    HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+                    if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                        continue;
+                    }
+                    try (InputStream body = response.body()) {
+                        byte[] payload = body.readAllBytes();
+                        statement.setString(1, entry.mediaId().toString());
+                        statement.setString(2, entry.fileName());
+                        statement.setString(3, entry.kind());
+                        statement.setString(4, entry.mimeType());
+                        if (entry.sizeBytes() == null) {
+                            statement.setNull(5, java.sql.Types.BIGINT);
+                        } else {
+                            statement.setLong(5, entry.sizeBytes());
+                        }
+                        statement.setBytes(6, payload);
+                        statement.executeUpdate();
+                    }
+                } catch (IOException | InterruptedException ignored) {
+                    if (ignored instanceof InterruptedException) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    private void writeMnpkgManifest(Connection connection, MnemaPackageManifest manifest) throws SQLException, IOException {
+        try (PreparedStatement clear = connection.prepareStatement("delete from " + MNPKG_MANIFEST_TABLE);
+             PreparedStatement insert = connection.prepareStatement(
+                     "insert into " + MNPKG_MANIFEST_TABLE + " (manifest_json) values (?)"
+             )) {
+            clear.executeUpdate();
+            insert.setString(1, objectMapper.writeValueAsString(manifest));
+            insert.executeUpdate();
+        }
     }
 
     private ExportScanResult writePackageCsv(ImportJobEntity job,
@@ -347,6 +542,14 @@ public class ExportProcessor {
                                CorePublicDeckResponse publicDeck,
                                CoreCardTemplateResponse template,
                                boolean hasAnki) throws IOException {
+        MnemaPackageManifest manifest = buildManifest(userDeck, publicDeck, template, hasAnki);
+        objectMapper.writeValue(manifestFile.toFile(), manifest);
+    }
+
+    private MnemaPackageManifest buildManifest(CoreUserDeckResponse userDeck,
+                                               CorePublicDeckResponse publicDeck,
+                                               CoreCardTemplateResponse template,
+                                               boolean hasAnki) {
         String deckName = firstNonBlank(
                 userDeck == null ? null : userDeck.displayName(),
                 publicDeck == null ? null : publicDeck.name(),
@@ -394,7 +597,7 @@ public class ExportProcessor {
                         fieldMeta
                 )
         );
-        objectMapper.writeValue(manifestFile.toFile(), manifest);
+        return manifest;
     }
 
     private boolean isTemplateAnki(CoreCardTemplateResponse template) {
@@ -468,9 +671,8 @@ public class ExportProcessor {
                 case "audio/aac" -> "aac";
                 case "audio/ogg", "audio/opus" -> "ogg";
                 case "audio/wav", "audio/wave", "audio/x-wav" -> "wav";
-                case "audio/webm" -> "webm";
+                case "audio/webm", "video/webm" -> "webm";
                 case "video/mp4" -> "mp4";
-                case "video/webm" -> "webm";
                 case "video/ogg" -> "ogv";
                 default -> extensionFromUrl(url);
             };
@@ -611,6 +813,26 @@ public class ExportProcessor {
         });
     }
 
+    private void rollbackQuietly(Connection connection) {
+        if (connection == null) {
+            return;
+        }
+        try {
+            connection.rollback();
+        } catch (SQLException ignored) {
+        }
+    }
+
+    private void closeQuietly(AutoCloseable closeable) {
+        if (closeable == null) {
+            return;
+        }
+        try {
+            closeable.close();
+        } catch (Exception ignored) {
+        }
+    }
+
     private void cleanup(Path tempDir) {
         if (tempDir == null) {
             return;
@@ -631,6 +853,12 @@ public class ExportProcessor {
     }
 
     private record ExportScanResult(Set<UUID> mediaIds, boolean hasAnki) {
+    }
+
+    private record MnpkgCardsResult(Set<UUID> mediaIds, boolean hasAnki) {
+    }
+
+    private record ExportArtifact(Path path, String contentType, String fileName) {
     }
 
     private record AnkiColumns(String front,

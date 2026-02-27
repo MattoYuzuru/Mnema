@@ -194,6 +194,11 @@ public class ImportProcessor {
                                           boolean ankiMode,
                                           ImportStream stream) {
         if (job.getMode() == ImportMode.create_new) {
+            List<String> selectedSourceFields = resolveCreateSourceFields(job, sourceFields);
+            if (selectedSourceFields.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one source field must be selected");
+            }
+
             String deckName = job.getDeckName();
             if (deckName == null || deckName.isBlank()) {
                 deckName = job.getSourceName() == null ? "Imported deck" : job.getSourceName();
@@ -212,8 +217,11 @@ public class ImportProcessor {
                 isListed = false;
             }
             List<CoreFieldTemplate> templateFields = stream instanceof TemplateAwareImportStream templateStream
-                    ? normalizeTemplateFields(templateStream.templateFields())
-                    : buildTemplateFields(sourceFields, layout);
+                    ? filterTemplateFields(normalizeTemplateFields(templateStream.templateFields()), selectedSourceFields, layout)
+                    : buildTemplateFields(selectedSourceFields, layout);
+            if (templateFields.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selected source fields do not match import template");
+            }
             CoreCardTemplateResponse template = coreApiClient.createTemplate(
                     job.getUserAccessToken(),
                     new CoreCardTemplateRequest(
@@ -248,7 +256,7 @@ public class ImportProcessor {
             );
 
             updateTargetDeck(job.getJobId(), userDeck.userDeckId());
-            Map<String, String> mapping = identityMapping(template.fields(), sourceFields);
+            Map<String, String> mapping = mappingFromJob(job, selectedSourceFields, template.fields());
             return new MappingContext(userDeck, template.fields(), mapping);
         }
 
@@ -272,11 +280,19 @@ public class ImportProcessor {
                                                List<CoreFieldTemplate> targetFields) {
         Map<String, String> mapping = new HashMap<>();
         JsonNode node = job.getFieldMapping();
+        boolean explicitMapping = node != null && node.isObject();
         if (node != null && node.isObject()) {
-            node.fields().forEachRemaining(entry -> mapping.put(entry.getKey(), entry.getValue().asText()));
+            node.fields().forEachRemaining(entry -> {
+                String target = entry.getKey();
+                String source = entry.getValue() == null ? null : entry.getValue().asText(null);
+                if (target == null || target.isBlank() || source == null || source.isBlank()) {
+                    return;
+                }
+                mapping.put(target, source);
+            });
         }
 
-        if (!mapping.isEmpty()) {
+        if (explicitMapping) {
             return mapping;
         }
         Map<String, String> normalized = new HashMap<>();
@@ -292,14 +308,65 @@ public class ImportProcessor {
         return mapping;
     }
 
-    private Map<String, String> identityMapping(List<CoreFieldTemplate> targetFields, List<String> sourceFields) {
-        Map<String, String> mapping = new HashMap<>();
-        for (CoreFieldTemplate field : targetFields) {
-            if (sourceFields.contains(field.name())) {
-                mapping.put(field.name(), field.name());
-            }
+    private List<String> resolveCreateSourceFields(ImportJobEntity job, List<String> sourceFields) {
+        if (sourceFields == null || sourceFields.isEmpty()) {
+            return List.of();
         }
-        return mapping;
+        JsonNode node = job.getFieldMapping();
+        if (node == null || !node.isObject() || node.isEmpty()) {
+            return List.copyOf(sourceFields);
+        }
+        Set<String> selected = new LinkedHashSet<>();
+        node.fields().forEachRemaining(entry -> {
+            String source = entry.getValue() == null ? null : entry.getValue().asText(null);
+            if (source != null && !source.isBlank()) {
+                selected.add(source);
+                return;
+            }
+            if (entry.getKey() != null && !entry.getKey().isBlank()) {
+                selected.add(entry.getKey());
+            }
+        });
+        if (selected.isEmpty()) {
+            return List.of();
+        }
+        return sourceFields.stream().filter(selected::contains).toList();
+    }
+
+    private List<CoreFieldTemplate> filterTemplateFields(List<CoreFieldTemplate> templateFields,
+                                                         List<String> selectedSourceFields,
+                                                         ImportLayout layout) {
+        if (selectedSourceFields == null || selectedSourceFields.isEmpty()) {
+            return List.of();
+        }
+        if (templateFields == null || templateFields.isEmpty()) {
+            return buildTemplateFields(selectedSourceFields, layout);
+        }
+        Set<String> selected = new LinkedHashSet<>(selectedSourceFields);
+        List<CoreFieldTemplate> filtered = templateFields.stream()
+                .filter(field -> field != null && field.name() != null && selected.contains(field.name()))
+                .toList();
+        if (filtered.isEmpty()) {
+            return List.of();
+        }
+        List<CoreFieldTemplate> reindexed = new ArrayList<>(filtered.size());
+        int index = 0;
+        for (CoreFieldTemplate field : filtered) {
+            reindexed.add(new CoreFieldTemplate(
+                    null,
+                    null,
+                    field.name(),
+                    field.label(),
+                    field.fieldType(),
+                    field.isRequired(),
+                    field.isOnFront(),
+                    index,
+                    field.defaultValue(),
+                    field.helpText()
+            ));
+            index++;
+        }
+        return normalizeTemplateFields(reindexed);
     }
 
     private List<CoreFieldTemplate> buildTemplateFields(List<String> sourceFields, ImportLayout layout) {
@@ -1048,6 +1115,11 @@ public class ImportProcessor {
         if (cached != null) {
             return "mnema-media://" + cached;
         }
+        if (UUID_PATTERN.matcher(normalized).matches() && mediaExists(normalized)) {
+            UUID existing = UUID.fromString(normalized);
+            mediaCache.put(normalized, existing);
+            return "mnema-media://" + existing;
+        }
         String inferredKind = kind == null ? inferMediaKind(normalized) : kind;
         UUID mediaId = uploadMedia(mediaStream, userId, normalized, inferredKind);
         if (mediaId == null && normalized.contains("/")) {
@@ -1157,6 +1229,12 @@ public class ImportProcessor {
             }
             if (mediaName == null) {
                 return null;
+            }
+            if (UUID_PATTERN.matcher(mediaName.trim()).matches() && mediaExists(mediaName.trim())) {
+                ObjectNode obj = objectMapper.createObjectNode();
+                obj.put("mediaId", mediaName.trim());
+                obj.put("kind", normalizedType);
+                return obj;
             }
             UUID mediaId = uploadMedia(mediaStream, userId, mediaName, normalizedType);
             if (mediaId == null && UUID_PATTERN.matcher(mediaName.trim()).matches()) {
@@ -1362,6 +1440,20 @@ public class ImportProcessor {
             return matcher.group(1);
         }
         return null;
+    }
+
+    private boolean mediaExists(String mediaId) {
+        try {
+            UUID parsed = UUID.fromString(mediaId);
+            List<MediaResolved> resolved = mediaApiClient.resolve(List.of(parsed));
+            if (resolved == null || resolved.isEmpty()) {
+                return false;
+            }
+            MediaResolved media = resolved.getFirst();
+            return media != null && media.url() != null && !media.url().isBlank();
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
     }
 
     private String guessContentType(String name) {

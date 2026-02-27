@@ -58,7 +58,7 @@ type ImportModeUI = 'create' | 'merge';
               (dragleave)="onDragLeave($event)"
               (drop)="onDrop($event)"
             >
-              <input type="file" accept=".apkg,.mnema,.csv,.tsv,.txt" (change)="onFileChange($event)" hidden #fileInput />
+              <input type="file" accept=".apkg,.mnema,.mnpkg,.csv,.tsv,.txt" (change)="onFileChange($event)" hidden #fileInput />
               <div class="dropzone-content">
                 <span class="dropzone-icon">⬆️</span>
                 <div class="dropzone-text">
@@ -130,13 +130,23 @@ type ImportModeUI = 'create' | 'merge';
 
           <section *ngIf="preview" class="preview-block">
             <h3>{{ 'import.previewTitle' | translate }}</h3>
+            <p class="mapping-subtitle">{{ 'import.fieldsToggleHint' | translate }}</p>
             <div class="field-list">
-              <span *ngFor="let field of preview.sourceFields" class="field-chip">{{ field.name }}</span>
+              <button
+                *ngFor="let field of preview.sourceFields"
+                type="button"
+                class="field-chip field-chip-toggle"
+                [class.inactive]="!isSourceFieldActive(field.name)"
+                (click)="toggleSourceField(field.name)"
+              >
+                <span>{{ field.name }}</span>
+                <span class="chip-toggle">×</span>
+              </button>
             </div>
 
             <div class="sample-card" *ngIf="sampleEntries.length > 0">
               <h4>{{ 'import.sampleTitle' | translate }}</h4>
-              <div *ngFor="let entry of sampleEntries" class="sample-row">
+              <div *ngFor="let entry of sampleEntries" class="sample-row" [class.inactive]="!isSourceFieldActive(entry[0])">
                 <span class="sample-label">{{ entry[0] }}</span>
                 <span class="sample-value">{{ entry[1] || ('import.emptyValue' | translate) }}</span>
               </div>
@@ -158,8 +168,8 @@ type ImportModeUI = 'create' | 'merge';
                   (change)="onMappingChange(field.name, $any($event.target).value)"
                 >
                   <option value="">{{ 'import.mappingSkip' | translate }}</option>
-                  <option *ngFor="let source of preview.sourceFields" [value]="source.name">
-                    {{ source.name }}
+                  <option *ngFor="let source of activeSourceFieldsList" [value]="source">
+                    {{ source }}
                   </option>
                 </select>
               </div>
@@ -232,9 +242,14 @@ type ImportModeUI = 'create' | 'merge';
       .preview-block { display: flex; flex-direction: column; gap: var(--spacing-md); }
       .field-list { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); }
       .field-chip { padding: 0.3rem 0.6rem; background: rgba(148, 163, 184, 0.2); border-radius: 999px; font-size: 0.8rem; }
+      .field-chip-toggle { display: inline-flex; align-items: center; gap: 0.45rem; border: 1px solid transparent; cursor: pointer; color: var(--color-text-primary); }
+      .field-chip-toggle:hover { border-color: var(--border-color); }
+      .field-chip-toggle.inactive { opacity: 0.45; }
+      .chip-toggle { font-size: 0.95rem; line-height: 1; font-weight: 700; }
       .sample-card { background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: var(--spacing-md); }
       .sample-row { display: grid; grid-template-columns: 140px 1fr; gap: var(--spacing-sm); padding: var(--spacing-xs) 0; border-bottom: 1px dashed var(--border-color); }
       .sample-row:last-child { border-bottom: none; }
+      .sample-row.inactive { opacity: 0.45; }
       .sample-label { font-weight: 600; color: var(--color-text-secondary); }
       .sample-value { color: var(--color-text-primary); word-break: break-word; }
       .mapping-block { display: flex; flex-direction: column; gap: var(--spacing-md); }
@@ -295,6 +310,7 @@ export class ImportDeckModalComponent implements OnDestroy {
     tagInput = '';
     tagError = '';
     mapping: Record<string, string> = {};
+    sourceFieldActive: Record<string, boolean> = {};
     job: ImportJobResponse | null = null;
     errorMessage = '';
     readonly maxDeckName = ImportDeckModalComponent.MAX_DECK_NAME;
@@ -317,7 +333,10 @@ export class ImportDeckModalComponent implements OnDestroy {
             return false;
         }
         if (this.mode === 'create') {
-            return !this.deckNameTooLong && !this.deckDescriptionTooLong && !this.hasInvalidTags();
+            return !this.deckNameTooLong
+                && !this.deckDescriptionTooLong
+                && !this.hasInvalidTags()
+                && this.activeSourceFieldsList.length > 0;
         }
         return !!this.targetDeckId;
     }
@@ -335,7 +354,21 @@ export class ImportDeckModalComponent implements OnDestroy {
             return [];
         }
         const sample = this.preview.sample[0];
-        return Object.entries(sample);
+        const orderedEntries: [string, string][] = [];
+        for (const field of this.preview.sourceFields) {
+            const name = field.name;
+            orderedEntries.push([name, sample[name] ?? '']);
+        }
+        return orderedEntries;
+    }
+
+    get activeSourceFieldsList(): string[] {
+        if (!this.preview) {
+            return [];
+        }
+        return this.preview.sourceFields
+            .map(field => field.name)
+            .filter(name => this.isSourceFieldActive(name));
     }
 
     get progressPercent(): number | null {
@@ -361,7 +394,7 @@ export class ImportDeckModalComponent implements OnDestroy {
         this.dragActive = false;
         const file = event.dataTransfer?.files?.[0];
         if (file) {
-            this.handleFile(file);
+            void this.handleFile(file);
         }
     }
 
@@ -369,7 +402,7 @@ export class ImportDeckModalComponent implements OnDestroy {
         const input = event.target as HTMLInputElement;
         const file = input.files?.[0];
         if (file) {
-            this.handleFile(file);
+            void this.handleFile(file);
         }
         input.value = '';
     }
@@ -380,10 +413,10 @@ export class ImportDeckModalComponent implements OnDestroy {
         }
         this.starting = true;
         this.errorMessage = '';
-        const mapping = this.mode === 'merge' ? this.cleanedMapping() : null;
         const mode: ImportMode = this.mode === 'merge' ? 'merge_into_existing' : 'create_new';
         const safeIsPublic = this.mode === 'create' ? this.isPublic : false;
         const safeIsListed = safeIsPublic ? this.isListed : false;
+        const fieldMapping = this.mode === 'merge' ? this.cleanedMapping() : this.createFieldSelectionMapping();
         const request = {
             sourceMediaId: this.fileInfo.mediaId,
             sourceType: this.fileInfo.sourceType,
@@ -397,7 +430,7 @@ export class ImportDeckModalComponent implements OnDestroy {
             tags: this.mode === 'create' ? this.tags : null,
             isPublic: safeIsPublic,
             isListed: safeIsListed,
-            fieldMapping: mapping
+            fieldMapping
         };
 
         this.importApi.createImportJob(request).subscribe({
@@ -421,7 +454,7 @@ export class ImportDeckModalComponent implements OnDestroy {
         this.stopPolling();
     }
 
-    private handleFile(file: File): void {
+    private async handleFile(file: File): Promise<void> {
         this.errorMessage = '';
         this.preview = null;
         this.job = null;
@@ -432,9 +465,10 @@ export class ImportDeckModalComponent implements OnDestroy {
         this.tags = [];
         this.tagInput = '';
         this.tagError = '';
+        this.sourceFieldActive = {};
         this.isPublic = false;
         this.isListed = false;
-        const sourceType = this.detectSourceType(file.name);
+        const sourceType = await this.detectSourceType(file);
 
         this.uploading = true;
         this.importApi.uploadSource(file, sourceType || undefined).subscribe({
@@ -464,7 +498,12 @@ export class ImportDeckModalComponent implements OnDestroy {
             next: preview => {
                 this.preview = preview;
                 this.previewing = false;
+                this.sourceFieldActive = {};
+                preview.sourceFields.forEach(field => {
+                    this.sourceFieldActive[field.name] = true;
+                });
                 this.mapping = { ...preview.suggestedMapping };
+                this.pruneMappingsByActiveFields();
             },
             error: () => {
                 this.previewing = false;
@@ -478,26 +517,109 @@ export class ImportDeckModalComponent implements OnDestroy {
             delete this.mapping[targetField];
             return;
         }
+        if (!this.isSourceFieldActive(sourceField)) {
+            return;
+        }
         this.mapping[targetField] = sourceField;
     }
 
     private cleanedMapping(): Record<string, string> {
         const result: Record<string, string> = {};
         Object.entries(this.mapping).forEach(([target, source]) => {
-            if (source) {
+            if (source && this.isSourceFieldActive(source)) {
                 result[target] = source;
             }
         });
         return result;
     }
 
-    private detectSourceType(fileName: string): ImportSourceType | null {
+    private createFieldSelectionMapping(): Record<string, string> {
+        const mapping: Record<string, string> = {};
+        this.activeSourceFieldsList.forEach(field => {
+            mapping[field] = field;
+        });
+        return mapping;
+    }
+
+    isSourceFieldActive(fieldName: string): boolean {
+        if (!fieldName) {
+            return false;
+        }
+        return this.sourceFieldActive[fieldName] !== false;
+    }
+
+    toggleSourceField(fieldName: string): void {
+        if (!fieldName) {
+            return;
+        }
+        const active = this.isSourceFieldActive(fieldName);
+        this.sourceFieldActive[fieldName] = !active;
+        this.pruneMappingsByActiveFields();
+    }
+
+    private pruneMappingsByActiveFields(): void {
+        Object.entries(this.mapping).forEach(([target, source]) => {
+            if (!source || !this.isSourceFieldActive(source)) {
+                delete this.mapping[target];
+            }
+        });
+    }
+
+    private async detectSourceType(file: File): Promise<ImportSourceType | null> {
+        const byName = this.detectSourceTypeByName(file.name);
+        if (byName) {
+            return byName;
+        }
+
+        const mimeType = (file.type || '').toLowerCase();
+        if (mimeType.includes('vnd.mnema.package+sqlite') || mimeType.includes('x-sqlite3')) {
+            return 'mnpkg';
+        }
+        if (mimeType.includes('csv')) {
+            return 'csv';
+        }
+        if (mimeType.includes('tsv') || mimeType.includes('tab-separated-values')) {
+            return 'tsv';
+        }
+        if (mimeType.includes('plain')) {
+            return 'txt';
+        }
+
+        if (await this.hasSqliteHeader(file)) {
+            return 'mnpkg';
+        }
+
+        return null;
+    }
+
+    private detectSourceTypeByName(fileName: string): ImportSourceType | null {
         const lower = fileName.toLowerCase();
         if (lower.endsWith('.apkg')) return 'apkg';
+        if (lower.endsWith('.mnema')) return 'mnema';
+        if (lower.endsWith('.mnpkg')) return 'mnpkg';
         if (lower.endsWith('.csv')) return 'csv';
         if (lower.endsWith('.tsv')) return 'tsv';
         if (lower.endsWith('.txt')) return 'txt';
         return null;
+    }
+
+    private async hasSqliteHeader(file: File): Promise<boolean> {
+        try {
+            const header = await file.slice(0, 16).arrayBuffer();
+            const bytes = new Uint8Array(header);
+            const signature = [0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66, 0x6f, 0x72, 0x6d, 0x61, 0x74, 0x20, 0x33, 0x00];
+            if (bytes.length < signature.length) {
+                return false;
+            }
+            for (let i = 0; i < signature.length; i++) {
+                if (bytes[i] !== signature[i]) {
+                    return false;
+                }
+            }
+            return true;
+        } catch {
+            return false;
+        }
     }
 
     private defaultDeckName(fileName: string): string {

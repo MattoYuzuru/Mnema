@@ -1,4 +1,4 @@
-export type ImportSourceType = 'apkg' | 'mnema' | 'csv' | 'tsv' | 'txt';
+export type ImportSourceType = 'apkg' | 'mnema' | 'mnpkg' | 'csv' | 'tsv' | 'txt';
 export type ImportMode = 'create_new' | 'merge_into_existing';
 export type ImportJobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'canceled';
 export type ImportJobType = 'import_job' | 'export_job';

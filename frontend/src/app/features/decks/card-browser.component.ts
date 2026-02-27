@@ -138,7 +138,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           </div>
 
           <div *ngIf="!searchNoResults && currentCard" class="flashcard-container">
-            <div class="flashcard glass" (click)="toggleReveal()">
+            <div class="flashcard glass" (click)="onFlashcardClick($event)">
               <div class="flashcard-content">
                 <div class="card-side front" [class.is-hidden]="revealed && !preferences.showFrontSideAfterFlip">
                   <app-flashcard-view
@@ -1188,6 +1188,18 @@ export class CardBrowserComponent implements OnInit {
 
     toggleReveal(): void {
         this.revealed = !this.revealed;
+    }
+
+    onFlashcardClick(event: MouseEvent): void {
+        const target = event.target as HTMLElement | null;
+        if (!target) {
+            this.toggleReveal();
+            return;
+        }
+        if (target.closest('a, button, input, textarea, select, audio, video, [data-no-flip]')) {
+            return;
+        }
+        this.toggleReveal();
     }
 
     private getPreviewText(value: CardContentValue | undefined, fieldType?: string): string {
