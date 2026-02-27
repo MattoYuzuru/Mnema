@@ -8,6 +8,7 @@
     --color-card-background: rgba(255, 255, 255, 0.65);
     --color-text-primary: #0b1220;
     --color-text-secondary: #1f2a44;
+    --color-text-tertiary: #334155;
     --color-text-muted: #5b6b86;
     --accent-shadow: 0 12px 30px rgba(14, 165, 233, 0.25);
     --accent-shadow-hover: 0 18px 36px rgba(14, 165, 233, 0.3);
@@ -146,6 +147,59 @@ select {
 .glass-select:focus {
     border-color: var(--color-primary-accent);
     box-shadow: var(--focus-ring);
+}
+
+.glass-checkbox {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-sm);
+    cursor: pointer;
+}
+
+.glass-checkbox input[type="checkbox"] {
+    appearance: none;
+    -webkit-appearance: none;
+    width: 1.05rem;
+    height: 1.05rem;
+    border-radius: 0.35rem;
+    border: 1px solid color-mix(in srgb, var(--glass-border-strong) 85%, var(--border-color));
+    background: color-mix(in srgb, var(--glass-surface-strong) 88%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+    display: inline-grid;
+    place-items: center;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.glass-checkbox input[type="checkbox"]::after {
+    content: "";
+    width: 0.52rem;
+    height: 0.3rem;
+    border-left: 2px solid #fff;
+    border-bottom: 2px solid #fff;
+    transform: rotate(-45deg) scale(0);
+    transform-origin: center;
+    transition: transform 0.16s ease;
+}
+
+.glass-checkbox input[type="checkbox"]:checked {
+    border-color: color-mix(in srgb, var(--color-primary-accent) 84%, var(--color-secondary-accent));
+    background: linear-gradient(135deg, var(--color-primary-accent), var(--color-secondary-accent));
+    box-shadow: 0 6px 16px -10px color-mix(in srgb, var(--color-primary-accent) 70%, transparent);
+}
+
+.glass-checkbox input[type="checkbox"]:checked::after {
+    transform: rotate(-45deg) scale(1);
+}
+
+.glass-checkbox input[type="checkbox"]:focus-visible {
+    outline: none;
+    box-shadow: var(--focus-ring);
+}
+
+.glass-checkbox input[type="checkbox"]:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
 }
 
 input::placeholder,

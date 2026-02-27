@@ -115,15 +115,15 @@ type ImportModeUI = 'create' | 'merge';
               <p *ngIf="tagError" class="error-text">{{ tagError | translate }}</p>
             </div>
             <div class="checkbox-group">
-              <label>
+              <label class="checkbox-label glass-checkbox">
                 <input type="checkbox" [(ngModel)]="isPublic" (change)="onPublicChange()" />
-                {{ 'import.makePublic' | translate }}
+                <span>{{ 'import.makePublic' | translate }}</span>
               </label>
             </div>
             <div class="checkbox-group">
-              <label>
+              <label class="checkbox-label glass-checkbox" [class.disabled]="!isPublic">
                 <input type="checkbox" [(ngModel)]="isListed" [disabled]="!isPublic" />
-                {{ 'import.listInCatalog' | translate }}
+                <span>{{ 'import.listInCatalog' | translate }}</span>
               </label>
             </div>
           </section>
@@ -275,6 +275,8 @@ type ImportModeUI = 'create' | 'merge';
       .tag-chip { display: inline-flex; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-full); font-size: 0.85rem; }
       .tag-chip button { background: none; border: none; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0; }
       .checkbox-group { display: flex; align-items: center; gap: var(--spacing-sm); }
+      .checkbox-label { font-size: 0.92rem; color: var(--color-text-primary); }
+      .checkbox-label.disabled { opacity: 0.65; cursor: default; }
 
       @media (max-width: 720px) {
         .mapping-row { grid-template-columns: 1fr; }

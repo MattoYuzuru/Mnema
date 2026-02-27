@@ -13,6 +13,7 @@ interface ThemePalette {
     cardBackground: string;
     textPrimary: string;
     textSecondary: string;
+    textTertiary: string;
     textMuted: string;
     accentShadow: string;
     accentShadowHover: string;
@@ -37,6 +38,7 @@ const THEME_PALETTES: Record<ThemeMode, Record<ThemeAccent, ThemePalette>> = {
             cardBackground: 'rgba(255, 255, 255, 0.55)',
             textPrimary: '#0b1220',
             textSecondary: '#1f2a44',
+            textTertiary: '#334155',
             textMuted: '#5b6b86',
             accentShadow: '0 12px 30px rgba(14, 165, 233, 0.25)',
             accentShadowHover: '0 18px 36px rgba(14, 165, 233, 0.3)',
@@ -58,6 +60,7 @@ const THEME_PALETTES: Record<ThemeMode, Record<ThemeAccent, ThemePalette>> = {
             cardBackground: 'rgba(255, 250, 240, 0.6)',
             textPrimary: '#3b1d05',
             textSecondary: '#5c2a0c',
+            textTertiary: '#5c2a0c',
             textMuted: '#8a4b1b',
             accentShadow: '0 12px 30px rgba(249, 115, 22, 0.28)',
             accentShadowHover: '0 18px 36px rgba(249, 115, 22, 0.36)',
@@ -81,6 +84,7 @@ const THEME_PALETTES: Record<ThemeMode, Record<ThemeAccent, ThemePalette>> = {
             cardBackground: 'rgba(15, 23, 42, 0.65)',
             textPrimary: '#e2e8f0',
             textSecondary: '#cbd5f5',
+            textTertiary: '#f1f5f9',
             textMuted: '#94a3b8',
             accentShadow: '0 12px 30px rgba(56, 189, 248, 0.3)',
             accentShadowHover: '0 18px 36px rgba(56, 189, 248, 0.38)',
@@ -102,6 +106,7 @@ const THEME_PALETTES: Record<ThemeMode, Record<ThemeAccent, ThemePalette>> = {
             cardBackground: 'rgba(41, 37, 36, 0.75)',
             textPrimary: '#fafaf9',
             textSecondary: '#e7e5e4',
+            textTertiary: '#fafaf9',
             textMuted: '#b9b2ab',
             accentShadow: '0 12px 30px rgba(251, 146, 60, 0.3)',
             accentShadowHover: '0 18px 36px rgba(251, 146, 60, 0.4)',
@@ -158,6 +163,7 @@ export class ThemeService {
         root.style.setProperty('--color-card-background', palette.cardBackground);
         root.style.setProperty('--color-text-primary', palette.textPrimary);
         root.style.setProperty('--color-text-secondary', palette.textSecondary);
+        root.style.setProperty('--color-text-tertiary', palette.textTertiary);
         root.style.setProperty('--color-text-muted', palette.textMuted);
         root.style.setProperty('--accent-shadow', palette.accentShadow);
         root.style.setProperty('--accent-shadow-hover', palette.accentShadowHover);

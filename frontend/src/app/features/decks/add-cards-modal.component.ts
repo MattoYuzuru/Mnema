@@ -94,7 +94,11 @@ interface PendingCard {
       .modal-header { display: flex; justify-content: space-between; align-items: center; padding: var(--spacing-lg); border-bottom: 1px solid var(--glass-border); flex-shrink: 0; }
       .modal-header h2 { margin: 0; font-size: 1.5rem; font-weight: 600; }
       .close-btn { background: none; border: none; font-size: 2rem; cursor: pointer; color: var(--color-text-secondary); line-height: 1; padding: 0; }
-      .modal-body { padding: var(--spacing-lg); overflow-y: auto; flex: 1; }
+      .modal-body { padding: var(--spacing-lg); overflow-y: auto; flex: 1; scrollbar-width: thin; scrollbar-color: var(--glass-border-strong) transparent; }
+      .modal-body::-webkit-scrollbar { width: 8px; }
+      .modal-body::-webkit-scrollbar-track { background: transparent; }
+      .modal-body::-webkit-scrollbar-thumb { background: var(--glass-border-strong); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+      .modal-body::-webkit-scrollbar-thumb:hover { background: var(--border-color-hover); }
       .loading-section { padding: var(--spacing-xxl); text-align: center; color: var(--color-text-secondary); }
       .card-form { display: flex; flex-direction: column; gap: var(--spacing-md); }
       .field-group { display: flex; flex-direction: column; }

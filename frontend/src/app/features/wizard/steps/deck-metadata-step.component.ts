@@ -81,8 +81,14 @@ import { I18nService } from '../../../core/services/i18n.service';
           </div>
           <p *ngIf="tagError" class="error-message">{{ tagError }}</p>
         </div>
-        <label class="checkbox-label"><input type="checkbox" formControlName="isPublic" /> {{ 'wizard.makePublic' | translate }}</label>
-        <label class="checkbox-label"><input type="checkbox" formControlName="isListed" [disabled]="!form.get('isPublic')?.value" /> {{ 'wizard.listInCatalog' | translate }}</label>
+        <label class="checkbox-label glass-checkbox">
+          <input type="checkbox" formControlName="isPublic" />
+          <span>{{ 'wizard.makePublic' | translate }}</span>
+        </label>
+        <label class="checkbox-label glass-checkbox" [class.disabled]="!form.get('isPublic')?.value">
+          <input type="checkbox" formControlName="isListed" [disabled]="!form.get('isPublic')?.value" />
+          <span>{{ 'wizard.listInCatalog' | translate }}</span>
+        </label>
       </form>
       <div class="step-actions">
         <app-button variant="ghost" (click)="onBack()">{{ 'wizard.back' | translate }}</app-button>
@@ -128,6 +134,7 @@ import { I18nService } from '../../../core/services/i18n.service';
       .tag-chip { display: inline-flex; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-full); font-size: 0.85rem; }
       .tag-chip button { background: none; border: none; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0; }
       .checkbox-label { display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; font-size: 0.9rem; }
+      .checkbox-label.disabled { opacity: 0.64; cursor: default; }
       .step-actions { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--spacing-sm); padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
       .step-actions app-button { flex: 1 1 14rem; }
       .error-message { font-size: 0.85rem; color: #dc2626; }
@@ -182,6 +189,11 @@ export class DeckMetadataStepComponent implements OnInit {
         if (deckMetadata.iconMediaId) {
             this.iconValue = { mediaId: deckMetadata.iconMediaId, kind: 'image' };
         }
+        this.form.get('isPublic')?.valueChanges.subscribe(isPublic => {
+            if (!isPublic) {
+                this.form.patchValue({ isListed: false }, { emitEvent: false });
+            }
+        });
     }
 
     onIconChange(value: CardContentValue | null): void {

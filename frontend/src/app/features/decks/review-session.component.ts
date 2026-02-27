@@ -112,6 +112,8 @@ interface ReviewAnswerOption {
               [content]="currentCard.effectiveContent"
               [side]="'front'"
               [hideLabels]="preferences.hideFieldLabels"
+              [autoPlayAudioSequence]="preferences.autoPlayCardAudioSequence"
+              [autoPlaySequenceToken]="currentCard.userCardId"
             ></app-flashcard-view>
             <div *ngIf="revealed && template && currentCard" class="revealed-content">
               <app-flashcard-view
@@ -120,6 +122,7 @@ interface ReviewAnswerOption {
                 [content]="currentCard.effectiveContent"
                 [side]="'front'"
                 [hideLabels]="preferences.hideFieldLabels"
+                [autoPlayAudioSequence]="false"
               ></app-flashcard-view>
               <div *ngIf="preferences.showFrontSideAfterFlip" class="divider"></div>
               <app-flashcard-view
@@ -127,6 +130,7 @@ interface ReviewAnswerOption {
                 [content]="currentCard.effectiveContent"
                 [side]="'back'"
                 [hideLabels]="preferences.hideFieldLabels"
+                [autoPlayAudioSequence]="false"
               ></app-flashcard-view>
             </div>
           </div>
@@ -611,7 +615,7 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
             return;
         }
 
-        if (event.key === ' ' || event.key === 'Space') {
+        if (this.isSpaceKey(event)) {
             event.preventDefault();
             if (!this.revealed) {
                 this.revealAnswer();
@@ -824,6 +828,10 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
     private resetSwipeState(): void {
         this.swipeStartX = null;
         this.swipeStartY = null;
+    }
+
+    private isSpaceKey(event: KeyboardEvent): boolean {
+        return event.key === ' ' || event.key === 'Space' || event.key === 'Spacebar' || event.code === 'Space';
     }
 
     private animateStreakValue(): void {

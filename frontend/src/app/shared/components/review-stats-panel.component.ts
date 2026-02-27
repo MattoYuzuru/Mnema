@@ -423,6 +423,7 @@ interface ChartBarPoint {
 
       .stats-control.glass-select {
         min-width: 94px;
+        box-shadow: none;
       }
 
       .apply-btn {

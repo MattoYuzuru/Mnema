@@ -12,6 +12,7 @@ import { TextareaComponent } from './shared/components/textarea.component';
 import { ReviewStatsPanelComponent } from './shared/components/review-stats-panel.component';
 
 import { TranslatePipe } from './shared/pipes/translate.pipe';
+import { I18nService } from './core/services/i18n.service';
 
 @Component({
     standalone: true,
@@ -435,7 +436,8 @@ export class ProfilePageComponent implements OnInit {
         public auth: AuthService,
         private api: UserApiService,
         private mediaApi: MediaApiService,
-        private fb: FormBuilder
+        private fb: FormBuilder,
+        private i18n: I18nService
     ) {
         this.form = this.fb.group({
             username: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(ProfilePageComponent.MAX_USERNAME_LENGTH)]],
@@ -640,7 +642,8 @@ export class ProfilePageComponent implements OnInit {
         if (!normalizedDate) return 'Unknown';
         const date = new Date(normalizedDate);
         if (isNaN(date.getTime())) return 'Unknown';
-        return date.toLocaleDateString('en-US', {
+        const locale = this.i18n.currentLanguage === 'ru' ? 'ru-RU' : 'en-US';
+        return date.toLocaleDateString(locale, {
             year: 'numeric',
             month: 'long',
             day: 'numeric'

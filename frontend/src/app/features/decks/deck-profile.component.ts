@@ -104,10 +104,6 @@ import { ToastService } from '../../core/services/toast.service';
         </div>
       </div>
 
-      <div class="deck-stats-block">
-        <app-review-stats-panel [userDeckId]="deck.userDeckId" titleKey="stats.deckTitle" [flat]="true"></app-review-stats-panel>
-      </div>
-
       <div class="deck-actions">
         <app-button variant="primary" size="md" (click)="learn()">
           {{ 'deckProfile.learn' | translate }}
@@ -138,37 +134,11 @@ import { ToastService } from '../../core/services/toast.service';
         </app-button>
       </div>
 
-      <p *ngIf="exportStatusKey" class="export-status">{{ exportStatusKey | translate }}</p>
+      <div class="deck-stats-block">
+        <app-review-stats-panel [userDeckId]="deck.userDeckId" titleKey="stats.deckTitle" [flat]="true"></app-review-stats-panel>
+      </div>
 
-      <section class="ai-feature-section">
-        <div class="ai-feature-header">
-          <h2>{{ 'deckProfile.aiFeaturesTitle' | translate }}</h2>
-          <p>{{ 'deckProfile.aiFeaturesDescription' | translate }}</p>
-        </div>
-        <div class="ai-feature-grid">
-          <button class="ai-feature-card" (click)="openAiAddModal()">
-            <div class="ai-feature-icon">✨</div>
-            <div>
-              <h3>{{ 'deckProfile.aiAddCardsTitle' | translate }}</h3>
-              <p>{{ 'deckProfile.aiAddCardsDescription' | translate }}</p>
-            </div>
-          </button>
-          <button class="ai-feature-card" (click)="openAiEnhanceModal()">
-            <div class="ai-feature-icon">🧠</div>
-            <div>
-              <h3>{{ 'deckProfile.aiEnhanceTitle' | translate }}</h3>
-              <p>{{ 'deckProfile.aiEnhanceDescription' | translate }}</p>
-            </div>
-          </button>
-          <button class="ai-feature-card" (click)="openAiImportModal()">
-            <div class="ai-feature-icon">📂</div>
-            <div>
-              <h3>{{ 'deckProfile.aiImportTitle' | translate }}</h3>
-              <p>{{ 'deckProfile.aiImportDescription' | translate }}</p>
-            </div>
-          </button>
-        </div>
-      </section>
+      <p *ngIf="exportStatusKey" class="export-status">{{ exportStatusKey | translate }}</p>
 
       <section class="ai-jobs-section">
         <div class="ai-jobs-header">
@@ -691,81 +661,6 @@ import { ToastService } from '../../core/services/toast.service';
         font-size: 0.9rem;
       }
 
-      .ai-feature-section {
-        margin-top: var(--spacing-2xl);
-        padding: var(--spacing-xl);
-        background: var(--color-card-background);
-        border-radius: var(--border-radius-lg);
-        border: 1px solid var(--border-color);
-      }
-
-      .ai-feature-header h2 {
-        margin: 0 0 var(--spacing-xs) 0;
-        font-size: 1.4rem;
-      }
-
-      .ai-feature-header p {
-        margin: 0 0 var(--spacing-lg) 0;
-        color: var(--color-text-muted);
-      }
-
-      .ai-feature-grid {
-        display: grid;
-        gap: var(--spacing-md);
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      }
-
-      .ai-feature-card {
-        display: flex;
-        align-items: flex-start;
-        gap: var(--spacing-md);
-        padding: var(--spacing-md);
-        border-radius: var(--border-radius-lg);
-        border: 1px solid var(--glass-border);
-        background: var(--color-background);
-        text-align: left;
-        cursor: pointer;
-        color: var(--color-text-primary);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-      }
-
-      .ai-feature-card h3 {
-        margin: 0 0 var(--spacing-xs) 0;
-        color: var(--color-text-primary);
-      }
-
-      .ai-feature-card p {
-        margin: 0;
-        color: var(--color-text-secondary);
-      }
-
-      .ai-feature-card:hover {
-        transform: translateY(-2px);
-        box-shadow: var(--shadow-sm);
-      }
-
-      .ai-feature-card.disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-        box-shadow: none;
-        transform: none;
-      }
-
-      .ai-feature-icon {
-        width: 44px;
-        height: 44px;
-        border-radius: 12px;
-        background: var(--color-surface-solid);
-        color: var(--color-text-primary);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.25rem;
-        line-height: 1;
-        border: 1px solid var(--border-color);
-        flex-shrink: 0;
-      }
-
       .ai-jobs-section {
         margin-top: var(--spacing-2xl);
         padding: var(--spacing-xl);
@@ -1081,11 +976,27 @@ import { ToastService } from '../../core/services/toast.service';
         scrollbar-color: var(--glass-border-strong) transparent;
       }
 
+      .add-choice-modal .modal-body,
+      .export-choice-modal .modal-body {
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+
       .edit-deck-modal .modal-body::-webkit-scrollbar {
         width: 8px;
       }
 
+      .add-choice-modal .modal-body::-webkit-scrollbar,
+      .export-choice-modal .modal-body::-webkit-scrollbar {
+        width: 8px;
+      }
+
       .edit-deck-modal .modal-body::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .add-choice-modal .modal-body::-webkit-scrollbar-track,
+      .export-choice-modal .modal-body::-webkit-scrollbar-track {
         background: transparent;
       }
 
@@ -1096,7 +1007,20 @@ import { ToastService } from '../../core/services/toast.service';
         background-clip: padding-box;
       }
 
+      .add-choice-modal .modal-body::-webkit-scrollbar-thumb,
+      .export-choice-modal .modal-body::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
       .edit-deck-modal .modal-body::-webkit-scrollbar-thumb:hover {
+        background: var(--border-color-hover);
+      }
+
+      .add-choice-modal .modal-body::-webkit-scrollbar-thumb:hover,
+      .export-choice-modal .modal-body::-webkit-scrollbar-thumb:hover {
         background: var(--border-color-hover);
       }
 

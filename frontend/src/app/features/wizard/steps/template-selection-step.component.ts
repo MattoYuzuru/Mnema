@@ -129,10 +129,11 @@ type TemplateFilter = 'mine' | 'public';
       }
 
       .choice-card {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        justify-items: center;
+        align-content: start;
+        gap: var(--spacing-sm);
         width: 100%;
         min-width: 0;
         padding: var(--spacing-xxl);
@@ -161,14 +162,14 @@ type TemplateFilter = 'mine' | 'public';
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 2.5rem;
-        margin-bottom: var(--spacing-lg);
+        font-size: 2.35rem;
+        line-height: 1;
       }
 
       .choice-card h3 {
         font-size: 1.25rem;
         font-weight: 600;
-        margin: 0 0 var(--spacing-sm) 0;
+        margin: 0;
         color: var(--color-text-primary);
       }
 

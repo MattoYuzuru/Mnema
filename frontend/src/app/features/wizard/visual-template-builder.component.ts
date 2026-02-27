@@ -112,7 +112,7 @@ interface BuilderState {
           <div class="preview-controls">
             <h3>{{ currentSide === 'front' ? ('visualBuilder.frontSide' | translate) : ('visualBuilder.backSide' | translate) }}</h3>
             <div class="preview-actions">
-              <label class="checkbox-label">
+              <label class="checkbox-label glass-checkbox">
                 <input type="checkbox" [(ngModel)]="showLabels" />
                 <span>{{ 'visualBuilder.showLabels' | translate }}</span>
               </label>
@@ -147,7 +147,6 @@ interface BuilderState {
                 *ngFor="let field of currentFields; let i = index"
                 class="field-row"
                 [class.selected]="selectedFieldId === field.tempId"
-                [style.flex-grow]="field.units"
                 (click)="selectField(field.tempId)"
                 cdkDrag
               >
@@ -207,7 +206,7 @@ interface BuilderState {
         <h2>{{ 'visualBuilder.createDialogTitle' | translate }}</h2>
         <p>{{ 'visualBuilder.createDialogMessage' | translate }}</p>
         <div class="modal-checkbox">
-          <label class="checkbox-label">
+          <label class="checkbox-label glass-checkbox">
             <input type="checkbox" [(ngModel)]="makePublic" />
             <span>{{ 'visualBuilder.makePublic' | translate }}</span>
           </label>
@@ -439,16 +438,6 @@ interface BuilderState {
         cursor: pointer;
       }
 
-      .checkbox-label input {
-        width: 18px;
-        height: 18px;
-        cursor: pointer;
-        border: 1px solid var(--glass-border-strong);
-        border-radius: 4px;
-        background: var(--color-surface-solid);
-        box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
-      }
-
       .toggle-container {
         display: flex;
         align-items: center;
@@ -556,6 +545,28 @@ interface BuilderState {
         flex-direction: column;
         transition: height 0.2s ease;
         position: relative;
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+
+      .card-preview::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .card-preview::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .card-preview::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      .card-preview::-webkit-scrollbar-thumb:hover {
+        background: var(--border-color-hover);
       }
 
       .card-empty {
@@ -570,6 +581,7 @@ interface BuilderState {
 
       .field-row {
         display: flex;
+        flex: 0 0 auto;
         align-items: center;
         gap: var(--spacing-sm);
         padding: var(--spacing-md);
