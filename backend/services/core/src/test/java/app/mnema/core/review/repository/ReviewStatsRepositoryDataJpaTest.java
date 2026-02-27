@@ -115,6 +115,57 @@ class ReviewStatsRepositoryDataJpaTest extends PostgresIntegrationTest {
         );
         long forecastTotal = forecast.stream().mapToLong(ReviewStatsRepository.ForecastProjection::getDueCount).sum();
         assertThat(forecastTotal).isEqualTo(1);
+
+        ReviewStatsRepository.StreakProjection streak = repository.loadStreak(
+                userId,
+                deckId,
+                now,
+                "UTC",
+                240
+        );
+        assertThat(streak.getCurrentStreakDays()).isEqualTo(1);
+        assertThat(streak.getLongestStreakDays()).isEqualTo(1);
+        assertThat(streak.getTodayStreakDays()).isEqualTo(0);
+        assertThat(streak.getActiveToday()).isFalse();
+
+        List<ReviewStatsRepository.SessionDayProjection> sessionDays = repository.loadSessionDays(
+                userId,
+                deckId,
+                from,
+                to,
+                "UTC",
+                240,
+                30
+        );
+        assertThat(sessionDays).hasSize(1);
+        assertThat(sessionDays.getFirst().getBucketDate()).isEqualTo(LocalDate.of(2026, 1, 10));
+        assertThat(sessionDays.getFirst().getSessionCount()).isEqualTo(3);
+        assertThat(sessionDays.getFirst().getStudiedMinutes()).isEqualTo(3);
+        assertThat(sessionDays.getFirst().getReviewCount()).isEqualTo(3);
+
+        List<ReviewStatsRepository.SessionWindowProjection> sessionWindows = repository.loadSessionWindows(
+                userId,
+                deckId,
+                from,
+                to,
+                "UTC",
+                240,
+                30
+        );
+        assertThat(sessionWindows).hasSize(3);
+        assertThat(sessionWindows.getFirst().getDurationMinutes()).isEqualTo(1);
+
+        ReviewStatsRepository.SessionWindowProjection latestSession = repository.loadLatestSessionWindow(
+                userId,
+                deckId,
+                from,
+                to,
+                "UTC",
+                240,
+                30
+        );
+        assertThat(latestSession).isNotNull();
+        assertThat(latestSession.getReviewCount()).isEqualTo(1);
     }
 
     private void seedAlgorithm(String algorithmId) {

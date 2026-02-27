@@ -13,6 +13,8 @@ import app.mnema.core.review.domain.ReviewSource;
 import app.mnema.core.review.entity.ReviewUserCardEntity;
 import app.mnema.core.review.entity.SrCardStateEntity;
 import app.mnema.core.review.entity.SrReviewLogEntity;
+import app.mnema.core.review.repository.ReviewDayCompletionRepository;
+import app.mnema.core.review.repository.ReviewStatsRepository;
 import app.mnema.core.review.repository.ReviewUserCardRepository;
 import app.mnema.core.review.repository.SrReviewLogRepository;
 import app.mnema.core.review.repository.SrCardStateRepository;
@@ -30,6 +32,7 @@ import java.util.*;
 
 @Service
 public class ReviewService {
+    private static final int DEFAULT_SESSION_GAP_MINUTES = 30;
 
     private final ReviewUserCardRepository userCardRepo;
     private final SrCardStateRepository stateRepo;
@@ -39,6 +42,8 @@ public class ReviewService {
     private final JsonConfigMerger configMerger;
     private final UserDeckPreferencesService preferencesService;
     private final SrReviewLogRepository reviewLogRepository;
+    private final ReviewStatsRepository reviewStatsRepository;
+    private final ReviewDayCompletionRepository reviewDayCompletionRepository;
     private final AlgorithmDefaultConfigCache defaultConfigCache;
     private final DeckAlgorithmUpdateBuffer updateBuffer;
 
@@ -50,6 +55,8 @@ public class ReviewService {
                          JsonConfigMerger configMerger,
                          UserDeckPreferencesService preferencesService,
                          SrReviewLogRepository reviewLogRepository,
+                         ReviewStatsRepository reviewStatsRepository,
+                         ReviewDayCompletionRepository reviewDayCompletionRepository,
                          AlgorithmDefaultConfigCache defaultConfigCache,
                          DeckAlgorithmUpdateBuffer updateBuffer) {
         this.userCardRepo = userCardRepo;
@@ -60,6 +67,8 @@ public class ReviewService {
         this.configMerger = configMerger;
         this.preferencesService = preferencesService;
         this.reviewLogRepository = reviewLogRepository;
+        this.reviewStatsRepository = reviewStatsRepository;
+        this.reviewDayCompletionRepository = reviewDayCompletionRepository;
         this.defaultConfigCache = defaultConfigCache;
         this.updateBuffer = updateBuffer;
     }
@@ -199,7 +208,9 @@ public class ReviewService {
         preferencesService.incrementCounters(userDeckId, current == null, now);
 
         ReviewNextCardResponse next = nextCard(userId, userDeckId);
+        ReviewAnswerResponse.Completion completion = null;
         if (next.userCardId() == null) {
+            completion = buildCompletion(userId, userDeckId, now);
             updateBuffer.flushIfPending(userDeckId, algorithmContext.algorithmId(), now)
                     .ifPresent(cfg -> deckAlgorithmPort.updateDeckAlgorithm(userId, userDeckId, algorithmContext.algorithmId(), cfg));
         }
@@ -207,7 +218,65 @@ public class ReviewService {
                 userCardId,
                 rating,
                 computation.nextReviewAt(),
-                next
+                next,
+                completion
+        );
+    }
+
+    private ReviewAnswerResponse.Completion buildCompletion(UUID userId, UUID userDeckId, Instant now) {
+        UserDeckPreferencesService.PreferencesSnapshot preferences = preferencesService.getSnapshot(userDeckId, now);
+        UserDeckPreferencesService.ReviewDayBounds reviewDay = preferences.reviewDay(now);
+        String timeZone = (preferences.timeZoneId() == null || preferences.timeZoneId().isBlank())
+                ? "UTC"
+                : preferences.timeZoneId();
+
+        ReviewDayCompletionRepository.CompletionProjection completionProjection =
+                reviewDayCompletionRepository.registerCompletion(userId, reviewDay.date(), now);
+        int completionIndexToday = completionProjection == null ? 1 : completionProjection.getCompletionsCount();
+        boolean firstCompletionToday = completionIndexToday == 1;
+
+        ReviewStatsRepository.StreakProjection streakProjection = reviewStatsRepository.loadStreak(
+                userId,
+                null,
+                now,
+                timeZone,
+                preferences.dayCutoffMinutes()
+        );
+        long todayStreak = streakProjection == null ? 0L : Math.max(0L, streakProjection.getTodayStreakDays());
+        long currentStreak = streakProjection == null ? 0L : Math.max(0L, streakProjection.getCurrentStreakDays());
+        long longestStreak = streakProjection == null ? 0L : Math.max(0L, streakProjection.getLongestStreakDays());
+        long previousStreak = firstCompletionToday ? Math.max(0L, todayStreak - 1L) : currentStreak;
+
+        ReviewStatsRepository.SessionWindowProjection sessionProjection = reviewStatsRepository.loadLatestSessionWindow(
+                userId,
+                userDeckId,
+                reviewDay.start(),
+                reviewDay.end(),
+                timeZone,
+                preferences.dayCutoffMinutes(),
+                DEFAULT_SESSION_GAP_MINUTES
+        );
+        ReviewAnswerResponse.SessionSnapshot session = sessionProjection == null
+                ? null
+                : new ReviewAnswerResponse.SessionSnapshot(
+                sessionProjection.getSessionStartedAt(),
+                sessionProjection.getSessionEndedAt(),
+                sessionProjection.getDurationMinutes(),
+                sessionProjection.getReviewCount(),
+                sessionProjection.getTotalResponseMs()
+        );
+
+        ReviewAnswerResponse.StreakProgress streak = new ReviewAnswerResponse.StreakProgress(
+                previousStreak,
+                Math.max(currentStreak, todayStreak),
+                longestStreak
+        );
+        return new ReviewAnswerResponse.Completion(
+                firstCompletionToday,
+                completionIndexToday,
+                reviewDay.date(),
+                streak,
+                session
         );
     }
 
