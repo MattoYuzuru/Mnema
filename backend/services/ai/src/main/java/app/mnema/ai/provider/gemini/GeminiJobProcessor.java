@@ -19,6 +19,7 @@ import app.mnema.ai.service.AudioChunkingService;
 import app.mnema.ai.service.AiImportContentService;
 import app.mnema.ai.service.AiJobProcessingResult;
 import app.mnema.ai.service.AiProviderProcessor;
+import app.mnema.ai.service.CardNoveltyService;
 import app.mnema.ai.support.ImportItemExtractor;
 import app.mnema.ai.provider.anki.AnkiTemplateSupport;
 import app.mnema.ai.provider.audit.AuditAnalyzer;
@@ -70,6 +71,8 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     private static final int MAX_IMPORT_CARDS = 500;
     private static final int MIN_IMPORT_BATCH = 10;
     private static final int MAX_IMPORT_BATCH = 50;
+    private static final int GENERATE_MAX_ATTEMPTS = 4;
+    private static final int NOVELTY_HINT_LIMIT = 24;
     private static final int DEFAULT_PCM_SAMPLE_RATE = 24000;
     private static final Pattern PCM_RATE_PATTERN = Pattern.compile("rate=([0-9]+)");
     private static final Pattern RETRY_IN_PATTERN = Pattern.compile("retry in\\s*([0-9]+(?:\\.[0-9]+)?)s", Pattern.CASE_INSENSITIVE);
@@ -119,6 +122,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     private final AiImportContentService importContentService;
     private final AudioChunkingService audioChunkingService;
     private final CoreApiClient coreApiClient;
+    private final CardNoveltyService noveltyService;
     private final ObjectMapper objectMapper;
     private final AnkiTemplateSupport ankiSupport;
     private final int maxImportChars;
@@ -133,6 +137,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                                AiImportContentService importContentService,
                                AudioChunkingService audioChunkingService,
                                CoreApiClient coreApiClient,
+                               CardNoveltyService noveltyService,
                                ObjectMapper objectMapper,
                                @Value("${app.ai.import.max-chars:200000}") int maxImportChars) {
         this.geminiClient = geminiClient;
@@ -143,6 +148,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         this.importContentService = importContentService;
         this.audioChunkingService = audioChunkingService;
         this.coreApiClient = coreApiClient;
+        this.noveltyService = noveltyService;
         this.objectMapper = objectMapper;
         this.ankiSupport = new AnkiTemplateSupport(objectMapper);
         this.maxImportChars = Math.max(maxImportChars, 1000);
@@ -808,22 +814,62 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         Map<String, String> fieldTypes = resolveFieldTypes(template);
 
         String userPrompt = extractTextParam(params, "input", "prompt", "text");
-        String prompt = buildCardsPrompt(userPrompt, template, publicDeck, allowedFields, count, job.getDeckId(), job.getUserAccessToken());
-        JsonNode responseSchema = buildCardsSchema(allowedFields, count);
         String model = textOrDefault(params.path("model"), props.defaultModel());
         Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
                 ? params.path("maxOutputTokens").asInt()
                 : null;
 
-        GeminiResponseResult response = geminiClient.createResponse(
-                apiKey,
-                new GeminiResponseRequest(model, prompt, maxOutputTokens, "application/json", responseSchema)
-        );
+        CardNoveltyService.NoveltyIndex noveltyIndex = noveltyService.buildIndex(job.getDeckId(), accessToken, allowedFields);
+        List<CardDraft> uniqueDrafts = new java.util.ArrayList<>();
+        int droppedEmpty = 0;
+        int droppedExact = 0;
+        int droppedPrimary = 0;
+        int droppedSemantic = 0;
+        GeminiResponseResult response = null;
 
-        JsonNode parsed = parseJsonResponse(response.outputText());
-        List<CardDraft> drafts = buildCardDrafts(parsed, allowedFields, template, fieldTypes);
-        List<CreateCardRequestPayload> limitedRequests = drafts.stream()
+        for (int attempt = 0; attempt < GENERATE_MAX_ATTEMPTS && uniqueDrafts.size() < count; attempt++) {
+            int remaining = count - uniqueDrafts.size();
+            int candidateCount = resolveCandidateCount(remaining, attempt);
+            String prompt = buildCardsPrompt(
+                    augmentGeneratePrompt(userPrompt, noveltyIndex, attempt),
+                    template,
+                    publicDeck,
+                    allowedFields,
+                    candidateCount,
+                    job.getDeckId(),
+                    job.getUserAccessToken()
+            );
+            JsonNode responseSchema = buildCardsSchema(allowedFields, candidateCount);
+
+            response = geminiClient.createResponse(
+                    apiKey,
+                    new GeminiResponseRequest(model, prompt, maxOutputTokens, "application/json", responseSchema)
+            );
+
+            JsonNode parsed = parseJsonResponse(response.outputText());
+            List<CardDraft> drafts = buildCardDrafts(parsed, allowedFields, template, fieldTypes);
+            CardNoveltyService.FilterResult<CardDraft> filtered = noveltyService.filterCandidates(
+                    drafts,
+                    CardDraft::content,
+                    allowedFields,
+                    noveltyIndex,
+                    remaining
+            );
+            uniqueDrafts.addAll(filtered.accepted());
+            droppedEmpty += filtered.droppedEmpty();
+            droppedExact += filtered.droppedExact();
+            droppedPrimary += filtered.droppedPrimary();
+            droppedSemantic += filtered.droppedSemantic();
+        }
+
+        if (uniqueDrafts.size() < count) {
+            throw new IllegalStateException("Failed to generate enough unique cards. Try a more specific prompt.");
+        }
+
+        List<CardDraft> limitedDrafts = uniqueDrafts.stream()
                 .limit(count)
+                .toList();
+        List<CreateCardRequestPayload> limitedRequests = limitedDrafts.stream()
                 .map(draft -> new CreateCardRequestPayload(draft.content(), null, null, null, null, null))
                 .toList();
 
@@ -834,7 +880,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                 job.getJobId()
         );
         ImageConfig imageConfig = resolveImageConfig(params, true);
-        MediaApplyResult mediaResult = applyMediaPromptsToNewCards(job, apiKey, accessToken, template, createdCards, drafts, fieldTypes, imageConfig, updateScope);
+        MediaApplyResult mediaResult = applyMediaPromptsToNewCards(job, apiKey, accessToken, template, createdCards, limitedDrafts, fieldTypes, imageConfig, updateScope);
         TtsApplyResult ttsResult;
         try {
             ttsResult = applyTtsIfNeeded(job, apiKey, params, createdCards, template, updateScope);
@@ -848,6 +894,12 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         summary.put("templateId", publicDeck.templateId().toString());
         summary.put("requestedCards", count);
         summary.put("createdCards", limitedRequests.size());
+        summary.put("duplicatesSkippedExact", droppedExact);
+        summary.put("duplicatesSkippedPrimary", droppedPrimary);
+        summary.put("duplicatesSkippedSemantic", droppedSemantic);
+        if (droppedEmpty > 0) {
+            summary.put("candidatesSkippedEmpty", droppedEmpty);
+        }
         if (mediaResult.imagesGenerated() > 0) {
             summary.put("imagesGenerated", mediaResult.imagesGenerated());
         }
@@ -1557,6 +1609,30 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             limit = 1;
         }
         return Math.min(requested, limit);
+    }
+
+    private int resolveCandidateCount(int remaining, int attempt) {
+        int safeRemaining = Math.max(1, remaining);
+        int boosted = attempt == 0
+                ? Math.max(safeRemaining * 3, safeRemaining + 10)
+                : Math.max(safeRemaining * 2, safeRemaining + 6);
+        return Math.min(boosted, 120);
+    }
+
+    private String augmentGeneratePrompt(String userPrompt, CardNoveltyService.NoveltyIndex noveltyIndex, int attempt) {
+        if (attempt <= 0) {
+            return userPrompt;
+        }
+        List<String> snippets = noveltyService.buildAvoidSnippets(noveltyIndex, NOVELTY_HINT_LIMIT);
+        if (snippets.isEmpty()) {
+            return userPrompt;
+        }
+        String forbidden = String.join(" | ", snippets);
+        String suffix = "Avoid generating items semantically similar to these existing examples: " + forbidden;
+        if (userPrompt == null || userPrompt.isBlank()) {
+            return suffix;
+        }
+        return userPrompt.trim() + ". " + suffix;
     }
 
     private int resolveImportBatchSize(JsonNode params) {

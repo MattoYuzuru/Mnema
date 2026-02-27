@@ -362,10 +362,10 @@ type FieldSide = 'front' | 'back';
       .ai-profile-section {
         margin-bottom: var(--spacing-2xl);
         border: 1px solid var(--glass-border);
-        border-radius: var(--border-radius-xl);
+        border-radius: var(--border-radius-lg);
         background: var(--color-card-background);
         padding: var(--spacing-lg);
-        box-shadow: var(--shadow-soft);
+        box-shadow: var(--shadow-sm);
       }
 
       .ai-hint {

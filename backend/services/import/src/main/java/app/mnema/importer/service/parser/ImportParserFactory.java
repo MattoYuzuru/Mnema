@@ -20,6 +20,7 @@ public class ImportParserFactory {
             case txt -> new TxtImportParser();
             case apkg -> new ApkgImportParser(objectMapper);
             case mnema -> new MnemaPackageImportParser(objectMapper);
+            case mnpkg -> new MnpkgImportParser(objectMapper);
         };
     }
 }

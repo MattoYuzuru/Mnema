@@ -1,4 +1,4 @@
-import { Component, ElementRef, Input, OnChanges, OnDestroy, Renderer2, SimpleChanges } from '@angular/core';
+import { Component, ElementRef, HostListener, Input, OnChanges, OnDestroy, Renderer2, SimpleChanges } from '@angular/core';
 import { NgFor, NgIf, NgClass } from '@angular/common';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
 import { CardContentValue } from '../../core/models/user-card.models';
@@ -154,6 +154,8 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
     @Input() content: Record<string, unknown> = {};
     @Input() side: 'front' | 'back' = 'front';
     @Input() hideLabels = false;
+    @Input() autoPlayAudioSequence = false;
+    @Input() autoPlaySequenceToken: string | null = null;
 
     frontFields: RenderedField[] = [];
     backFields: RenderedField[] = [];
@@ -163,6 +165,9 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
     ankiCss = '';
     private resolvedUrls: Record<string, string> = {};
     private ankiStyleElement: HTMLStyleElement | null = null;
+    private autoPlayDelayHandle: ReturnType<typeof setTimeout> | null = null;
+    private autoPlayRunId = 0;
+    private lastAutoPlayToken: string | null = null;
 
     constructor(
         private mediaApi: MediaApiService,
@@ -171,23 +176,33 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
     ) {}
 
     ngOnChanges(changes: SimpleChanges): void {
-        if (changes['template'] || changes['content']) {
+        if (changes['template'] || changes['content'] || changes['side'] || changes['autoPlayAudioSequence'] || changes['autoPlaySequenceToken']) {
             void this.refreshView();
         }
     }
 
     ngOnDestroy(): void {
+        this.cancelAutoPlaySequence();
         this.removeAnkiStyle();
+    }
+
+    @HostListener('keydown', ['$event'])
+    onMediaKeyDown(event: KeyboardEvent): void {
+        if (this.isSpaceKey(event) && this.eventTargetsMedia(event)) {
+            event.preventDefault();
+        }
     }
 
     private async refreshView(): Promise<void> {
         if (this.isAnkiTemplate()) {
             await this.buildAnkiView();
+            this.scheduleAutoPlayIfNeeded();
             return;
         }
         this.ankiMode = false;
         this.removeAnkiStyle();
         await this.buildFields();
+        this.scheduleAutoPlayIfNeeded();
     }
 
     private async buildFields(): Promise<void> {
@@ -339,16 +354,121 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
         this.ankiStyleElement = null;
     }
 
+    private scheduleAutoPlayIfNeeded(): void {
+        this.cancelAutoPlaySequence();
+        if (!this.autoPlayAudioSequence || this.side !== 'front') {
+            return;
+        }
+
+        const token = this.autoPlaySequenceToken?.trim() || null;
+        if (!token || token === this.lastAutoPlayToken) {
+            return;
+        }
+
+        this.lastAutoPlayToken = token;
+        const runId = ++this.autoPlayRunId;
+        this.autoPlayDelayHandle = setTimeout(() => {
+            this.autoPlayDelayHandle = null;
+            void this.playAudioSequence(runId);
+        }, 500);
+    }
+
+    private cancelAutoPlaySequence(): void {
+        if (this.autoPlayDelayHandle) {
+            clearTimeout(this.autoPlayDelayHandle);
+            this.autoPlayDelayHandle = null;
+        }
+        this.autoPlayRunId++;
+    }
+
+    private async playAudioSequence(runId: number): Promise<void> {
+        const audioElements = Array.from(this.host.nativeElement.querySelectorAll('audio'));
+        if (audioElements.length === 0) {
+            return;
+        }
+
+        for (const audio of audioElements) {
+            if (runId !== this.autoPlayRunId) {
+                return;
+            }
+
+            audio.currentTime = 0;
+            try {
+                await audio.play();
+            } catch {
+                continue;
+            }
+
+            await this.waitForAudioToFinish(audio, runId);
+            if (runId !== this.autoPlayRunId) {
+                return;
+            }
+            await this.delayWithCancel(500, runId);
+        }
+    }
+
+    private waitForAudioToFinish(audio: HTMLAudioElement, runId: number): Promise<void> {
+        return new Promise(resolve => {
+            const cleanup = (): void => {
+                audio.removeEventListener('ended', onEnded);
+                audio.removeEventListener('error', onEndLike);
+                audio.removeEventListener('abort', onEndLike);
+                audio.removeEventListener('pause', onPause);
+            };
+
+            const complete = (): void => {
+                cleanup();
+                resolve();
+            };
+
+            const onEnded = (): void => complete();
+            const onEndLike = (): void => complete();
+            const onPause = (): void => {
+                if (!audio.ended) {
+                    complete();
+                }
+            };
+
+            if (runId !== this.autoPlayRunId || audio.ended) {
+                complete();
+                return;
+            }
+
+            audio.addEventListener('ended', onEnded, { once: true });
+            audio.addEventListener('error', onEndLike, { once: true });
+            audio.addEventListener('abort', onEndLike, { once: true });
+            audio.addEventListener('pause', onPause, { once: true });
+        });
+    }
+
+    private delayWithCancel(delayMs: number, runId: number): Promise<void> {
+        return new Promise(resolve => {
+            if (runId !== this.autoPlayRunId) {
+                resolve();
+                return;
+            }
+            setTimeout(resolve, delayMs);
+        });
+    }
+
     private buildAnkiCss(css: string): string {
         if (!css) {
             return '';
         }
-        const fixes: string[] = [];
+        const fixes: string[] = [
+            '.anki-card { width: 100% !important; max-width: 100% !important; overflow-x: clip; }',
+            '.anki-card .anki-html { width: 100% !important; max-width: 100% !important; overflow-wrap: anywhere; word-break: break-word; }',
+            '.anki-card img, .anki-card video, .anki-card iframe, .anki-card object, .anki-card embed { max-width: 100% !important; height: auto !important; }',
+            '.anki-card audio { max-width: 100% !important; }',
+            '.anki-card table { display: block; width: 100% !important; max-width: 100% !important; overflow-x: auto; }'
+        ];
         if (css.includes('wrapped-japanese')) {
             fixes.push('.anki-card .wrapped-japanese { visibility: visible !important; }');
         }
-        if (fixes.length === 0) {
-            return css;
+        if (css.includes('migaku-card')) {
+            fixes.push('.anki-card .migaku-card { width: 100% !important; max-width: 100% !important; margin-left: auto !important; margin-right: auto !important; }');
+            fixes.push('.anki-card .migaku-card-image img { width: 100% !important; max-width: 100% !important; }');
+            fixes.push('.anki-card .migaku-card-content { width: 100% !important; max-width: 100% !important; overflow-wrap: anywhere; }');
         }
         return `${css}\n\n/* Mnema compatibility fixes */\n${fixes.join('\n')}\n`;
     }
@@ -394,5 +514,13 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
             return markdownToHtml(value);
         }
         return value.replace(/\n/g, '<br>');
+    }
+
+    private isSpaceKey(event: KeyboardEvent): boolean {
+        return event.key === ' ' || event.key === 'Space' || event.key === 'Spacebar' || event.code === 'Space';
+    }
+
+    private eventTargetsMedia(event: KeyboardEvent): boolean {
+        return event.composedPath().some(node => node instanceof HTMLAudioElement || node instanceof HTMLVideoElement);
     }
 }

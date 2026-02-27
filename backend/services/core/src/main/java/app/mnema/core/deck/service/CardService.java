@@ -39,6 +39,8 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.regex.Pattern;
+import java.util.Locale;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -47,6 +49,10 @@ public class CardService {
 
     private static final int MAX_TAGS = 3;
     private static final int MAX_TAG_LENGTH = 25;
+    private static final int SEMANTIC_VECTOR_DIM = 256;
+    private static final int SEMANTIC_CANDIDATE_LIMIT = 1200;
+    private static final double DEFAULT_SEMANTIC_THRESHOLD = 0.92d;
+    private static final Pattern NON_ALNUM = Pattern.compile("[^\\p{IsAlphabetic}\\p{IsDigit}]+", Pattern.UNICODE_CHARACTER_CLASS);
 
     private final UserDeckRepository userDeckRepository;
     private final UserCardRepository userCardRepository;
@@ -249,6 +255,10 @@ public class CardService {
         }
         int limitGroups = request.limitGroups() == null ? 10 : Math.max(1, Math.min(request.limitGroups(), 50));
         int perGroupLimit = request.perGroupLimit() == null ? 5 : Math.max(2, Math.min(request.perGroupLimit(), 20));
+        boolean includeSemantic = Boolean.TRUE.equals(request.includeSemantic());
+        double semanticThreshold = request.semanticThreshold() == null
+                ? DEFAULT_SEMANTIC_THRESHOLD
+                : Math.max(0.70d, Math.min(request.semanticThreshold(), 0.99d));
         List<String> fields = request.fields().stream()
                 .filter(name -> name != null && !name.isBlank())
                 .map(String::trim)
@@ -258,16 +268,60 @@ public class CardService {
             throw new IllegalArgumentException("fields are required");
         }
 
-        List<UserCardRepository.DuplicateGroupProjection> groups = userCardRepository.findDuplicateGroups(
+        List<UserCardRepository.DuplicateGroupProjection> exactGroups = userCardRepository.findDuplicateGroups(
                 currentUserId,
                 userDeckId,
                 fields.toArray(String[]::new),
                 limitGroups
         );
-        if (groups.isEmpty()) {
-            return List.of();
+        List<DuplicateGroupDTO> result = new ArrayList<>(mapDuplicateGroups(
+                currentUserId,
+                userDeckId,
+                exactGroups,
+                perGroupLimit,
+                "exact",
+                1.0d
+        ));
+
+        if (!includeSemantic || result.size() >= limitGroups) {
+            return result.isEmpty() ? List.of() : Collections.unmodifiableList(result);
         }
 
+        Set<UUID> excludedIds = new HashSet<>();
+        for (DuplicateGroupDTO group : result) {
+            for (UserCardDTO card : group.cards()) {
+                excludedIds.add(card.userCardId());
+            }
+        }
+        int remainingGroups = limitGroups - result.size();
+        if (remainingGroups <= 0) {
+            return result.isEmpty() ? List.of() : Collections.unmodifiableList(result);
+        }
+
+        List<DuplicateGroupDTO> semanticGroups = findSemanticDuplicateGroups(
+                currentUserId,
+                userDeckId,
+                fields,
+                perGroupLimit,
+                remainingGroups,
+                semanticThreshold,
+                excludedIds
+        );
+        if (!semanticGroups.isEmpty()) {
+            result.addAll(semanticGroups);
+        }
+        return result.isEmpty() ? List.of() : Collections.unmodifiableList(result);
+    }
+
+    private List<DuplicateGroupDTO> mapDuplicateGroups(UUID currentUserId,
+                                                       UUID userDeckId,
+                                                       List<UserCardRepository.DuplicateGroupProjection> groups,
+                                                       int perGroupLimit,
+                                                       String matchType,
+                                                       Double confidence) {
+        if (groups == null || groups.isEmpty()) {
+            return List.of();
+        }
         List<DuplicateGroupDTO> result = new ArrayList<>();
         for (UserCardRepository.DuplicateGroupProjection group : groups) {
             UUID[] ids = group.getCardIds();
@@ -275,8 +329,17 @@ public class CardService {
                 continue;
             }
             List<UUID> limitedIds = new ArrayList<>();
-            for (int i = 0; i < ids.length && limitedIds.size() < perGroupLimit; i++) {
-                limitedIds.add(ids[i]);
+            for (UUID id : ids) {
+                if (id == null) {
+                    continue;
+                }
+                if (limitedIds.size() >= perGroupLimit) {
+                    break;
+                }
+                limitedIds.add(id);
+            }
+            if (limitedIds.isEmpty()) {
+                continue;
             }
             List<UserCardEntity> cards = userCardRepository.findByUserIdAndUserDeckIdAndUserCardIdIn(
                     currentUserId,
@@ -296,10 +359,306 @@ public class CardService {
                 }
             }
             if (!ordered.isEmpty()) {
-                result.add(new DuplicateGroupDTO(group.getCnt(), Collections.unmodifiableList(ordered)));
+                result.add(new DuplicateGroupDTO(
+                        matchType,
+                        confidence,
+                        group.getCnt(),
+                        Collections.unmodifiableList(ordered)
+                ));
             }
         }
         return result.isEmpty() ? List.of() : Collections.unmodifiableList(result);
+    }
+
+    private List<DuplicateGroupDTO> findSemanticDuplicateGroups(UUID currentUserId,
+                                                                UUID userDeckId,
+                                                                List<String> fields,
+                                                                int perGroupLimit,
+                                                                int limitGroups,
+                                                                double threshold,
+                                                                Set<UUID> excludedIds) {
+        if (fields == null || fields.isEmpty() || limitGroups <= 0) {
+            return List.of();
+        }
+        int candidateLimit = Math.max(50, Math.min(SEMANTIC_CANDIDATE_LIMIT, limitGroups * 120));
+        List<UserCardRepository.SemanticCandidateProjection> candidates = userCardRepository.findSemanticDuplicateCandidates(
+                currentUserId,
+                userDeckId,
+                fields.toArray(String[]::new),
+                candidateLimit
+        );
+        if (candidates == null || candidates.size() < 2) {
+            return List.of();
+        }
+
+        List<SemanticCardCandidate> semanticCandidates = new ArrayList<>();
+        for (UserCardRepository.SemanticCandidateProjection candidate : candidates) {
+            if (candidate == null || candidate.getUserCardId() == null) {
+                continue;
+            }
+            if (excludedIds != null && excludedIds.contains(candidate.getUserCardId())) {
+                continue;
+            }
+            String[] values = candidate.getValues();
+            SemanticFingerprint fingerprint = fingerprint(values);
+            if (fingerprint == null) {
+                continue;
+            }
+            semanticCandidates.add(new SemanticCardCandidate(
+                    candidate.getUserCardId(),
+                    candidate.getCreatedAt(),
+                    values,
+                    fingerprint
+            ));
+        }
+        if (semanticCandidates.size() < 2) {
+            return List.of();
+        }
+
+        UnionFind unionFind = new UnionFind(semanticCandidates.size());
+        Map<Integer, Double> groupMaxSimilarity = new HashMap<>();
+        for (int i = 0; i < semanticCandidates.size(); i++) {
+            SemanticCardCandidate left = semanticCandidates.get(i);
+            for (int j = i + 1; j < semanticCandidates.size(); j++) {
+                SemanticCardCandidate right = semanticCandidates.get(j);
+                if (isSemanticDuplicate(left.fingerprint(), right.fingerprint(), threshold)) {
+                    unionFind.union(i, j);
+                    double similarity = cosine(left.fingerprint().vector(), right.fingerprint().vector());
+                    int root = unionFind.find(i);
+                    groupMaxSimilarity.merge(root, similarity, Math::max);
+                }
+            }
+        }
+
+        Map<Integer, List<SemanticCardCandidate>> grouped = new HashMap<>();
+        for (int i = 0; i < semanticCandidates.size(); i++) {
+            int root = unionFind.find(i);
+            grouped.computeIfAbsent(root, __ -> new ArrayList<>()).add(semanticCandidates.get(i));
+        }
+
+        List<SemanticGroup> semanticGroups = new ArrayList<>();
+        for (Map.Entry<Integer, List<SemanticCardCandidate>> entry : grouped.entrySet()) {
+            List<SemanticCardCandidate> cards = entry.getValue();
+            if (cards.size() < 2) {
+                continue;
+            }
+            cards.sort((a, b) -> {
+                Instant leftCreated = a.createdAt();
+                Instant rightCreated = b.createdAt();
+                if (leftCreated != null && rightCreated != null) {
+                    int cmp = leftCreated.compareTo(rightCreated);
+                    if (cmp != 0) {
+                        return cmp;
+                    }
+                } else if (leftCreated != null) {
+                    return -1;
+                } else if (rightCreated != null) {
+                    return 1;
+                }
+                return a.userCardId().compareTo(b.userCardId());
+            });
+            double confidence = groupMaxSimilarity.getOrDefault(entry.getKey(), threshold);
+            semanticGroups.add(new SemanticGroup(cards, confidence));
+        }
+
+        if (semanticGroups.isEmpty()) {
+            return List.of();
+        }
+
+        semanticGroups.sort((a, b) -> {
+            int bySize = Integer.compare(b.cards().size(), a.cards().size());
+            if (bySize != 0) {
+                return bySize;
+            }
+            return Double.compare(b.confidence(), a.confidence());
+        });
+
+        List<DuplicateGroupDTO> result = new ArrayList<>();
+        for (SemanticGroup group : semanticGroups) {
+            if (result.size() >= limitGroups) {
+                break;
+            }
+            List<UUID> limitedIds = group.cards().stream()
+                    .map(SemanticCardCandidate::userCardId)
+                    .limit(perGroupLimit)
+                    .toList();
+            if (limitedIds.isEmpty()) {
+                continue;
+            }
+            List<UserCardEntity> cards = userCardRepository.findByUserIdAndUserDeckIdAndUserCardIdIn(
+                    currentUserId,
+                    userDeckId,
+                    limitedIds
+            );
+            if (cards.isEmpty()) {
+                continue;
+            }
+            Map<UUID, UserCardEntity> byId = cards.stream()
+                    .collect(Collectors.toMap(UserCardEntity::getUserCardId, card -> card));
+            List<UserCardDTO> ordered = new ArrayList<>();
+            for (UUID id : limitedIds) {
+                UserCardEntity card = byId.get(id);
+                if (card != null) {
+                    ordered.add(toUserCardDTO(card));
+                }
+            }
+            if (ordered.size() < 2) {
+                continue;
+            }
+            result.add(new DuplicateGroupDTO(
+                    "semantic",
+                    Math.min(0.999d, Math.max(threshold, group.confidence())),
+                    group.cards().size(),
+                    Collections.unmodifiableList(ordered)
+            ));
+        }
+        return result.isEmpty() ? List.of() : Collections.unmodifiableList(result);
+    }
+
+    private boolean isSemanticDuplicate(SemanticFingerprint left, SemanticFingerprint right, double threshold) {
+        if (left == null || right == null) {
+            return false;
+        }
+        if (left.primary() != null && !left.primary().isBlank() && left.primary().equals(right.primary())) {
+            return true;
+        }
+        return cosine(left.vector(), right.vector()) >= threshold;
+    }
+
+    private SemanticFingerprint fingerprint(String[] rawValues) {
+        if (rawValues == null || rawValues.length == 0) {
+            return null;
+        }
+        List<String> normalized = new ArrayList<>(rawValues.length);
+        for (String value : rawValues) {
+            normalized.add(normalize(value));
+        }
+        boolean hasAny = normalized.stream().anyMatch(value -> value != null && !value.isBlank());
+        if (!hasAny) {
+            return null;
+        }
+        String primary = normalized.getFirst();
+        if (primary == null || primary.isBlank()) {
+            primary = normalized.stream()
+                    .filter(value -> value != null && !value.isBlank())
+                    .findFirst()
+                    .orElse(null);
+        }
+        String combined = normalized.stream()
+                .filter(value -> value != null && !value.isBlank())
+                .collect(Collectors.joining(" "));
+        return new SemanticFingerprint(primary, vectorize(combined));
+    }
+
+    private String normalize(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "";
+        }
+        String lowered = raw.toLowerCase(Locale.ROOT);
+        String compact = NON_ALNUM.matcher(lowered).replaceAll(" ").trim();
+        if (compact.isBlank()) {
+            return "";
+        }
+        return compact.replaceAll("\\s+", " ");
+    }
+
+    private float[] vectorize(String text) {
+        float[] vector = new float[SEMANTIC_VECTOR_DIM];
+        if (text == null || text.isBlank()) {
+            return vector;
+        }
+        String value = " " + text + " ";
+        if (value.length() < 3) {
+            int idx = Math.floorMod(value.hashCode(), SEMANTIC_VECTOR_DIM);
+            vector[idx] += 1f;
+            normalizeVector(vector);
+            return vector;
+        }
+        for (int i = 0; i <= value.length() - 3; i++) {
+            String gram = value.substring(i, i + 3);
+            int hash = gram.hashCode();
+            int idx = Math.floorMod(hash, SEMANTIC_VECTOR_DIM);
+            float sign = ((hash >>> 31) == 0) ? 1f : -1f;
+            vector[idx] += sign;
+        }
+        normalizeVector(vector);
+        return vector;
+    }
+
+    private void normalizeVector(float[] vector) {
+        double norm = 0d;
+        for (float value : vector) {
+            norm += value * value;
+        }
+        if (norm <= 0d) {
+            return;
+        }
+        float inv = (float) (1d / Math.sqrt(norm));
+        for (int i = 0; i < vector.length; i++) {
+            vector[i] = vector[i] * inv;
+        }
+    }
+
+    private double cosine(float[] left, float[] right) {
+        if (left == null || right == null) {
+            return 0d;
+        }
+        int len = Math.min(left.length, right.length);
+        float dot = 0f;
+        for (int i = 0; i < len; i++) {
+            dot += left[i] * right[i];
+        }
+        return dot;
+    }
+
+    private record SemanticCardCandidate(UUID userCardId,
+                                         Instant createdAt,
+                                         String[] values,
+                                         SemanticFingerprint fingerprint) {
+    }
+
+    private record SemanticFingerprint(String primary, float[] vector) {
+    }
+
+    private record SemanticGroup(List<SemanticCardCandidate> cards, double confidence) {
+    }
+
+    private static final class UnionFind {
+        private final int[] parent;
+        private final int[] rank;
+
+        private UnionFind(int size) {
+            this.parent = new int[size];
+            this.rank = new int[size];
+            for (int i = 0; i < size; i++) {
+                parent[i] = i;
+            }
+        }
+
+        private int find(int x) {
+            if (parent[x] != x) {
+                parent[x] = find(parent[x]);
+            }
+            return parent[x];
+        }
+
+        private void union(int a, int b) {
+            int rootA = find(a);
+            int rootB = find(b);
+            if (rootA == rootB) {
+                return;
+            }
+            if (rank[rootA] < rank[rootB]) {
+                parent[rootA] = rootB;
+                return;
+            }
+            if (rank[rootA] > rank[rootB]) {
+                parent[rootB] = rootA;
+                return;
+            }
+            parent[rootB] = rootA;
+            rank[rootA]++;
+        }
     }
 
     @Transactional

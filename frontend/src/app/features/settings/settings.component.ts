@@ -93,10 +93,10 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       </section>
 
       <section class="settings-section">
-        <h2>{{ 'settings.cardAppearance' | translate }}</h2>
-        <p class="section-description">{{ 'settings.cardAppearanceDescription' | translate }}</p>
+        <h2>{{ 'settings.reviewExperience' | translate }}</h2>
+        <p class="section-description">{{ 'settings.reviewExperienceDescription' | translate }}</p>
         <div class="checkbox-group">
-          <label class="checkbox-label">
+          <label class="checkbox-label glass-checkbox">
             <input
               type="checkbox"
               [checked]="preferences.hideFieldLabels"
@@ -104,13 +104,21 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             />
             <span>{{ 'settings.hideFieldLabels' | translate }}</span>
           </label>
-          <label class="checkbox-label">
+          <label class="checkbox-label glass-checkbox">
             <input
               type="checkbox"
               [checked]="preferences.showFrontSideAfterFlip"
               (change)="preferences.setShowFrontSideAfterFlip($any($event.target).checked)"
             />
             <span>{{ 'settings.showFrontSideAfterFlip' | translate }}</span>
+          </label>
+          <label class="checkbox-label glass-checkbox">
+            <input
+              type="checkbox"
+              [checked]="preferences.autoPlayCardAudioSequence"
+              (change)="preferences.setAutoPlayCardAudioSequence($any($event.target).checked)"
+            />
+            <span>{{ 'settings.autoPlayCardAudioSequence' | translate }}</span>
           </label>
         </div>
 
@@ -541,12 +549,6 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         gap: var(--spacing-sm);
         cursor: pointer;
         font-size: 0.95rem;
-      }
-
-      .checkbox-label input[type="checkbox"] {
-        width: 18px;
-        height: 18px;
-        cursor: pointer;
       }
 
       .loading-state, .empty-state {

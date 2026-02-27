@@ -98,7 +98,7 @@ interface EncodingOption {
                 <div class="source-meta">{{ 'aiImport.sourceSubscriptionDesc' | translate }}</div>
               </div>
             </div>
-            <div class="form-grid">
+            <div class="form-grid compact-head-grid">
               <div class="form-field">
                 <label for="ai-import-provider">{{ 'aiImport.providerLabel' | translate }}</label>
                 <select
@@ -535,8 +535,8 @@ interface EncodingOption {
         display: flex;
         align-items: flex-start;
         justify-content: center;
-        padding: calc(var(--spacing-2xl) + 1rem) var(--spacing-lg) var(--spacing-lg);
-        z-index: 40;
+        padding: calc(var(--spacing-2xl) + 3rem) var(--spacing-lg) var(--spacing-xl);
+        z-index: 1000;
         backdrop-filter: blur(12px) saturate(140%);
       }
 
@@ -636,6 +636,22 @@ interface EncodingOption {
         display: grid;
         grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
         gap: var(--spacing-md);
+      }
+      .compact-head-grid { align-items: start; }
+      .compact-head-grid .form-field {
+        display: grid;
+        grid-template-rows: minmax(2.4rem, auto) minmax(40px, auto) auto;
+        align-content: start;
+      }
+      .compact-head-grid .form-field label {
+        line-height: 1.2;
+        display: flex;
+        align-items: flex-end;
+      }
+      .compact-head-grid .form-field input,
+      .compact-head-grid .form-field .glass-select {
+        min-height: 40px;
+        box-sizing: border-box;
       }
 
       .form-field { display: grid; gap: var(--spacing-xs); }

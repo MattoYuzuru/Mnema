@@ -129,13 +129,14 @@ type TemplateFilter = 'mine' | 'public';
       }
 
       .choice-card {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        justify-items: center;
+        align-content: start;
+        gap: var(--spacing-sm);
         width: 100%;
         min-width: 0;
-        padding: var(--spacing-xxl);
+        padding: calc(var(--spacing-xxl) + var(--spacing-sm)) var(--spacing-xxl) var(--spacing-xxl);
         background: var(--color-card-background);
         border: 2px solid var(--border-color);
         border-radius: var(--border-radius-lg);
@@ -161,14 +162,15 @@ type TemplateFilter = 'mine' | 'public';
         display: flex;
         align-items: center;
         justify-content: center;
-        font-size: 2.5rem;
-        margin-bottom: var(--spacing-lg);
+        font-size: 2.35rem;
+        line-height: 1;
+        margin-top: var(--spacing-sm);
       }
 
       .choice-card h3 {
         font-size: 1.25rem;
         font-weight: 600;
-        margin: 0 0 var(--spacing-sm) 0;
+        margin: 0;
         color: var(--color-text-primary);
       }
 
@@ -265,7 +267,7 @@ type TemplateFilter = 'mine' | 'public';
         }
 
         .choice-card {
-          padding: var(--spacing-xl);
+          padding: calc(var(--spacing-xl) + var(--spacing-xs)) var(--spacing-xl) var(--spacing-xl);
           min-height: 200px;
         }
 
@@ -273,6 +275,7 @@ type TemplateFilter = 'mine' | 'public';
           width: 64px;
           height: 64px;
           font-size: 2rem;
+          margin-top: var(--spacing-xs);
         }
 
         .filter-tabs {
@@ -294,7 +297,7 @@ type TemplateFilter = 'mine' | 'public';
 
       @media (max-width: 480px) {
         .choice-card {
-          padding: var(--spacing-lg);
+          padding: calc(var(--spacing-lg) + var(--spacing-xs)) var(--spacing-lg) var(--spacing-lg);
         }
 
         .choice-card p {

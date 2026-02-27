@@ -34,8 +34,9 @@ public class ReviewStatsController {
                                         @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
                                         @RequestParam(required = false) String timeZone,
                                         @RequestParam(required = false) Integer dayCutoffMinutes,
+                                        @RequestParam(required = false) Integer sessionGapMinutes,
                                         @RequestParam(required = false) Integer forecastDays) {
         UUID userId = currentUserProvider.getUserId(jwt);
-        return reviewStatsService.stats(userId, userDeckId, from, to, timeZone, dayCutoffMinutes, forecastDays);
+        return reviewStatsService.stats(userId, userDeckId, from, to, timeZone, dayCutoffMinutes, sessionGapMinutes, forecastDays);
     }
 }

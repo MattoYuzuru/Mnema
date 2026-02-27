@@ -4,6 +4,8 @@ import app.mnema.importer.domain.ImportJobEntity;
 import app.mnema.importer.domain.ImportJobStatus;
 import app.mnema.importer.domain.ImportJobType;
 import app.mnema.importer.repository.ImportJobRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -17,6 +19,8 @@ import java.util.UUID;
 
 @Service
 public class ImportJobWorker {
+
+    private static final Logger log = LoggerFactory.getLogger(ImportJobWorker.class);
 
     private final JdbcTemplate jdbcTemplate;
     private final ImportJobRepository jobRepository;
@@ -54,7 +58,18 @@ public class ImportJobWorker {
             }
             markCompleted(job.getJobId());
         } catch (Exception ex) {
-            markFailed(job.getJobId(), ex.getMessage());
+            String error = summarizeError(ex);
+            log.error(
+                    "Import job failed: jobId={}, type={}, userId={}, targetDeckId={}, sourceType={}, error={}",
+                    job.getJobId(),
+                    job.getJobType(),
+                    job.getUserId(),
+                    job.getTargetDeckId(),
+                    job.getSourceType(),
+                    error,
+                    ex
+            );
+            markFailed(job.getJobId(), error);
         }
     }
 
@@ -115,5 +130,24 @@ public class ImportJobWorker {
     private String defaultWorkerId() {
         String host = System.getenv("HOSTNAME");
         return (host == null || host.isBlank()) ? "import-worker" : host;
+    }
+
+    private String summarizeError(Throwable throwable) {
+        if (throwable == null) {
+            return "Unknown error";
+        }
+        Throwable root = throwable;
+        while (root.getCause() != null && root.getCause() != root) {
+            root = root.getCause();
+        }
+        String message = root.getMessage();
+        if (message != null && !message.isBlank()) {
+            return message;
+        }
+        String fallback = throwable.getMessage();
+        if (fallback != null && !fallback.isBlank()) {
+            return fallback;
+        }
+        return throwable.getClass().getSimpleName();
     }
 }

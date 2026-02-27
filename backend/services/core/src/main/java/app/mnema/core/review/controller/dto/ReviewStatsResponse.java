@@ -1,6 +1,7 @@
 package app.mnema.core.review.controller.dto;
 
 import java.time.LocalDate;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -8,9 +9,12 @@ public record ReviewStatsResponse(
         Scope scope,
         UUID userDeckId,
         Filter filter,
+        Streak streak,
         Overview overview,
         QueueSnapshot queue,
         List<DailyPoint> daily,
+        List<SessionDayPoint> sessionDays,
+        List<SessionWindowPoint> todaySessions,
         List<HourlyPoint> hourly,
         List<RatingPoint> ratings,
         List<SourcePoint> sources,
@@ -26,7 +30,19 @@ public record ReviewStatsResponse(
             LocalDate toDate,
             String timeZone,
             int dayCutoffMinutes,
+            int sessionGapMinutes,
             int forecastDays
+    ) {
+    }
+
+    public record Streak(
+            long currentStreakDays,
+            long longestStreakDays,
+            long todayStreakDays,
+            boolean activeToday,
+            LocalDate currentStreakStartDate,
+            LocalDate currentStreakEndDate,
+            LocalDate lastActiveDate
     ) {
     }
 
@@ -64,6 +80,26 @@ public record ReviewStatsResponse(
             long hardCount,
             long goodCount,
             long easyCount,
+            long totalResponseMs
+    ) {
+    }
+
+    public record SessionDayPoint(
+            LocalDate date,
+            long sessionCount,
+            Instant firstSessionStartAt,
+            Instant lastSessionEndAt,
+            long studiedMinutes,
+            long reviewCount,
+            long totalResponseMs
+    ) {
+    }
+
+    public record SessionWindowPoint(
+            Instant startedAt,
+            Instant endedAt,
+            long durationMinutes,
+            long reviewCount,
             long totalResponseMs
     ) {
     }

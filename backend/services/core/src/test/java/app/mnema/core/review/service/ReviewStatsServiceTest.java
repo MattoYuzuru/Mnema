@@ -9,6 +9,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -49,6 +50,17 @@ class ReviewStatsServiceTest {
                         new DailyProjectionStub(LocalDate.of(2026, 1, 1), 4, 3, 1, 1, 2, 0, 1800),
                         new DailyProjectionStub(LocalDate.of(2026, 1, 3), 6, 4, 1, 1, 3, 1, 3200)
                 ));
+        when(statsRepository.loadStreak(eq(userId), isNull(), any(), eq("UTC"), eq(0)))
+                .thenReturn(new StreakProjectionStub(9, 22, 10, true, LocalDate.of(2025, 12, 24), LocalDate.of(2026, 1, 2), LocalDate.of(2026, 1, 2)));
+        when(statsRepository.loadSessionDays(eq(userId), isNull(), any(), any(), eq("UTC"), eq(0), eq(30)))
+                .thenReturn(List.of(
+                        new SessionDayProjectionStub(LocalDate.of(2026, 1, 1), 2, Instant.parse("2026-01-01T09:00:00Z"), Instant.parse("2026-01-01T10:15:00Z"), 42, 4, 1800),
+                        new SessionDayProjectionStub(LocalDate.of(2026, 1, 3), 1, Instant.parse("2026-01-03T08:30:00Z"), Instant.parse("2026-01-03T09:00:00Z"), 30, 6, 3200)
+                ));
+        when(statsRepository.loadSessionWindows(eq(userId), isNull(), any(), any(), eq("UTC"), eq(0), eq(30)))
+                .thenReturn(List.of(
+                        new SessionWindowProjectionStub(Instant.parse("2026-01-03T08:30:00Z"), Instant.parse("2026-01-03T09:00:00Z"), 30, 6, 3200)
+                ));
         when(statsRepository.loadHourly(eq(userId), isNull(), any(), any(), eq("UTC")))
                 .thenReturn(List.of(new HourlyProjectionStub(5, 3, 1, 410.0)));
         when(statsRepository.loadRatings(eq(userId), isNull(), any(), any()))
@@ -71,15 +83,21 @@ class ReviewStatsServiceTest {
                         new ForecastProjectionStub(forecastStart.plusDays(1), 12)
                 ));
 
-        ReviewStatsResponse stats = service.stats(userId, null, from, to, "UTC", 0, 3);
+        ReviewStatsResponse stats = service.stats(userId, null, from, to, "UTC", 0, 30, 3);
 
         assertThat(stats.scope()).isEqualTo(ReviewStatsResponse.Scope.ACCOUNT);
         assertThat(stats.overview().reviewCount()).isEqualTo(10);
         assertThat(stats.overview().againRatePercent()).isEqualTo(20.0);
         assertThat(stats.overview().successRatePercent()).isEqualTo(80.0);
+        assertThat(stats.streak().currentStreakDays()).isEqualTo(9);
+        assertThat(stats.streak().todayStreakDays()).isEqualTo(10);
         assertThat(stats.daily()).hasSize(3);
         assertThat(stats.daily().get(1).date()).isEqualTo(LocalDate.of(2026, 1, 2));
         assertThat(stats.daily().get(1).reviewCount()).isZero();
+        assertThat(stats.sessionDays()).hasSize(3);
+        assertThat(stats.sessionDays().get(1).sessionCount()).isZero();
+        assertThat(stats.todaySessions()).hasSize(1);
+        assertThat(stats.todaySessions().getFirst().durationMinutes()).isEqualTo(30);
         assertThat(stats.hourly()).hasSize(24);
         assertThat(stats.hourly().get(5).reviewCount()).isEqualTo(3);
         assertThat(stats.ratings()).extracting(ReviewStatsResponse.RatingPoint::rating)
@@ -104,6 +122,7 @@ class ReviewStatsServiceTest {
                 LocalDate.of(2026, 1, 10),
                 "UTC",
                 0,
+                30,
                 30
         )).isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("User deck not found");
@@ -399,6 +418,173 @@ class ReviewStatsServiceTest {
         @Override
         public long getOverdue() {
             return overdue;
+        }
+    }
+
+    private static final class StreakProjectionStub implements ReviewStatsRepository.StreakProjection {
+        private final long currentStreakDays;
+        private final long longestStreakDays;
+        private final long todayStreakDays;
+        private final boolean activeToday;
+        private final LocalDate currentStreakStartDate;
+        private final LocalDate currentStreakEndDate;
+        private final LocalDate lastActiveDate;
+
+        private StreakProjectionStub(long currentStreakDays,
+                                     long longestStreakDays,
+                                     long todayStreakDays,
+                                     boolean activeToday,
+                                     LocalDate currentStreakStartDate,
+                                     LocalDate currentStreakEndDate,
+                                     LocalDate lastActiveDate) {
+            this.currentStreakDays = currentStreakDays;
+            this.longestStreakDays = longestStreakDays;
+            this.todayStreakDays = todayStreakDays;
+            this.activeToday = activeToday;
+            this.currentStreakStartDate = currentStreakStartDate;
+            this.currentStreakEndDate = currentStreakEndDate;
+            this.lastActiveDate = lastActiveDate;
+        }
+
+        @Override
+        public long getCurrentStreakDays() {
+            return currentStreakDays;
+        }
+
+        @Override
+        public long getLongestStreakDays() {
+            return longestStreakDays;
+        }
+
+        @Override
+        public long getTodayStreakDays() {
+            return todayStreakDays;
+        }
+
+        @Override
+        public boolean getActiveToday() {
+            return activeToday;
+        }
+
+        @Override
+        public LocalDate getCurrentStreakStartDate() {
+            return currentStreakStartDate;
+        }
+
+        @Override
+        public LocalDate getCurrentStreakEndDate() {
+            return currentStreakEndDate;
+        }
+
+        @Override
+        public LocalDate getLastActiveDate() {
+            return lastActiveDate;
+        }
+    }
+
+    private static final class SessionDayProjectionStub implements ReviewStatsRepository.SessionDayProjection {
+        private final LocalDate bucketDate;
+        private final long sessionCount;
+        private final Instant firstSessionStartAt;
+        private final Instant lastSessionEndAt;
+        private final long studiedMinutes;
+        private final long reviewCount;
+        private final long totalResponseMs;
+
+        private SessionDayProjectionStub(LocalDate bucketDate,
+                                         long sessionCount,
+                                         Instant firstSessionStartAt,
+                                         Instant lastSessionEndAt,
+                                         long studiedMinutes,
+                                         long reviewCount,
+                                         long totalResponseMs) {
+            this.bucketDate = bucketDate;
+            this.sessionCount = sessionCount;
+            this.firstSessionStartAt = firstSessionStartAt;
+            this.lastSessionEndAt = lastSessionEndAt;
+            this.studiedMinutes = studiedMinutes;
+            this.reviewCount = reviewCount;
+            this.totalResponseMs = totalResponseMs;
+        }
+
+        @Override
+        public LocalDate getBucketDate() {
+            return bucketDate;
+        }
+
+        @Override
+        public long getSessionCount() {
+            return sessionCount;
+        }
+
+        @Override
+        public Instant getFirstSessionStartAt() {
+            return firstSessionStartAt;
+        }
+
+        @Override
+        public Instant getLastSessionEndAt() {
+            return lastSessionEndAt;
+        }
+
+        @Override
+        public long getStudiedMinutes() {
+            return studiedMinutes;
+        }
+
+        @Override
+        public long getReviewCount() {
+            return reviewCount;
+        }
+
+        @Override
+        public long getTotalResponseMs() {
+            return totalResponseMs;
+        }
+    }
+
+    private static final class SessionWindowProjectionStub implements ReviewStatsRepository.SessionWindowProjection {
+        private final Instant sessionStartedAt;
+        private final Instant sessionEndedAt;
+        private final long durationMinutes;
+        private final long reviewCount;
+        private final long totalResponseMs;
+
+        private SessionWindowProjectionStub(Instant sessionStartedAt,
+                                            Instant sessionEndedAt,
+                                            long durationMinutes,
+                                            long reviewCount,
+                                            long totalResponseMs) {
+            this.sessionStartedAt = sessionStartedAt;
+            this.sessionEndedAt = sessionEndedAt;
+            this.durationMinutes = durationMinutes;
+            this.reviewCount = reviewCount;
+            this.totalResponseMs = totalResponseMs;
+        }
+
+        @Override
+        public Instant getSessionStartedAt() {
+            return sessionStartedAt;
+        }
+
+        @Override
+        public Instant getSessionEndedAt() {
+            return sessionEndedAt;
+        }
+
+        @Override
+        public long getDurationMinutes() {
+            return durationMinutes;
+        }
+
+        @Override
+        public long getReviewCount() {
+            return reviewCount;
+        }
+
+        @Override
+        public long getTotalResponseMs() {
+            return totalResponseMs;
         }
     }
 }

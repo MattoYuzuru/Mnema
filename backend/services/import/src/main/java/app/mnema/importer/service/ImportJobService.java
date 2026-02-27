@@ -137,7 +137,7 @@ public class ImportJobService {
     }
 
     private com.fasterxml.jackson.databind.JsonNode toMappingNode(Map<String, String> mapping) {
-        if (mapping == null || mapping.isEmpty()) {
+        if (mapping == null) {
             return NullNode.getInstance();
         }
         return objectMapper.valueToTree(mapping);

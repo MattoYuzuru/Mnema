@@ -17,6 +17,7 @@ import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { ReviewDeckAlgorithmResponse } from '../../core/models/review.models';
 import { ImportJobResponse, ImportSourceType } from '../../core/models/import.models';
 import { AiJobResponse, AiJobStatus, AiJobType } from '../../core/models/ai.models';
+import { DECK_LANGUAGE_OPTIONS } from '../../core/models/language.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { AddCardsModalComponent } from './add-cards-modal.component';
@@ -31,6 +32,7 @@ import { ImportDeckModalComponent } from '../import/import-deck-modal.component'
 import { ReviewStatsPanelComponent } from '../../shared/components/review-stats-panel.component';
 import { markdownToHtml } from '../../shared/utils/markdown.util';
 import { I18nService } from '../../core/services/i18n.service';
+import { ToastService } from '../../core/services/toast.service';
 
 @Component({
     selector: 'app-deck-profile',
@@ -103,10 +105,6 @@ import { I18nService } from '../../core/services/i18n.service';
         </div>
       </div>
 
-      <div class="deck-stats-block">
-        <app-review-stats-panel [userDeckId]="deck.userDeckId" titleKey="stats.deckTitle" [flat]="true"></app-review-stats-panel>
-      </div>
-
       <div class="deck-actions">
         <app-button variant="primary" size="md" (click)="learn()">
           {{ 'deckProfile.learn' | translate }}
@@ -137,37 +135,11 @@ import { I18nService } from '../../core/services/i18n.service';
         </app-button>
       </div>
 
-      <p *ngIf="exportStatusKey" class="export-status">{{ exportStatusKey | translate }}</p>
+      <div class="deck-stats-block">
+        <app-review-stats-panel [userDeckId]="deck.userDeckId" titleKey="stats.deckTitle" [flat]="true"></app-review-stats-panel>
+      </div>
 
-      <section class="ai-feature-section">
-        <div class="ai-feature-header">
-          <h2>{{ 'deckProfile.aiFeaturesTitle' | translate }}</h2>
-          <p>{{ 'deckProfile.aiFeaturesDescription' | translate }}</p>
-        </div>
-        <div class="ai-feature-grid">
-          <button class="ai-feature-card" (click)="openAiAddModal()">
-            <div class="ai-feature-icon">✨</div>
-            <div>
-              <h3>{{ 'deckProfile.aiAddCardsTitle' | translate }}</h3>
-              <p>{{ 'deckProfile.aiAddCardsDescription' | translate }}</p>
-            </div>
-          </button>
-          <button class="ai-feature-card" (click)="openAiEnhanceModal()">
-            <div class="ai-feature-icon">🧠</div>
-            <div>
-              <h3>{{ 'deckProfile.aiEnhanceTitle' | translate }}</h3>
-              <p>{{ 'deckProfile.aiEnhanceDescription' | translate }}</p>
-            </div>
-          </button>
-          <button class="ai-feature-card" (click)="openAiImportModal()">
-            <div class="ai-feature-icon">📂</div>
-            <div>
-              <h3>{{ 'deckProfile.aiImportTitle' | translate }}</h3>
-              <p>{{ 'deckProfile.aiImportDescription' | translate }}</p>
-            </div>
-          </button>
-        </div>
-      </section>
+      <p *ngIf="exportStatusKey" class="export-status">{{ exportStatusKey | translate }}</p>
 
       <section class="ai-jobs-section">
         <div class="ai-jobs-header">
@@ -372,6 +344,7 @@ import { I18nService } from '../../core/services/i18n.service';
       [deckName]="deck.displayName"
       [templateId]="publicDeck?.templateId || ''"
       [templateVersion]="deck.templateVersion || null"
+      [canApplyGlobal]="isAuthor"
       (jobCreated)="onAiJobCreated($event)"
       (closed)="closeAiEnhanceModal()"
     ></app-ai-enhance-deck-modal>
@@ -423,9 +396,9 @@ import { I18nService } from '../../core/services/i18n.service';
               </div>
             </div>
             <div class="checkbox-group">
-              <label>
+              <label class="glass-checkbox">
                 <input type="checkbox" formControlName="autoUpdate" />
-                {{ 'deckProfile.autoUpdateLabel' | translate }}
+                <span>{{ 'deckProfile.autoUpdateLabel' | translate }}</span>
               </label>
             </div>
 
@@ -461,10 +434,9 @@ import { I18nService } from '../../core/services/i18n.service';
               <div class="form-group">
                 <label>{{ 'deckProfile.language' | translate }}</label>
                 <select formControlName="language" class="language-select">
-                  <option value="en">{{ 'language.code.en' | translate }}</option>
-                  <option value="ru">{{ 'language.code.ru' | translate }}</option>
-                  <option value="jp">{{ 'language.code.jp' | translate }}</option>
-                  <option value="sp">{{ 'language.code.sp' | translate }}</option>
+                  <option *ngFor="let option of deckLanguageOptions" [value]="option.code">
+                    {{ option.labelKey | translate }}
+                  </option>
                 </select>
               </div>
               <div class="form-group">
@@ -484,15 +456,15 @@ import { I18nService } from '../../core/services/i18n.service';
                 <p *ngIf="tagError" class="error-message">{{ tagError }}</p>
               </div>
               <div class="checkbox-group">
-                <label>
+                <label class="glass-checkbox">
                   <input type="checkbox" formControlName="isPublic" />
-                  {{ 'deckProfile.makePublic' | translate }}
+                  <span>{{ 'deckProfile.makePublic' | translate }}</span>
                 </label>
               </div>
               <div class="checkbox-group">
-                <label>
+                <label class="glass-checkbox">
                   <input type="checkbox" formControlName="isListed" />
-                  {{ 'deckProfile.listInCatalog' | translate }}
+                  <span>{{ 'deckProfile.listInCatalog' | translate }}</span>
                 </label>
               </div>
             </div>
@@ -575,7 +547,7 @@ import { I18nService } from '../../core/services/i18n.service';
               <h3>{{ 'deckProfile.exportCsvTitle' | translate }}</h3>
               <p>{{ 'deckProfile.exportCsvDesc' | translate }}</p>
             </div>
-            <div class="choice-card" (click)="confirmExport('mnema')">
+            <div class="choice-card" (click)="confirmExport('mnpkg')">
               <div class="choice-icon">📦</div>
               <h3>{{ 'deckProfile.exportMnemaTitle' | translate }}</h3>
               <p>{{ 'deckProfile.exportMnemaDesc' | translate }}</p>
@@ -659,6 +631,7 @@ import { I18nService } from '../../core/services/i18n.service';
       }
 
       .deck-stats-block {
+        margin-top: var(--spacing-xl);
         margin-bottom: var(--spacing-2xl);
       }
 
@@ -687,81 +660,6 @@ import { I18nService } from '../../core/services/i18n.service';
       .error-state {
         color: #dc2626;
         font-size: 0.9rem;
-      }
-
-      .ai-feature-section {
-        margin-top: var(--spacing-2xl);
-        padding: var(--spacing-xl);
-        background: var(--color-card-background);
-        border-radius: var(--border-radius-lg);
-        border: 1px solid var(--border-color);
-      }
-
-      .ai-feature-header h2 {
-        margin: 0 0 var(--spacing-xs) 0;
-        font-size: 1.4rem;
-      }
-
-      .ai-feature-header p {
-        margin: 0 0 var(--spacing-lg) 0;
-        color: var(--color-text-muted);
-      }
-
-      .ai-feature-grid {
-        display: grid;
-        gap: var(--spacing-md);
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      }
-
-      .ai-feature-card {
-        display: flex;
-        align-items: flex-start;
-        gap: var(--spacing-md);
-        padding: var(--spacing-md);
-        border-radius: var(--border-radius-lg);
-        border: 1px solid var(--glass-border);
-        background: var(--color-background);
-        text-align: left;
-        cursor: pointer;
-        color: var(--color-text-primary);
-        transition: transform 0.2s ease, box-shadow 0.2s ease;
-      }
-
-      .ai-feature-card h3 {
-        margin: 0 0 var(--spacing-xs) 0;
-        color: var(--color-text-primary);
-      }
-
-      .ai-feature-card p {
-        margin: 0;
-        color: var(--color-text-secondary);
-      }
-
-      .ai-feature-card:hover {
-        transform: translateY(-2px);
-        box-shadow: var(--shadow-sm);
-      }
-
-      .ai-feature-card.disabled {
-        opacity: 0.6;
-        cursor: not-allowed;
-        box-shadow: none;
-        transform: none;
-      }
-
-      .ai-feature-icon {
-        width: 44px;
-        height: 44px;
-        border-radius: 12px;
-        background: var(--color-surface-solid);
-        color: var(--color-text-primary);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.25rem;
-        line-height: 1;
-        border: 1px solid var(--border-color);
-        flex-shrink: 0;
       }
 
       .ai-jobs-section {
@@ -1079,11 +977,27 @@ import { I18nService } from '../../core/services/i18n.service';
         scrollbar-color: var(--glass-border-strong) transparent;
       }
 
+      .add-choice-modal .modal-body,
+      .export-choice-modal .modal-body {
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+
       .edit-deck-modal .modal-body::-webkit-scrollbar {
         width: 8px;
       }
 
+      .add-choice-modal .modal-body::-webkit-scrollbar,
+      .export-choice-modal .modal-body::-webkit-scrollbar {
+        width: 8px;
+      }
+
       .edit-deck-modal .modal-body::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .add-choice-modal .modal-body::-webkit-scrollbar-track,
+      .export-choice-modal .modal-body::-webkit-scrollbar-track {
         background: transparent;
       }
 
@@ -1094,7 +1008,20 @@ import { I18nService } from '../../core/services/i18n.service';
         background-clip: padding-box;
       }
 
+      .add-choice-modal .modal-body::-webkit-scrollbar-thumb,
+      .export-choice-modal .modal-body::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
       .edit-deck-modal .modal-body::-webkit-scrollbar-thumb:hover {
+        background: var(--border-color-hover);
+      }
+
+      .add-choice-modal .modal-body::-webkit-scrollbar-thumb:hover,
+      .export-choice-modal .modal-body::-webkit-scrollbar-thumb:hover {
         background: var(--border-color-hover);
       }
 
@@ -1173,12 +1100,6 @@ import { I18nService } from '../../core/services/i18n.service';
         align-items: center;
         gap: var(--spacing-sm);
         font-size: 0.9rem;
-        cursor: pointer;
-      }
-
-      .checkbox-group input[type="checkbox"] {
-        width: 18px;
-        height: 18px;
         cursor: pointer;
       }
 
@@ -1455,6 +1376,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     tagError = '';
     tagInput = '';
     tags: string[] = [];
+    readonly deckLanguageOptions = DECK_LANGUAGE_OPTIONS;
 
     formatDescription(description?: string): string {
         return markdownToHtml((description || '').trim());
@@ -1508,7 +1430,8 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         private importApi: ImportApiService,
         private mediaApi: MediaApiService,
         private aiApi: AiApiService,
-        private i18n: I18nService
+        private i18n: I18nService,
+        private toast: ToastService
     ) {}
 
     ngOnInit(): void {
@@ -1907,6 +1830,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         this.showExportChoice = false;
         this.exporting = true;
         this.exportStatusKey = 'deckProfile.exportPreparing';
+        this.toast.info('toast.exportSoon');
 
         this.importApi.createExportJob({ userDeckId: this.deck.userDeckId, format }).subscribe({
             next: job => {
@@ -1914,9 +1838,11 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                 this.exportStatusKey = 'deckProfile.exportRunning';
                 this.startExportPolling(job.jobId);
             },
-            error: () => {
+            error: err => {
+                console.error('Failed to create export job', err);
                 this.exporting = false;
                 this.exportStatusKey = 'deckProfile.exportFailed';
+                this.toast.error('toast.exportFailed');
             }
         });
     }
@@ -1934,12 +1860,22 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                             this.downloadExport(job.resultMediaId);
                         } else {
                             this.exportStatusKey = 'deckProfile.exportFailed';
+                            this.toast.error('toast.exportFailed');
                         }
                     } else if (job.status === 'failed' || job.status === 'canceled') {
+                        console.error('Export job failed', {
+                            jobId: job.jobId,
+                            status: job.status,
+                            errorMessage: job.errorMessage
+                        });
                         this.exporting = false;
                         this.stopExportPolling();
                         this.exportStatusKey = 'deckProfile.exportFailed';
+                        this.toast.error('toast.exportFailed');
                     }
+                },
+                error: err => {
+                    console.error('Failed to poll export job', { jobId, err });
                 }
             });
         }, 2000);
@@ -1957,16 +1893,33 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             next: resolved => {
                 const url = resolved[0]?.url;
                 if (url) {
-                    window.open(url, '_blank');
+                    this.triggerDownload(url);
                     this.exportStatusKey = 'deckProfile.exportReady';
+                    this.toast.success('toast.exportStarted');
                 } else {
+                    console.error('Export file is missing resolved URL', { mediaId });
                     this.exportStatusKey = 'deckProfile.exportFailed';
+                    this.toast.error('toast.exportFailed');
                 }
             },
-            error: () => {
+            error: err => {
+                console.error('Failed to resolve exported file media', { mediaId, err });
                 this.exportStatusKey = 'deckProfile.exportFailed';
+                this.toast.error('toast.exportFailed');
             }
         });
+    }
+
+    private triggerDownload(url: string): void {
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.target = '_self';
+        anchor.rel = 'noopener';
+        anchor.setAttribute('download', '');
+        anchor.style.display = 'none';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
     }
 
     private resolveBrowserTimeZone(): string | null {

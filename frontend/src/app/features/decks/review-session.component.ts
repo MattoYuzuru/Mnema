@@ -10,7 +10,7 @@ import { PreferencesService } from '../../core/services/preferences.service';
 import { I18nService } from '../../core/services/i18n.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { CardTemplateDTO } from '../../core/models/template.models';
-import { ReviewClientFeatures, ReviewNextCardResponse, ReviewQueueDTO } from '../../core/models/review.models';
+import { ReviewClientFeatures, ReviewCompletionDTO, ReviewNextCardResponse, ReviewQueueDTO } from '../../core/models/review.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { FlashcardViewComponent } from '../../shared/components/flashcard-view.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
@@ -30,13 +30,49 @@ interface ReviewAnswerOption {
     template: `
     <div class="review-session" [class.mobile-swipe-enabled]="isMobileSwipeColumnMode()">
       <div *ngIf="sessionComplete" class="session-complete">
-        <div class="complete-message">
+        <article class="complete-message" [class.celebration]="isFirstCompletionToday()">
+          <p class="complete-kicker">
+            {{ (isFirstCompletionToday() ? 'review.sessionFirstTodayTitle' : 'review.sessionGreatWork') | translate }}
+          </p>
           <h2>{{ 'review.sessionComplete' | translate }}</h2>
-          <p>{{ 'review.allCardsReviewed' | translate }}</p>
-          <app-button variant="primary" size="lg" (click)="backToDeck()">
-            {{ 'review.backToDeck' | translate }}
-          </app-button>
-        </div>
+          <p class="complete-subtitle">
+            {{ (isFirstCompletionToday() ? 'review.sessionFirstTodayHint' : 'review.allCardsReviewed') | translate }}
+          </p>
+
+          <div *ngIf="completion?.streak as streak" class="streak-progress" [class.celebration]="isFirstCompletionToday()">
+            <div class="streak-values">
+              <span *ngIf="isFirstCompletionToday()" class="streak-before">{{ streak.previousStreakDays }}</span>
+              <span *ngIf="isFirstCompletionToday()" class="streak-arrow">→</span>
+              <span class="streak-after">{{ animatedStreakValue }}</span>
+            </div>
+            <span class="streak-caption">{{ 'stats.streakDays' | translate }}</span>
+          </div>
+
+          <div class="completion-stats">
+            <article class="completion-stat">
+              <span>{{ 'review.sessionDuration' | translate }}</span>
+              <strong>{{ completionSessionDuration() }}</strong>
+            </article>
+            <article class="completion-stat">
+              <span>{{ 'review.sessionReviewsDone' | translate }}</span>
+              <strong>{{ completionSessionReviews() }}</strong>
+            </article>
+            <article class="completion-stat">
+              <span>{{ 'review.sessionDoneToday' | translate }}</span>
+              <strong>{{ completion?.completionIndexToday ?? 1 }}</strong>
+            </article>
+            <article class="completion-stat">
+              <span>{{ 'review.sessionBestStreak' | translate }}</span>
+              <strong>{{ completion?.streak?.longestStreakDays ?? animatedStreakValue }}</strong>
+            </article>
+          </div>
+
+          <div class="complete-actions">
+            <app-button variant="primary" size="lg" (click)="backToDeck()">
+              {{ 'review.backToDeck' | translate }}
+            </app-button>
+          </div>
+        </article>
       </div>
 
       <div *ngIf="!sessionComplete && currentCard">
@@ -76,6 +112,8 @@ interface ReviewAnswerOption {
               [content]="currentCard.effectiveContent"
               [side]="'front'"
               [hideLabels]="preferences.hideFieldLabels"
+              [autoPlayAudioSequence]="preferences.autoPlayCardAudioSequence"
+              [autoPlaySequenceToken]="currentCard.userCardId"
             ></app-flashcard-view>
             <div *ngIf="revealed && template && currentCard" class="revealed-content">
               <app-flashcard-view
@@ -84,6 +122,7 @@ interface ReviewAnswerOption {
                 [content]="currentCard.effectiveContent"
                 [side]="'front'"
                 [hideLabels]="preferences.hideFieldLabels"
+                [autoPlayAudioSequence]="false"
               ></app-flashcard-view>
               <div *ngIf="preferences.showFrontSideAfterFlip" class="divider"></div>
               <app-flashcard-view
@@ -91,6 +130,7 @@ interface ReviewAnswerOption {
                 [content]="currentCard.effectiveContent"
                 [side]="'back'"
                 [hideLabels]="preferences.hideFieldLabels"
+                [autoPlayAudioSequence]="false"
               ></app-flashcard-view>
             </div>
           </div>
@@ -154,19 +194,138 @@ interface ReviewAnswerOption {
       }
 
       .complete-message {
+        width: min(46rem, 100%);
         text-align: center;
         padding: var(--spacing-2xl);
+        border-radius: calc(var(--border-radius-lg) + 0.35rem);
+        border: 1px solid color-mix(in srgb, var(--glass-border-strong) 85%, var(--border-color));
+        background:
+          linear-gradient(145deg, color-mix(in srgb, var(--glass-surface-strong) 86%, transparent), color-mix(in srgb, var(--glass-surface) 86%, transparent)),
+          radial-gradient(140% 130% at 50% 0%, color-mix(in srgb, var(--color-primary-accent) 20%, transparent), transparent 65%);
+        backdrop-filter: blur(calc(var(--glass-blur) + 2px)) saturate(165%);
+        box-shadow: 0 24px 46px -32px color-mix(in srgb, var(--shadow-color) 90%, transparent);
+      }
+
+      .complete-message.celebration {
+        border-color: color-mix(in srgb, var(--color-primary-accent) 46%, var(--glass-border-strong));
+        background:
+          linear-gradient(145deg, color-mix(in srgb, var(--glass-surface-strong) 90%, transparent), color-mix(in srgb, var(--glass-surface) 88%, transparent)),
+          radial-gradient(130% 120% at 8% -12%, color-mix(in srgb, var(--color-primary-accent) 28%, transparent), transparent 64%),
+          radial-gradient(120% 110% at 92% 0%, color-mix(in srgb, var(--color-secondary-accent) 26%, transparent), transparent 62%);
       }
 
       .complete-message h2 {
-        font-size: 1.75rem;
-        margin: 0 0 var(--spacing-md) 0;
+        font-size: clamp(1.75rem, 3.8vw, 2.4rem);
+        margin: 0.25rem 0 var(--spacing-md) 0;
+        line-height: 1.1;
       }
 
-      .complete-message p {
+      .complete-kicker {
+        margin: 0;
+        font-size: 0.82rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: var(--color-text-secondary);
+      }
+
+      .complete-subtitle {
         font-size: 1.1rem;
         color: var(--color-text-muted);
         margin: 0 0 var(--spacing-xl) 0;
+      }
+
+      .streak-progress {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.2rem;
+        margin: 0 0 var(--spacing-xl) 0;
+        padding: 0.6rem 1rem;
+        border-radius: 999px;
+        border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+        background: color-mix(in srgb, var(--glass-surface-strong) 86%, transparent);
+      }
+
+      .streak-progress.celebration {
+        border-color: color-mix(in srgb, var(--color-primary-accent) 48%, var(--border-color));
+      }
+
+      .streak-values {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.55rem;
+        line-height: 1;
+      }
+
+      .streak-before {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.35rem;
+        line-height: 1;
+        color: var(--color-text-muted);
+        font-weight: 600;
+      }
+
+      .streak-arrow {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        color: var(--color-text-secondary);
+        font-size: 1.35rem;
+        line-height: 1;
+      }
+
+      .streak-after {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: clamp(2rem, 5vw, 3rem);
+        line-height: 1;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        background: linear-gradient(120deg, var(--color-primary-accent), var(--color-secondary-accent));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+
+      .streak-caption {
+        font-size: 0.9rem;
+        color: var(--color-text-secondary);
+      }
+
+      .completion-stats {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: var(--spacing-sm);
+        margin-bottom: var(--spacing-xl);
+      }
+
+      .completion-stat {
+        padding: var(--spacing-sm);
+        border-radius: var(--border-radius-md);
+        border: 1px solid color-mix(in srgb, var(--border-color) 78%, transparent);
+        background: color-mix(in srgb, var(--glass-surface-strong) 86%, transparent);
+        text-align: left;
+      }
+
+      .completion-stat span {
+        display: block;
+        font-size: 0.76rem;
+        color: var(--color-text-secondary);
+      }
+
+      .completion-stat strong {
+        display: block;
+        margin-top: 0.25rem;
+        font-size: 1.1rem;
+      }
+
+      .complete-actions {
+        display: flex;
+        justify-content: center;
       }
 
       .review-header {
@@ -335,6 +494,10 @@ interface ReviewAnswerOption {
           font-size: 1.25rem;
         }
 
+        .completion-stats {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
         .card-container {
           min-height: 16rem;
         }
@@ -363,6 +526,10 @@ interface ReviewAnswerOption {
           padding: var(--spacing-md);
         }
 
+        .completion-stats {
+          grid-template-columns: 1fr;
+        }
+
         .answer-buttons:not(.answer-buttons-mobile-column) {
           flex-direction: column;
           width: 100%;
@@ -384,6 +551,8 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
     queue: ReviewQueueDTO = { newCount: 0, dueCount: 0 };
     initialTotalRemaining = 0;
     sessionComplete = false;
+    completion: ReviewCompletionDTO | null = null;
+    animatedStreakValue = 0;
     revealed = false;
     cardShownTime = 0;
     isMobileViewport = false;
@@ -391,6 +560,7 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
     private swipeStartX: number | null = null;
     private swipeStartY: number | null = null;
     private suppressAnswerClickUntil = 0;
+    private streakAnimationTimer: ReturnType<typeof setInterval> | null = null;
 
     private readonly quadAnswerOptions: ReadonlyArray<ReviewAnswerOption> = [
         { rating: 'AGAIN', labelKey: 'review.again', variant: 'ghost' },
@@ -424,6 +594,7 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
     }
 
     ngOnDestroy(): void {
+        this.stopStreakAnimation();
     }
 
     get answerOptions(): ReadonlyArray<ReviewAnswerOption> {
@@ -444,7 +615,7 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
             return;
         }
 
-        if (event.key === ' ' || event.key === 'Space') {
+        if (this.isSpaceKey(event)) {
             event.preventDefault();
             if (!this.revealed) {
                 this.revealAnswer();
@@ -518,7 +689,7 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
         forkJoin({ deck: deck$, nextCard: nextCard$ }).subscribe({
             next: result => {
                 this.deck = result.deck;
-                this.handleNextCard(result.nextCard);
+                this.handleNextCard(result.nextCard, null);
                 if (this.deck.publicDeckId && !this.sessionComplete) {
                     this.publicDeckApi.getPublicDeck(this.deck.publicDeckId).subscribe({
                         next: publicDeck => {
@@ -538,7 +709,7 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
         });
     }
 
-    private handleNextCard(nextCard: ReviewNextCardResponse): void {
+    private handleNextCard(nextCard: ReviewNextCardResponse, completion: ReviewCompletionDTO | null): void {
         this.queue = nextCard.queue;
 
         if (this.initialTotalRemaining === 0) {
@@ -547,10 +718,16 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
 
         if (nextCard.userCardId === null) {
             this.sessionComplete = true;
-            setTimeout(() => this.backToDeck(), 2000);
+            this.currentCard = null;
+            this.revealed = false;
+            this.completion = completion;
+            this.animateStreakValue();
             return;
         }
 
+        this.sessionComplete = false;
+        this.completion = null;
+        this.animatedStreakValue = 0;
         this.currentCard = nextCard;
         this.revealed = false;
         this.cardShownTime = performance.now();
@@ -599,7 +776,7 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
             features: this.buildClientFeatures()
         }).subscribe({
             next: response => {
-                this.handleNextCard(response.next);
+                this.handleNextCard(response.next, response.completion ?? null);
             },
             error: () => {
                 this.backToDeck();
@@ -609,6 +786,27 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
 
     backToDeck(): void {
         void this.router.navigate(['/decks', this.userDeckId]);
+    }
+
+    isFirstCompletionToday(): boolean {
+        return this.completion?.firstCompletionToday === true;
+    }
+
+    completionSessionDuration(): string {
+        const minutes = this.completion?.session?.durationMinutes;
+        if (!minutes || minutes <= 0) {
+            return '0m';
+        }
+        if (minutes < 60) {
+            return `${minutes}m`;
+        }
+        const hours = Math.floor(minutes / 60);
+        const rest = minutes % 60;
+        return rest === 0 ? `${hours}h` : `${hours}h ${rest}m`;
+    }
+
+    completionSessionReviews(): number {
+        return this.completion?.session?.reviewCount ?? 0;
     }
 
     isHlr(): boolean {
@@ -630,6 +828,41 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
     private resetSwipeState(): void {
         this.swipeStartX = null;
         this.swipeStartY = null;
+    }
+
+    private isSpaceKey(event: KeyboardEvent): boolean {
+        return event.key === ' ' || event.key === 'Space' || event.key === 'Spacebar' || event.code === 'Space';
+    }
+
+    private animateStreakValue(): void {
+        this.stopStreakAnimation();
+        const streak = this.completion?.streak;
+        if (!streak) {
+            this.animatedStreakValue = 0;
+            return;
+        }
+        const from = this.isFirstCompletionToday() ? streak.previousStreakDays : streak.currentStreakDays;
+        const to = streak.currentStreakDays;
+        this.animatedStreakValue = from;
+        if (from === to || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+            this.animatedStreakValue = to;
+            return;
+        }
+        const step = to > from ? 1 : -1;
+        this.streakAnimationTimer = setInterval(() => {
+            if (this.animatedStreakValue === to) {
+                this.stopStreakAnimation();
+                return;
+            }
+            this.animatedStreakValue += step;
+        }, 260);
+    }
+
+    private stopStreakAnimation(): void {
+        if (this.streakAnimationTimer !== null) {
+            clearInterval(this.streakAnimationTimer);
+            this.streakAnimationTimer = null;
+        }
     }
 
     private localizeIntervalDisplay(display: string): string {

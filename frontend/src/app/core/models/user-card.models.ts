@@ -28,6 +28,8 @@ export interface MissingFieldSummary {
 }
 
 export interface DuplicateGroup {
+    matchType?: 'exact' | 'semantic' | string;
+    confidence?: number;
     size: number;
     cards: UserCardDTO[];
 }

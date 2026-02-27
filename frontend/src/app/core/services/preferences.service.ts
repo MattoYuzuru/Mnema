@@ -4,6 +4,7 @@ import { BehaviorSubject, Observable } from 'rxjs';
 export interface UserPreferences {
     hideFieldLabels: boolean;
     showFrontSideAfterFlip: boolean;
+    autoPlayCardAudioSequence: boolean;
     mobileReviewButtonsMode: 'classic' | 'swipe-column';
     mobileReviewButtonsSide: 'left' | 'right';
 }
@@ -30,6 +31,7 @@ export class PreferencesService {
                 return {
                     ...defaults,
                     ...parsed,
+                    autoPlayCardAudioSequence: parsed.autoPlayCardAudioSequence === true,
                     mobileReviewButtonsMode: parsed.mobileReviewButtonsMode === 'swipe-column'
                         ? 'swipe-column'
                         : 'classic',
@@ -47,6 +49,7 @@ export class PreferencesService {
         return {
             hideFieldLabels: false,
             showFrontSideAfterFlip: true,
+            autoPlayCardAudioSequence: false,
             mobileReviewButtonsMode: 'swipe-column',
             mobileReviewButtonsSide: 'left'
         };
@@ -68,6 +71,16 @@ export class PreferencesService {
 
     setShowFrontSideAfterFlip(show: boolean): void {
         const updated = { ...this._preferencesSubject.value, showFrontSideAfterFlip: show };
+        this._preferencesSubject.next(updated);
+        this.savePreferences(updated);
+    }
+
+    get autoPlayCardAudioSequence(): boolean {
+        return this._preferencesSubject.value.autoPlayCardAudioSequence;
+    }
+
+    setAutoPlayCardAudioSequence(enabled: boolean): void {
+        const updated = { ...this._preferencesSubject.value, autoPlayCardAudioSequence: enabled };
         this._preferencesSubject.next(updated);
         this.savePreferences(updated);
     }

@@ -6,10 +6,13 @@ import app.mnema.core.review.algorithm.SrsAlgorithm;
 import app.mnema.core.review.api.CardViewPort;
 import app.mnema.core.review.api.DeckAlgorithmConfig;
 import app.mnema.core.review.api.DeckAlgorithmPort;
+import app.mnema.core.review.controller.dto.ReviewAnswerResponse;
 import app.mnema.core.review.controller.dto.ReviewDeckAlgorithmResponse;
 import app.mnema.core.review.domain.Rating;
 import app.mnema.core.review.entity.ReviewUserCardEntity;
 import app.mnema.core.review.entity.SrCardStateEntity;
+import app.mnema.core.review.repository.ReviewDayCompletionRepository;
+import app.mnema.core.review.repository.ReviewStatsRepository;
 import app.mnema.core.review.repository.ReviewUserCardRepository;
 import app.mnema.core.review.repository.SrCardStateRepository;
 import app.mnema.core.review.repository.SrReviewLogRepository;
@@ -63,6 +66,12 @@ class ReviewServiceTest {
     SrReviewLogRepository reviewLogRepository;
 
     @Mock
+    ReviewStatsRepository reviewStatsRepository;
+
+    @Mock
+    ReviewDayCompletionRepository reviewDayCompletionRepository;
+
+    @Mock
     AlgorithmDefaultConfigCache defaultConfigCache;
 
     @Mock
@@ -81,6 +90,8 @@ class ReviewServiceTest {
                 configMerger,
                 preferencesService,
                 reviewLogRepository,
+                reviewStatsRepository,
+                reviewDayCompletionRepository,
                 defaultConfigCache,
                 updateBuffer
         );
@@ -201,11 +212,103 @@ class ReviewServiceTest {
         when(preferencesService.getSnapshot(eq(deckId), any())).thenReturn(snapshot);
         when(userCardRepo.countDue(eq(userId), eq(deckId), any())).thenReturn(0L);
         when(userCardRepo.countNew(userId, deckId)).thenReturn(0L);
-        reviewService.answer(userId, deckId, cardId, Rating.GOOD, 1200, app.mnema.core.review.domain.ReviewSource.web, null);
+        when(reviewDayCompletionRepository.registerCompletion(eq(userId), any(), any()))
+                .thenReturn(new ReviewDayCompletionRepository.CompletionProjection() {
+                    @Override
+                    public int getCompletionsCount() {
+                        return 1;
+                    }
+
+                    @Override
+                    public Instant getFirstCompletedAt() {
+                        return Instant.now();
+                    }
+
+                    @Override
+                    public Instant getLastCompletedAt() {
+                        return Instant.now();
+                    }
+                });
+        when(reviewStatsRepository.loadStreak(eq(userId), isNull(), any(), eq("UTC"), eq(0)))
+                .thenReturn(new ReviewStatsRepository.StreakProjection() {
+                    @Override
+                    public long getCurrentStreakDays() {
+                        return 7;
+                    }
+
+                    @Override
+                    public long getLongestStreakDays() {
+                        return 11;
+                    }
+
+                    @Override
+                    public long getTodayStreakDays() {
+                        return 7;
+                    }
+
+                    @Override
+                    public boolean getActiveToday() {
+                        return true;
+                    }
+
+                    @Override
+                    public java.time.LocalDate getCurrentStreakStartDate() {
+                        return null;
+                    }
+
+                    @Override
+                    public java.time.LocalDate getCurrentStreakEndDate() {
+                        return null;
+                    }
+
+                    @Override
+                    public java.time.LocalDate getLastActiveDate() {
+                        return null;
+                    }
+                });
+        when(reviewStatsRepository.loadLatestSessionWindow(eq(userId), eq(deckId), any(), any(), eq("UTC"), eq(0), eq(30)))
+                .thenReturn(new ReviewStatsRepository.SessionWindowProjection() {
+                    @Override
+                    public Instant getSessionStartedAt() {
+                        return Instant.now().minusSeconds(1800);
+                    }
+
+                    @Override
+                    public Instant getSessionEndedAt() {
+                        return Instant.now();
+                    }
+
+                    @Override
+                    public long getDurationMinutes() {
+                        return 30;
+                    }
+
+                    @Override
+                    public long getReviewCount() {
+                        return 12;
+                    }
+
+                    @Override
+                    public long getTotalResponseMs() {
+                        return 7300;
+                    }
+                });
+        ReviewAnswerResponse response = reviewService.answer(
+                userId,
+                deckId,
+                cardId,
+                Rating.GOOD,
+                1200,
+                app.mnema.core.review.domain.ReviewSource.web,
+                null
+        );
 
         ArgumentCaptor<SrsAlgorithm.ReviewInput> inputCaptor = ArgumentCaptor.forClass(SrsAlgorithm.ReviewInput.class);
         verify(newAlgorithm).review(inputCaptor.capture(), eq(Rating.GOOD), any(), eq(effectiveCfg), any(), any());
         assertThat(inputCaptor.getValue().state()).isEqualTo(convertedState);
         verify(preferencesService).incrementCounters(eq(deckId), eq(false), any());
+        assertThat(response.completion()).isNotNull();
+        assertThat(response.completion().firstCompletionToday()).isTrue();
+        assertThat(response.completion().streak().currentStreakDays()).isEqualTo(7);
     }
 }

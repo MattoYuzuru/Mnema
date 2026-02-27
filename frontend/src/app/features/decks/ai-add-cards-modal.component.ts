@@ -6,6 +6,8 @@ import { TemplateApiService } from '../../core/services/template-api.service';
 import { AiJobResponse, AiProviderCredential } from '../../core/models/ai.models';
 import { FieldTemplateDTO } from '../../core/models/template.models';
 import { ButtonComponent } from '../../shared/components/button.component';
+import { I18nService } from '../../core/services/i18n.service';
+import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 type FieldOption = { key: string; label: string; enabled: boolean };
 type TtsMapping = { sourceField: string; targetField: string };
@@ -13,34 +15,34 @@ type TtsMapping = { sourceField: string; targetField: string };
 @Component({
     selector: 'app-ai-add-cards-modal',
     standalone: true,
-    imports: [NgFor, NgIf, FormsModule, ButtonComponent],
+    imports: [NgFor, NgIf, FormsModule, ButtonComponent, TranslatePipe],
     template: `
     <div class="modal-overlay" (click)="close()">
       <div class="modal-content ai-modal" (click)="$event.stopPropagation()">
         <div class="modal-header">
-          <h2>AI Additions</h2>
+          <h2>{{ 'aiAdd.title' | translate }}</h2>
           <button class="close-btn" (click)="close()">&times;</button>
         </div>
 
         <div class="modal-body">
           <p class="modal-hint">
-            Generate new cards with AI using your provider key. Results will appear in this deck once completed.
+            {{ 'aiAdd.hint' | translate }}
           </p>
 
           <div class="ai-source">
             <div class="source-card active">
-              <div class="source-title">Use my key</div>
-              <div class="source-meta">Your saved provider keys are used for generation.</div>
+              <div class="source-title">{{ 'aiAdd.sourceOwnTitle' | translate }}</div>
+              <div class="source-meta">{{ 'aiAdd.sourceOwnDesc' | translate }}</div>
             </div>
             <div class="source-card disabled" aria-disabled="true">
-              <div class="source-title">Use Mnema subscription</div>
-              <div class="source-meta">Coming soon</div>
+              <div class="source-title">{{ 'aiAdd.sourceSubscriptionTitle' | translate }}</div>
+              <div class="source-meta">{{ 'aiAdd.sourceSubscriptionDesc' | translate }}</div>
             </div>
           </div>
 
-          <div class="form-grid">
+          <div class="form-grid compact-head-grid">
             <div class="form-field">
-              <label for="ai-provider-key">Provider key</label>
+              <label for="ai-provider-key">{{ 'aiAdd.providerLabel' | translate }}</label>
               <select
                 id="ai-provider-key"
                 class="glass-select"
@@ -48,18 +50,18 @@ type TtsMapping = { sourceField: string; targetField: string };
                 (ngModelChange)="onProviderChange($event)"
                 [disabled]="loadingProviders() || providerKeys().length === 0"
               >
-                <option [ngValue]="''">Select a key</option>
+                <option [ngValue]="''">{{ 'aiAdd.selectKey' | translate }}</option>
                 <option *ngFor="let key of providerKeys(); trackBy: trackProvider" [ngValue]="key.id">
                   {{ key.provider }}{{ key.alias ? ' · ' + key.alias : '' }}
                 </option>
               </select>
               <p *ngIf="!loadingProviders() && providerKeys().length === 0" class="field-hint">
-                Add a provider key in Settings first.
+                {{ 'aiAdd.noKeys' | translate }}
               </p>
             </div>
 
             <div class="form-field">
-              <label for="ai-card-count">Cards to generate</label>
+              <label for="ai-card-count">{{ 'aiAdd.cardCountLabel' | translate }}</label>
               <input
                 id="ai-card-count"
                 type="number"
@@ -71,7 +73,7 @@ type TtsMapping = { sourceField: string; targetField: string };
             </div>
 
             <div class="form-field">
-              <label for="ai-model">Model (optional)</label>
+              <label for="ai-model">{{ 'aiAdd.modelLabel' | translate }}</label>
               <input
                 id="ai-model"
                 type="text"
@@ -83,7 +85,7 @@ type TtsMapping = { sourceField: string; targetField: string };
           </div>
 
           <div class="field-options">
-            <label>Fields to generate</label>
+            <label>{{ 'aiAdd.fieldsLabel' | translate }}</label>
             <div class="field-grid">
               <label *ngFor="let field of fieldOptions(); trackBy: trackField" class="field-option" [class.disabled]="!field.enabled">
                 <input
@@ -99,12 +101,12 @@ type TtsMapping = { sourceField: string; targetField: string };
           </div>
 
           <div *ngIf="hasAudioFields()" class="tts-section">
-            <div *ngIf="!ttsSupported()" class="field-hint">TTS is supported for OpenAI, Gemini, and Qwen providers.</div>
+            <div *ngIf="!ttsSupported()" class="field-hint">{{ 'aiAdd.ttsUnavailable' | translate }}</div>
 
             <div *ngIf="ttsEnabled()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
-                  <label for="ai-tts-model">TTS model</label>
+                  <label for="ai-tts-model">{{ 'aiAdd.ttsModelLabel' | translate }}</label>
                   <input
                     id="ai-tts-model"
                     type="text"
@@ -114,7 +116,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                   />
                 </div>
                 <div class="form-field">
-                  <label for="ai-tts-voice">Voice</label>
+                  <label for="ai-tts-voice">{{ 'aiAdd.voiceLabel' | translate }}</label>
                   <select
                     id="ai-tts-voice"
                     class="glass-select"
@@ -130,11 +132,11 @@ type TtsMapping = { sourceField: string; targetField: string };
                     type="text"
                     [ngModel]="ttsVoiceCustom()"
                     (ngModelChange)="onTtsVoiceCustomChange($event)"
-                    placeholder="Custom voice"
+                    [placeholder]="'aiAdd.customVoicePlaceholder' | translate"
                   />
                 </div>
                 <div class="form-field">
-                  <label for="ai-tts-format">Format</label>
+                  <label for="ai-tts-format">{{ 'aiAdd.formatLabel' | translate }}</label>
                   <select
                     id="ai-tts-format"
                     class="glass-select"
@@ -147,7 +149,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                   </select>
                 </div>
                 <div class="form-field">
-                  <label for="ai-tts-max-chars">Max chars</label>
+                  <label for="ai-tts-max-chars">{{ 'aiAdd.maxCharsLabel' | translate }}</label>
                   <input
                     id="ai-tts-max-chars"
                     type="number"
@@ -160,7 +162,7 @@ type TtsMapping = { sourceField: string; targetField: string };
               </div>
 
               <div class="tts-mapping">
-                <label>Audio field mapping</label>
+                <label>{{ 'aiAdd.audioMappingLabel' | translate }}</label>
                 <div class="mapping-list">
                   <div *ngFor="let mapping of ttsMappings(); let i = index" class="mapping-row">
                     <select
@@ -187,18 +189,18 @@ type TtsMapping = { sourceField: string; targetField: string };
                     </button>
                   </div>
                 </div>
-                <button type="button" class="add-mapping" (click)="addTtsMapping()">Add mapping</button>
+                <button type="button" class="add-mapping" (click)="addTtsMapping()">{{ 'aiAdd.addMapping' | translate }}</button>
               </div>
             </div>
           </div>
 
           <div *ngIf="selectedImageFields().length > 0" class="tts-section">
-            <label class="tts-toggle">Image generation</label>
-            <div *ngIf="!imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, and Grok providers.</div>
+            <label class="tts-toggle">{{ 'aiAdd.imageTitle' | translate }}</label>
+            <div *ngIf="!imageSupported()" class="field-hint">{{ 'aiAdd.imageUnavailable' | translate }}</div>
             <div *ngIf="imageSupported()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
-                  <label for="ai-image-model">Image model</label>
+                  <label for="ai-image-model">{{ 'aiAdd.imageModelLabel' | translate }}</label>
                   <select
                     id="ai-image-model"
                     class="glass-select"
@@ -206,7 +208,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                     (ngModelChange)="onImageModelChange($event)"
                   >
                     <option *ngFor="let model of imageModelOptions()" [ngValue]="model">
-                      {{ model === 'custom' ? 'Custom' : model }}
+                      {{ model === 'custom' ? ('aiAdd.customOption' | translate) : model }}
                     </option>
                   </select>
                   <input
@@ -214,11 +216,11 @@ type TtsMapping = { sourceField: string; targetField: string };
                     type="text"
                     [ngModel]="imageModelCustom()"
                     (ngModelChange)="onImageModelCustomChange($event)"
-                    placeholder="custom-image-model"
+                    [placeholder]="'aiAdd.customImageModelPlaceholder' | translate"
                   />
                 </div>
                 <div class="form-field">
-                  <label for="ai-image-size">Size</label>
+                  <label for="ai-image-size">{{ 'aiAdd.imageSizeLabel' | translate }}</label>
                   <input
                     id="ai-image-size"
                     type="text"
@@ -228,7 +230,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                   />
                 </div>
                 <div class="form-field">
-                  <label for="ai-image-format">Format</label>
+                  <label for="ai-image-format">{{ 'aiAdd.imageFormatLabel' | translate }}</label>
                   <select
                     id="ai-image-format"
                     class="glass-select"
@@ -245,12 +247,12 @@ type TtsMapping = { sourceField: string; targetField: string };
           </div>
 
           <div *ngIf="selectedVideoFields().length > 0" class="tts-section">
-            <label class="tts-toggle">Video generation</label>
-            <div *ngIf="!videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, and Grok providers.</div>
+            <label class="tts-toggle">{{ 'aiAdd.videoTitle' | translate }}</label>
+            <div *ngIf="!videoSupported()" class="field-hint">{{ 'aiAdd.videoUnavailable' | translate }}</div>
             <div *ngIf="videoSupported()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
-                  <label for="ai-video-model">Video model</label>
+                  <label for="ai-video-model">{{ 'aiAdd.videoModelLabel' | translate }}</label>
                   <select
                     id="ai-video-model"
                     class="glass-select"
@@ -258,7 +260,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                     (ngModelChange)="onVideoModelChange($event)"
                   >
                     <option *ngFor="let model of videoModelOptions()" [ngValue]="model">
-                      {{ model === 'custom' ? 'Custom' : model }}
+                      {{ model === 'custom' ? ('aiAdd.customOption' | translate) : model }}
                     </option>
                   </select>
                   <input
@@ -266,11 +268,11 @@ type TtsMapping = { sourceField: string; targetField: string };
                     type="text"
                     [ngModel]="videoModelCustom()"
                     (ngModelChange)="onVideoModelCustomChange($event)"
-                    placeholder="custom-video-model"
+                    [placeholder]="'aiAdd.customVideoModelPlaceholder' | translate"
                   />
                 </div>
                 <div class="form-field">
-                  <label for="ai-video-duration">Duration (s)</label>
+                  <label for="ai-video-duration">{{ 'aiAdd.videoDurationLabel' | translate }}</label>
                   <input
                     id="ai-video-duration"
                     type="number"
@@ -281,7 +283,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                   />
                 </div>
                 <div class="form-field">
-                  <label for="ai-video-resolution">Resolution</label>
+                  <label for="ai-video-resolution">{{ 'aiAdd.videoResolutionLabel' | translate }}</label>
                   <input
                     id="ai-video-resolution"
                     type="text"
@@ -291,7 +293,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                   />
                 </div>
                 <div class="form-field">
-                  <label for="ai-video-format">Format</label>
+                  <label for="ai-video-format">{{ 'aiAdd.videoFormatLabel' | translate }}</label>
                   <select
                     id="ai-video-format"
                     class="glass-select"
@@ -307,13 +309,13 @@ type TtsMapping = { sourceField: string; targetField: string };
           </div>
 
           <div class="form-field">
-            <label for="ai-prompt">Instructions</label>
+            <label for="ai-prompt">{{ 'aiAdd.instructionsLabel' | translate }}</label>
             <textarea
               id="ai-prompt"
               rows="4"
               [ngModel]="prompt()"
               (ngModelChange)="onPromptChange($event)"
-              placeholder="Describe what kind of cards you want to generate..."
+              [placeholder]="'aiAdd.instructionsPlaceholder' | translate"
             ></textarea>
           </div>
 
@@ -326,13 +328,13 @@ type TtsMapping = { sourceField: string; targetField: string };
         </div>
 
         <div class="modal-footer">
-          <app-button variant="ghost" (click)="close()">Cancel</app-button>
+          <app-button variant="ghost" (click)="close()">{{ 'aiAdd.cancel' | translate }}</app-button>
           <app-button
             variant="primary"
             (click)="submit()"
             [disabled]="!canSubmit()"
           >
-            {{ creating() ? 'Queueing...' : 'Generate cards' }}
+            {{ creating() ? ('aiAdd.queueing' | translate) : ('aiAdd.generate' | translate) }}
           </app-button>
         </div>
       </div>
@@ -342,7 +344,21 @@ type TtsMapping = { sourceField: string; targetField: string };
       .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(8, 12, 22, 0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(12px) saturate(140%); }
       .modal-content { background: var(--color-surface-solid); border-radius: var(--border-radius-lg); max-height: 90vh; display: flex; flex-direction: column; border: 1px solid var(--glass-border); box-shadow: var(--shadow-lg); }
       .modal-header { display: flex; justify-content: space-between; align-items: center; padding: var(--spacing-lg); border-bottom: 1px solid var(--glass-border); }
-      .modal-body { padding: var(--spacing-lg); overflow-y: auto; }
+      .modal-body {
+        padding: var(--spacing-lg);
+        overflow-y: auto;
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+      .modal-body::-webkit-scrollbar { width: 8px; }
+      .modal-body::-webkit-scrollbar-track { background: transparent; }
+      .modal-body::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+      .modal-body::-webkit-scrollbar-thumb:hover { background: var(--border-color-hover); }
       .close-btn { background: none; border: none; font-size: 2rem; cursor: pointer; color: var(--color-text-secondary); line-height: 1; padding: 0; }
       .ai-modal { max-width: 760px; width: 92%; }
       .modal-hint { color: var(--color-text-muted); margin: 0 0 var(--spacing-lg) 0; }
@@ -353,6 +369,22 @@ type TtsMapping = { sourceField: string; targetField: string };
       .source-title { font-weight: 600; margin-bottom: var(--spacing-xs); }
       .source-meta { font-size: 0.9rem; color: var(--color-text-secondary); }
       .form-grid { display: grid; gap: var(--spacing-md); grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); margin-bottom: var(--spacing-md); }
+      .compact-head-grid { align-items: start; }
+      .compact-head-grid .form-field {
+        display: grid;
+        grid-template-rows: minmax(2.4rem, auto) minmax(40px, auto) auto;
+        align-content: start;
+      }
+      .compact-head-grid .form-field label {
+        line-height: 1.2;
+        display: flex;
+        align-items: flex-end;
+      }
+      .compact-head-grid .form-field input,
+      .compact-head-grid .form-field .glass-select {
+        min-height: 40px;
+        box-sizing: border-box;
+      }
       .form-field { display: flex; flex-direction: column; gap: var(--spacing-xs); }
       .form-field input,
       .form-field textarea { padding: var(--spacing-sm); border-radius: var(--border-radius-md); border: 1px solid var(--border-color); background: var(--color-background); color: var(--color-text-primary); }
@@ -610,7 +642,11 @@ export class AiAddCardsModalComponent implements OnInit {
         'Kiki'
     ];
 
-    constructor(private aiApi: AiApiService, private templateApi: TemplateApiService) {}
+    constructor(
+        private aiApi: AiApiService,
+        private templateApi: TemplateApiService,
+        private i18n: I18nService
+    ) {}
 
     ngOnInit(): void {
         this.storageKey = `mnema_ai_add_cards:${this.userDeckId || 'default'}`;
@@ -747,15 +783,15 @@ export class AiAddCardsModalComponent implements OnInit {
         }).subscribe({
             next: job => {
                 this.creating.set(false);
+                this.clearDraft();
                 this.jobCreated.emit(job);
+                this.close();
             },
             error: err => {
                 this.creating.set(false);
-                this.createError.set(err?.error?.message || 'Failed to create AI job');
+                this.createError.set(err?.error?.message || this.i18n.translate('aiAdd.createError'));
             }
         });
-        this.clearDraft();
-        this.close();
     }
 
     close(): void {
@@ -843,7 +879,7 @@ export class AiAddCardsModalComponent implements OnInit {
 
     voiceLabel(voice: string): string {
         if (!voice) return '';
-        if (voice === 'custom') return 'Custom';
+        if (voice === 'custom') return this.i18n.translate('aiAdd.customOption');
         return voice.charAt(0).toUpperCase() + voice.slice(1);
     }
 

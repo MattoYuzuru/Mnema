@@ -16,6 +16,7 @@ import app.mnema.ai.domain.type.AiProviderStatus;
 import app.mnema.ai.repository.AiProviderCredentialRepository;
 import app.mnema.ai.service.AiJobProcessingResult;
 import app.mnema.ai.service.AiProviderProcessor;
+import app.mnema.ai.service.CardNoveltyService;
 import app.mnema.ai.provider.anki.AnkiTemplateSupport;
 import app.mnema.ai.provider.audit.AuditAnalyzer;
 import app.mnema.ai.vault.EncryptedSecret;
@@ -46,12 +47,15 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
     private static final String MODE_IMPORT_PREVIEW = "import_preview";
     private static final String MODE_IMPORT_GENERATE = "import_generate";
     private static final int MAX_CARDS = 50;
+    private static final int GENERATE_MAX_ATTEMPTS = 4;
+    private static final int NOVELTY_HINT_LIMIT = 24;
 
     private final ClaudeClient claudeClient;
     private final ClaudeProps props;
     private final SecretVault secretVault;
     private final AiProviderCredentialRepository credentialRepository;
     private final CoreApiClient coreApiClient;
+    private final CardNoveltyService noveltyService;
     private final ObjectMapper objectMapper;
     private final AnkiTemplateSupport ankiSupport;
 
@@ -60,12 +64,14 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
                               SecretVault secretVault,
                               AiProviderCredentialRepository credentialRepository,
                               CoreApiClient coreApiClient,
+                              CardNoveltyService noveltyService,
                               ObjectMapper objectMapper) {
         this.claudeClient = claudeClient;
         this.props = props;
         this.secretVault = secretVault;
         this.credentialRepository = credentialRepository;
         this.coreApiClient = coreApiClient;
+        this.noveltyService = noveltyService;
         this.objectMapper = objectMapper;
         this.ankiSupport = new AnkiTemplateSupport(objectMapper);
     }
@@ -164,18 +170,55 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         }
 
         String userPrompt = extractTextParam(params, "input", "prompt", "text");
-        String prompt = buildCardsPrompt(userPrompt, template, publicDeck, allowedFields, count, job.getDeckId(), job.getUserAccessToken());
         String model = textOrDefault(params.path("model"), props.defaultModel());
         Integer maxOutputTokens = resolveMaxTokens(params.path("maxOutputTokens"));
 
-        ClaudeResponseResult response = claudeClient.createMessage(
-                apiKey,
-                new ClaudeMessageRequest(model, prompt, maxOutputTokens)
-        );
+        CardNoveltyService.NoveltyIndex noveltyIndex = noveltyService.buildIndex(job.getDeckId(), accessToken, allowedFields);
+        List<CreateCardRequestPayload> uniqueRequests = new java.util.ArrayList<>();
+        int droppedEmpty = 0;
+        int droppedExact = 0;
+        int droppedPrimary = 0;
+        int droppedSemantic = 0;
+        ClaudeResponseResult response = null;
 
-        JsonNode parsed = parseJsonResponse(response.outputText());
-        List<CreateCardRequestPayload> cardRequests = buildCardRequests(parsed, allowedFields, template);
-        List<CreateCardRequestPayload> limitedRequests = cardRequests.stream()
+        for (int attempt = 0; attempt < GENERATE_MAX_ATTEMPTS && uniqueRequests.size() < count; attempt++) {
+            int remaining = count - uniqueRequests.size();
+            int candidateCount = resolveCandidateCount(remaining, attempt);
+            String prompt = buildCardsPrompt(
+                    augmentGeneratePrompt(userPrompt, noveltyIndex, attempt),
+                    template,
+                    publicDeck,
+                    allowedFields,
+                    candidateCount,
+                    job.getDeckId(),
+                    job.getUserAccessToken()
+            );
+            response = claudeClient.createMessage(
+                    apiKey,
+                    new ClaudeMessageRequest(model, prompt, maxOutputTokens)
+            );
+
+            JsonNode parsed = parseJsonResponse(response.outputText());
+            List<CreateCardRequestPayload> cardRequests = buildCardRequests(parsed, allowedFields, template);
+            CardNoveltyService.FilterResult<CreateCardRequestPayload> filtered = noveltyService.filterCandidates(
+                    cardRequests,
+                    CreateCardRequestPayload::content,
+                    allowedFields,
+                    noveltyIndex,
+                    remaining
+            );
+            uniqueRequests.addAll(filtered.accepted());
+            droppedEmpty += filtered.droppedEmpty();
+            droppedExact += filtered.droppedExact();
+            droppedPrimary += filtered.droppedPrimary();
+            droppedSemantic += filtered.droppedSemantic();
+        }
+
+        if (uniqueRequests.size() < count) {
+            throw new IllegalStateException("Failed to generate enough unique cards. Try a more specific prompt.");
+        }
+
+        List<CreateCardRequestPayload> limitedRequests = uniqueRequests.stream()
                 .limit(count)
                 .toList();
 
@@ -187,6 +230,12 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         summary.put("templateId", publicDeck.templateId().toString());
         summary.put("requestedCards", count);
         summary.put("createdCards", limitedRequests.size());
+        summary.put("duplicatesSkippedExact", droppedExact);
+        summary.put("duplicatesSkippedPrimary", droppedPrimary);
+        summary.put("duplicatesSkippedSemantic", droppedSemantic);
+        if (droppedEmpty > 0) {
+            summary.put("candidatesSkippedEmpty", droppedEmpty);
+        }
         ArrayNode fieldsNode = summary.putArray("fields");
         for (String field : allowedFields) {
             fieldsNode.add(field);
@@ -444,6 +493,30 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
             requested = 1;
         }
         return Math.min(requested, MAX_CARDS);
+    }
+
+    private int resolveCandidateCount(int remaining, int attempt) {
+        int safeRemaining = Math.max(1, remaining);
+        int boosted = attempt == 0
+                ? Math.max(safeRemaining * 3, safeRemaining + 10)
+                : Math.max(safeRemaining * 2, safeRemaining + 6);
+        return Math.min(boosted, 120);
+    }
+
+    private String augmentGeneratePrompt(String userPrompt, CardNoveltyService.NoveltyIndex noveltyIndex, int attempt) {
+        if (attempt <= 0) {
+            return userPrompt;
+        }
+        List<String> snippets = noveltyService.buildAvoidSnippets(noveltyIndex, NOVELTY_HINT_LIMIT);
+        if (snippets.isEmpty()) {
+            return userPrompt;
+        }
+        String forbidden = String.join(" | ", snippets);
+        String suffix = "Avoid generating items semantically similar to these existing examples: " + forbidden;
+        if (userPrompt == null || userPrompt.isBlank()) {
+            return suffix;
+        }
+        return userPrompt.trim() + ". " + suffix;
     }
 
     private int resolveLimit(JsonNode node) {
