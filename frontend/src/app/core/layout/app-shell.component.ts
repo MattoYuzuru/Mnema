@@ -10,11 +10,12 @@ import { UserApiService, UserProfile } from '../../user-api.service';
 import { I18nService, Language } from '../services/i18n.service';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
+import { ToastStackComponent } from '../../shared/components/toast-stack.component';
 
 @Component({
     selector: 'app-shell',
     standalone: true,
-    imports: [RouterOutlet, RouterLink, NgIf, ButtonComponent, TranslatePipe],
+    imports: [RouterOutlet, RouterLink, NgIf, ButtonComponent, TranslatePipe, ToastStackComponent],
     template: `
     <div class="app-shell">
       <header class="header desktop-header glass-strong">
@@ -293,6 +294,8 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           <a routerLink="/terms" class="footer-link">{{ 'nav.terms' | translate }}</a>
         </div>
       </footer>
+
+      <app-toast-stack></app-toast-stack>
     </div>
   `,
     styles: [

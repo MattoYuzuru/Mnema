@@ -66,7 +66,11 @@ public class MediaService {
         UUID userId = currentUserProvider.requireUserId(jwt);
 
         String contentType = policy.normalizeContentType(req.contentType());
-        policy.validateUpload(req.kind(), contentType, req.sizeBytes());
+        try {
+            policy.validateUpload(req.kind(), contentType, req.sizeBytes());
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage(), ex);
+        }
 
         UUID mediaId = UUID.randomUUID();
         String storageKey = buildStorageKey(req.kind().name(), mediaId);
@@ -231,7 +235,11 @@ public class MediaService {
         }
 
         long sizeBytes = file.getSize();
-        policy.validateUpload(req.kind(), contentType, sizeBytes);
+        try {
+            policy.validateUpload(req.kind(), contentType, sizeBytes);
+        } catch (IllegalArgumentException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage(), ex);
+        }
 
         UUID mediaId = UUID.randomUUID();
         String storageKey = buildStorageKey(req.kind().name(), mediaId);

@@ -95,6 +95,8 @@ public class MediaPolicy {
                 "application/x-apkg",
                 "application/apkg",
                 "application/vnd.anki",
+                "application/vnd.mnema.package+sqlite",
+                "application/x-sqlite3",
                 "text/csv",
                 "text/plain"
         );

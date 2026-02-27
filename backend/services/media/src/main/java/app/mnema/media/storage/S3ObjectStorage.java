@@ -12,6 +12,8 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignRequest;
 import software.amazon.awssdk.core.sync.RequestBody;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
@@ -133,12 +135,16 @@ public class S3ObjectStorage implements ObjectStorage {
     }
 
     @Override
-    public PresignedUrl presignGet(String key, Duration ttl) {
-        GetObjectRequest request = GetObjectRequest.builder()
+    public PresignedUrl presignGet(String key, Duration ttl, String fileName) {
+        GetObjectRequest.Builder requestBuilder = GetObjectRequest.builder()
                 .bucket(bucket)
                 .key(key)
-                .responseCacheControl(CACHE_CONTROL)
-                .build();
+                .responseCacheControl(CACHE_CONTROL);
+        String contentDisposition = buildContentDisposition(fileName);
+        if (contentDisposition != null) {
+            requestBuilder.responseContentDisposition(contentDisposition);
+        }
+        GetObjectRequest request = requestBuilder.build();
 
         GetObjectPresignRequest presign = GetObjectPresignRequest.builder()
                 .signatureDuration(ttl)
@@ -165,5 +171,22 @@ public class S3ObjectStorage implements ObjectStorage {
             headers.put(entry.getKey(), String.join(",", entry.getValue()));
         }
         return headers;
+    }
+
+    private String buildContentDisposition(String fileName) {
+        if (fileName == null) {
+            return null;
+        }
+        String sanitized = fileName
+                .replace("\\", "_")
+                .replace("\"", "_")
+                .replace("\r", "")
+                .replace("\n", "")
+                .trim();
+        if (sanitized.isBlank()) {
+            return null;
+        }
+        String encoded = URLEncoder.encode(sanitized, StandardCharsets.UTF_8).replace("+", "%20");
+        return "attachment; filename=\"" + sanitized + "\"; filename*=UTF-8''" + encoded;
     }
 }

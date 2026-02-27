@@ -23,7 +23,7 @@ public class MediaResolveCache {
 
     @Cacheable(cacheNames = "media-resolve", key = "#asset.mediaId")
     public ResolvedMedia resolve(MediaAssetEntity asset) {
-        var presigned = storage.presignGet(asset.getStorageKey(), policy.presignTtl());
+        var presigned = storage.presignGet(asset.getStorageKey(), policy.presignTtl(), asset.getOriginalFileName());
         Instant expiresAt = Instant.now().plus(policy.presignTtl());
         return new ResolvedMedia(
                 asset.getMediaId(),

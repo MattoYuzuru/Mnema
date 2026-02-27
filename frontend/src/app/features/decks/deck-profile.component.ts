@@ -31,6 +31,7 @@ import { ImportDeckModalComponent } from '../import/import-deck-modal.component'
 import { ReviewStatsPanelComponent } from '../../shared/components/review-stats-panel.component';
 import { markdownToHtml } from '../../shared/utils/markdown.util';
 import { I18nService } from '../../core/services/i18n.service';
+import { ToastService } from '../../core/services/toast.service';
 
 @Component({
     selector: 'app-deck-profile',
@@ -575,7 +576,7 @@ import { I18nService } from '../../core/services/i18n.service';
               <h3>{{ 'deckProfile.exportCsvTitle' | translate }}</h3>
               <p>{{ 'deckProfile.exportCsvDesc' | translate }}</p>
             </div>
-            <div class="choice-card" (click)="confirmExport('mnema')">
+            <div class="choice-card" (click)="confirmExport('mnpkg')">
               <div class="choice-icon">📦</div>
               <h3>{{ 'deckProfile.exportMnemaTitle' | translate }}</h3>
               <p>{{ 'deckProfile.exportMnemaDesc' | translate }}</p>
@@ -1508,7 +1509,8 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         private importApi: ImportApiService,
         private mediaApi: MediaApiService,
         private aiApi: AiApiService,
-        private i18n: I18nService
+        private i18n: I18nService,
+        private toast: ToastService
     ) {}
 
     ngOnInit(): void {
@@ -1907,6 +1909,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         this.showExportChoice = false;
         this.exporting = true;
         this.exportStatusKey = 'deckProfile.exportPreparing';
+        this.toast.info('toast.exportSoon');
 
         this.importApi.createExportJob({ userDeckId: this.deck.userDeckId, format }).subscribe({
             next: job => {
@@ -1914,9 +1917,11 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                 this.exportStatusKey = 'deckProfile.exportRunning';
                 this.startExportPolling(job.jobId);
             },
-            error: () => {
+            error: err => {
+                console.error('Failed to create export job', err);
                 this.exporting = false;
                 this.exportStatusKey = 'deckProfile.exportFailed';
+                this.toast.error('toast.exportFailed');
             }
         });
     }
@@ -1934,12 +1939,22 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                             this.downloadExport(job.resultMediaId);
                         } else {
                             this.exportStatusKey = 'deckProfile.exportFailed';
+                            this.toast.error('toast.exportFailed');
                         }
                     } else if (job.status === 'failed' || job.status === 'canceled') {
+                        console.error('Export job failed', {
+                            jobId: job.jobId,
+                            status: job.status,
+                            errorMessage: job.errorMessage
+                        });
                         this.exporting = false;
                         this.stopExportPolling();
                         this.exportStatusKey = 'deckProfile.exportFailed';
+                        this.toast.error('toast.exportFailed');
                     }
+                },
+                error: err => {
+                    console.error('Failed to poll export job', { jobId, err });
                 }
             });
         }, 2000);
@@ -1957,16 +1972,33 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             next: resolved => {
                 const url = resolved[0]?.url;
                 if (url) {
-                    window.open(url, '_blank');
+                    this.triggerDownload(url);
                     this.exportStatusKey = 'deckProfile.exportReady';
+                    this.toast.success('toast.exportStarted');
                 } else {
+                    console.error('Export file is missing resolved URL', { mediaId });
                     this.exportStatusKey = 'deckProfile.exportFailed';
+                    this.toast.error('toast.exportFailed');
                 }
             },
-            error: () => {
+            error: err => {
+                console.error('Failed to resolve exported file media', { mediaId, err });
                 this.exportStatusKey = 'deckProfile.exportFailed';
+                this.toast.error('toast.exportFailed');
             }
         });
+    }
+
+    private triggerDownload(url: string): void {
+        const anchor = document.createElement('a');
+        anchor.href = url;
+        anchor.target = '_self';
+        anchor.rel = 'noopener';
+        anchor.setAttribute('download', '');
+        anchor.style.display = 'none';
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
     }
 
     private resolveBrowserTimeZone(): string | null {
