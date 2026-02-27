@@ -19,6 +19,7 @@ import app.mnema.ai.service.AudioChunkingService;
 import app.mnema.ai.service.AiImportContentService;
 import app.mnema.ai.service.AiJobProcessingResult;
 import app.mnema.ai.service.AiProviderProcessor;
+import app.mnema.ai.service.CardNoveltyService;
 import app.mnema.ai.support.ImportItemExtractor;
 import app.mnema.ai.provider.anki.AnkiTemplateSupport;
 import app.mnema.ai.provider.audit.AuditAnalyzer;
@@ -75,6 +76,8 @@ public class QwenJobProcessor implements AiProviderProcessor {
     private static final int MAX_IMPORT_CARDS = 500;
     private static final int MIN_IMPORT_BATCH = 10;
     private static final int MAX_IMPORT_BATCH = 50;
+    private static final int GENERATE_MAX_ATTEMPTS = 4;
+    private static final int NOVELTY_HINT_LIMIT = 24;
     private static final Duration VIDEO_POLL_INTERVAL = Duration.ofSeconds(5);
     private static final Duration VIDEO_POLL_TIMEOUT = Duration.ofMinutes(5);
     private static final Pattern RETRY_IN_PATTERN = Pattern.compile("retry in\\s*([0-9]+(?:\\.[0-9]+)?)s", Pattern.CASE_INSENSITIVE);
@@ -92,6 +95,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
     private final AiImportContentService importContentService;
     private final AudioChunkingService audioChunkingService;
     private final CoreApiClient coreApiClient;
+    private final CardNoveltyService noveltyService;
     private final ObjectMapper objectMapper;
     private final AnkiTemplateSupport ankiSupport;
     private final int maxImportChars;
@@ -106,6 +110,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
                               AiImportContentService importContentService,
                               AudioChunkingService audioChunkingService,
                               CoreApiClient coreApiClient,
+                              CardNoveltyService noveltyService,
                               ObjectMapper objectMapper,
                               @Value("${app.ai.import.max-chars:200000}") int maxImportChars) {
         this.qwenClient = qwenClient;
@@ -116,6 +121,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         this.importContentService = importContentService;
         this.audioChunkingService = audioChunkingService;
         this.coreApiClient = coreApiClient;
+        this.noveltyService = noveltyService;
         this.objectMapper = objectMapper;
         this.ankiSupport = new AnkiTemplateSupport(objectMapper);
         this.maxImportChars = Math.max(maxImportChars, 1000);
@@ -1371,28 +1377,66 @@ public class QwenJobProcessor implements AiProviderProcessor {
         if (allowedFields.isEmpty()) {
             throw new IllegalStateException("No supported fields to generate");
         }
+        Map<String, String> fieldTypes = resolveFieldTypes(template);
 
         String userPrompt = extractTextParam(params, "input", "prompt", "text");
-        String prompt = buildCardsPrompt(userPrompt, template, publicDeck, allowedFields, count, job.getDeckId(), job.getUserAccessToken());
-        JsonNode responseFormat = buildCardsSchema(allowedFields, count);
         String model = textOrDefault(params.path("model"), props.defaultModel());
         Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
                 ? params.path("maxOutputTokens").asInt()
                 : null;
 
-        QwenChatResult response = qwenClient.createChatCompletion(
-                apiKey,
-                new QwenChatRequest(model, prompt, maxOutputTokens, responseFormat)
-        );
+        CardNoveltyService.NoveltyIndex noveltyIndex = noveltyService.buildIndex(job.getDeckId(), accessToken, allowedFields);
+        List<CardDraft> uniqueDrafts = new ArrayList<>();
+        int droppedEmpty = 0;
+        int droppedExact = 0;
+        int droppedPrimary = 0;
+        int droppedSemantic = 0;
+        QwenChatResult response = null;
 
-        JsonNode parsed = parseJsonResponse(response.outputText());
-        Map<String, String> fieldTypes = resolveFieldTypes(template);
-        List<CardDraft> drafts = buildCardDrafts(parsed, allowedFields, template, fieldTypes);
-        List<CreateCardRequestPayload> cardRequests = drafts.stream()
-                .map(draft -> new CreateCardRequestPayload(draft.content(), null, null, null, null, null))
-                .toList();
-        List<CreateCardRequestPayload> limitedRequests = cardRequests.stream()
+        for (int attempt = 0; attempt < GENERATE_MAX_ATTEMPTS && uniqueDrafts.size() < count; attempt++) {
+            int remaining = count - uniqueDrafts.size();
+            int candidateCount = resolveCandidateCount(remaining, attempt);
+            String prompt = buildCardsPrompt(
+                    augmentGeneratePrompt(userPrompt, noveltyIndex, attempt),
+                    template,
+                    publicDeck,
+                    allowedFields,
+                    candidateCount,
+                    job.getDeckId(),
+                    job.getUserAccessToken()
+            );
+            JsonNode responseFormat = buildCardsSchema(allowedFields, candidateCount);
+
+            response = qwenClient.createChatCompletion(
+                    apiKey,
+                    new QwenChatRequest(model, prompt, maxOutputTokens, responseFormat)
+            );
+
+            JsonNode parsed = parseJsonResponse(response.outputText());
+            List<CardDraft> drafts = buildCardDrafts(parsed, allowedFields, template, fieldTypes);
+            CardNoveltyService.FilterResult<CardDraft> filtered = noveltyService.filterCandidates(
+                    drafts,
+                    CardDraft::content,
+                    allowedFields,
+                    noveltyIndex,
+                    remaining
+            );
+            uniqueDrafts.addAll(filtered.accepted());
+            droppedEmpty += filtered.droppedEmpty();
+            droppedExact += filtered.droppedExact();
+            droppedPrimary += filtered.droppedPrimary();
+            droppedSemantic += filtered.droppedSemantic();
+        }
+
+        if (uniqueDrafts.size() < count) {
+            throw new IllegalStateException("Failed to generate enough unique cards. Try a more specific prompt.");
+        }
+
+        List<CardDraft> limitedDrafts = uniqueDrafts.stream()
                 .limit(count)
+                .toList();
+        List<CreateCardRequestPayload> limitedRequests = limitedDrafts.stream()
+                .map(draft -> new CreateCardRequestPayload(draft.content(), null, null, null, null, null))
                 .toList();
 
         List<CoreUserCardResponse> createdCards = coreApiClient.addCards(
@@ -1404,7 +1448,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         TtsApplyResult ttsResult = applyTtsIfNeeded(job, apiKey, params, createdCards, template, updateScope);
         ImageConfig imageConfig = resolveImageConfig(params, true);
         VideoConfig videoConfig = resolveVideoConfig(params, true);
-        MediaApplyResult mediaResult = applyMediaPromptsToNewCards(job, apiKey, accessToken, template, createdCards, drafts, fieldTypes, imageConfig, videoConfig, updateScope);
+        MediaApplyResult mediaResult = applyMediaPromptsToNewCards(job, apiKey, accessToken, template, createdCards, limitedDrafts, fieldTypes, imageConfig, videoConfig, updateScope);
 
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("mode", MODE_GENERATE_CARDS);
@@ -1412,6 +1456,12 @@ public class QwenJobProcessor implements AiProviderProcessor {
         summary.put("templateId", publicDeck.templateId().toString());
         summary.put("requestedCards", count);
         summary.put("createdCards", limitedRequests.size());
+        summary.put("duplicatesSkippedExact", droppedExact);
+        summary.put("duplicatesSkippedPrimary", droppedPrimary);
+        summary.put("duplicatesSkippedSemantic", droppedSemantic);
+        if (droppedEmpty > 0) {
+            summary.put("candidatesSkippedEmpty", droppedEmpty);
+        }
         if (ttsResult.generated() > 0) {
             summary.put("ttsGenerated", ttsResult.generated());
         }
@@ -1617,6 +1667,30 @@ public class QwenJobProcessor implements AiProviderProcessor {
             limit = 1;
         }
         return Math.min(count, limit);
+    }
+
+    private int resolveCandidateCount(int remaining, int attempt) {
+        int safeRemaining = Math.max(1, remaining);
+        int boosted = attempt == 0
+                ? Math.max(safeRemaining * 3, safeRemaining + 10)
+                : Math.max(safeRemaining * 2, safeRemaining + 6);
+        return Math.min(boosted, 120);
+    }
+
+    private String augmentGeneratePrompt(String userPrompt, CardNoveltyService.NoveltyIndex noveltyIndex, int attempt) {
+        if (attempt <= 0) {
+            return userPrompt;
+        }
+        List<String> snippets = noveltyService.buildAvoidSnippets(noveltyIndex, NOVELTY_HINT_LIMIT);
+        if (snippets.isEmpty()) {
+            return userPrompt;
+        }
+        String forbidden = String.join(" | ", snippets);
+        String suffix = "Avoid generating items semantically similar to these existing examples: " + forbidden;
+        if (userPrompt == null || userPrompt.isBlank()) {
+            return suffix;
+        }
+        return userPrompt.trim() + ". " + suffix;
     }
 
     private int resolveImportBatchSize(JsonNode params) {

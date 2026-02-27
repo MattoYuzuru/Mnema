@@ -5,6 +5,7 @@ import app.mnema.ai.client.media.MediaApiClient;
 import app.mnema.ai.repository.AiProviderCredentialRepository;
 import app.mnema.ai.service.AiImportContentService;
 import app.mnema.ai.service.AudioChunkingService;
+import app.mnema.ai.service.CardNoveltyService;
 import app.mnema.ai.vault.SecretVault;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.NullNode;
@@ -74,6 +75,7 @@ class GeminiJobProcessorTest {
                 mock(AiImportContentService.class),
                 mock(AudioChunkingService.class),
                 mock(CoreApiClient.class),
+                mock(CardNoveltyService.class),
                 mapper,
                 200_000
         );
