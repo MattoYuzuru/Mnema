@@ -226,10 +226,31 @@ interface BuilderState {
         display: flex;
         flex-direction: column;
         min-height: 100vh;
-        height: 100vh;
+        height: auto;
         overflow-y: auto;
         overflow-x: hidden;
         background: transparent;
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+
+      .builder-page::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .builder-page::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .builder-page::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      .builder-page::-webkit-scrollbar-thumb:hover {
+        background: var(--border-color-hover);
       }
 
       .builder-header {
@@ -281,13 +302,31 @@ interface BuilderState {
       .builder-container {
         display: grid;
         grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        flex: 1;
-        overflow: visible;
-        min-height: 0;
         gap: var(--spacing-lg);
         padding: 0 var(--spacing-xl) var(--spacing-xl);
         align-items: stretch;
         overflow-x: hidden;
+        scrollbar-width: thin;
+        scrollbar-color: var(--glass-border-strong) transparent;
+      }
+
+      .builder-container::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .builder-container::-webkit-scrollbar-track {
+        background: transparent;
+      }
+
+      .builder-container::-webkit-scrollbar-thumb {
+        background: var(--glass-border-strong);
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: padding-box;
+      }
+
+      .builder-container::-webkit-scrollbar-thumb:hover {
+        background: var(--border-color-hover);
       }
 
       .builder-left {
@@ -298,8 +337,6 @@ interface BuilderState {
         overflow: visible;
         border-radius: var(--border-radius-lg);
         border: 1px solid var(--glass-border-strong);
-        height: 100%;
-        min-height: 0;
       }
 
       .builder-left.glass::before,
@@ -505,8 +542,6 @@ interface BuilderState {
         gap: var(--spacing-lg);
         border-radius: var(--border-radius-lg);
         border: 1px solid var(--glass-border-strong);
-        height: 100%;
-        min-height: 0;
       }
 
       .preview-controls {
@@ -544,30 +579,10 @@ interface BuilderState {
         box-shadow: var(--shadow-md);
         display: flex;
         flex-direction: column;
+        gap: var(--spacing-sm);
         transition: height 0.2s ease;
         position: relative;
-        overflow-y: auto;
-        scrollbar-width: thin;
-        scrollbar-color: var(--glass-border-strong) transparent;
-      }
-
-      .card-preview::-webkit-scrollbar {
-        width: 8px;
-      }
-
-      .card-preview::-webkit-scrollbar-track {
-        background: transparent;
-      }
-
-      .card-preview::-webkit-scrollbar-thumb {
-        background: var(--glass-border-strong);
-        border-radius: 999px;
-        border: 2px solid transparent;
-        background-clip: padding-box;
-      }
-
-      .card-preview::-webkit-scrollbar-thumb:hover {
-        background: var(--border-color-hover);
+        overflow: hidden;
       }
 
       .card-empty {
@@ -589,14 +604,9 @@ interface BuilderState {
         background: var(--glass-surface);
         border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-md);
-        margin-bottom: var(--spacing-sm);
         cursor: pointer;
         transition: all 0.15s;
         min-height: 50px;
-      }
-
-      .field-row:last-of-type {
-        margin-bottom: 0;
       }
 
       .field-row:hover {
@@ -745,7 +755,6 @@ interface BuilderState {
         border-radius: var(--border-radius-md);
         border: 1px dashed var(--border-color-hover);
         background: color-mix(in srgb, var(--glass-surface-strong) 76%, transparent);
-        margin-bottom: var(--spacing-sm);
       }
 
       .cdk-drag-animating {
@@ -814,7 +823,7 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     private static readonly MAX_FIELD_HELP_TEXT = 100;
     private readonly STORAGE_KEY = 'mnema_visual_builder_draft';
     private readonly BASE_CARD_HEIGHT = 300;
-    private readonly MIN_FIELD_HEIGHT = 72;
+    private readonly MIN_FIELD_HEIGHT = 75;
     private tempIdCounter = 0;
     private skipDraftSave = false;
 
@@ -876,7 +885,10 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
         if (fieldCount <= 0) {
             return `${this.BASE_CARD_HEIGHT}px`;
         }
-        const height = Math.max(this.BASE_CARD_HEIGHT, fieldCount * this.MIN_FIELD_HEIGHT);
+        if (fieldCount <= 4) {
+            return `${this.BASE_CARD_HEIGHT}px`;
+        }
+        const height = fieldCount * this.MIN_FIELD_HEIGHT;
         return `${height}px`;
     }
 
