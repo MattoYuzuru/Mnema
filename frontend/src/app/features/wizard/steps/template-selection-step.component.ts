@@ -164,6 +164,7 @@ type TemplateFilter = 'mine' | 'public';
         justify-content: center;
         font-size: 2.35rem;
         line-height: 1;
+        margin-top: var(--spacing-sm);
       }
 
       .choice-card h3 {
@@ -274,6 +275,7 @@ type TemplateFilter = 'mine' | 'public';
           width: 64px;
           height: 64px;
           font-size: 2rem;
+          margin-top: var(--spacing-xs);
         }
 
         .filter-tabs {
