@@ -65,12 +65,16 @@ export class CardApiService {
         userDeckId: string,
         fields: string[],
         limitGroups = 10,
-        perGroupLimit = 5
+        perGroupLimit = 5,
+        includeSemantic = false,
+        semanticThreshold?: number
     ): Observable<DuplicateGroup[]> {
         return this.http.post<DuplicateGroup[]>(`${this.baseUrl}/${userDeckId}/cards/duplicates`, {
             fields,
             limitGroups,
-            perGroupLimit
+            perGroupLimit,
+            includeSemantic,
+            semanticThreshold
         });
     }
 

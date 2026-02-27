@@ -9,6 +9,7 @@ import { DecksListComponent } from './features/decks/decks-list.component';
 import { DeckProfileComponent } from './features/decks/deck-profile.component';
 import { CardBrowserComponent } from './features/decks/card-browser.component';
 import { ReviewSessionComponent } from './features/decks/review-session.component';
+import { DuplicateReviewPageComponent } from './features/decks/duplicate-review-page.component';
 import { PublicDecksCatalogComponent } from './features/public-decks/public-decks-catalog.component';
 import { PublicCardBrowserComponent } from './features/public-decks/public-card-browser.component';
 import { TemplatesListComponent } from './features/templates/templates-list.component';
@@ -28,6 +29,7 @@ export const appRoutes: Routes = [
     { path: 'decks', component: DecksListComponent, canActivate: [authGuard] },
     { path: 'decks/:userDeckId', component: DeckProfileComponent, canActivate: [authGuard] },
     { path: 'decks/:userDeckId/browse', component: CardBrowserComponent, canActivate: [authGuard] },
+    { path: 'decks/:userDeckId/duplicates-review', component: DuplicateReviewPageComponent, canActivate: [authGuard] },
     { path: 'decks/:userDeckId/review', component: ReviewSessionComponent, canActivate: [authGuard] },
     { path: 'create-deck', component: DeckWizardComponent, canActivate: [authGuard] },
     { path: 'wizard/visual-template-builder', component: VisualTemplateBuilderComponent, canActivate: [authGuard] },

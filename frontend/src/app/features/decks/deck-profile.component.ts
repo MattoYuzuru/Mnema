@@ -373,6 +373,7 @@ import { ToastService } from '../../core/services/toast.service';
       [deckName]="deck.displayName"
       [templateId]="publicDeck?.templateId || ''"
       [templateVersion]="deck.templateVersion || null"
+      [canApplyGlobal]="isAuthor"
       (jobCreated)="onAiJobCreated($event)"
       (closed)="closeAiEnhanceModal()"
     ></app-ai-enhance-deck-modal>
