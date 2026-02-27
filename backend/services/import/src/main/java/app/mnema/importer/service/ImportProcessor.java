@@ -114,6 +114,7 @@ public class ImportProcessor {
             CoreUserDeckResponse targetDeck = mappingContext.userDeck();
             List<CoreFieldTemplate> targetFields = mappingContext.targetFields();
             Map<String, String> mapping = mappingContext.mapping();
+            boolean sourceAnkiPassthrough = mappingContext.sourceAnkiPassthrough();
 
             Integer totalItems = stream.totalItems();
             if (totalItems != null && totalItems > 0) {
@@ -133,7 +134,7 @@ public class ImportProcessor {
                 if (isPlaceholderRecord(record)) {
                     continue;
                 }
-                ObjectNode content = buildContent(record, targetFields, mapping, stream, job.getUserId());
+                ObjectNode content = buildContent(record, targetFields, mapping, stream, job.getUserId(), sourceAnkiPassthrough);
                 if (content.isEmpty()) {
                     continue;
                 }
@@ -257,7 +258,7 @@ public class ImportProcessor {
 
             updateTargetDeck(job.getJobId(), userDeck.userDeckId());
             Map<String, String> mapping = mappingFromJob(job, selectedSourceFields, template.fields());
-            return new MappingContext(userDeck, template.fields(), mapping);
+            return new MappingContext(userDeck, template.fields(), mapping, ankiMode);
         }
 
         if (job.getTargetDeckId() == null) {
@@ -272,7 +273,10 @@ public class ImportProcessor {
         CoreCardTemplateResponse template = coreApiClient.getTemplate(job.getUserAccessToken(), publicDeck.templateId());
 
         Map<String, String> mapping = mappingFromJob(job, sourceFields, template.fields());
-        return new MappingContext(userDeck, template.fields(), mapping);
+        if (mapping.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "At least one field must be mapped for merge import");
+        }
+        return new MappingContext(userDeck, template.fields(), mapping, false);
     }
 
     private Map<String, String> mappingFromJob(ImportJobEntity job,
@@ -624,9 +628,10 @@ public class ImportProcessor {
                                     List<CoreFieldTemplate> targetFields,
                                     Map<String, String> mapping,
                                     ImportStream stream,
-                                    UUID userId) {
+                                    UUID userId,
+                                    boolean sourceAnkiPassthrough) {
         ImportAnkiTemplate ankiTemplate = record.ankiTemplate();
-        if (ankiTemplate != null && stream instanceof MediaImportStream mediaStream) {
+        if (ankiTemplate != null && sourceAnkiPassthrough && stream instanceof MediaImportStream mediaStream) {
             return buildAnkiContent(record, ankiTemplate, targetFields, mapping, mediaStream, userId);
         }
 
@@ -687,7 +692,8 @@ public class ImportProcessor {
             }
         }
 
-        AnkiRendered rendered = renderAnkiCard(sourceValues, template, mediaStream, userId);
+        Map<String, String> filteredSourceValues = filterSourceValuesByMapping(sourceValues, mapping);
+        AnkiRendered rendered = renderAnkiCard(filteredSourceValues, template, mediaStream, userId);
         ObjectNode ankiNode = objectMapper.createObjectNode();
         ankiNode.put("front", rendered.frontHtml());
         ankiNode.put("back", rendered.backHtml());
@@ -705,6 +711,29 @@ public class ImportProcessor {
         }
         content.set("_anki", ankiNode);
         return content;
+    }
+
+    private Map<String, String> filterSourceValuesByMapping(Map<String, String> sourceValues,
+                                                            Map<String, String> mapping) {
+        if (sourceValues == null || sourceValues.isEmpty() || mapping == null || mapping.isEmpty()) {
+            return Map.of();
+        }
+        Set<String> allowedSources = new HashSet<>();
+        for (String source : mapping.values()) {
+            if (source != null && !source.isBlank()) {
+                allowedSources.add(source);
+            }
+        }
+        if (allowedSources.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> filtered = new HashMap<>();
+        for (Map.Entry<String, String> entry : sourceValues.entrySet()) {
+            if (allowedSources.contains(entry.getKey())) {
+                filtered.put(entry.getKey(), entry.getValue());
+            }
+        }
+        return filtered;
     }
 
     private AnkiRendered renderAnkiCard(Map<String, String> fields,
@@ -1597,7 +1626,8 @@ public class ImportProcessor {
 
     private record MappingContext(CoreUserDeckResponse userDeck,
                                   List<CoreFieldTemplate> targetFields,
-                                  Map<String, String> mapping) {
+                                  Map<String, String> mapping,
+                                  boolean sourceAnkiPassthrough) {
     }
 
     private record AnkiRendered(String frontHtml, String backHtml, String css) {

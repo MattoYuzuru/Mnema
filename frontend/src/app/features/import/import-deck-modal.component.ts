@@ -341,7 +341,7 @@ export class ImportDeckModalComponent implements OnDestroy {
                 && !this.hasInvalidTags()
                 && this.activeSourceFieldsList.length > 0;
         }
-        return !!this.targetDeckId;
+        return !!this.targetDeckId && Object.keys(this.cleanedMapping()).length > 0;
     }
 
     get deckNameTooLong(): boolean {
