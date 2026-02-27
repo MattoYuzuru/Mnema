@@ -2,7 +2,7 @@ import { Component, OnInit, OnDestroy } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
-import { DragDropModule, CdkDragDrop, moveItemInArray } from '@angular/cdk/drag-drop';
+import { DragDropModule, CdkDragDrop, CdkDragEnter, CdkDragExit, moveItemInArray } from '@angular/cdk/drag-drop';
 import { TemplateApiService } from '../../core/services/template-api.service';
 import { CreateFieldTemplateRequest, CreateTemplateRequest } from '../../core/models/template.models';
 import { DeckWizardStateService } from './deck-wizard-state.service';
@@ -27,7 +27,6 @@ interface BuilderField {
     label: string;
     helpText: string;
     required: boolean;
-    units: number;
 }
 
 interface BuilderState {
@@ -137,9 +136,11 @@ interface BuilderState {
               id="cardDropZone"
               [cdkDropListData]="currentFields"
               [cdkDropListConnectedTo]="[]"
+              (cdkDropListEntered)="onCardDropEntered($event)"
+              (cdkDropListExited)="onCardDropExited($event)"
               (cdkDropListDropped)="onDrop($event)"
             >
-              <div *ngIf="currentFields.length === 0" class="card-empty">
+              <div *ngIf="currentFields.length === 0 && !isPaletteDragOverCard" class="card-empty">
                 {{ 'visualBuilder.dragFieldsHere' | translate }}
               </div>
 
@@ -581,7 +582,7 @@ interface BuilderState {
 
       .field-row {
         display: flex;
-        flex: 0 0 auto;
+        flex: 1 1 0;
         align-items: center;
         gap: var(--spacing-sm);
         padding: var(--spacing-md);
@@ -738,7 +739,13 @@ interface BuilderState {
       }
 
       .cdk-drag-placeholder {
-        opacity: 0.4;
+        opacity: 0.55;
+        flex: 1 1 0;
+        min-height: 0;
+        border-radius: var(--border-radius-md);
+        border: 1px dashed var(--border-color-hover);
+        background: color-mix(in srgb, var(--glass-surface-strong) 76%, transparent);
+        margin-bottom: var(--spacing-sm);
       }
 
       .cdk-drag-animating {
@@ -807,6 +814,7 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     private static readonly MAX_FIELD_HELP_TEXT = 100;
     private readonly STORAGE_KEY = 'mnema_visual_builder_draft';
     private readonly BASE_CARD_HEIGHT = 300;
+    private readonly MIN_FIELD_HEIGHT = 72;
     private tempIdCounter = 0;
     private skipDraftSave = false;
 
@@ -822,6 +830,7 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     showSaveDialog = false;
     makePublic = false;
     saving = false;
+    isPaletteDragOverCard = false;
     readonly maxTemplateName = VisualTemplateBuilderComponent.MAX_TEMPLATE_NAME;
     readonly maxTemplateDescription = VisualTemplateBuilderComponent.MAX_TEMPLATE_DESCRIPTION;
     readonly maxFieldLabel = VisualTemplateBuilderComponent.MAX_FIELD_LABEL;
@@ -863,13 +872,24 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     }
 
     getCardHeight(): string {
-        const fieldCount = this.currentFields.length;
-        if (fieldCount === 0) {
+        const fieldCount = this.currentFields.length + (this.isPaletteDragOverCard ? 1 : 0);
+        if (fieldCount <= 0) {
             return `${this.BASE_CARD_HEIGHT}px`;
         }
-        const capacityUnits = Math.max(4, fieldCount);
-        const height = this.BASE_CARD_HEIGHT * (capacityUnits / 4);
+        const height = Math.max(this.BASE_CARD_HEIGHT, fieldCount * this.MIN_FIELD_HEIGHT);
         return `${height}px`;
+    }
+
+    onCardDropEntered(event: CdkDragEnter<BuilderField[]>): void {
+        if (this.isPaletteDragData(event.item.data)) {
+            this.isPaletteDragOverCard = true;
+        }
+    }
+
+    onCardDropExited(event: CdkDragExit<BuilderField[]>): void {
+        if (this.isPaletteDragData(event.item.data)) {
+            this.isPaletteDragOverCard = false;
+        }
     }
 
     private generateFieldName(label: string, existingNames: string[]): string {
@@ -892,19 +912,19 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     }
 
     onDrop(event: CdkDragDrop<BuilderField[]>): void {
+        this.isPaletteDragOverCard = false;
+
         if (event.previousContainer === event.container) {
             moveItemInArray(this.currentFields, event.previousIndex, event.currentIndex);
-            this.recalculateUnits();
             this.saveDraft();
         } else {
             if (this.currentFields.length >= 10) {
                 return;
             }
 
-            const draggedItem = (event.previousContainer.data as any)[event.previousIndex];
-            const paletteField = draggedItem as PaletteField;
+            const paletteField = event.item.data as PaletteField;
 
-            if (paletteField && !paletteField.inDev) {
+            if (this.isPaletteDragData(paletteField) && !paletteField.inDev) {
                 const existingNames = [
                     ...this.frontFields.map(f => f.name),
                     ...this.backFields.map(f => f.name)
@@ -917,11 +937,9 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
                     type: paletteField.type,
                     label: '',
                     helpText: '',
-                    required: false,
-                    units: 1
+                    required: false
                 };
                 this.currentFields.splice(event.currentIndex, 0, newField);
-                this.recalculateUnits();
                 this.selectField(newField.tempId);
                 this.saveDraft();
             }
@@ -938,7 +956,6 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
         if (this.selectedFieldId === removed.tempId) {
             this.selectedFieldId = null;
         }
-        this.recalculateUnits();
         this.saveDraft();
     }
 
@@ -1085,26 +1102,6 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
         void this.router.navigate(['/create-deck']);
     }
 
-    private recalculateUnits(): void {
-        const count = this.currentFields.length;
-
-        if (count === 0) {
-            return;
-        }
-
-        if (count === 1) {
-            this.currentFields[0].units = 4;
-        } else if (count === 2) {
-            this.currentFields.forEach(f => f.units = 2);
-        } else if (count === 3) {
-            this.currentFields[0].units = 2;
-            this.currentFields[1].units = 1;
-            this.currentFields[2].units = 1;
-        } else {
-            this.currentFields.forEach(f => f.units = 1);
-        }
-    }
-
     private loadDraft(): void {
         const draft = localStorage.getItem(this.STORAGE_KEY);
         if (draft) {
@@ -1116,12 +1113,6 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
                 this.selectedFieldId = state.selectedFieldId || null;
                 this.templateName = state.templateName || '';
                 this.templateDescription = state.templateDescription || '';
-
-                this.recalculateUnits();
-                if (this.currentSide === 'back') {
-                    this.backFields.forEach(() => {});
-                    this.recalculateUnits();
-                }
             } catch {
             }
         }
@@ -1141,5 +1132,14 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
 
     private clearDraft(): void {
         localStorage.removeItem(this.STORAGE_KEY);
+    }
+
+    private isPaletteDragData(data: unknown): data is PaletteField {
+        return !!data &&
+            typeof data === 'object' &&
+            'type' in data &&
+            'icon' in data &&
+            'label' in data &&
+            'inDev' in data;
     }
 }

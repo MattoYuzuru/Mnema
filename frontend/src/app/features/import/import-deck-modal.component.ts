@@ -219,8 +219,8 @@ type ImportModeUI = 'create' | 'merge';
     </div>
   `,
     styles: [`
-      .modal-overlay { position: fixed; inset: 0; background: rgba(8, 12, 22, 0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(12px) saturate(140%); }
-      .modal-content { width: min(920px, 92vw); max-height: 92vh; background: var(--color-surface-solid); border-radius: var(--border-radius-lg); border: 1px solid var(--glass-border); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden; }
+      .modal-overlay { position: fixed; inset: 0; background: rgba(8, 12, 22, 0.55); display: flex; align-items: flex-start; justify-content: center; z-index: 1000; backdrop-filter: blur(12px) saturate(140%); padding: var(--spacing-md) 0; overflow-y: auto; }
+      .modal-content { width: min(920px, 92vw); max-height: calc(100vh - (2 * var(--spacing-md))); margin: 0 auto; background: var(--color-surface-solid); border-radius: var(--border-radius-lg); border: 1px solid var(--glass-border); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden; }
       .modal-header { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--spacing-lg); padding: var(--spacing-xl); border-bottom: 1px solid var(--glass-border); }
       .modal-header h2 { margin: 0; font-size: 1.6rem; }
       .subtitle { margin: var(--spacing-xs) 0 0; color: var(--color-text-secondary); font-size: 0.95rem; }
@@ -275,6 +275,7 @@ type ImportModeUI = 'create' | 'merge';
       .tag-chip { display: inline-flex; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-full); font-size: 0.85rem; }
       .tag-chip button { background: none; border: none; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0; }
       .checkbox-group { display: flex; align-items: center; gap: var(--spacing-sm); }
+      .deck-name-block .checkbox-group:first-of-type { margin-top: var(--spacing-sm); }
       .checkbox-label { font-size: 0.92rem; color: var(--color-text-primary); }
       .checkbox-label.disabled { opacity: 0.65; cursor: default; }
 

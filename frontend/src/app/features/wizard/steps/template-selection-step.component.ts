@@ -136,7 +136,7 @@ type TemplateFilter = 'mine' | 'public';
         gap: var(--spacing-sm);
         width: 100%;
         min-width: 0;
-        padding: var(--spacing-xxl);
+        padding: calc(var(--spacing-xxl) + var(--spacing-sm)) var(--spacing-xxl) var(--spacing-xxl);
         background: var(--color-card-background);
         border: 2px solid var(--border-color);
         border-radius: var(--border-radius-lg);
@@ -266,7 +266,7 @@ type TemplateFilter = 'mine' | 'public';
         }
 
         .choice-card {
-          padding: var(--spacing-xl);
+          padding: calc(var(--spacing-xl) + var(--spacing-xs)) var(--spacing-xl) var(--spacing-xl);
           min-height: 200px;
         }
 
@@ -295,7 +295,7 @@ type TemplateFilter = 'mine' | 'public';
 
       @media (max-width: 480px) {
         .choice-card {
-          padding: var(--spacing-lg);
+          padding: calc(var(--spacing-lg) + var(--spacing-xs)) var(--spacing-lg) var(--spacing-lg);
         }
 
         .choice-card p {

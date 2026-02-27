@@ -395,9 +395,9 @@ import { ToastService } from '../../core/services/toast.service';
               </div>
             </div>
             <div class="checkbox-group">
-              <label>
+              <label class="glass-checkbox">
                 <input type="checkbox" formControlName="autoUpdate" />
-                {{ 'deckProfile.autoUpdateLabel' | translate }}
+                <span>{{ 'deckProfile.autoUpdateLabel' | translate }}</span>
               </label>
             </div>
 
@@ -456,15 +456,15 @@ import { ToastService } from '../../core/services/toast.service';
                 <p *ngIf="tagError" class="error-message">{{ tagError }}</p>
               </div>
               <div class="checkbox-group">
-                <label>
+                <label class="glass-checkbox">
                   <input type="checkbox" formControlName="isPublic" />
-                  {{ 'deckProfile.makePublic' | translate }}
+                  <span>{{ 'deckProfile.makePublic' | translate }}</span>
                 </label>
               </div>
               <div class="checkbox-group">
-                <label>
+                <label class="glass-checkbox">
                   <input type="checkbox" formControlName="isListed" />
-                  {{ 'deckProfile.listInCatalog' | translate }}
+                  <span>{{ 'deckProfile.listInCatalog' | translate }}</span>
                 </label>
               </div>
             </div>
@@ -631,6 +631,7 @@ import { ToastService } from '../../core/services/toast.service';
       }
 
       .deck-stats-block {
+        margin-top: var(--spacing-xl);
         margin-bottom: var(--spacing-2xl);
       }
 
@@ -1099,12 +1100,6 @@ import { ToastService } from '../../core/services/toast.service';
         align-items: center;
         gap: var(--spacing-sm);
         font-size: 0.9rem;
-        cursor: pointer;
-      }
-
-      .checkbox-group input[type="checkbox"] {
-        width: 18px;
-        height: 18px;
         cursor: pointer;
       }
 

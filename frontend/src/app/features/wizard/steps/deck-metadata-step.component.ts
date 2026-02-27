@@ -134,6 +134,7 @@ import { I18nService } from '../../../core/services/i18n.service';
       .tag-chip { display: inline-flex; align-items: center; gap: var(--spacing-xs); padding: var(--spacing-xs) var(--spacing-sm); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-full); font-size: 0.85rem; }
       .tag-chip button { background: none; border: none; cursor: pointer; font-size: 1.2rem; line-height: 1; padding: 0; }
       .checkbox-label { display: flex; align-items: center; gap: var(--spacing-sm); cursor: pointer; font-size: 0.9rem; }
+      .form .checkbox-label:first-of-type { margin-top: var(--spacing-sm); }
       .checkbox-label.disabled { opacity: 0.64; cursor: default; }
       .step-actions { display: flex; justify-content: space-between; flex-wrap: wrap; gap: var(--spacing-sm); padding-top: var(--spacing-lg); border-top: 1px solid var(--border-color); }
       .step-actions app-button { flex: 1 1 14rem; }
