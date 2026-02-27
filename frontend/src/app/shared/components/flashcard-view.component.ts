@@ -343,12 +343,20 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
         if (!css) {
             return '';
         }
-        const fixes: string[] = [];
+        const fixes: string[] = [
+            '.anki-card { width: 100% !important; max-width: 100% !important; overflow-x: clip; }',
+            '.anki-card .anki-html { width: 100% !important; max-width: 100% !important; overflow-wrap: anywhere; word-break: break-word; }',
+            '.anki-card img, .anki-card video, .anki-card iframe, .anki-card object, .anki-card embed { max-width: 100% !important; height: auto !important; }',
+            '.anki-card audio { max-width: 100% !important; }',
+            '.anki-card table { display: block; width: 100% !important; max-width: 100% !important; overflow-x: auto; }'
+        ];
         if (css.includes('wrapped-japanese')) {
             fixes.push('.anki-card .wrapped-japanese { visibility: visible !important; }');
         }
-        if (fixes.length === 0) {
-            return css;
+        if (css.includes('migaku-card')) {
+            fixes.push('.anki-card .migaku-card { width: 100% !important; max-width: 100% !important; margin-left: auto !important; margin-right: auto !important; }');
+            fixes.push('.anki-card .migaku-card-image img { width: 100% !important; max-width: 100% !important; }');
+            fixes.push('.anki-card .migaku-card-content { width: 100% !important; max-width: 100% !important; overflow-wrap: anywhere; }');
         }
         return `${css}\n\n/* Mnema compatibility fixes */\n${fixes.join('\n')}\n`;
     }
