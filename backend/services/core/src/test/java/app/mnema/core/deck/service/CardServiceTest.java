@@ -7,6 +7,7 @@ import app.mnema.core.deck.domain.entity.PublicDeckEntity;
 import app.mnema.core.deck.domain.entity.UserCardEntity;
 import app.mnema.core.deck.domain.entity.UserDeckEntity;
 import app.mnema.core.deck.domain.request.CreateCardRequest;
+import app.mnema.core.deck.domain.request.DuplicateSearchRequest;
 import app.mnema.core.deck.domain.type.LanguageTag;
 import app.mnema.core.deck.domain.type.SrAlgorithm;
 import app.mnema.core.deck.repository.*;
@@ -365,5 +366,141 @@ class CardServiceTest {
         verify(publicCardRepository).saveAll(anyList());
         verify(userDeckRepository).save(any(UserDeckEntity.class));
         verify(userCardRepository).save(any(UserCardEntity.class));
+    }
+
+    @Test
+    void getDuplicateGroups_returnsExactGroupsByDefault() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        Instant now = Instant.now();
+
+        UserDeckEntity deck = new UserDeckEntity(
+                userId,
+                null,
+                1,
+                1,
+                true,
+                SrAlgorithm.fsrs_v6.name(),
+                null,
+                "Deck",
+                "Desc",
+                now,
+                null,
+                false
+        );
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(deck));
+
+        UUID cardA = UUID.randomUUID();
+        UUID cardB = UUID.randomUUID();
+        when(userCardRepository.findDuplicateGroups(eq(userId), eq(deckId), any(String[].class), eq(10)))
+                .thenReturn(List.of(duplicateGroupProjection(2, cardA, cardB)));
+
+        UserCardEntity entityA = new UserCardEntity(userId, deckId, null, true, false, null, null, textContent("front", "Hello"), now.minusSeconds(5), null);
+        entityA.setUserCardId(cardA);
+        UserCardEntity entityB = new UserCardEntity(userId, deckId, null, true, false, null, null, textContent("front", "Hello!"), now.minusSeconds(3), null);
+        entityB.setUserCardId(cardB);
+        when(userCardRepository.findByUserIdAndUserDeckIdAndUserCardIdIn(userId, deckId, List.of(cardA, cardB)))
+                .thenReturn(List.of(entityA, entityB));
+
+        List<app.mnema.core.deck.domain.dto.DuplicateGroupDTO> result = cardService.getDuplicateGroups(
+                userId,
+                deckId,
+                new DuplicateSearchRequest(List.of("front"), 10, 5, null, null)
+        );
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().matchType()).isEqualTo("exact");
+        assertThat(result.getFirst().confidence()).isEqualTo(1.0d);
+        assertThat(result.getFirst().size()).isEqualTo(2);
+    }
+
+    @Test
+    void getDuplicateGroups_addsSemanticGroupsWhenEnabled() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        Instant now = Instant.now();
+
+        UserDeckEntity deck = new UserDeckEntity(
+                userId,
+                null,
+                1,
+                1,
+                true,
+                SrAlgorithm.fsrs_v6.name(),
+                null,
+                "Deck",
+                "Desc",
+                now,
+                null,
+                false
+        );
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(deck));
+        when(userCardRepository.findDuplicateGroups(eq(userId), eq(deckId), any(String[].class), eq(10)))
+                .thenReturn(List.of());
+
+        UUID cardA = UUID.randomUUID();
+        UUID cardB = UUID.randomUUID();
+        when(userCardRepository.findSemanticDuplicateCandidates(eq(userId), eq(deckId), any(String[].class), anyInt()))
+                .thenReturn(List.of(
+                        semanticProjection(cardA, now.minusSeconds(10), new String[]{"apple", "red fruit"}),
+                        semanticProjection(cardB, now.minusSeconds(5), new String[]{"apple", "green fruit"})
+                ));
+
+        UserCardEntity entityA = new UserCardEntity(userId, deckId, null, true, false, null, null, textContent("front", "apple"), now.minusSeconds(10), null);
+        entityA.setUserCardId(cardA);
+        UserCardEntity entityB = new UserCardEntity(userId, deckId, null, true, false, null, null, textContent("front", "apple"), now.minusSeconds(5), null);
+        entityB.setUserCardId(cardB);
+        when(userCardRepository.findByUserIdAndUserDeckIdAndUserCardIdIn(eq(userId), eq(deckId), anyList()))
+                .thenReturn(List.of(entityA, entityB));
+
+        List<app.mnema.core.deck.domain.dto.DuplicateGroupDTO> result = cardService.getDuplicateGroups(
+                userId,
+                deckId,
+                new DuplicateSearchRequest(List.of("front", "back"), 10, 5, true, 0.92d)
+        );
+
+        assertThat(result).hasSize(1);
+        assertThat(result.getFirst().matchType()).isEqualTo("semantic");
+        assertThat(result.getFirst().size()).isEqualTo(2);
+        assertThat(result.getFirst().confidence()).isGreaterThan(0.9d);
+    }
+
+    private UserCardRepository.DuplicateGroupProjection duplicateGroupProjection(int cnt, UUID... ids) {
+        return new UserCardRepository.DuplicateGroupProjection() {
+            @Override
+            public UUID[] getCardIds() {
+                return ids;
+            }
+
+            @Override
+            public int getCnt() {
+                return cnt;
+            }
+        };
+    }
+
+    private UserCardRepository.SemanticCandidateProjection semanticProjection(UUID cardId, Instant createdAt, String[] values) {
+        return new UserCardRepository.SemanticCandidateProjection() {
+            @Override
+            public UUID getUserCardId() {
+                return cardId;
+            }
+
+            @Override
+            public Instant getCreatedAt() {
+                return createdAt;
+            }
+
+            @Override
+            public String[] getValues() {
+                return values;
+            }
+        };
+    }
+
+    private ObjectNode textContent(String key, String value) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put(key, value);
+        return node;
     }
 }

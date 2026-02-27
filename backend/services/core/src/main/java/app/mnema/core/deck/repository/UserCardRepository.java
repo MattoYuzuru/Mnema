@@ -9,6 +9,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 
@@ -251,6 +252,50 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
     interface DuplicateGroupProjection {
         UUID[] getCardIds();
         int getCnt();
+    }
+
+    @Query(value = """
+        with input_fields as (
+            select f.field_name, f.ord
+            from unnest(cast(:fields as text[])) with ordinality as f(field_name, ord)
+        )
+        select
+            uc.user_card_id as userCardId,
+            uc.created_at as createdAt,
+            array_agg(
+                coalesce(
+                    nullif(jsonb_extract_path_text(uc.content_override, f.field_name), ''),
+                    nullif(jsonb_extract_path_text(pc.content, f.field_name), ''),
+                    ''
+                )
+                order by f.ord
+            ) as values
+        from app_core.user_cards uc
+        left join app_core.user_decks ud
+          on ud.user_deck_id = uc.subscription_id
+        left join app_core.public_cards pc
+          on pc.card_id = uc.public_card_id
+         and pc.deck_id = ud.public_deck_id
+         and pc.deck_version = ud.current_version
+        join input_fields f on true
+        where uc.user_id = :userId
+          and uc.subscription_id = :userDeckId
+          and uc.is_deleted = false
+        group by uc.user_card_id, uc.created_at
+        order by uc.created_at asc, uc.user_card_id asc
+        limit :limit
+        """, nativeQuery = true)
+    List<SemanticCandidateProjection> findSemanticDuplicateCandidates(
+            @Param("userId") UUID userId,
+            @Param("userDeckId") UUID userDeckId,
+            @Param("fields") String[] fields,
+            @Param("limit") int limit
+    );
+
+    interface SemanticCandidateProjection {
+        UUID getUserCardId();
+        Instant getCreatedAt();
+        String[] getValues();
     }
 
     @Query(value = """

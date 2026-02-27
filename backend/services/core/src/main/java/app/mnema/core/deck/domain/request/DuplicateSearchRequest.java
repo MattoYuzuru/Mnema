@@ -5,6 +5,8 @@ import java.util.List;
 public record DuplicateSearchRequest(
         List<String> fields,
         Integer limitGroups,
-        Integer perGroupLimit
+        Integer perGroupLimit,
+        Boolean includeSemantic,
+        Double semanticThreshold
 ) {
 }
