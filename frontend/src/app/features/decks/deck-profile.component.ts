@@ -17,6 +17,7 @@ import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { ReviewDeckAlgorithmResponse } from '../../core/models/review.models';
 import { ImportJobResponse, ImportSourceType } from '../../core/models/import.models';
 import { AiJobResponse, AiJobStatus, AiJobType } from '../../core/models/ai.models';
+import { DECK_LANGUAGE_OPTIONS } from '../../core/models/language.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { AddCardsModalComponent } from './add-cards-modal.component';
@@ -433,10 +434,9 @@ import { ToastService } from '../../core/services/toast.service';
               <div class="form-group">
                 <label>{{ 'deckProfile.language' | translate }}</label>
                 <select formControlName="language" class="language-select">
-                  <option value="en">{{ 'language.code.en' | translate }}</option>
-                  <option value="ru">{{ 'language.code.ru' | translate }}</option>
-                  <option value="jp">{{ 'language.code.jp' | translate }}</option>
-                  <option value="sp">{{ 'language.code.sp' | translate }}</option>
+                  <option *ngFor="let option of deckLanguageOptions" [value]="option.code">
+                    {{ option.labelKey | translate }}
+                  </option>
                 </select>
               </div>
               <div class="form-group">
@@ -1376,6 +1376,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     tagError = '';
     tagInput = '';
     tags: string[] = [];
+    readonly deckLanguageOptions = DECK_LANGUAGE_OPTIONS;
 
     formatDescription(description?: string): string {
         return markdownToHtml((description || '').trim());

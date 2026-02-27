@@ -9,6 +9,7 @@ import { ButtonComponent } from '../../../shared/components/button.component';
 import { InputComponent } from '../../../shared/components/input.component';
 import { MediaUploadComponent } from '../../../shared/components/media-upload.component';
 import { CardContentValue } from '../../../core/models/user-card.models';
+import { DECK_LANGUAGE_OPTIONS, DEFAULT_DECK_LANGUAGE } from '../../../core/models/language.models';
 import { TranslatePipe } from '../../../shared/pipes/translate.pipe';
 import { I18nService } from '../../../core/services/i18n.service';
 
@@ -59,10 +60,9 @@ import { I18nService } from '../../../core/services/i18n.service';
         <div class="form-group">
           <label>{{ 'wizard.language' | translate }}</label>
           <select formControlName="language" class="language-select">
-            <option value="en">{{ 'language.english' | translate }}</option>
-            <option value="ru">{{ 'language.russian' | translate }}</option>
-            <option value="jp">日本語 (Japanese)</option>
-            <option value="sp">Español (Spanish)</option>
+            <option *ngFor="let option of deckLanguageOptions" [value]="option.code">
+              {{ option.labelKey | translate }}
+            </option>
           </select>
         </div>
         <div class="form-group">
@@ -159,6 +159,7 @@ export class DeckMetadataStepComponent implements OnInit {
     readonly maxDescriptionLength = DeckMetadataStepComponent.MAX_DESCRIPTION_LENGTH;
     readonly maxTagLength = DeckMetadataStepComponent.MAX_TAG_LENGTH;
     readonly codeMarker = '`';
+    readonly deckLanguageOptions = DECK_LANGUAGE_OPTIONS;
     form: FormGroup;
     tags: string[] = [];
     tagInput = '';
@@ -177,7 +178,7 @@ export class DeckMetadataStepComponent implements OnInit {
         this.form = this.fb.group({
             name: ['', [Validators.required, Validators.maxLength(DeckMetadataStepComponent.MAX_NAME_LENGTH)]],
             description: ['', [Validators.maxLength(DeckMetadataStepComponent.MAX_DESCRIPTION_LENGTH)]],
-            language: ['en'],
+            language: [DEFAULT_DECK_LANGUAGE],
             isPublic: [false],
             isListed: [false]
         });

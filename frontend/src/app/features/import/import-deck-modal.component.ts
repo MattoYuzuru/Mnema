@@ -10,6 +10,7 @@ import {
     UploadImportSourceResponse,
     ImportJobResponse
 } from '../../core/models/import.models';
+import { DECK_LANGUAGE_OPTIONS, DEFAULT_DECK_LANGUAGE, DeckLanguageCode } from '../../core/models/language.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
@@ -100,10 +101,9 @@ type ImportModeUI = 'create' | 'merge';
             <div class="form-group">
               <label>{{ 'import.languageLabel' | translate }}</label>
               <select [(ngModel)]="language" class="language-select">
-                <option value="en">{{ 'language.english' | translate }}</option>
-                <option value="ru">{{ 'language.russian' | translate }}</option>
-                <option value="jp">日本語 (Japanese)</option>
-                <option value="sp">Español (Spanish)</option>
+                <option *ngFor="let option of deckLanguageOptions" [value]="option.code">
+                  {{ option.labelKey | translate }}
+                </option>
               </select>
             </div>
             <div class="form-group">
@@ -306,7 +306,8 @@ export class ImportDeckModalComponent implements OnDestroy {
     preview: ImportPreviewResponse | null = null;
     deckName = '';
     deckDescription = '';
-    language: 'en' | 'ru' | 'jp' | 'sp' = 'en';
+    readonly deckLanguageOptions = DECK_LANGUAGE_OPTIONS;
+    language: DeckLanguageCode = DEFAULT_DECK_LANGUAGE;
     isPublic = false;
     isListed = false;
     tags: string[] = [];
@@ -464,7 +465,7 @@ export class ImportDeckModalComponent implements OnDestroy {
         this.fileInfo = null;
         this.deckName = this.defaultDeckName(file.name);
         this.deckDescription = '';
-        this.language = 'en';
+        this.language = DEFAULT_DECK_LANGUAGE;
         this.tags = [];
         this.tagInput = '';
         this.tagError = '';

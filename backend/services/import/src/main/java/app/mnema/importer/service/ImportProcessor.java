@@ -54,7 +54,7 @@ public class ImportProcessor {
     private static final String ANKI_UPDATE_MESSAGE = "please update to the latest anki version";
     private static final List<String> FRONT_FIELD_HINTS = List.of("front", "question", "term", "word", "expression", "original", "prompt");
     private static final List<String> BACK_FIELD_HINTS = List.of("back", "answer", "meaning", "translation", "definition", "example", "comment", "notes", "extra", "hint");
-    private static final Set<String> SUPPORTED_LANGUAGES = Set.of("ru", "en", "jp", "sp");
+    private static final Set<String> SUPPORTED_LANGUAGES = Set.of("ru", "en", "jp", "sp", "zh", "hi", "ar", "fr", "bn", "pt", "id");
     private static final Set<String> BUILTIN_FIELDS = Set.of(
             "frontside",
             "tags",
