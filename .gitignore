@@ -42,3 +42,6 @@ build
 /test_decks
 /first-cool-liquid-glass
 /second-no-glass-white-hero
+
+.env.local
+.mnema
