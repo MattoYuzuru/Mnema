@@ -1,6 +1,7 @@
 package app.mnema.auth.local
 
 import app.mnema.auth.config.LocalAuthProps
+import app.mnema.auth.config.AuthFeaturesProps
 import app.mnema.auth.security.LocalTokenResponse
 import app.mnema.auth.security.LocalTokenService
 import app.mnema.auth.security.RateLimiter
@@ -25,6 +26,7 @@ class LocalAuthService(
     private val passwordEncoder: PasswordEncoder,
     private val tokenService: LocalTokenService,
     private val props: LocalAuthProps,
+    private val featureProps: AuthFeaturesProps,
     private val rateLimiter: RateLimiter,
     private val turnstileService: TurnstileService,
     private val identityRepository: FederatedIdentityRepository
@@ -86,7 +88,7 @@ class LocalAuthService(
 
         val user = AuthUser(
             email = email,
-            emailVerified = false,
+            emailVerified = !featureProps.requireEmailVerification,
             username = username,
             passwordHash = passwordEncoder.encode(password),
             createdAt = now,

@@ -5,6 +5,7 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink, ActivatedRoute } from '@angular/router';
 import { AuthService } from './auth.service';
 import { TranslatePipe } from './shared/pipes/translate.pipe';
+import { appConfig } from './app.config';
 
 type OAuthProvider = 'google' | 'github' | 'yandex';
 
@@ -34,7 +35,7 @@ declare global {
           <a routerLink="/profile" class="link-button">{{ 'login.goToProfile' | translate }}</a>
         </div>
 
-        <div *ngIf="auth.status() !== 'authenticated'" class="auth-blocks">
+        <div *ngIf="auth.status() !== 'authenticated'" class="auth-blocks" [class.local-only]="!config.features.federatedAuthEnabled">
           <div class="auth-block local-auth">
             <h2>{{ mode === 'login' ? ('login.loginTitle' | translate) : ('login.registerTitle' | translate) }}</h2>
             <form #localForm="ngForm" class="local-form" (ngSubmit)="submitLocal(localForm)">
@@ -137,9 +138,9 @@ declare global {
             </form>
           </div>
 
-          <div class="divider"></div>
+          <div *ngIf="config.features.federatedAuthEnabled" class="divider"></div>
 
-          <div class="auth-block oauth-auth">
+          <div *ngIf="config.features.federatedAuthEnabled" class="auth-block oauth-auth">
             <h2>{{ 'login.oauthTitle' | translate }}</h2>
 
             <button class="oauth-button google-button" type="button" (click)="login('google')">
@@ -249,6 +250,10 @@ declare global {
         grid-template-columns: 1fr auto 1fr;
         gap: var(--spacing-xl);
         margin-bottom: var(--spacing-xl);
+      }
+
+      .auth-blocks.local-only {
+        grid-template-columns: 1fr;
       }
 
       .auth-block {
@@ -497,6 +502,7 @@ export class LoginPageComponent implements OnInit, AfterViewInit {
     readonly passwordMaxLength = 128;
     readonly usernameMinLength = 3;
     readonly usernameMaxLength = 50;
+    readonly config = appConfig;
 
     private readonly emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 

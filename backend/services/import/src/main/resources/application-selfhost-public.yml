@@ -1,0 +1,4 @@
+app:
+  cors:
+    origins:
+      - ${PUBLIC_WEB_ORIGIN:https://mnema.app}

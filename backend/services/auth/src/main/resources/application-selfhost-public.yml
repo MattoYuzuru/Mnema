@@ -1,0 +1,9 @@
+app:
+  cors:
+    origins:
+      - ${PUBLIC_WEB_ORIGIN:https://mnema.app}
+
+auth:
+  issuer: ${AUTH_ISSUER:https://auth.mnema.app}
+  logout:
+    default-redirect: ${AUTH_LOGOUT_DEFAULT_REDIRECT:${PUBLIC_WEB_ORIGIN:https://mnema.app}/}
