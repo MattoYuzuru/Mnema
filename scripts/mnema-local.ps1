@@ -3,6 +3,7 @@ $ErrorActionPreference = 'Stop'
 $RootDir = (Resolve-Path "$PSScriptRoot/..").Path
 $WorkDir = Join-Path $RootDir '.mnema'
 $EnvFile = Join-Path $RootDir '.env.local'
+$EnvFileForCompose = $EnvFile -replace '\\', '/'
 $OverrideFile = Join-Path $WorkDir 'compose.ports.yml'
 $DryRun = $env:MNEMA_DRY_RUN -eq '1'
 $UsedPorts = [System.Collections.Generic.HashSet[int]]::new()
@@ -206,6 +207,8 @@ Set-Content -Path $EnvFile -Value $envContent -Encoding UTF8
 $overrideContent = @"
 services:
   postgres:
+    env_file:
+      - "$EnvFileForCompose"
     ports:
       - "$POSTGRES_PORT:5432"
 

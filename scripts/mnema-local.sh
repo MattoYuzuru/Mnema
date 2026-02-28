@@ -168,6 +168,8 @@ write_override_file() {
   cat > "$OVERRIDE_FILE" <<YAML
 services:
   postgres:
+    env_file:
+      - "${ENV_FILE}"
     ports:
       - "${POSTGRES_PORT}:5432"
 
