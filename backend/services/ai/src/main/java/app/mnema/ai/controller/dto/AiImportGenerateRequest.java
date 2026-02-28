@@ -15,6 +15,7 @@ public record AiImportGenerateRequest(
         @NotEmpty List<String> fields,
         @NotNull @Positive Integer count,
         UUID providerCredentialId,
+        String provider,
         String model,
         String sourceType,
         String encoding,

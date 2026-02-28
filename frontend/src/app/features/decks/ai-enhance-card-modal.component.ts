@@ -3,7 +3,7 @@ import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AiApiService } from '../../core/services/ai-api.service';
 import { CardApiService } from '../../core/services/card-api.service';
-import { AiJobResponse, AiProviderCredential } from '../../core/models/ai.models';
+import { AiJobResponse, AiProviderCredential, AiRuntimeCapabilities } from '../../core/models/ai.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { UserCardDTO } from '../../core/models/user-card.models';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
@@ -441,6 +441,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
     videoResolution = signal('1280x720');
     videoDurationSeconds = signal(5);
     videoFormat = signal('mp4');
+    runtimeCapabilities = signal<AiRuntimeCapabilities | null>(null);
     updateScope = signal<'local' | 'global'>('local');
 
     private storageKey = '';
@@ -451,9 +452,9 @@ export class AiEnhanceCardModalComponent implements OnInit {
         const provider = this.providerKeys().find(item => item.id === selectedId)?.provider;
         return this.normalizeProvider(provider);
     });
-    readonly ttsSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
-    readonly imageSupported = computed(() => ['openai', 'gemini', 'qwen', 'grok'].includes(this.selectedProvider()));
-    readonly videoSupported = computed(() => ['openai', 'qwen', 'grok'].includes(this.selectedProvider()));
+    readonly ttsSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'tts', ['openai', 'gemini', 'qwen']));
+    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'grok']));
+    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'grok']));
     readonly imageModelOptions = computed(() => this.resolveImageModelOptions(this.selectedProvider()));
     readonly videoModelOptions = computed(() => this.resolveVideoModelOptions(this.selectedProvider()));
     readonly voiceOptions = computed(() => {
@@ -562,7 +563,15 @@ export class AiEnhanceCardModalComponent implements OnInit {
             ? `mnema_ai_card_audit:${this.userDeckId}:${this.card.userCardId}`
             : '';
         this.restoreAudit();
+        this.loadRuntimeCapabilities();
         this.loadProviders();
+    }
+
+    private loadRuntimeCapabilities(): void {
+        this.aiApi.getRuntimeCapabilities().subscribe({
+            next: capabilities => this.runtimeCapabilities.set(capabilities),
+            error: () => this.runtimeCapabilities.set(null)
+        });
     }
 
     close(): void {
@@ -656,6 +665,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
             type: 'generic',
             params: {
                 providerCredentialId: this.selectedCredentialId(),
+                provider: this.selectedProvider() || undefined,
                 mode: 'card_audit',
                 cardId: this.card.userCardId
             }
@@ -686,6 +696,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
             type: 'generic',
             params: {
                 providerCredentialId: this.selectedCredentialId(),
+                provider: this.selectedProvider() || undefined,
                 mode: 'card_missing_fields',
                 cardId: this.card.userCardId,
                 fields: missing,
@@ -920,6 +931,20 @@ export class AiEnhanceCardModalComponent implements OnInit {
         if (normalized === 'xai' || normalized === 'x.ai') return 'grok';
         if (normalized === 'dashscope' || normalized === 'aliyun' || normalized === 'alibaba') return 'qwen';
         return normalized;
+    }
+
+    private supportsCapability(provider: string,
+                               capability: 'text' | 'stt' | 'tts' | 'image' | 'video' | 'gif',
+                               fallbackProviders: string[]): boolean {
+        if (!provider) {
+            return false;
+        }
+        const runtime = this.runtimeCapabilities();
+        const runtimeCaps = runtime?.providers?.find(item => this.normalizeProvider(item.key) === provider);
+        if (runtimeCaps) {
+            return Boolean(runtimeCaps[capability]);
+        }
+        return fallbackProviders.includes(provider);
     }
 
     private syncVoicePreset(): void {

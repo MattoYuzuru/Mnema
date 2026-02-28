@@ -245,17 +245,18 @@ public class AiJobService {
             return new ProviderInfo(null, null, null, null);
         }
         UUID credentialId = parseUuid(params.path("providerCredentialId").asText(null));
+        String providerFromParams = textOrNull(params.path("provider"));
         String model = textOrNull(params.path("model"));
         if (model == null) {
             model = textOrNull(params.path("tts").path("model"));
         }
         final String resolvedModel = model;
         if (credentialId == null) {
-            return new ProviderInfo(null, null, null, resolvedModel);
+            return new ProviderInfo(null, providerFromParams, null, resolvedModel);
         }
         return credentialRepository.findByIdAndUserId(credentialId, job.getUserId())
                 .map(credential -> new ProviderInfo(credentialId, credential.getProvider(), credential.getAlias(), resolvedModel))
-                .orElseGet(() -> new ProviderInfo(credentialId, null, null, resolvedModel));
+                .orElseGet(() -> new ProviderInfo(credentialId, providerFromParams, null, resolvedModel));
     }
 
     private UUID parseUuid(String raw) {

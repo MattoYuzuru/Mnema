@@ -39,11 +39,13 @@ public class OpenAiClient {
             textNode.set("format", request.responseFormat());
         }
 
-        JsonNode response = restClient.post()
+        RestClient.RequestBodySpec spec = restClient.post()
                 .uri("/v1/responses")
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(payload)
+                .contentType(MediaType.APPLICATION_JSON);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        JsonNode response = spec.body(payload)
                 .retrieve()
                 .body(JsonNode.class);
 
@@ -75,11 +77,13 @@ public class OpenAiClient {
             textNode.set("format", responseFormat);
         }
 
-        JsonNode response = restClient.post()
+        RestClient.RequestBodySpec spec = restClient.post()
                 .uri("/v1/responses")
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(payload)
+                .contentType(MediaType.APPLICATION_JSON);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        JsonNode response = spec.body(payload)
                 .retrieve()
                 .body(JsonNode.class);
 
@@ -102,11 +106,13 @@ public class OpenAiClient {
         payload.put("voice", request.voice());
         payload.put("response_format", request.responseFormat());
 
-        byte[] response = restClient.post()
+        RestClient.RequestBodySpec spec = restClient.post()
                 .uri("/v1/audio/speech")
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(payload)
+                .contentType(MediaType.APPLICATION_JSON);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        byte[] response = spec.body(payload)
                 .retrieve()
                 .body(byte[].class);
 
@@ -134,11 +140,13 @@ public class OpenAiClient {
         builder.part("file", resource)
                 .contentType(MediaType.parseMediaType(request.mimeType()));
 
-        JsonNode response = restClient.post()
+        RestClient.RequestBodySpec spec = restClient.post()
                 .uri("/v1/audio/transcriptions")
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .contentType(MediaType.MULTIPART_FORM_DATA)
-                .body(builder.build())
+                .contentType(MediaType.MULTIPART_FORM_DATA);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        JsonNode response = spec.body(builder.build())
                 .retrieve()
                 .body(JsonNode.class);
 
@@ -168,11 +176,13 @@ public class OpenAiClient {
         if (request.format() != null && !request.format().isBlank()) {
             payload.put("output_format", request.format());
         }
-        JsonNode response = restClient.post()
+        RestClient.RequestBodySpec spec = restClient.post()
                 .uri("/v1/images/generations")
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(payload)
+                .contentType(MediaType.APPLICATION_JSON);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        JsonNode response = spec.body(payload)
                 .retrieve()
                 .body(JsonNode.class);
 
@@ -207,11 +217,13 @@ public class OpenAiClient {
             builder.part("size", request.size());
         }
 
-        JsonNode response = restClient.post()
+        RestClient.RequestBodySpec spec = restClient.post()
                 .uri("/v1/videos")
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .contentType(MediaType.MULTIPART_FORM_DATA)
-                .body(builder.build())
+                .contentType(MediaType.MULTIPART_FORM_DATA);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        JsonNode response = spec.body(builder.build())
                 .retrieve()
                 .body(JsonNode.class);
 
@@ -222,11 +234,12 @@ public class OpenAiClient {
     }
 
     public OpenAiVideoJob getVideoJob(String apiKey, String videoId) {
-        JsonNode response = restClient.get()
-                .uri("/v1/videos/{videoId}", videoId)
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .retrieve()
-                .body(JsonNode.class);
+        RestClient.RequestHeadersSpec<?> spec = restClient.get()
+                .uri("/v1/videos/{videoId}", videoId);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        JsonNode response = spec.retrieve().body(JsonNode.class);
 
         if (response == null) {
             throw new IllegalStateException("OpenAI video status is empty");
@@ -235,11 +248,12 @@ public class OpenAiClient {
     }
 
     public byte[] downloadVideoContent(String apiKey, String videoId) {
-        byte[] response = restClient.get()
-                .uri("/v1/videos/{videoId}/content", videoId)
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .retrieve()
-                .body(byte[].class);
+        RestClient.RequestHeadersSpec<?> spec = restClient.get()
+                .uri("/v1/videos/{videoId}/content", videoId);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        byte[] response = spec.retrieve().body(byte[].class);
 
         if (response == null || response.length == 0) {
             throw new IllegalStateException("OpenAI video content is empty");
@@ -249,6 +263,10 @@ public class OpenAiClient {
 
     private String bearer(String token) {
         return "Bearer " + token;
+    }
+
+    private boolean hasApiKey(String token) {
+        return token != null && !token.isBlank();
     }
 
     private OpenAiVideoJob parseVideoJob(JsonNode response) {

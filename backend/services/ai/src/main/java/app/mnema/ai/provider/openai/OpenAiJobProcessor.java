@@ -99,6 +99,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private final ObjectMapper objectMapper;
     private final AnkiTemplateSupport ankiSupport;
     private final int maxImportChars;
+    private final String systemApiKey;
     private final Object ttsThrottleLock = new Object();
     private long nextTtsRequestAtMs = 0L;
 
@@ -124,6 +125,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         this.noveltyService = noveltyService;
         this.objectMapper = objectMapper;
         this.ankiSupport = new AnkiTemplateSupport(objectMapper);
+        this.systemApiKey = props.systemApiKey() == null ? "" : props.systemApiKey().trim();
         this.maxImportChars = Math.max(maxImportChars, 1000);
     }
 
@@ -134,11 +136,14 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
     @Override
     public AiJobProcessingResult process(AiJobEntity job) {
-        AiProviderCredentialEntity credential = resolveCredential(job);
-        String apiKey = decryptSecret(credential);
-        credential.setLastUsedAt(Instant.now());
-        credential.setUpdatedAt(Instant.now());
-        credentialRepository.save(credential);
+        CredentialSelection credentialSelection = resolveCredential(job);
+        String apiKey = credentialSelection.apiKey();
+        if (credentialSelection.credential() != null) {
+            AiProviderCredentialEntity credential = credentialSelection.credential();
+            credential.setLastUsedAt(Instant.now());
+            credential.setUpdatedAt(Instant.now());
+            credentialRepository.save(credential);
+        }
 
         if (job.getType() == AiJobType.tts) {
             return handleTts(job, apiKey);
@@ -1520,12 +1525,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         );
     }
 
-    private AiProviderCredentialEntity resolveCredential(AiJobEntity job) {
+    private CredentialSelection resolveCredential(AiJobEntity job) {
         JsonNode params = safeParams(job);
         UUID credentialId = parseUuid(params.path("providerCredentialId").asText(null));
         if (credentialId != null) {
-            return credentialRepository.findByIdAndUserId(credentialId, job.getUserId())
+            AiProviderCredentialEntity credential = credentialRepository.findByIdAndUserId(credentialId, job.getUserId())
                     .orElseThrow(() -> new IllegalStateException("Provider credential not found"));
+            return new CredentialSelection(credential, decryptSecret(credential));
         }
         Optional<AiProviderCredentialEntity> credential = credentialRepository
                 .findFirstByUserIdAndProviderAndStatusOrderByCreatedAtAsc(
@@ -1533,7 +1539,11 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                         PROVIDER,
                         AiProviderStatus.active
                 );
-        return credential.orElseThrow(() -> new IllegalStateException("No active OpenAI credential"));
+        if (credential.isPresent()) {
+            AiProviderCredentialEntity entity = credential.get();
+            return new CredentialSelection(entity, decryptSecret(entity));
+        }
+        return new CredentialSelection(null, systemApiKey);
     }
 
     private String decryptSecret(AiProviderCredentialEntity credential) {
@@ -3655,5 +3665,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             return "audio/ogg";
         }
         return "audio/mpeg";
+    }
+
+    private record CredentialSelection(AiProviderCredentialEntity credential, String apiKey) {
     }
 }

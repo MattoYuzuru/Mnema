@@ -5,7 +5,7 @@ import { Router } from '@angular/router';
 import { AiApiService } from '../../core/services/ai-api.service';
 import { CardApiService } from '../../core/services/card-api.service';
 import { TemplateApiService } from '../../core/services/template-api.service';
-import { AiJobResponse, AiProviderCredential } from '../../core/models/ai.models';
+import { AiJobResponse, AiProviderCredential, AiRuntimeCapabilities } from '../../core/models/ai.models';
 import { FieldTemplateDTO } from '../../core/models/template.models';
 import { MissingFieldStat } from '../../core/models/user-card.models';
 import { ButtonComponent } from '../../shared/components/button.component';
@@ -638,6 +638,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     videoResolution = signal('1280x720');
     videoDurationSeconds = signal(5);
     videoFormat = signal('mp4');
+    runtimeCapabilities = signal<AiRuntimeCapabilities | null>(null);
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
         if (!selectedId) return '';
@@ -646,9 +647,9 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     });
     readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
-    readonly ttsSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
-    readonly imageSupported = computed(() => ['openai', 'gemini', 'qwen', 'grok'].includes(this.selectedProvider()));
-    readonly videoSupported = computed(() => ['openai', 'qwen', 'grok'].includes(this.selectedProvider()));
+    readonly ttsSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'tts', ['openai', 'gemini', 'qwen']));
+    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'grok']));
+    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'grok']));
     readonly imageModelOptions = computed(() => this.resolveImageModelOptions(this.selectedProvider()));
     readonly videoModelOptions = computed(() => this.resolveVideoModelOptions(this.selectedProvider()));
     readonly voiceOptions = computed(() => {
@@ -804,8 +805,16 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     ngOnInit(): void {
         this.storageKey = `mnema_ai_enhance:${this.userDeckId || 'default'}`;
         this.restoreDraft();
+        this.loadRuntimeCapabilities();
         this.loadProviders();
         this.loadTemplateFields();
+    }
+
+    private loadRuntimeCapabilities(): void {
+        this.aiApi.getRuntimeCapabilities().subscribe({
+            next: capabilities => this.runtimeCapabilities.set(capabilities),
+            error: () => this.runtimeCapabilities.set(null)
+        });
     }
 
     loadTemplateFields(): void {
@@ -976,6 +985,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             type: 'generic',
             params: {
                 providerCredentialId: this.selectedCredentialId(),
+                provider: this.selectedProvider() || undefined,
                 model: this.modelName().trim() || undefined,
                 input,
                 actions,
@@ -1409,6 +1419,20 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (normalized === 'xai' || normalized === 'x.ai') return 'grok';
         if (normalized === 'dashscope' || normalized === 'aliyun' || normalized === 'alibaba') return 'qwen';
         return normalized;
+    }
+
+    private supportsCapability(provider: string,
+                               capability: 'text' | 'stt' | 'tts' | 'image' | 'video' | 'gif',
+                               fallbackProviders: string[]): boolean {
+        if (!provider) {
+            return false;
+        }
+        const runtime = this.runtimeCapabilities();
+        const runtimeCaps = runtime?.providers?.find(item => this.normalizeProvider(item.key) === provider);
+        if (runtimeCaps) {
+            return Boolean(runtimeCaps[capability]);
+        }
+        return fallbackProviders.includes(provider);
     }
 
     voiceLabel(voice: string): string {

@@ -14,6 +14,7 @@ import { AiProviderCredential } from '../../core/models/ai.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
+import { appConfig } from '../../app.config';
 
 @Component({
     selector: 'app-settings',
@@ -168,7 +169,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         </div>
       </section>
 
-      <section class="settings-section ai-settings">
+      <section *ngIf="!aiSystemProviderEnabled" class="settings-section ai-settings">
         <div class="section-heading-with-help">
           <h2>{{ 'settings.aiProviderKeysTitle' | translate }}</h2>
           <a
@@ -310,6 +311,13 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             </form>
           </div>
         </div>
+      </section>
+
+      <section *ngIf="aiSystemProviderEnabled" class="settings-section ai-settings">
+        <h2>{{ 'settings.aiProviderKeysTitle' | translate }}</h2>
+        <p class="section-description">
+          AI runs in system-managed local mode ({{ aiSystemProviderName }}). Personal provider keys are disabled for this deployment profile.
+        </p>
       </section>
 
       <section class="settings-section">
@@ -936,6 +944,8 @@ export class SettingsComponent implements OnInit {
         { label: 'GigaChat', value: 'gigachat' },
         { label: 'Custom', value: 'custom' }
     ];
+    readonly aiSystemProviderEnabled = appConfig.features.aiSystemProviderEnabled;
+    readonly aiSystemProviderName = appConfig.features.aiSystemProviderName;
 
     constructor(
         public theme: ThemeService,
@@ -950,7 +960,9 @@ export class SettingsComponent implements OnInit {
 
     ngOnInit(): void {
         this.loadArchivedDecks();
-        this.loadProviders();
+        if (!this.aiSystemProviderEnabled) {
+            this.loadProviders();
+        }
         this.providerName.set(this.providerPreset());
         this.userApi.getMe().subscribe({
             next: profile => {

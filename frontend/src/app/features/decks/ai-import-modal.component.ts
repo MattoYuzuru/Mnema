@@ -7,7 +7,8 @@ import { TemplateApiService } from '../../core/services/template-api.service';
 import {
     AiImportPreviewSummary,
     AiJobResponse,
-    AiProviderCredential
+    AiProviderCredential,
+    AiRuntimeCapabilities
 } from '../../core/models/ai.models';
 import { FieldTemplateDTO } from '../../core/models/template.models';
 import { ButtonComponent } from '../../shared/components/button.component';
@@ -949,6 +950,7 @@ export class AiImportModalComponent implements OnInit {
     recording = signal(false);
     recordingSeconds = signal(0);
     recordingError = signal('');
+    runtimeCapabilities = signal<AiRuntimeCapabilities | null>(null);
 
     readonly maxCards = AiImportModalComponent.MAX_CARDS;
 
@@ -963,9 +965,9 @@ export class AiImportModalComponent implements OnInit {
 
     readonly formatOptions = ['mp3', 'ogg', 'wav'];
     readonly ttsFormatOptions = computed(() => ['gemini', 'qwen'].includes(this.selectedProvider()) ? ['wav'] : this.formatOptions);
-    readonly ttsSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
-    readonly imageSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
-    readonly videoSupported = computed(() => ['openai', 'qwen'].includes(this.selectedProvider()));
+    readonly ttsSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'tts', ['openai', 'gemini', 'qwen']));
+    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen']));
+    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen']));
     readonly hasAudioFields = computed(() => this.audioFields().length > 0);
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
@@ -973,7 +975,7 @@ export class AiImportModalComponent implements OnInit {
         const provider = this.providerKeys().find(item => item.id === selectedId)?.provider;
         return this.normalizeProvider(provider);
     });
-    readonly importSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
+    readonly importSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'text', ['openai', 'gemini', 'qwen', 'ollama']));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
     readonly sttModelPlaceholder = computed(() => this.resolveSttModelPlaceholder(this.selectedProvider()));
     readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
@@ -1105,8 +1107,16 @@ export class AiImportModalComponent implements OnInit {
         this.storageKey = `mnema_ai_import:${this.userDeckId || 'default'}`;
         this.startDraftSync();
         this.restoreDraft();
+        this.loadRuntimeCapabilities();
         this.loadProviders();
         this.loadTemplateFields();
+    }
+
+    private loadRuntimeCapabilities(): void {
+        this.aiApi.getRuntimeCapabilities().subscribe({
+            next: capabilities => this.runtimeCapabilities.set(capabilities),
+            error: () => this.runtimeCapabilities.set(null)
+        });
     }
 
     loadProviders(): void {
@@ -1388,6 +1398,7 @@ export class AiImportModalComponent implements OnInit {
             deckId: this.userDeckId,
             sourceMediaId: fileInfo.mediaId,
             providerCredentialId: this.selectedCredentialId() || undefined,
+            provider: this.selectedProvider() || undefined,
             model: this.modelName().trim() || undefined,
             sourceType: fileInfo.sourceType,
             encoding: this.showEncoding() && this.encoding() !== 'auto' ? this.encoding() : undefined,
@@ -1468,6 +1479,7 @@ export class AiImportModalComponent implements OnInit {
             fields,
             count: this.clampCount(this.estimatedCount()),
             providerCredentialId: this.selectedCredentialId() || undefined,
+            provider: this.selectedProvider() || undefined,
             model: this.modelName().trim() || undefined,
             sourceType: fileInfo.sourceType,
             encoding: this.showEncoding() && this.encoding() !== 'auto' ? this.encoding() : undefined,
@@ -1932,6 +1944,20 @@ export class AiImportModalComponent implements OnInit {
         if (normalized === 'xai' || normalized === 'x.ai') return 'grok';
         if (normalized === 'dashscope' || normalized === 'aliyun' || normalized === 'alibaba') return 'qwen';
         return normalized;
+    }
+
+    private supportsCapability(provider: string,
+                               capability: 'text' | 'stt' | 'tts' | 'image' | 'video' | 'gif',
+                               fallbackProviders: string[]): boolean {
+        if (!provider) {
+            return false;
+        }
+        const runtime = this.runtimeCapabilities();
+        const runtimeCaps = runtime?.providers?.find(item => this.normalizeProvider(item.key) === provider);
+        if (runtimeCaps) {
+            return Boolean(runtimeCaps[capability]);
+        }
+        return fallbackProviders.includes(provider);
     }
 
     private clampCount(value: number): number {

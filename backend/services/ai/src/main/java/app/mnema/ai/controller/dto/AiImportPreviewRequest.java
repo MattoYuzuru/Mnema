@@ -10,6 +10,7 @@ public record AiImportPreviewRequest(
         @NotNull UUID deckId,
         @NotNull UUID sourceMediaId,
         UUID providerCredentialId,
+        String provider,
         String model,
         String sourceType,
         String encoding,

@@ -10,6 +10,33 @@ export interface AiProviderCredential {
     updatedAt?: string | null;
 }
 
+export interface AiRuntimeCapabilities {
+    mode: 'system_managed' | 'user_keys' | string;
+    systemProvider?: string | null;
+    ollama?: {
+        enabled: boolean;
+        available: boolean;
+        baseUrl: string;
+        models: Array<{
+            name: string;
+            sizeBytes?: number | null;
+            modifiedAt?: string | null;
+            capabilities: string[];
+        }>;
+    } | null;
+    providers?: Array<{
+        key: string;
+        displayName: string;
+        requiresCredential: boolean;
+        text: boolean;
+        stt: boolean;
+        tts: boolean;
+        image: boolean;
+        video: boolean;
+        gif: boolean;
+    }>;
+}
+
 export interface CreateAiProviderRequest {
     provider: string;
     alias?: string | null;
@@ -56,6 +83,7 @@ export interface AiImportPreviewRequest {
     deckId: string;
     sourceMediaId: string;
     providerCredentialId?: string | null;
+    provider?: string | null;
     model?: string | null;
     sourceType?: string | null;
     encoding?: string | null;
@@ -71,6 +99,7 @@ export interface AiImportGenerateRequest {
     fields: string[];
     count: number;
     providerCredentialId?: string | null;
+    provider?: string | null;
     model?: string | null;
     sourceType?: string | null;
     encoding?: string | null;

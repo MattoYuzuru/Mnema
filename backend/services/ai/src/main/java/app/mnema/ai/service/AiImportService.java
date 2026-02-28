@@ -29,6 +29,7 @@ public class AiImportService {
 
     public AiJobResponse createPreviewJob(Jwt jwt, String accessToken, AiImportPreviewRequest request) {
         ObjectNode params = baseParams(request.providerCredentialId(),
+                request.provider(),
                 request.sourceMediaId().toString(),
                 request.sourceType(),
                 request.encoding(),
@@ -52,6 +53,7 @@ public class AiImportService {
 
     public AiJobResponse createGenerateJob(Jwt jwt, String accessToken, AiImportGenerateRequest request) {
         ObjectNode params = baseParams(request.providerCredentialId(),
+                request.provider(),
                 request.sourceMediaId().toString(),
                 request.sourceType(),
                 request.encoding(),
@@ -89,6 +91,7 @@ public class AiImportService {
     }
 
     private ObjectNode baseParams(java.util.UUID providerCredentialId,
+                                  String provider,
                                   String sourceMediaId,
                                   String sourceType,
                                   String encoding,
@@ -100,6 +103,7 @@ public class AiImportService {
         putOptional(params, "sourceType", sourceType);
         putOptional(params, "encoding", encoding);
         putOptional(params, "language", language);
+        putOptional(params, "provider", provider);
         putOptional(params, "model", model);
         putOptional(params, "instructions", instructions);
         if (providerCredentialId != null) {
