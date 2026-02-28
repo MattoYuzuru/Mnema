@@ -31,7 +31,10 @@
 * [Чем Mnema выделяется относительно Anki/Quizlet](#чем-mnema-выделяется-относительно-ankiquizlet)
 * [Технологии](#технологии)
 * [Архитектура](#архитектура)
+* [Self-Hosted Local (one-command)](#self-hosted-local-one-command)
+* [Self-Hosted Public (own domain)](#self-hosted-public-own-domain)
 * [Локальная разработка](#локальная-разработка)
+* [Системные требования и sizing](#системные-требования-и-sizing)
 * [Переменные окружения (.env)](#переменные-окружения-env)
 * [CI/CD и деплой](#cicd-и-деплой)
 * [Безопасность](#безопасность)
@@ -139,6 +142,66 @@ Frontend (`frontend`) общается с backend API:
 
 ---
 
+## Self-Hosted Local (one-command)
+
+Для локального self-host режима добавлены bootstrap-скрипты:
+
+- Linux/macOS:
+```bash
+./scripts/mnema-local.sh
+```
+- Windows (PowerShell):
+```powershell
+.\scripts\mnema-local.ps1
+```
+
+Что делает скрипт:
+- спрашивает минимальные креды (`Postgres`, `MinIO`);
+- проверяет порты (`3005`, `5432`, `6379`, `8083-8088`, `9000`, `9001`, `11434`);
+- если порт занят, автоматически выбирает следующий свободный (`+1`, `+2`, ...), и явно пишет это в консоль;
+- генерирует `.env.local` и `.mnema/compose.ports.yml`;
+- поднимает compose с `Postgres`, `Redis`, `MinIO` (+ bucket init), `Ollama` и сервисами Mnema;
+- включает профиль `dev,selfhost-local` (в `auth` отключает federated OAuth/Turnstile и обязательную email verification);
+- проверяет доступность Ollama и предлагает `pull` рекомендованной модели по RAM.
+
+Проверка без старта контейнеров: `MNEMA_DRY_RUN=1 ./scripts/mnema-local.sh`
+
+Подробный runbook и ограничения: [docs/deploy/selfhost-local.md](docs/deploy/selfhost-local.md)
+Матрица локальных AI моделей (включая video/gif): [docs/deploy/model-matrix.md](docs/deploy/model-matrix.md)
+
+---
+
+## Self-Hosted Public (own domain)
+
+Для публичного self-host (домен/поддомены, доступ из интернета) добавлены bootstrap-скрипты:
+
+- Linux/macOS:
+```bash
+./scripts/mnema-public.sh
+```
+- Windows (PowerShell):
+```powershell
+.\scripts\mnema-public.ps1
+```
+
+Что делает скрипт:
+- спрашивает домены (`web`, `auth`) и базовые креды (`Postgres`, `MinIO`);
+- проверяет порты, при конфликте сдвигает на следующий свободный;
+- генерирует `.env.public` и `.mnema/compose.public.yml`;
+- включает профиль `prod,selfhost-public` для backend-сервисов;
+- включает `frontend` runtime-конфиг (`MNEMA_AUTH_SERVER_URL` и feature flags) без пересборки образа;
+- добавляет `MinIO` и `Ollama` в compose override;
+- может сразу выполнить `docker compose up -d --build`.
+
+Проверка без старта контейнеров:
+```bash
+MNEMA_DRY_RUN=1 ./scripts/mnema-public.sh
+```
+
+Подробный runbook (DNS, reverse proxy, TLS, OAuth): [docs/deploy/selfhost-public.md](docs/deploy/selfhost-public.md)
+
+---
+
 ## Локальная разработка
 
 1. Подготовить `.env` (пример ниже).
@@ -158,6 +221,44 @@ docker compose up -d --build
 - ai: `8088`
 - postgres: `${POSTGRES_PORT}`
 - redis: `6379`
+
+---
+
+## Системные требования и sizing
+
+Оценки для self-host local режима (без внешних SaaS). Фактическое потребление зависит от моделей, числа одновременных задач и лимитов JVM.
+
+### Минимум для запуска
+- CPU: 4 vCPU
+- RAM: 8 GB (без тяжелых локальных AI задач)
+- Disk: 25 GB свободного места
+
+### Рекомендуемо для комфортной работы
+- CPU: 8+ vCPU
+- RAM: 16 GB (если Ollama 7B/8B используется регулярно)
+- Disk: 60+ GB (контейнеры + кэш моделей + импорт/медиа)
+
+### Оценка памяти (порядок величин)
+- Mnema сервисы + Postgres + Redis + MinIO + Frontend: ~4-7 GB RAM
+- Ollama runtime без активной модели: ~0.5-1 GB RAM
+- Одна активная 7B/8B модель в Ollama (квантованная): обычно +4-8 GB RAM
+- STT/TTS/Image локальные сервисы (при добавлении): обычно +1-6 GB RAM суммарно в зависимости от выбранных моделей
+
+### Оценка диска
+- Чистый git checkout (tracked files): ~6 MB
+- Docker images для базового стека (без AI-моделей): обычно ~8-15 GB
+- Ollama model cache:
+  - маленькие модели: ~2-5 GB каждая
+  - 7B/8B: ~4-8 GB каждая
+  - 30B+: десятки GB
+- Данные Postgres/MinIO/импорты: зависят от контента, закладывайте отдельный запас 10-100+ GB
+
+Практические команды для проверки на вашей машине:
+```bash
+docker stats
+docker system df
+du -h -d 1 .
+```
 
 ---
 

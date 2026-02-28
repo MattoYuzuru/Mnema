@@ -33,7 +33,11 @@ jwt-*.pem
 backend/.gradle
 frontend/dist
 frontend/node_modules
-/scripts
+/scripts/*
+!/scripts/mnema-local.sh
+!/scripts/mnema-local.ps1
+!/scripts/mnema-public.sh
+!/scripts/mnema-public.ps1
 build
 /test_decks
 /first-cool-liquid-glass
