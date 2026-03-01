@@ -52,6 +52,38 @@ function Prompt-WithDefault {
     return $value.Trim()
 }
 
+function Test-ValidIdentifier {
+    param([string]$Value)
+    return $Value -match '^[A-Za-z0-9._-]{3,64}$'
+}
+
+function Test-ValidPassword {
+    param([string]$Value)
+    return -not [string]::IsNullOrEmpty($Value) -and $Value.Length -ge 8
+}
+
+function Prompt-ValidatedIdentifier {
+    param([string]$Prompt, [string]$Default)
+    while ($true) {
+        $value = Prompt-WithDefault -Prompt $Prompt -Default $Default
+        if (Test-ValidIdentifier -Value $value) {
+            return $value
+        }
+        Write-Host "[error] $Prompt must be 3-64 chars and contain only letters, digits, dot, underscore, hyphen."
+    }
+}
+
+function Prompt-ValidatedPassword {
+    param([string]$Prompt, [string]$Default)
+    while ($true) {
+        $value = Prompt-WithDefault -Prompt $Prompt -Default $Default
+        if (Test-ValidPassword -Value $value) {
+            return $value
+        }
+        Write-Host "[error] $Prompt must be at least 8 characters."
+    }
+}
+
 function New-HexSecret {
     param([int]$ByteCount)
     $bytes = New-Object byte[] $ByteCount
@@ -86,11 +118,11 @@ $authIssuer = "https://$authDomain"
 $federatedRaw = Read-Host 'Enable federated OAuth providers? [y/N]'
 $authFederatedEnabled = if ($federatedRaw -match '^[Yy]$') { 'true' } else { 'false' }
 
-$dbUser = Prompt-WithDefault -Prompt 'Postgres user' -Default 'mnema'
-$dbPassword = Prompt-WithDefault -Prompt 'Postgres password' -Default 'mnema_public'
-$dbName = Prompt-WithDefault -Prompt 'Postgres database' -Default 'mnema'
-$minioUser = Prompt-WithDefault -Prompt 'MinIO root user' -Default 'mnema'
-$minioPassword = Prompt-WithDefault -Prompt 'MinIO root password' -Default 'mnema_public_minio'
+$dbUser = Prompt-ValidatedIdentifier -Prompt 'Postgres user' -Default 'mnema'
+$dbPassword = Prompt-ValidatedPassword -Prompt 'Postgres password' -Default 'mnema_public'
+$dbName = Prompt-ValidatedIdentifier -Prompt 'Postgres database' -Default 'mnema'
+$minioUser = Prompt-ValidatedIdentifier -Prompt 'MinIO root user' -Default 'mnema'
+$minioPassword = Prompt-ValidatedPassword -Prompt 'MinIO root password' -Default 'mnema_public_minio'
 
 $POSTGRES_PORT = Get-NextFreePort -StartPort 5432
 $REDIS_PORT = Get-NextFreePort -StartPort 6379
@@ -138,12 +170,12 @@ AUTH_SWAGGER_REDIRECT_URIS=$authSwaggerRedirects
 AUTH_FEDERATED_ENABLED=$authFederatedEnabled
 AUTH_REQUIRE_EMAIL_VERIFICATION=$authFederatedEnabled
 
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GH_CLIENT_ID=
-GH_CLIENT_SECRET=
-YANDEX_CLIENT_ID=
-YANDEX_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=disabled-google
+GOOGLE_CLIENT_SECRET=disabled-google-secret
+GH_CLIENT_ID=disabled-github
+GH_CLIENT_SECRET=disabled-github-secret
+YANDEX_CLIENT_ID=disabled-yandex
+YANDEX_CLIENT_SECRET=disabled-yandex-secret
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
 

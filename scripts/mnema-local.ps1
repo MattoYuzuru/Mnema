@@ -52,6 +52,38 @@ function Prompt-WithDefault {
     return $value.Trim()
 }
 
+function Test-ValidIdentifier {
+    param([string]$Value)
+    return $Value -match '^[A-Za-z0-9._-]{3,64}$'
+}
+
+function Test-ValidPassword {
+    param([string]$Value)
+    return -not [string]::IsNullOrEmpty($Value) -and $Value.Length -ge 8
+}
+
+function Prompt-ValidatedIdentifier {
+    param([string]$Prompt, [string]$Default)
+    while ($true) {
+        $value = Prompt-WithDefault -Prompt $Prompt -Default $Default
+        if (Test-ValidIdentifier -Value $value) {
+            return $value
+        }
+        Write-Host "[error] $Prompt must be 3-64 chars and contain only letters, digits, dot, underscore, hyphen."
+    }
+}
+
+function Prompt-ValidatedPassword {
+    param([string]$Prompt, [string]$Default)
+    while ($true) {
+        $value = Prompt-WithDefault -Prompt $Prompt -Default $Default
+        if (Test-ValidPassword -Value $value) {
+            return $value
+        }
+        Write-Host "[error] $Prompt must be at least 8 characters."
+    }
+}
+
 function New-HexSecret {
     param([int]$ByteCount)
     $bytes = New-Object byte[] $ByteCount
@@ -102,11 +134,11 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host '== Mnema local bootstrap =='
 Write-Host 'The script will detect busy ports and move to the next free port automatically.'
 
-$dbUser = Prompt-WithDefault -Prompt 'Postgres user' -Default 'mnema'
-$dbName = Prompt-WithDefault -Prompt 'Postgres database' -Default 'mnema'
-$dbPassword = Prompt-WithDefault -Prompt 'Postgres password' -Default 'mnema_local'
-$minioUser = Prompt-WithDefault -Prompt 'MinIO root user' -Default 'mnema'
-$minioPassword = Prompt-WithDefault -Prompt 'MinIO root password' -Default 'mnema_minio_local'
+$dbUser = Prompt-ValidatedIdentifier -Prompt 'Postgres user' -Default 'mnema'
+$dbName = Prompt-ValidatedIdentifier -Prompt 'Postgres database' -Default 'mnema'
+$dbPassword = Prompt-ValidatedPassword -Prompt 'Postgres password' -Default 'mnema_local'
+$minioUser = Prompt-ValidatedIdentifier -Prompt 'MinIO root user' -Default 'mnema'
+$minioPassword = Prompt-ValidatedPassword -Prompt 'MinIO root password' -Default 'mnema_minio_local'
 
 $POSTGRES_PORT = Get-NextFreePort -StartPort 5432
 $REDIS_PORT = Get-NextFreePort -StartPort 6379
@@ -146,12 +178,12 @@ SPRING_DATASOURCE_PASSWORD=$dbPassword
 AUTH_ISSUER=http://localhost:$AUTH_PORT
 AUTH_ISSUER_URI=http://localhost:$AUTH_PORT
 
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GH_CLIENT_ID=
-GH_CLIENT_SECRET=
-YANDEX_CLIENT_ID=
-YANDEX_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=disabled-google
+GOOGLE_CLIENT_SECRET=disabled-google-secret
+GH_CLIENT_ID=disabled-github
+GH_CLIENT_SECRET=disabled-github-secret
+YANDEX_CLIENT_ID=disabled-yandex
+YANDEX_CLIENT_SECRET=disabled-yandex-secret
 
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=

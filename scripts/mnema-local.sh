@@ -74,6 +74,44 @@ prompt_default() {
   fi
 }
 
+is_valid_identifier() {
+  local value="$1"
+  [[ "$value" =~ ^[A-Za-z0-9._-]{3,64}$ ]]
+}
+
+is_valid_password() {
+  local value="$1"
+  (( ${#value} >= 8 ))
+}
+
+prompt_identifier() {
+  local label="$1"
+  local default_value="$2"
+  local value
+  while true; do
+    value="$(prompt_default "$label" "$default_value")"
+    if is_valid_identifier "$value"; then
+      echo "$value"
+      return
+    fi
+    echo "[error] $label must be 3-64 chars and contain only letters, digits, dot, underscore, hyphen."
+  done
+}
+
+prompt_password() {
+  local label="$1"
+  local default_value="$2"
+  local value
+  while true; do
+    value="$(prompt_default "$label" "$default_value")"
+    if is_valid_password "$value"; then
+      echo "$value"
+      return
+    fi
+    echo "[error] $label must be at least 8 characters."
+  done
+}
+
 rand_hex() {
   local bytes="$1"
   if command_exists openssl; then
@@ -107,12 +145,12 @@ SPRING_DATASOURCE_PASSWORD=$postgres_password
 AUTH_ISSUER=http://localhost:${AUTH_PORT}
 AUTH_ISSUER_URI=http://localhost:${AUTH_PORT}
 
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GH_CLIENT_ID=
-GH_CLIENT_SECRET=
-YANDEX_CLIENT_ID=
-YANDEX_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=disabled-google
+GOOGLE_CLIENT_SECRET=disabled-google-secret
+GH_CLIENT_ID=disabled-github
+GH_CLIENT_SECRET=disabled-github-secret
+YANDEX_CLIENT_ID=disabled-yandex
+YANDEX_CLIENT_SECRET=disabled-yandex-secret
 
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
@@ -305,11 +343,11 @@ default_db_password="mnema_local"
 default_minio_user="mnema"
 default_minio_password="mnema_minio_local"
 
-DB_USER="$(prompt_default 'Postgres user' "$default_db_user")"
-DB_NAME="$(prompt_default 'Postgres database' "$default_db_name")"
-DB_PASSWORD="$(prompt_default 'Postgres password' "$default_db_password")"
-MINIO_USER="$(prompt_default 'MinIO root user' "$default_minio_user")"
-MINIO_PASSWORD="$(prompt_default 'MinIO root password' "$default_minio_password")"
+DB_USER="$(prompt_identifier 'Postgres user' "$default_db_user")"
+DB_NAME="$(prompt_identifier 'Postgres database' "$default_db_name")"
+DB_PASSWORD="$(prompt_password 'Postgres password' "$default_db_password")"
+MINIO_USER="$(prompt_identifier 'MinIO root user' "$default_minio_user")"
+MINIO_PASSWORD="$(prompt_password 'MinIO root password' "$default_minio_password")"
 
 POSTGRES_PORT="$(next_free_port 5432)"
 REDIS_PORT="$(next_free_port 6379 "$POSTGRES_PORT")"

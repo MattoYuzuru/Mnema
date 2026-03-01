@@ -79,6 +79,44 @@ prompt_default() {
   fi
 }
 
+is_valid_identifier() {
+  local value="$1"
+  [[ "$value" =~ ^[A-Za-z0-9._-]{3,64}$ ]]
+}
+
+is_valid_password() {
+  local value="$1"
+  (( ${#value} >= 8 ))
+}
+
+prompt_identifier() {
+  local label="$1"
+  local default_value="$2"
+  local value
+  while true; do
+    value="$(prompt_default "$label" "$default_value")"
+    if is_valid_identifier "$value"; then
+      echo "$value"
+      return
+    fi
+    echo "[error] $label must be 3-64 chars and contain only letters, digits, dot, underscore, hyphen."
+  done
+}
+
+prompt_password() {
+  local label="$1"
+  local default_value="$2"
+  local value
+  while true; do
+    value="$(prompt_default "$label" "$default_value")"
+    if is_valid_password "$value"; then
+      echo "$value"
+      return
+    fi
+    echo "[error] $label must be at least 8 characters."
+  done
+}
+
 rand_hex() {
   local bytes="$1"
   if command_exists openssl; then
@@ -102,11 +140,11 @@ if [[ "${federated_raw:-}" =~ ^[Yy]$ ]]; then
   AUTH_FEDERATED_ENABLED="true"
 fi
 
-POSTGRES_USER="$(prompt_default 'Postgres user' 'mnema')"
-POSTGRES_PASSWORD="$(prompt_default 'Postgres password' 'mnema_public')"
-POSTGRES_DB="$(prompt_default 'Postgres database' 'mnema')"
-MINIO_USER="$(prompt_default 'MinIO root user' 'mnema')"
-MINIO_PASSWORD="$(prompt_default 'MinIO root password' 'mnema_public_minio')"
+POSTGRES_USER="$(prompt_identifier 'Postgres user' 'mnema')"
+POSTGRES_PASSWORD="$(prompt_password 'Postgres password' 'mnema_public')"
+POSTGRES_DB="$(prompt_identifier 'Postgres database' 'mnema')"
+MINIO_USER="$(prompt_identifier 'MinIO root user' 'mnema')"
+MINIO_PASSWORD="$(prompt_password 'MinIO root password' 'mnema_public_minio')"
 
 used_ports=()
 POSTGRES_PORT="$(next_free_port 5432 "${used_ports[@]:-}")"; used_ports+=("$POSTGRES_PORT")
@@ -155,12 +193,12 @@ AUTH_SWAGGER_REDIRECT_URIS=$AUTH_SWAGGER_REDIRECTS
 AUTH_FEDERATED_ENABLED=$AUTH_FEDERATED_ENABLED
 AUTH_REQUIRE_EMAIL_VERIFICATION=$AUTH_FEDERATED_ENABLED
 
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GH_CLIENT_ID=
-GH_CLIENT_SECRET=
-YANDEX_CLIENT_ID=
-YANDEX_CLIENT_SECRET=
+GOOGLE_CLIENT_ID=disabled-google
+GOOGLE_CLIENT_SECRET=disabled-google-secret
+GH_CLIENT_ID=disabled-github
+GH_CLIENT_SECRET=disabled-github-secret
+YANDEX_CLIENT_ID=disabled-yandex
+YANDEX_CLIENT_SECRET=disabled-yandex-secret
 TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
 
