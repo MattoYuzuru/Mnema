@@ -1529,9 +1529,11 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         JsonNode params = safeParams(job);
         UUID credentialId = parseUuid(params.path("providerCredentialId").asText(null));
         if (credentialId != null) {
-            AiProviderCredentialEntity credential = credentialRepository.findByIdAndUserId(credentialId, job.getUserId())
-                    .orElseThrow(() -> new IllegalStateException("Provider credential not found"));
-            return new CredentialSelection(credential, decryptSecret(credential));
+            Optional<AiProviderCredentialEntity> byId = credentialRepository.findByIdAndUserId(credentialId, job.getUserId());
+            if (byId.isPresent()) {
+                AiProviderCredentialEntity credential = byId.get();
+                return new CredentialSelection(credential, decryptSecret(credential));
+            }
         }
         Optional<AiProviderCredentialEntity> credential = credentialRepository
                 .findFirstByUserIdAndProviderAndStatusOrderByCreatedAtAsc(
