@@ -218,7 +218,7 @@ public class TemplateService {
                                                        CardTemplateDTO dto) {
 
         CardTemplateEntity entity = cardTemplateRepository
-                .findByOwnerIdAndTemplateId(currentUserId, templateId)
+                .findByOwnerIdAndTemplateIdForUpdate(currentUserId, templateId)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template not found or access denied: " + templateId
                 ));
@@ -276,7 +276,7 @@ public class TemplateService {
 
         // 1. Проверяем наличие шаблона и права
         CardTemplateEntity cardTemplate = cardTemplateRepository
-                .findByOwnerIdAndTemplateId(currentUserId, templateId)
+                .findByOwnerIdAndTemplateIdForUpdate(currentUserId, templateId)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template with ID: " + templateId +
                                 " and owner ID: " + currentUserId + " not found."
@@ -301,7 +301,7 @@ public class TemplateService {
 
         // Проверяем, что шаблон принадлежит текущему пользователю
         CardTemplateEntity template = cardTemplateRepository
-                .findByOwnerIdAndTemplateId(currentUserId, templateId)
+                .findByOwnerIdAndTemplateIdForUpdate(currentUserId, templateId)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template not found or access denied: " + templateId
                 ));
@@ -359,7 +359,7 @@ public class TemplateService {
 
         // Проверяем права на шаблон
         CardTemplateEntity template = cardTemplateRepository
-                .findByOwnerIdAndTemplateId(currentUserId, templateId)
+                .findByOwnerIdAndTemplateIdForUpdate(currentUserId, templateId)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template not found or access denied: " + templateId
                 ));
@@ -431,7 +431,7 @@ public class TemplateService {
 
         // Проверяем права на шаблон
         CardTemplateEntity template = cardTemplateRepository
-                .findByOwnerIdAndTemplateId(currentUserId, templateId)
+                .findByOwnerIdAndTemplateIdForUpdate(currentUserId, templateId)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template not found or access denied: " + templateId
                 ));

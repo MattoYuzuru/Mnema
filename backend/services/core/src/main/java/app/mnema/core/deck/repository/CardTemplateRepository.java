@@ -1,9 +1,11 @@
 package app.mnema.core.deck.repository;
 
 import app.mnema.core.deck.domain.entity.CardTemplateEntity;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -23,6 +25,15 @@ public interface CardTemplateRepository extends JpaRepository<CardTemplateEntity
     Page<CardTemplateEntity> findByIsPublicTrueOrOwnerIdOrderByCreatedAtDesc(UUID ownerId, Pageable pageable);
 
     Optional<CardTemplateEntity> findByOwnerIdAndTemplateId(UUID ownerId, UUID templateId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select t
+            from CardTemplateEntity t
+            where t.ownerId = :ownerId and t.templateId = :templateId
+            """)
+    Optional<CardTemplateEntity> findByOwnerIdAndTemplateIdForUpdate(@Param("ownerId") UUID ownerId,
+                                                                      @Param("templateId") UUID templateId);
 
     @Query(value = """
         select t.*
