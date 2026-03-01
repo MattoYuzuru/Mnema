@@ -125,6 +125,19 @@ rand_hex() {
   date +%s%N | sha256sum | cut -c1-$((bytes * 2))
 }
 
+rand_b64() {
+  local bytes="$1"
+  if command_exists openssl; then
+    openssl rand -base64 "$bytes" | tr -d '\n'
+    return 0
+  fi
+  if command_exists head; then
+    head -c "$bytes" /dev/urandom | base64 | tr -d '\n'
+    return 0
+  fi
+  rand_hex "$bytes"
+}
+
 write_env_file() {
   local postgres_user="$1"
   local postgres_password="$2"
@@ -160,6 +173,7 @@ MEDIA_INTERNAL_TOKEN=$(rand_hex 24)
 AWS_REGION=us-east-1
 AWS_BUCKET_NAME=mnema-local
 AWS_ENDPOINT=http://minio:9000
+AWS_PUBLIC_ENDPOINT=http://localhost:${MINIO_API_PORT}
 AWS_PATH_STYLE_ACCESS=true
 AWS_ACCESS_KEY_ID=$minio_user
 AWS_SECRET_ACCESS_KEY=$minio_password
@@ -171,7 +185,7 @@ AI_PROVIDER=openai
 AI_SYSTEM_MANAGED_PROVIDER_ENABLED=true
 AI_SYSTEM_PROVIDER_NAME=ollama
 AI_OLLAMA_ENABLED=true
-AI_VAULT_MASTER_KEY=$(rand_hex 32)
+AI_VAULT_MASTER_KEY=$(rand_b64 32)
 AI_VAULT_KEY_ID=local-v1
 
 OPENAI_BASE_URL=http://ollama:11434/v1

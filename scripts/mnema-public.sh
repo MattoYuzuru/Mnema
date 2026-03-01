@@ -126,6 +126,19 @@ rand_hex() {
   fi
 }
 
+rand_b64() {
+  local bytes="$1"
+  if command_exists openssl; then
+    openssl rand -base64 "$bytes" | tr -d '\n'
+    return 0
+  fi
+  if command_exists head; then
+    head -c "$bytes" /dev/urandom | base64 | tr -d '\n'
+    return 0
+  fi
+  rand_hex "$bytes"
+}
+
 check_requirements
 
 echo "== Mnema public self-host init =="
@@ -206,6 +219,7 @@ MEDIA_INTERNAL_TOKEN=$(rand_hex 24)
 AWS_REGION=us-east-1
 AWS_BUCKET_NAME=mnema-public
 AWS_ENDPOINT=http://minio:9000
+AWS_PUBLIC_ENDPOINT=http://localhost:${MINIO_API_PORT}
 AWS_PATH_STYLE_ACCESS=true
 AWS_ACCESS_KEY_ID=$MINIO_USER
 AWS_SECRET_ACCESS_KEY=$MINIO_PASSWORD
@@ -221,7 +235,7 @@ OLLAMA_BASE_URL=http://ollama:11434
 OPENAI_BASE_URL=http://ollama:11434/v1
 OPENAI_SYSTEM_API_KEY=
 OPENAI_DEFAULT_MODEL=qwen3:8b
-AI_VAULT_MASTER_KEY=$(rand_hex 32)
+AI_VAULT_MASTER_KEY=$(rand_b64 32)
 AI_VAULT_KEY_ID=public-v1
 
 REDIS_HOST=redis

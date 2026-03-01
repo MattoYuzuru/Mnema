@@ -91,6 +91,13 @@ function New-HexSecret {
     return -join ($bytes | ForEach-Object { $_.ToString('x2') })
 }
 
+function New-Base64Secret {
+    param([int]$ByteCount)
+    $bytes = New-Object byte[] $ByteCount
+    [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+    return [Convert]::ToBase64String($bytes)
+}
+
 function Print-PortInfo {
     param([string]$Name, [int]$DefaultPort, [int]$FinalPort)
     if ($DefaultPort -eq $FinalPort) {
@@ -183,6 +190,7 @@ MEDIA_INTERNAL_TOKEN=$(New-HexSecret -ByteCount 24)
 AWS_REGION=us-east-1
 AWS_BUCKET_NAME=mnema-public
 AWS_ENDPOINT=http://minio:9000
+AWS_PUBLIC_ENDPOINT=http://localhost:$MINIO_API_PORT
 AWS_PATH_STYLE_ACCESS=true
 AWS_ACCESS_KEY_ID=$minioUser
 AWS_SECRET_ACCESS_KEY=$minioPassword
@@ -198,7 +206,7 @@ OLLAMA_BASE_URL=http://ollama:11434
 OPENAI_BASE_URL=http://ollama:11434/v1
 OPENAI_SYSTEM_API_KEY=
 OPENAI_DEFAULT_MODEL=qwen3:8b
-AI_VAULT_MASTER_KEY=$(New-HexSecret -ByteCount 32)
+AI_VAULT_MASTER_KEY=$(New-Base64Secret -ByteCount 32)
 AI_VAULT_KEY_ID=public-v1
 
 REDIS_HOST=redis

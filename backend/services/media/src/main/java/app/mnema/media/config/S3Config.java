@@ -35,11 +35,18 @@ public class S3Config {
     @Bean
     public S3Presigner s3Presigner(S3Props p) {
         var creds = AwsBasicCredentials.create(p.accessKey(), p.secretKey());
+        var s3Config = S3Configuration.builder()
+                .pathStyleAccessEnabled(p.pathStyleAccess())
+                .build();
+        var presignEndpoint = (p.publicEndpoint() != null && !p.publicEndpoint().isBlank())
+                ? p.publicEndpoint()
+                : p.endpoint();
 
         return S3Presigner.builder()
                 .region(Region.of(p.region()))
-                .endpointOverride(URI.create(p.endpoint()))
+                .endpointOverride(URI.create(presignEndpoint))
                 .credentialsProvider(StaticCredentialsProvider.create(creds))
+                .serviceConfiguration(s3Config)
                 .build();
     }
 }

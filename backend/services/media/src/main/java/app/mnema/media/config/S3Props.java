@@ -10,6 +10,7 @@ public record S3Props(
         @NotBlank String bucket,
         @NotBlank String region,
         @NotBlank String endpoint,
+        String publicEndpoint,
         boolean pathStyleAccess,
         @NotBlank String accessKey,
         @NotBlank String secretKey
