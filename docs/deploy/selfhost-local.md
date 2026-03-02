@@ -8,6 +8,7 @@
 - `redis`
 - `minio` + `minio-init` (автосоздание bucket `mnema-local`)
 - `ollama`
+- `local-ai-gateway` (OpenAI-compatible шлюз для локальных backends)
 - backend сервисы (`auth`, `user`, `core`, `media`, `import`, `ai`)
 - `frontend`
 
@@ -54,6 +55,7 @@ MNEMA_DRY_RUN=1 ./scripts/mnema-local.sh
 - `8083-8088` (backend)
 - `9000` / `9001` (MinIO API/console)
 - `11434` (Ollama)
+- `8090` (Local AI Gateway)
 
 Если порт занят, выбирается следующий свободный (`+1`, `+2`, ...). В консоль выводится, какой порт заменен.
 
@@ -69,8 +71,24 @@ MNEMA_DRY_RUN=1 ./scripts/mnema-local.sh
 
 - `ai` сервис:
   - системный provider mode (`user keys` не обязателен);
-  - default provider для self-host: `ollama` (через OpenAI-compatible контур);
+  - default provider для self-host: `ollama`;
+  - OpenAI-compatible base URL указывает на `local-ai-gateway` (`OPENAI_BASE_URL=http://local-ai-gateway:8089`);
+  - text/chat/vision идут через Ollama;
+  - TTS/STT/image/video проксируются gateway в соответствующие локальные backends при их настройке;
   - runtime discovery endpoint: `GET /api/ai/runtime/capabilities`.
+
+## Local AI Gateway
+
+Gateway поднимается вместе со стеком и дает единый OpenAI-compatible endpoint для Mnema AI сервиса.
+
+Локальные переменные в `.env.local`:
+
+- `LOCAL_AUDIO_BASE_URL` — backend для `/v1/audio/*` (например локальный Speaches/Orpheus/Piper-gateway)
+- `LOCAL_IMAGE_BASE_URL` — backend для `/v1/images/*` (если хотите вынести image отдельно)
+- `LOCAL_VIDEO_BASE_URL` — backend для `/v1/videos*`
+- `LOCAL_TTS_VOICES` — fallback список голосов через запятую, если audio backend не отдает `/v1/audio/voices`
+
+Если `LOCAL_*_BASE_URL` пустой, gateway пытается использовать Ollama для этого типа запросов.
 
 ## Оценка ресурсов (приблизительно)
 
@@ -113,9 +131,12 @@ docker compose --env-file .env.local -f docker-compose.yml -f .mnema/compose.por
 docker compose --env-file .env.local -f docker-compose.yml -f .mnema/compose.ports.yml exec -T ollama ollama pull <model>
 docker compose --env-file .env.local -f docker-compose.yml -f .mnema/compose.ports.yml exec -T ollama ollama run <model>
 curl http://localhost:11434/api/tags
+curl http://localhost:8090/v1/models
+curl http://localhost:8090/v1/audio/voices
 ```
 
 Если порт `11434` был занят, используйте фактический порт, который показал bootstrap скрипт.
+Аналогично для gateway (`8090` по умолчанию).
 
 Модельная матрица и рекомендации по modality:
 - [Local AI Model Matrix](./model-matrix.md)

@@ -181,6 +181,9 @@ function Print-OllamaNextCommands {
     Write-Host "       $composeCmd exec -T ollama ollama run <model>"
     Write-Host "[next] Check via API (/api/tags):"
     Write-Host "       curl http://localhost:$OLLAMA_PORT/api/tags"
+    Write-Host "[next] Check gateway models/voices:"
+    Write-Host "       curl http://localhost:$LOCAL_AI_GATEWAY_PORT/v1/models"
+    Write-Host "       curl http://localhost:$LOCAL_AI_GATEWAY_PORT/v1/audio/voices"
 }
 
 if (-not (Test-Command docker)) {
@@ -215,6 +218,7 @@ $FRONTEND_PORT = Get-NextFreePort -StartPort 3005
 $MINIO_API_PORT = Get-NextFreePort -StartPort 9000
 $MINIO_CONSOLE_PORT = Get-NextFreePort -StartPort 9001
 $OLLAMA_PORT = Get-NextFreePort -StartPort 11434
+$LOCAL_AI_GATEWAY_PORT = Get-NextFreePort -StartPort 8090
 
 Print-PortInfo -Name 'postgres' -DefaultPort 5432 -FinalPort $POSTGRES_PORT
 Print-PortInfo -Name 'redis' -DefaultPort 6379 -FinalPort $REDIS_PORT
@@ -228,6 +232,7 @@ Print-PortInfo -Name 'frontend' -DefaultPort 3005 -FinalPort $FRONTEND_PORT
 Print-PortInfo -Name 'minio-api' -DefaultPort 9000 -FinalPort $MINIO_API_PORT
 Print-PortInfo -Name 'minio-console' -DefaultPort 9001 -FinalPort $MINIO_CONSOLE_PORT
 Print-PortInfo -Name 'ollama' -DefaultPort 11434 -FinalPort $OLLAMA_PORT
+Print-PortInfo -Name 'local-ai-gateway' -DefaultPort 8090 -FinalPort $LOCAL_AI_GATEWAY_PORT
 
 $envContent = @"
 POSTGRES_DB=$dbName
@@ -264,19 +269,27 @@ AWS_SECRET_ACCESS_KEY=$minioPassword
 CORE_BASE_URL=http://core:8080/api/core
 MEDIA_BASE_URL=http://media:8080/api/media
 
-AI_PROVIDER=openai
+AI_PROVIDER=ollama
 AI_SYSTEM_MANAGED_PROVIDER_ENABLED=true
 AI_SYSTEM_PROVIDER_NAME=ollama
 AI_OLLAMA_ENABLED=true
 AI_VAULT_MASTER_KEY=$(New-Base64Secret -ByteCount 32)
 AI_VAULT_KEY_ID=local-v1
 
-OPENAI_BASE_URL=http://ollama:11434
+OPENAI_BASE_URL=http://local-ai-gateway:8089
 OLLAMA_BASE_URL=http://ollama:11434
 OPENAI_SYSTEM_API_KEY=
 OPENAI_DEFAULT_MODEL=$openAiDefaultModel
 OPENAI_TTS_MODEL=
 OPENAI_STT_MODEL=
+OPENAI_IMAGE_MODEL=
+OPENAI_VIDEO_MODEL=
+
+LOCAL_AI_GATEWAY_PORT=$LOCAL_AI_GATEWAY_PORT
+LOCAL_AUDIO_BASE_URL=
+LOCAL_IMAGE_BASE_URL=
+LOCAL_VIDEO_BASE_URL=
+LOCAL_TTS_VOICES=
 
 GEMINI_BASE_URL=
 GEMINI_DEFAULT_MODEL=
@@ -353,7 +366,7 @@ services:
       AI_SYSTEM_PROVIDER_NAME: "ollama"
       AI_OLLAMA_ENABLED: "true"
       OLLAMA_BASE_URL: "http://ollama:11434"
-      OPENAI_BASE_URL: "http://ollama:11434"
+      OPENAI_BASE_URL: "http://local-ai-gateway:8089"
       OPENAI_SYSTEM_API_KEY: ""
       OPENAI_DEFAULT_MODEL: "$openAiDefaultModel"
       OPENAI_TTS_MODEL: ""
@@ -379,6 +392,33 @@ services:
       - mnema_minio_data:/data
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  local-ai-gateway:
+    networks: [ mnema_net ]
+    build:
+      context: ./scripts/local-ai-gateway
+      dockerfile: Dockerfile
+    environment:
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      AUDIO_BASE_URL: "`${LOCAL_AUDIO_BASE_URL}"
+      IMAGE_BASE_URL: "`${LOCAL_IMAGE_BASE_URL}"
+      VIDEO_BASE_URL: "`${LOCAL_VIDEO_BASE_URL}"
+      GATEWAY_DEFAULT_TEXT_MODEL: "$openAiDefaultModel"
+      GATEWAY_DEFAULT_TTS_MODEL: "`${OPENAI_TTS_MODEL}"
+      GATEWAY_DEFAULT_STT_MODEL: "`${OPENAI_STT_MODEL}"
+      GATEWAY_DEFAULT_IMAGE_MODEL: "`${OPENAI_IMAGE_MODEL}"
+      GATEWAY_DEFAULT_VIDEO_MODEL: "`${OPENAI_VIDEO_MODEL}"
+      GATEWAY_TTS_VOICES: "`${LOCAL_TTS_VOICES}"
+    depends_on:
+      ollama:
+        condition: service_started
+    ports:
+      - "$LOCAL_AI_GATEWAY_PORT:8089"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8089/health" ]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -429,6 +469,7 @@ Write-Host "[ok] Frontend: http://localhost:$FRONTEND_PORT"
 Write-Host "[ok] MinIO API: http://localhost:$MINIO_API_PORT"
 Write-Host "[ok] MinIO Console: http://localhost:$MINIO_CONSOLE_PORT"
 Write-Host "[ok] Ollama API: http://localhost:$OLLAMA_PORT"
+Write-Host "[ok] Local AI Gateway: http://localhost:$LOCAL_AI_GATEWAY_PORT"
 $ollamaHealth = $null
 try {
     $ollamaHealth = Invoke-RestMethod -Method Get -Uri "http://localhost:$OLLAMA_PORT/api/tags" -TimeoutSec 3

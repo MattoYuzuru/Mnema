@@ -23,6 +23,7 @@ export interface AiRuntimeCapabilities {
             modifiedAt?: string | null;
             capabilities: string[];
         }>;
+        voices?: string[];
     } | null;
     providers?: Array<{
         key: string;

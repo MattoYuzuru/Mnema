@@ -146,6 +146,7 @@ write_env_file() {
   local minio_user="$5"
   local minio_password="$6"
   local openai_default_model="$7"
+  local local_ai_gateway_port="$8"
 
   cat > "$ENV_FILE" <<ENV
 POSTGRES_DB=$postgres_db
@@ -182,19 +183,27 @@ AWS_SECRET_ACCESS_KEY=$minio_password
 CORE_BASE_URL=http://core:8080/api/core
 MEDIA_BASE_URL=http://media:8080/api/media
 
-AI_PROVIDER=openai
+AI_PROVIDER=ollama
 AI_SYSTEM_MANAGED_PROVIDER_ENABLED=true
 AI_SYSTEM_PROVIDER_NAME=ollama
 AI_OLLAMA_ENABLED=true
 AI_VAULT_MASTER_KEY=$(rand_b64 32)
 AI_VAULT_KEY_ID=local-v1
 
-OPENAI_BASE_URL=http://ollama:11434
+OPENAI_BASE_URL=http://local-ai-gateway:8089
 OLLAMA_BASE_URL=http://ollama:11434
 OPENAI_SYSTEM_API_KEY=
 OPENAI_DEFAULT_MODEL=$openai_default_model
 OPENAI_TTS_MODEL=
 OPENAI_STT_MODEL=
+OPENAI_IMAGE_MODEL=
+OPENAI_VIDEO_MODEL=
+
+LOCAL_AI_GATEWAY_PORT=$local_ai_gateway_port
+LOCAL_AUDIO_BASE_URL=
+LOCAL_IMAGE_BASE_URL=
+LOCAL_VIDEO_BASE_URL=
+LOCAL_TTS_VOICES=
 
 GEMINI_BASE_URL=
 GEMINI_DEFAULT_MODEL=
@@ -272,7 +281,7 @@ services:
       AI_SYSTEM_PROVIDER_NAME: "ollama"
       AI_OLLAMA_ENABLED: "true"
       OLLAMA_BASE_URL: "http://ollama:11434"
-      OPENAI_BASE_URL: "http://ollama:11434"
+      OPENAI_BASE_URL: "http://local-ai-gateway:8089"
       OPENAI_SYSTEM_API_KEY: ""
       OPENAI_DEFAULT_MODEL: "${openai_default_model}"
       OPENAI_TTS_MODEL: ""
@@ -298,6 +307,33 @@ services:
       - mnema_minio_data:/data
     healthcheck:
       test: [ "CMD", "curl", "-f", "http://localhost:9000/minio/health/live" ]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  local-ai-gateway:
+    networks: [ mnema_net ]
+    build:
+      context: ./scripts/local-ai-gateway
+      dockerfile: Dockerfile
+    environment:
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      AUDIO_BASE_URL: "\${LOCAL_AUDIO_BASE_URL}"
+      IMAGE_BASE_URL: "\${LOCAL_IMAGE_BASE_URL}"
+      VIDEO_BASE_URL: "\${LOCAL_VIDEO_BASE_URL}"
+      GATEWAY_DEFAULT_TEXT_MODEL: "${OPENAI_DEFAULT_MODEL}"
+      GATEWAY_DEFAULT_TTS_MODEL: "\${OPENAI_TTS_MODEL}"
+      GATEWAY_DEFAULT_STT_MODEL: "\${OPENAI_STT_MODEL}"
+      GATEWAY_DEFAULT_IMAGE_MODEL: "\${OPENAI_IMAGE_MODEL}"
+      GATEWAY_DEFAULT_VIDEO_MODEL: "\${OPENAI_VIDEO_MODEL}"
+      GATEWAY_TTS_VOICES: "\${LOCAL_TTS_VOICES}"
+    depends_on:
+      ollama:
+        condition: service_started
+    ports:
+      - "${LOCAL_AI_GATEWAY_PORT}:8089"
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8089/health" ]
       interval: 5s
       timeout: 3s
       retries: 20
@@ -402,6 +438,9 @@ print_ollama_next_commands() {
   echo "       $compose_cmd exec -T ollama ollama run <model>"
   echo "[next] Check via API (/api/tags):"
   echo "       curl http://localhost:${OLLAMA_PORT}/api/tags"
+  echo "[next] Check gateway models/voices:"
+  echo "       curl http://localhost:${LOCAL_AI_GATEWAY_PORT}/v1/models"
+  echo "       curl http://localhost:${LOCAL_AI_GATEWAY_PORT}/v1/audio/voices"
 }
 
 check_requirements
@@ -435,6 +474,7 @@ FRONTEND_PORT="$(next_free_port 3005 "$POSTGRES_PORT" "$REDIS_PORT" "$AUTH_PORT"
 MINIO_API_PORT="$(next_free_port 9000 "$POSTGRES_PORT" "$REDIS_PORT" "$AUTH_PORT" "$USER_PORT" "$CORE_PORT" "$MEDIA_PORT" "$IMPORT_PORT" "$AI_PORT" "$FRONTEND_PORT")"
 MINIO_CONSOLE_PORT="$(next_free_port 9001 "$POSTGRES_PORT" "$REDIS_PORT" "$AUTH_PORT" "$USER_PORT" "$CORE_PORT" "$MEDIA_PORT" "$IMPORT_PORT" "$AI_PORT" "$FRONTEND_PORT" "$MINIO_API_PORT")"
 OLLAMA_PORT="$(next_free_port 11434 "$POSTGRES_PORT" "$REDIS_PORT" "$AUTH_PORT" "$USER_PORT" "$CORE_PORT" "$MEDIA_PORT" "$IMPORT_PORT" "$AI_PORT" "$FRONTEND_PORT" "$MINIO_API_PORT" "$MINIO_CONSOLE_PORT")"
+LOCAL_AI_GATEWAY_PORT="$(next_free_port 8090 "$POSTGRES_PORT" "$REDIS_PORT" "$AUTH_PORT" "$USER_PORT" "$CORE_PORT" "$MEDIA_PORT" "$IMPORT_PORT" "$AI_PORT" "$FRONTEND_PORT" "$MINIO_API_PORT" "$MINIO_CONSOLE_PORT" "$OLLAMA_PORT")"
 
 print_port_info "postgres" "5432" "$POSTGRES_PORT"
 print_port_info "redis" "6379" "$REDIS_PORT"
@@ -448,8 +488,9 @@ print_port_info "frontend" "3005" "$FRONTEND_PORT"
 print_port_info "minio-api" "9000" "$MINIO_API_PORT"
 print_port_info "minio-console" "9001" "$MINIO_CONSOLE_PORT"
 print_port_info "ollama" "11434" "$OLLAMA_PORT"
+print_port_info "local-ai-gateway" "8090" "$LOCAL_AI_GATEWAY_PORT"
 
-write_env_file "$DB_USER" "$DB_PASSWORD" "$DB_NAME" "$POSTGRES_PORT" "$MINIO_USER" "$MINIO_PASSWORD" "$OPENAI_DEFAULT_MODEL"
+write_env_file "$DB_USER" "$DB_PASSWORD" "$DB_NAME" "$POSTGRES_PORT" "$MINIO_USER" "$MINIO_PASSWORD" "$OPENAI_DEFAULT_MODEL" "$LOCAL_AI_GATEWAY_PORT"
 write_override_file "$OPENAI_DEFAULT_MODEL"
 
 echo "[info] Generated: $ENV_FILE"
@@ -469,6 +510,7 @@ echo "[ok] Frontend: http://localhost:${FRONTEND_PORT}"
 echo "[ok] MinIO API: http://localhost:${MINIO_API_PORT}"
 echo "[ok] MinIO Console: http://localhost:${MINIO_CONSOLE_PORT}"
 echo "[ok] Ollama API: http://localhost:${OLLAMA_PORT}"
+echo "[ok] Local AI Gateway: http://localhost:${LOCAL_AI_GATEWAY_PORT}"
 
 if command_exists curl; then
   if curl -fsS "http://localhost:${OLLAMA_PORT}/api/tags" >/dev/null 2>&1; then

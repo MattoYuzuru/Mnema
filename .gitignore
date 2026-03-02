@@ -38,6 +38,8 @@ frontend/node_modules
 !/scripts/mnema-local.ps1
 !/scripts/mnema-public.sh
 !/scripts/mnema-public.ps1
+!/scripts/local-ai-gateway/
+!/scripts/local-ai-gateway/**
 build
 /test_decks
 /first-cool-liquid-glass

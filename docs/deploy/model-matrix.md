@@ -15,6 +15,17 @@ Ollama хорошо подходит для text/chat/vision и частично
 - STT: `whisper.cpp server` (или иной локальный ASR сервис)
 - TTS: `Piper` (или иной локальный TTS сервис)
 - Image/video/gif: `ComfyUI` (+ video pipelines)
+- orchestration: `local-ai-gateway` (единая OpenAI-compatible точка для Mnema)
+
+## Gateway схема
+
+- `OPENAI_BASE_URL` в Mnema -> `local-ai-gateway`
+- `local-ai-gateway` маршрутизирует:
+  - `/v1/responses`, `/v1/chat/completions` -> `Ollama`
+  - `/v1/audio/*` -> `LOCAL_AUDIO_BASE_URL` (если задан), иначе fallback
+  - `/v1/images/*` -> `LOCAL_IMAGE_BASE_URL` (если задан), иначе fallback
+  - `/v1/videos*` -> `LOCAL_VIDEO_BASE_URL` (если задан), иначе fallback
+- Runtime API в Mnema использует `/v1/models` и `/v1/audio/voices` gateway, чтобы UI показывал доступные модели и голоса.
 
 ## Text/Chat (Ollama)
 
@@ -84,6 +95,8 @@ Ollama хорошо подходит для text/chat/vision и частично
 - Ollama API: https://docs.ollama.com/api
 - Ollama OpenAI compatibility: https://docs.ollama.com/openai
 - Ollama model library (Qwen): https://ollama.com/library/qwen3
+- Speaches docs: https://speaches.ai/
+- Speaches OpenAI-compatible API: https://speaches.ai/usage/python
 - ComfyUI docs: https://docs.comfy.org/
 - Hugging Face Diffusers text-to-video: https://huggingface.co/docs/diffusers/en/api/pipelines/text_to_video
 - whisper.cpp: https://github.com/ggml-org/whisper.cpp

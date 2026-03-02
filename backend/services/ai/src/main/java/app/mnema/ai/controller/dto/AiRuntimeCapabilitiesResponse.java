@@ -12,7 +12,8 @@ public record AiRuntimeCapabilitiesResponse(
             boolean enabled,
             boolean available,
             String baseUrl,
-            List<OllamaModelInfo> models
+            List<OllamaModelInfo> models,
+            List<String> voices
     ) {}
 
     public record OllamaModelInfo(

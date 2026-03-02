@@ -1849,6 +1849,10 @@ export class AiImportModalComponent implements OnInit {
     }
 
     public voiceOptions(): string[] {
+        if (this.selectedProvider() === 'ollama') {
+            const runtimeVoices = this.runtimeVoiceOptions();
+            return runtimeVoices.length ? [...runtimeVoices, 'custom'] : ['custom'];
+        }
         if (this.selectedProvider() === 'gemini') {
             return [...this.geminiVoices, 'custom'];
         }
@@ -1859,6 +1863,12 @@ export class AiImportModalComponent implements OnInit {
             return [...this.openAiVoices, 'custom'];
         }
         return ['custom'];
+    }
+
+    private runtimeVoiceOptions(): string[] {
+        const voices = this.runtimeCapabilities()?.ollama?.voices || [];
+        const unique = Array.from(new Set(voices.map(voice => String(voice || '').trim()).filter(Boolean)));
+        return unique.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     }
 
     public voiceLabel(voice: string): string {

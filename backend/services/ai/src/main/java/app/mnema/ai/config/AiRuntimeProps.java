@@ -7,6 +7,7 @@ public record AiRuntimeProps(
         boolean systemManagedProviderEnabled,
         String systemProviderName,
         boolean ollamaEnabled,
-        String ollamaBaseUrl
+        String ollamaBaseUrl,
+        String openaiBaseUrl
 ) {
 }

@@ -654,6 +654,10 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     readonly videoModelOptions = computed(() => this.resolveVideoModelOptions(this.selectedProvider()));
     readonly voiceOptions = computed(() => {
         const provider = this.selectedProvider();
+        if (provider === 'ollama') {
+            const runtimeVoices = this.runtimeVoiceOptions();
+            return runtimeVoices.length ? [...runtimeVoices, 'custom'] : ['custom'];
+        }
         if (provider === 'gemini') {
             return [...this.geminiVoices, 'custom'];
         }
@@ -1546,6 +1550,12 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (!videoOptions.includes(this.videoModel())) {
             this.videoModel.set(videoOptions[0]);
         }
+    }
+
+    private runtimeVoiceOptions(): string[] {
+        const voices = this.runtimeCapabilities()?.ollama?.voices || [];
+        const unique = Array.from(new Set(voices.map(voice => String(voice || '').trim()).filter(Boolean)));
+        return unique.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     }
 
     private setOptionState(key: string, enabled: boolean, description?: string): void {

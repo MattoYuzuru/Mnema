@@ -524,6 +524,10 @@ export class AiAddCardsModalComponent implements OnInit {
 
     readonly voiceOptions = computed(() => {
         const provider = this.selectedProvider();
+        if (provider === 'ollama') {
+            const runtimeVoices = this.runtimeVoiceOptions();
+            return runtimeVoices.length ? [...runtimeVoices, 'custom'] : ['custom'];
+        }
         if (provider === 'gemini') {
             return [...this.geminiVoices, 'custom'];
         }
@@ -968,6 +972,12 @@ export class AiAddCardsModalComponent implements OnInit {
             return ['grok-imagine-video', 'custom'];
         }
         return ['custom'];
+    }
+
+    private runtimeVoiceOptions(): string[] {
+        const voices = this.runtimeCapabilities()?.ollama?.voices || [];
+        const unique = Array.from(new Set(voices.map(voice => String(voice || '').trim()).filter(Boolean)));
+        return unique.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     }
 
     private ensureDefaultMediaModels(): void {
