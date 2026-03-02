@@ -145,6 +145,7 @@ write_env_file() {
   local postgres_port="$4"
   local minio_user="$5"
   local minio_password="$6"
+  local openai_default_model="$7"
 
   cat > "$ENV_FILE" <<ENV
 POSTGRES_DB=$postgres_db
@@ -191,7 +192,7 @@ AI_VAULT_KEY_ID=local-v1
 OPENAI_BASE_URL=http://ollama:11434
 OLLAMA_BASE_URL=http://ollama:11434
 OPENAI_SYSTEM_API_KEY=
-OPENAI_DEFAULT_MODEL=qwen3:8b
+OPENAI_DEFAULT_MODEL=$openai_default_model
 OPENAI_TTS_MODEL=
 OPENAI_STT_MODEL=
 
@@ -218,6 +219,7 @@ ENV
 }
 
 write_override_file() {
+  local openai_default_model="$1"
   cat > "$OVERRIDE_FILE" <<YAML
 services:
   postgres:
@@ -272,7 +274,7 @@ services:
       OLLAMA_BASE_URL: "http://ollama:11434"
       OPENAI_BASE_URL: "http://ollama:11434"
       OPENAI_SYSTEM_API_KEY: ""
-      OPENAI_DEFAULT_MODEL: "qwen3:8b"
+      OPENAI_DEFAULT_MODEL: "${openai_default_model}"
       OPENAI_TTS_MODEL: ""
       OPENAI_STT_MODEL: ""
     ports:
@@ -356,6 +358,52 @@ recommend_ollama_model() {
   fi
 }
 
+recommend_ollama_text_backup() {
+  local mem_kb
+  mem_kb="$(grep -E '^MemTotal:' /proc/meminfo 2>/dev/null | awk '{print $2}')"
+  if [[ -z "${mem_kb:-}" ]]; then
+    echo "qwen2.5:7b"
+    return
+  fi
+  local mem_gb=$((mem_kb / 1024 / 1024))
+  if (( mem_gb < 12 )); then
+    echo "qwen2.5:3b"
+  elif (( mem_gb < 24 )); then
+    echo "qwen2.5:7b"
+  else
+    echo "qwen3:8b"
+  fi
+}
+
+recommend_ollama_vision_model() {
+  local mem_kb
+  mem_kb="$(grep -E '^MemTotal:' /proc/meminfo 2>/dev/null | awk '{print $2}')"
+  if [[ -z "${mem_kb:-}" ]]; then
+    echo "qwen2.5vl:3b"
+    return
+  fi
+  local mem_gb=$((mem_kb / 1024 / 1024))
+  if (( mem_gb < 16 )); then
+    echo "qwen2.5vl:3b"
+  elif (( mem_gb < 28 )); then
+    echo "qwen2.5vl:7b"
+  else
+    echo "minicpm-v:8b"
+  fi
+}
+
+print_ollama_next_commands() {
+  local compose_cmd="docker compose --env-file $ENV_FILE -f docker-compose.yml -f $OVERRIDE_FILE"
+  echo "[next] Inspect local models:"
+  echo "       $compose_cmd exec -T ollama ollama list"
+  echo "[next] Pull another model manually:"
+  echo "       $compose_cmd exec -T ollama ollama pull <model>"
+  echo "[next] Run model interactively:"
+  echo "       $compose_cmd exec -T ollama ollama run <model>"
+  echo "[next] Check via API (/api/tags):"
+  echo "       curl http://localhost:${OLLAMA_PORT}/api/tags"
+}
+
 check_requirements
 
 echo "== Mnema local bootstrap =="
@@ -372,6 +420,8 @@ DB_NAME="$(prompt_identifier 'Postgres database' "$default_db_name")"
 DB_PASSWORD="$(prompt_password 'Postgres password' "$default_db_password")"
 MINIO_USER="$(prompt_identifier 'MinIO root user' "$default_minio_user")"
 MINIO_PASSWORD="$(prompt_password 'MinIO root password' "$default_minio_password")"
+STARTER_MODEL_RECOMMENDED="$(recommend_ollama_model)"
+OPENAI_DEFAULT_MODEL="$(prompt_default 'Starter Ollama text model' "$STARTER_MODEL_RECOMMENDED")"
 
 POSTGRES_PORT="$(next_free_port 5432)"
 REDIS_PORT="$(next_free_port 6379 "$POSTGRES_PORT")"
@@ -399,8 +449,8 @@ print_port_info "minio-api" "9000" "$MINIO_API_PORT"
 print_port_info "minio-console" "9001" "$MINIO_CONSOLE_PORT"
 print_port_info "ollama" "11434" "$OLLAMA_PORT"
 
-write_env_file "$DB_USER" "$DB_PASSWORD" "$DB_NAME" "$POSTGRES_PORT" "$MINIO_USER" "$MINIO_PASSWORD"
-write_override_file
+write_env_file "$DB_USER" "$DB_PASSWORD" "$DB_NAME" "$POSTGRES_PORT" "$MINIO_USER" "$MINIO_PASSWORD" "$OPENAI_DEFAULT_MODEL"
+write_override_file "$OPENAI_DEFAULT_MODEL"
 
 echo "[info] Generated: $ENV_FILE"
 echo "[info] Generated: $OVERRIDE_FILE"
@@ -423,15 +473,32 @@ echo "[ok] Ollama API: http://localhost:${OLLAMA_PORT}"
 if command_exists curl; then
   if curl -fsS "http://localhost:${OLLAMA_PORT}/api/tags" >/dev/null 2>&1; then
     echo "[ok] Ollama is reachable."
-    local_model="$(recommend_ollama_model)"
-    echo "[info] Recommended starter model for this host: ${local_model}"
-    read -r -p "Pull recommended model now? [y/N]: " pull_choice
+    local_model="$OPENAI_DEFAULT_MODEL"
+    backup_model="$(recommend_ollama_text_backup)"
+    vision_model="$(recommend_ollama_vision_model)"
+    echo "[info] Recommended starter text model: ${local_model}"
+    echo "[info] Optional backup text model: ${backup_model}"
+    echo "[info] Optional vision model (OCR/image understanding): ${vision_model}"
+    echo "[info] Notes:"
+    echo "       - Ollama OpenAI-compatible endpoints currently cover text/vision + embeddings + experimental images."
+    echo "       - STT/TTS/video in Mnema local usually require separate local services (whisper.cpp, Piper, ComfyUI pipelines)."
+    read -r -p "Pull starter text model now? [y/N]: " pull_choice
     if [[ "${pull_choice:-}" =~ ^[Yy]$ ]]; then
       docker compose --env-file "$ENV_FILE" -f docker-compose.yml -f "$OVERRIDE_FILE" exec -T ollama ollama pull "$local_model" || true
     fi
+    read -r -p "Pull backup text model (${backup_model}) too? [y/N]: " pull_backup
+    if [[ "${pull_backup:-}" =~ ^[Yy]$ ]]; then
+      docker compose --env-file "$ENV_FILE" -f docker-compose.yml -f "$OVERRIDE_FILE" exec -T ollama ollama pull "$backup_model" || true
+    fi
+    read -r -p "Pull vision model (${vision_model}) too? [y/N]: " pull_vision
+    if [[ "${pull_vision:-}" =~ ^[Yy]$ ]]; then
+      docker compose --env-file "$ENV_FILE" -f docker-compose.yml -f "$OVERRIDE_FILE" exec -T ollama ollama pull "$vision_model" || true
+    fi
+    print_ollama_next_commands
   else
     echo "[warn] Ollama API is not reachable yet. You can retry later with:"
     echo "       docker compose --env-file $ENV_FILE -f docker-compose.yml -f $OVERRIDE_FILE exec -T ollama ollama pull qwen3:8b"
+    print_ollama_next_commands
   fi
 fi
 

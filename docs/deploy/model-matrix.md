@@ -30,6 +30,20 @@ Ollama хорошо подходит для text/chat/vision и частично
 - `qwen3:14b`
 - более крупные reasoning модели по возможностям хоста
 
+## Практические профили железа
+
+### RTX 2060 Mobile + 16 GB RAM
+- text/chat: `qwen3:4b`, `qwen2.5:3b`, `llama3.2:3b`
+- vision: `qwen2.5vl:3b`
+- image: легкие SD1.5/SDXL turbo профили, небольшие batch
+- video/gif: только короткие ролики в low-res, лучше выносить на более мощный узел
+
+### RTX 3060 + 32 GB RAM
+- text/chat: `qwen3:8b`, `llama3.1:8b`
+- vision: `qwen2.5vl:7b`, `minicpm-v:8b`
+- image: SDXL/FLUX с умеренными шагами и очередью
+- video/gif: ограниченный low-mid tier, лучше `1` job за раз
+
 ## STT (локально)
 
 - `whisper.cpp` small/medium для баланса скорости/качества

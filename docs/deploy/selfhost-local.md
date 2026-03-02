@@ -27,11 +27,17 @@
 
 Скрипт:
 - спрашивает минимальные креды для `Postgres` и `MinIO`;
+- спрашивает starter text model для Ollama и сохраняет его в `OPENAI_DEFAULT_MODEL`;
 - генерирует `.env.local`;
 - генерирует `.mnema/compose.ports.yml`;
 - запускает `docker compose` с учетом auto-selected портов.
 - включает профиль `SPRING_PROFILES_ACTIVE=dev,selfhost-local` для backend сервисов.
-- после старта проверяет `Ollama /api/tags`, предлагает рекомендованную модель (`qwen3:4b/8b/14b`) по объему RAM и может сразу выполнить `ollama pull`.
+- после старта проверяет `Ollama /api/tags`, предлагает:
+  - starter text model (`qwen3:4b/8b/14b`) по объему RAM;
+  - backup text model (`qwen2.5:3b/7b` или `qwen3:8b`);
+  - vision model (`qwen2.5vl:3b/7b` или `minicpm-v:8b`).
+- для каждой рекомендации можно сразу сделать `ollama pull`.
+- в конце печатает команды для ручного управления моделями (`ollama list/pull/run`, `curl /api/tags`).
 
 Для проверки без запуска контейнеров:
 
@@ -97,6 +103,19 @@ MNEMA_DRY_RUN=1 ./scripts/mnema-local.sh
 docker stats
 docker system df
 ```
+
+## Управление моделями Ollama вручную
+
+После старта скрипт печатает команды вида:
+
+```bash
+docker compose --env-file .env.local -f docker-compose.yml -f .mnema/compose.ports.yml exec -T ollama ollama list
+docker compose --env-file .env.local -f docker-compose.yml -f .mnema/compose.ports.yml exec -T ollama ollama pull <model>
+docker compose --env-file .env.local -f docker-compose.yml -f .mnema/compose.ports.yml exec -T ollama ollama run <model>
+curl http://localhost:11434/api/tags
+```
+
+Если порт `11434` был занят, используйте фактический порт, который показал bootstrap скрипт.
 
 Модельная матрица и рекомендации по modality:
 - [Local AI Model Matrix](./model-matrix.md)

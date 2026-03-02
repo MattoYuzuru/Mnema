@@ -129,6 +129,60 @@ function Get-RecommendedOllamaModel {
     return 'qwen3:14b'
 }
 
+function Get-RecommendedOllamaBackupTextModel {
+    $memBytes = 0
+    try {
+        $memBytes = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
+    }
+    catch {
+        $memBytes = 0
+    }
+    if ($memBytes -le 0) {
+        return 'qwen2.5:7b'
+    }
+    $memGb = [math]::Floor($memBytes / 1GB)
+    if ($memGb -lt 12) {
+        return 'qwen2.5:3b'
+    }
+    if ($memGb -lt 24) {
+        return 'qwen2.5:7b'
+    }
+    return 'qwen3:8b'
+}
+
+function Get-RecommendedOllamaVisionModel {
+    $memBytes = 0
+    try {
+        $memBytes = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory
+    }
+    catch {
+        $memBytes = 0
+    }
+    if ($memBytes -le 0) {
+        return 'qwen2.5vl:3b'
+    }
+    $memGb = [math]::Floor($memBytes / 1GB)
+    if ($memGb -lt 16) {
+        return 'qwen2.5vl:3b'
+    }
+    if ($memGb -lt 28) {
+        return 'qwen2.5vl:7b'
+    }
+    return 'minicpm-v:8b'
+}
+
+function Print-OllamaNextCommands {
+    $composeCmd = "docker compose --env-file `"$EnvFile`" -f docker-compose.yml -f `"$OverrideFile`""
+    Write-Host "[next] Inspect local models:"
+    Write-Host "       $composeCmd exec -T ollama ollama list"
+    Write-Host "[next] Pull another model manually:"
+    Write-Host "       $composeCmd exec -T ollama ollama pull <model>"
+    Write-Host "[next] Run model interactively:"
+    Write-Host "       $composeCmd exec -T ollama ollama run <model>"
+    Write-Host "[next] Check via API (/api/tags):"
+    Write-Host "       curl http://localhost:$OLLAMA_PORT/api/tags"
+}
+
 if (-not (Test-Command docker)) {
     throw '[error] Docker is not installed or not in PATH.'
 }
@@ -146,6 +200,8 @@ $dbName = Prompt-ValidatedIdentifier -Prompt 'Postgres database' -Default 'mnema
 $dbPassword = Prompt-ValidatedPassword -Prompt 'Postgres password' -Default 'mnema_local'
 $minioUser = Prompt-ValidatedIdentifier -Prompt 'MinIO root user' -Default 'mnema'
 $minioPassword = Prompt-ValidatedPassword -Prompt 'MinIO root password' -Default 'mnema_minio_local'
+$starterModelRecommended = Get-RecommendedOllamaModel
+$openAiDefaultModel = Prompt-WithDefault -Prompt 'Starter Ollama text model' -Default $starterModelRecommended
 
 $POSTGRES_PORT = Get-NextFreePort -StartPort 5432
 $REDIS_PORT = Get-NextFreePort -StartPort 6379
@@ -218,7 +274,7 @@ AI_VAULT_KEY_ID=local-v1
 OPENAI_BASE_URL=http://ollama:11434
 OLLAMA_BASE_URL=http://ollama:11434
 OPENAI_SYSTEM_API_KEY=
-OPENAI_DEFAULT_MODEL=qwen3:8b
+OPENAI_DEFAULT_MODEL=$openAiDefaultModel
 OPENAI_TTS_MODEL=
 OPENAI_STT_MODEL=
 
@@ -299,7 +355,7 @@ services:
       OLLAMA_BASE_URL: "http://ollama:11434"
       OPENAI_BASE_URL: "http://ollama:11434"
       OPENAI_SYSTEM_API_KEY: ""
-      OPENAI_DEFAULT_MODEL: "qwen3:8b"
+      OPENAI_DEFAULT_MODEL: "$openAiDefaultModel"
       OPENAI_TTS_MODEL: ""
       OPENAI_STT_MODEL: ""
     ports:
@@ -381,16 +437,33 @@ catch {
     $ollamaHealth = $null
 }
 if ($null -ne $ollamaHealth) {
-    $recommended = Get-RecommendedOllamaModel
+    $recommended = $openAiDefaultModel
+    $backupRecommended = Get-RecommendedOllamaBackupTextModel
+    $visionRecommended = Get-RecommendedOllamaVisionModel
     Write-Host "[ok] Ollama is reachable."
-    Write-Host "[info] Recommended starter model for this host: $recommended"
-    $pullChoice = Read-Host 'Pull recommended model now? [y/N]'
+    Write-Host "[info] Recommended starter text model: $recommended"
+    Write-Host "[info] Optional backup text model: $backupRecommended"
+    Write-Host "[info] Optional vision model (OCR/image understanding): $visionRecommended"
+    Write-Host "[info] Notes:"
+    Write-Host "       - Ollama OpenAI-compatible endpoints currently cover text/vision + embeddings + experimental images."
+    Write-Host "       - STT/TTS/video in Mnema local usually require separate local services (whisper.cpp, Piper, ComfyUI pipelines)."
+    $pullChoice = Read-Host 'Pull starter text model now? [y/N]'
     if ($pullChoice -match '^[Yy]$') {
         & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T ollama ollama pull $recommended
     }
+    $pullBackup = Read-Host "Pull backup text model ($backupRecommended) too? [y/N]"
+    if ($pullBackup -match '^[Yy]$') {
+        & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T ollama ollama pull $backupRecommended
+    }
+    $pullVision = Read-Host "Pull vision model ($visionRecommended) too? [y/N]"
+    if ($pullVision -match '^[Yy]$') {
+        & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T ollama ollama pull $visionRecommended
+    }
+    Print-OllamaNextCommands
 }
 else {
     Write-Host '[warn] Ollama API is not reachable yet.'
     Write-Host "[warn] Later run: docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T ollama ollama pull qwen3:8b"
+    Print-OllamaNextCommands
 }
 Write-Host "[ok] To stop: docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile down"
