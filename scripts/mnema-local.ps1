@@ -215,7 +215,7 @@ AI_OLLAMA_ENABLED=true
 AI_VAULT_MASTER_KEY=$(New-Base64Secret -ByteCount 32)
 AI_VAULT_KEY_ID=local-v1
 
-OPENAI_BASE_URL=http://ollama:11434/v1
+OPENAI_BASE_URL=http://ollama:11434
 OLLAMA_BASE_URL=http://ollama:11434
 OPENAI_SYSTEM_API_KEY=
 OPENAI_DEFAULT_MODEL=qwen3:8b
@@ -297,7 +297,7 @@ services:
       AI_SYSTEM_PROVIDER_NAME: "ollama"
       AI_OLLAMA_ENABLED: "true"
       OLLAMA_BASE_URL: "http://ollama:11434"
-      OPENAI_BASE_URL: "http://ollama:11434/v1"
+      OPENAI_BASE_URL: "http://ollama:11434"
       OPENAI_SYSTEM_API_KEY: ""
       OPENAI_DEFAULT_MODEL: "qwen3:8b"
       OPENAI_TTS_MODEL: ""

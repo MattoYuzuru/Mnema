@@ -8,6 +8,7 @@ import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.util.Base64;
@@ -45,9 +46,14 @@ public class OpenAiClient {
         if (hasApiKey(apiKey)) {
             spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
         }
-        JsonNode response = spec.body(payload)
-                .retrieve()
-                .body(JsonNode.class);
+        JsonNode response;
+        try {
+            response = spec.body(payload)
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (HttpClientErrorException.NotFound ex) {
+            response = createChatCompletionCompat(apiKey, request.model(), request.input(), request.maxOutputTokens());
+        }
 
         if (response == null) {
             throw new IllegalStateException("OpenAI response is empty");
@@ -56,8 +62,12 @@ public class OpenAiClient {
         String outputText = OpenAiResponseParser.extractText(response);
         String model = response.path("model").asText(null);
         JsonNode usage = response.path("usage");
-        Integer inputTokens = usage.hasNonNull("input_tokens") ? usage.get("input_tokens").asInt() : null;
-        Integer outputTokens = usage.hasNonNull("output_tokens") ? usage.get("output_tokens").asInt() : null;
+        Integer inputTokens = usage.hasNonNull("input_tokens")
+                ? usage.get("input_tokens").asInt()
+                : (usage.hasNonNull("prompt_tokens") ? usage.get("prompt_tokens").asInt() : null);
+        Integer outputTokens = usage.hasNonNull("output_tokens")
+                ? usage.get("output_tokens").asInt()
+                : (usage.hasNonNull("completion_tokens") ? usage.get("completion_tokens").asInt() : null);
         return new OpenAiResponseResult(outputText, model, inputTokens, outputTokens, response);
     }
 
@@ -83,9 +93,15 @@ public class OpenAiClient {
         if (hasApiKey(apiKey)) {
             spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
         }
-        JsonNode response = spec.body(payload)
-                .retrieve()
-                .body(JsonNode.class);
+        JsonNode response;
+        try {
+            response = spec.body(payload)
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (HttpClientErrorException.NotFound ex) {
+            String compatInput = input == null ? "" : (input.isTextual() ? input.asText() : input.toString());
+            response = createChatCompletionCompat(apiKey, model, compatInput, maxOutputTokens);
+        }
 
         if (response == null) {
             throw new IllegalStateException("OpenAI response is empty");
@@ -94,9 +110,38 @@ public class OpenAiClient {
         String outputText = OpenAiResponseParser.extractText(response);
         String responseModel = response.path("model").asText(null);
         JsonNode usage = response.path("usage");
-        Integer inputTokens = usage.hasNonNull("input_tokens") ? usage.get("input_tokens").asInt() : null;
-        Integer outputTokens = usage.hasNonNull("output_tokens") ? usage.get("output_tokens").asInt() : null;
+        Integer inputTokens = usage.hasNonNull("input_tokens")
+                ? usage.get("input_tokens").asInt()
+                : (usage.hasNonNull("prompt_tokens") ? usage.get("prompt_tokens").asInt() : null);
+        Integer outputTokens = usage.hasNonNull("output_tokens")
+                ? usage.get("output_tokens").asInt()
+                : (usage.hasNonNull("completion_tokens") ? usage.get("completion_tokens").asInt() : null);
         return new OpenAiResponseResult(outputText, responseModel, inputTokens, outputTokens, response);
+    }
+
+    private JsonNode createChatCompletionCompat(String apiKey,
+                                                String model,
+                                                String input,
+                                                Integer maxOutputTokens) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("model", model);
+        payload.putArray("messages")
+                .addObject()
+                .put("role", "user")
+                .put("content", input == null ? "" : input);
+        if (maxOutputTokens != null && maxOutputTokens > 0) {
+            payload.put("max_tokens", maxOutputTokens);
+        }
+
+        RestClient.RequestBodySpec spec = restClient.post()
+                .uri("/v1/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        return spec.body(payload)
+                .retrieve()
+                .body(JsonNode.class);
     }
 
     public byte[] createSpeech(String apiKey, OpenAiSpeechRequest request) {
