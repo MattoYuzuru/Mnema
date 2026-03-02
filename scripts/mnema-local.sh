@@ -190,6 +190,7 @@ AI_VAULT_KEY_ID=local-v1
 
 OPENAI_BASE_URL=http://ollama:11434/v1
 OLLAMA_BASE_URL=http://ollama:11434
+OPENAI_SYSTEM_API_KEY=
 OPENAI_DEFAULT_MODEL=qwen3:8b
 OPENAI_TTS_MODEL=
 OPENAI_STT_MODEL=
@@ -265,6 +266,15 @@ services:
   ai:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      AI_SYSTEM_MANAGED_PROVIDER_ENABLED: "true"
+      AI_SYSTEM_PROVIDER_NAME: "ollama"
+      AI_OLLAMA_ENABLED: "true"
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      OPENAI_BASE_URL: "http://ollama:11434/v1"
+      OPENAI_SYSTEM_API_KEY: ""
+      OPENAI_DEFAULT_MODEL: "qwen3:8b"
+      OPENAI_TTS_MODEL: ""
+      OPENAI_STT_MODEL: ""
     ports:
       - "${AI_PORT}:8080"
 
