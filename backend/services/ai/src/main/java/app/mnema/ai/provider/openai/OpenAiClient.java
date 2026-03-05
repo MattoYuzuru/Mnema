@@ -12,6 +12,7 @@ import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.util.Base64;
+import java.util.Locale;
 
 @Component
 public class OpenAiClient {
@@ -51,7 +52,10 @@ public class OpenAiClient {
             response = spec.body(payload)
                     .retrieve()
                     .body(JsonNode.class);
-        } catch (HttpClientErrorException.NotFound ex) {
+        } catch (HttpClientErrorException ex) {
+            if (!shouldFallbackToChatCompat(ex)) {
+                throw ex;
+            }
             response = createChatCompletionCompat(apiKey, request.model(), request.input(), request.maxOutputTokens());
         }
 
@@ -98,7 +102,10 @@ public class OpenAiClient {
             response = spec.body(payload)
                     .retrieve()
                     .body(JsonNode.class);
-        } catch (HttpClientErrorException.NotFound ex) {
+        } catch (HttpClientErrorException ex) {
+            if (!shouldFallbackToChatCompat(ex)) {
+                throw ex;
+            }
             String compatInput = input == null ? "" : (input.isTextual() ? input.asText() : input.toString());
             response = createChatCompletionCompat(apiKey, model, compatInput, maxOutputTokens);
         }
@@ -142,6 +149,30 @@ public class OpenAiClient {
         return spec.body(payload)
                 .retrieve()
                 .body(JsonNode.class);
+    }
+
+    static boolean shouldFallbackToChatCompat(int statusCode, String errorText) {
+        if (statusCode == 404 || statusCode == 405 || statusCode == 410 || statusCode == 501) {
+            return true;
+        }
+        if (statusCode != 400) {
+            return false;
+        }
+        String normalized = errorText == null ? "" : errorText.toLowerCase(Locale.ROOT);
+        boolean mentionsResponses = normalized.contains("/v1/responses") || normalized.contains("responses");
+        boolean unsupportedEndpoint = normalized.contains("not found")
+                || normalized.contains("unsupported")
+                || normalized.contains("unknown")
+                || normalized.contains("no route")
+                || normalized.contains("unrecognized");
+        return mentionsResponses && unsupportedEndpoint;
+    }
+
+    private static boolean shouldFallbackToChatCompat(HttpClientErrorException ex) {
+        String body = ex.getResponseBodyAsString();
+        String message = ex.getMessage();
+        String combined = (body == null ? "" : body) + " " + (message == null ? "" : message);
+        return shouldFallbackToChatCompat(ex.getStatusCode().value(), combined);
     }
 
     public byte[] createSpeech(String apiKey, OpenAiSpeechRequest request) {

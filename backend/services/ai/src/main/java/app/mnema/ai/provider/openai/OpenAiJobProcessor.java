@@ -172,8 +172,17 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (MODE_CARD_MISSING_AUDIO.equalsIgnoreCase(mode)) {
             return handleCardMissingAudio(job, apiKey, params);
         }
-        if (MODE_ENHANCE.equalsIgnoreCase(mode) && hasAction(params, "audit")) {
-            return handleAudit(job, apiKey, params);
+        if (MODE_ENHANCE.equalsIgnoreCase(mode)) {
+            String resolvedEnhanceMode = resolveEnhanceMode(params);
+            if (MODE_MISSING_FIELDS.equals(resolvedEnhanceMode)) {
+                return handleMissingFields(job, apiKey, params);
+            }
+            if (MODE_MISSING_AUDIO.equals(resolvedEnhanceMode)) {
+                return handleMissingAudio(job, apiKey, params);
+            }
+            if (MODE_AUDIT.equals(resolvedEnhanceMode)) {
+                return handleAudit(job, apiKey, params);
+            }
         }
         if (MODE_MISSING_AUDIO.equalsIgnoreCase(mode)) {
             return handleMissingAudio(job, apiKey, params);
@@ -1822,6 +1831,38 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         for (JsonNode item : node) {
             if (item.isTextual() && action.equalsIgnoreCase(item.asText())) {
                 return true;
+            }
+        }
+        return false;
+    }
+
+    static String resolveEnhanceMode(JsonNode params) {
+        if (hasAnyAction(params, "missing_fields", "fill_missing", "fields", "text", "image", "video", "all")) {
+            return MODE_MISSING_FIELDS;
+        }
+        if (hasAnyAction(params, "missing_audio", "audio", "tts")) {
+            return MODE_MISSING_AUDIO;
+        }
+        if (hasAnyAction(params, "audit", "analyze", "analysis")) {
+            return MODE_AUDIT;
+        }
+        return MODE_MISSING_FIELDS;
+    }
+
+    private static boolean hasAnyAction(JsonNode params, String... actions) {
+        JsonNode node = params.path("actions");
+        if (!node.isArray()) {
+            return false;
+        }
+        for (JsonNode item : node) {
+            if (!item.isTextual()) {
+                continue;
+            }
+            String value = item.asText();
+            for (String action : actions) {
+                if (action.equalsIgnoreCase(value)) {
+                    return true;
+                }
             }
         }
         return false;
