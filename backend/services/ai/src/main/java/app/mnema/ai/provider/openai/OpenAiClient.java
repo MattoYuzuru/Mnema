@@ -7,12 +7,14 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.util.Base64;
 import java.util.Locale;
+import java.net.http.HttpClient;
 
 @Component
 public class OpenAiClient {
@@ -23,7 +25,14 @@ public class OpenAiClient {
     public OpenAiClient(RestClient.Builder restClientBuilder,
                         OpenAiProps props,
                         ObjectMapper objectMapper) {
+        // local-ai-gateway runs on uvicorn (HTTP/1.1); forcing h1 avoids h2c upgrade failures
+        JdkClientHttpRequestFactory http11Factory = new JdkClientHttpRequestFactory(
+                HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .build()
+        );
         this.restClient = restClientBuilder
+                .requestFactory(http11Factory)
                 .baseUrl(props.baseUrl())
                 .build();
         this.objectMapper = objectMapper;
