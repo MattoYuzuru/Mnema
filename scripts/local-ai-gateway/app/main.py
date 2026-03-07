@@ -11,7 +11,8 @@ from fastapi.responses import JSONResponse, Response
 
 app = FastAPI(title="Mnema Local AI Gateway", version="1.0.0")
 
-TIMEOUT = float(os.getenv("GATEWAY_TIMEOUT_SECONDS", "180"))
+TIMEOUT_SECONDS = float(os.getenv("GATEWAY_TIMEOUT_SECONDS", "600"))
+HTTP_TIMEOUT = httpx.Timeout(connect=10.0, read=TIMEOUT_SECONDS, write=TIMEOUT_SECONDS, pool=TIMEOUT_SECONDS)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
 AUDIO_BASE_URL = os.getenv("AUDIO_BASE_URL", "").strip().rstrip("/")
 IMAGE_BASE_URL = os.getenv("IMAGE_BASE_URL", "").strip().rstrip("/")
@@ -107,7 +108,7 @@ async def _proxy(request: Request, path: str, backend_base_url: str) -> Response
         body = _inject_default_model(path, body)
 
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
             upstream = await client.request(
                 method,
                 target_url,
@@ -116,7 +117,10 @@ async def _proxy(request: Request, path: str, backend_base_url: str) -> Response
                 headers=headers,
             )
     except httpx.TimeoutException as exc:
-        raise HTTPException(status_code=504, detail=f"Upstream timeout: {exc!s}") from exc
+        raise HTTPException(
+            status_code=504,
+            detail=f"Upstream timeout backend={backend_base_url} path={path} timeout_seconds={TIMEOUT_SECONDS} reason={exc.__class__.__name__}"
+        ) from exc
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"Upstream connection failed: {exc!s}") from exc
 
@@ -150,7 +154,7 @@ def _capabilities_from_model_name(model_name: str) -> set[str]:
 
 async def _load_ollama_models() -> list[dict[str, Any]]:
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
             response = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
             response.raise_for_status()
             payload = response.json()
@@ -184,7 +188,7 @@ async def _load_audio_models() -> list[dict[str, Any]]:
         return []
 
     try:
-        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
             response = await client.get(f"{AUDIO_BASE_URL}/v1/models")
             response.raise_for_status()
             payload = response.json()
@@ -213,7 +217,7 @@ async def _load_audio_models() -> list[dict[str, Any]]:
 async def _load_audio_voices() -> list[str]:
     if AUDIO_BASE_URL:
         try:
-            async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
                 response = await client.get(f"{AUDIO_BASE_URL}/v1/audio/voices")
                 response.raise_for_status()
                 payload = response.json()
