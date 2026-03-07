@@ -52,6 +52,18 @@ function Prompt-WithDefault {
     return $value.Trim()
 }
 
+function Prompt-Choice {
+    param([string]$Prompt, [string]$Default, [string[]]$Allowed)
+    while ($true) {
+        $value = Prompt-WithDefault -Prompt $Prompt -Default $Default
+        $normalized = $value.Trim().ToLowerInvariant()
+        if ($Allowed -contains $normalized) {
+            return $normalized
+        }
+        Write-Host "[error] Supported values: $($Allowed -join ', ')."
+    }
+}
+
 function Test-ValidIdentifier {
     param([string]$Value)
     return $Value -match '^[A-Za-z0-9._-]{3,64}$'
@@ -205,6 +217,23 @@ $minioUser = Prompt-ValidatedIdentifier -Prompt 'MinIO root user' -Default 'mnem
 $minioPassword = Prompt-ValidatedPassword -Prompt 'MinIO root password' -Default 'mnema_minio_local'
 $starterModelRecommended = Get-RecommendedOllamaModel
 $openAiDefaultModel = Prompt-WithDefault -Prompt 'Starter Ollama text model' -Default $starterModelRecommended
+Write-Host '[setup] Offline audio backend for TTS/STT'
+$audioBackendMode = Prompt-Choice -Prompt 'Audio backend mode (ollama/custom/skip)' -Default 'ollama' -Allowed @('ollama', 'custom', 'skip')
+$openAiTtsModel = ''
+$openAiSttModel = ''
+$localAudioBaseUrl = ''
+$localTtsVoices = ''
+if ($audioBackendMode -eq 'ollama') {
+    $openAiTtsModel = Prompt-WithDefault -Prompt 'Ollama TTS model' -Default 'kokoro:8b'
+    $openAiSttModel = Prompt-WithDefault -Prompt 'Ollama STT model (optional)' -Default ''
+    $localTtsVoices = Prompt-WithDefault -Prompt 'Fallback TTS voices comma-separated (optional)' -Default 'af_sarah,af_bella'
+}
+elseif ($audioBackendMode -eq 'custom') {
+    $localAudioBaseUrl = Prompt-WithDefault -Prompt 'Local audio backend URL (inside docker network)' -Default 'http://host.docker.internal:8000'
+    $openAiTtsModel = Prompt-WithDefault -Prompt 'Default TTS model (optional)' -Default 'kokoro'
+    $openAiSttModel = Prompt-WithDefault -Prompt 'Default STT model (optional)' -Default 'whisper-large-v3-turbo'
+    $localTtsVoices = Prompt-WithDefault -Prompt 'Fallback TTS voices comma-separated (optional)' -Default ''
+}
 
 $POSTGRES_PORT = Get-NextFreePort -StartPort 5432
 $REDIS_PORT = Get-NextFreePort -StartPort 6379
@@ -280,17 +309,17 @@ OPENAI_BASE_URL=http://local-ai-gateway:8089
 OLLAMA_BASE_URL=http://ollama:11434
 OPENAI_SYSTEM_API_KEY=
 OPENAI_DEFAULT_MODEL=$openAiDefaultModel
-OPENAI_TTS_MODEL=
-OPENAI_STT_MODEL=
+OPENAI_TTS_MODEL=$openAiTtsModel
+OPENAI_STT_MODEL=$openAiSttModel
 OPENAI_IMAGE_MODEL=
 OPENAI_VIDEO_MODEL=
 
 LOCAL_AI_GATEWAY_PORT=$LOCAL_AI_GATEWAY_PORT
 LOCAL_AI_GATEWAY_TIMEOUT_SECONDS=600
-LOCAL_AUDIO_BASE_URL=
+LOCAL_AUDIO_BASE_URL=$localAudioBaseUrl
 LOCAL_IMAGE_BASE_URL=
 LOCAL_VIDEO_BASE_URL=
-LOCAL_TTS_VOICES=
+LOCAL_TTS_VOICES=$localTtsVoices
 
 GEMINI_BASE_URL=
 GEMINI_DEFAULT_MODEL=
@@ -370,8 +399,8 @@ services:
       OPENAI_BASE_URL: "http://local-ai-gateway:8089"
       OPENAI_SYSTEM_API_KEY: ""
       OPENAI_DEFAULT_MODEL: "$openAiDefaultModel"
-      OPENAI_TTS_MODEL: ""
-      OPENAI_STT_MODEL: ""
+      OPENAI_TTS_MODEL: "$openAiTtsModel"
+      OPENAI_STT_MODEL: "$openAiSttModel"
     ports:
       - "$AI_PORT:8080"
 
@@ -472,6 +501,10 @@ Write-Host "[ok] MinIO API: http://localhost:$MINIO_API_PORT"
 Write-Host "[ok] MinIO Console: http://localhost:$MINIO_CONSOLE_PORT"
 Write-Host "[ok] Ollama API: http://localhost:$OLLAMA_PORT"
 Write-Host "[ok] Local AI Gateway: http://localhost:$LOCAL_AI_GATEWAY_PORT"
+Write-Host "[info] Audio backend mode: $audioBackendMode"
+if ($audioBackendMode -eq 'custom') {
+    Write-Host "[info] Audio backend URL: $localAudioBaseUrl"
+}
 $ollamaHealth = $null
 try {
     $ollamaHealth = Invoke-RestMethod -Method Get -Uri "http://localhost:$OLLAMA_PORT/api/tags" -TimeoutSec 3
@@ -501,6 +534,18 @@ if ($null -ne $ollamaHealth) {
     $pullVision = Read-Host "Pull vision model ($visionRecommended) too? [y/N]"
     if ($pullVision -match '^[Yy]$') {
         & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T ollama ollama pull $visionRecommended
+    }
+    if ($audioBackendMode -eq 'ollama' -and -not [string]::IsNullOrWhiteSpace($openAiTtsModel)) {
+        $pullTts = Read-Host "Pull TTS model ($openAiTtsModel) too? [y/N]"
+        if ($pullTts -match '^[Yy]$') {
+            & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T ollama ollama pull $openAiTtsModel
+        }
+    }
+    if ($audioBackendMode -eq 'ollama' -and -not [string]::IsNullOrWhiteSpace($openAiSttModel)) {
+        $pullStt = Read-Host "Pull STT model ($openAiSttModel) too? [y/N]"
+        if ($pullStt -match '^[Yy]$') {
+            & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T ollama ollama pull $openAiSttModel
+        }
     }
     Print-OllamaNextCommands
 }

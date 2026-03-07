@@ -29,6 +29,7 @@
 Скрипт:
 - спрашивает минимальные креды для `Postgres` и `MinIO`;
 - спрашивает starter text model для Ollama и сохраняет его в `OPENAI_DEFAULT_MODEL`;
+- спрашивает режим audio backend (`ollama` / `custom` / `skip`) и заполняет `OPENAI_TTS_MODEL`, `OPENAI_STT_MODEL`, `LOCAL_AUDIO_BASE_URL`, `LOCAL_TTS_VOICES`;
 - генерирует `.env.local`;
 - генерирует `.mnema/compose.ports.yml`;
 - запускает `docker compose` с учетом auto-selected портов.

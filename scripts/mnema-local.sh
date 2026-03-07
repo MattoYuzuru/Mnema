@@ -74,6 +74,28 @@ prompt_default() {
   fi
 }
 
+prompt_choice() {
+  local question="$1"
+  local default_value="$2"
+  local value
+  while true; do
+    read -r -p "$question [$default_value]: " value
+    if [[ -z "${value// }" ]]; then
+      value="$default_value"
+    fi
+    value="$(echo "$value" | tr '[:upper:]' '[:lower:]')"
+    case "$value" in
+      ollama|custom|skip)
+        echo "$value"
+        return
+        ;;
+      *)
+        echo "[error] Supported values: ollama, custom, skip."
+        ;;
+    esac
+  done
+}
+
 is_valid_identifier() {
   local value="$1"
   [[ "$value" =~ ^[A-Za-z0-9._-]{3,64}$ ]]
@@ -147,6 +169,10 @@ write_env_file() {
   local minio_password="$6"
   local openai_default_model="$7"
   local local_ai_gateway_port="$8"
+  local openai_tts_model="$9"
+  local openai_stt_model="${10}"
+  local local_audio_base_url="${11}"
+  local local_tts_voices="${12}"
 
   cat > "$ENV_FILE" <<ENV
 POSTGRES_DB=$postgres_db
@@ -194,17 +220,17 @@ OPENAI_BASE_URL=http://local-ai-gateway:8089
 OLLAMA_BASE_URL=http://ollama:11434
 OPENAI_SYSTEM_API_KEY=
 OPENAI_DEFAULT_MODEL=$openai_default_model
-OPENAI_TTS_MODEL=
-OPENAI_STT_MODEL=
+OPENAI_TTS_MODEL=$openai_tts_model
+OPENAI_STT_MODEL=$openai_stt_model
 OPENAI_IMAGE_MODEL=
 OPENAI_VIDEO_MODEL=
 
 LOCAL_AI_GATEWAY_PORT=$local_ai_gateway_port
 LOCAL_AI_GATEWAY_TIMEOUT_SECONDS=600
-LOCAL_AUDIO_BASE_URL=
+LOCAL_AUDIO_BASE_URL=$local_audio_base_url
 LOCAL_IMAGE_BASE_URL=
 LOCAL_VIDEO_BASE_URL=
-LOCAL_TTS_VOICES=
+LOCAL_TTS_VOICES=$local_tts_voices
 
 GEMINI_BASE_URL=
 GEMINI_DEFAULT_MODEL=
@@ -463,6 +489,22 @@ MINIO_USER="$(prompt_identifier 'MinIO root user' "$default_minio_user")"
 MINIO_PASSWORD="$(prompt_password 'MinIO root password' "$default_minio_password")"
 STARTER_MODEL_RECOMMENDED="$(recommend_ollama_model)"
 OPENAI_DEFAULT_MODEL="$(prompt_default 'Starter Ollama text model' "$STARTER_MODEL_RECOMMENDED")"
+echo "[setup] Offline audio backend for TTS/STT"
+AUDIO_BACKEND_MODE="$(prompt_choice 'Audio backend mode (ollama/custom/skip)' 'ollama')"
+OPENAI_TTS_MODEL=""
+OPENAI_STT_MODEL=""
+LOCAL_AUDIO_BASE_URL=""
+LOCAL_TTS_VOICES=""
+if [[ "$AUDIO_BACKEND_MODE" == "ollama" ]]; then
+  OPENAI_TTS_MODEL="$(prompt_default 'Ollama TTS model' 'kokoro:8b')"
+  OPENAI_STT_MODEL="$(prompt_default 'Ollama STT model (optional)' '')"
+  LOCAL_TTS_VOICES="$(prompt_default 'Fallback TTS voices comma-separated (optional)' 'af_sarah,af_bella')"
+elif [[ "$AUDIO_BACKEND_MODE" == "custom" ]]; then
+  LOCAL_AUDIO_BASE_URL="$(prompt_default 'Local audio backend URL (inside docker network)' 'http://host.docker.internal:8000')"
+  OPENAI_TTS_MODEL="$(prompt_default 'Default TTS model (optional)' 'kokoro')"
+  OPENAI_STT_MODEL="$(prompt_default 'Default STT model (optional)' 'whisper-large-v3-turbo')"
+  LOCAL_TTS_VOICES="$(prompt_default 'Fallback TTS voices comma-separated (optional)' '')"
+fi
 
 POSTGRES_PORT="$(next_free_port 5432)"
 REDIS_PORT="$(next_free_port 6379 "$POSTGRES_PORT")"
@@ -492,7 +534,7 @@ print_port_info "minio-console" "9001" "$MINIO_CONSOLE_PORT"
 print_port_info "ollama" "11434" "$OLLAMA_PORT"
 print_port_info "local-ai-gateway" "8090" "$LOCAL_AI_GATEWAY_PORT"
 
-write_env_file "$DB_USER" "$DB_PASSWORD" "$DB_NAME" "$POSTGRES_PORT" "$MINIO_USER" "$MINIO_PASSWORD" "$OPENAI_DEFAULT_MODEL" "$LOCAL_AI_GATEWAY_PORT"
+write_env_file "$DB_USER" "$DB_PASSWORD" "$DB_NAME" "$POSTGRES_PORT" "$MINIO_USER" "$MINIO_PASSWORD" "$OPENAI_DEFAULT_MODEL" "$LOCAL_AI_GATEWAY_PORT" "$OPENAI_TTS_MODEL" "$OPENAI_STT_MODEL" "$LOCAL_AUDIO_BASE_URL" "$LOCAL_TTS_VOICES"
 write_override_file "$OPENAI_DEFAULT_MODEL"
 
 echo "[info] Generated: $ENV_FILE"
@@ -513,6 +555,10 @@ echo "[ok] MinIO API: http://localhost:${MINIO_API_PORT}"
 echo "[ok] MinIO Console: http://localhost:${MINIO_CONSOLE_PORT}"
 echo "[ok] Ollama API: http://localhost:${OLLAMA_PORT}"
 echo "[ok] Local AI Gateway: http://localhost:${LOCAL_AI_GATEWAY_PORT}"
+echo "[info] Audio backend mode: ${AUDIO_BACKEND_MODE}"
+if [[ "$AUDIO_BACKEND_MODE" == "custom" ]]; then
+  echo "[info] Audio backend URL: ${LOCAL_AUDIO_BASE_URL}"
+fi
 
 if command_exists curl; then
   if curl -fsS "http://localhost:${OLLAMA_PORT}/api/tags" >/dev/null 2>&1; then
@@ -537,6 +583,18 @@ if command_exists curl; then
     read -r -p "Pull vision model (${vision_model}) too? [y/N]: " pull_vision
     if [[ "${pull_vision:-}" =~ ^[Yy]$ ]]; then
       docker compose --env-file "$ENV_FILE" -f docker-compose.yml -f "$OVERRIDE_FILE" exec -T ollama ollama pull "$vision_model" || true
+    fi
+    if [[ "$AUDIO_BACKEND_MODE" == "ollama" && -n "${OPENAI_TTS_MODEL:-}" ]]; then
+      read -r -p "Pull TTS model (${OPENAI_TTS_MODEL}) too? [y/N]: " pull_tts
+      if [[ "${pull_tts:-}" =~ ^[Yy]$ ]]; then
+        docker compose --env-file "$ENV_FILE" -f docker-compose.yml -f "$OVERRIDE_FILE" exec -T ollama ollama pull "$OPENAI_TTS_MODEL" || true
+      fi
+    fi
+    if [[ "$AUDIO_BACKEND_MODE" == "ollama" && -n "${OPENAI_STT_MODEL:-}" ]]; then
+      read -r -p "Pull STT model (${OPENAI_STT_MODEL}) too? [y/N]: " pull_stt
+      if [[ "${pull_stt:-}" =~ ^[Yy]$ ]]; then
+        docker compose --env-file "$ENV_FILE" -f docker-compose.yml -f "$OVERRIDE_FILE" exec -T ollama ollama pull "$OPENAI_STT_MODEL" || true
+      fi
     fi
     print_ollama_next_commands
   else
