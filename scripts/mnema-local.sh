@@ -275,7 +275,7 @@ write_override_file() {
   local ollama_gpu_enabled="$2"
   local ollama_gpu_block=""
   if [[ "$ollama_gpu_enabled" == "true" ]]; then
-    ollama_gpu_block=$'    gpus: all\n    environment:\n      NVIDIA_VISIBLE_DEVICES: "\\${OLLAMA_VISIBLE_GPUS}"\n      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"'
+    ollama_gpu_block=$'    gpus: all\n    environment:\n      NVIDIA_VISIBLE_DEVICES: "${OLLAMA_VISIBLE_GPUS}"\n      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"'
   fi
   cat > "$OVERRIDE_FILE" <<YAML
 services:

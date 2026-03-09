@@ -26,6 +26,20 @@
 .\scripts\mnema-local.ps1
 ```
 
+## Prerequisites
+
+Перед запуском убедитесь, что доступны:
+
+- Docker Engine + Docker Compose plugin (`docker compose version`)
+- если хотите GPU для Ollama: Docker GPU runtime (`docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi`)
+
+### Linux (NVIDIA)
+
+- Ubuntu/Debian: установите `nvidia-container-toolkit` из официального репозитория NVIDIA, затем `sudo nvidia-ctk runtime configure --runtime=docker` и перезапуск Docker.
+- Fedora/RHEL: аналогично, через RPM repo NVIDIA + `nvidia-container-toolkit`, затем `sudo nvidia-ctk runtime configure --runtime=docker` и перезапуск Docker.
+
+Если GPU runtime недоступен, bootstrap скрипт автоматически оставит Ollama на CPU и выведет предупреждение.
+
 Скрипт:
 - спрашивает минимальные креды для `Postgres` и `MinIO`;
 - спрашивает starter text model для Ollama и сохраняет его в `OPENAI_DEFAULT_MODEL`;
