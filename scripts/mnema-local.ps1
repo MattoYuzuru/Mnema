@@ -64,6 +64,18 @@ function Prompt-Choice {
     }
 }
 
+function Normalize-OllamaModelName {
+    param([string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return ''
+    }
+    $trimmed = $Value.Trim()
+    if ($trimmed -eq 'kokoro:8b') {
+        return 'kokoro'
+    }
+    return $trimmed
+}
+
 function Test-ValidIdentifier {
     param([string]$Value)
     return $Value -match '^[A-Za-z0-9._-]{3,64}$'
@@ -240,19 +252,22 @@ $minioPassword = Prompt-ValidatedPassword -Prompt 'MinIO root password' -Default
 $starterModelRecommended = Get-RecommendedOllamaModel
 $openAiDefaultModel = Prompt-WithDefault -Prompt 'Starter Ollama text model' -Default $starterModelRecommended
 Write-Host '[setup] Offline audio backend for TTS/STT'
-$audioBackendMode = Prompt-Choice -Prompt 'Audio backend mode (ollama/custom/skip)' -Default 'ollama' -Allowed @('ollama', 'custom', 'skip')
+$audioBackendMode = Prompt-Choice -Prompt 'Audio backend mode (custom/ollama/skip)' -Default 'custom' -Allowed @('ollama', 'custom', 'skip')
 $openAiTtsModel = ''
 $openAiSttModel = ''
 $localAudioBaseUrl = ''
 $localTtsVoices = ''
 if ($audioBackendMode -eq 'ollama') {
-    $openAiTtsModel = Prompt-WithDefault -Prompt 'Ollama TTS model' -Default 'kokoro:8b'
+    Write-Host '[warn] Ollama /v1/audio/speech may be unavailable for many models/builds. Prefer custom audio backend.'
+    $openAiTtsModel = Prompt-WithDefault -Prompt 'Ollama TTS model (experimental)' -Default 'kokoro'
+    $openAiTtsModel = Normalize-OllamaModelName -Value $openAiTtsModel
     $openAiSttModel = Prompt-WithDefault -Prompt 'Ollama STT model (optional)' -Default ''
     $localTtsVoices = Prompt-WithDefault -Prompt 'Fallback TTS voices comma-separated (optional)' -Default 'af_sarah,af_bella'
 }
 elseif ($audioBackendMode -eq 'custom') {
     $localAudioBaseUrl = Prompt-WithDefault -Prompt 'Local audio backend URL (inside docker network)' -Default 'http://host.docker.internal:8000'
     $openAiTtsModel = Prompt-WithDefault -Prompt 'Default TTS model (optional)' -Default 'kokoro'
+    $openAiTtsModel = Normalize-OllamaModelName -Value $openAiTtsModel
     $openAiSttModel = Prompt-WithDefault -Prompt 'Default STT model (optional)' -Default 'whisper-large-v3-turbo'
     $localTtsVoices = Prompt-WithDefault -Prompt 'Fallback TTS voices comma-separated (optional)' -Default ''
 }
@@ -466,6 +481,8 @@ services:
 
   local-ai-gateway:
     networks: [ mnema_net ]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     build:
       context: ./scripts/local-ai-gateway
       dockerfile: Dockerfile
@@ -558,6 +575,14 @@ if ($ollamaGpuEnabled -eq 'true') {
 }
 if ($audioBackendMode -eq 'custom') {
     Write-Host "[info] Audio backend URL: $localAudioBaseUrl"
+    $audioCheck = & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T local-ai-gateway python -c "import os,sys,urllib.request; u=os.getenv('AUDIO_BASE_URL','').rstrip('/'); sys.exit(0 if (not u) else 0 if urllib.request.urlopen(u + '/v1/models', timeout=5).status < 500 else 1)" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host '[ok] Audio backend URL is reachable from local-ai-gateway.'
+    }
+    else {
+        Write-Host '[warn] Audio backend URL is not reachable from local-ai-gateway.'
+        Write-Host '       Check LOCAL_AUDIO_BASE_URL in .env.local (for Linux host services use http://host.docker.internal:<port>).'
+    }
 }
 $ollamaHealth = $null
 try {

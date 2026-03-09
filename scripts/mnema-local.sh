@@ -146,6 +146,18 @@ prompt_password() {
   done
 }
 
+normalize_ollama_model_name() {
+  local value="$1"
+  case "$value" in
+    kokoro:8b)
+      echo "kokoro"
+      ;;
+    *)
+      echo "$value"
+      ;;
+  esac
+}
+
 rand_hex() {
   local bytes="$1"
   if command_exists openssl; then
@@ -361,6 +373,8 @@ services:
 
   local-ai-gateway:
     networks: [ mnema_net ]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     build:
       context: ./scripts/local-ai-gateway
       dockerfile: Dockerfile
@@ -512,18 +526,21 @@ MINIO_PASSWORD="$(prompt_password 'MinIO root password' "$default_minio_password
 STARTER_MODEL_RECOMMENDED="$(recommend_ollama_model)"
 OPENAI_DEFAULT_MODEL="$(prompt_default 'Starter Ollama text model' "$STARTER_MODEL_RECOMMENDED")"
 echo "[setup] Offline audio backend for TTS/STT"
-AUDIO_BACKEND_MODE="$(prompt_choice 'Audio backend mode (ollama/custom/skip)' 'ollama')"
+AUDIO_BACKEND_MODE="$(prompt_choice 'Audio backend mode (custom/ollama/skip)' 'custom')"
 OPENAI_TTS_MODEL=""
 OPENAI_STT_MODEL=""
 LOCAL_AUDIO_BASE_URL=""
 LOCAL_TTS_VOICES=""
 if [[ "$AUDIO_BACKEND_MODE" == "ollama" ]]; then
-  OPENAI_TTS_MODEL="$(prompt_default 'Ollama TTS model' 'kokoro:8b')"
+  echo "[warn] Ollama /v1/audio/speech may be unavailable for many models/builds. Prefer custom audio backend."
+  OPENAI_TTS_MODEL="$(prompt_default 'Ollama TTS model (experimental)' 'kokoro')"
+  OPENAI_TTS_MODEL="$(normalize_ollama_model_name "$OPENAI_TTS_MODEL")"
   OPENAI_STT_MODEL="$(prompt_default 'Ollama STT model (optional)' '')"
   LOCAL_TTS_VOICES="$(prompt_default 'Fallback TTS voices comma-separated (optional)' 'af_sarah,af_bella')"
 elif [[ "$AUDIO_BACKEND_MODE" == "custom" ]]; then
   LOCAL_AUDIO_BASE_URL="$(prompt_default 'Local audio backend URL (inside docker network)' 'http://host.docker.internal:8000')"
   OPENAI_TTS_MODEL="$(prompt_default 'Default TTS model (optional)' 'kokoro')"
+  OPENAI_TTS_MODEL="$(normalize_ollama_model_name "$OPENAI_TTS_MODEL")"
   OPENAI_STT_MODEL="$(prompt_default 'Default STT model (optional)' 'whisper-large-v3-turbo')"
   LOCAL_TTS_VOICES="$(prompt_default 'Fallback TTS voices comma-separated (optional)' '')"
 fi
@@ -600,6 +617,12 @@ if [[ "$OLLAMA_GPU_ENABLED" == "true" ]]; then
 fi
 if [[ "$AUDIO_BACKEND_MODE" == "custom" ]]; then
   echo "[info] Audio backend URL: ${LOCAL_AUDIO_BASE_URL}"
+  if docker compose --env-file "$ENV_FILE" -f docker-compose.yml -f "$OVERRIDE_FILE" exec -T local-ai-gateway python -c 'import os,sys,urllib.request; u=os.getenv("AUDIO_BASE_URL","").rstrip("/"); sys.exit(0 if (not u) else 0 if urllib.request.urlopen(u + "/v1/models", timeout=5).status < 500 else 1)' >/dev/null 2>&1; then
+    echo "[ok] Audio backend URL is reachable from local-ai-gateway."
+  else
+    echo "[warn] Audio backend URL is not reachable from local-ai-gateway."
+    echo "       Check LOCAL_AUDIO_BASE_URL in .env.local (for Linux host services use http://host.docker.internal:<port>)."
+  fi
 fi
 
 if command_exists curl; then

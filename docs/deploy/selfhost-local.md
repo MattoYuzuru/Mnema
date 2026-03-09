@@ -43,7 +43,8 @@
 Скрипт:
 - спрашивает минимальные креды для `Postgres` и `MinIO`;
 - спрашивает starter text model для Ollama и сохраняет его в `OPENAI_DEFAULT_MODEL`;
-- спрашивает режим audio backend (`ollama` / `custom` / `skip`) и заполняет `OPENAI_TTS_MODEL`, `OPENAI_STT_MODEL`, `LOCAL_AUDIO_BASE_URL`, `LOCAL_TTS_VOICES`;
+- спрашивает режим audio backend (`custom` / `ollama` / `skip`, по умолчанию `custom`) и заполняет `OPENAI_TTS_MODEL`, `OPENAI_STT_MODEL`, `LOCAL_AUDIO_BASE_URL`, `LOCAL_TTS_VOICES`;
+- для TTS нормализует legacy alias `kokoro:8b` в валидный `kokoro`;
 - автоматически проверяет доступность Docker GPU runtime и включает `gpus: all` для `ollama` (fallback на CPU с предупреждением, если runtime недоступен);
 - генерирует `.env.local`;
 - генерирует `.mnema/compose.ports.yml`;
@@ -106,6 +107,8 @@ Gateway поднимается вместе со стеком и дает еди
 - `LOCAL_AI_GATEWAY_TIMEOUT_SECONDS` — timeout для upstream запросов gateway (по умолчанию `600`)
 
 Если `LOCAL_*_BASE_URL` пустой, gateway пытается использовать Ollama для этого типа запросов.
+
+Для Linux-host audio backend используется `host.docker.internal` через `extra_hosts` в `local-ai-gateway`. Если после старта видите warning про недоступный audio backend, проверьте `LOCAL_AUDIO_BASE_URL` и что backend действительно слушает указанный порт.
 
 ## Оценка ресурсов (приблизительно)
 
