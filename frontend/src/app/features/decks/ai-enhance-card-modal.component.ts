@@ -459,6 +459,10 @@ export class AiEnhanceCardModalComponent implements OnInit {
     readonly videoModelOptions = computed(() => this.resolveVideoModelOptions(this.selectedProvider()));
     readonly voiceOptions = computed(() => {
         const provider = this.selectedProvider();
+        if (provider === 'ollama') {
+            const runtimeVoices = this.runtimeVoiceOptions();
+            return runtimeVoices.length ? [...runtimeVoices, 'custom'] : ['custom'];
+        }
         if (provider === 'gemini') {
             return [...this.geminiVoices, 'custom'];
         }
@@ -961,6 +965,9 @@ export class AiEnhanceCardModalComponent implements OnInit {
     private resolveVoice(): string {
         if (this.ttsVoicePreset() === 'custom') {
             const custom = this.ttsVoiceCustom().trim();
+            if (!custom) {
+                return '';
+            }
             return this.selectedProvider() === 'gemini' ? custom.toLowerCase() : custom;
         }
         const voice = this.ttsVoicePreset();
@@ -972,6 +979,15 @@ export class AiEnhanceCardModalComponent implements OnInit {
     }
 
     private resolveImageModelOptions(provider: string): string[] {
+        if (provider === 'ollama') {
+            const runtime = this.runtimeCapabilities()?.ollama?.models || [];
+            const imageModels = runtime
+                .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('image'))
+                .map(model => model.name)
+                .filter(name => !!name && name.trim().length > 0)
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+            return imageModels.length > 0 ? [...imageModels, 'custom'] : ['custom'];
+        }
         if (provider === 'openai') {
             return ['gpt-image-1-mini', 'gpt-image-1', 'custom'];
         }
@@ -988,6 +1004,15 @@ export class AiEnhanceCardModalComponent implements OnInit {
     }
 
     private resolveVideoModelOptions(provider: string): string[] {
+        if (provider === 'ollama') {
+            const runtime = this.runtimeCapabilities()?.ollama?.models || [];
+            const videoModels = runtime
+                .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('video'))
+                .map(model => model.name)
+                .filter(name => !!name && name.trim().length > 0)
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+            return videoModels.length > 0 ? [...videoModels, 'custom'] : ['custom'];
+        }
         if (provider === 'openai') {
             return ['sora-2', 'custom'];
         }
@@ -1037,9 +1062,15 @@ export class AiEnhanceCardModalComponent implements OnInit {
         }
         return {
             enabled: true,
-            voice: this.resolveVoice(),
+            voice: this.resolveVoice() || undefined,
             format: this.resolveAudioFormat()
         };
+    }
+
+    private runtimeVoiceOptions(): string[] {
+        const voices = this.runtimeCapabilities()?.ollama?.voices || [];
+        const unique = Array.from(new Set(voices.map(voice => String(voice || '').trim()).filter(Boolean)));
+        return unique.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     }
 
     private buildImageParams(missingFields: string[]): Record<string, unknown> | null {

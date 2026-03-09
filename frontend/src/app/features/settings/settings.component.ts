@@ -169,7 +169,7 @@ import { appConfig } from '../../app.config';
         </div>
       </section>
 
-      <section *ngIf="!aiSystemProviderEnabled" class="settings-section ai-settings">
+      <section class="settings-section ai-settings">
         <div class="section-heading-with-help">
           <h2>{{ 'settings.aiProviderKeysTitle' | translate }}</h2>
           <a
@@ -182,6 +182,9 @@ import { appConfig } from '../../app.config';
         </div>
         <p class="section-description">
           {{ 'settings.aiProviderKeysDescription' | translate }}
+        </p>
+        <p *ngIf="aiSystemProviderEnabled" class="section-description">
+          System provider {{ aiSystemProviderName }} is enabled for local runtime. You can still add personal provider keys and switch per request.
         </p>
 
         <div class="ai-settings-grid">
@@ -228,7 +231,7 @@ import { appConfig } from '../../app.config';
                     size="sm"
                     tone="danger"
                     (click)="openDeleteProvider(key)"
-                    [disabled]="deleteInFlight()"
+                    [disabled]="deleteInFlight() || isSystemProviderKey(key)"
                   >
                     {{ 'settings.aiProviderKeysDelete' | translate }}
                   </app-button>
@@ -311,13 +314,6 @@ import { appConfig } from '../../app.config';
             </form>
           </div>
         </div>
-      </section>
-
-      <section *ngIf="aiSystemProviderEnabled" class="settings-section ai-settings">
-        <h2>{{ 'settings.aiProviderKeysTitle' | translate }}</h2>
-        <p class="section-description">
-          AI runs in system-managed local mode ({{ aiSystemProviderName }}). Personal provider keys are disabled for this deployment profile.
-        </p>
       </section>
 
       <section class="settings-section">
@@ -908,6 +904,7 @@ import { appConfig } from '../../app.config';
     `]
 })
 export class SettingsComponent implements OnInit {
+    private static readonly SYSTEM_PROVIDER_ID = '00000000-0000-0000-0000-000000000001';
     archivedDecks: UserDeckDTO[] = [];
     loadingArchive = false;
     showDeleteConfirmation = false;
@@ -960,9 +957,7 @@ export class SettingsComponent implements OnInit {
 
     ngOnInit(): void {
         this.loadArchivedDecks();
-        if (!this.aiSystemProviderEnabled) {
-            this.loadProviders();
-        }
+        this.loadProviders();
         this.providerName.set(this.providerPreset());
         this.userApi.getMe().subscribe({
             next: profile => {
@@ -1073,6 +1068,10 @@ export class SettingsComponent implements OnInit {
 
     trackProvider(_: number, item: AiProviderCredential): string {
         return item.id;
+    }
+
+    isSystemProviderKey(key: AiProviderCredential): boolean {
+        return key.id === SettingsComponent.SYSTEM_PROVIDER_ID;
     }
 
     restoreDeck(userDeckId: string): void {

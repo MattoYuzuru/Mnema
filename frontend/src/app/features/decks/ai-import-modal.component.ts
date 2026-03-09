@@ -1742,7 +1742,7 @@ export class AiImportModalComponent implements OnInit {
         return {
             enabled: true,
             model: this.ttsModel().trim() || undefined,
-            voice: this.resolveVoice(),
+            voice: this.resolveVoice() || undefined,
             format: this.ttsFormat(),
             maxChars: this.ttsMaxChars(),
             mappings
@@ -1812,8 +1812,10 @@ export class AiImportModalComponent implements OnInit {
     private resolveVoice(): string {
         if (this.ttsVoicePreset() === 'custom') {
             const custom = this.ttsVoiceCustom().trim();
-            const fallback = custom || this.ttsVoicePreset();
-            return this.selectedProvider() === 'gemini' ? fallback.toLowerCase() : fallback;
+            if (!custom) {
+                return '';
+            }
+            return this.selectedProvider() === 'gemini' ? custom.toLowerCase() : custom;
         }
         const voice = this.ttsVoicePreset();
         return this.selectedProvider() === 'gemini' ? voice.toLowerCase() : voice;
@@ -1877,6 +1879,15 @@ export class AiImportModalComponent implements OnInit {
     }
 
     private resolveImageModelOptions(provider: string): string[] {
+        if (provider === 'ollama') {
+            const runtime = this.runtimeCapabilities()?.ollama?.models || [];
+            const imageModels = runtime
+                .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('image'))
+                .map(model => model.name)
+                .filter(name => !!name && name.trim().length > 0)
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+            return imageModels.length > 0 ? [...imageModels, 'custom'] : ['custom'];
+        }
         if (provider === 'openai') {
             return ['gpt-image-1', 'custom'];
         }
@@ -1890,6 +1901,15 @@ export class AiImportModalComponent implements OnInit {
     }
 
     private resolveVideoModelOptions(provider: string): string[] {
+        if (provider === 'ollama') {
+            const runtime = this.runtimeCapabilities()?.ollama?.models || [];
+            const videoModels = runtime
+                .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('video'))
+                .map(model => model.name)
+                .filter(name => !!name && name.trim().length > 0)
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+            return videoModels.length > 0 ? [...videoModels, 'custom'] : ['custom'];
+        }
         if (provider === 'openai') {
             return ['gpt-video-mini', 'custom'];
         }
@@ -1901,6 +1921,8 @@ export class AiImportModalComponent implements OnInit {
 
     private resolveModelPlaceholder(provider: string): string {
         switch (provider) {
+            case 'ollama':
+                return 'qwen3:8b';
             case 'openai':
                 return 'gpt-4.1-mini';
             case 'gemini':
@@ -1921,6 +1943,9 @@ export class AiImportModalComponent implements OnInit {
     }
 
     private resolveTtsModelPlaceholder(provider: string): string {
+        if (provider === 'ollama') {
+            return 'ollama-tts-model';
+        }
         if (provider === 'openai') {
             return 'gpt-4o-mini-tts';
         }
@@ -1934,6 +1959,9 @@ export class AiImportModalComponent implements OnInit {
     }
 
     private resolveSttModelPlaceholder(provider: string): string {
+        if (provider === 'ollama') {
+            return 'ollama-stt-model';
+        }
         if (provider === 'openai') {
             return 'gpt-4o-mini-transcribe';
         }
