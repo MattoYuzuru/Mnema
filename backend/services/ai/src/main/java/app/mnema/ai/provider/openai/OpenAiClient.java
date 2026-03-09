@@ -14,7 +14,10 @@ import org.springframework.web.client.RestClient;
 
 import java.util.Base64;
 import java.util.Locale;
+import java.net.URI;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 
 @Component
 public class OpenAiClient {
@@ -188,7 +191,9 @@ public class OpenAiClient {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("model", request.model());
         payload.put("input", request.input());
-        payload.put("voice", request.voice());
+        if (request.voice() != null && !request.voice().isBlank()) {
+            payload.put("voice", request.voice());
+        }
         payload.put("response_format", request.responseFormat());
 
         RestClient.RequestBodySpec spec = restClient.post()
@@ -261,6 +266,8 @@ public class OpenAiClient {
         if (request.format() != null && !request.format().isBlank()) {
             payload.put("output_format", request.format());
         }
+        // Ollama OpenAI compatibility expects b64_json for image payloads.
+        payload.put("response_format", "b64_json");
         RestClient.RequestBodySpec spec = restClient.post()
                 .uri("/v1/images/generations")
                 .contentType(MediaType.APPLICATION_JSON);
@@ -280,10 +287,16 @@ public class OpenAiClient {
         }
         JsonNode item = dataNode.get(0);
         String b64 = item.path("b64_json").asText(null);
-        if (b64 == null || b64.isBlank()) {
-            throw new IllegalStateException("OpenAI image response missing b64_json");
+        byte[] bytes;
+        if (b64 != null && !b64.isBlank()) {
+            bytes = Base64.getDecoder().decode(b64);
+        } else {
+            String imageUrl = item.path("url").asText(null);
+            if (imageUrl == null || imageUrl.isBlank()) {
+                throw new IllegalStateException("OpenAI image response missing b64_json/url");
+            }
+            bytes = downloadImageFromUrl(imageUrl, apiKey);
         }
-        byte[] bytes = Base64.getDecoder().decode(b64);
         String revisedPrompt = item.path("revised_prompt").asText(null);
         String model = response.path("model").asText(null);
         String outputFormat = response.path("output_format").asText(null);
@@ -376,5 +389,30 @@ public class OpenAiClient {
             case "gif" -> "image/gif";
             default -> "image/png";
         };
+    }
+
+    private byte[] downloadImageFromUrl(String imageUrl, String apiKey) {
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(imageUrl))
+                    .GET();
+            if (hasApiKey(apiKey)) {
+                builder.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+            }
+            HttpResponse<byte[]> response = HttpClient.newBuilder()
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .build()
+                    .send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() >= 400) {
+                throw new IllegalStateException("Image download failed status=" + response.statusCode());
+            }
+            byte[] body = response.body();
+            if (body == null || body.length == 0) {
+                throw new IllegalStateException("Image download response is empty");
+            }
+            return body;
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to download image bytes", ex);
+        }
     }
 }

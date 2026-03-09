@@ -42,19 +42,21 @@
 
 Скрипт:
 - спрашивает минимальные креды для `Postgres` и `MinIO`;
-- спрашивает starter text model для Ollama и сохраняет его в `OPENAI_DEFAULT_MODEL`;
-- спрашивает режим audio backend (`custom` / `ollama` / `skip`, по умолчанию `custom`) и заполняет `OPENAI_TTS_MODEL`, `OPENAI_STT_MODEL`, `LOCAL_AUDIO_BASE_URL`, `LOCAL_TTS_VOICES`;
-- для TTS нормализует legacy alias `kokoro:8b` в валидный `kokoro`;
+- интерактивно (стрелками) выбирает:
+  - primary/secondary text model;
+  - optional vision model;
+  - optional TTS/STT модели;
+  - optional image model;
+  - GPU device для Ollama при нескольких GPU;
+- спрашивает режимы backend-ов:
+  - audio: `ollama` (experimental) / `custom` / `none`;
+  - image: `ollama` (experimental) / `custom` / `none`;
+- заполняет `OPENAI_*` модели и gateway-переменные (`REMOTE_OPENAI_BASE_URL`, `OLLAMA_AUDIO_EXPERIMENTAL`, `OLLAMA_IMAGE_EXPERIMENTAL`);
 - автоматически проверяет доступность Docker GPU runtime и включает `gpus: all` для `ollama` (fallback на CPU с предупреждением, если runtime недоступен);
 - генерирует `.env.local`;
 - генерирует `.mnema/compose.ports.yml`;
-- запускает `docker compose` с учетом auto-selected портов.
+- запускает `docker compose pull`, поднимает `ollama + local-ai-gateway`, делает `ollama pull` выбранных моделей и затем поднимает весь стек;
 - включает профиль `SPRING_PROFILES_ACTIVE=dev,selfhost-local` для backend сервисов.
-- после старта проверяет `Ollama /api/tags`, предлагает:
-  - starter text model (`qwen3:4b/8b/14b`) по объему RAM;
-  - backup text model (`qwen2.5:3b/7b` или `qwen3:8b`);
-  - vision model (`qwen2.5vl:3b/7b` или `minicpm-v:8b`).
-- для каждой рекомендации можно сразу сделать `ollama pull`.
 - в конце печатает команды для ручного управления моделями (`ollama list/pull/run`, `curl /api/tags`).
 
 Для проверки без запуска контейнеров:
@@ -92,6 +94,7 @@ MNEMA_DRY_RUN=1 ./scripts/mnema-local.sh
   - OpenAI-compatible base URL указывает на `local-ai-gateway` (`OPENAI_BASE_URL=http://local-ai-gateway:8089`);
   - text/chat/vision идут через Ollama;
   - TTS/STT/image/video проксируются gateway в соответствующие локальные backends при их настройке;
+  - персональные provider keys остаются доступны в UI (можно использовать одновременно system provider и внешние ключи).
   - runtime discovery endpoint: `GET /api/ai/runtime/capabilities`.
 
 ## Local AI Gateway
@@ -105,8 +108,13 @@ Gateway поднимается вместе со стеком и дает еди
 - `LOCAL_VIDEO_BASE_URL` — backend для `/v1/videos*`
 - `LOCAL_TTS_VOICES` — fallback список голосов через запятую, если audio backend не отдает `/v1/audio/voices`
 - `LOCAL_AI_GATEWAY_TIMEOUT_SECONDS` — timeout для upstream запросов gateway (по умолчанию `600`)
+- `REMOTE_OPENAI_BASE_URL` — внешний OpenAI endpoint (по умолчанию `https://api.openai.com`), используется gateway при наличии Bearer API key;
+- `OLLAMA_AUDIO_EXPERIMENTAL` — включает fallback `/v1/audio/*` в Ollama (experimental);
+- `OLLAMA_IMAGE_EXPERIMENTAL` — включает fallback `/v1/images/*` в Ollama (experimental).
 
 Если `LOCAL_*_BASE_URL` пустой, gateway пытается использовать Ollama для этого типа запросов.
+
+Примечание: по официальной документации Ollama OpenAI-compat гарантирован для chat/responses/completions и experimental image endpoint; audio endpoint-ы остаются experimental/ограниченными в зависимости от сборки и моделей.
 
 Для Linux-host audio backend используется `host.docker.internal` через `extra_hosts` в `local-ai-gateway`. Если после старта видите warning про недоступный audio backend, проверьте `LOCAL_AUDIO_BASE_URL` и что backend действительно слушает указанный порт.
 

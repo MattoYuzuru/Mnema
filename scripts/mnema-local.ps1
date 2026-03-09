@@ -69,11 +69,7 @@ function Normalize-OllamaModelName {
     if ([string]::IsNullOrWhiteSpace($Value)) {
         return ''
     }
-    $trimmed = $Value.Trim()
-    if ($trimmed -eq 'kokoro:8b') {
-        return 'kokoro'
-    }
-    return $trimmed
+    return $Value.Trim()
 }
 
 function Test-ValidIdentifier {
@@ -252,24 +248,45 @@ $minioPassword = Prompt-ValidatedPassword -Prompt 'MinIO root password' -Default
 $starterModelRecommended = Get-RecommendedOllamaModel
 $openAiDefaultModel = Prompt-WithDefault -Prompt 'Starter Ollama text model' -Default $starterModelRecommended
 Write-Host '[setup] Offline audio backend for TTS/STT'
-$audioBackendMode = Prompt-Choice -Prompt 'Audio backend mode (custom/ollama/skip)' -Default 'custom' -Allowed @('ollama', 'custom', 'skip')
+$audioBackendMode = Prompt-Choice -Prompt 'Audio backend mode (custom/ollama/none)' -Default 'ollama' -Allowed @('ollama', 'custom', 'none')
 $openAiTtsModel = ''
 $openAiSttModel = ''
+$openAiImageModel = ''
 $localAudioBaseUrl = ''
+$localImageBaseUrl = ''
 $localTtsVoices = ''
+$remoteOpenAiBaseUrl = 'https://api.openai.com'
+$ollamaAudioExperimental = 'false'
+$ollamaImageExperimental = 'true'
 if ($audioBackendMode -eq 'ollama') {
-    Write-Host '[warn] Ollama /v1/audio/speech may be unavailable for many models/builds. Prefer custom audio backend.'
-    $openAiTtsModel = Prompt-WithDefault -Prompt 'Ollama TTS model (experimental)' -Default 'kokoro'
+    $ollamaAudioExperimental = 'true'
+    Write-Host '[warn] Ollama audio compatibility is experimental; choose only existing Ollama models.'
+    $openAiTtsModel = Prompt-WithDefault -Prompt 'Ollama TTS model (optional)' -Default ''
     $openAiTtsModel = Normalize-OllamaModelName -Value $openAiTtsModel
     $openAiSttModel = Prompt-WithDefault -Prompt 'Ollama STT model (optional)' -Default ''
-    $localTtsVoices = Prompt-WithDefault -Prompt 'Fallback TTS voices comma-separated (optional)' -Default 'af_sarah,af_bella'
+    $localTtsVoices = Prompt-WithDefault -Prompt 'Fallback TTS voices comma-separated (optional)' -Default ''
 }
 elseif ($audioBackendMode -eq 'custom') {
     $localAudioBaseUrl = Prompt-WithDefault -Prompt 'Local audio backend URL (inside docker network)' -Default 'http://host.docker.internal:8000'
-    $openAiTtsModel = Prompt-WithDefault -Prompt 'Default TTS model (optional)' -Default 'kokoro'
+    $openAiTtsModel = Prompt-WithDefault -Prompt 'Default TTS model (optional)' -Default ''
     $openAiTtsModel = Normalize-OllamaModelName -Value $openAiTtsModel
-    $openAiSttModel = Prompt-WithDefault -Prompt 'Default STT model (optional)' -Default 'whisper-large-v3-turbo'
+    $openAiSttModel = Prompt-WithDefault -Prompt 'Default STT model (optional)' -Default ''
     $localTtsVoices = Prompt-WithDefault -Prompt 'Fallback TTS voices comma-separated (optional)' -Default ''
+}
+
+Write-Host '[setup] Image backend'
+$imageBackendMode = Prompt-Choice -Prompt 'Image backend mode (ollama/custom/none)' -Default 'ollama' -Allowed @('ollama', 'custom', 'none')
+if ($imageBackendMode -eq 'ollama') {
+    $ollamaImageExperimental = 'true'
+    $openAiImageModel = Prompt-WithDefault -Prompt 'Ollama image model (optional)' -Default 'x/z-image-turbo'
+}
+elseif ($imageBackendMode -eq 'custom') {
+    $ollamaImageExperimental = 'false'
+    $localImageBaseUrl = Prompt-WithDefault -Prompt 'Local image backend URL (inside docker network)' -Default 'http://host.docker.internal:8188'
+    $openAiImageModel = Prompt-WithDefault -Prompt 'Default image model (optional)' -Default ''
+}
+else {
+    $ollamaImageExperimental = 'false'
 }
 
 $ollamaGpuEnabled = 'false'
@@ -361,28 +378,23 @@ OLLAMA_BASE_URL=http://ollama:11434
 OPENAI_SYSTEM_API_KEY=
 OPENAI_DEFAULT_MODEL=$openAiDefaultModel
 OPENAI_TTS_MODEL=$openAiTtsModel
+OPENAI_TTS_VOICE=
+OPENAI_TTS_FORMAT=wav
 OPENAI_STT_MODEL=$openAiSttModel
-OPENAI_IMAGE_MODEL=
+OPENAI_IMAGE_MODEL=$openAiImageModel
 OPENAI_VIDEO_MODEL=
 
 LOCAL_AI_GATEWAY_PORT=$LOCAL_AI_GATEWAY_PORT
 LOCAL_AI_GATEWAY_TIMEOUT_SECONDS=600
 LOCAL_AUDIO_BASE_URL=$localAudioBaseUrl
-LOCAL_IMAGE_BASE_URL=
+LOCAL_IMAGE_BASE_URL=$localImageBaseUrl
 LOCAL_VIDEO_BASE_URL=
 LOCAL_TTS_VOICES=$localTtsVoices
+REMOTE_OPENAI_BASE_URL=$remoteOpenAiBaseUrl
+OLLAMA_AUDIO_EXPERIMENTAL=$ollamaAudioExperimental
+OLLAMA_IMAGE_EXPERIMENTAL=$ollamaImageExperimental
 OLLAMA_GPU_ENABLED=$ollamaGpuEnabled
 OLLAMA_VISIBLE_GPUS=$ollamaVisibleGpus
-
-GEMINI_BASE_URL=
-GEMINI_DEFAULT_MODEL=
-
-ANTHROPIC_BASE_URL=
-ANTHROPIC_API_VERSION=2023-06-01
-ANTHROPIC_DEFAULT_MODEL=
-
-QWEN_BASE_URL=
-QWEN_DASHSCOPE_BASE_URL=
 
 GROK_BASE_URL=
 
@@ -453,11 +465,18 @@ services:
       OPENAI_SYSTEM_API_KEY: ""
       OPENAI_DEFAULT_MODEL: "$openAiDefaultModel"
       OPENAI_TTS_MODEL: "$openAiTtsModel"
+      OPENAI_TTS_VOICE: "`${OPENAI_TTS_VOICE}"
+      OPENAI_TTS_FORMAT: "`${OPENAI_TTS_FORMAT}"
       OPENAI_STT_MODEL: "$openAiSttModel"
+      OPENAI_IMAGE_MODEL: "`${OPENAI_IMAGE_MODEL}"
+      OPENAI_VIDEO_MODEL: "`${OPENAI_VIDEO_MODEL}"
     ports:
       - "$AI_PORT:8080"
 
   frontend:
+    environment:
+      MNEMA_FEATURE_AI_SYSTEM_PROVIDER_ENABLED: "true"
+      MNEMA_FEATURE_AI_SYSTEM_PROVIDER_NAME: "ollama"
     ports:
       - "$FRONTEND_PORT:80"
 
@@ -488,6 +507,9 @@ services:
       dockerfile: Dockerfile
     environment:
       OLLAMA_BASE_URL: "http://ollama:11434"
+      REMOTE_OPENAI_BASE_URL: "`${REMOTE_OPENAI_BASE_URL}"
+      OLLAMA_AUDIO_EXPERIMENTAL: "`${OLLAMA_AUDIO_EXPERIMENTAL}"
+      OLLAMA_IMAGE_EXPERIMENTAL: "`${OLLAMA_IMAGE_EXPERIMENTAL}"
       AUDIO_BASE_URL: "`${LOCAL_AUDIO_BASE_URL}"
       IMAGE_BASE_URL: "`${LOCAL_IMAGE_BASE_URL}"
       VIDEO_BASE_URL: "`${LOCAL_VIDEO_BASE_URL}"
@@ -584,6 +606,17 @@ if ($audioBackendMode -eq 'custom') {
         Write-Host '       Check LOCAL_AUDIO_BASE_URL in .env.local (for Linux host services use http://host.docker.internal:<port>).'
     }
 }
+if ($imageBackendMode -eq 'custom') {
+    Write-Host "[info] Image backend URL: $localImageBaseUrl"
+    $imageCheck = & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T local-ai-gateway python -c "import os,sys,urllib.request; u=os.getenv('IMAGE_BASE_URL','').rstrip('/'); sys.exit(0 if (not u) else 0 if urllib.request.urlopen(u + '/v1/models', timeout=5).status < 500 else 1)" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host '[ok] Image backend URL is reachable from local-ai-gateway.'
+    }
+    else {
+        Write-Host '[warn] Image backend URL is not reachable from local-ai-gateway.'
+        Write-Host '       Check LOCAL_IMAGE_BASE_URL in .env.local (for Linux host services use http://host.docker.internal:<port>).'
+    }
+}
 $ollamaHealth = $null
 try {
     $ollamaHealth = Invoke-RestMethod -Method Get -Uri "http://localhost:$OLLAMA_PORT/api/tags" -TimeoutSec 3
@@ -600,8 +633,8 @@ if ($null -ne $ollamaHealth) {
     Write-Host "[info] Optional backup text model: $backupRecommended"
     Write-Host "[info] Optional vision model (OCR/image understanding): $visionRecommended"
     Write-Host "[info] Notes:"
-    Write-Host "       - Ollama OpenAI-compatible endpoints currently cover text/vision + embeddings + experimental images."
-    Write-Host "       - STT/TTS/video in Mnema local usually require separate local services (whisper.cpp, Piper, ComfyUI pipelines)."
+    Write-Host "       - Ollama OpenAI-compatible endpoints cover text/vision and experimental images."
+    Write-Host "       - Audio endpoints are experimental in Ollama mode; prefer custom audio backend for production stability."
     $pullChoice = Read-Host 'Pull starter text model now? [y/N]'
     if ($pullChoice -match '^[Yy]$') {
         & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T ollama ollama pull $recommended
@@ -624,6 +657,12 @@ if ($null -ne $ollamaHealth) {
         $pullStt = Read-Host "Pull STT model ($openAiSttModel) too? [y/N]"
         if ($pullStt -match '^[Yy]$') {
             & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T ollama ollama pull $openAiSttModel
+        }
+    }
+    if ($imageBackendMode -eq 'ollama' -and -not [string]::IsNullOrWhiteSpace($openAiImageModel)) {
+        $pullImage = Read-Host "Pull image model ($openAiImageModel) too? [y/N]"
+        if ($pullImage -match '^[Yy]$') {
+            & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T ollama ollama pull $openAiImageModel
         }
     }
     Print-OllamaNextCommands

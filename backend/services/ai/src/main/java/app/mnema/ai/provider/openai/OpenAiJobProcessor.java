@@ -587,6 +587,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                                             String language) {
         AudioChunkingService.AudioChunkingResult chunking = audioChunkingService.prepareChunks(source.bytes(), source.mimeType());
         String model = resolveSttModel(params);
+        if (model == null || model.isBlank()) {
+            throw new IllegalStateException("STT model is required for audio import");
+        }
         String sttLanguage = resolveSttLanguage(params, language);
         StringBuilder transcript = new StringBuilder();
         boolean truncated = false;
@@ -732,7 +735,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (props.defaultSttModel() != null && !props.defaultSttModel().isBlank()) {
             return props.defaultSttModel();
         }
-        return "gpt-4o-mini-transcribe";
+        return null;
     }
 
     private String resolveSttLanguage(JsonNode params, String fallback) {
@@ -1494,8 +1497,17 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             throw new IllegalStateException("TTS text is required");
         }
         String model = textOrDefault(params.path("model"), props.defaultTtsModel());
-        String voice = textOrDefault(params.path("voice"), props.defaultVoice());
+        if (model == null || model.isBlank()) {
+            throw new IllegalStateException("TTS model is required");
+        }
+        String voice = textOrNull(params.path("voice"));
+        if (voice == null && props.defaultVoice() != null && !props.defaultVoice().isBlank()) {
+            voice = props.defaultVoice().trim();
+        }
         String format = textOrDefault(params.path("format"), props.defaultTtsFormat());
+        if (format == null || format.isBlank()) {
+            format = "mp3";
+        }
 
         byte[] audio = createSpeechWithRetry(
                 job,
@@ -1521,7 +1533,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         summary.put("contentType", contentType);
         summary.put("fileName", fileName);
         summary.put("model", model);
-        summary.put("voice", voice);
+        if (voice != null && !voice.isBlank()) {
+            summary.put("voice", voice);
+        }
 
         return new AiJobProcessingResult(
                 summary,
@@ -2814,8 +2828,17 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
 
         String model = textOrDefault(ttsNode.path("model"), props.defaultTtsModel());
-        String voice = textOrDefault(ttsNode.path("voice"), props.defaultVoice());
+        if (model == null || model.isBlank()) {
+            return new TtsApplyResult(0, 0, null, "TTS model is required");
+        }
+        String voice = textOrNull(ttsNode.path("voice"));
+        if (voice == null && props.defaultVoice() != null && !props.defaultVoice().isBlank()) {
+            voice = props.defaultVoice().trim();
+        }
         String format = textOrDefault(ttsNode.path("format"), props.defaultTtsFormat());
+        if (format == null || format.isBlank()) {
+            format = "mp3";
+        }
         int maxChars = ttsNode.path("maxChars").isInt() ? ttsNode.path("maxChars").asInt() : 300;
         if (maxChars < 1) {
             maxChars = 1;
@@ -2928,8 +2951,17 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
 
         String model = textOrDefault(ttsNode.path("model"), props.defaultTtsModel());
-        String voice = textOrDefault(ttsNode.path("voice"), props.defaultVoice());
+        if (model == null || model.isBlank()) {
+            return new TtsApplyResult(0, 0, null, "TTS model is required");
+        }
+        String voice = textOrNull(ttsNode.path("voice"));
+        if (voice == null && props.defaultVoice() != null && !props.defaultVoice().isBlank()) {
+            voice = props.defaultVoice().trim();
+        }
         String format = textOrDefault(ttsNode.path("format"), props.defaultTtsFormat());
+        if (format == null || format.isBlank()) {
+            format = "mp3";
+        }
         int maxChars = ttsNode.path("maxChars").isInt() ? ttsNode.path("maxChars").asInt() : 300;
         if (maxChars < 1) {
             maxChars = 1;
@@ -3301,7 +3333,12 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
         String model = textOrDefault(node.path("model"), props.defaultImageModel());
         if (model == null || model.isBlank()) {
-            model = "gpt-image-1-mini";
+            if (isLocalOllamaRequest(params)) {
+                enabled = false;
+                model = "";
+            } else {
+                model = "gpt-image-1-mini";
+            }
         }
         String size = textOrDefault(node.path("size"), props.defaultImageSize());
         if (size == null || size.isBlank()) {
@@ -3324,7 +3361,12 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
         String model = textOrDefault(node.path("model"), props.defaultVideoModel());
         if (model == null || model.isBlank()) {
-            model = "sora-2";
+            if (isLocalOllamaRequest(params)) {
+                enabled = false;
+                model = "";
+            } else {
+                model = "sora-2";
+            }
         }
         Integer durationSeconds = node.path("durationSeconds").isInt()
                 ? Integer.valueOf(node.path("durationSeconds").asInt())
@@ -3344,6 +3386,15 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
         String format = textOrDefault(node.path("format"), "mp4");
         return new VideoConfig(enabled, model, durationSeconds, resolution, format);
+    }
+
+    private boolean isLocalOllamaRequest(JsonNode params) {
+        String provider = textOrNull(params.path("provider"));
+        if (provider == null || provider.isBlank()) {
+            return false;
+        }
+        String normalized = provider.trim().toLowerCase(Locale.ROOT);
+        return "ollama".equals(normalized) || "local-openai".equals(normalized);
     }
 
     private MediaUpload generateImage(AiJobEntity job, String apiKey, ImageConfig config, String prompt) {

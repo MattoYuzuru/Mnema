@@ -5,7 +5,7 @@
 ## Важно про Ollama
 
 Ollama хорошо подходит для text/chat/vision и частично image, но:
-- audio endpoint'ы OpenAI-совместимости (`/v1/audio/*`) не являются стабильной частью Ollama OpenAI API;
+- audio endpoint'ы OpenAI-совместимости (`/v1/audio/*`) остаются experimental/ограниченными по сборкам и моделям;
 - `images/generations` в OpenAI-совместимости у Ollama помечен как experimental;
 - video/gif генерация через Ollama как основной контур не рекомендуется.
 
@@ -22,9 +22,10 @@ Ollama хорошо подходит для text/chat/vision и частично
 - `OPENAI_BASE_URL` в Mnema -> `local-ai-gateway`
 - `local-ai-gateway` маршрутизирует:
   - `/v1/responses`, `/v1/chat/completions` -> `Ollama`
-  - `/v1/audio/*` -> `LOCAL_AUDIO_BASE_URL` (если задан), иначе fallback
-  - `/v1/images/*` -> `LOCAL_IMAGE_BASE_URL` (если задан), иначе fallback
+  - `/v1/audio/*` -> `LOCAL_AUDIO_BASE_URL` (если задан), иначе fallback в Ollama только при `OLLAMA_AUDIO_EXPERIMENTAL=true`
+  - `/v1/images/*` -> `LOCAL_IMAGE_BASE_URL` (если задан), иначе fallback в Ollama при `OLLAMA_IMAGE_EXPERIMENTAL=true`
   - `/v1/videos*` -> `LOCAL_VIDEO_BASE_URL` (если задан), иначе fallback
+- при наличии Bearer API key gateway может проксировать `/v1/*` в `REMOTE_OPENAI_BASE_URL` (по умолчанию `https://api.openai.com`)
 - Runtime API в Mnema использует `/v1/models` и `/v1/audio/voices` gateway, чтобы UI показывал доступные модели и голоса.
 
 ## Text/Chat (Ollama)
@@ -95,6 +96,7 @@ Ollama хорошо подходит для text/chat/vision и частично
 - Ollama API: https://docs.ollama.com/api
 - Ollama OpenAI compatibility: https://docs.ollama.com/openai
 - Ollama model library (Qwen): https://ollama.com/library/qwen3
+- Ollama OpenAI images example models (`x/z-image-turbo`, `x/flux2-klein`): https://docs.ollama.com/openai
 - Speaches docs: https://speaches.ai/
 - Speaches OpenAI-compatible API: https://speaches.ai/usage/python
 - ComfyUI docs: https://docs.comfy.org/

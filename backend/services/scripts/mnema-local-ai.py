@@ -46,9 +46,9 @@ PRESETS: Dict[str, Preset] = {
         models={
             "text": "llama3.2:3b",
             "vision": "llava:7b",
-            "stt": "whisper:base",
-            "tts": "kokoro:latest",
-            "image": "sdxl:latest",
+            "stt": "",
+            "tts": "",
+            "image": "x/z-image-turbo",
             "video": "wan2.2-t2v:1.3b",
         },
     ),
@@ -58,9 +58,9 @@ PRESETS: Dict[str, Preset] = {
         models={
             "text": "qwen2.5:7b",
             "vision": "qwen2.5vl:7b",
-            "stt": "whisper:large-v3",
-            "tts": "kokoro:latest",
-            "image": "flux.1-schnell:latest",
+            "stt": "",
+            "tts": "",
+            "image": "x/flux2-klein",
             "video": "wan2.2-t2v:14b",
         },
     ),
@@ -70,9 +70,9 @@ PRESETS: Dict[str, Preset] = {
         models={
             "text": "qwen2.5:32b",
             "vision": "qwen2.5vl:32b",
-            "stt": "whisper:large-v3",
-            "tts": "kokoro:latest",
-            "image": "flux.1-dev:latest",
+            "stt": "",
+            "tts": "",
+            "image": "x/flux2-klein",
             "video": "wan2.2-t2v:14b",
         },
     ),
@@ -263,6 +263,8 @@ def run_pull(model: str) -> bool:
 def pull_models(models: Dict[str, str]) -> List[str]:
     unique = []
     for _, model in models.items():
+        if not model or not model.strip():
+            continue
         if model not in unique:
             unique.append(model)
 
@@ -277,8 +279,9 @@ def pull_models(models: Dict[str, str]) -> List[str]:
 
 def build_env(models: Dict[str, str], runtime_base_url: str, ollama_url: str) -> Dict[str, str]:
     openai_url = runtime_base_url.strip() or ollama_url.strip()
+    audio_experimental = "true" if (models.get("tts") or models.get("stt")) else "false"
     return {
-        "AI_PROVIDER": "openai",
+        "AI_PROVIDER": "ollama",
         "AI_SYSTEM_MANAGED_PROVIDER_ENABLED": "true",
         "AI_SYSTEM_PROVIDER_NAME": "ollama",
         "AI_OLLAMA_ENABLED": "true",
@@ -287,9 +290,14 @@ def build_env(models: Dict[str, str], runtime_base_url: str, ollama_url: str) ->
         "OPENAI_SYSTEM_API_KEY": "",
         "OPENAI_DEFAULT_MODEL": models["text"],
         "OPENAI_TTS_MODEL": models["tts"],
+        "OPENAI_TTS_VOICE": "",
+        "OPENAI_TTS_FORMAT": "wav",
         "OPENAI_STT_MODEL": models["stt"],
         "OPENAI_IMAGE_MODEL": models["image"],
         "OPENAI_VIDEO_MODEL": models["video"],
+        "REMOTE_OPENAI_BASE_URL": "https://api.openai.com",
+        "OLLAMA_AUDIO_EXPERIMENTAL": audio_experimental,
+        "OLLAMA_IMAGE_EXPERIMENTAL": "true",
     }
 
 

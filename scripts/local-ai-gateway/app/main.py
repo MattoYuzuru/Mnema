@@ -14,9 +14,12 @@ app = FastAPI(title="Mnema Local AI Gateway", version="1.0.0")
 TIMEOUT_SECONDS = float(os.getenv("GATEWAY_TIMEOUT_SECONDS", "600"))
 HTTP_TIMEOUT = httpx.Timeout(connect=10.0, read=TIMEOUT_SECONDS, write=TIMEOUT_SECONDS, pool=TIMEOUT_SECONDS)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
+REMOTE_OPENAI_BASE_URL = os.getenv("REMOTE_OPENAI_BASE_URL", "https://api.openai.com").strip().rstrip("/")
 AUDIO_BASE_URL = os.getenv("AUDIO_BASE_URL", "").strip().rstrip("/")
 IMAGE_BASE_URL = os.getenv("IMAGE_BASE_URL", "").strip().rstrip("/")
 VIDEO_BASE_URL = os.getenv("VIDEO_BASE_URL", "").strip().rstrip("/")
+OLLAMA_AUDIO_EXPERIMENTAL = os.getenv("OLLAMA_AUDIO_EXPERIMENTAL", "false").strip().lower() in {"1", "true", "yes", "on"}
+OLLAMA_IMAGE_EXPERIMENTAL = os.getenv("OLLAMA_IMAGE_EXPERIMENTAL", "true").strip().lower() in {"1", "true", "yes", "on"}
 
 DEFAULT_TEXT_MODEL = os.getenv("GATEWAY_DEFAULT_TEXT_MODEL", "qwen3:8b").strip()
 DEFAULT_TTS_MODEL = os.getenv("GATEWAY_DEFAULT_TTS_MODEL", "").strip()
@@ -29,13 +32,36 @@ STATIC_TTS_VOICES = [
 ]
 
 
-def _choose_backend(path: str) -> str:
+def _has_bearer_auth(request: Request) -> bool:
+    auth = request.headers.get("authorization", "")
+    return auth.lower().startswith("bearer ") and len(auth.strip()) > 7
+
+
+def _should_use_remote_openai(path: str, request: Request) -> bool:
+    if not REMOTE_OPENAI_BASE_URL:
+        return False
+    if not _has_bearer_auth(request):
+        return False
+    return path.startswith("/v1/")
+
+
+def _choose_backend(path: str, request: Request) -> str:
+    if _should_use_remote_openai(path, request):
+        return REMOTE_OPENAI_BASE_URL
     if path.startswith("/v1/audio/"):
-        return AUDIO_BASE_URL or OLLAMA_BASE_URL
+        if AUDIO_BASE_URL:
+            return AUDIO_BASE_URL
+        if OLLAMA_AUDIO_EXPERIMENTAL:
+            return OLLAMA_BASE_URL
+        return ""
     if path.startswith("/v1/images/"):
-        return IMAGE_BASE_URL or OLLAMA_BASE_URL
+        if IMAGE_BASE_URL:
+            return IMAGE_BASE_URL
+        if OLLAMA_IMAGE_EXPERIMENTAL:
+            return OLLAMA_BASE_URL
+        return ""
     if path.startswith("/v1/videos"):
-        return VIDEO_BASE_URL or OLLAMA_BASE_URL
+        return VIDEO_BASE_URL or ""
     return OLLAMA_BASE_URL
 
 
@@ -52,7 +78,7 @@ def _forward_headers(request: Request) -> dict[str, str]:
     for name, value in request.headers.items():
         lower = name.lower()
         if lower in allowed:
-            result[name] = value
+            result[lower] = value
     return result
 
 
@@ -136,17 +162,18 @@ async def _proxy(request: Request, path: str, backend_base_url: str) -> Response
     )
 
 
-def _capabilities_from_model_name(model_name: str) -> set[str]:
+def _capabilities_from_model_name(model_name: str, allow_ollama_audio: bool = False) -> set[str]:
     normalized = model_name.lower()
     caps = {"text"}
     if any(token in normalized for token in ("vision", "vl", "llava", "moondream", "minicpm-v")):
         caps.add("vision")
     if any(token in normalized for token in ("image", "sd", "flux")):
         caps.add("image")
-    if any(token in normalized for token in ("whisper", "asr", "stt")):
-        caps.add("stt")
-    if any(token in normalized for token in ("tts", "voice", "kokoro", "orpheus", "piper")):
-        caps.add("tts")
+    if allow_ollama_audio:
+        if any(token in normalized for token in ("whisper", "asr", "stt")):
+            caps.add("stt")
+        if any(token in normalized for token in ("tts", "voice", "kokoro", "orpheus", "piper")):
+            caps.add("tts")
     if any(token in normalized for token in ("video", "t2v", "wan", "sora")):
         caps.add("video")
     return caps
@@ -166,7 +193,7 @@ async def _load_ollama_models() -> list[dict[str, Any]]:
         name = str(model.get("name", "")).strip()
         if not name:
             continue
-        caps = sorted(_capabilities_from_model_name(name))
+        caps = sorted(_capabilities_from_model_name(name, allow_ollama_audio=OLLAMA_AUDIO_EXPERIMENTAL))
         result.append(
             {
                 "id": name,
@@ -255,9 +282,12 @@ async def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "ollama_base_url": OLLAMA_BASE_URL,
+        "remote_openai_base_url": REMOTE_OPENAI_BASE_URL or None,
         "audio_base_url": AUDIO_BASE_URL or None,
         "image_base_url": IMAGE_BASE_URL or None,
         "video_base_url": VIDEO_BASE_URL or None,
+        "ollama_audio_experimental": OLLAMA_AUDIO_EXPERIMENTAL,
+        "ollama_image_experimental": OLLAMA_IMAGE_EXPERIMENTAL,
     }
 
 
@@ -305,7 +335,7 @@ async def list_voices() -> dict[str, Any]:
     methods=["POST"],
 )
 async def responses(request: Request) -> Response:
-    return await _proxy(request, "/v1/responses", _choose_backend("/v1/responses"))
+    return await _proxy(request, "/v1/responses", _choose_backend("/v1/responses", request))
 
 
 @app.api_route(
@@ -313,7 +343,7 @@ async def responses(request: Request) -> Response:
     methods=["POST"],
 )
 async def chat_completions(request: Request) -> Response:
-    return await _proxy(request, "/v1/chat/completions", _choose_backend("/v1/chat/completions"))
+    return await _proxy(request, "/v1/chat/completions", _choose_backend("/v1/chat/completions", request))
 
 
 @app.api_route(
@@ -321,7 +351,7 @@ async def chat_completions(request: Request) -> Response:
     methods=["POST"],
 )
 async def completions(request: Request) -> Response:
-    return await _proxy(request, "/v1/completions", _choose_backend("/v1/completions"))
+    return await _proxy(request, "/v1/completions", _choose_backend("/v1/completions", request))
 
 
 @app.api_route(
@@ -329,7 +359,7 @@ async def completions(request: Request) -> Response:
     methods=["POST"],
 )
 async def audio_speech(request: Request) -> Response:
-    return await _proxy(request, "/v1/audio/speech", _choose_backend("/v1/audio/speech"))
+    return await _proxy(request, "/v1/audio/speech", _choose_backend("/v1/audio/speech", request))
 
 
 @app.api_route(
@@ -337,7 +367,7 @@ async def audio_speech(request: Request) -> Response:
     methods=["POST"],
 )
 async def audio_transcriptions(request: Request) -> Response:
-    return await _proxy(request, "/v1/audio/transcriptions", _choose_backend("/v1/audio/transcriptions"))
+    return await _proxy(request, "/v1/audio/transcriptions", _choose_backend("/v1/audio/transcriptions", request))
 
 
 @app.api_route(
@@ -345,7 +375,7 @@ async def audio_transcriptions(request: Request) -> Response:
     methods=["POST"],
 )
 async def image_generations(request: Request) -> Response:
-    return await _proxy(request, "/v1/images/generations", _choose_backend("/v1/images/generations"))
+    return await _proxy(request, "/v1/images/generations", _choose_backend("/v1/images/generations", request))
 
 
 @app.api_route(
@@ -353,7 +383,7 @@ async def image_generations(request: Request) -> Response:
     methods=["POST"],
 )
 async def videos(request: Request) -> Response:
-    return await _proxy(request, "/v1/videos", _choose_backend("/v1/videos"))
+    return await _proxy(request, "/v1/videos", _choose_backend("/v1/videos", request))
 
 
 @app.api_route(
@@ -361,7 +391,7 @@ async def videos(request: Request) -> Response:
     methods=["GET"],
 )
 async def videos_status(video_id: str, request: Request) -> Response:
-    return await _proxy(request, f"/v1/videos/{video_id}", _choose_backend("/v1/videos"))
+    return await _proxy(request, f"/v1/videos/{video_id}", _choose_backend("/v1/videos", request))
 
 
 @app.api_route(
@@ -369,7 +399,7 @@ async def videos_status(video_id: str, request: Request) -> Response:
     methods=["GET"],
 )
 async def videos_content(video_id: str, request: Request) -> Response:
-    return await _proxy(request, f"/v1/videos/{video_id}/content", _choose_backend("/v1/videos"))
+    return await _proxy(request, f"/v1/videos/{video_id}/content", _choose_backend("/v1/videos", request))
 
 
 @app.exception_handler(HTTPException)

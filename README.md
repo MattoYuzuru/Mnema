@@ -157,12 +157,14 @@ Frontend (`frontend`) общается с backend API:
 
 Что делает скрипт:
 - спрашивает минимальные креды (`Postgres`, `MinIO`);
+- интерактивно (стрелками) предлагает выбор GPU для Ollama, primary/secondary text model, vision model, а также optional TTS/STT/image models;
+- поддерживает режимы backend-ов: `ollama` (experimental), `custom`, `none` для audio/image;
 - проверяет порты (`3005`, `5432`, `6379`, `8083-8088`, `9000`, `9001`, `11434`);
 - если порт занят, автоматически выбирает следующий свободный (`+1`, `+2`, ...), и явно пишет это в консоль;
 - генерирует `.env.local` и `.mnema/compose.ports.yml`;
-- поднимает compose с `Postgres`, `Redis`, `MinIO` (+ bucket init), `Ollama` и сервисами Mnema;
+- поднимает `ollama + local-ai-gateway`, выполняет pull выбранных моделей, затем поднимает весь стек Mnema;
 - включает профиль `dev,selfhost-local` (в `auth` отключает federated OAuth/Turnstile и обязательную email verification);
-- проверяет доступность Ollama и предлагает `pull` рекомендованной модели по RAM.
+- оставляет разблокированными внешние provider keys (можно использовать и `ollama`, и персональные `OpenAI/Gemini/Qwen/...` ключи в рантайме).
 
 Проверка без старта контейнеров: `MNEMA_DRY_RUN=1 ./scripts/mnema-local.sh`
 

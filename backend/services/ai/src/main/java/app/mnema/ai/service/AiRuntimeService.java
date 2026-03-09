@@ -184,7 +184,7 @@ public class AiRuntimeService {
                         name,
                         sizeBytes,
                         modifiedAt,
-                        inferModelCapabilities(name)
+                        inferModelCapabilities(name, false)
                 ));
             }
             return new DiscoveryResult(true, models);
@@ -211,7 +211,7 @@ public class AiRuntimeService {
                     continue;
                 }
 
-                Set<String> capabilities = new LinkedHashSet<>(inferModelCapabilities(name));
+                Set<String> capabilities = new LinkedHashSet<>(inferModelCapabilities(name, true));
                 JsonNode metadata = model.path("metadata");
                 if (metadata.has("capabilities") && metadata.get("capabilities").isArray()) {
                     for (JsonNode capNode : metadata.get("capabilities")) {
@@ -269,7 +269,7 @@ public class AiRuntimeService {
         return null;
     }
 
-    private List<String> inferModelCapabilities(String modelName) {
+    private List<String> inferModelCapabilities(String modelName, boolean includeAudioCapabilities) {
         String normalized = modelName.toLowerCase(Locale.ROOT);
         List<String> capabilities = new ArrayList<>();
         capabilities.add("text");
@@ -286,15 +286,17 @@ public class AiRuntimeService {
                 || normalized.contains("image")) {
             capabilities.add("image");
         }
-        if (normalized.contains("whisper") || normalized.contains("asr") || normalized.contains("stt")) {
-            capabilities.add("stt");
-        }
-        if (normalized.contains("tts")
-                || normalized.contains("voice")
-                || normalized.contains("kokoro")
-                || normalized.contains("orpheus")
-                || normalized.contains("piper")) {
-            capabilities.add("tts");
+        if (includeAudioCapabilities) {
+            if (normalized.contains("whisper") || normalized.contains("asr") || normalized.contains("stt")) {
+                capabilities.add("stt");
+            }
+            if (normalized.contains("tts")
+                    || normalized.contains("voice")
+                    || normalized.contains("kokoro")
+                    || normalized.contains("orpheus")
+                    || normalized.contains("piper")) {
+                capabilities.add("tts");
+            }
         }
         if (normalized.contains("video") || normalized.contains("t2v") || normalized.contains("wan") || normalized.contains("sora")) {
             capabilities.add("video");
