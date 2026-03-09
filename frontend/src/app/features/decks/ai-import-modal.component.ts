@@ -966,8 +966,8 @@ export class AiImportModalComponent implements OnInit {
     readonly formatOptions = ['mp3', 'ogg', 'wav'];
     readonly ttsFormatOptions = computed(() => ['gemini', 'qwen'].includes(this.selectedProvider()) ? ['wav'] : this.formatOptions);
     readonly ttsSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'tts', ['openai', 'gemini', 'qwen']));
-    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen']));
-    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen']));
+    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'ollama']));
+    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'ollama']));
     readonly hasAudioFields = computed(() => this.audioFields().length > 0);
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
@@ -1734,6 +1734,10 @@ export class AiImportModalComponent implements OnInit {
         if (!this.hasAudioFields() || !this.ttsEnabled() || !this.ttsSupported()) {
             return null;
         }
+        const model = this.ttsModel().trim();
+        if (!model) {
+            return null;
+        }
         const mappings = this.ttsMappings()
             .filter(mapping => !!mapping.sourceField && !!mapping.targetField);
         if (mappings.length === 0) {
@@ -1741,7 +1745,7 @@ export class AiImportModalComponent implements OnInit {
         }
         return {
             enabled: true,
-            model: this.ttsModel().trim() || undefined,
+            model,
             voice: this.resolveVoice() || undefined,
             format: this.ttsFormat(),
             maxChars: this.ttsMaxChars(),
@@ -1993,7 +1997,12 @@ export class AiImportModalComponent implements OnInit {
         const runtime = this.runtimeCapabilities();
         const runtimeCaps = runtime?.providers?.find(item => this.normalizeProvider(item.key) === provider);
         if (runtimeCaps) {
-            return Boolean(runtimeCaps[capability]);
+            if (Boolean(runtimeCaps[capability])) {
+                return true;
+            }
+            if (provider !== 'ollama') {
+                return false;
+            }
         }
         return fallbackProviders.includes(provider);
     }

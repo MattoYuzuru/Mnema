@@ -112,6 +112,16 @@ interface CardAuditSummary {
             </div>
             <div *ngIf="missingAudioFields().length > 0 && ttsEnabled() && ttsSupported()" class="form-grid tts-form">
               <div class="form-field">
+                <label for="ai-card-tts-model">TTS model (optional)</label>
+                <input
+                  id="ai-card-tts-model"
+                  type="text"
+                  [ngModel]="ttsModel()"
+                  (ngModelChange)="onTtsModelChange($event)"
+                  placeholder="ollama-tts-model"
+                />
+              </div>
+              <div class="form-field">
                 <label for="ai-card-voice">{{ 'cardEnhance.voice' | translate }}</label>
                 <select
                   id="ai-card-voice"
@@ -428,6 +438,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
     auditUpdatedAt = signal<string | null>(null);
 
     ttsEnabled = signal(true);
+    ttsModel = signal('');
     ttsVoicePreset = signal('alloy');
     ttsVoiceCustom = signal('');
     imageEnabled = signal(true);
@@ -453,8 +464,8 @@ export class AiEnhanceCardModalComponent implements OnInit {
         return this.normalizeProvider(provider);
     });
     readonly ttsSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'tts', ['openai', 'gemini', 'qwen']));
-    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'grok']));
-    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'grok']));
+    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'grok', 'ollama']));
+    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'grok', 'ollama']));
     readonly imageModelOptions = computed(() => this.resolveImageModelOptions(this.selectedProvider()));
     readonly videoModelOptions = computed(() => this.resolveVideoModelOptions(this.selectedProvider()));
     readonly voiceOptions = computed(() => {
@@ -610,6 +621,10 @@ export class AiEnhanceCardModalComponent implements OnInit {
         if (value !== 'custom') {
             this.ttsVoiceCustom.set('');
         }
+    }
+
+    onTtsModelChange(value: string): void {
+        this.ttsModel.set(value);
     }
 
     onTtsVoiceCustomChange(value: string): void {
@@ -946,7 +961,12 @@ export class AiEnhanceCardModalComponent implements OnInit {
         const runtime = this.runtimeCapabilities();
         const runtimeCaps = runtime?.providers?.find(item => this.normalizeProvider(item.key) === provider);
         if (runtimeCaps) {
-            return Boolean(runtimeCaps[capability]);
+            if (Boolean(runtimeCaps[capability])) {
+                return true;
+            }
+            if (provider !== 'ollama') {
+                return false;
+            }
         }
         return fallbackProviders.includes(provider);
     }
@@ -1053,6 +1073,10 @@ export class AiEnhanceCardModalComponent implements OnInit {
         if (!this.ttsEnabled() || !this.ttsSupported()) {
             return null;
         }
+        const model = this.ttsModel().trim();
+        if (!model) {
+            return null;
+        }
         const audioFields = this.missingAudioFields().map(field => field.name);
         if (audioFields.length === 0) {
             return null;
@@ -1062,6 +1086,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
         }
         return {
             enabled: true,
+            model,
             voice: this.resolveVoice() || undefined,
             format: this.resolveAudioFormat()
         };

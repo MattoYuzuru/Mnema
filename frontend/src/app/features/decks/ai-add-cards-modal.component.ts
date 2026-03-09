@@ -543,8 +543,8 @@ export class AiAddCardsModalComponent implements OnInit {
     readonly ttsFormatOptions = computed(() => ['gemini', 'qwen'].includes(this.selectedProvider()) ? ['wav'] : this.formatOptions);
     readonly ttsSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'tts', ['openai', 'gemini', 'qwen']));
     readonly hasAudioFields = computed(() => this.audioFields().length > 0);
-    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'grok']));
-    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'grok']));
+    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'grok', 'ollama']));
+    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'grok', 'ollama']));
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
         if (!selectedId) return '';
@@ -889,7 +889,12 @@ export class AiAddCardsModalComponent implements OnInit {
         const runtime = this.runtimeCapabilities();
         const runtimeCaps = runtime?.providers?.find(item => this.normalizeProvider(item.key) === provider);
         if (runtimeCaps) {
-            return Boolean(runtimeCaps[capability]);
+            if (Boolean(runtimeCaps[capability])) {
+                return true;
+            }
+            if (provider !== 'ollama') {
+                return false;
+            }
         }
         return fallbackProviders.includes(provider);
     }
@@ -913,6 +918,8 @@ export class AiAddCardsModalComponent implements OnInit {
 
     private resolveModelPlaceholder(provider: string): string {
         switch (provider) {
+            case 'ollama':
+                return 'qwen3:8b';
             case 'openai':
                 return 'gpt-4.1-mini';
             case 'gemini':
@@ -934,6 +941,8 @@ export class AiAddCardsModalComponent implements OnInit {
 
     private resolveTtsModelPlaceholder(provider: string): string {
         switch (provider) {
+            case 'ollama':
+                return 'ollama-tts-model';
             case 'openai':
                 return 'gpt-4o-mini-tts';
             case 'gemini':
@@ -946,6 +955,15 @@ export class AiAddCardsModalComponent implements OnInit {
     }
 
     private resolveImageModelOptions(provider: string): string[] {
+        if (provider === 'ollama') {
+            const runtime = this.runtimeCapabilities()?.ollama?.models || [];
+            const imageModels = runtime
+                .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('image'))
+                .map(model => model.name)
+                .filter(name => !!name && name.trim().length > 0)
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+            return imageModels.length > 0 ? [...imageModels, 'custom'] : ['custom'];
+        }
         if (provider === 'openai') {
             return ['gpt-image-1-mini', 'gpt-image-1', 'custom'];
         }
@@ -962,6 +980,15 @@ export class AiAddCardsModalComponent implements OnInit {
     }
 
     private resolveVideoModelOptions(provider: string): string[] {
+        if (provider === 'ollama') {
+            const runtime = this.runtimeCapabilities()?.ollama?.models || [];
+            const videoModels = runtime
+                .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('video'))
+                .map(model => model.name)
+                .filter(name => !!name && name.trim().length > 0)
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+            return videoModels.length > 0 ? [...videoModels, 'custom'] : ['custom'];
+        }
         if (provider === 'openai') {
             return ['sora-2', 'custom'];
         }
@@ -1139,6 +1166,10 @@ export class AiAddCardsModalComponent implements OnInit {
         if (!this.hasAudioFields() || !this.ttsEnabled() || !this.ttsSupported()) {
             return null;
         }
+        const model = this.ttsModel().trim();
+        if (!model) {
+            return null;
+        }
         const mappings = this.ttsMappings()
             .filter(mapping => mapping.sourceField && mapping.targetField);
         if (mappings.length === 0) {
@@ -1146,7 +1177,7 @@ export class AiAddCardsModalComponent implements OnInit {
         }
         return {
             enabled: true,
-            model: this.ttsModel().trim() || undefined,
+            model,
             voice: this.resolveVoice() || undefined,
             format: this.ttsFormat(),
             maxChars: this.ttsMaxChars(),

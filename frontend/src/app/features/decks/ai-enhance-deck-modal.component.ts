@@ -122,8 +122,8 @@ type FieldLimitMap = Record<string, number>;
                 </label>
               </div>
               <div *ngIf="hasAudioFields() && !ttsSupported()" class="field-hint">TTS is supported for OpenAI, Gemini, and Qwen providers.</div>
-              <div *ngIf="hasImageFields() && !imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, and Grok providers.</div>
-              <div *ngIf="hasVideoFields() && !videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, and Grok providers.</div>
+              <div *ngIf="hasImageFields() && !imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, Grok, and Ollama providers.</div>
+              <div *ngIf="hasVideoFields() && !videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, Grok, and Ollama providers.</div>
               <label
                 *ngFor="let stat of missingRows(); trackBy: trackMissingField"
                 class="field-option missing-option"
@@ -253,7 +253,7 @@ type FieldLimitMap = Record<string, number>;
 
           <div *ngIf="hasMissingFields() && imageEnabled() && hasImageFields()" class="tts-section">
             <label class="grid-label">Image generation</label>
-            <div *ngIf="!imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, and Grok providers.</div>
+            <div *ngIf="!imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, Grok, and Ollama providers.</div>
             <div *ngIf="imageSupported()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
@@ -305,7 +305,7 @@ type FieldLimitMap = Record<string, number>;
 
           <div *ngIf="hasMissingFields() && videoEnabled() && hasVideoFields()" class="tts-section">
             <label class="grid-label">Video generation</label>
-            <div *ngIf="!videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, and Grok providers.</div>
+            <div *ngIf="!videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, Grok, and Ollama providers.</div>
             <div *ngIf="videoSupported()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
@@ -648,8 +648,8 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
     readonly ttsSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'tts', ['openai', 'gemini', 'qwen']));
-    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'grok']));
-    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'grok']));
+    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'grok', 'ollama']));
+    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'grok', 'ollama']));
     readonly imageModelOptions = computed(() => this.resolveImageModelOptions(this.selectedProvider()));
     readonly videoModelOptions = computed(() => this.resolveVideoModelOptions(this.selectedProvider()));
     readonly voiceOptions = computed(() => {
@@ -1345,9 +1345,6 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             if (!this.ttsEnabled() || !this.ttsSupported()) {
                 return false;
             }
-            if (!this.buildTtsParams()) {
-                return false;
-            }
         }
         if (imageSelected && (!this.imageEnabled() || !this.imageSupported())) {
             return false;
@@ -1434,7 +1431,12 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         const runtime = this.runtimeCapabilities();
         const runtimeCaps = runtime?.providers?.find(item => this.normalizeProvider(item.key) === provider);
         if (runtimeCaps) {
-            return Boolean(runtimeCaps[capability]);
+            if (Boolean(runtimeCaps[capability])) {
+                return true;
+            }
+            if (provider !== 'ollama') {
+                return false;
+            }
         }
         return fallbackProviders.includes(provider);
     }
@@ -1635,6 +1637,10 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (!this.hasAudioFields() || !this.ttsSupported()) {
             return null;
         }
+        const model = this.ttsModel().trim();
+        if (!model) {
+            return null;
+        }
         const targets = new Set(this.ttsTargetFields().map(field => field.name));
         if (targets.size === 0) {
             return null;
@@ -1646,7 +1652,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         }
         return {
             enabled: true,
-            model: this.ttsModel().trim() || undefined,
+            model,
             voice: this.resolveVoice() || undefined,
             format: this.ttsFormat(),
             maxChars: this.ttsMaxChars(),
