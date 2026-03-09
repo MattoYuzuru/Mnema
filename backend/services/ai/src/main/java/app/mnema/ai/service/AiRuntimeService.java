@@ -111,18 +111,6 @@ public class AiRuntimeService {
             available = true;
         }
 
-        if (!voices.isEmpty() && merged.values().stream().noneMatch(model -> model.capabilities().contains("tts"))) {
-            merged.putIfAbsent(
-                    "local-tts",
-                    new AiRuntimeCapabilitiesResponse.OllamaModelInfo(
-                            "local-tts",
-                            null,
-                            null,
-                            List.of("tts")
-                    )
-            );
-        }
-
         List<AiRuntimeCapabilitiesResponse.OllamaModelInfo> models = merged.values().stream()
                 .sorted(Comparator.comparing(AiRuntimeCapabilitiesResponse.OllamaModelInfo::name, String.CASE_INSENSITIVE_ORDER))
                 .toList();

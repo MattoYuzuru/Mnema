@@ -49,7 +49,7 @@
   - optional image model;
   - GPU device для Ollama при нескольких GPU;
 - спрашивает режимы backend-ов:
-  - audio: `ollama` (experimental) / `custom` / `none`;
+  - audio: `ollama` (experimental) / `custom` / `none` (рекомендуемый дефолт: `none`);
   - image: `ollama` (experimental) / `custom` / `none`;
 - заполняет `OPENAI_*` модели и gateway-переменные (`REMOTE_OPENAI_BASE_URL`, `OLLAMA_AUDIO_EXPERIMENTAL`, `OLLAMA_IMAGE_EXPERIMENTAL`);
 - автоматически проверяет доступность Docker GPU runtime и включает `gpus: all` для `ollama` (fallback на CPU с предупреждением, если runtime недоступен);
@@ -109,7 +109,7 @@ Gateway поднимается вместе со стеком и дает еди
 - `LOCAL_TTS_VOICES` — fallback список голосов через запятую, если audio backend не отдает `/v1/audio/voices`
 - `LOCAL_AI_GATEWAY_TIMEOUT_SECONDS` — timeout для upstream запросов gateway (по умолчанию `600`)
 - `REMOTE_OPENAI_BASE_URL` — внешний OpenAI endpoint (по умолчанию `https://api.openai.com`), используется gateway при наличии Bearer API key;
-- `OLLAMA_AUDIO_EXPERIMENTAL` — включает fallback `/v1/audio/*` в Ollama (experimental);
+- `OLLAMA_AUDIO_EXPERIMENTAL` — включает fallback `/v1/audio/*` в Ollama (experimental, используется только если gateway подтвердил доступность Ollama `/v1/audio` endpoint-ов);
 - `OLLAMA_IMAGE_EXPERIMENTAL` — включает fallback `/v1/images/*` в Ollama (experimental).
 
 Если `LOCAL_*_BASE_URL` пустой, gateway пытается использовать Ollama для этого типа запросов.

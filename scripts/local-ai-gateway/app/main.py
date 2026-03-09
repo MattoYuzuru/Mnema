@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 from typing import Any, Iterable
 from urllib.parse import parse_qsl
 
@@ -20,6 +21,7 @@ IMAGE_BASE_URL = os.getenv("IMAGE_BASE_URL", "").strip().rstrip("/")
 VIDEO_BASE_URL = os.getenv("VIDEO_BASE_URL", "").strip().rstrip("/")
 OLLAMA_AUDIO_EXPERIMENTAL = os.getenv("OLLAMA_AUDIO_EXPERIMENTAL", "false").strip().lower() in {"1", "true", "yes", "on"}
 OLLAMA_IMAGE_EXPERIMENTAL = os.getenv("OLLAMA_IMAGE_EXPERIMENTAL", "true").strip().lower() in {"1", "true", "yes", "on"}
+AUDIO_CAPABILITY_CACHE_TTL_SECONDS = float(os.getenv("AUDIO_CAPABILITY_CACHE_TTL_SECONDS", "300"))
 
 DEFAULT_TEXT_MODEL = os.getenv("GATEWAY_DEFAULT_TEXT_MODEL", "qwen3:8b").strip()
 DEFAULT_TTS_MODEL = os.getenv("GATEWAY_DEFAULT_TTS_MODEL", "").strip()
@@ -30,6 +32,9 @@ DEFAULT_VIDEO_MODEL = os.getenv("GATEWAY_DEFAULT_VIDEO_MODEL", "").strip()
 STATIC_TTS_VOICES = [
     voice.strip() for voice in os.getenv("GATEWAY_TTS_VOICES", "").split(",") if voice.strip()
 ]
+
+_ollama_audio_supported_cache: bool | None = None
+_ollama_audio_supported_checked_at = 0.0
 
 
 def _has_bearer_auth(request: Request) -> bool:
@@ -45,13 +50,53 @@ def _should_use_remote_openai(path: str, request: Request) -> bool:
     return path.startswith("/v1/")
 
 
+def _probe_ollama_audio_support() -> bool:
+    speech_url = f"{OLLAMA_BASE_URL}/v1/audio/speech"
+    transcription_url = f"{OLLAMA_BASE_URL}/v1/audio/transcriptions"
+    try:
+        timeout = httpx.Timeout(connect=2.0, read=2.0, write=2.0, pool=2.0)
+        with httpx.Client(timeout=timeout, follow_redirects=True) as client:
+            speech = client.post(
+                speech_url,
+                json={"model": "__probe__", "input": "test"},
+                headers={"content-type": "application/json"},
+            )
+            transcription = client.post(
+                transcription_url,
+                json={"model": "__probe__"},
+                headers={"content-type": "application/json"},
+            )
+        return speech.status_code != 404 and transcription.status_code != 404
+    except Exception:
+        return False
+
+
+def _ollama_audio_supported() -> bool:
+    if not OLLAMA_AUDIO_EXPERIMENTAL:
+        return False
+
+    global _ollama_audio_supported_cache
+    global _ollama_audio_supported_checked_at
+
+    now = time.monotonic()
+    if (
+        _ollama_audio_supported_cache is not None
+        and (now - _ollama_audio_supported_checked_at) < AUDIO_CAPABILITY_CACHE_TTL_SECONDS
+    ):
+        return _ollama_audio_supported_cache
+
+    _ollama_audio_supported_cache = _probe_ollama_audio_support()
+    _ollama_audio_supported_checked_at = now
+    return _ollama_audio_supported_cache
+
+
 def _choose_backend(path: str, request: Request) -> str:
     if _should_use_remote_openai(path, request):
         return REMOTE_OPENAI_BASE_URL
     if path.startswith("/v1/audio/"):
         if AUDIO_BASE_URL:
             return AUDIO_BASE_URL
-        if OLLAMA_AUDIO_EXPERIMENTAL:
+        if _ollama_audio_supported():
             return OLLAMA_BASE_URL
         return ""
     if path.startswith("/v1/images/"):
@@ -189,11 +234,12 @@ async def _load_ollama_models() -> list[dict[str, Any]]:
         return []
 
     result = []
+    allow_ollama_audio = _ollama_audio_supported()
     for model in payload.get("models", []):
         name = str(model.get("name", "")).strip()
         if not name:
             continue
-        caps = sorted(_capabilities_from_model_name(name, allow_ollama_audio=OLLAMA_AUDIO_EXPERIMENTAL))
+        caps = sorted(_capabilities_from_model_name(name, allow_ollama_audio=allow_ollama_audio))
         result.append(
             {
                 "id": name,
@@ -287,6 +333,7 @@ async def health() -> dict[str, Any]:
         "image_base_url": IMAGE_BASE_URL or None,
         "video_base_url": VIDEO_BASE_URL or None,
         "ollama_audio_experimental": OLLAMA_AUDIO_EXPERIMENTAL,
+        "ollama_audio_supported": _ollama_audio_supported(),
         "ollama_image_experimental": OLLAMA_IMAGE_EXPERIMENTAL,
     }
 

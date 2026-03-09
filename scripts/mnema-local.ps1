@@ -248,7 +248,7 @@ $minioPassword = Prompt-ValidatedPassword -Prompt 'MinIO root password' -Default
 $starterModelRecommended = Get-RecommendedOllamaModel
 $openAiDefaultModel = Prompt-WithDefault -Prompt 'Starter Ollama text model' -Default $starterModelRecommended
 Write-Host '[setup] Offline audio backend for TTS/STT'
-$audioBackendMode = Prompt-Choice -Prompt 'Audio backend mode (custom/ollama/none)' -Default 'ollama' -Allowed @('ollama', 'custom', 'none')
+$audioBackendMode = Prompt-Choice -Prompt 'Audio backend mode (custom/ollama/none)' -Default 'none' -Allowed @('ollama', 'custom', 'none')
 $openAiTtsModel = ''
 $openAiSttModel = ''
 $openAiImageModel = ''
@@ -604,6 +604,16 @@ if ($audioBackendMode -eq 'custom') {
     else {
         Write-Host '[warn] Audio backend URL is not reachable from local-ai-gateway.'
         Write-Host '       Check LOCAL_AUDIO_BASE_URL in .env.local (for Linux host services use http://host.docker.internal:<port>).'
+    }
+}
+if ($audioBackendMode -eq 'ollama') {
+    $audioSupportCheck = & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T local-ai-gateway python -c "import json,sys,urllib.request; data=json.load(urllib.request.urlopen('http://localhost:8089/health', timeout=5)); sys.exit(0 if data.get('ollama_audio_supported') else 1)" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host '[ok] Ollama /v1/audio endpoints are reachable.'
+    }
+    else {
+        Write-Host '[warn] Ollama /v1/audio endpoints are unavailable in this runtime.'
+        Write-Host '       Keep TTS model empty or switch audio backend mode to custom.'
     }
 }
 if ($imageBackendMode -eq 'custom') {

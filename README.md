@@ -158,7 +158,7 @@ Frontend (`frontend`) общается с backend API:
 Что делает скрипт:
 - спрашивает минимальные креды (`Postgres`, `MinIO`);
 - интерактивно (стрелками) предлагает выбор GPU для Ollama, primary/secondary text model, vision model, а также optional TTS/STT/image models;
-- поддерживает режимы backend-ов: `ollama` (experimental), `custom`, `none` для audio/image;
+- поддерживает режимы backend-ов: `ollama` (experimental), `custom`, `none` для audio/image (для audio безопасный дефолт — `none`);
 - проверяет порты (`3005`, `5432`, `6379`, `8083-8088`, `9000`, `9001`, `11434`);
 - если порт занят, автоматически выбирает следующий свободный (`+1`, `+2`, ...), и явно пишет это в консоль;
 - генерирует `.env.local` и `.mnema/compose.ports.yml`;

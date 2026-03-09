@@ -729,7 +729,7 @@ AUDIO_MODE_OPTIONS=(
   "none|No audio backend|Disable STT/TTS defaults"
 )
 AUDIO_BACKEND_MODE=""
-menu_select AUDIO_BACKEND_MODE "Select audio backend mode" 0 AUDIO_MODE_OPTIONS
+menu_select AUDIO_BACKEND_MODE "Select audio backend mode" 2 AUDIO_MODE_OPTIONS
 
 IMAGE_MODE_OPTIONS=(
   "ollama|Ollama experimental image|Use Ollama /v1/images/generations"
@@ -1000,6 +1000,15 @@ if [[ "$AUDIO_BACKEND_MODE" == "custom" ]]; then
   else
     echo "[warn] Custom audio backend URL is not reachable from local-ai-gateway."
     echo "       Check LOCAL_AUDIO_BASE_URL in .env.local (for Linux host services use http://host.docker.internal:<port>)."
+  fi
+fi
+
+if [[ "$AUDIO_BACKEND_MODE" == "ollama" ]]; then
+  if compose_cmd exec -T local-ai-gateway python -c 'import json,sys,urllib.request; data=json.load(urllib.request.urlopen("http://localhost:8089/health", timeout=5)); sys.exit(0 if data.get("ollama_audio_supported") else 1)' >/dev/null 2>&1; then
+    echo "[ok] Ollama /v1/audio endpoints are reachable."
+  else
+    echo "[warn] Ollama /v1/audio endpoints are unavailable in this runtime."
+    echo "       Keep TTS model empty or switch AUDIO_BACKEND_MODE to custom."
   fi
 fi
 

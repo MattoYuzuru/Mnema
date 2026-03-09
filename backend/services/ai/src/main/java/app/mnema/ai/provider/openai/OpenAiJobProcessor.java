@@ -2829,7 +2829,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
         String model = textOrDefault(ttsNode.path("model"), props.defaultTtsModel());
         if (model == null || model.isBlank()) {
-            return new TtsApplyResult(0, 0, null, "TTS model is required");
+            return new TtsApplyResult(0, 0, null, null);
         }
         String voice = textOrNull(ttsNode.path("voice"));
         if (voice == null && props.defaultVoice() != null && !props.defaultVoice().isBlank()) {
@@ -2952,7 +2952,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
         String model = textOrDefault(ttsNode.path("model"), props.defaultTtsModel());
         if (model == null || model.isBlank()) {
-            return new TtsApplyResult(0, 0, null, "TTS model is required");
+            return new TtsApplyResult(0, 0, null, null);
         }
         String voice = textOrNull(ttsNode.path("voice"));
         if (voice == null && props.defaultVoice() != null && !props.defaultVoice().isBlank()) {

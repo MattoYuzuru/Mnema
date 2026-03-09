@@ -22,7 +22,7 @@ Ollama хорошо подходит для text/chat/vision и частично
 - `OPENAI_BASE_URL` в Mnema -> `local-ai-gateway`
 - `local-ai-gateway` маршрутизирует:
   - `/v1/responses`, `/v1/chat/completions` -> `Ollama`
-  - `/v1/audio/*` -> `LOCAL_AUDIO_BASE_URL` (если задан), иначе fallback в Ollama только при `OLLAMA_AUDIO_EXPERIMENTAL=true`
+  - `/v1/audio/*` -> `LOCAL_AUDIO_BASE_URL` (если задан), иначе fallback в Ollama только при `OLLAMA_AUDIO_EXPERIMENTAL=true` и доступных Ollama `/v1/audio` endpoint-ах
   - `/v1/images/*` -> `LOCAL_IMAGE_BASE_URL` (если задан), иначе fallback в Ollama при `OLLAMA_IMAGE_EXPERIMENTAL=true`
   - `/v1/videos*` -> `LOCAL_VIDEO_BASE_URL` (если задан), иначе fallback
 - при наличии Bearer API key gateway может проксировать `/v1/*` в `REMOTE_OPENAI_BASE_URL` (по умолчанию `https://api.openai.com`)
