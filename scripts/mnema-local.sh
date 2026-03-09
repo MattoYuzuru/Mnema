@@ -25,6 +25,18 @@ check_requirements() {
   fi
 }
 
+docker_gpu_available() {
+  docker run --rm --gpus all alpine:3.20 true >/dev/null 2>&1
+}
+
+detect_gpu_devices() {
+  if ! command_exists nvidia-smi; then
+    echo ""
+    return
+  fi
+  nvidia-smi -L 2>/dev/null | awk -F'[: ]+' '/^GPU [0-9]+:/ {print $2}' | paste -sd, -
+}
+
 is_port_busy() {
   local port="$1"
 
@@ -173,6 +185,8 @@ write_env_file() {
   local openai_stt_model="${10}"
   local local_audio_base_url="${11}"
   local local_tts_voices="${12}"
+  local ollama_gpu_enabled="${13}"
+  local ollama_visible_gpus="${14}"
 
   cat > "$ENV_FILE" <<ENV
 POSTGRES_DB=$postgres_db
@@ -231,6 +245,8 @@ LOCAL_AUDIO_BASE_URL=$local_audio_base_url
 LOCAL_IMAGE_BASE_URL=
 LOCAL_VIDEO_BASE_URL=
 LOCAL_TTS_VOICES=$local_tts_voices
+OLLAMA_GPU_ENABLED=$ollama_gpu_enabled
+OLLAMA_VISIBLE_GPUS=$ollama_visible_gpus
 
 GEMINI_BASE_URL=
 GEMINI_DEFAULT_MODEL=
@@ -256,6 +272,11 @@ ENV
 
 write_override_file() {
   local openai_default_model="$1"
+  local ollama_gpu_enabled="$2"
+  local ollama_gpu_block=""
+  if [[ "$ollama_gpu_enabled" == "true" ]]; then
+    ollama_gpu_block=$'    gpus: all\n    environment:\n      NVIDIA_VISIBLE_DEVICES: "\\${OLLAMA_VISIBLE_GPUS}"\n      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"'
+  fi
   cat > "$OVERRIDE_FILE" <<YAML
 services:
   postgres:
@@ -311,8 +332,8 @@ services:
       OPENAI_BASE_URL: "http://local-ai-gateway:8089"
       OPENAI_SYSTEM_API_KEY: ""
       OPENAI_DEFAULT_MODEL: "${openai_default_model}"
-      OPENAI_TTS_MODEL: ""
-      OPENAI_STT_MODEL: ""
+      OPENAI_TTS_MODEL: "\${OPENAI_TTS_MODEL}"
+      OPENAI_STT_MODEL: "\${OPENAI_STT_MODEL}"
     ports:
       - "${AI_PORT}:8080"
 
@@ -383,6 +404,7 @@ services:
   ollama:
     networks: [ mnema_net ]
     image: ollama/ollama:latest
+${ollama_gpu_block}
     ports:
       - "${OLLAMA_PORT}:11434"
     volumes:
@@ -506,6 +528,22 @@ elif [[ "$AUDIO_BACKEND_MODE" == "custom" ]]; then
   LOCAL_TTS_VOICES="$(prompt_default 'Fallback TTS voices comma-separated (optional)' '')"
 fi
 
+OLLAMA_GPU_ENABLED="false"
+OLLAMA_VISIBLE_GPUS="all"
+GPU_DEVICES_DETECTED="$(detect_gpu_devices)"
+if docker_gpu_available; then
+  OLLAMA_GPU_ENABLED="true"
+  if [[ -n "${GPU_DEVICES_DETECTED:-}" ]]; then
+    device_count="$(echo "$GPU_DEVICES_DETECTED" | awk -F',' '{print NF}')"
+    if (( device_count > 1 )); then
+      echo "[info] Detected multiple GPUs: ${GPU_DEVICES_DETECTED}"
+      OLLAMA_VISIBLE_GPUS="$(prompt_default 'GPU devices for Ollama (all or comma-separated indices)' 'all')"
+    fi
+  fi
+else
+  echo "[warn] Docker GPU runtime is not available. Ollama will run on CPU."
+fi
+
 POSTGRES_PORT="$(next_free_port 5432)"
 REDIS_PORT="$(next_free_port 6379 "$POSTGRES_PORT")"
 AUTH_PORT="$(next_free_port 8083 "$POSTGRES_PORT" "$REDIS_PORT")"
@@ -534,8 +572,8 @@ print_port_info "minio-console" "9001" "$MINIO_CONSOLE_PORT"
 print_port_info "ollama" "11434" "$OLLAMA_PORT"
 print_port_info "local-ai-gateway" "8090" "$LOCAL_AI_GATEWAY_PORT"
 
-write_env_file "$DB_USER" "$DB_PASSWORD" "$DB_NAME" "$POSTGRES_PORT" "$MINIO_USER" "$MINIO_PASSWORD" "$OPENAI_DEFAULT_MODEL" "$LOCAL_AI_GATEWAY_PORT" "$OPENAI_TTS_MODEL" "$OPENAI_STT_MODEL" "$LOCAL_AUDIO_BASE_URL" "$LOCAL_TTS_VOICES"
-write_override_file "$OPENAI_DEFAULT_MODEL"
+write_env_file "$DB_USER" "$DB_PASSWORD" "$DB_NAME" "$POSTGRES_PORT" "$MINIO_USER" "$MINIO_PASSWORD" "$OPENAI_DEFAULT_MODEL" "$LOCAL_AI_GATEWAY_PORT" "$OPENAI_TTS_MODEL" "$OPENAI_STT_MODEL" "$LOCAL_AUDIO_BASE_URL" "$LOCAL_TTS_VOICES" "$OLLAMA_GPU_ENABLED" "$OLLAMA_VISIBLE_GPUS"
+write_override_file "$OPENAI_DEFAULT_MODEL" "$OLLAMA_GPU_ENABLED"
 
 echo "[info] Generated: $ENV_FILE"
 echo "[info] Generated: $OVERRIDE_FILE"
@@ -556,6 +594,10 @@ echo "[ok] MinIO Console: http://localhost:${MINIO_CONSOLE_PORT}"
 echo "[ok] Ollama API: http://localhost:${OLLAMA_PORT}"
 echo "[ok] Local AI Gateway: http://localhost:${LOCAL_AI_GATEWAY_PORT}"
 echo "[info] Audio backend mode: ${AUDIO_BACKEND_MODE}"
+echo "[info] Ollama GPU enabled: ${OLLAMA_GPU_ENABLED}"
+if [[ "$OLLAMA_GPU_ENABLED" == "true" ]]; then
+  echo "[info] Ollama visible GPUs: ${OLLAMA_VISIBLE_GPUS}"
+fi
 if [[ "$AUDIO_BACKEND_MODE" == "custom" ]]; then
   echo "[info] Audio backend URL: ${LOCAL_AUDIO_BASE_URL}"
 fi

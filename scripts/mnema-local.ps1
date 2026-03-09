@@ -120,6 +120,28 @@ function Print-PortInfo {
     }
 }
 
+function Test-DockerGpuAvailable {
+    $null = & docker run --rm --gpus all alpine:3.20 true 2>$null
+    return $LASTEXITCODE -eq 0
+}
+
+function Get-NvidiaDeviceIds {
+    if (-not (Test-Command nvidia-smi)) {
+        return @()
+    }
+    $lines = & nvidia-smi -L 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $lines) {
+        return @()
+    }
+    $ids = @()
+    foreach ($line in $lines) {
+        if ($line -match '^GPU\\s+(\\d+):') {
+            $ids += $Matches[1]
+        }
+    }
+    return $ids
+}
+
 function Get-RecommendedOllamaModel {
     $memBytes = 0
     try {
@@ -235,6 +257,20 @@ elseif ($audioBackendMode -eq 'custom') {
     $localTtsVoices = Prompt-WithDefault -Prompt 'Fallback TTS voices comma-separated (optional)' -Default ''
 }
 
+$ollamaGpuEnabled = 'false'
+$ollamaVisibleGpus = 'all'
+$gpuDeviceIds = Get-NvidiaDeviceIds
+if (Test-DockerGpuAvailable) {
+    $ollamaGpuEnabled = 'true'
+    if ($gpuDeviceIds.Count -gt 1) {
+        Write-Host "[info] Detected multiple GPUs: $($gpuDeviceIds -join ',')"
+        $ollamaVisibleGpus = Prompt-WithDefault -Prompt 'GPU devices for Ollama (all or comma-separated indices)' -Default 'all'
+    }
+}
+else {
+    Write-Host '[warn] Docker GPU runtime is not available. Ollama will run on CPU.'
+}
+
 $POSTGRES_PORT = Get-NextFreePort -StartPort 5432
 $REDIS_PORT = Get-NextFreePort -StartPort 6379
 $AUTH_PORT = Get-NextFreePort -StartPort 8083
@@ -320,6 +356,8 @@ LOCAL_AUDIO_BASE_URL=$localAudioBaseUrl
 LOCAL_IMAGE_BASE_URL=
 LOCAL_VIDEO_BASE_URL=
 LOCAL_TTS_VOICES=$localTtsVoices
+OLLAMA_GPU_ENABLED=$ollamaGpuEnabled
+OLLAMA_VISIBLE_GPUS=$ollamaVisibleGpus
 
 GEMINI_BASE_URL=
 GEMINI_DEFAULT_MODEL=
@@ -471,6 +509,7 @@ services:
   ollama:
     networks: [ mnema_net ]
     image: ollama/ollama:latest
+__OLLAMA_GPU_BLOCK__
     ports:
       - "$OLLAMA_PORT:11434"
     volumes:
@@ -480,6 +519,17 @@ volumes:
   mnema_minio_data:
   mnema_ollama_data:
 "@
+
+$ollamaGpuBlock = ''
+if ($ollamaGpuEnabled -eq 'true') {
+    $ollamaGpuBlock = @"
+    gpus: all
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "`${OLLAMA_VISIBLE_GPUS}"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+"@
+}
+$overrideContent = $overrideContent.Replace('__OLLAMA_GPU_BLOCK__', $ollamaGpuBlock)
 
 Set-Content -Path $OverrideFile -Value $overrideContent -Encoding UTF8
 
@@ -502,6 +552,10 @@ Write-Host "[ok] MinIO Console: http://localhost:$MINIO_CONSOLE_PORT"
 Write-Host "[ok] Ollama API: http://localhost:$OLLAMA_PORT"
 Write-Host "[ok] Local AI Gateway: http://localhost:$LOCAL_AI_GATEWAY_PORT"
 Write-Host "[info] Audio backend mode: $audioBackendMode"
+Write-Host "[info] Ollama GPU enabled: $ollamaGpuEnabled"
+if ($ollamaGpuEnabled -eq 'true') {
+    Write-Host "[info] Ollama visible GPUs: $ollamaVisibleGpus"
+}
 if ($audioBackendMode -eq 'custom') {
     Write-Host "[info] Audio backend URL: $localAudioBaseUrl"
 }
