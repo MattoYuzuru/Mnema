@@ -417,7 +417,7 @@ public class TemplateService {
                 .findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, newVersion.getVersion())
                 .stream()
                 .map(this::toFieldTemplateDTO)
-                .filter(updated -> updated.name().equals(field.getName()))
+                .filter(updated -> updated.name().equals(newName))
                 .findFirst()
                 .orElseThrow(() -> new NoSuchElementException("Updated field not found after version creation"));
     }
