@@ -64,6 +64,9 @@ tasks.register("quality") {
             project.tasks.matching { it.name in setOf("compileJava", "compileKotlin", "compileTestJava", "compileTestKotlin") }.toList()
         },
         subprojects.flatMap { it.tasks.withType<Test>() },
+        subprojects.flatMap { project ->
+            project.tasks.withType<org.gradle.testing.jacoco.tasks.JacocoReport>().toList()
+        },
         "coverageBaselineCheck",
         "jacocoRootReport"
     )
@@ -72,7 +75,12 @@ tasks.register("quality") {
 tasks.register<Exec>("coverageBaselineCheck") {
     group = "verification"
     description = "Checks backend per-service line coverage against the current baseline."
-    dependsOn("jacocoRootReport")
+    dependsOn(
+        subprojects.flatMap { project ->
+            project.tasks.withType<org.gradle.testing.jacoco.tasks.JacocoReport>().toList()
+        },
+        "jacocoRootReport"
+    )
     workingDir = projectDir
     commandLine("python3", "scripts/check_coverage.py")
 }

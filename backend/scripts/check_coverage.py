@@ -8,7 +8,14 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BASELINE_PATH = ROOT / "coverage-baseline.json"
-REPORT_GLOB = ROOT.glob("services/*/build/reports/jacoco/test/jacocoTestReport.xml")
+SERVICES_DIR = ROOT / "services"
+
+
+def service_dirs() -> list[Path]:
+    return sorted(
+        path for path in SERVICES_DIR.iterdir()
+        if path.is_dir() and (path / "src/main").exists()
+    )
 
 
 def load_line_coverage(report_path: Path) -> float:
@@ -27,16 +34,22 @@ def main() -> int:
     failures: list[str] = []
 
     print("Backend coverage baseline check")
-    for report_path in sorted(REPORT_GLOB):
-        service = report_path.parts[-6]
-        actual = load_line_coverage(report_path)
-        required = baselines.get(service)
-        if required is None:
-            failures.append(f"{service}: missing baseline threshold")
+    discovered_services: set[str] = set()
+
+    for service, required in sorted(baselines.items()):
+        report_path = SERVICES_DIR / service / "build/reports/jacoco/test/jacocoTestReport.xml"
+        discovered_services.add(service)
+        if not report_path.exists():
+            failures.append(f"{service}: missing coverage report at {report_path}")
             continue
+        actual = load_line_coverage(report_path)
         print(f"- {service}: actual={actual:.2%} required={required:.2%}")
         if actual + 1e-9 < required:
             failures.append(f"{service}: {actual:.2%} < {required:.2%}")
+
+    for service_dir in service_dirs():
+        if service_dir.name not in discovered_services:
+            failures.append(f"{service_dir.name}: missing baseline threshold")
 
     if failures:
         print("\nCoverage check failed:", file=sys.stderr)
