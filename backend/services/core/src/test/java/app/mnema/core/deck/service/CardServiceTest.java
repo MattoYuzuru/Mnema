@@ -40,6 +40,7 @@ import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 
+import java.lang.reflect.Method;
 import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
@@ -52,6 +53,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -360,7 +362,7 @@ class CardServiceTest {
         assertThat(result.deletedCards()).isEqualTo(1);
         assertThat(result.globalApplied()).isTrue();
         assertThat(deleteTarget.isActive()).isFalse();
-        verify(publicCardRepository).saveAll(anyList());
+        verify(publicCardRepository, atLeastOnce()).saveAll(anyList());
     }
 
     @Test
@@ -500,6 +502,74 @@ class CardServiceTest {
     }
 
     @Test
+    void addNewCardsToDeckBatch_reusesExistingOperationSessionAndStartsOrderIndexFromZeroWhenDeckEmpty() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
+        UUID operationId = UUID.randomUUID();
+        UserDeckEntity deck = userDeck(deckId, userId, publicDeckId);
+        deck.setCurrentVersion(3);
+        PublicDeckEntity latestDeck = publicDeck(publicDeckId, 3, userId, UUID.randomUUID(), 1, true);
+        DeckUpdateSessionEntity session = new DeckUpdateSessionEntity(publicDeckId, operationId, userId, 3,
+                Instant.parse("2026-04-07T11:59:00Z"), Instant.parse("2026-04-07T11:59:30Z"));
+
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(deck));
+        when(publicDeckRepository.findLatestByDeckId(publicDeckId)).thenReturn(Optional.of(latestDeck));
+        when(deckUpdateSessionRepository.findByDeckIdAndOperationId(publicDeckId, operationId)).thenReturn(Optional.of(session));
+        when(publicDeckRepository.findByDeckIdAndVersion(publicDeckId, 3)).thenReturn(Optional.of(latestDeck));
+        when(publicCardRepository.findMaxOrderIndex(publicDeckId, 3)).thenReturn(null);
+        when(publicDeckRepository.save(any(PublicDeckEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(deckUpdateSessionRepository.save(any(DeckUpdateSessionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(publicCardRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userDeckRepository.save(any(UserDeckEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userCardRepository.save(any(UserCardEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        List<UserCardDTO> result = cardService.addNewCardsToDeckBatch(
+                userId,
+                deckId,
+                List.of(new CreateCardRequest(textContent("front", "First"), 99, new String[]{"tag"}, "note", null, null)),
+                operationId
+        );
+
+        ArgumentCaptor<List<PublicCardEntity>> publicCardsCaptor = ArgumentCaptor.forClass(List.class);
+        verify(publicCardRepository).saveAll(publicCardsCaptor.capture());
+        assertThat(publicCardsCaptor.getValue()).singleElement().satisfies(card ->
+                assertThat(card.getOrderIndex()).isEqualTo(1)
+        );
+        assertThat(result).singleElement().satisfies(dto -> assertThat(dto.publicCardId()).isNotNull());
+    }
+
+    @Test
+    void addNewCardsToDeckBatch_rejectsTooManyTags() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(userDeck(deckId, userId, null)));
+
+        assertThatThrownBy(() -> cardService.addNewCardsToDeckBatch(
+                userId,
+                deckId,
+                List.of(new CreateCardRequest(textContent("front", "Q"), 1, new String[]{"a", "b", "c", "d"}, null, null, null)),
+                null
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Too many tags");
+    }
+
+    @Test
+    void addNewCardsToDeckBatch_rejectsTooLongTag() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(userDeck(deckId, userId, null)));
+
+        assertThatThrownBy(() -> cardService.addNewCardsToDeckBatch(
+                userId,
+                deckId,
+                List.of(new CreateCardRequest(textContent("front", "Q"), 1, new String[]{"x".repeat(26)}, null, null, null)),
+                null
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Tag is too long");
+    }
+
+    @Test
     void updateUserCard_localClearsTagOverrideWhenItMatchesPublicTags() {
         UUID userId = UUID.randomUUID();
         UUID deckId = UUID.randomUUID();
@@ -574,6 +644,76 @@ class CardServiceTest {
     }
 
     @Test
+    void updateUserCard_globallyFallsBackToChecksumMatchWhenCardIdChanges() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
+        UUID stalePublicCardId = UUID.randomUUID();
+        UUID latestPublicCardId = UUID.randomUUID();
+
+        UserDeckEntity deck = userDeck(deckId, userId, publicDeckId);
+        PublicDeckEntity latestDeck = publicDeck(publicDeckId, 2, userId, UUID.randomUUID(), 1, true);
+        UserCardEntity card = userCard(userId, deckId, stalePublicCardId, false, false, "old", new String[]{"old"}, textContent("front", "old"));
+        PublicCardEntity linkedPublicCard = publicCard(publicDeckId, 1, stalePublicCardId, json("{\"back\":\"A\",\"front\":\"Q\"}"), new String[]{"old"}, true, "   ");
+        PublicCardEntity latestSameChecksumCard = publicCard(publicDeckId, 2, latestPublicCardId, json("{\"front\":\"Q\",\"back\":\"A\"}"), new String[]{"old"}, true, null);
+
+        when(userCardRepository.findById(card.getUserCardId())).thenReturn(Optional.of(card));
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(deck));
+        when(publicDeckRepository.findLatestByDeckId(publicDeckId)).thenReturn(Optional.of(latestDeck));
+        when(publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(stalePublicCardId))
+                .thenReturn(Optional.of(linkedPublicCard));
+        when(publicDeckRepository.save(any(PublicDeckEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(publicCardRepository.findByDeckIdAndDeckVersion(publicDeckId, 2)).thenReturn(List.of(latestSameChecksumCard));
+        when(publicCardRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userDeckRepository.save(any(UserDeckEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userCardRepository.save(any(UserCardEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        UserCardDTO result = cardService.updateUserCard(
+                userId,
+                deckId,
+                card.getUserCardId(),
+                new UserCardDTO(card.getUserCardId(), stalePublicCardId, false, false, "updated", new String[]{"fresh"}, json("{\"front\":\"Updated\",\"back\":\"A\"}")),
+                true,
+                null
+        );
+
+        assertThat(result.personalNote()).isEqualTo("updated");
+        assertThat(deck.getCurrentVersion()).isEqualTo(3);
+        verify(publicCardRepository, atLeastOnce()).saveAll(anyList());
+    }
+
+    @Test
+    void updateUserCard_globallyRejectsNonUniqueChecksumMatch() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
+        UUID stalePublicCardId = UUID.randomUUID();
+
+        UserDeckEntity deck = userDeck(deckId, userId, publicDeckId);
+        PublicDeckEntity latestDeck = publicDeck(publicDeckId, 2, userId, UUID.randomUUID(), 1, true);
+        UserCardEntity card = userCard(userId, deckId, stalePublicCardId, false, false, "old", null, textContent("front", "old"));
+        PublicCardEntity linkedPublicCard = publicCard(publicDeckId, 1, stalePublicCardId, textContent("front", "same"), null, true, null);
+        PublicCardEntity latestA = publicCard(publicDeckId, 2, UUID.randomUUID(), textContent("front", "same"), null, true, null);
+        PublicCardEntity latestB = publicCard(publicDeckId, 2, UUID.randomUUID(), textContent("front", "same"), null, true, null);
+
+        when(userCardRepository.findById(card.getUserCardId())).thenReturn(Optional.of(card));
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(deck));
+        when(publicDeckRepository.findLatestByDeckId(publicDeckId)).thenReturn(Optional.of(latestDeck));
+        when(publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(stalePublicCardId)).thenReturn(Optional.of(linkedPublicCard));
+        when(publicCardRepository.findByDeckIdAndDeckVersion(publicDeckId, 2)).thenReturn(List.of(latestA, latestB));
+
+        assertThatThrownBy(() -> cardService.updateUserCard(
+                userId,
+                deckId,
+                card.getUserCardId(),
+                new UserCardDTO(card.getUserCardId(), stalePublicCardId, false, false, "updated", null, textContent("front", "updated")),
+                true,
+                null
+        )).isInstanceOf(IllegalStateException.class)
+                .hasMessage("Public card checksum is not unique in latest version");
+    }
+
+    @Test
     void deleteUserCard_marksOnlyLocalCardDeletedWhenGlobalDeleteDisabled() {
         UUID userId = UUID.randomUUID();
         UUID deckId = UUID.randomUUID();
@@ -585,6 +725,23 @@ class CardServiceTest {
         when(userCardRepository.save(any(UserCardEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
         cardService.deleteUserCard(userId, deckId, card.getUserCardId());
+
+        assertThat(card.isDeleted()).isTrue();
+        verify(userCardRepository).save(card);
+    }
+
+    @Test
+    void deleteUserCard_overloadWithBooleanFalseDeletesLocally() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        UserDeckEntity deck = userDeck(deckId, userId, null);
+        UserCardEntity card = userCard(userId, deckId, null, true, false, null, null, textContent("front", "Q"));
+
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(deck));
+        when(userCardRepository.findById(card.getUserCardId())).thenReturn(Optional.of(card));
+        when(userCardRepository.save(any(UserCardEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        cardService.deleteUserCard(userId, deckId, card.getUserCardId(), false);
 
         assertThat(card.isDeleted()).isTrue();
         verify(userCardRepository).save(card);
@@ -637,6 +794,73 @@ class CardServiceTest {
         assertThat(targetCard.isActive()).isFalse();
         verify(publicCardRepository).saveAll(anyList());
         verify(userCardRepository).save(card);
+    }
+
+    @Test
+    void deleteUserCard_globallyFallsBackToChecksumMatchWhenCardIdChanges() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
+        UUID stalePublicCardId = UUID.randomUUID();
+
+        UserDeckEntity deck = userDeck(deckId, userId, publicDeckId);
+        UserCardEntity card = userCard(userId, deckId, stalePublicCardId, false, false, null, null, null);
+        PublicDeckEntity latestDeck = publicDeck(publicDeckId, 2, userId, UUID.randomUUID(), 1, true);
+        PublicCardEntity targetCard = publicCard(publicDeckId, 3, UUID.randomUUID(), json("{\"b\":\"A\",\"a\":\"Q\"}"), new String[]{"tag"}, true, null);
+        PublicCardEntity linkedCard = publicCard(publicDeckId, 1, stalePublicCardId, json("{\"a\":\"Q\",\"b\":\"A\"}"), new String[]{"tag"}, true, " ");
+
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(deck));
+        when(userCardRepository.findById(card.getUserCardId())).thenReturn(Optional.of(card));
+        when(publicDeckRepository.findLatestByDeckId(publicDeckId)).thenReturn(Optional.of(latestDeck));
+        when(publicDeckRepository.save(any(PublicDeckEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(publicCardRepository.findByDeckIdAndDeckVersion(publicDeckId, 2)).thenReturn(List.of(targetCard));
+        when(publicCardRepository.findByDeckIdAndDeckVersion(publicDeckId, 3)).thenReturn(List.of(targetCard));
+        when(publicCardRepository.findAllByCardIdInOrderByDeckVersionDesc(any())).thenReturn(List.of(linkedCard));
+        when(publicCardRepository.saveAll(anyList())).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userDeckRepository.save(any(UserDeckEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(userCardRepository.save(any(UserCardEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        cardService.deleteUserCard(userId, deckId, card.getUserCardId(), true, null);
+
+        assertThat(card.isDeleted()).isTrue();
+        assertThat(targetCard.isActive()).isFalse();
+        verify(publicCardRepository, atLeastOnce()).saveAll(anyList());
+    }
+
+    @Test
+    void getPublicCardById_throwsWhenDeckVersionIsMissing() {
+        UUID deckId = UUID.randomUUID();
+        UUID cardId = UUID.randomUUID();
+        PublicCardEntity card = publicCard(deckId, 2, cardId, textContent("front", "Q"), null, true, "chk");
+        when(publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(cardId)).thenReturn(Optional.of(card));
+        when(publicDeckRepository.findByDeckIdAndVersion(deckId, 2)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> cardService.getPublicCardById(cardId))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Public deck not found for card");
+    }
+
+    @Test
+    void getFieldTemplatesForPublicDeck_returnsEmptyWhenDeckHasNoTemplate() {
+        UUID deckId = UUID.randomUUID();
+        PublicDeckEntity publicDeck = publicDeck(deckId, 2, UUID.randomUUID(), null, null, true);
+        when(publicDeckRepository.findLatestByDeckId(deckId)).thenReturn(Optional.of(publicDeck));
+
+        List<FieldTemplateDTO> result = cardService.getFieldTemplatesForPublicDeck(deckId, null);
+
+        assertThat(result).isEmpty();
+        verifyNoInteractions(fieldTemplateRepository);
+    }
+
+    @Test
+    void computeChecksum_isStableForDifferentJsonFieldOrder() throws Exception {
+        Method computeChecksum = CardService.class.getDeclaredMethod("computeChecksum", com.fasterxml.jackson.databind.JsonNode.class);
+        computeChecksum.setAccessible(true);
+
+        String left = (String) computeChecksum.invoke(cardService, json("{\"front\":\"Q\",\"back\":{\"hint\":\"A\",\"extra\":1}}"));
+        String right = (String) computeChecksum.invoke(cardService, json("{\"back\":{\"extra\":1,\"hint\":\"A\"},\"front\":\"Q\"}"));
+
+        assertThat(left).isEqualTo(right);
     }
 
     private UserDeckEntity userDeck(UUID deckId, UUID userId, UUID publicDeckId) {
