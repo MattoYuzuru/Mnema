@@ -137,11 +137,11 @@ If the requested UI:
     - frontend: component tests for critical logic, e2e only when necessary
 - Prefer deterministic tests; avoid brittle timing.
 - Before presenting final results or preparing a branch for review, run the full project quality gate locally:
-    - backend lint
+    - backend lint/static analysis, if configured in this repository
     - backend tests
     - frontend lint
     - frontend tests
-  If any of these cannot be run, explicitly state what was blocked and why.
+  If any of these cannot be run, or if a requested quality gate is not configured in the repo yet, explicitly state what was blocked or missing and why.
 
 ### 8.2 Documentation
 - Document non-obvious behavior (Javadoc/KDoc, README snippets, or inline comments).
