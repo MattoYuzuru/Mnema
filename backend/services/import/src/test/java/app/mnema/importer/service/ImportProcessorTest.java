@@ -373,6 +373,144 @@ class ImportProcessorTest {
         assertEquals("Deck is missing public template", ex.getReason());
     }
 
+    @Test
+    void rejectsMissingOrUnreadySourceMedia() {
+        TestFixture fixture = new TestFixture();
+        ImportJobEntity job = fixture.createNewJob();
+        job.setSourceMediaId(null);
+
+        ResponseStatusException missing = assertThrows(ResponseStatusException.class, () -> fixture.processor.process(job));
+        assertEquals(HttpStatus.BAD_REQUEST, missing.getStatusCode());
+        assertEquals("Missing source media", missing.getReason());
+
+        job.setSourceMediaId(UUID.randomUUID());
+        when(fixture.mediaApiClient.resolve(List.of(job.getSourceMediaId())))
+                .thenReturn(List.of(new MediaResolved(
+                        job.getSourceMediaId(),
+                        "import_file",
+                        null,
+                        "text/csv",
+                        10L,
+                        null,
+                        null,
+                        null,
+                        null
+                )));
+
+        ResponseStatusException notReady = assertThrows(ResponseStatusException.class, () -> fixture.processor.process(job));
+        assertEquals(HttpStatus.CONFLICT, notReady.getStatusCode());
+        assertEquals("Import source not ready", notReady.getReason());
+    }
+
+    @Test
+    void createNewImportRejectsWhenNoFieldsAreSelected() throws Exception {
+        TestFixture fixture = new TestFixture();
+        ImportJobEntity job = fixture.createNewJob();
+        fixture.stubSource(job);
+        when(fixture.stream.fields()).thenReturn(List.of());
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class, () -> fixture.processor.process(job));
+
+        assertEquals(HttpStatus.BAD_REQUEST, ex.getStatusCode());
+        assertEquals("At least one source field must be selected", ex.getReason());
+    }
+
+    @Test
+    void createNewImportHandlesUuidMediaAndUploadedAudioVideo() throws Exception {
+        TestFixture fixture = new TestFixture();
+        ImportJobEntity job = fixture.createNewJob();
+        job.setSourceType(ImportSourceType.apkg);
+        fixture.stubSource(job);
+        when(fixture.stream.fields()).thenReturn(List.of("Photo", "Sound", "Video"));
+        when(fixture.stream.layout()).thenReturn(new ImportLayout(List.of("Photo"), List.of("Sound", "Video")));
+        when(fixture.stream.hasNext()).thenReturn(true, false);
+
+        UUID existingMediaId = UUID.randomUUID();
+        when(fixture.mediaApiClient.resolve(List.of(existingMediaId)))
+                .thenReturn(List.of(new MediaResolved(
+                        existingMediaId,
+                        "card_image",
+                        "https://cdn.example/existing.png",
+                        "image/png",
+                        10L,
+                        null,
+                        null,
+                        null,
+                        null
+                )));
+        when(((MediaImportStream) fixture.stream).openMedia("voice.mp3"))
+                .thenReturn(new ImportMedia(new ByteArrayInputStream(new byte[]{1, 2}), 2));
+        when(((MediaImportStream) fixture.stream).openMedia("movie.mp4"))
+                .thenReturn(new ImportMedia(new ByteArrayInputStream(new byte[]{3, 4, 5}), 3));
+        when(fixture.stream.next()).thenReturn(new ImportRecord(
+                Map.of(
+                        "Photo", existingMediaId.toString(),
+                        "Sound", "[sound:voice.mp3]",
+                        "Video", "<video src=\"movie.mp4\"></video>"
+                ),
+                null,
+                null,
+                0
+        ));
+
+        UUID templateId = UUID.randomUUID();
+        UUID userDeckId = UUID.randomUUID();
+        when(fixture.coreApiClient.createTemplate(anyString(), any())).thenReturn(new CoreCardTemplateResponse(
+                templateId,
+                job.getUserId(),
+                "Template",
+                "Template",
+                false,
+                Instant.now(),
+                Instant.now(),
+                objectMapper.createObjectNode(),
+                null,
+                null,
+                List.of(
+                        new CoreFieldTemplate(UUID.randomUUID(), templateId, "Photo", "Photo", "image", true, true, 0, null, null),
+                        new CoreFieldTemplate(UUID.randomUUID(), templateId, "Sound", "Sound", "audio", true, false, 1, null, null),
+                        new CoreFieldTemplate(UUID.randomUUID(), templateId, "Video", "Video", "video", false, false, 2, null, null)
+                )
+        ));
+        when(fixture.coreApiClient.createDeck(anyString(), any())).thenReturn(new CoreUserDeckResponse(
+                userDeckId,
+                job.getUserId(),
+                UUID.randomUUID(),
+                1,
+                1,
+                false,
+                "fsrs",
+                null,
+                "Imported deck",
+                "Imported from apkg",
+                Instant.now(),
+                null,
+                false
+        ));
+        UUID uploadedAudio = UUID.randomUUID();
+        UUID uploadedVideo = UUID.randomUUID();
+        when(fixture.mediaApiClient.directUpload(eq(job.getUserId()), eq("card_audio"), anyString(), eq("voice.mp3"), eq(2L), any()))
+                .thenReturn(uploadedAudio);
+        when(fixture.mediaApiClient.directUpload(eq(job.getUserId()), eq("card_video"), anyString(), eq("movie.mp4"), eq(3L), any()))
+                .thenReturn(uploadedVideo);
+        when(fixture.coreApiClient.addCardsBatch(anyString(), eq(userDeckId), any(), eq(job.getJobId())))
+                .thenReturn(List.of(new CoreUserCardResponse(UUID.randomUUID(), null, true, false, null, objectMapper.createObjectNode())));
+
+        fixture.processor.process(job);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<CoreCreateCardRequest>> requestsCaptor =
+                (ArgumentCaptor<List<CoreCreateCardRequest>>) (ArgumentCaptor<?>) ArgumentCaptor.forClass(List.class);
+        verify(fixture.coreApiClient).addCardsBatch(anyString(), eq(userDeckId), requestsCaptor.capture(), eq(job.getJobId()));
+        ObjectNode content = (ObjectNode) requestsCaptor.getValue().getFirst().content();
+        assertEquals(existingMediaId.toString(), content.path("Photo").path("mediaId").asText());
+        assertEquals("image", content.path("Photo").path("kind").asText());
+        assertEquals(uploadedAudio.toString(), content.path("Sound").path("mediaId").asText());
+        assertEquals("audio", content.path("Sound").path("kind").asText());
+        assertEquals(uploadedVideo.toString(), content.path("Video").path("mediaId").asText());
+        assertEquals("video", content.path("Video").path("kind").asText());
+    }
+
     private ObjectNode emptyMapping() {
         return objectMapper.createObjectNode();
     }

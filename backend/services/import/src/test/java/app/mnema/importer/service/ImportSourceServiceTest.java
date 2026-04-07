@@ -7,6 +7,8 @@ import app.mnema.importer.security.CurrentUserProvider;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -15,11 +17,13 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class ImportSourceServiceTest {
@@ -100,6 +104,108 @@ class ImportSourceServiceTest {
         assertEquals(ImportSourceType.apkg, response.sourceType());
     }
 
+    @Test
+    void usesExplicitTypeAndDefaultContentTypeWhenMissing() {
+        MediaApiClient mediaApiClient = mock(MediaApiClient.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        ImportSourceService service = new ImportSourceService(mediaApiClient, currentUserProvider);
+
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        when(currentUserProvider.requireUserId(any(Jwt.class))).thenReturn(userId);
+        when(mediaApiClient.directUpload(eq(userId), eq("import_file"), eq("text/plain"), eq("deck.txt"), anyLong(), any()))
+                .thenReturn(mediaId);
+
+        MockMultipartFile file = new MockMultipartFile("file", "deck.txt", null, "front\tback".getBytes());
+
+        UploadImportSourceResponse response = service.uploadSource(mock(Jwt.class), file, ImportSourceType.tsv);
+
+        assertEquals(ImportSourceType.tsv, response.sourceType());
+        assertEquals("deck.txt", response.fileName());
+        assertEquals(mediaId, response.mediaId());
+    }
+
+    @Test
+    void detectsByNormalizedContentTypeAndExtensionFallbacks() {
+        MediaApiClient mediaApiClient = mock(MediaApiClient.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        ImportSourceService service = new ImportSourceService(mediaApiClient, currentUserProvider);
+
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        when(currentUserProvider.requireUserId(any(Jwt.class))).thenReturn(userId);
+        when(mediaApiClient.directUpload(eq(userId), eq("import_file"), eq("text/plain"), eq("notes.txt"), anyLong(), any()))
+                .thenReturn(mediaId);
+
+        MockMultipartFile txt = new MockMultipartFile("file", "notes.txt", "TEXT/PLAIN; charset=UTF-8", "hello".getBytes());
+        UploadImportSourceResponse response = service.uploadSource(mock(Jwt.class), txt, null);
+
+        assertEquals(ImportSourceType.txt, response.sourceType());
+        assertEquals(5L, response.sizeBytes());
+    }
+
+    @Test
+    void rejectsMissingFileAndMissingUser() {
+        MediaApiClient mediaApiClient = mock(MediaApiClient.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        ImportSourceService service = new ImportSourceService(mediaApiClient, currentUserProvider);
+
+        ResponseStatusException missingFile = assertThrows(ResponseStatusException.class,
+                () -> service.uploadSource(mock(Jwt.class), null, null));
+        assertEquals(400, missingFile.getStatusCode().value());
+        assertEquals("Missing file", missingFile.getReason());
+
+        MockMultipartFile file = new MockMultipartFile("file", "deck.csv", "text/csv", "a,b".getBytes());
+        when(currentUserProvider.requireUserId(any(Jwt.class))).thenThrow(new IllegalStateException("user_id claim missing"));
+
+        ResponseStatusException missingUser = assertThrows(ResponseStatusException.class,
+                () -> service.uploadSource(mock(Jwt.class), file, null));
+        assertEquals(401, missingUser.getStatusCode().value());
+        assertEquals("user_id claim missing", missingUser.getReason());
+    }
+
+    @Test
+    void wrapsUploadReadFailure() throws Exception {
+        MediaApiClient mediaApiClient = mock(MediaApiClient.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        ImportSourceService service = new ImportSourceService(mediaApiClient, currentUserProvider);
+
+        UUID userId = UUID.randomUUID();
+        when(currentUserProvider.requireUserId(any(Jwt.class))).thenReturn(userId);
+        MultipartFile file = mock(MultipartFile.class);
+        when(file.isEmpty()).thenReturn(false);
+        when(file.getOriginalFilename()).thenReturn("deck.csv");
+        when(file.getSize()).thenReturn(10L);
+        when(file.getContentType()).thenReturn("text/csv");
+        when(file.getInputStream()).thenThrow(new IOException("broken input"));
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.uploadSource(mock(Jwt.class), file, null));
+
+        assertEquals(400, ex.getStatusCode().value());
+        assertEquals("Failed to read upload", ex.getReason());
+    }
+
+    @Test
+    void fallsBackToCsvWhenInspectionFindsNoSignals() {
+        MediaApiClient mediaApiClient = mock(MediaApiClient.class);
+        CurrentUserProvider currentUserProvider = mock(CurrentUserProvider.class);
+        ImportSourceService service = new ImportSourceService(mediaApiClient, currentUserProvider);
+
+        UUID userId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        when(currentUserProvider.requireUserId(any(Jwt.class))).thenReturn(userId);
+        when(mediaApiClient.directUpload(eq(userId), eq("import_file"), eq("application/octet-stream"), eq("mystery.bin"), anyLong(), any()))
+                .thenReturn(mediaId);
+
+        MockMultipartFile file = new MockMultipartFile("file", "mystery.bin", "application/octet-stream", "not-a-zip".getBytes());
+
+        UploadImportSourceResponse response = service.uploadSource(mock(Jwt.class), file, null);
+
+        assertEquals(ImportSourceType.csv, response.sourceType());
+        verify(mediaApiClient).directUpload(eq(userId), eq("import_file"), eq("application/octet-stream"), eq("mystery.bin"), anyLong(), any());
+    }
+
     private byte[] zipOf(String... entryNames) throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         try (ZipOutputStream zos = new ZipOutputStream(output)) {
@@ -112,4 +218,3 @@ class ImportSourceServiceTest {
         return output.toByteArray();
     }
 }
-
