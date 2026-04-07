@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -13,7 +14,10 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class MnpkgImportParserTest {
@@ -54,6 +58,180 @@ class MnpkgImportParserTest {
 
             ImportMedia mediaByName = stream.openMedia("sample.png");
             assertNotNull(mediaByName);
+        } finally {
+            Files.deleteIfExists(sqliteFile);
+        }
+    }
+
+    @Test
+    void readsPackageWithoutManifestAndDetectsAnkiFromCards() throws Exception {
+        Path sqliteFile = Files.createTempFile("mnpkg-no-manifest-", ".mnpkg");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + sqliteFile.toAbsolutePath())) {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "create table cards (" +
+                            "row_index integer primary key autoincrement," +
+                            "order_index integer," +
+                            "fields_json text not null," +
+                            "anki_json text" +
+                            ")"
+            )) {
+                statement.execute();
+            }
+            ObjectNode fields = objectMapper.createObjectNode();
+            fields.put("Question", "hello");
+            fields.put("Answer", "world");
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "insert into cards (order_index, fields_json, anki_json) values (?, ?, ?)"
+            )) {
+                statement.setNull(1, java.sql.Types.INTEGER);
+                statement.setString(2, objectMapper.writeValueAsString(fields));
+                statement.setString(3, "{\"front\":\"<div>{{Question}}</div>\",\"back\":\"<div>{{Answer}}</div>\"}");
+                statement.executeUpdate();
+            }
+        }
+
+        MnpkgImportParser parser = new MnpkgImportParser(objectMapper);
+        try (InputStream in = Files.newInputStream(sqliteFile);
+             MnpkgImportParser.MnpkgImportStream stream = parser.openStream(in)) {
+            assertEquals(java.util.List.of("Question", "Answer"), stream.fields());
+            assertTrue(stream.isAnki());
+            assertNull(stream.layout());
+            assertTrue(stream.hasNext());
+            ImportRecord record = stream.next();
+            assertEquals("hello", record.fields().get("Question"));
+            assertNull(record.orderIndex());
+            assertNotNull(record.ankiTemplate());
+            assertNull(stream.openMedia("anything.png"));
+        } finally {
+            Files.deleteIfExists(sqliteFile);
+        }
+    }
+
+    @Test
+    void failsWhenCardsTableIsMissing() throws Exception {
+        Path sqliteFile = Files.createTempFile("mnpkg-missing-cards-", ".mnpkg");
+        try (Connection ignored = DriverManager.getConnection("jdbc:sqlite:" + sqliteFile.toAbsolutePath())) {
+            // create empty sqlite package without cards table
+        }
+
+        MnpkgImportParser parser = new MnpkgImportParser(objectMapper);
+        try (InputStream in = Files.newInputStream(sqliteFile)) {
+            IOException ex = assertThrows(IOException.class, () -> parser.openStream(in));
+            assertTrue(ex.getMessage().contains("cards table is missing"));
+        } finally {
+            Files.deleteIfExists(sqliteFile);
+        }
+    }
+
+    @Test
+    void malformedCardPayloadYieldsNullRecordAndStopsStream() throws Exception {
+        Path sqliteFile = createFixturePackage();
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + sqliteFile.toAbsolutePath());
+             PreparedStatement statement = connection.prepareStatement("update cards set fields_json = ?")) {
+            statement.setString(1, "{not-json");
+            statement.executeUpdate();
+        }
+
+        MnpkgImportParser parser = new MnpkgImportParser(objectMapper);
+        try (InputStream in = Files.newInputStream(sqliteFile);
+             MnpkgImportParser.MnpkgImportStream stream = parser.openStream(in)) {
+            assertTrue(stream.hasNext());
+            assertNull(stream.next());
+            assertFalse(stream.hasNext());
+        } finally {
+            Files.deleteIfExists(sqliteFile);
+        }
+    }
+
+    @Test
+    void buildsFallbackLayoutFromTemplateFieldsAndHandlesInvalidAnkiOrEmptyMedia() throws Exception {
+        Path sqliteFile = Files.createTempFile("mnpkg-template-fallback-", ".mnpkg");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + sqliteFile.toAbsolutePath())) {
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "create table manifest (manifest_json text not null)"
+            )) {
+                statement.execute();
+            }
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "create table cards (" +
+                            "row_index integer primary key autoincrement," +
+                            "order_index integer," +
+                            "fields_json text not null," +
+                            "anki_json text" +
+                            ")"
+            )) {
+                statement.execute();
+            }
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "create table media (" +
+                            "media_id text primary key," +
+                            "file_name text not null," +
+                            "kind text," +
+                            "mime_type text," +
+                            "size_bytes integer," +
+                            "payload blob not null" +
+                            ")"
+            )) {
+                statement.execute();
+            }
+
+            MnemaPackageManifest manifest = new MnemaPackageManifest(
+                    "mnema",
+                    1,
+                    new MnemaPackageManifest.DeckMeta("Demo", "Demo deck", "en", new String[]{"demo"}),
+                    new MnemaPackageManifest.TemplateMeta(
+                            "Demo template",
+                            "Demo template description",
+                            null,
+                            false,
+                            java.util.List.of(
+                                    new MnemaPackageManifest.FieldMeta("Front", "Front", "text", true, true, 0, null, null),
+                                    new MnemaPackageManifest.FieldMeta("Back", "Back", "text", true, false, 1, null, null)
+                            )
+                    )
+            );
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "insert into manifest (manifest_json) values (?)"
+            )) {
+                statement.setString(1, objectMapper.writeValueAsString(manifest));
+                statement.executeUpdate();
+            }
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "insert into cards (order_index, fields_json, anki_json) values (?, ?, ?)"
+            )) {
+                statement.setInt(1, 7);
+                statement.setString(2, "");
+                statement.setString(3, "{bad-json");
+                statement.executeUpdate();
+            }
+            try (PreparedStatement statement = connection.prepareStatement(
+                    "insert into media (media_id, file_name, kind, mime_type, size_bytes, payload) values (?, ?, ?, ?, ?, ?)"
+            )) {
+                statement.setString(1, "22222222-2222-2222-2222-222222222222");
+                statement.setString(2, "empty.png");
+                statement.setString(3, "card_image");
+                statement.setString(4, "image/png");
+                statement.setLong(5, 0);
+                statement.setBytes(6, new byte[0]);
+                statement.executeUpdate();
+            }
+        }
+
+        MnpkgImportParser parser = new MnpkgImportParser(objectMapper);
+        try (InputStream in = Files.newInputStream(sqliteFile);
+             MnpkgImportParser.MnpkgImportStream stream = parser.openStream(in)) {
+            assertEquals(java.util.List.of("Front", "Back"), stream.fields());
+            assertNotNull(stream.layout());
+            assertEquals(java.util.List.of("Front"), stream.layout().front());
+            assertEquals(java.util.List.of("Back"), stream.layout().back());
+            assertTrue(stream.isAnki());
+
+            ImportRecord record = stream.next();
+            assertNotNull(record);
+            assertEquals("", record.fields().get("Front"));
+            assertEquals("", record.fields().get("Back"));
+            assertNull(record.ankiTemplate());
+            assertNull(stream.openMedia("empty.png"));
         } finally {
             Files.deleteIfExists(sqliteFile);
         }

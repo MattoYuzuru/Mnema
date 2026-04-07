@@ -1,44 +1,46 @@
 package app.mnema.media.security;
 
-import java.util.List;
-import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.oauth2.jwt.Jwt;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import static org.assertj.core.api.Assertions.assertThat;
 
 class JwtScopeHelperTest {
 
-    private final JwtScopeHelper helper = new JwtScopeHelper();
+    JwtScopeHelper helper = new JwtScopeHelper();
 
     @Test
-    void readsScopesFromScpClaim() {
-        Jwt jwt = Jwt.withTokenValue("token")
-                .header("alg", "none")
-                .claim("scp", List.of("user.read", "media.internal"))
-                .build();
+    void hasAnyScope_readsScopesFromScpAndScopeClaims() {
+        Jwt jwt = new Jwt(
+                "token",
+                Instant.parse("2026-04-07T00:00:00Z"),
+                Instant.parse("2026-04-08T00:00:00Z"),
+                Map.of("alg", "none"),
+                Map.of("scp", List.of("media.internal"), "scope", "user.read media.read_all")
+        );
 
-        assertTrue(helper.hasAnyScope(jwt, Set.of("media.internal")));
+        assertThat(helper.hasAnyScope(jwt, Set.of("media.internal"))).isTrue();
+        assertThat(helper.hasAnyScope(jwt, Set.of("media.read_all"))).isTrue();
+        assertThat(helper.hasAnyScope(jwt, Set.of("missing.scope"))).isFalse();
     }
 
     @Test
-    void readsScopesFromSpaceSeparatedScopeClaim() {
-        Jwt jwt = Jwt.withTokenValue("token")
-                .header("alg", "none")
-                .claim("scope", "user.read user.write")
-                .build();
+    void hasAnyScope_returnsFalseForMissingInputs() {
+        Jwt jwt = new Jwt(
+                "token",
+                Instant.parse("2026-04-07T00:00:00Z"),
+                Instant.parse("2026-04-08T00:00:00Z"),
+                Map.of("alg", "none"),
+                Map.of("sub", "x")
+        );
 
-        assertTrue(helper.hasAnyScope(jwt, Set.of("user.write")));
-    }
-
-    @Test
-    void returnsFalseWhenScopeIsMissing() {
-        Jwt jwt = Jwt.withTokenValue("token")
-                .header("alg", "none")
-                .claim("sub", "user")
-                .build();
-
-        assertFalse(helper.hasAnyScope(jwt, Set.of("media.internal")));
+        assertThat(helper.hasAnyScope(null, Set.of("media.internal"))).isFalse();
+        assertThat(helper.hasAnyScope(jwt, Set.of())).isFalse();
+        assertThat(helper.hasAnyScope(jwt, null)).isFalse();
     }
 }
