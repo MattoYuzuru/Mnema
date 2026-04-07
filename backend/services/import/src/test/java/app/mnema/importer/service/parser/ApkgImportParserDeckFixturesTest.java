@@ -1,132 +1,214 @@
 package app.mnema.importer.service.parser;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Assumptions;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ApkgImportParserDeckFixturesTest {
 
-    private static final Pattern IMG_SRC_PATTERN = Pattern.compile("<img[^>]+src=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
-    private static final Pattern SOUND_PATTERN = Pattern.compile("\\[sound:([^\\]]+)]", Pattern.CASE_INSENSITIVE);
-    private static final Pattern AUDIO_SRC_PATTERN = Pattern.compile("<audio[^>]+src=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
-    private static final Pattern VIDEO_SRC_PATTERN = Pattern.compile("<video[^>]+src=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
+    private static final String MODEL_ID = "1001";
+
+    private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Test
-    void parsesAllProvidedApkgFixtures() throws Exception {
-        Path fixturesDir = locateFixturesDir();
-        Assumptions.assumeTrue(fixturesDir != null && Files.isDirectory(fixturesDir), "test_decks directory is not available");
+    void parsesGeneratedApkgFixtureWithMedia() throws Exception {
+        Path apkg = createApkgFixture();
+        ApkgImportParser parser = new ApkgImportParser(objectMapper);
 
-        List<Path> apkgFiles = Files.list(fixturesDir)
-                .filter(path -> path.getFileName().toString().toLowerCase().endsWith(".apkg"))
-                .sorted(Comparator.comparing(path -> path.getFileName().toString()))
-                .toList();
+        try (InputStream in = Files.newInputStream(apkg)) {
+            ImportPreview preview = parser.preview(in, 2);
+            assertNotNull(preview);
+            assertEquals(2, preview.fields().size());
+            assertEquals("Front", preview.fields().get(0));
+            assertEquals("Back", preview.fields().get(1));
+            assertFalse(preview.sample().isEmpty());
+        }
 
-        Assumptions.assumeFalse(apkgFiles.isEmpty(), "No .apkg files in test_decks");
+        try (InputStream in = Files.newInputStream(apkg);
+             ApkgImportParser.ApkgImportStream stream = parser.openStream(in)) {
+            assertTrue(stream.isAnki());
+            assertNotNull(stream.layout());
+            assertEquals(2, stream.totalItems());
+            assertTrue(stream.hasNext());
 
-        ApkgImportParser parser = new ApkgImportParser(new ObjectMapper());
-        for (Path apkg : apkgFiles) {
-            try (InputStream in = Files.newInputStream(apkg)) {
-                ImportPreview preview = parser.preview(in, 2);
-                assertNotNull(preview, "preview should be available for " + apkg.getFileName());
-                assertFalse(preview.fields().isEmpty(), "fields should not be empty for " + apkg.getFileName());
+            ImportRecord first = stream.next();
+            assertNotNull(first);
+            assertEquals("Front", stream.fields().get(0));
+            assertTrue(first.fields().get("Front").contains("sample.png"));
+            assertNotNull(first.progress());
+            assertNotNull(first.ankiTemplate());
+            assertEquals("<div>{{Front}}</div>", first.ankiTemplate().frontTemplate());
+
+            ImportMedia image = stream.openMedia("sample.png");
+            assertNotNull(image);
+            try (InputStream mediaStream = image.stream()) {
+                assertEquals("png", new String(mediaStream.readAllBytes(), StandardCharsets.UTF_8));
             }
 
-            try (InputStream in = Files.newInputStream(apkg);
-                 ApkgImportParser.ApkgImportStream stream = parser.openStream(in)) {
-                assertFalse(stream.fields().isEmpty(), "stream fields should not be empty for " + apkg.getFileName());
-                assertTrue(stream.hasNext(), "stream must contain at least one note for " + apkg.getFileName());
-
-                int processed = 0;
-                List<String> mediaRefs = new ArrayList<>();
-                while (stream.hasNext() && processed < 8) {
-                    ImportRecord record = stream.next();
-                    if (record == null) {
-                        continue;
-                    }
-                    processed++;
-                    collectMediaReferences(record, mediaRefs);
-                }
-                assertTrue(processed > 0, "at least one note should be read for " + apkg.getFileName());
-
-                int checkedMedia = 0;
-                for (String ref : mediaRefs) {
-                    if (checkedMedia >= 8) {
-                        break;
-                    }
-                    if (ref == null || ref.isBlank() || ref.startsWith("http://") || ref.startsWith("https://")) {
-                        continue;
-                    }
-                    checkedMedia++;
-                    ImportMedia media = stream.openMedia(ref);
-                    if (media != null) {
-                        try (InputStream mediaStream = media.stream()) {
-                            assertTrue(media.size() >= 0, "media size should be non-negative for " + ref);
-                            mediaStream.readNBytes(1);
-                        }
-                    }
-                }
+            ImportMedia audio = stream.openMedia("sample.mp3");
+            assertNotNull(audio);
+            try (InputStream mediaStream = audio.stream()) {
+                assertEquals("mp3", new String(mediaStream.readAllBytes(), StandardCharsets.UTF_8));
             }
+
+            assertTrue(stream.hasNext());
+            ImportRecord second = stream.next();
+            assertNotNull(second);
+            assertEquals("Second answer", second.fields().get("Back"));
+            assertFalse(stream.hasNext());
+        } finally {
+            Files.deleteIfExists(apkg);
         }
     }
 
-    private void collectMediaReferences(ImportRecord record, List<String> refs) {
-        if (record == null || record.fields() == null) {
-            return;
+    private Path createApkgFixture() throws Exception {
+        Path collectionFile = createCollectionDatabase();
+        Path apkgFile = Files.createTempFile("apkg-parser-test-", ".apkg");
+
+        try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(apkgFile))) {
+            zip.putNextEntry(new ZipEntry("collection.anki2"));
+            Files.copy(collectionFile, zip);
+            zip.closeEntry();
+
+            zip.putNextEntry(new ZipEntry("media"));
+            zip.write(objectMapper.writeValueAsBytes(Map.of("0", "sample.png", "1", "sample.mp3")));
+            zip.closeEntry();
+
+            zip.putNextEntry(new ZipEntry("0"));
+            zip.write("png".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+
+            zip.putNextEntry(new ZipEntry("1"));
+            zip.write("mp3".getBytes(StandardCharsets.UTF_8));
+            zip.closeEntry();
+        } finally {
+            Files.deleteIfExists(collectionFile);
         }
-        for (String value : record.fields().values()) {
-            if (value == null || value.isBlank()) {
-                continue;
-            }
-            collectByPattern(value, IMG_SRC_PATTERN, refs);
-            collectByPattern(value, SOUND_PATTERN, refs);
-            collectByPattern(value, AUDIO_SRC_PATTERN, refs);
-            collectByPattern(value, VIDEO_SRC_PATTERN, refs);
+
+        return apkgFile;
+    }
+
+    private Path createCollectionDatabase() throws Exception {
+        Path sqliteFile = Files.createTempFile("apkg-collection-", ".anki2");
+
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + sqliteFile.toAbsolutePath())) {
+            createSchema(connection);
+            insertModels(connection);
+            insertNotes(connection);
+            insertCards(connection);
+        }
+
+        return sqliteFile;
+    }
+
+    private void createSchema(Connection connection) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "create table col (models text not null)"
+        )) {
+            statement.execute();
+        }
+        try (PreparedStatement statement = connection.prepareStatement(
+                "create table notes (" +
+                        "id integer primary key," +
+                        "mid integer not null," +
+                        "flds text not null" +
+                        ")"
+        )) {
+            statement.execute();
+        }
+        try (PreparedStatement statement = connection.prepareStatement(
+                "create table cards (" +
+                        "id integer primary key," +
+                        "nid integer not null," +
+                        "ivl integer not null," +
+                        "factor integer not null," +
+                        "reps integer not null," +
+                        "queue integer not null," +
+                        "type integer not null" +
+                        ")"
+        )) {
+            statement.execute();
         }
     }
 
-    private void collectByPattern(String value, Pattern pattern, List<String> refs) {
-        Matcher matcher = pattern.matcher(value);
-        while (matcher.find()) {
-            String ref = matcher.group(1);
-            if (ref != null && !ref.isBlank()) {
-                refs.add(ref.trim());
-            }
+    private void insertModels(Connection connection) throws Exception {
+        ObjectNode root = objectMapper.createObjectNode();
+        ObjectNode model = root.putObject(MODEL_ID);
+        model.put("name", "Basic");
+        model.put("css", ".card { color: black; }");
+        ArrayNode fields = model.putArray("flds");
+        fields.addObject().put("name", "Front");
+        fields.addObject().put("name", "Back");
+
+        ArrayNode templates = model.putArray("tmpls");
+        templates.addObject()
+                .put("name", "Card 1")
+                .put("ord", 0)
+                .put("qfmt", "<div>{{Front}}</div>")
+                .put("afmt", "<div>{{FrontSide}}</div><hr><div>{{Back}}</div>");
+
+        try (PreparedStatement statement = connection.prepareStatement(
+                "insert into col (models) values (?)"
+        )) {
+            statement.setString(1, objectMapper.writeValueAsString(root));
+            statement.executeUpdate();
         }
     }
 
-    private Path locateFixturesDir() {
-        String fromProperty = System.getProperty("mnema.testDecksDir");
-        if (fromProperty != null && !fromProperty.isBlank()) {
-            Path path = Path.of(fromProperty).toAbsolutePath().normalize();
-            if (Files.isDirectory(path)) {
-                return path;
-            }
+    private void insertNotes(Connection connection) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "insert into notes (id, mid, flds) values (?, ?, ?)"
+        )) {
+            statement.setLong(1, 1L);
+            statement.setLong(2, Long.parseLong(MODEL_ID));
+            statement.setString(3, "Question <img src=\"sample.png\"> [sound:sample.mp3]\u001fAnswer");
+            statement.executeUpdate();
+
+            statement.setLong(1, 2L);
+            statement.setLong(2, Long.parseLong(MODEL_ID));
+            statement.setString(3, "Second question\u001fSecond answer");
+            statement.executeUpdate();
         }
-        List<Path> candidates = List.of(
-                Path.of("/home/mattoyudzuru/IdeaProjects/Mnema/test_decks"),
-                Path.of("../../test_decks"),
-                Path.of("../../../test_decks"),
-                Path.of("../../../../test_decks")
-        );
-        for (Path candidate : candidates) {
-            Path normalized = candidate.toAbsolutePath().normalize();
-            if (Files.isDirectory(normalized)) {
-                return normalized;
-            }
+    }
+
+    private void insertCards(Connection connection) throws Exception {
+        try (PreparedStatement statement = connection.prepareStatement(
+                "insert into cards (id, nid, ivl, factor, reps, queue, type) values (?, ?, ?, ?, ?, ?, ?)"
+        )) {
+            statement.setLong(1, 10L);
+            statement.setLong(2, 1L);
+            statement.setInt(3, 12);
+            statement.setInt(4, 2500);
+            statement.setInt(5, 7);
+            statement.setInt(6, 2);
+            statement.setInt(7, 2);
+            statement.executeUpdate();
+
+            statement.setLong(1, 11L);
+            statement.setLong(2, 2L);
+            statement.setInt(3, 1);
+            statement.setInt(4, 2300);
+            statement.setInt(5, 1);
+            statement.setInt(6, 1);
+            statement.setInt(7, 1);
+            statement.executeUpdate();
         }
-        return null;
     }
 }
