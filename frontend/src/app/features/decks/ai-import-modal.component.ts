@@ -7,7 +7,8 @@ import { TemplateApiService } from '../../core/services/template-api.service';
 import {
     AiImportPreviewSummary,
     AiJobResponse,
-    AiProviderCredential
+    AiProviderCredential,
+    AiRuntimeCapabilities
 } from '../../core/models/ai.models';
 import { FieldTemplateDTO } from '../../core/models/template.models';
 import { ButtonComponent } from '../../shared/components/button.component';
@@ -949,6 +950,7 @@ export class AiImportModalComponent implements OnInit {
     recording = signal(false);
     recordingSeconds = signal(0);
     recordingError = signal('');
+    runtimeCapabilities = signal<AiRuntimeCapabilities | null>(null);
 
     readonly maxCards = AiImportModalComponent.MAX_CARDS;
 
@@ -963,9 +965,9 @@ export class AiImportModalComponent implements OnInit {
 
     readonly formatOptions = ['mp3', 'ogg', 'wav'];
     readonly ttsFormatOptions = computed(() => ['gemini', 'qwen'].includes(this.selectedProvider()) ? ['wav'] : this.formatOptions);
-    readonly ttsSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
-    readonly imageSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
-    readonly videoSupported = computed(() => ['openai', 'qwen'].includes(this.selectedProvider()));
+    readonly ttsSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'tts', ['openai', 'gemini', 'qwen']));
+    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'ollama']));
+    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'ollama']));
     readonly hasAudioFields = computed(() => this.audioFields().length > 0);
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
@@ -973,7 +975,7 @@ export class AiImportModalComponent implements OnInit {
         const provider = this.providerKeys().find(item => item.id === selectedId)?.provider;
         return this.normalizeProvider(provider);
     });
-    readonly importSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
+    readonly importSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'text', ['openai', 'gemini', 'qwen', 'ollama']));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
     readonly sttModelPlaceholder = computed(() => this.resolveSttModelPlaceholder(this.selectedProvider()));
     readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
@@ -1105,8 +1107,16 @@ export class AiImportModalComponent implements OnInit {
         this.storageKey = `mnema_ai_import:${this.userDeckId || 'default'}`;
         this.startDraftSync();
         this.restoreDraft();
+        this.loadRuntimeCapabilities();
         this.loadProviders();
         this.loadTemplateFields();
+    }
+
+    private loadRuntimeCapabilities(): void {
+        this.aiApi.getRuntimeCapabilities().subscribe({
+            next: capabilities => this.runtimeCapabilities.set(capabilities),
+            error: () => this.runtimeCapabilities.set(null)
+        });
     }
 
     loadProviders(): void {
@@ -1388,6 +1398,7 @@ export class AiImportModalComponent implements OnInit {
             deckId: this.userDeckId,
             sourceMediaId: fileInfo.mediaId,
             providerCredentialId: this.selectedCredentialId() || undefined,
+            provider: this.selectedProvider() || undefined,
             model: this.modelName().trim() || undefined,
             sourceType: fileInfo.sourceType,
             encoding: this.showEncoding() && this.encoding() !== 'auto' ? this.encoding() : undefined,
@@ -1468,6 +1479,7 @@ export class AiImportModalComponent implements OnInit {
             fields,
             count: this.clampCount(this.estimatedCount()),
             providerCredentialId: this.selectedCredentialId() || undefined,
+            provider: this.selectedProvider() || undefined,
             model: this.modelName().trim() || undefined,
             sourceType: fileInfo.sourceType,
             encoding: this.showEncoding() && this.encoding() !== 'auto' ? this.encoding() : undefined,
@@ -1722,6 +1734,10 @@ export class AiImportModalComponent implements OnInit {
         if (!this.hasAudioFields() || !this.ttsEnabled() || !this.ttsSupported()) {
             return null;
         }
+        const model = this.ttsModel().trim();
+        if (!model) {
+            return null;
+        }
         const mappings = this.ttsMappings()
             .filter(mapping => !!mapping.sourceField && !!mapping.targetField);
         if (mappings.length === 0) {
@@ -1729,8 +1745,8 @@ export class AiImportModalComponent implements OnInit {
         }
         return {
             enabled: true,
-            model: this.ttsModel().trim() || undefined,
-            voice: this.resolveVoice(),
+            model,
+            voice: this.resolveVoice() || undefined,
             format: this.ttsFormat(),
             maxChars: this.ttsMaxChars(),
             mappings
@@ -1800,8 +1816,10 @@ export class AiImportModalComponent implements OnInit {
     private resolveVoice(): string {
         if (this.ttsVoicePreset() === 'custom') {
             const custom = this.ttsVoiceCustom().trim();
-            const fallback = custom || this.ttsVoicePreset();
-            return this.selectedProvider() === 'gemini' ? fallback.toLowerCase() : fallback;
+            if (!custom) {
+                return '';
+            }
+            return this.selectedProvider() === 'gemini' ? custom.toLowerCase() : custom;
         }
         const voice = this.ttsVoicePreset();
         return this.selectedProvider() === 'gemini' ? voice.toLowerCase() : voice;
@@ -1837,6 +1855,10 @@ export class AiImportModalComponent implements OnInit {
     }
 
     public voiceOptions(): string[] {
+        if (this.selectedProvider() === 'ollama') {
+            const runtimeVoices = this.runtimeVoiceOptions();
+            return runtimeVoices.length ? [...runtimeVoices, 'custom'] : ['custom'];
+        }
         if (this.selectedProvider() === 'gemini') {
             return [...this.geminiVoices, 'custom'];
         }
@@ -1849,12 +1871,27 @@ export class AiImportModalComponent implements OnInit {
         return ['custom'];
     }
 
+    private runtimeVoiceOptions(): string[] {
+        const voices = this.runtimeCapabilities()?.ollama?.voices || [];
+        const unique = Array.from(new Set(voices.map(voice => String(voice || '').trim()).filter(Boolean)));
+        return unique.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    }
+
     public voiceLabel(voice: string): string {
         if (voice === 'custom') return 'Custom';
         return voice;
     }
 
     private resolveImageModelOptions(provider: string): string[] {
+        if (provider === 'ollama') {
+            const runtime = this.runtimeCapabilities()?.ollama?.models || [];
+            const imageModels = runtime
+                .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('image'))
+                .map(model => model.name)
+                .filter(name => !!name && name.trim().length > 0)
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+            return imageModels.length > 0 ? [...imageModels, 'custom'] : ['custom'];
+        }
         if (provider === 'openai') {
             return ['gpt-image-1', 'custom'];
         }
@@ -1868,6 +1905,15 @@ export class AiImportModalComponent implements OnInit {
     }
 
     private resolveVideoModelOptions(provider: string): string[] {
+        if (provider === 'ollama') {
+            const runtime = this.runtimeCapabilities()?.ollama?.models || [];
+            const videoModels = runtime
+                .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('video'))
+                .map(model => model.name)
+                .filter(name => !!name && name.trim().length > 0)
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+            return videoModels.length > 0 ? [...videoModels, 'custom'] : ['custom'];
+        }
         if (provider === 'openai') {
             return ['gpt-video-mini', 'custom'];
         }
@@ -1879,6 +1925,8 @@ export class AiImportModalComponent implements OnInit {
 
     private resolveModelPlaceholder(provider: string): string {
         switch (provider) {
+            case 'ollama':
+                return 'qwen3:8b';
             case 'openai':
                 return 'gpt-4.1-mini';
             case 'gemini':
@@ -1899,6 +1947,9 @@ export class AiImportModalComponent implements OnInit {
     }
 
     private resolveTtsModelPlaceholder(provider: string): string {
+        if (provider === 'ollama') {
+            return 'ollama-tts-model';
+        }
         if (provider === 'openai') {
             return 'gpt-4o-mini-tts';
         }
@@ -1912,6 +1963,9 @@ export class AiImportModalComponent implements OnInit {
     }
 
     private resolveSttModelPlaceholder(provider: string): string {
+        if (provider === 'ollama') {
+            return 'ollama-stt-model';
+        }
         if (provider === 'openai') {
             return 'gpt-4o-mini-transcribe';
         }
@@ -1932,6 +1986,25 @@ export class AiImportModalComponent implements OnInit {
         if (normalized === 'xai' || normalized === 'x.ai') return 'grok';
         if (normalized === 'dashscope' || normalized === 'aliyun' || normalized === 'alibaba') return 'qwen';
         return normalized;
+    }
+
+    private supportsCapability(provider: string,
+                               capability: 'text' | 'stt' | 'tts' | 'image' | 'video' | 'gif',
+                               fallbackProviders: string[]): boolean {
+        if (!provider) {
+            return false;
+        }
+        const runtime = this.runtimeCapabilities();
+        const runtimeCaps = runtime?.providers?.find(item => this.normalizeProvider(item.key) === provider);
+        if (runtimeCaps) {
+            if (Boolean(runtimeCaps[capability])) {
+                return true;
+            }
+            if (provider !== 'ollama') {
+                return false;
+            }
+        }
+        return fallbackProviders.includes(provider);
     }
 
     private clampCount(value: number): number {

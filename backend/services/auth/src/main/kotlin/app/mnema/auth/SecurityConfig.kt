@@ -1,5 +1,6 @@
 package app.mnema.auth
 
+import app.mnema.auth.config.AuthFeaturesProps
 import app.mnema.auth.federation.FederatedOAuth2UserService
 import app.mnema.auth.federation.FederatedUserMapper
 import app.mnema.auth.identity.FederatedIdentityResult
@@ -51,6 +52,7 @@ import java.util.Base64
 
 @Configuration
 class SecurityConfig(
+    private val featureProps: AuthFeaturesProps,
     private val identityService: FederatedIdentityService,
     private val userMapper: FederatedUserMapper
 ) {
@@ -95,13 +97,16 @@ class SecurityConfig(
                 auth.anyRequest().authenticated()
             }
             .csrf { csrf -> csrf.ignoringRequestMatchers(endpointsMatcher) }
-            .exceptionHandling { exceptions ->
+            .cors {}
+
+        if (featureProps.federatedEnabled) {
+            http.exceptionHandling { exceptions ->
                 exceptions.defaultAuthenticationEntryPointFor(
                     ProviderAwareLoginEntryPoint("google", supportedProviders),
                     MediaTypeRequestMatcher(MediaType.TEXT_HTML)
                 )
             }
-            .cors {}
+        }
 
         return http.build()
     }
@@ -122,11 +127,6 @@ class SecurityConfig(
                     .requestMatchers("/actuator/**", "/error").permitAll()
                     .anyRequest().authenticated()
             }
-            .oauth2Login { oauth2 ->
-                oauth2
-                    .userInfoEndpoint { userInfo -> userInfo.userService(federatedOAuth2UserService) }
-                    .successHandler(federatedSuccessHandler)
-            }
             .logout { logout ->
                 logout
                     .logoutUrl("/logout")
@@ -140,6 +140,14 @@ class SecurityConfig(
             }
             .csrf { it.disable() }
             .cors {}
+
+        if (featureProps.federatedEnabled) {
+            http.oauth2Login { oauth2 ->
+                oauth2
+                    .userInfoEndpoint { userInfo -> userInfo.userService(federatedOAuth2UserService) }
+                    .successHandler(federatedSuccessHandler)
+            }
+        }
 
         return http.build()
     }
@@ -216,17 +224,19 @@ class SecurityConfig(
         JdbcRegisteredClientRepository(jdbcTemplate)
 
     @Bean
-    fun seedClients(repo: RegisteredClientRepository) = CommandLineRunner {
+    fun seedClients(
+        repo: RegisteredClientRepository,
+        @Value("\${auth.clients.swagger.redirect-uris}") swaggerRedirectUris: List<String>,
+        @Value("\${auth.clients.web.redirect-uris}") webRedirectUris: List<String>
+    ) = CommandLineRunner {
         // 1) swagger-ui как было
         if (repo.findByClientId("swagger-ui") == null) {
-            val swaggerClient = RegisteredClient.withId(UUID.randomUUID().toString())
+            var swaggerBuilder = RegisteredClient.withId(UUID.randomUUID().toString())
                 .clientId("swagger-ui")
                 .clientSecret("{noop}secret")
                 .clientAuthenticationMethod(ClientAuthenticationMethod.CLIENT_SECRET_BASIC)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                .redirectUri("http://localhost:8084/api/user/swagger-ui/oauth2-redirect.html")
-                .redirectUri("https://mnema.app/api/user/swagger-ui/oauth2-redirect.html")
                 .scope("openid")
                 .scope("user.read")
                 .scope("user.write")
@@ -243,22 +253,29 @@ class SecurityConfig(
                         .requireAuthorizationConsent(false)
                         .build()
                 )
-                .build()
+            val swaggerUris = swaggerRedirectUris
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+            if (swaggerUris.isEmpty()) {
+                throw IllegalStateException("auth.clients.swagger.redirect-uris must not be empty")
+            }
+            swaggerUris.forEach { uri ->
+                swaggerBuilder = swaggerBuilder.redirectUri(uri)
+            }
+            val swaggerClient = swaggerBuilder.build()
 
             repo.save(swaggerClient)
         }
 
         // 2) публичный фронтовый клиент mnema-web
         if (repo.findByClientId("mnema-web") == null) {
-            val webClient = RegisteredClient.withId(UUID.randomUUID().toString())
+            var webBuilder = RegisteredClient.withId(UUID.randomUUID().toString())
                 .clientId("mnema-web")
                 // public client -> без секрета
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE)
                 .authorizationGrantType(AuthorizationGrantType.REFRESH_TOKEN)
-                // !!! redirect_uri ДОЛЖЕН 1-в-1 совпадать с фронтом !!!
-                .redirectUri("http://localhost:3005/")
-                .redirectUri("https://mnema.app/")
                 .scope("openid")
                 .scope("profile")
                 .scope("email")
@@ -277,7 +294,17 @@ class SecurityConfig(
                         .reuseRefreshTokens(false)
                         .build()
                 )
-                .build()
+            val webUris = webRedirectUris
+                .map { it.trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+            if (webUris.isEmpty()) {
+                throw IllegalStateException("auth.clients.web.redirect-uris must not be empty")
+            }
+            webUris.forEach { uri ->
+                webBuilder = webBuilder.redirectUri(uri)
+            }
+            val webClient = webBuilder.build()
 
             repo.save(webClient)
         }

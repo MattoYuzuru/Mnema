@@ -17,6 +17,8 @@ FROM nginx:alpine
 
 # SPA-фолбэк, чтобы роутинг работал при F5
 COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY docker/40-gen-app-config.sh /docker-entrypoint.d/40-gen-app-config.sh
+RUN chmod +x /docker-entrypoint.d/40-gen-app-config.sh
 
 # Копируем стандартный выход Angular 18: dist/<projectName>
 COPY --from=build /app/dist/mnema-frontend /usr/share/nginx/html

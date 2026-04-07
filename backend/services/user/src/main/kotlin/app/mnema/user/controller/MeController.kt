@@ -149,7 +149,10 @@ class MeController(
             }
             user.bio = it
         }
-        req.avatarUrl?.let { user.avatarUrl = it }
+        req.avatarUrl?.let {
+            user.avatarUrl = it.takeIf(String::isNotBlank)
+            user.avatarMediaId = null
+        }
         req.avatarMediaId?.let {
             user.avatarMediaId = it
             user.avatarUrl = null

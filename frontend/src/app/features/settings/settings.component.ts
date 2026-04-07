@@ -14,6 +14,7 @@ import { AiProviderCredential } from '../../core/models/ai.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
+import { appConfig } from '../../app.config';
 
 @Component({
     selector: 'app-settings',
@@ -182,6 +183,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         <p class="section-description">
           {{ 'settings.aiProviderKeysDescription' | translate }}
         </p>
+        <p *ngIf="aiSystemProviderEnabled" class="section-description">
+          System provider {{ aiSystemProviderName }} is enabled for local runtime. You can still add personal provider keys and switch per request.
+        </p>
 
         <div class="ai-settings-grid">
           <div class="ai-keys-panel" [attr.aria-busy]="providersLoading()">
@@ -227,7 +231,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                     size="sm"
                     tone="danger"
                     (click)="openDeleteProvider(key)"
-                    [disabled]="deleteInFlight()"
+                    [disabled]="deleteInFlight() || isSystemProviderKey(key)"
                   >
                     {{ 'settings.aiProviderKeysDelete' | translate }}
                   </app-button>
@@ -392,8 +396,8 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       message="Are you sure you want to permanently delete this deck? This action cannot be undone and all card progress will be lost."
       confirmText="Delete Permanently"
       cancelText="Cancel"
-      (confirm)="confirmHardDelete()"
-      (cancel)="closeHardDeleteConfirm()"
+      (confirmed)="confirmHardDelete()"
+      (cancelled)="closeHardDeleteConfirm()"
     ></app-confirmation-dialog>
 
     <app-confirmation-dialog
@@ -404,8 +408,8 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       [confirmText]="'settings.aiProviderKeysDeleteConfirm' | translate"
       [cancelText]="'settings.aiProviderKeysDeleteCancel' | translate"
       confirmVariant="ghost"
-      (confirm)="confirmDeleteProvider()"
-      (cancel)="closeDeleteProvider()"
+      (confirmed)="confirmDeleteProvider()"
+      (cancelled)="closeDeleteProvider()"
     ></app-confirmation-dialog>
   `,
     styles: [`
@@ -900,6 +904,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
     `]
 })
 export class SettingsComponent implements OnInit {
+    private static readonly SYSTEM_PROVIDER_ID = '00000000-0000-0000-0000-000000000001';
     archivedDecks: UserDeckDTO[] = [];
     loadingArchive = false;
     showDeleteConfirmation = false;
@@ -936,6 +941,8 @@ export class SettingsComponent implements OnInit {
         { label: 'GigaChat', value: 'gigachat' },
         { label: 'Custom', value: 'custom' }
     ];
+    readonly aiSystemProviderEnabled = appConfig.features.aiSystemProviderEnabled;
+    readonly aiSystemProviderName = appConfig.features.aiSystemProviderName;
 
     constructor(
         public theme: ThemeService,
@@ -1061,6 +1068,10 @@ export class SettingsComponent implements OnInit {
 
     trackProvider(_: number, item: AiProviderCredential): string {
         return item.id;
+    }
+
+    isSystemProviderKey(key: AiProviderCredential): boolean {
+        return key.id === SettingsComponent.SYSTEM_PROVIDER_ID;
     }
 
     restoreDeck(userDeckId: string): void {

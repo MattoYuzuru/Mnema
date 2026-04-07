@@ -1,0 +1,12 @@
+app:
+  ai:
+    provider: openai
+    runtime:
+      system-managed-provider-enabled: true
+      system-provider-name: ollama
+      ollama-enabled: true
+      ollama-base-url: http://ollama:11434
+  cors:
+    origins:
+      - http://localhost:3005
+      - http://127.0.0.1:3005

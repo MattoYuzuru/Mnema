@@ -28,6 +28,7 @@ class ImportApplicationTests {
         registry.add("spring.flyway.url", postgres::getJdbcUrl);
         registry.add("spring.flyway.user", postgres::getUsername);
         registry.add("spring.flyway.password", postgres::getPassword);
+        registry.add("app.import.worker.enabled", () -> "false");
     }
 
     @Test

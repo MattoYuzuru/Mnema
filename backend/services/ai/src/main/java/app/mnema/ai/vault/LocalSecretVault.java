@@ -11,6 +11,7 @@ import javax.crypto.spec.SecretKeySpec;
 import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Base64;
+import java.util.HexFormat;
 
 @Service
 public class LocalSecretVault implements SecretVault {
@@ -40,12 +41,24 @@ public class LocalSecretVault implements SecretVault {
                     : props.keyId();
             log.warn("AI vault master key is not configured; using ephemeral key");
         } else {
-            byte[] decoded = Base64.getDecoder().decode(key);
+            byte[] decoded = decodeKeyMaterial(key);
             if (decoded.length != 16 && decoded.length != 24 && decoded.length != 32) {
                 throw new IllegalStateException("Invalid vault master key length");
             }
             this.masterKey = new SecretKeySpec(decoded, "AES");
             this.keyId = props.keyId() == null || props.keyId().isBlank() ? "local-master" : props.keyId();
+        }
+    }
+
+    private byte[] decodeKeyMaterial(String rawKey) {
+        String key = rawKey.trim();
+        if ((key.length() == 32 || key.length() == 48 || key.length() == 64) && key.matches("^[0-9a-fA-F]+$")) {
+            return HexFormat.of().parseHex(key);
+        }
+        try {
+            return Base64.getDecoder().decode(key);
+        } catch (IllegalArgumentException ex) {
+            throw new IllegalStateException("Invalid vault master key encoding: expected base64 or hex", ex);
         }
     }
 

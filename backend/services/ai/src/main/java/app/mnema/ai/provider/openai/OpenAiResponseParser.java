@@ -38,6 +38,30 @@ public final class OpenAiResponseParser {
             }
             return builder.toString();
         }
+        JsonNode choices = response.get("choices");
+        if (choices != null && choices.isArray() && !choices.isEmpty()) {
+            JsonNode first = choices.get(0);
+            JsonNode message = first.path("message");
+            JsonNode content = message.get("content");
+            if (content != null) {
+                if (content.isTextual()) {
+                    return content.asText();
+                }
+                if (content.isArray()) {
+                    StringBuilder builder = new StringBuilder();
+                    for (JsonNode part : content) {
+                        String text = part.path("text").asText("");
+                        if (!text.isBlank()) {
+                            if (!builder.isEmpty()) {
+                                builder.append('\n');
+                            }
+                            builder.append(text);
+                        }
+                    }
+                    return builder.toString();
+                }
+            }
+        }
         return "";
     }
 }

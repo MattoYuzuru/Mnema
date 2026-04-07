@@ -91,7 +91,7 @@ public class CsvImportParser implements ImportParser {
             Map<String, String> values = new LinkedHashMap<>();
             for (int i = 0; i < headers.size(); i++) {
                 String header = headers.get(i);
-                String value = usesHeader ? record.get(header) : (i < record.size() ? record.get(i) : "");
+                String value = i < record.size() ? record.get(i) : "";
                 values.put(header, value);
             }
             return new ImportRecord(values, null, null, null);

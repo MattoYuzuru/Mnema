@@ -13,6 +13,7 @@ import { ReviewStatsPanelComponent } from './shared/components/review-stats-pane
 
 import { TranslatePipe } from './shared/pipes/translate.pipe';
 import { I18nService } from './core/services/i18n.service';
+import { appConfig } from './app.config';
 
 @Component({
     standalone: true,
@@ -26,7 +27,7 @@ import { I18nService } from './core/services/i18n.service';
         <div *ngIf="loading" class="loading">{{ 'profile.loadingProfile' | translate }}</div>
 
         <div *ngIf="!loading && profile" class="profile-content">
-          <div *ngIf="auth.user()?.emailVerified === false" class="verification-warning">
+          <div *ngIf="config.features.showEmailVerificationWarning && auth.user()?.emailVerified === false" class="verification-warning">
             <h3>{{ 'profile.unverifiedTitle' | translate }}</h3>
             <p>{{ 'profile.unverifiedText' | translate }}</p>
           </div>
@@ -417,6 +418,7 @@ export class ProfilePageComponent implements OnInit {
     private static readonly MAX_BIO_LENGTH = 200;
     readonly maxUsernameLength = ProfilePageComponent.MAX_USERNAME_LENGTH;
     readonly maxBioLength = ProfilePageComponent.MAX_BIO_LENGTH;
+    readonly config = appConfig;
     @ViewChild('avatarInput') avatarInput!: ElementRef<HTMLInputElement>;
 
     profile: UserProfile | null = null;

@@ -5,7 +5,7 @@ import { Router } from '@angular/router';
 import { AiApiService } from '../../core/services/ai-api.service';
 import { CardApiService } from '../../core/services/card-api.service';
 import { TemplateApiService } from '../../core/services/template-api.service';
-import { AiJobResponse, AiProviderCredential } from '../../core/models/ai.models';
+import { AiJobResponse, AiProviderCredential, AiRuntimeCapabilities } from '../../core/models/ai.models';
 import { FieldTemplateDTO } from '../../core/models/template.models';
 import { MissingFieldStat } from '../../core/models/user-card.models';
 import { ButtonComponent } from '../../shared/components/button.component';
@@ -122,8 +122,8 @@ type FieldLimitMap = Record<string, number>;
                 </label>
               </div>
               <div *ngIf="hasAudioFields() && !ttsSupported()" class="field-hint">TTS is supported for OpenAI, Gemini, and Qwen providers.</div>
-              <div *ngIf="hasImageFields() && !imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, and Grok providers.</div>
-              <div *ngIf="hasVideoFields() && !videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, and Grok providers.</div>
+              <div *ngIf="hasImageFields() && !imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, Grok, and Ollama providers.</div>
+              <div *ngIf="hasVideoFields() && !videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, Grok, and Ollama providers.</div>
               <label
                 *ngFor="let stat of missingRows(); trackBy: trackMissingField"
                 class="field-option missing-option"
@@ -253,7 +253,7 @@ type FieldLimitMap = Record<string, number>;
 
           <div *ngIf="hasMissingFields() && imageEnabled() && hasImageFields()" class="tts-section">
             <label class="grid-label">Image generation</label>
-            <div *ngIf="!imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, and Grok providers.</div>
+            <div *ngIf="!imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, Grok, and Ollama providers.</div>
             <div *ngIf="imageSupported()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
@@ -305,7 +305,7 @@ type FieldLimitMap = Record<string, number>;
 
           <div *ngIf="hasMissingFields() && videoEnabled() && hasVideoFields()" class="tts-section">
             <label class="grid-label">Video generation</label>
-            <div *ngIf="!videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, and Grok providers.</div>
+            <div *ngIf="!videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, Grok, and Ollama providers.</div>
             <div *ngIf="videoSupported()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
@@ -638,6 +638,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     videoResolution = signal('1280x720');
     videoDurationSeconds = signal(5);
     videoFormat = signal('mp4');
+    runtimeCapabilities = signal<AiRuntimeCapabilities | null>(null);
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
         if (!selectedId) return '';
@@ -646,13 +647,17 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     });
     readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
-    readonly ttsSupported = computed(() => ['openai', 'gemini', 'qwen'].includes(this.selectedProvider()));
-    readonly imageSupported = computed(() => ['openai', 'gemini', 'qwen', 'grok'].includes(this.selectedProvider()));
-    readonly videoSupported = computed(() => ['openai', 'qwen', 'grok'].includes(this.selectedProvider()));
+    readonly ttsSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'tts', ['openai', 'gemini', 'qwen']));
+    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'grok', 'ollama']));
+    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'grok', 'ollama']));
     readonly imageModelOptions = computed(() => this.resolveImageModelOptions(this.selectedProvider()));
     readonly videoModelOptions = computed(() => this.resolveVideoModelOptions(this.selectedProvider()));
     readonly voiceOptions = computed(() => {
         const provider = this.selectedProvider();
+        if (provider === 'ollama') {
+            const runtimeVoices = this.runtimeVoiceOptions();
+            return runtimeVoices.length ? [...runtimeVoices, 'custom'] : ['custom'];
+        }
         if (provider === 'gemini') {
             return [...this.geminiVoices, 'custom'];
         }
@@ -804,8 +809,16 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     ngOnInit(): void {
         this.storageKey = `mnema_ai_enhance:${this.userDeckId || 'default'}`;
         this.restoreDraft();
+        this.loadRuntimeCapabilities();
         this.loadProviders();
         this.loadTemplateFields();
+    }
+
+    private loadRuntimeCapabilities(): void {
+        this.aiApi.getRuntimeCapabilities().subscribe({
+            next: capabilities => this.runtimeCapabilities.set(capabilities),
+            error: () => this.runtimeCapabilities.set(null)
+        });
     }
 
     loadTemplateFields(): void {
@@ -976,6 +989,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             type: 'generic',
             params: {
                 providerCredentialId: this.selectedCredentialId(),
+                provider: this.selectedProvider() || undefined,
                 model: this.modelName().trim() || undefined,
                 input,
                 actions,
@@ -1331,9 +1345,6 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             if (!this.ttsEnabled() || !this.ttsSupported()) {
                 return false;
             }
-            if (!this.buildTtsParams()) {
-                return false;
-            }
         }
         if (imageSelected && (!this.imageEnabled() || !this.imageSupported())) {
             return false;
@@ -1411,6 +1422,25 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         return normalized;
     }
 
+    private supportsCapability(provider: string,
+                               capability: 'text' | 'stt' | 'tts' | 'image' | 'video' | 'gif',
+                               fallbackProviders: string[]): boolean {
+        if (!provider) {
+            return false;
+        }
+        const runtime = this.runtimeCapabilities();
+        const runtimeCaps = runtime?.providers?.find(item => this.normalizeProvider(item.key) === provider);
+        if (runtimeCaps) {
+            if (Boolean(runtimeCaps[capability])) {
+                return true;
+            }
+            if (provider !== 'ollama') {
+                return false;
+            }
+        }
+        return fallbackProviders.includes(provider);
+    }
+
     voiceLabel(voice: string): string {
         if (!voice) return '';
         if (voice === 'custom') return 'Custom';
@@ -1419,6 +1449,8 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
     private resolveModelPlaceholder(provider: string): string {
         switch (provider) {
+            case 'ollama':
+                return 'qwen3:8b';
             case 'openai':
                 return 'gpt-4.1-mini';
             case 'gemini':
@@ -1440,6 +1472,8 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
     private resolveTtsModelPlaceholder(provider: string): string {
         switch (provider) {
+            case 'ollama':
+                return 'ollama-tts-model';
             case 'openai':
                 return 'gpt-4o-mini-tts';
             case 'gemini':
@@ -1485,6 +1519,15 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     }
 
     private resolveImageModelOptions(provider: string): string[] {
+        if (provider === 'ollama') {
+            const runtime = this.runtimeCapabilities()?.ollama?.models || [];
+            const imageModels = runtime
+                .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('image'))
+                .map(model => model.name)
+                .filter(name => !!name && name.trim().length > 0)
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+            return imageModels.length > 0 ? [...imageModels, 'custom'] : ['custom'];
+        }
         if (provider === 'openai') {
             return ['gpt-image-1-mini', 'gpt-image-1', 'custom'];
         }
@@ -1501,6 +1544,15 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     }
 
     private resolveVideoModelOptions(provider: string): string[] {
+        if (provider === 'ollama') {
+            const runtime = this.runtimeCapabilities()?.ollama?.models || [];
+            const videoModels = runtime
+                .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('video'))
+                .map(model => model.name)
+                .filter(name => !!name && name.trim().length > 0)
+                .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+            return videoModels.length > 0 ? [...videoModels, 'custom'] : ['custom'];
+        }
         if (provider === 'openai') {
             return ['sora-2', 'custom'];
         }
@@ -1522,6 +1574,12 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (!videoOptions.includes(this.videoModel())) {
             this.videoModel.set(videoOptions[0]);
         }
+    }
+
+    private runtimeVoiceOptions(): string[] {
+        const voices = this.runtimeCapabilities()?.ollama?.voices || [];
+        const unique = Array.from(new Set(voices.map(voice => String(voice || '').trim()).filter(Boolean)));
+        return unique.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     }
 
     private setOptionState(key: string, enabled: boolean, description?: string): void {
@@ -1563,6 +1621,9 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     private resolveVoice(): string {
         if (this.ttsVoicePreset() === 'custom') {
             const custom = this.ttsVoiceCustom().trim();
+            if (!custom) {
+                return '';
+            }
             return this.selectedProvider() === 'gemini' ? custom.toLowerCase() : custom;
         }
         const voice = this.ttsVoicePreset();
@@ -1576,6 +1637,10 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (!this.hasAudioFields() || !this.ttsSupported()) {
             return null;
         }
+        const model = this.ttsModel().trim();
+        if (!model) {
+            return null;
+        }
         const targets = new Set(this.ttsTargetFields().map(field => field.name));
         if (targets.size === 0) {
             return null;
@@ -1587,7 +1652,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         }
         return {
             enabled: true,
-            model: this.ttsModel().trim() || undefined,
+            model,
             voice: this.resolveVoice() || undefined,
             format: this.ttsFormat(),
             maxChars: this.ttsMaxChars(),

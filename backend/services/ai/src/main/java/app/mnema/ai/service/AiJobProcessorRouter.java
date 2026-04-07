@@ -54,11 +54,13 @@ public class AiJobProcessorRouter implements AiJobProcessor {
         UUID credentialId = parseUuid(params.path("providerCredentialId").asText(null));
         if (credentialId != null) {
             AiProviderCredentialEntity credential = credentialRepository.findByIdAndUserId(credentialId, job.getUserId())
-                    .orElseThrow(() -> new IllegalStateException("Provider credential not found"));
-            if (credential.getStatus() != AiProviderStatus.active) {
-                throw new IllegalStateException("Provider credential is inactive");
+                    .orElse(null);
+            if (credential != null) {
+                if (credential.getStatus() != AiProviderStatus.active) {
+                    throw new IllegalStateException("Provider credential is inactive");
+                }
+                return normalizeProvider(credential.getProvider());
             }
-            return normalizeProvider(credential.getProvider());
         }
 
         String providerFromParams = params.path("provider").asText(null);
@@ -99,6 +101,9 @@ public class AiJobProcessorRouter implements AiJobProcessor {
         }
         if ("dashscope".equals(normalized) || "aliyun".equals(normalized) || "alibaba".equals(normalized)) {
             return "qwen";
+        }
+        if ("ollama".equals(normalized) || "local-openai".equals(normalized)) {
+            return "openai";
         }
         return normalized;
     }

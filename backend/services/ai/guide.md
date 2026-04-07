@@ -20,6 +20,17 @@
 4. Провайдерный процессор (`Gemini/OpenAI/Qwen/Grok/Claude`) выполняет mode-логику.
 5. Результат и usage пишутся в summary/ledger, статус `completed` или `failed`.
 
+## Режим enhance_deck (важно для self-host)
+- `mode=enhance_deck` теперь маршрутизируется по `actions`:
+  - `missing_fields` / `fill_missing` / `text` / `image` / `video` / `all` -> missing fields flow;
+  - `missing_audio` / `audio` / `tts` -> missing audio flow;
+  - `audit` -> audit flow.
+- Если `actions` пустой или неизвестный, используется missing fields flow по умолчанию.
+- Для OpenAI-compatible локальных рантаймов включен fallback:
+  - сначала запрос в `/v1/responses`;
+  - при любом `4xx` повтор в `/v1/chat/completions`.
+  Это нужно для совместимости с рантаймами, где `responses` API не реализован полностью.
+
 ## Рантайм-эмбеддинги и новизна генерации
 Для режима `generate_cards` добавлен слой runtime-новизны (`CardNoveltyService`), чтобы не плодить дубликаты:
 

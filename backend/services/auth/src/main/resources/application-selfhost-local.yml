@@ -1,0 +1,32 @@
+app:
+  auth:
+    features:
+      federated-enabled: false
+      require-email-verification: false
+  cors:
+    origins:
+      - http://localhost:3005
+      - http://127.0.0.1:3005
+
+auth:
+  logout:
+    default-redirect: http://localhost:3005/
+
+turnstile:
+  site-key: ""
+  secret-key: ""
+
+spring:
+  security:
+    oauth2:
+      client:
+        registration:
+          google:
+            client-id: disabled-google
+            client-secret: disabled-google-secret
+          github:
+            client-id: disabled-github
+            client-secret: disabled-github-secret
+          yandex:
+            client-id: disabled-yandex
+            client-secret: disabled-yandex-secret

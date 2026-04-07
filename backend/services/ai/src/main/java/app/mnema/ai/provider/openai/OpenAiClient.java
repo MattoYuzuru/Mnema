@@ -7,10 +7,17 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.MultipartBodyBuilder;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.util.Base64;
+import java.util.Locale;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 
 @Component
 public class OpenAiClient {
@@ -21,7 +28,14 @@ public class OpenAiClient {
     public OpenAiClient(RestClient.Builder restClientBuilder,
                         OpenAiProps props,
                         ObjectMapper objectMapper) {
+        // local-ai-gateway runs on uvicorn (HTTP/1.1); forcing h1 avoids h2c upgrade failures
+        JdkClientHttpRequestFactory http11Factory = new JdkClientHttpRequestFactory(
+                HttpClient.newBuilder()
+                        .version(HttpClient.Version.HTTP_1_1)
+                        .build()
+        );
         this.restClient = restClientBuilder
+                .requestFactory(http11Factory)
                 .baseUrl(props.baseUrl())
                 .build();
         this.objectMapper = objectMapper;
@@ -39,13 +53,23 @@ public class OpenAiClient {
             textNode.set("format", request.responseFormat());
         }
 
-        JsonNode response = restClient.post()
+        RestClient.RequestBodySpec spec = restClient.post()
                 .uri("/v1/responses")
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(payload)
-                .retrieve()
-                .body(JsonNode.class);
+                .contentType(MediaType.APPLICATION_JSON);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        JsonNode response;
+        try {
+            response = spec.body(payload)
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (HttpClientErrorException ex) {
+            if (!shouldFallbackToChatCompat(ex)) {
+                throw ex;
+            }
+            response = createChatCompletionCompat(apiKey, request.model(), request.input(), request.maxOutputTokens());
+        }
 
         if (response == null) {
             throw new IllegalStateException("OpenAI response is empty");
@@ -54,8 +78,12 @@ public class OpenAiClient {
         String outputText = OpenAiResponseParser.extractText(response);
         String model = response.path("model").asText(null);
         JsonNode usage = response.path("usage");
-        Integer inputTokens = usage.hasNonNull("input_tokens") ? usage.get("input_tokens").asInt() : null;
-        Integer outputTokens = usage.hasNonNull("output_tokens") ? usage.get("output_tokens").asInt() : null;
+        Integer inputTokens = usage.hasNonNull("input_tokens")
+                ? usage.get("input_tokens").asInt()
+                : (usage.hasNonNull("prompt_tokens") ? usage.get("prompt_tokens").asInt() : null);
+        Integer outputTokens = usage.hasNonNull("output_tokens")
+                ? usage.get("output_tokens").asInt()
+                : (usage.hasNonNull("completion_tokens") ? usage.get("completion_tokens").asInt() : null);
         return new OpenAiResponseResult(outputText, model, inputTokens, outputTokens, response);
     }
 
@@ -75,13 +103,24 @@ public class OpenAiClient {
             textNode.set("format", responseFormat);
         }
 
-        JsonNode response = restClient.post()
+        RestClient.RequestBodySpec spec = restClient.post()
                 .uri("/v1/responses")
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(payload)
-                .retrieve()
-                .body(JsonNode.class);
+                .contentType(MediaType.APPLICATION_JSON);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        JsonNode response;
+        try {
+            response = spec.body(payload)
+                    .retrieve()
+                    .body(JsonNode.class);
+        } catch (HttpClientErrorException ex) {
+            if (!shouldFallbackToChatCompat(ex)) {
+                throw ex;
+            }
+            String compatInput = input == null ? "" : (input.isTextual() ? input.asText() : input.toString());
+            response = createChatCompletionCompat(apiKey, model, compatInput, maxOutputTokens);
+        }
 
         if (response == null) {
             throw new IllegalStateException("OpenAI response is empty");
@@ -90,23 +129,80 @@ public class OpenAiClient {
         String outputText = OpenAiResponseParser.extractText(response);
         String responseModel = response.path("model").asText(null);
         JsonNode usage = response.path("usage");
-        Integer inputTokens = usage.hasNonNull("input_tokens") ? usage.get("input_tokens").asInt() : null;
-        Integer outputTokens = usage.hasNonNull("output_tokens") ? usage.get("output_tokens").asInt() : null;
+        Integer inputTokens = usage.hasNonNull("input_tokens")
+                ? usage.get("input_tokens").asInt()
+                : (usage.hasNonNull("prompt_tokens") ? usage.get("prompt_tokens").asInt() : null);
+        Integer outputTokens = usage.hasNonNull("output_tokens")
+                ? usage.get("output_tokens").asInt()
+                : (usage.hasNonNull("completion_tokens") ? usage.get("completion_tokens").asInt() : null);
         return new OpenAiResponseResult(outputText, responseModel, inputTokens, outputTokens, response);
+    }
+
+    private JsonNode createChatCompletionCompat(String apiKey,
+                                                String model,
+                                                String input,
+                                                Integer maxOutputTokens) {
+        ObjectNode payload = objectMapper.createObjectNode();
+        payload.put("model", model);
+        payload.putArray("messages")
+                .addObject()
+                .put("role", "user")
+                .put("content", input == null ? "" : input);
+        if (maxOutputTokens != null && maxOutputTokens > 0) {
+            payload.put("max_tokens", maxOutputTokens);
+        }
+
+        RestClient.RequestBodySpec spec = restClient.post()
+                .uri("/v1/chat/completions")
+                .contentType(MediaType.APPLICATION_JSON);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        return spec.body(payload)
+                .retrieve()
+                .body(JsonNode.class);
+    }
+
+    static boolean shouldFallbackToChatCompat(int statusCode, String errorText) {
+        if (statusCode == 404 || statusCode == 405 || statusCode == 410 || statusCode == 501) {
+            return true;
+        }
+        if (statusCode != 400) {
+            return false;
+        }
+        String normalized = errorText == null ? "" : errorText.toLowerCase(Locale.ROOT);
+        boolean mentionsResponses = normalized.contains("/v1/responses") || normalized.contains("responses");
+        boolean unsupportedEndpoint = normalized.contains("not found")
+                || normalized.contains("unsupported")
+                || normalized.contains("unknown")
+                || normalized.contains("no route")
+                || normalized.contains("unrecognized");
+        return mentionsResponses && unsupportedEndpoint;
+    }
+
+    private static boolean shouldFallbackToChatCompat(HttpClientErrorException ex) {
+        String body = ex.getResponseBodyAsString();
+        String message = ex.getMessage();
+        String combined = (body == null ? "" : body) + " " + (message == null ? "" : message);
+        return shouldFallbackToChatCompat(ex.getStatusCode().value(), combined);
     }
 
     public byte[] createSpeech(String apiKey, OpenAiSpeechRequest request) {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("model", request.model());
         payload.put("input", request.input());
-        payload.put("voice", request.voice());
+        if (request.voice() != null && !request.voice().isBlank()) {
+            payload.put("voice", request.voice());
+        }
         payload.put("response_format", request.responseFormat());
 
-        byte[] response = restClient.post()
+        RestClient.RequestBodySpec spec = restClient.post()
                 .uri("/v1/audio/speech")
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(payload)
+                .contentType(MediaType.APPLICATION_JSON);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        byte[] response = spec.body(payload)
                 .retrieve()
                 .body(byte[].class);
 
@@ -134,11 +230,13 @@ public class OpenAiClient {
         builder.part("file", resource)
                 .contentType(MediaType.parseMediaType(request.mimeType()));
 
-        JsonNode response = restClient.post()
+        RestClient.RequestBodySpec spec = restClient.post()
                 .uri("/v1/audio/transcriptions")
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .contentType(MediaType.MULTIPART_FORM_DATA)
-                .body(builder.build())
+                .contentType(MediaType.MULTIPART_FORM_DATA);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        JsonNode response = spec.body(builder.build())
                 .retrieve()
                 .body(JsonNode.class);
 
@@ -168,11 +266,15 @@ public class OpenAiClient {
         if (request.format() != null && !request.format().isBlank()) {
             payload.put("output_format", request.format());
         }
-        JsonNode response = restClient.post()
+        // Ollama OpenAI compatibility expects b64_json for image payloads.
+        payload.put("response_format", "b64_json");
+        RestClient.RequestBodySpec spec = restClient.post()
                 .uri("/v1/images/generations")
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .contentType(MediaType.APPLICATION_JSON)
-                .body(payload)
+                .contentType(MediaType.APPLICATION_JSON);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        JsonNode response = spec.body(payload)
                 .retrieve()
                 .body(JsonNode.class);
 
@@ -185,10 +287,16 @@ public class OpenAiClient {
         }
         JsonNode item = dataNode.get(0);
         String b64 = item.path("b64_json").asText(null);
-        if (b64 == null || b64.isBlank()) {
-            throw new IllegalStateException("OpenAI image response missing b64_json");
+        byte[] bytes;
+        if (b64 != null && !b64.isBlank()) {
+            bytes = Base64.getDecoder().decode(b64);
+        } else {
+            String imageUrl = item.path("url").asText(null);
+            if (imageUrl == null || imageUrl.isBlank()) {
+                throw new IllegalStateException("OpenAI image response missing b64_json/url");
+            }
+            bytes = downloadImageFromUrl(imageUrl, apiKey);
         }
-        byte[] bytes = Base64.getDecoder().decode(b64);
         String revisedPrompt = item.path("revised_prompt").asText(null);
         String model = response.path("model").asText(null);
         String outputFormat = response.path("output_format").asText(null);
@@ -207,11 +315,13 @@ public class OpenAiClient {
             builder.part("size", request.size());
         }
 
-        JsonNode response = restClient.post()
+        RestClient.RequestBodySpec spec = restClient.post()
                 .uri("/v1/videos")
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .contentType(MediaType.MULTIPART_FORM_DATA)
-                .body(builder.build())
+                .contentType(MediaType.MULTIPART_FORM_DATA);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        JsonNode response = spec.body(builder.build())
                 .retrieve()
                 .body(JsonNode.class);
 
@@ -222,11 +332,12 @@ public class OpenAiClient {
     }
 
     public OpenAiVideoJob getVideoJob(String apiKey, String videoId) {
-        JsonNode response = restClient.get()
-                .uri("/v1/videos/{videoId}", videoId)
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .retrieve()
-                .body(JsonNode.class);
+        RestClient.RequestHeadersSpec<?> spec = restClient.get()
+                .uri("/v1/videos/{videoId}", videoId);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        JsonNode response = spec.retrieve().body(JsonNode.class);
 
         if (response == null) {
             throw new IllegalStateException("OpenAI video status is empty");
@@ -235,11 +346,12 @@ public class OpenAiClient {
     }
 
     public byte[] downloadVideoContent(String apiKey, String videoId) {
-        byte[] response = restClient.get()
-                .uri("/v1/videos/{videoId}/content", videoId)
-                .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
-                .retrieve()
-                .body(byte[].class);
+        RestClient.RequestHeadersSpec<?> spec = restClient.get()
+                .uri("/v1/videos/{videoId}/content", videoId);
+        if (hasApiKey(apiKey)) {
+            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        }
+        byte[] response = spec.retrieve().body(byte[].class);
 
         if (response == null || response.length == 0) {
             throw new IllegalStateException("OpenAI video content is empty");
@@ -249,6 +361,10 @@ public class OpenAiClient {
 
     private String bearer(String token) {
         return "Bearer " + token;
+    }
+
+    private boolean hasApiKey(String token) {
+        return token != null && !token.isBlank();
     }
 
     private OpenAiVideoJob parseVideoJob(JsonNode response) {
@@ -273,5 +389,30 @@ public class OpenAiClient {
             case "gif" -> "image/gif";
             default -> "image/png";
         };
+    }
+
+    private byte[] downloadImageFromUrl(String imageUrl, String apiKey) {
+        try {
+            HttpRequest.Builder builder = HttpRequest.newBuilder()
+                    .uri(URI.create(imageUrl))
+                    .GET();
+            if (hasApiKey(apiKey)) {
+                builder.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+            }
+            HttpResponse<byte[]> response = HttpClient.newBuilder()
+                    .version(HttpClient.Version.HTTP_1_1)
+                    .build()
+                    .send(builder.build(), HttpResponse.BodyHandlers.ofByteArray());
+            if (response.statusCode() >= 400) {
+                throw new IllegalStateException("Image download failed status=" + response.statusCode());
+            }
+            byte[] body = response.body();
+            if (body == null || body.length == 0) {
+                throw new IllegalStateException("Image download response is empty");
+            }
+            return body;
+        } catch (Exception ex) {
+            throw new IllegalStateException("Failed to download image bytes", ex);
+        }
     }
 }
