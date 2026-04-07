@@ -67,6 +67,62 @@ class FederatedUserMapperTest {
     }
 
     @Test
+    fun `maps github oauth principal with login fallback`() {
+        val principal = DefaultOAuth2User(
+            listOf(SimpleGrantedAuthority("ROLE_USER")),
+            mapOf(
+                "id" to 42,
+                "login" to "octocat",
+                "avatar_url" to "https://img.example/octo.png"
+            ),
+            "id"
+        )
+        val authentication = OAuth2AuthenticationToken(principal, principal.authorities, "github")
+
+        val info = mapper.from(authentication)
+
+        requireNotNull(info)
+        assertEquals("octocat", info.name)
+        assertEquals(false, info.emailVerified)
+        assertEquals("https://img.example/octo.png", info.pictureUrl)
+    }
+
+    @Test
+    fun `maps yandex principal with encoded avatar id`() {
+        val principal = DefaultOAuth2User(
+            listOf(SimpleGrantedAuthority("ROLE_USER")),
+            mapOf(
+                "id" to "ya-sub",
+                "emails" to listOf("user@example.com"),
+                "display_name" to "Yandex User",
+                "default_avatar_id" to "12/34 56"
+            ),
+            "id"
+        )
+        val authentication = OAuth2AuthenticationToken(principal, principal.authorities, "yandex")
+
+        val info = mapper.from(authentication)
+
+        requireNotNull(info)
+        assertEquals("ya-sub", info.providerSub)
+        assertEquals("user@example.com", info.email)
+        assertEquals("Yandex User", info.name)
+        assertEquals("https://avatars.yandex.net/get-yapic/12%2F34+56/islands-200", info.pictureUrl)
+    }
+
+    @Test
+    fun `returns null for google principal without oidc claims`() {
+        val principal = DefaultOAuth2User(
+            listOf(SimpleGrantedAuthority("ROLE_USER")),
+            mapOf("sub" to "google-sub"),
+            "sub"
+        )
+        val authentication = OAuth2AuthenticationToken(principal, principal.authorities, "google")
+
+        assertNull(mapper.from(authentication))
+    }
+
+    @Test
     fun `returns null for unsupported provider`() {
         val principal = DefaultOAuth2User(
             listOf(SimpleGrantedAuthority("ROLE_USER")),

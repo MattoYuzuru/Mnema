@@ -61,12 +61,9 @@ class MeController(
     @Transactional
     @PreAuthorize("hasAuthority('SCOPE_user.read')")
     fun getOrCreate(@AuthenticationPrincipal jwt: Jwt): MeResponse {
-        val userIdStr = jwt.getClaimAsString("user_id")
-            ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "user_id claim missing")
+        val userId = requireUserId(jwt)
         val email = jwt.getClaimAsString("email")
             ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "email claim missing")
-
-        val userId = UUID.fromString(userIdStr)
 
         val existing = repo.findById(userId)
         if (existing.isPresent) {
@@ -126,9 +123,7 @@ class MeController(
     @Transactional
     @PreAuthorize("hasAuthority('SCOPE_user.write')")
     fun update(@AuthenticationPrincipal jwt: Jwt, @RequestBody req: MeUpdateRequest): MeResponse {
-        val userIdStr = jwt.getClaimAsString("user_id")
-            ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "user_id claim missing")
-        val userId = UUID.fromString(userIdStr)
+        val userId = requireUserId(jwt)
 
         val user = repo.findById(userId)
             .orElseThrow { ResponseStatusException(HttpStatus.NOT_FOUND, "User not found") }
@@ -166,9 +161,7 @@ class MeController(
     @Transactional
     @PreAuthorize("hasAuthority('SCOPE_user.write')")
     fun delete(@AuthenticationPrincipal jwt: Jwt) {
-        val userIdStr = jwt.getClaimAsString("user_id")
-            ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "user_id claim missing")
-        val userId = UUID.fromString(userIdStr)
+        val userId = requireUserId(jwt)
 
         if (!repo.existsById(userId)) {
             throw ResponseStatusException(HttpStatus.NOT_FOUND, "User not found")
@@ -199,5 +192,11 @@ class MeController(
             ?: jwt.getClaimAsString("preferred_username")
         val cleaned = raw?.trim()?.replace("\\s+".toRegex(), "")
         return cleaned?.take(MAX_USERNAME_LENGTH)?.takeIf { it.isNotBlank() }
+    }
+
+    private fun requireUserId(jwt: Jwt): UUID {
+        val userId = jwt.getClaimAsString("user_id")
+            ?.let { raw -> runCatching { UUID.fromString(raw) }.getOrNull() }
+        return userId ?: throw ResponseStatusException(HttpStatus.UNAUTHORIZED, "user_id claim missing")
     }
 }
