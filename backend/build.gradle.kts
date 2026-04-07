@@ -56,6 +56,27 @@ tasks.register<org.gradle.testing.jacoco.tasks.JacocoReport>("jacocoRootReport")
     }
 }
 
+tasks.register("quality") {
+    group = "verification"
+    description = "Runs backend compilation, tests, and aggregate coverage reporting."
+    dependsOn(
+        subprojects.flatMap { project ->
+            project.tasks.matching { it.name in setOf("compileJava", "compileKotlin", "compileTestJava", "compileTestKotlin") }.toList()
+        },
+        subprojects.flatMap { it.tasks.withType<Test>() },
+        "coverageBaselineCheck",
+        "jacocoRootReport"
+    )
+}
+
+tasks.register<Exec>("coverageBaselineCheck") {
+    group = "verification"
+    description = "Checks backend per-service line coverage against the current baseline."
+    dependsOn("jacocoRootReport")
+    workingDir = projectDir
+    commandLine("python3", "scripts/check_coverage.py")
+}
+
 gradle.projectsEvaluated {
     tasks.named<org.gradle.testing.jacoco.tasks.JacocoReport>("jacocoRootReport") {
         val coverageProjects = subprojects.filter { it.extensions.findByType<org.gradle.api.tasks.SourceSetContainer>() != null }

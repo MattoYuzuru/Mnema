@@ -396,8 +396,8 @@ import { appConfig } from '../../app.config';
       message="Are you sure you want to permanently delete this deck? This action cannot be undone and all card progress will be lost."
       confirmText="Delete Permanently"
       cancelText="Cancel"
-      (confirm)="confirmHardDelete()"
-      (cancel)="closeHardDeleteConfirm()"
+      (confirmed)="confirmHardDelete()"
+      (cancelled)="closeHardDeleteConfirm()"
     ></app-confirmation-dialog>
 
     <app-confirmation-dialog
@@ -408,8 +408,8 @@ import { appConfig } from '../../app.config';
       [confirmText]="'settings.aiProviderKeysDeleteConfirm' | translate"
       [cancelText]="'settings.aiProviderKeysDeleteCancel' | translate"
       confirmVariant="ghost"
-      (confirm)="confirmDeleteProvider()"
-      (cancel)="closeDeleteProvider()"
+      (confirmed)="confirmDeleteProvider()"
+      (cancelled)="closeDeleteProvider()"
     ></app-confirmation-dialog>
   `,
     styles: [`

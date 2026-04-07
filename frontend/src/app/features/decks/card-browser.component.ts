@@ -303,8 +303,8 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       [message]="'cardBrowser.deleteCardMessage' | translate"
       [confirmText]="'cardBrowser.confirmDelete' | translate"
       [cancelText]="'cardBrowser.cancel' | translate"
-      (confirm)="confirmDelete('local')"
-      (cancel)="closeDeleteConfirm()"
+      (confirmed)="confirmDelete('local')"
+      (cancelled)="closeDeleteConfirm()"
     ></app-confirmation-dialog>
 
     <div *ngIf="showScopePrompt" class="modal-overlay" (click)="closeScopePrompt()">

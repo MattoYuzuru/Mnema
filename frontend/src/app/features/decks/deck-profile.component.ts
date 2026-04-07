@@ -529,8 +529,8 @@ import { ToastService } from '../../core/services/toast.service';
       [message]="'deckProfile.deleteDeckMessage' | translate"
       [confirmText]="'deckProfile.confirmDelete' | translate"
       [cancelText]="'deckProfile.cancel' | translate"
-      (confirm)="confirmDelete()"
-      (cancel)="closeDeleteConfirm()"
+      (confirmed)="confirmDelete()"
+      (cancelled)="closeDeleteConfirm()"
     ></app-confirmation-dialog>
 
     <div *ngIf="showExportChoice" class="modal-overlay" (click)="closeExportChoice()">

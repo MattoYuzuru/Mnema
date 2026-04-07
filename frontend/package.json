@@ -3,7 +3,9 @@
   "version": "0.0.1",
   "private": true,
   "scripts": {
-    "build": "npx -y -p @angular/cli@18 ng build --configuration production"
+    "build": "ng build --configuration production",
+    "lint": "ng lint",
+    "test": "ng test --watch=false --browsers=ChromeHeadless"
   },
   "dependencies": {
     "@angular/animations": "18.2.14",
@@ -23,6 +25,16 @@
     "@angular-devkit/build-angular": "18.2.14",
     "@angular/cli": "18.2.14",
     "@angular/compiler-cli": "18.2.14",
-    "typescript": "5.5.4"
+    "@types/jasmine": "5.1.7",
+    "angular-eslint": "18.4.3",
+    "eslint": "9.15.0",
+    "jasmine-core": "5.4.0",
+    "karma": "6.4.4",
+    "karma-chrome-launcher": "3.2.0",
+    "karma-coverage": "2.2.1",
+    "karma-jasmine": "5.1.0",
+    "karma-jasmine-html-reporter": "2.1.0",
+    "typescript": "5.5.4",
+    "typescript-eslint": "8.16.0"
   }
 }
