@@ -289,6 +289,7 @@ public class ReviewService {
         }
         AlgorithmContext ctx = resolveAlgorithmContext(userId, userDeckId);
         List<UUID> cardIds = requests.stream()
+                .filter(Objects::nonNull)
                 .map(SeedCardProgressRequest::userCardId)
                 .filter(java.util.Objects::nonNull)
                 .toList();
@@ -306,6 +307,7 @@ public class ReviewService {
 
         Instant now = Instant.now();
         List<SrCardStateEntity> toSave = new java.util.ArrayList<>();
+        Set<UUID> scheduled = new HashSet<>(existing.keySet());
 
         for (SeedCardProgressRequest request : requests) {
             if (request == null || request.userCardId() == null) {
@@ -322,7 +324,7 @@ public class ReviewService {
             if (card.isDeleted()) {
                 continue;
             }
-            if (existing.containsKey(cardId)) {
+            if (scheduled.contains(cardId)) {
                 continue;
             }
 
@@ -345,6 +347,7 @@ public class ReviewService {
             state.setReviewCount(Math.max(0, request.reviewCount() == null ? 0 : request.reviewCount()));
             state.setSuspended(request.suspended() != null && request.suspended());
             toSave.add(state);
+            scheduled.add(cardId);
         }
 
         if (!toSave.isEmpty()) {
