@@ -38,6 +38,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
       <header class="page-header">
         <div class="header-left">
           <app-button variant="ghost" size="sm" (click)="backToDeck()">
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+              <path d="M10.5 3.5 6 8l4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
             {{ 'cardBrowser.backToDeck' | translate }}
           </app-button>
           <div>
@@ -117,6 +120,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                 (click)="previousCard()"
                 [disabled]="searchNoResults || currentCardIndex === 0"
               >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                  <path d="M10.5 3.5 6 8l4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
                 {{ 'cardBrowser.previous' | translate }}
               </app-button>
               <app-button
@@ -126,6 +132,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                 [disabled]="searchNoResults || currentCardIndex >= cards.length - 1"
               >
                 {{ 'cardBrowser.next' | translate }}
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                  <path d="M5.5 3.5 10 8l-4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
               </app-button>
             </div>
           </div>
