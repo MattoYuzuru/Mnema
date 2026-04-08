@@ -149,7 +149,7 @@ import { ToastService } from '../../core/services/toast.service';
           </div>
           <div class="ai-jobs-actions">
             <app-button variant="ghost" size="sm" (click)="toggleAiJobsVisibility()" [disabled]="aiJobs.length === 0">
-              {{ showOnlyLatestAiJob ? 'Show all jobs' : 'Show latest job' }}
+              {{ (showOnlyLatestAiJob ? 'deckProfile.aiJobsShowAll' : 'deckProfile.aiJobsShowLatest') | translate }}
             </app-button>
             <app-button variant="ghost" size="sm" (click)="refreshAiJobs()" [disabled]="aiJobsLoading">
               {{ 'deckProfile.aiJobsRefresh' | translate }}
@@ -175,9 +175,9 @@ import { ToastService } from '../../core/services/toast.service';
                         [class.completed]="entry.job.status === 'completed'"
                         [class.failed]="entry.job.status === 'failed'"
                         [class.canceled]="entry.job.status === 'canceled'">
-                    {{ formatStatus(entry.job.status) }}
+                    {{ formatAiJobStatus(entry.job.status) }}
                   </span>
-                  <span class="ai-job-date">{{ entry.job.createdAt | date:'medium' }}</span>
+                  <span class="ai-job-date">{{ formatMetaDateTime(entry.job.createdAt) }}</span>
                   <span *ngIf="formatAiJobProvider(entry.job)" class="ai-job-key">{{ formatAiJobProvider(entry.job) }}</span>
                   <span *ngIf="entry.job.model" class="ai-job-model">{{ entry.job.model }}</span>
                 </div>
@@ -1411,6 +1411,21 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         const locale = this.i18n.currentLanguage === 'ru' ? 'ru-RU' : 'en-US';
         return new Intl.DateTimeFormat(locale, { dateStyle: 'long' }).format(parsed);
     }
+
+    formatMetaDateTime(value?: string | null): string {
+        if (!value) {
+            return '-';
+        }
+        const parsed = new Date(value);
+        if (Number.isNaN(parsed.getTime())) {
+            return value;
+        }
+        const locale = this.i18n.currentLanguage === 'ru' ? 'ru-RU' : 'en-US';
+        return new Intl.DateTimeFormat(locale, {
+            dateStyle: 'medium',
+            timeStyle: 'short'
+        }).format(parsed);
+    }
     currentAlgorithm: ReviewDeckAlgorithmResponse | null = null;
     originalAlgorithmId = '';
     private readonly editDraftKeyPrefix = 'mnema_edit_deck_draft:';
@@ -1652,11 +1667,14 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         return status === 'queued' || status === 'processing';
     }
 
-    formatStatus(status: string): string {
+    formatAiJobStatus(status: string): string {
         if (!status) {
-            return 'Unknown';
+            return '';
         }
-        return status.charAt(0).toUpperCase() + status.slice(1);
+        const normalized = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+        const key = `deckProfile.aiJobsStatus${normalized}`;
+        const translated = this.i18n.translate(key);
+        return translated === key ? normalized : translated;
     }
 
     formatJson(value: unknown): string {
@@ -1788,10 +1806,11 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                 if (updatedDeck.publicDeckId) {
                     this.loadPublicDeck(updatedDeck.publicDeckId);
                 }
-                console.log('Deck synced successfully');
+                this.toast.success('deckProfile.syncSuccess');
             },
             error: err => {
                 console.error('Failed to sync deck:', err);
+                this.toast.error('deckProfile.syncError');
             }
         });
     }
@@ -1807,10 +1826,11 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         this.deckApi.syncDeckTemplate(this.userDeckId).subscribe({
             next: updatedDeck => {
                 this.deck = updatedDeck;
-                console.log('Template synced successfully');
+                this.toast.success('deckProfile.syncTemplateSuccess');
             },
             error: err => {
                 console.error('Failed to sync template:', err);
+                this.toast.error('deckProfile.syncTemplateError');
             }
         });
     }
@@ -2175,9 +2195,12 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                 this.saving = false;
                 this.showEditModal = false;
                 this.clearEditDraft();
+                this.toast.success('deckProfile.saveSuccess');
             },
-            error: () => {
+            error: err => {
+                console.error('Failed to save deck changes:', err);
                 this.saving = false;
+                this.toast.error('deckProfile.saveError');
             }
         });
     }

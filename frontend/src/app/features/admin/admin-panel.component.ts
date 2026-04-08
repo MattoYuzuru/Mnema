@@ -5,6 +5,8 @@ import { Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { AdminApiService, AdminOverview, AdminUserEntry } from '../../core/services/admin-api.service';
 import { ModerationReportEntry, ModerationReportStats, ReportApiService } from '../../core/services/report-api.service';
+import { I18nService } from '../../core/services/i18n.service';
+import { ToastService } from '../../core/services/toast.service';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
@@ -381,7 +383,7 @@ interface ChartView {
         justify-content: space-between;
         gap: var(--spacing-lg);
         padding: var(--spacing-xl);
-        border-radius: var(--border-radius-xl);
+        border-radius: var(--border-radius-lg);
       }
 
       .hero h1 {
@@ -421,7 +423,7 @@ interface ChartView {
       }
 
       .stat-card, .panel, .chart-card {
-        border-radius: var(--border-radius-xl);
+        border-radius: var(--border-radius-lg);
         padding: var(--spacing-lg);
       }
 
@@ -473,7 +475,7 @@ interface ChartView {
         border: 1px solid var(--border-color);
         background: rgba(255, 255, 255, 0.08);
         color: var(--color-text-primary);
-        border-radius: var(--border-radius-lg);
+        border-radius: var(--border-radius-md);
         padding: 0.85rem 1rem;
       }
 
@@ -493,7 +495,7 @@ interface ChartView {
         justify-content: space-between;
         gap: var(--spacing-md);
         padding: var(--spacing-md);
-        border-radius: var(--border-radius-lg);
+        border-radius: var(--border-radius-md);
         background: rgba(255, 255, 255, 0.05);
         border: 1px solid rgba(255, 255, 255, 0.08);
       }
@@ -656,7 +658,7 @@ interface ChartView {
         justify-content: space-between;
         gap: var(--spacing-md);
         padding: var(--spacing-md);
-        border-radius: var(--border-radius-lg);
+        border-radius: var(--border-radius-md);
         background: rgba(255, 255, 255, 0.05);
         border: 1px solid rgba(255, 255, 255, 0.08);
       }
@@ -686,18 +688,27 @@ interface ChartView {
       }
 
       .report-link-btn {
-        border: none;
-        background: transparent;
-        color: #38bdf8;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 2rem;
+        padding: 0.4rem 0.8rem;
+        border: 1px solid color-mix(in srgb, var(--border-color) 85%, transparent);
+        border-radius: var(--border-radius-full);
+        background: color-mix(in srgb, var(--glass-surface) 88%, transparent);
+        color: var(--color-text-primary);
         font: inherit;
         font-weight: 600;
-        padding: 0;
         cursor: pointer;
+        transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
       }
 
       .report-link-btn:hover,
       .report-link-btn:focus-visible {
-        color: #7dd3fc;
+        color: var(--color-text-primary);
+        border-color: color-mix(in srgb, var(--color-primary-accent) 45%, var(--border-color));
+        background: color-mix(in srgb, var(--glass-surface-strong) 92%, transparent);
+        transform: translateY(-1px);
         outline: none;
       }
 
@@ -764,7 +775,9 @@ export class AdminPanelComponent implements OnInit {
     constructor(
         private adminApi: AdminApiService,
         private reportApi: ReportApiService,
-        private router: Router
+        private router: Router,
+        private i18n: I18nService,
+        private toast: ToastService
     ) {}
 
     ngOnInit(): void {
@@ -846,25 +859,65 @@ export class AdminPanelComponent implements OnInit {
     }
 
     grantAdmin(user: AdminUserEntry): void {
-        this.adminApi.grantAdmin(user.id).subscribe({ next: () => this.reloadAll() });
+        this.adminApi.grantAdmin(user.id).subscribe({
+            next: () => {
+                this.toast.success('adminPanel.grantAdminSuccess');
+                this.reloadAll();
+            },
+            error: () => {
+                this.toast.error('adminPanel.grantAdminError');
+            }
+        });
     }
 
     revokeAdmin(user: AdminUserEntry): void {
-        this.adminApi.revokeAdmin(user.id).subscribe({ next: () => this.reloadAll() });
+        this.adminApi.revokeAdmin(user.id).subscribe({
+            next: () => {
+                this.toast.success('adminPanel.revokeAdminSuccess');
+                this.reloadAll();
+            },
+            error: () => {
+                this.toast.error('adminPanel.revokeAdminError');
+            }
+        });
     }
 
     banUser(user: AdminUserEntry): void {
-        const reason = window.prompt('Ban reason (optional)', '') ?? '';
-        this.adminApi.banUser(user.id, reason).subscribe({ next: () => this.reloadAll() });
+        const reason = window.prompt(this.i18n.translate('adminPanel.banReasonPrompt'), '') ?? '';
+        this.adminApi.banUser(user.id, reason).subscribe({
+            next: () => {
+                this.toast.success('adminPanel.banUserSuccess');
+                this.reloadAll();
+            },
+            error: () => {
+                this.toast.error('adminPanel.banUserError');
+            }
+        });
     }
 
     unbanUser(user: AdminUserEntry): void {
-        this.adminApi.unbanUser(user.id).subscribe({ next: () => this.reloadAll() });
+        this.adminApi.unbanUser(user.id).subscribe({
+            next: () => {
+                this.toast.success('adminPanel.unbanUserSuccess');
+                this.reloadAll();
+            },
+            error: () => {
+                this.toast.error('adminPanel.unbanUserError');
+            }
+        });
     }
 
     closeReport(report: ModerationReportEntry): void {
-        const resolutionNote = window.prompt('Resolution note (optional)', '') ?? '';
-        this.reportApi.closeReport(report.reportId, resolutionNote).subscribe({ next: () => this.reloadAll() });
+        const resolutionNote = window.prompt(this.i18n.translate('adminPanel.closeReportPrompt'), '') ?? '';
+        this.reportApi.closeReport(report.reportId, resolutionNote).subscribe({
+            next: () => {
+                this.toast.success('adminPanel.closeReportSuccess');
+                this.reloadAll();
+            },
+            error: () => {
+                this.toast.error('adminPanel.closeReportError');
+            }
+        });
     }
 
     openReportTarget(report: ModerationReportEntry): void {

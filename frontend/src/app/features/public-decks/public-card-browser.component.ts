@@ -160,6 +160,9 @@ import { ToastService } from '../../core/services/toast.service';
                 (click)="previousCard()"
                 [disabled]="searchNoResults || currentCardIndex === 0"
               >
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                  <path d="M10.5 3.5 6 8l4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
                 {{ 'cardBrowser.previous' | translate }}
               </app-button>
               <app-button
@@ -169,6 +172,9 @@ import { ToastService } from '../../core/services/toast.service';
                 [disabled]="searchNoResults || currentCardIndex >= visibleCards.length - 1"
               >
                 {{ 'cardBrowser.next' | translate }}
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                  <path d="M5.5 3.5 10 8l-4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
               </app-button>
             </div>
           </div>
@@ -1313,9 +1319,11 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
             next: updated => {
                 this.deck = updated;
                 this.closeDeckEditModal();
+                this.toast.success('deckProfile.saveSuccess');
             },
             error: err => {
                 console.error('Failed to save deck', err);
+                this.toast.error('deckProfile.saveError');
             }
         });
     }
@@ -1359,10 +1367,15 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
 
     banAuthor(): void {
         if (!this.deck) return;
-        const reason = window.prompt('Ban reason (optional)', '') ?? '';
+        const reason = window.prompt(this.i18n.translate('adminPanel.banReasonPrompt'), '') ?? '';
         this.adminApi.banUser(this.deck.authorId, reason).subscribe({
-            next: () => {},
-            error: err => console.error('Failed to ban author', err)
+            next: () => {
+                this.toast.success('adminPanel.banUserSuccess');
+            },
+            error: err => {
+                console.error('Failed to ban author', err);
+                this.toast.error('adminPanel.banUserError');
+            }
         });
     }
 

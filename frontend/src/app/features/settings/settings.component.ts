@@ -11,6 +11,7 @@ import { UserApiService } from '../../user-api.service';
 import { AuthService } from '../../auth.service';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { AiProviderCredential } from '../../core/models/ai.models';
+import { ToastService } from '../../core/services/toast.service';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
@@ -320,7 +321,7 @@ import { appConfig } from '../../app.config';
         <h2>{{ 'settings.archive' | translate }}</h2>
         <p class="section-description">{{ 'settings.archiveDescription' | translate }}</p>
 
-        <div *ngIf="loadingArchive" class="loading-state">Loading archived decks...</div>
+        <div *ngIf="loadingArchive" class="loading-state">{{ 'settings.archiveLoading' | translate }}</div>
 
         <div *ngIf="!loadingArchive && archivedDecks.length === 0" class="empty-state">
           {{ 'publicDecks.noArchivedDecks' | translate }}
@@ -334,14 +335,14 @@ import { appConfig } from '../../app.config';
             </div>
             <div class="archive-item-actions">
               <app-button variant="ghost" size="sm" (click)="openDeck(deck.userDeckId)">
-                Open
+                {{ 'settings.open' | translate }}
               </app-button>
               <app-button variant="secondary" size="sm" (click)="restoreDeck(deck.userDeckId)">
                 {{ 'settings.restore' | translate }}
               </app-button>
-        <app-button variant="ghost" size="sm" tone="danger" (click)="openHardDeleteConfirm(deck.userDeckId)">
-          Delete Permanently
-        </app-button>
+              <app-button variant="ghost" size="sm" tone="danger" (click)="openHardDeleteConfirm(deck.userDeckId)">
+                {{ 'settings.deletePermanently' | translate }}
+              </app-button>
             </div>
           </div>
         </div>
@@ -357,15 +358,15 @@ import { appConfig } from '../../app.config';
       </section>
     </div>
 
-    <div *ngIf="showDeleteConfirmation" class="modal-overlay" (click)="showDeleteConfirmation = false; deleteAccountUsername = ''">
+      <div *ngIf="showDeleteConfirmation" class="modal-overlay" (click)="showDeleteConfirmation = false; deleteAccountUsername = ''">
       <div class="modal-content delete-account-modal" (click)="$event.stopPropagation()">
         <div class="modal-header">
-          <h2>Delete Account</h2>
+          <h2>{{ 'settings.deleteAccountTitle' | translate }}</h2>
           <button class="close-btn" (click)="showDeleteConfirmation = false; deleteAccountUsername = ''">&times;</button>
         </div>
         <div class="modal-body">
-          <p class="warning-text">This action cannot be undone. All your decks and progress will be permanently deleted.</p>
-          <p>Type your username <strong>{{ currentUsername }}</strong> to confirm:</p>
+          <p class="warning-text">{{ 'settings.deleteAccountConfirmMessage' | translate }}</p>
+          <p>{{ 'settings.deleteAccountConfirmPrompt' | translate }} <strong>{{ currentUsername }}</strong></p>
           <input
             type="text"
             [(ngModel)]="deleteAccountUsername"
@@ -375,7 +376,7 @@ import { appConfig } from '../../app.config';
         </div>
         <div class="modal-footer">
           <app-button variant="ghost" (click)="showDeleteConfirmation = false; deleteAccountUsername = ''">
-            Cancel
+            {{ 'settings.cancel' | translate }}
           </app-button>
           <app-button
             variant="primary"
@@ -392,10 +393,10 @@ import { appConfig } from '../../app.config';
     <app-confirmation-dialog
       *ngIf="showHardDeleteConfirmation"
       [open]="showHardDeleteConfirmation"
-      title="Delete Deck Permanently"
-      message="Are you sure you want to permanently delete this deck? This action cannot be undone and all card progress will be lost."
-      confirmText="Delete Permanently"
-      cancelText="Cancel"
+      [title]="'settings.deleteDeckPermanentTitle' | translate"
+      [message]="'settings.deleteDeckPermanentMessage' | translate"
+      [confirmText]="'settings.deletePermanently' | translate"
+      [cancelText]="'settings.cancel' | translate"
       (confirmed)="confirmHardDelete()"
       (cancelled)="closeHardDeleteConfirm()"
     ></app-confirmation-dialog>
@@ -952,7 +953,8 @@ export class SettingsComponent implements OnInit {
         private aiApi: AiApiService,
         private userApi: UserApiService,
         private auth: AuthService,
-        private router: Router
+        private router: Router,
+        private toast: ToastService
     ) {}
 
     ngOnInit(): void {
@@ -1020,10 +1022,12 @@ export class SettingsComponent implements OnInit {
                 this.providerSecret.set('');
                 this.createSuccess.set('settings.aiProviderKeysSaved');
                 this.creatingProvider.set(false);
+                this.toast.success('settings.aiProviderKeysSaved');
             },
             error: () => {
                 this.createError.set('settings.aiProviderKeysSaveError');
                 this.creatingProvider.set(false);
+                this.toast.error('settings.aiProviderKeysSaveError');
             }
         });
     }
@@ -1047,10 +1051,12 @@ export class SettingsComponent implements OnInit {
                 this.providerKeys.update(list => list.filter(item => item.id !== target.id));
                 this.deleteInFlight.set(false);
                 this.closeDeleteProvider();
+                this.toast.success('settings.aiProviderKeysDeleteSuccess');
             },
             error: () => {
                 this.deleteInFlight.set(false);
                 this.closeDeleteProvider();
+                this.toast.error('settings.aiProviderKeysDeleteError');
             }
         });
     }
@@ -1078,8 +1084,10 @@ export class SettingsComponent implements OnInit {
         this.deckApi.patchDeck(userDeckId, { archived: false }).subscribe({
             next: () => {
                 this.archivedDecks = this.archivedDecks.filter(d => d.userDeckId !== userDeckId);
+                this.toast.success('settings.archiveRestoreSuccess');
             },
             error: () => {
+                this.toast.error('settings.archiveRestoreError');
             }
         });
     }
@@ -1106,9 +1114,11 @@ export class SettingsComponent implements OnInit {
             next: () => {
                 this.archivedDecks = this.archivedDecks.filter(d => d.userDeckId !== deckId);
                 this.closeHardDeleteConfirm();
+                this.toast.success('settings.archiveDeleteSuccess');
             },
             error: () => {
                 this.closeHardDeleteConfirm();
+                this.toast.error('settings.archiveDeleteError');
             }
         });
     }

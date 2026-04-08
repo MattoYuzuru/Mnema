@@ -13,6 +13,7 @@ import { ReviewStatsPanelComponent } from './shared/components/review-stats-pane
 
 import { TranslatePipe } from './shared/pipes/translate.pipe';
 import { I18nService } from './core/services/i18n.service';
+import { ToastService } from './core/services/toast.service';
 import { appConfig } from './app.config';
 
 @Component({
@@ -138,8 +139,6 @@ import { appConfig } from './app.config';
                   {{ (passwordSaving ? 'profile.passwordSaving' : 'profile.passwordSave') | translate }}
                 </app-button>
               </div>
-              <div *ngIf="passwordMessageKey" class="password-success">{{ passwordMessageKey | translate }}</div>
-              <div *ngIf="passwordErrorKey" class="password-error">{{ passwordErrorKey | translate }}</div>
             </form>
           </div>
         </div>
@@ -241,16 +240,6 @@ import { appConfig } from './app.config';
         display: flex;
         flex-direction: column;
         gap: var(--spacing-md);
-      }
-
-      .password-success {
-        color: #166534;
-        font-size: 0.9rem;
-      }
-
-      .password-error {
-        color: #b91c1c;
-        font-size: 0.9rem;
       }
 
       .profile-header {
@@ -431,15 +420,14 @@ export class ProfilePageComponent implements OnInit {
     passwordForm: FormGroup;
     passwordStatus: PasswordStatus | null = null;
     passwordSaving = false;
-    passwordMessageKey: string | null = null;
-    passwordErrorKey: string | null = null;
 
     constructor(
         public auth: AuthService,
         private api: UserApiService,
         private mediaApi: MediaApiService,
         private fb: FormBuilder,
-        private i18n: I18nService
+        private i18n: I18nService,
+        private toast: ToastService
     ) {
         this.form = this.fb.group({
             username: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(ProfilePageComponent.MAX_USERNAME_LENGTH)]],
@@ -510,9 +498,11 @@ export class ProfilePageComponent implements OnInit {
                 next: async profile => {
                     this.profile = profile;
                     await this.resolveAvatarUrl(profile);
+                    this.toast.success('profile.saveSuccess');
                 },
                 error: err => {
                     console.error('Failed to save profile', err);
+                    this.toast.error('profile.saveError');
                 },
                 complete: () => {
                     this.saving = false;
@@ -532,8 +522,6 @@ export class ProfilePageComponent implements OnInit {
     savePassword(): void {
         if (!this.passwordStatus || this.passwordForm.invalid) return;
         this.passwordSaving = true;
-        this.passwordMessageKey = null;
-        this.passwordErrorKey = null;
 
         const currentPassword = this.passwordStatus.hasPassword
             ? (this.passwordForm.get('currentPassword')?.value as string | null)
@@ -544,13 +532,13 @@ export class ProfilePageComponent implements OnInit {
             .setPassword(currentPassword, newPassword)
             .then(status => {
                 this.passwordStatus = status;
-                this.passwordMessageKey = 'profile.passwordSuccess';
                 this.passwordForm.reset();
                 this.applyPasswordValidators();
+                this.toast.success('profile.passwordSuccess');
             })
             .catch(err => {
                 console.error('Failed to update password', err);
-                this.passwordErrorKey = 'profile.passwordError';
+                this.toast.error('profile.passwordError');
             })
             .finally(() => {
                 this.passwordSaving = false;
@@ -624,17 +612,20 @@ export class ProfilePageComponent implements OnInit {
                     await this.resolveAvatarUrl(profile);
                     this.uploading = false;
                     this.uploadProgress = 0;
+                    this.toast.success('profile.avatarSuccess');
                 },
                 error: err => {
                     console.error('Failed to update avatar', err);
                     this.uploading = false;
                     this.uploadProgress = 0;
+                    this.toast.error('profile.avatarError');
                 }
             });
         } catch (err) {
             console.error('Failed to upload avatar', err);
             this.uploading = false;
             this.uploadProgress = 0;
+            this.toast.error('profile.avatarError');
         }
     }
 
