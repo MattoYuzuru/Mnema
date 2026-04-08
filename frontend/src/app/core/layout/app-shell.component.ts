@@ -78,6 +78,13 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
                 </svg>
                 {{ 'nav.settings' | translate }}
               </a>
+              <a *ngIf="userProfile()?.admin" routerLink="/admin" class="menu-item" (click)="closeUserMenu()">
+                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                  <path d="M12 3l7 4v5c0 5-3.5 7.74-7 9-3.5-1.26-7-4-7-9V7l7-4z"/>
+                  <path d="M9.5 12.5l1.5 1.5 3.5-4"/>
+                </svg>
+                {{ 'nav.admin' | translate }}
+              </a>
               <button class="menu-item" type="button" (click)="logout()">
                 <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
                   <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
@@ -201,6 +208,7 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
           <a *ngIf="auth.status() === 'authenticated'" routerLink="/templates" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.templates' | translate }}</a>
           <a *ngIf="auth.status() === 'authenticated'" routerLink="/profile" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.profile' | translate }}</a>
           <a *ngIf="auth.status() === 'authenticated'" routerLink="/settings" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.settings' | translate }}</a>
+          <a *ngIf="auth.status() === 'authenticated' && userProfile()?.admin" routerLink="/admin" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.admin' | translate }}</a>
 
           <a routerLink="/privacy" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.privacy' | translate }}</a>
           <a routerLink="/terms" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.terms' | translate }}</a>

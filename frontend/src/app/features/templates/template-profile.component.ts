@@ -4,11 +4,14 @@ import { NgIf, NgFor } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { TemplateApiService } from '../../core/services/template-api.service';
+import { ReportApiService, ReportReason } from '../../core/services/report-api.service';
+import { ToastService } from '../../core/services/toast.service';
 import { UserApiService } from '../../user-api.service';
 import { DeckWizardStateService } from '../wizard/deck-wizard-state.service';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
+import { ReportContentModalComponent } from '../../shared/components/report-content-modal.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 import { I18nService } from '../../core/services/i18n.service';
 
@@ -30,7 +33,7 @@ type FieldSide = 'front' | 'back';
 @Component({
     selector: 'app-template-profile',
     standalone: true,
-    imports: [NgIf, NgFor, FormsModule, ButtonComponent, MemoryTipLoaderComponent, TranslatePipe],
+    imports: [NgIf, NgFor, FormsModule, ButtonComponent, MemoryTipLoaderComponent, TranslatePipe, ReportContentModalComponent],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -61,8 +64,11 @@ type FieldSide = 'front' | 'back';
             {{ 'templateProfile.useTemplate' | translate }}
           </app-button>
 
-          <app-button *ngIf="isOwner && !editing" variant="secondary" (click)="startEdit()">
+          <app-button *ngIf="canEditTemplate && !editing" variant="secondary" (click)="startEdit()">
             {{ 'templateProfile.edit' | translate }}
+          </app-button>
+          <app-button *ngIf="canReportTemplate" variant="ghost" (click)="openReportModal()">
+            {{ 'reports.action' | translate }}
           </app-button>
           <app-button *ngIf="editing" variant="ghost" (click)="cancelEdit()" [disabled]="saving">
             {{ 'templateProfile.cancel' | translate }}
@@ -269,6 +275,14 @@ type FieldSide = 'front' | 'back';
         </div>
       </section>
     </div>
+
+    <app-report-content-modal
+      [visible]="showReportModal"
+      [subject]="template?.name || ''"
+      [submitting]="reportSubmitting"
+      (close)="closeReportModal()"
+      (submitted)="submitReport($event.reason, $event.details)"
+    ></app-report-content-modal>
   `,
     styles: [`
       .template-profile {
@@ -617,12 +631,15 @@ export class TemplateProfileComponent implements OnInit {
     template: CardTemplateDTO | null = null;
     currentUserId: string | null = null;
     isOwner = false;
+    isAdmin = false;
     fromWizard = false;
     isFlipped = false;
     editing = false;
     templateError = '';
     requestedVersion: number | null = null;
     isLatestVersion = true;
+    showReportModal = false;
+    reportSubmitting = false;
 
     draftName = '';
     draftDescription = '';
@@ -653,9 +670,11 @@ export class TemplateProfileComponent implements OnInit {
         private route: ActivatedRoute,
         private router: Router,
         private templateApi: TemplateApiService,
+        private reportApi: ReportApiService,
         private userApi: UserApiService,
         private wizardState: DeckWizardStateService,
-        private i18n: I18nService
+        private i18n: I18nService,
+        private toast: ToastService
     ) {}
 
     ngOnInit(): void {
@@ -676,6 +695,7 @@ export class TemplateProfileComponent implements OnInit {
                 this.template = template;
                 this.currentUserId = user.id;
                 this.isOwner = template.ownerId === user.id;
+                this.isAdmin = user.admin;
                 this.isLatestVersion = !template.latestVersion || !template.version || template.version === template.latestVersion;
                 this.hydrateDraft(template);
                 this.loading = false;
@@ -697,12 +717,69 @@ export class TemplateProfileComponent implements OnInit {
         this.templateError = '';
     }
 
+    get canEditTemplate(): boolean {
+        return this.isOwner || this.isAdmin;
+    }
+
+    get canReportTemplate(): boolean {
+        return !!this.template?.isPublic && !this.isOwner;
+    }
+
     cancelEdit(): void {
         if (!this.template) return;
         this.editing = false;
         this.fieldError = '';
         this.templateError = '';
         this.hydrateDraft(this.template);
+    }
+
+    openReportModal(): void {
+        if (!this.template) {
+            return;
+        }
+        if (!this.currentUserId) {
+            void this.router.navigate(['/login'], {
+                queryParams: {
+                    returnUrl: this.router.url
+                }
+            });
+            return;
+        }
+        this.showReportModal = true;
+    }
+
+    closeReportModal(): void {
+        if (this.reportSubmitting) {
+            return;
+        }
+        this.showReportModal = false;
+    }
+
+    submitReport(reason: ReportReason, details: string | null): void {
+        if (!this.template) {
+            return;
+        }
+        this.reportSubmitting = true;
+        this.reportApi.createReport({
+            targetType: 'TEMPLATE',
+            targetId: this.template.templateId,
+            reason,
+            details
+        }).subscribe({
+            next: () => {
+                this.reportSubmitting = false;
+                this.showReportModal = false;
+                this.toast.success('reports.submitSuccess');
+            },
+            error: err => {
+                this.reportSubmitting = false;
+                if (err?.status === 409) {
+                    this.toast.warning('reports.duplicateOpen');
+                    return;
+                }
+                this.toast.error('reports.submitError');
+            }
+        });
     }
 
     saveChanges(): void {

@@ -25,6 +25,21 @@ data class User(
     @Column(nullable = false, name = "is_admin")
     var isAdmin: Boolean = false,
 
+    @Column(name = "admin_granted_by", columnDefinition = "uuid")
+    var adminGrantedBy: UUID? = null,
+
+    @Column(name = "admin_granted_at")
+    var adminGrantedAt: Instant? = null,
+
+    @Column(name = "banned_by", columnDefinition = "uuid")
+    var bannedBy: UUID? = null,
+
+    @Column(name = "banned_at")
+    var bannedAt: Instant? = null,
+
+    @Column(name = "ban_reason", length = 280)
+    var banReason: String? = null,
+
     @Column(name = "avatar_url")
     var avatarUrl: String? = null,
 

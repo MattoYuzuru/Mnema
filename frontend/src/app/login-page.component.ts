@@ -515,6 +515,10 @@ export class LoginPageComponent implements OnInit, AfterViewInit {
 
     ngOnInit(): void {
         this.returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/profile';
+        const authError = this.route.snapshot.queryParamMap.get('authError');
+        if (authError === 'banned') {
+            this.localErrorKey = 'login.errorBanned';
+        }
         void this.loadTurnstile();
     }
 
@@ -619,6 +623,9 @@ export class LoginPageComponent implements OnInit, AfterViewInit {
                     }
                     return 'login.errorConflict';
                 case 423:
+                    if (message === 'banned') {
+                        return 'login.errorBanned';
+                    }
                     return 'login.errorLocked';
                 case 429:
                     return 'login.errorTooMany';

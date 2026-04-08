@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { appConfig } from './app.config';
 import { BehaviorSubject, Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { map, tap } from 'rxjs/operators';
 
 export interface UserProfile {
     id: string;
@@ -15,6 +15,11 @@ export interface UserProfile {
     createdAt: string;
     updatedAt: string;
 }
+
+type UserProfileApiResponse = Omit<UserProfile, 'admin'> & {
+    admin?: boolean;
+    isAdmin?: boolean;
+};
 
 export interface MeUpdateRequest {
     username?: string;
@@ -31,13 +36,15 @@ export class UserApiService {
     constructor(private http: HttpClient) {}
 
     getMe(): Observable<UserProfile> {
-        return this.http.get<UserProfile>(`${appConfig.apiBaseUrl}/me`).pipe(
+        return this.http.get<UserProfileApiResponse>(`${appConfig.apiBaseUrl}/me`).pipe(
+            map(profile => this.normalizeProfile(profile)),
             tap(profile => this.profileSubject.next(profile))
         );
     }
 
     updateMe(update: MeUpdateRequest): Observable<UserProfile> {
-        return this.http.patch<UserProfile>(`${appConfig.apiBaseUrl}/me`, update).pipe(
+        return this.http.patch<UserProfileApiResponse>(`${appConfig.apiBaseUrl}/me`, update).pipe(
+            map(profile => this.normalizeProfile(profile)),
             tap(profile => this.profileSubject.next(profile))
         );
     }
@@ -46,5 +53,12 @@ export class UserApiService {
         return this.http.delete<void>(`${appConfig.apiBaseUrl}/me`).pipe(
             tap(() => this.profileSubject.next(null))
         );
+    }
+
+    private normalizeProfile(profile: UserProfileApiResponse): UserProfile {
+        return {
+            ...profile,
+            admin: profile.admin ?? profile.isAdmin ?? false
+        };
     }
 }

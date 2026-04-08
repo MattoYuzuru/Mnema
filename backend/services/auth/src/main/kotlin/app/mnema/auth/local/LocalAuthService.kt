@@ -7,6 +7,7 @@ import app.mnema.auth.security.LocalTokenService
 import app.mnema.auth.security.RateLimiter
 import app.mnema.auth.security.TurnstileService
 import app.mnema.auth.identity.FederatedIdentityRepository
+import app.mnema.auth.user.LoginModerationService
 import app.mnema.auth.user.AuthUser
 import app.mnema.auth.user.AuthUserRepository
 import java.time.Instant
@@ -29,7 +30,8 @@ class LocalAuthService(
     private val featureProps: AuthFeaturesProps,
     private val rateLimiter: RateLimiter,
     private val turnstileService: TurnstileService,
-    private val identityRepository: FederatedIdentityRepository
+    private val identityRepository: FederatedIdentityRepository,
+    private val loginModerationService: LoginModerationService
 ) {
     private val allowedUsername = Regex("^[A-Za-z0-9._-]{3,50}$")
     private val emailPattern = Regex("^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$")
@@ -100,6 +102,7 @@ class LocalAuthService(
         } catch (ex: DataIntegrityViolationException) {
             throw ResponseStatusException(HttpStatus.CONFLICT, "email_or_username_in_use")
         }
+        loginModerationService.assertLoginAllowed(saved.id)
         return tokenService.generateTokens(saved, scopes, props.accessTokenTtl, now)
     }
 
@@ -145,6 +148,7 @@ class LocalAuthService(
         user.resetFailedLogins()
         user.touchLogin(now)
         userRepository.save(user)
+        loginModerationService.assertLoginAllowed(user.id)
         return tokenService.generateTokens(user, scopes, props.accessTokenTtl, now)
     }
 

@@ -8,6 +8,7 @@ import app.mnema.core.deck.domain.entity.FieldTemplateEntity;
 import app.mnema.core.deck.repository.CardTemplateRepository;
 import app.mnema.core.deck.repository.CardTemplateVersionRepository;
 import app.mnema.core.deck.repository.FieldTemplateRepository;
+import app.mnema.core.security.ContentAdminAccessService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -36,13 +37,16 @@ public class TemplateService {
     private final CardTemplateRepository cardTemplateRepository;
     private final FieldTemplateRepository fieldTemplateRepository;
     private final CardTemplateVersionRepository cardTemplateVersionRepository;
+    private final ContentAdminAccessService contentAdminAccessService;
 
     public TemplateService(CardTemplateRepository cardTemplateRepository,
                            FieldTemplateRepository fieldTemplateRepository,
-                           CardTemplateVersionRepository cardTemplateVersionRepository) {
+                           CardTemplateVersionRepository cardTemplateVersionRepository,
+                           ContentAdminAccessService contentAdminAccessService) {
         this.cardTemplateRepository = cardTemplateRepository;
         this.fieldTemplateRepository = fieldTemplateRepository;
         this.cardTemplateVersionRepository = cardTemplateVersionRepository;
+        this.contentAdminAccessService = contentAdminAccessService;
     }
 
     // GET /api/core/templates?page=1&limit=10 - получить все публичные шаблоны постранично
@@ -218,10 +222,11 @@ public class TemplateService {
                                                        CardTemplateDTO dto) {
 
         CardTemplateEntity entity = cardTemplateRepository
-                .findByOwnerIdAndTemplateIdForUpdate(currentUserId, templateId)
+                .findByTemplateIdForUpdate(templateId)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template not found or access denied: " + templateId
                 ));
+        contentAdminAccessService.assertCanManageOwnedContent(currentUserId, entity.getOwnerId(), "template", templateId);
 
         // Base meta updates
         if (dto.name() != null) {
@@ -276,11 +281,12 @@ public class TemplateService {
 
         // 1. Проверяем наличие шаблона и права
         CardTemplateEntity cardTemplate = cardTemplateRepository
-                .findByOwnerIdAndTemplateIdForUpdate(currentUserId, templateId)
+                .findByTemplateIdForUpdate(templateId)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template with ID: " + templateId +
                                 " and owner ID: " + currentUserId + " not found."
                 ));
+        contentAdminAccessService.assertCanManageOwnedContent(currentUserId, cardTemplate.getOwnerId(), "template", templateId);
 
         // 2. Удаляем поля (в БД уже есть ON DELETE CASCADE, но так явнее)
         List<FieldTemplateEntity> cardFields = fieldTemplateRepository.findByTemplateId(templateId);
@@ -301,10 +307,11 @@ public class TemplateService {
 
         // Проверяем, что шаблон принадлежит текущему пользователю
         CardTemplateEntity template = cardTemplateRepository
-                .findByOwnerIdAndTemplateIdForUpdate(currentUserId, templateId)
+                .findByTemplateIdForUpdate(templateId)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template not found or access denied: " + templateId
                 ));
+        contentAdminAccessService.assertCanManageOwnedContent(currentUserId, template.getOwnerId(), "template", templateId);
 
         CardTemplateVersionEntity latestVersion = resolveLatestVersion(template);
 
@@ -359,10 +366,11 @@ public class TemplateService {
 
         // Проверяем права на шаблон
         CardTemplateEntity template = cardTemplateRepository
-                .findByOwnerIdAndTemplateIdForUpdate(currentUserId, templateId)
+                .findByTemplateIdForUpdate(templateId)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template not found or access denied: " + templateId
                 ));
+        contentAdminAccessService.assertCanManageOwnedContent(currentUserId, template.getOwnerId(), "template", templateId);
 
         CardTemplateVersionEntity latestVersion = resolveLatestVersion(template);
 
@@ -431,10 +439,11 @@ public class TemplateService {
 
         // Проверяем права на шаблон
         CardTemplateEntity template = cardTemplateRepository
-                .findByOwnerIdAndTemplateIdForUpdate(currentUserId, templateId)
+                .findByTemplateIdForUpdate(templateId)
                 .orElseThrow(() -> new NoSuchElementException(
                         "Template not found or access denied: " + templateId
                 ));
+        contentAdminAccessService.assertCanManageOwnedContent(currentUserId, template.getOwnerId(), "template", templateId);
 
         CardTemplateVersionEntity latestVersion = resolveLatestVersion(template);
 

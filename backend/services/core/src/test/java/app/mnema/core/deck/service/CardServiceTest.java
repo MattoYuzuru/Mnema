@@ -26,6 +26,7 @@ import app.mnema.core.deck.repository.PublicCardRepository;
 import app.mnema.core.deck.repository.PublicDeckRepository;
 import app.mnema.core.deck.repository.UserCardRepository;
 import app.mnema.core.deck.repository.UserDeckRepository;
+import app.mnema.core.security.ContentAdminAccessService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
@@ -82,6 +83,9 @@ class CardServiceTest {
 
     @Spy
     ObjectMapper objectMapper = new ObjectMapper();
+
+    @Mock
+    ContentAdminAccessService contentAdminAccessService;
 
     @InjectMocks
     CardService cardService;
