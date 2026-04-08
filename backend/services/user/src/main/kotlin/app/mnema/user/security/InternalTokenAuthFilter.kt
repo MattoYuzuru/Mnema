@@ -5,6 +5,7 @@ import jakarta.servlet.ServletException
 import jakarta.servlet.http.HttpServletRequest
 import jakarta.servlet.http.HttpServletResponse
 import org.springframework.security.authentication.AbstractAuthenticationToken
+import org.springframework.security.authentication.AnonymousAuthenticationToken
 import org.springframework.security.core.authority.SimpleGrantedAuthority
 import org.springframework.security.oauth2.jwt.Jwt
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken
@@ -67,6 +68,10 @@ class InternalTokenAuthFilter(
 
     private fun hasAuthentication(): Boolean {
         val context = org.springframework.security.core.context.SecurityContextHolder.getContext()
-        return context?.authentication != null
+        val authentication = context?.authentication ?: return false
+        if (authentication is AnonymousAuthenticationToken) {
+            return false
+        }
+        return authentication.isAuthenticated
     }
 }

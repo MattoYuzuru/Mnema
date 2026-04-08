@@ -2,6 +2,7 @@ package app.mnema.user.config
 
 import app.mnema.user.security.InternalTokenAuthFilter
 import app.mnema.user.security.UserInternalAuthProps
+import jakarta.servlet.DispatcherType
 import org.springframework.boot.actuate.autoconfigure.security.servlet.EndpointRequest
 import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.context.annotation.Bean
@@ -12,8 +13,8 @@ import org.springframework.security.config.Customizer
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity
 import org.springframework.security.config.annotation.web.builders.HttpSecurity
 import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver
+import org.springframework.security.web.authentication.AnonymousAuthenticationFilter
 import org.springframework.security.web.SecurityFilterChain
-import org.springframework.security.web.access.intercept.AuthorizationFilter
 
 @Configuration
 @EnableMethodSecurity
@@ -47,7 +48,10 @@ class SecurityConfig(
                 if (publicMatchers.isNotEmpty()) {
                     it.requestMatchers(*publicMatchers.toTypedArray()).permitAll()
                 }
+                it.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
+                it.requestMatchers("/error").permitAll()
                 it.requestMatchers(EndpointRequest.to("health", "info")).permitAll()
+                it.requestMatchers("/internal/users/**").hasAnyAuthority("SCOPE_user.read", "SCOPE_user.internal")
                 it.anyRequest().authenticated()
             }
             .oauth2ResourceServer {
@@ -55,7 +59,7 @@ class SecurityConfig(
                     .bearerTokenResolver(bearerTokenResolver)
             }
 
-        http.addFilterBefore(internalTokenAuthFilter, AuthorizationFilter::class.java)
+        http.addFilterBefore(internalTokenAuthFilter, AnonymousAuthenticationFilter::class.java)
         return http.build()
     }
 
@@ -75,4 +79,5 @@ class SecurityConfig(
     @Bean
     fun internalTokenAuthFilter(props: UserInternalAuthProps): InternalTokenAuthFilter =
         InternalTokenAuthFilter(props)
+
 }
