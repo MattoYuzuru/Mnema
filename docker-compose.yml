@@ -40,6 +40,9 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
       SPRING_FLYWAY_ENABLED: "true"
       AUTH_ISSUER: http://auth:8080
+      AUTH_LOGIN_PAGE_URL: http://localhost:3005/login
+      USER_BASE_URL: http://user:8080/api/user
+      USER_INTERNAL_TOKEN: ${USER_INTERNAL_TOKEN:-mnema-user-internal-dev}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
       GITHUB_CLIENT_ID: ${GH_CLIENT_ID}
@@ -67,6 +70,7 @@ services:
       CORE_BASE_URL: http://core:8080/api/core
       MEDIA_BASE_URL: http://media:8080/api/media
       MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
+      USER_INTERNAL_TOKEN: ${USER_INTERNAL_TOKEN:-mnema-user-internal-dev}
       REDIS_HOST: redis
       REDIS_PORT: 6379
     depends_on:
@@ -87,6 +91,8 @@ services:
       SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD}}
       SPRING_FLYWAY_ENABLED: "true"
       AUTH_ISSUER_URI: http://auth:8080
+      USER_BASE_URL: http://user:8080/api/user
+      USER_INTERNAL_TOKEN: ${USER_INTERNAL_TOKEN:-mnema-user-internal-dev}
       MEDIA_BASE_URL: http://media:8080/api/media
       MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
       REDIS_HOST: redis
@@ -178,6 +184,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    environment:
+      MNEMA_FEATURE_FEDERATED_AUTH_ENABLED: "true"
+      MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING: "true"
     ports: [ "3005:80" ]
     restart: unless-stopped
 

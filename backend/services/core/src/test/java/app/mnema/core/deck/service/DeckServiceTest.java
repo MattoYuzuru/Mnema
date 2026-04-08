@@ -17,6 +17,7 @@ import app.mnema.core.deck.repository.UserCardRepository;
 import app.mnema.core.deck.repository.UserDeckRepository;
 import app.mnema.core.media.client.MediaResolved;
 import app.mnema.core.media.service.MediaResolveCache;
+import app.mnema.core.security.ContentAdminAccessService;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -66,6 +67,9 @@ class DeckServiceTest {
 
     @Mock
     MediaResolveCache mediaResolveCache;
+
+    @Mock
+    ContentAdminAccessService contentAdminAccessService;
 
     @InjectMocks
     DeckService deckService;

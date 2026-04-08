@@ -9,6 +9,7 @@ import app.mnema.core.deck.domain.type.CardFieldType;
 import app.mnema.core.deck.repository.CardTemplateRepository;
 import app.mnema.core.deck.repository.CardTemplateVersionRepository;
 import app.mnema.core.deck.repository.FieldTemplateRepository;
+import app.mnema.core.security.ContentAdminAccessService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
@@ -53,6 +54,9 @@ class TemplateServiceTest {
 
     @Mock
     CardTemplateVersionRepository cardTemplateVersionRepository;
+
+    @Mock
+    ContentAdminAccessService contentAdminAccessService;
 
     @InjectMocks
     TemplateService templateService;
@@ -254,7 +258,7 @@ class TemplateServiceTest {
         UUID templateId = UUID.randomUUID();
         CardTemplateEntity template = template(templateId, 1, json("{\"layout\":\"entity\"}"), json("{\"ai\":\"entity\"}"), "entity.png");
         CardTemplateVersionEntity latestVersion = version(templateId, 1, json("{\"layout\":\"v1\"}"), json("{\"ai\":\"v1\"}"), "v1.png");
-        when(cardTemplateRepository.findByOwnerIdAndTemplateIdForUpdate(ownerId, templateId)).thenReturn(Optional.of(template));
+        when(cardTemplateRepository.findByTemplateIdForUpdate(templateId)).thenReturn(Optional.of(template));
         when(cardTemplateVersionRepository.findByTemplateIdAndVersion(templateId, 1)).thenReturn(Optional.of(latestVersion));
         when(cardTemplateRepository.save(any(CardTemplateEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(fieldTemplateRepository.findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, 1))
@@ -290,7 +294,7 @@ class TemplateServiceTest {
                 fieldEntity(UUID.randomUUID(), templateId, 2, "back", "Back", true, false, 1)
         );
 
-        when(cardTemplateRepository.findByOwnerIdAndTemplateIdForUpdate(ownerId, templateId)).thenReturn(Optional.of(template));
+        when(cardTemplateRepository.findByTemplateIdForUpdate(templateId)).thenReturn(Optional.of(template));
         when(cardTemplateVersionRepository.findByTemplateIdAndVersion(templateId, 1)).thenReturn(Optional.of(latestVersion));
         when(cardTemplateVersionRepository.save(any(CardTemplateVersionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(fieldTemplateRepository.findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, 1)).thenReturn(currentFields);
@@ -324,7 +328,7 @@ class TemplateServiceTest {
                 fieldEntity(UUID.randomUUID(), templateId, 1, "back", "Back", true, false, 1)
         );
 
-        when(cardTemplateRepository.findByOwnerIdAndTemplateIdForUpdate(ownerId, templateId)).thenReturn(Optional.of(template));
+        when(cardTemplateRepository.findByTemplateIdForUpdate(templateId)).thenReturn(Optional.of(template));
         when(fieldTemplateRepository.findByTemplateId(templateId)).thenReturn(fields);
 
         templateService.deleteTemplate(ownerId, templateId);
@@ -349,7 +353,7 @@ class TemplateServiceTest {
                 fieldEntity(UUID.randomUUID(), templateId, 4, "hint", "Hint", false, false, 2)
         );
 
-        when(cardTemplateRepository.findByOwnerIdAndTemplateIdForUpdate(ownerId, templateId)).thenReturn(Optional.of(template));
+        when(cardTemplateRepository.findByTemplateIdForUpdate(templateId)).thenReturn(Optional.of(template));
         when(cardTemplateVersionRepository.findTopByTemplateIdOrderByVersionDesc(templateId)).thenReturn(Optional.of(latestVersion));
         when(cardTemplateVersionRepository.save(any(CardTemplateVersionEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
         when(fieldTemplateRepository.findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, 3)).thenReturn(existingFields);
@@ -391,7 +395,7 @@ class TemplateServiceTest {
                 fieldEntity(UUID.randomUUID(), templateId, 2, "back", "Back", true, false, 1)
         );
 
-        when(cardTemplateRepository.findByOwnerIdAndTemplateIdForUpdate(ownerId, templateId)).thenReturn(Optional.of(template));
+        when(cardTemplateRepository.findByTemplateIdForUpdate(templateId)).thenReturn(Optional.of(template));
         when(cardTemplateVersionRepository.findByTemplateIdAndVersion(templateId, 1)).thenReturn(Optional.of(latestVersion));
         when(fieldTemplateRepository.findByFieldIdAndTemplateIdAndTemplateVersion(fieldId, templateId, 1)).thenReturn(Optional.of(existingFront));
         when(fieldTemplateRepository.findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, 1)).thenReturn(currentFields);
@@ -434,7 +438,7 @@ class TemplateServiceTest {
                 fieldEntity(UUID.randomUUID(), templateId, 1, "back", "Back", true, false, 1)
         );
 
-        when(cardTemplateRepository.findByOwnerIdAndTemplateIdForUpdate(ownerId, templateId)).thenReturn(Optional.of(template));
+        when(cardTemplateRepository.findByTemplateIdForUpdate(templateId)).thenReturn(Optional.of(template));
         when(cardTemplateVersionRepository.findByTemplateIdAndVersion(templateId, 1)).thenReturn(Optional.of(latestVersion));
         when(fieldTemplateRepository.findByFieldIdAndTemplateIdAndTemplateVersion(fieldId, templateId, 1)).thenReturn(Optional.of(frontField));
         when(fieldTemplateRepository.findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, 1)).thenReturn(fields);

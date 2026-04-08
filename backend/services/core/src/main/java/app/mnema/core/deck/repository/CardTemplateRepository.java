@@ -35,6 +35,14 @@ public interface CardTemplateRepository extends JpaRepository<CardTemplateEntity
     Optional<CardTemplateEntity> findByOwnerIdAndTemplateIdForUpdate(@Param("ownerId") UUID ownerId,
                                                                       @Param("templateId") UUID templateId);
 
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("""
+            select t
+            from CardTemplateEntity t
+            where t.templateId = :templateId
+            """)
+    Optional<CardTemplateEntity> findByTemplateIdForUpdate(@Param("templateId") UUID templateId);
+
     @Query(value = """
         select t.*
         from app_core.card_templates t

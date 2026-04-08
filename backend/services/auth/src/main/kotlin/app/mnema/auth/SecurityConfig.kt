@@ -7,11 +7,13 @@ import app.mnema.auth.identity.FederatedIdentityResult
 import app.mnema.auth.identity.FederatedIdentityService
 import app.mnema.auth.security.LogoutRedirectService
 import app.mnema.auth.security.ProviderAwareLoginEntryPoint
+import app.mnema.auth.user.LoginModerationService
 import com.nimbusds.jose.jwk.JWKSet
 import com.nimbusds.jose.jwk.RSAKey
 import com.nimbusds.jose.jwk.source.JWKSource
 import com.nimbusds.jose.proc.SecurityContext
 import java.security.KeyFactory
+import java.net.URLEncoder
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.boot.CommandLineRunner
 import org.springframework.context.annotation.Bean
@@ -38,6 +40,7 @@ import org.springframework.security.web.SecurityFilterChain
 import org.springframework.security.web.authentication.AuthenticationSuccessHandler
 import org.springframework.security.web.authentication.SavedRequestAwareAuthenticationSuccessHandler
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher
+import org.springframework.security.core.context.SecurityContextHolder
 import org.slf4j.LoggerFactory
 import java.security.MessageDigest
 import java.security.KeyPair
@@ -49,6 +52,8 @@ import java.security.spec.X509EncodedKeySpec
 import java.time.Duration
 import java.util.*
 import java.util.Base64
+import org.springframework.http.HttpStatus
+import org.springframework.web.server.ResponseStatusException
 
 @Configuration
 class SecurityConfig(
@@ -161,7 +166,10 @@ class SecurityConfig(
      *    чтобы всё корректно вернулось к /oauth2/authorize и продолжилось до redirect_uri.
      */
     @Bean
-    fun federatedSuccessHandler(): AuthenticationSuccessHandler {
+    fun federatedSuccessHandler(
+        loginModerationService: LoginModerationService,
+        @Value("\${auth.frontend.login-url:http://localhost:3005/login}") loginPageUrl: String
+    ): AuthenticationSuccessHandler {
         val delegate = SavedRequestAwareAuthenticationSuccessHandler()
 
         return AuthenticationSuccessHandler { request, response, authentication ->
@@ -170,6 +178,17 @@ class SecurityConfig(
 
             if (oauth2 != null && info != null) {
                 val result = identityService.synchronize(info)
+                try {
+                    loginModerationService.assertLoginAllowed(result.user.id)
+                } catch (ex: ResponseStatusException) {
+                    if (ex.statusCode == HttpStatus.LOCKED && ex.reason == "banned") {
+                        SecurityContextHolder.clearContext()
+                        request.getSession(false)?.invalidate()
+                        response.sendRedirect(loginRedirectUrl(loginPageUrl, "banned"))
+                        return@AuthenticationSuccessHandler
+                    }
+                    throw ex
+                }
                 oauth2.details = result
             }
 
@@ -363,5 +382,10 @@ class SecurityConfig(
     private fun keyIdFor(publicKey: RSAPublicKey): String {
         val digest = MessageDigest.getInstance("SHA-256").digest(publicKey.encoded)
         return Base64.getUrlEncoder().withoutPadding().encodeToString(digest)
+    }
+
+    private fun loginRedirectUrl(loginPageUrl: String, code: String): String {
+        val separator = if (loginPageUrl.contains("?")) "&" else "?"
+        return loginPageUrl + separator + "authError=" + URLEncoder.encode(code, Charsets.UTF_8)
     }
 }

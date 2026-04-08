@@ -124,4 +124,27 @@ public class PublicDeckController {
         deckService.deletePublicDeck(userId, deckId);
     }
 
+    @PatchMapping("/{deckId}/cards/{cardId}")
+    public PublicCardDTO updateManagedPublicCard(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID deckId,
+            @PathVariable UUID cardId,
+            @RequestBody PublicCardDTO dto,
+            @RequestParam(required = false) UUID operationId
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        return cardService.updateManagedPublicCard(userId, deckId, cardId, dto, operationId);
+    }
+
+    @DeleteMapping("/{deckId}/cards/{cardId}")
+    public void deleteManagedPublicCard(
+            @AuthenticationPrincipal Jwt jwt,
+            @PathVariable UUID deckId,
+            @PathVariable UUID cardId,
+            @RequestParam(required = false) UUID operationId
+    ) {
+        var userId = currentUserProvider.getUserId(jwt);
+        cardService.deleteManagedPublicCard(userId, deckId, cardId, operationId);
+    }
+
 }

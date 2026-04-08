@@ -15,6 +15,7 @@ import app.mnema.core.deck.domain.request.DuplicateSearchRequest;
 import app.mnema.core.deck.domain.request.MissingFieldCardsRequest;
 import app.mnema.core.deck.domain.request.MissingFieldSummaryRequest;
 import app.mnema.core.deck.repository.*;
+import app.mnema.core.security.ContentAdminAccessService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
@@ -61,6 +62,7 @@ public class CardService {
     private final DeckUpdateSessionRepository deckUpdateSessionRepository;
     private final FieldTemplateRepository fieldTemplateRepository;
     private final ObjectMapper objectMapper;
+    private final ContentAdminAccessService contentAdminAccessService;
 
     public CardService(UserDeckRepository userDeckRepository,
                        UserCardRepository userCardRepository,
@@ -68,7 +70,8 @@ public class CardService {
                        PublicDeckRepository publicDeckRepository,
                        DeckUpdateSessionRepository deckUpdateSessionRepository,
                        FieldTemplateRepository fieldTemplateRepository,
-                       ObjectMapper objectMapper) {
+                       ObjectMapper objectMapper,
+                       ContentAdminAccessService contentAdminAccessService) {
         this.userDeckRepository = userDeckRepository;
         this.userCardRepository = userCardRepository;
         this.publicCardRepository = publicCardRepository;
@@ -76,6 +79,7 @@ public class CardService {
         this.deckUpdateSessionRepository = deckUpdateSessionRepository;
         this.fieldTemplateRepository = fieldTemplateRepository;
         this.objectMapper = objectMapper;
+        this.contentAdminAccessService = contentAdminAccessService;
     }
 
     // Просмотр всех карт в пользовательской колоде
@@ -806,6 +810,54 @@ public class CardService {
                 .toList();
     }
 
+    @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
+    public PublicCardDTO updateManagedPublicCard(UUID currentUserId,
+                                                 UUID deckId,
+                                                 UUID cardId,
+                                                 PublicCardDTO dto,
+                                                 UUID operationId) {
+        PublicDeckEntity latestDeck = resolvePublicDeck(deckId, null);
+        contentAdminAccessService.assertCanManageOwnedContent(currentUserId, latestDeck.getAuthorId(), "public deck", deckId);
+
+        UserDeckEntity sourceDeck = userDeckRepository.findByUserIdAndPublicDeckId(latestDeck.getAuthorId(), deckId)
+                .orElseThrow(() -> new IllegalArgumentException("Author source deck not found: " + deckId));
+        UserCardEntity sourceCard = userCardRepository.findByUserDeckIdAndPublicCardId(sourceDeck.getUserDeckId(), cardId)
+                .orElseThrow(() -> new IllegalArgumentException("Author source card not found: " + cardId));
+
+        UserCardDTO updateRequest = new UserCardDTO(
+                sourceCard.getUserCardId(),
+                sourceCard.getPublicCardId(),
+                sourceCard.isCustom(),
+                sourceCard.isDeleted(),
+                sourceCard.getPersonalNote(),
+                dto.tags(),
+                dto.content()
+        );
+        updateUserCard(currentUserId, sourceDeck.getUserDeckId(), sourceCard.getUserCardId(), updateRequest, true, operationId);
+
+        PublicCardEntity updated = publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(cardId)
+                .orElseThrow(() -> new IllegalArgumentException("Public card not found after update: " + cardId));
+        return toPublicCardDTO(updated);
+    }
+
+    @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_user.write')")
+    public void deleteManagedPublicCard(UUID currentUserId,
+                                        UUID deckId,
+                                        UUID cardId,
+                                        UUID operationId) {
+        PublicDeckEntity latestDeck = resolvePublicDeck(deckId, null);
+        contentAdminAccessService.assertCanManageOwnedContent(currentUserId, latestDeck.getAuthorId(), "public deck", deckId);
+
+        UserDeckEntity sourceDeck = userDeckRepository.findByUserIdAndPublicDeckId(latestDeck.getAuthorId(), deckId)
+                .orElseThrow(() -> new IllegalArgumentException("Author source deck not found: " + deckId));
+        UserCardEntity sourceCard = userCardRepository.findByUserDeckIdAndPublicCardId(sourceDeck.getUserDeckId(), cardId)
+                .orElseThrow(() -> new IllegalArgumentException("Author source card not found: " + cardId));
+
+        deleteUserCard(currentUserId, sourceDeck.getUserDeckId(), sourceCard.getUserCardId(), true, operationId);
+    }
+
     private PublicDeckEntity resolvePublicDeck(UUID deckId, Integer deckVersion) {
         if (deckVersion == null) {
             return publicDeckRepository
@@ -846,15 +898,14 @@ public class CardService {
         UserDeckEntity userDeck = userDeckRepository.findById(userDeckId)
                 .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
 
-        if (!userDeck.getUserId().equals(currentUserId)) {
-            throw new SecurityException("Access denied to deck " + userDeckId);
-        }
-
         Instant now = Instant.now();
         List<UserCardDTO> result = new ArrayList<>();
 
         // 1) Локальная колода
         if (userDeck.getPublicDeckId() == null) {
+            if (!userDeck.getUserId().equals(currentUserId)) {
+                throw new SecurityException("Access denied to deck " + userDeckId);
+            }
             long offsetNanos = 0L;
             for (CreateCardRequest request : requests) {
                 validateTags(request.tags());
@@ -888,8 +939,14 @@ public class CardService {
                 .findLatestByDeckId(publicDeckId)
                 .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + publicDeckId));
 
+        boolean canManageAsAuthor = currentUserId.equals(latestDeck.getAuthorId())
+                || contentAdminAccessService.canManageOwnedContent(currentUserId, latestDeck.getAuthorId());
+        if (!userDeck.getUserId().equals(currentUserId) && !canManageAsAuthor) {
+            throw new SecurityException("Access denied to deck " + userDeckId);
+        }
+
         // 2) Не автор: добавляем только кастомные карты
-        if (!latestDeck.getAuthorId().equals(currentUserId)) {
+        if (!canManageAsAuthor) {
             long offsetNanos = 0L;
             for (CreateCardRequest request : requests) {
                 validateTags(request.tags());
@@ -1209,14 +1266,18 @@ public class CardService {
         UserCardEntity card = userCardRepository.findById(userCardId)
                 .orElseThrow(() -> new IllegalArgumentException("User card not found: " + userCardId));
 
-        if (!card.getUserDeckId().equals(userDeckId) || !card.getUserId().equals(currentUserId)) {
+        if (!updateGlobally && (!card.getUserDeckId().equals(userDeckId) || !card.getUserId().equals(currentUserId))) {
             throw new SecurityException("Access denied to card " + userCardId);
         }
 
         if (updateGlobally) {
             UserDeckEntity userDeck = userDeckRepository.findById(userDeckId)
                     .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
-            if (!userDeck.getUserId().equals(currentUserId)) {
+            boolean canManageAsAuthor = canManageSourcePublicDeck(currentUserId, userDeck);
+            if ((!card.getUserDeckId().equals(userDeckId) || (!card.getUserId().equals(currentUserId) && !canManageAsAuthor))) {
+                throw new SecurityException("Access denied to card " + userCardId);
+            }
+            if (!userDeck.getUserId().equals(currentUserId) && !canManageAsAuthor) {
                 throw new SecurityException("Access denied to deck " + userDeckId);
             }
             return updateUserCardGlobally(currentUserId, userDeck, card, dto, operationId);
@@ -1262,9 +1323,7 @@ public class CardService {
 
         PublicDeckEntity latestDeck = publicDeckRepository.findLatestByDeckId(publicDeckId)
                 .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + publicDeckId));
-        if (!latestDeck.getAuthorId().equals(currentUserId)) {
-            throw new SecurityException("Access denied to public deck " + publicDeckId);
-        }
+        contentAdminAccessService.assertCanManageOwnedContent(currentUserId, latestDeck.getAuthorId(), "public deck", publicDeckId);
 
         PublicCardEntity linkedPublicCard = publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(card.getPublicCardId())
                 .orElseThrow(() -> new IllegalArgumentException("Public card not found: " + card.getPublicCardId()));
@@ -1467,14 +1526,15 @@ public class CardService {
         UserDeckEntity userDeck = userDeckRepository.findById(userDeckId)
                 .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
 
-        if (!userDeck.getUserId().equals(currentUserId)) {
+        boolean canManageAsAuthor = deleteGlobally && canManageSourcePublicDeck(currentUserId, userDeck);
+        if (!userDeck.getUserId().equals(currentUserId) && !canManageAsAuthor) {
             throw new SecurityException("Access denied to deck " + userDeckId);
         }
 
         UserCardEntity card = userCardRepository.findById(userCardId)
                 .orElseThrow(() -> new IllegalArgumentException("User card not found: " + userCardId));
 
-        if (!card.getUserDeckId().equals(userDeckId) || !card.getUserId().equals(currentUserId)) {
+        if (!card.getUserDeckId().equals(userDeckId) || (!card.getUserId().equals(currentUserId) && !canManageAsAuthor)) {
             throw new SecurityException("Access denied to card " + userCardId);
         }
 
@@ -1634,9 +1694,7 @@ public class CardService {
                 .findLatestByDeckId(publicDeckId)
                 .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + publicDeckId));
 
-        if (!latestDeck.getAuthorId().equals(currentUserId)) {
-            throw new SecurityException("Access denied to public deck " + publicDeckId);
-        }
+        contentAdminAccessService.assertCanManageOwnedContent(currentUserId, latestDeck.getAuthorId(), "public deck", publicDeckId);
 
         if (operationId != null) {
             DeckUpdateSessionEntity session = deckUpdateSessionRepository
@@ -1848,6 +1906,18 @@ public class CardService {
                 c.isActive(),
                 c.getChecksum()
         );
+    }
+
+    private boolean canManageSourcePublicDeck(UUID currentUserId, UserDeckEntity userDeck) {
+        UUID publicDeckId = userDeck.getPublicDeckId();
+        if (publicDeckId == null) {
+            return false;
+        }
+
+        PublicDeckEntity latestDeck = publicDeckRepository.findLatestByDeckId(publicDeckId).orElse(null);
+        return latestDeck != null
+                && (currentUserId.equals(latestDeck.getAuthorId())
+                || contentAdminAccessService.canManageOwnedContent(currentUserId, latestDeck.getAuthorId()));
     }
 
     // простое слияние: override перекрывает поля из public.content

@@ -15,6 +15,7 @@ import app.mnema.core.deck.repository.PublicDeckRepository;
 import app.mnema.core.deck.repository.UserCardRepository;
 import app.mnema.core.deck.repository.UserDeckRepository;
 import app.mnema.core.media.service.MediaResolveCache;
+import app.mnema.core.security.ContentAdminAccessService;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -42,19 +43,22 @@ public class DeckService {
     private final PublicDeckRepository publicDeckRepository;
     private final CardTemplateRepository cardTemplateRepository;
     private final MediaResolveCache mediaResolveCache;
+    private final ContentAdminAccessService contentAdminAccessService;
 
     public DeckService(UserDeckRepository userDeckRepository,
                        UserCardRepository userCardRepository,
                        PublicCardRepository publicCardRepository,
                        PublicDeckRepository publicDeckRepository,
                        CardTemplateRepository cardTemplateRepository,
-                       MediaResolveCache mediaResolveCache) {
+                       MediaResolveCache mediaResolveCache,
+                       ContentAdminAccessService contentAdminAccessService) {
         this.userDeckRepository = userDeckRepository;
         this.userCardRepository = userCardRepository;
         this.publicCardRepository = publicCardRepository;
         this.publicDeckRepository = publicDeckRepository;
         this.cardTemplateRepository = cardTemplateRepository;
         this.mediaResolveCache = mediaResolveCache;
+        this.contentAdminAccessService = contentAdminAccessService;
     }
 
     // Публичный каталог: только последние версии каждой публичной колоды
@@ -299,9 +303,7 @@ public class DeckService {
         PublicDeckEntity deck = publicDeckRepository.findLatestByDeckId(publicDeckId)
                 .orElseThrow(() -> new IllegalArgumentException("Public deck not found: " + publicDeckId));
 
-        if (!deck.getAuthorId().equals(currentUserId)) {
-            throw new SecurityException("Access denied to deck " + publicDeckId);
-        }
+        contentAdminAccessService.assertCanManageOwnedContent(currentUserId, deck.getAuthorId(), "public deck", publicDeckId);
 
         deck.setListed(false);
         deck.setPublicFlag(false);
@@ -587,9 +589,7 @@ public class DeckService {
                     ));
         }
 
-        if (!deck.getAuthorId().equals(currentUserId)) {
-            throw new SecurityException("Only author can update deck meta");
-        }
+        contentAdminAccessService.assertCanManageOwnedContent(currentUserId, deck.getAuthorId(), "public deck", deckId);
 
         if (dto.name() != null) {
             validateLength(dto.name(), MAX_DECK_NAME, "Deck name");

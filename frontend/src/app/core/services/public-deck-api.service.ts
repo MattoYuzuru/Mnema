@@ -69,4 +69,20 @@ export class PublicDeckApiService {
     deletePublicDeck(deckId: string): Observable<void> {
         return this.http.delete<void>(`${this.baseUrl}/${deckId}`);
     }
+
+    patchManagedPublicCard(deckId: string, cardId: string, body: Partial<PublicCardDTO>, operationId?: string): Observable<PublicCardDTO> {
+        let params = new HttpParams();
+        if (operationId) {
+            params = params.set('operationId', operationId);
+        }
+        return this.http.patch<PublicCardDTO>(`${this.baseUrl}/${deckId}/cards/${cardId}`, body, { params });
+    }
+
+    deleteManagedPublicCard(deckId: string, cardId: string, operationId?: string): Observable<void> {
+        let params = new HttpParams();
+        if (operationId) {
+            params = params.set('operationId', operationId);
+        }
+        return this.http.delete<void>(`${this.baseUrl}/${deckId}/cards/${cardId}`, { params });
+    }
 }

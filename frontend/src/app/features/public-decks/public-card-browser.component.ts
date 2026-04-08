@@ -1,12 +1,15 @@
 import { Component, OnInit, HostListener, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NgIf, NgFor, DatePipe } from '@angular/common';
+import { FormsModule } from '@angular/forms';
 import { forkJoin, of, Subscription } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { AuthService } from '../../auth.service';
 import { UserApiService } from '../../user-api.service';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
+import { AdminApiService } from '../../core/services/admin-api.service';
+import { ReportApiService, ReportTargetType, ReportReason } from '../../core/services/report-api.service';
 import { ReviewApiService } from '../../core/services/review-api.service';
 import { PublicDeckDTO, PublicCardDTO } from '../../core/models/public-deck.models';
 import { CardContentValue } from '../../core/models/user-card.models';
@@ -19,11 +22,14 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 import { TagChipComponent } from '../../shared/components/tag-chip.component';
 import { markdownToHtml } from '../../shared/utils/markdown.util';
 import { I18nService } from '../../core/services/i18n.service';
+import { MediaUploadComponent } from '../../shared/components/media-upload.component';
+import { ReportContentModalComponent } from '../../shared/components/report-content-modal.component';
+import { ToastService } from '../../core/services/toast.service';
 
 @Component({
     selector: 'app-public-card-browser',
     standalone: true,
-    imports: [NgIf, NgFor, DatePipe, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, TranslatePipe, TagChipComponent],
+    imports: [NgIf, NgFor, DatePipe, FormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, TranslatePipe, TagChipComponent, MediaUploadComponent, ReportContentModalComponent],
     template: `
     <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
 
@@ -56,6 +62,23 @@ import { I18nService } from '../../core/services/i18n.service';
           <p class="card-count">{{ cardCount }} {{ 'publicCardBrowser.cards' | translate }}</p>
         </div>
         <div class="header-right">
+          <button *ngIf="canReportDeck" class="report-trigger" type="button" (click)="openDeckReportModal()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M10.3 3.9 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
+              <path d="M12 9v4"/>
+              <path d="M12 17h.01"/>
+            </svg>
+            {{ 'reports.action' | translate }}
+          </button>
+          <app-button *ngIf="canModerateDeck" variant="secondary" size="md" (click)="openDeckEditModal()">
+            {{ 'publicCardBrowser.editDeck' | translate }}
+          </app-button>
+          <app-button *ngIf="canModerateDeck" variant="ghost" size="md" tone="danger" (click)="deleteDeck()">
+            {{ 'publicCardBrowser.deleteDeck' | translate }}
+          </app-button>
+          <app-button *ngIf="canBanAuthor" variant="ghost" size="md" tone="danger" (click)="banAuthor()">
+            {{ 'publicCardBrowser.banAuthor' | translate }}
+          </app-button>
           <app-button *ngIf="canFork" variant="primary" size="md" (click)="forkDeck()">{{ 'button.fork' | translate }}</app-button>
         </div>
       </header>
@@ -94,6 +117,30 @@ import { I18nService } from '../../core/services/i18n.service';
                   </div>
                 </div>
               </button>
+              <div *ngIf="canModerateDeck || canReportCard" class="card-item-actions">
+                <button *ngIf="canReportCard" class="icon-btn report" type="button" (click)="openCardReportModal(card); $event.stopPropagation()" [title]="'reports.action' | translate">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M10.3 3.9 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
+                    <path d="M12 9v4"/>
+                    <path d="M12 17h.01"/>
+                  </svg>
+                </button>
+                <button *ngIf="canModerateDeck" class="icon-btn" type="button" (click)="openCardEditModal(card); $event.stopPropagation()" [title]="'cardBrowser.editCard' | translate">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                  </svg>
+                </button>
+                <button *ngIf="canModerateDeck" class="icon-btn delete" type="button" (click)="deleteCard(card); $event.stopPropagation()" [title]="'cardBrowser.deleteCard' | translate">
+                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                    <path d="M3 6h18"/>
+                    <path d="M8 6V4h8v2"/>
+                    <path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/>
+                    <path d="M10 11v6"/>
+                    <path d="M14 11v6"/>
+                  </svg>
+                </button>
+              </div>
             </div>
           </div>
         </aside>
@@ -154,6 +201,18 @@ import { I18nService } from '../../core/services/i18n.service';
           <div *ngIf="!searchNoResults && currentCard?.tags?.length" class="card-tags-panel">
             <app-tag-chip *ngFor="let tag of currentCard!.tags" [text]="tag"></app-tag-chip>
           </div>
+
+          <div class="card-actions" *ngIf="!searchNoResults && currentCard && (canModerateDeck || canReportCard)">
+            <app-button *ngIf="canReportCard" variant="ghost" size="sm" (click)="openCardReportModal(currentCard!)">
+              {{ 'reports.action' | translate }}
+            </app-button>
+            <app-button *ngIf="canModerateDeck" variant="secondary" size="sm" (click)="openCardEditModal(currentCard!)">
+              {{ 'cardBrowser.editCard' | translate }}
+            </app-button>
+            <app-button *ngIf="canModerateDeck" variant="ghost" size="sm" tone="danger" (click)="deleteCard(currentCard!)">
+              {{ 'cardBrowser.deleteCard' | translate }}
+            </app-button>
+          </div>
         </section>
       </div>
 
@@ -164,6 +223,90 @@ import { I18nService } from '../../core/services/i18n.service';
         [description]="searchNoResults ? ('publicCardBrowser.noSearchResultsDescription' | translate) : ('publicCardBrowser.noCardsDescription' | translate)"
       ></app-empty-state>
     </div>
+
+    <div *ngIf="showDeckEditModal && deckDraft" class="modal-overlay" (click)="closeDeckEditModal()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>{{ 'publicCardBrowser.editDeck' | translate }}</h2>
+          <button class="close-btn" type="button" (click)="closeDeckEditModal()">&times;</button>
+        </div>
+        <div class="modal-body deck-edit-form">
+          <label>
+            <span>{{ 'deckProfile.publicDeckName' | translate }}</span>
+            <input [(ngModel)]="deckDraft.name" [attr.maxlength]="50" />
+          </label>
+          <label>
+            <span>{{ 'deckProfile.description' | translate }}</span>
+            <textarea [(ngModel)]="deckDraft.description" rows="4" [attr.maxlength]="200"></textarea>
+          </label>
+          <label>
+            <span>{{ 'deckProfile.tags' | translate }}</span>
+            <input
+              [(ngModel)]="deckTagInput"
+              (keydown.enter)="addDeckTag($event)"
+              [placeholder]="'cardBrowser.tagsPlaceholder' | translate"
+              [attr.maxlength]="maxDeckTagLength"
+            />
+            <div *ngIf="deckTags.length" class="deck-tags editable">
+              <app-tag-chip *ngFor="let tag of deckTags; let index = index" [text]="tag" [removable]="true" (remove)="removeDeckTag(index)"></app-tag-chip>
+            </div>
+            <p *ngIf="deckTagError" class="modal-error">{{ deckTagError }}</p>
+          </label>
+          <div class="checkbox-row">
+            <label><input type="checkbox" [(ngModel)]="deckDraft.isPublic" /> {{ 'wizard.visibilityPublic' | translate }}</label>
+            <label><input type="checkbox" [(ngModel)]="deckDraft.isListed" /> {{ 'deckProfile.isListed' | translate }}</label>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <app-button variant="ghost" (click)="closeDeckEditModal()">{{ 'cardBrowser.cancel' | translate }}</app-button>
+          <app-button variant="primary" (click)="saveDeckChanges()">{{ 'cardBrowser.save' | translate }}</app-button>
+        </div>
+      </div>
+    </div>
+
+    <div *ngIf="showCardEditModal && editingCard && template" class="modal-overlay" (click)="closeCardEditModal()">
+      <div class="modal-content" (click)="$event.stopPropagation()">
+        <div class="modal-header">
+          <h2>{{ 'cardBrowser.editCard' | translate }}</h2>
+          <button class="close-btn" type="button" (click)="closeCardEditModal()">&times;</button>
+        </div>
+        <div class="modal-body card-edit-form">
+          <div *ngFor="let field of template.fields || []" class="field-group">
+            <app-media-upload
+              *ngIf="isMediaField(field)"
+              [label]="field.label"
+              [fieldType]="getMediaFieldType(field)"
+              [value]="getCardMediaValue(field.name)"
+              (valueChange)="onCardMediaChange(field.name, $event)"
+            ></app-media-upload>
+            <label *ngIf="field.fieldType === 'text'">
+              <span>{{ field.label }}</span>
+              <input [ngModel]="editingCardContent[field.name]" (ngModelChange)="onCardFieldChange(field.name, $event)" />
+            </label>
+            <label *ngIf="field.fieldType === 'rich_text' || field.fieldType === 'markdown'">
+              <span>{{ field.label }}</span>
+              <textarea [ngModel]="editingCardContent[field.name]" (ngModelChange)="onCardFieldChange(field.name, $event)" rows="4"></textarea>
+            </label>
+          </div>
+          <label>
+            <span>{{ 'cardBrowser.tags' | translate }}</span>
+            <input [(ngModel)]="editingCardTagsDraft" [placeholder]="'cardBrowser.tagsPlaceholder' | translate" />
+          </label>
+        </div>
+        <div class="modal-actions">
+          <app-button variant="ghost" (click)="closeCardEditModal()">{{ 'cardBrowser.cancel' | translate }}</app-button>
+          <app-button variant="primary" (click)="saveCardChanges()">{{ 'cardBrowser.save' | translate }}</app-button>
+        </div>
+      </div>
+    </div>
+
+    <app-report-content-modal
+      [visible]="showReportModal"
+      [subject]="reportSubject"
+      [submitting]="reportSubmitting"
+      (close)="closeReportModal()"
+      (submitted)="submitReport($event.reason, $event.details)"
+    ></app-report-content-modal>
   `,
     styles: [`
       .public-card-browser {
@@ -536,6 +679,155 @@ import { I18nService } from '../../core/services/i18n.service';
         gap: var(--spacing-xs);
       }
 
+      .card-item-actions,
+      .card-actions,
+      .modal-actions,
+      .checkbox-row {
+        display: flex;
+        gap: var(--spacing-xs);
+      }
+
+      .card-item-actions {
+        margin-left: auto;
+      }
+
+      .report-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        height: 2.75rem;
+        padding: 0 1rem;
+        border-radius: 999px;
+        border: 1px solid rgba(245, 158, 11, 0.26);
+        background: linear-gradient(135deg, rgba(245, 158, 11, 0.14), rgba(248, 113, 113, 0.1));
+        color: var(--color-text-primary);
+        cursor: pointer;
+      }
+
+      .icon-btn {
+        width: 2rem;
+        height: 2rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        border: 1px solid var(--glass-border);
+        background: rgba(255, 255, 255, 0.06);
+        color: var(--color-text-secondary);
+        cursor: pointer;
+      }
+
+      .icon-btn.delete {
+        color: #ef4444;
+      }
+
+      .icon-btn.report {
+        color: #f59e0b;
+      }
+
+      .card-actions {
+        justify-content: center;
+        flex-wrap: wrap;
+      }
+
+      .modal-overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(15, 23, 42, 0.45);
+        backdrop-filter: blur(10px);
+        display: grid;
+        place-items: center;
+        padding: var(--spacing-md);
+        z-index: 1000;
+      }
+
+      .modal-content {
+        width: min(720px, 100%);
+        max-height: 90vh;
+        overflow: auto;
+        border-radius: var(--border-radius-xl);
+        background: var(--color-card-background);
+        border: 1px solid var(--border-color);
+        box-shadow: var(--shadow-lg);
+      }
+
+      .modal-header,
+      .modal-actions {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: var(--spacing-lg);
+      }
+
+      .modal-header {
+        border-bottom: 1px solid var(--border-color);
+      }
+
+      .modal-header h2 {
+        margin: 0;
+      }
+
+      .modal-body {
+        padding: var(--spacing-lg);
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-md);
+      }
+
+      .modal-body label {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-xs);
+        color: var(--color-text-secondary);
+      }
+
+      .modal-body input,
+      .modal-body textarea {
+        border: 1px solid var(--border-color);
+        border-radius: var(--border-radius-lg);
+        background: rgba(255, 255, 255, 0.05);
+        color: var(--color-text-primary);
+        padding: 0.8rem 0.95rem;
+      }
+
+      .modal-body textarea {
+        resize: vertical;
+      }
+
+      .modal-actions {
+        justify-content: flex-end;
+        border-top: 1px solid var(--border-color);
+      }
+
+      .modal-error {
+        margin: 0;
+        color: #fca5a5;
+        font-size: 0.85rem;
+      }
+
+      .close-btn {
+        border: none;
+        background: none;
+        font-size: 1.5rem;
+        color: var(--color-text-secondary);
+        cursor: pointer;
+      }
+
+      .checkbox-row {
+        flex-wrap: wrap;
+      }
+
+      .checkbox-row label {
+        flex-direction: row;
+        align-items: center;
+      }
+
+      .field-group {
+        display: flex;
+        flex-direction: column;
+        gap: var(--spacing-sm);
+      }
+
       @media (max-width: 768px) {
         .public-card-browser {
           padding: 0 var(--spacing-md);
@@ -588,6 +880,8 @@ import { I18nService } from '../../core/services/i18n.service';
 export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     private static readonly PAGE_SIZE = 50;
     private static readonly PREFETCH_THRESHOLD = 0.8;
+    private static readonly MAX_DECK_TAGS = 5;
+    private static readonly MAX_DECK_TAG_LENGTH = 25;
 
     loading = true;
     cards: PublicCardDTO[] = [];
@@ -604,10 +898,26 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     private searchDebounce?: ReturnType<typeof setTimeout>;
     canFork = false;
     currentUserId: string | null = null;
+    isAdmin = false;
     userPublicDeckIds: Set<string> = new Set();
     userPublicDeckIdsLoaded = false;
     private authSubscription?: Subscription;
     private userPublicDeckIdsLoading = false;
+    showDeckEditModal = false;
+    showCardEditModal = false;
+    deckDraft: PublicDeckDTO | null = null;
+    deckTags: string[] = [];
+    deckTagInput = '';
+    deckTagError = '';
+    readonly maxDeckTagLength = PublicCardBrowserComponent.MAX_DECK_TAG_LENGTH;
+    editingCard: PublicCardDTO | null = null;
+    editingCardContent: Record<string, CardContentValue> = {};
+    editingCardTagsDraft = '';
+    showReportModal = false;
+    reportSubmitting = false;
+    reportTargetType: ReportTargetType = 'DECK';
+    reportTargetId = '';
+    reportSubject = '';
 
     formatDescription(description?: string): string {
         return markdownToHtml((description || '').trim());
@@ -639,10 +949,13 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         private router: Router,
         private publicDeckApi: PublicDeckApiService,
         private userApi: UserApiService,
+        private adminApi: AdminApiService,
+        private reportApi: ReportApiService,
         private deckApi: DeckApiService,
         private reviewApi: ReviewApiService,
         public auth: AuthService,
-        private i18n: I18nService
+        private i18n: I18nService,
+        private toast: ToastService
     ) {}
 
     ngOnInit(): void {
@@ -715,6 +1028,7 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
                 this.loadUserContext();
             } else {
                 this.currentUserId = null;
+                this.isAdmin = false;
                 this.userPublicDeckIds.clear();
                 this.userPublicDeckIdsLoaded = false;
                 this.userPublicDeckIdsLoading = false;
@@ -733,6 +1047,7 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         ).subscribe({
             next: user => {
                 this.currentUserId = user?.id || null;
+                this.isAdmin = user?.admin || false;
                 this.updateCanFork();
             }
         });
@@ -773,6 +1088,22 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
             return;
         }
         this.canFork = !this.userPublicDeckIds.has(this.deck.deckId);
+    }
+
+    get canModerateDeck(): boolean {
+        return !!this.deck && !!this.currentUserId && (this.isAdmin || this.deck.authorId === this.currentUserId);
+    }
+
+    get canBanAuthor(): boolean {
+        return !!this.deck && !!this.currentUserId && this.isAdmin && this.deck.authorId !== this.currentUserId;
+    }
+
+    get canReportDeck(): boolean {
+        return !!this.deck && (!this.currentUserId || this.deck.authorId !== this.currentUserId);
+    }
+
+    get canReportCard(): boolean {
+        return this.canReportDeck;
     }
 
     private buildTemplateFromFields(fields: FieldTemplateDTO[]): void {
@@ -936,6 +1267,216 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         return values.length > 80 ? values.substring(0, 80) + '...' : values;
     }
 
+    openDeckEditModal(): void {
+        if (!this.deck || !this.canModerateDeck) return;
+        this.deckDraft = { ...this.deck, tags: [...(this.deck.tags || [])] };
+        this.deckTags = [...(this.deck.tags || [])];
+        this.deckTagInput = '';
+        this.deckTagError = '';
+        this.showDeckEditModal = true;
+    }
+
+    closeDeckEditModal(): void {
+        this.showDeckEditModal = false;
+        this.deckDraft = null;
+        this.deckTags = [];
+        this.deckTagInput = '';
+        this.deckTagError = '';
+    }
+
+    saveDeckChanges(): void {
+        if (!this.deck || !this.deckDraft) return;
+        if (!this.commitDeckTagInput()) {
+            return;
+        }
+        const payload: Partial<PublicDeckDTO> = {
+            name: this.deckDraft.name?.trim(),
+            description: this.deckDraft.description?.trim() || '',
+            isPublic: this.deckDraft.isPublic,
+            isListed: this.deckDraft.isListed,
+            tags: [...this.deckTags]
+        };
+        this.publicDeckApi.patchPublicDeck(this.deck.deckId, payload).subscribe({
+            next: updated => {
+                this.deck = updated;
+                this.closeDeckEditModal();
+            },
+            error: err => {
+                console.error('Failed to save deck', err);
+            }
+        });
+    }
+
+    addDeckTag(event: Event): void {
+        event.preventDefault();
+        const tag = this.deckTagInput.trim();
+        if (!tag) {
+            return;
+        }
+        if (this.deckTags.length >= PublicCardBrowserComponent.MAX_DECK_TAGS) {
+            this.deckTagError = this.i18n.translate('validation.tagsLimit');
+            return;
+        }
+        if (tag.length > PublicCardBrowserComponent.MAX_DECK_TAG_LENGTH) {
+            this.deckTagError = this.i18n.translate('validation.tagTooLong');
+            return;
+        }
+        if (this.deckTags.some(existing => existing.toLowerCase() === tag.toLowerCase())) {
+            this.deckTagInput = '';
+            this.deckTagError = '';
+            return;
+        }
+        this.deckTags = [...this.deckTags, tag];
+        this.deckTagInput = '';
+        this.deckTagError = '';
+    }
+
+    removeDeckTag(index: number): void {
+        this.deckTags = this.deckTags.filter((_, currentIndex) => currentIndex !== index);
+        this.deckTagError = '';
+    }
+
+    deleteDeck(): void {
+        if (!this.deck || !window.confirm('Delete this public deck?')) return;
+        this.publicDeckApi.deletePublicDeck(this.deck.deckId).subscribe({
+            next: () => void this.router.navigate(['/public-decks']),
+            error: err => console.error('Failed to delete deck', err)
+        });
+    }
+
+    banAuthor(): void {
+        if (!this.deck) return;
+        const reason = window.prompt('Ban reason (optional)', '') ?? '';
+        this.adminApi.banUser(this.deck.authorId, reason).subscribe({
+            next: () => {},
+            error: err => console.error('Failed to ban author', err)
+        });
+    }
+
+    openDeckReportModal(): void {
+        if (!this.deck) {
+            return;
+        }
+        this.openReportModal('DECK', this.deck.deckId, this.deck.name);
+    }
+
+    openCardReportModal(card: PublicCardDTO): void {
+        if (!this.deck) {
+            return;
+        }
+        const preview = this.getFrontPreview(card) || this.i18n.translate('reports.cardFallbackSubject');
+        this.openReportModal('CARD', card.cardId, `${this.deck.name}: ${preview}`);
+    }
+
+    openCardEditModal(card: PublicCardDTO): void {
+        if (!this.canModerateDeck) return;
+        this.editingCard = card;
+        this.editingCardContent = JSON.parse(JSON.stringify(card.content || {}));
+        this.editingCardTagsDraft = (card.tags || []).join(', ');
+        this.showCardEditModal = true;
+    }
+
+    closeCardEditModal(): void {
+        this.showCardEditModal = false;
+        this.editingCard = null;
+        this.editingCardContent = {};
+        this.editingCardTagsDraft = '';
+    }
+
+    saveCardChanges(): void {
+        if (!this.deck || !this.editingCard) return;
+        this.publicDeckApi.patchManagedPublicCard(this.deck.deckId, this.editingCard.cardId, {
+            content: this.editingCardContent,
+            tags: this.parseTags(this.editingCardTagsDraft)
+        }).subscribe({
+            next: updated => {
+                this.cards = this.cards.map(card => card.cardId === updated.cardId ? updated : card);
+                this.closeCardEditModal();
+            },
+            error: err => console.error('Failed to save public card', err)
+        });
+    }
+
+    deleteCard(card: PublicCardDTO): void {
+        if (!this.deck || !window.confirm('Delete this card from future public versions?')) return;
+        this.publicDeckApi.deleteManagedPublicCard(this.deck.deckId, card.cardId).subscribe({
+            next: () => {
+                this.cards = this.cards.filter(item => item.cardId !== card.cardId);
+                if (this.currentCardIndex >= this.visibleCards.length) {
+                    this.currentCardIndex = Math.max(0, this.visibleCards.length - 1);
+                }
+            },
+            error: err => console.error('Failed to delete public card', err)
+        });
+    }
+
+    closeReportModal(): void {
+        if (this.reportSubmitting) {
+            return;
+        }
+        this.showReportModal = false;
+        this.reportTargetId = '';
+        this.reportSubject = '';
+    }
+
+    submitReport(reason: ReportReason, details: string | null): void {
+        if (!this.reportTargetId) {
+            return;
+        }
+        this.reportSubmitting = true;
+        this.reportApi.createReport({
+            targetType: this.reportTargetType,
+            targetId: this.reportTargetId,
+            reason,
+            details
+        }).subscribe({
+            next: () => {
+                this.reportSubmitting = false;
+                this.closeReportModal();
+                this.toast.success('reports.submitSuccess');
+            },
+            error: err => {
+                this.reportSubmitting = false;
+                if (err?.status === 409) {
+                    this.toast.warning('reports.duplicateOpen');
+                    return;
+                }
+                this.toast.error('reports.submitError');
+            }
+        });
+    }
+
+    isMediaField(field: FieldTemplateDTO): boolean {
+        return ['image', 'audio', 'video'].includes(field.fieldType);
+    }
+
+    getMediaFieldType(field: FieldTemplateDTO): 'image' | 'audio' | 'video' {
+        return (field.fieldType === 'audio' || field.fieldType === 'video') ? field.fieldType : 'image';
+    }
+
+    getCardMediaValue(fieldName: string): CardContentValue | null {
+        return this.editingCardContent[fieldName] ?? null;
+    }
+
+    onCardMediaChange(fieldName: string, value: CardContentValue | null): void {
+        if (value === null) {
+            const { [fieldName]: _removed, ...rest } = this.editingCardContent;
+            this.editingCardContent = rest;
+            return;
+        }
+        this.editingCardContent = {
+            ...this.editingCardContent,
+            [fieldName]: value
+        };
+    }
+
+    onCardFieldChange(fieldName: string, value: string): void {
+        this.editingCardContent = {
+            ...this.editingCardContent,
+            [fieldName]: value
+        };
+    }
+
     openCardFromList(index: number): void {
         if (index < 0 || index >= this.visibleCards.length) {
             return;
@@ -945,8 +1486,41 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         this.maybePrefetchMoreCards();
     }
 
+    private parseTags(source: string): string[] {
+        return source
+            .split(',')
+            .map(tag => tag.trim())
+            .filter(Boolean)
+            .slice(0, 5);
+    }
+
+    private commitDeckTagInput(): boolean {
+        const pendingTag = this.deckTagInput.trim();
+        if (!pendingTag) {
+            return true;
+        }
+        const fakeEvent = { preventDefault() {} } as Event;
+        this.addDeckTag(fakeEvent);
+        return !this.deckTagError;
+    }
+
     private stripHtml(value: string): string {
         return value.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    }
+
+    private openReportModal(targetType: ReportTargetType, targetId: string, subject: string): void {
+        if (this.auth.status() !== 'authenticated') {
+            void this.router.navigate(['/login'], {
+                queryParams: {
+                    returnUrl: this.router.url
+                }
+            });
+            return;
+        }
+        this.reportTargetType = targetType;
+        this.reportTargetId = targetId;
+        this.reportSubject = subject;
+        this.showReportModal = true;
     }
 
     forkDeck(): void {

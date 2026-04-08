@@ -18,6 +18,7 @@ import { TemplateProfileComponent } from './features/templates/template-profile.
 import { DeckWizardComponent } from './features/wizard/deck-wizard.component';
 import { VisualTemplateBuilderComponent } from './features/wizard/visual-template-builder.component';
 import { SettingsComponent } from './features/settings/settings.component';
+import { AdminPanelComponent } from './features/admin/admin-panel.component';
 import { authGuard } from './core/guards/auth.guard';
 
 export const appRoutes: Routes = [
@@ -39,6 +40,7 @@ export const appRoutes: Routes = [
     { path: 'templates', component: TemplatesListComponent, canActivate: [authGuard] },
     { path: 'public-templates', component: PublicTemplatesComponent, canActivate: [authGuard] },
     { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },
+    { path: 'admin', component: AdminPanelComponent, canActivate: [authGuard] },
     { path: 'privacy', component: PrivacyPageComponent },
     { path: 'terms', component: TermsPageComponent },
     { path: '**', redirectTo: '' }

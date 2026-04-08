@@ -12,6 +12,7 @@ import org.springframework.stereotype.Repository;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 
 @Repository
 public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> {
@@ -23,6 +24,8 @@ public interface UserCardRepository extends JpaRepository<UserCardEntity, UUID> 
     long countByUserDeckIdAndDeletedFalse(UUID userDeckId);
 
     List<UserCardEntity> findByUserDeckId(UUID userDeckId);
+
+    Optional<UserCardEntity> findByUserDeckIdAndPublicCardId(UUID userDeckId, UUID publicCardId);
 
     @Query(value = """
         select uc.*

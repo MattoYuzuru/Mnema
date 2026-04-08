@@ -6,6 +6,7 @@ import app.mnema.auth.identity.FederatedIdentityRepository
 import app.mnema.auth.security.LocalTokenService
 import app.mnema.auth.security.RateLimiter
 import app.mnema.auth.security.TurnstileService
+import app.mnema.auth.user.LoginModerationService
 import app.mnema.auth.user.AuthUser
 import app.mnema.auth.user.AuthUserRepository
 import java.time.Duration
@@ -39,6 +40,7 @@ class LocalAuthServiceTest {
     private val encoder = mock(JwtEncoder::class.java)
     private val turnstileService = mock(TurnstileService::class.java)
     private val identityRepository = mock(FederatedIdentityRepository::class.java)
+    private val loginModerationService = mock(LoginModerationService::class.java)
 
     private val props = LocalAuthProps(
         accessTokenTtl = Duration.ofHours(8),
@@ -333,6 +335,63 @@ class LocalAuthServiceTest {
     }
 
     @Test
+    fun `login rejects banned user after successful password check`() {
+        val service = service()
+        val userId = UUID.randomUUID()
+        val user = AuthUser(
+            id = userId,
+            email = "user@example.com",
+            username = "mnema",
+            passwordHash = "encoded"
+        )
+
+        `when`(turnstileService.verify("captcha", "127.0.0.1")).thenReturn(true)
+        `when`(userRepository.findByUsernameIgnoreCase("mnema")).thenReturn(Optional.of(user))
+        `when`(passwordEncoder.matches("secret-password", "encoded")).thenReturn(true)
+        `when`(userRepository.save(user)).thenReturn(user)
+        `when`(loginModerationService.assertLoginAllowed(userId)).thenThrow(
+            ResponseStatusException(HttpStatus.LOCKED, "banned")
+        )
+
+        val ex = assertThrows<ResponseStatusException> {
+            service.login(LocalAuthController.LoginRequest("mnema", "secret-password", "captcha"), "127.0.0.1")
+        }
+
+        assertEquals(HttpStatus.LOCKED, ex.statusCode)
+        assertEquals("banned", ex.reason)
+    }
+
+    @Test
+    fun `register checks moderation state before issuing tokens`() {
+        val service = service()
+        val userId = UUID.randomUUID()
+        val request = LocalAuthController.RegisterRequest(
+            email = "user@example.com",
+            username = "mnema",
+            password = "secret-password",
+            turnstileToken = "captcha"
+        )
+        val saved = AuthUser(
+            id = userId,
+            email = "user@example.com",
+            emailVerified = false,
+            username = "mnema",
+            passwordHash = "encoded"
+        )
+
+        `when`(turnstileService.verify("captcha", "127.0.0.1")).thenReturn(true)
+        `when`(userRepository.findByEmailIgnoreCase("user@example.com")).thenReturn(Optional.empty())
+        `when`(userRepository.existsByUsernameIgnoreCase("mnema")).thenReturn(false)
+        `when`(passwordEncoder.encode("secret-password")).thenReturn("encoded")
+        `when`(userRepository.save(any(AuthUser::class.java))).thenReturn(saved)
+        stubToken()
+
+        service.register(request, "127.0.0.1")
+
+        verify(loginModerationService).assertLoginAllowed(userId)
+    }
+
+    @Test
     fun `password status uses email fallback and change password validates input`() {
         val service = service()
         val oauthUser = AuthUser(email = "user@example.com", passwordHash = null)
@@ -453,7 +512,8 @@ class LocalAuthServiceTest {
             featureProps,
             RateLimiter(),
             turnstileService,
-            identityRepository
+            identityRepository,
+            loginModerationService
         )
 
     private fun stubToken(tokenValue: String = "token") {

@@ -33,7 +33,7 @@ class MeController(
         val bio: String?,
         val avatarUrl: String?,
         val avatarMediaId: UUID?,
-        val isAdmin: Boolean,
+        val admin: Boolean,
         val createdAt: Instant,
         val updatedAt: Instant
     )
@@ -52,7 +52,7 @@ class MeController(
         bio = user.bio,
         avatarUrl = resolvedAvatarUrl ?: user.avatarUrl,
         avatarMediaId = user.avatarMediaId,
-        isAdmin = user.isAdmin,
+        admin = user.isAdmin,
         createdAt = user.createdAt,
         updatedAt = user.updatedAt
     )
