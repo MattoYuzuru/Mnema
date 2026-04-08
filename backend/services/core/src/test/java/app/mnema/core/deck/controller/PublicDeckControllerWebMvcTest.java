@@ -3,6 +3,7 @@ package app.mnema.core.deck.controller;
 import app.mnema.core.deck.domain.dto.PublicCardDTO;
 import app.mnema.core.deck.domain.dto.PublicDeckDTO;
 import app.mnema.core.deck.domain.dto.UserDeckDTO;
+import app.mnema.core.deck.domain.dto.DeckSizeDTO;
 import app.mnema.core.deck.domain.type.LanguageTag;
 import app.mnema.core.deck.service.CardService;
 import app.mnema.core.deck.service.DeckService;
@@ -29,7 +30,9 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.jwt;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -166,5 +169,145 @@ class PublicDeckControllerWebMvcTest {
                 .andExpect(jsonPath("$.userId").value(userId.toString()))
                 .andExpect(jsonPath("$.publicDeckId").value(publicDeckId.toString()))
                 .andExpect(jsonPath("$.displayName").value("Forked deck"));
+    }
+
+    @Test
+    void getPublicDeck_andDeckSize_delegateToDeckService() throws Exception {
+        UUID deckId = UUID.randomUUID();
+        PublicDeckDTO deck = new PublicDeckDTO(
+                deckId,
+                2,
+                UUID.randomUUID(),
+                "Editable deck",
+                "Description",
+                null,
+                null,
+                UUID.randomUUID(),
+                1,
+                true,
+                true,
+                LanguageTag.en,
+                new String[]{"tag"},
+                Instant.now(),
+                Instant.now(),
+                Instant.now(),
+                null
+        );
+        DeckSizeDTO size = new DeckSizeDTO(deckId, 42);
+
+        when(deckService.getPublicDeck(deckId, 2)).thenReturn(deck);
+        when(deckService.getPublicDeckSize(deckId, 2)).thenReturn(size);
+
+        mockMvc.perform(get("/decks/public/{deckId}", deckId)
+                        .with(jwt().jwt(j -> j.claim("sub", "user-123"))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_user.read")))
+                        .param("version", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deckId").value(deckId.toString()))
+                .andExpect(jsonPath("$.name").value("Editable deck"));
+
+        mockMvc.perform(get("/decks/public/{deckId}/size", deckId)
+                        .with(jwt().jwt(j -> j.claim("sub", "user-123"))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_user.read")))
+                        .param("version", "2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.deckId").value(deckId.toString()))
+                .andExpect(jsonPath("$.cardsQty").value(42));
+    }
+
+    @Test
+    void adminDeckEndpoints_updateAndDeleteDeckAndCardsForCurrentUser() throws Exception {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        UUID cardId = UUID.randomUUID();
+        UUID operationId = UUID.randomUUID();
+        PublicDeckDTO updatedDeck = new PublicDeckDTO(
+                deckId,
+                3,
+                userId,
+                "Updated deck",
+                "Updated description",
+                null,
+                null,
+                UUID.randomUUID(),
+                1,
+                true,
+                true,
+                LanguageTag.en,
+                new String[]{"tag"},
+                Instant.now(),
+                Instant.now(),
+                Instant.now(),
+                null
+        );
+        ObjectNode content = objectMapper.createObjectNode();
+        content.put("front", "Updated");
+        PublicCardDTO updatedCard = new PublicCardDTO(
+                deckId,
+                3,
+                cardId,
+                content,
+                1,
+                new String[]{"tag"},
+                Instant.now(),
+                Instant.now(),
+                true,
+                "checksum-123"
+        );
+
+        when(currentUserProvider.getUserId(any(Jwt.class))).thenReturn(userId);
+        when(deckService.updatePublicDeckMeta(any(), any(), any(), any())).thenReturn(updatedDeck);
+        when(cardService.updateManagedPublicCard(any(), any(), any(), any(), any())).thenReturn(updatedCard);
+        String deckPayload = """
+                {
+                  "deckId": "%s",
+                  "version": 3,
+                  "name": "Updated deck",
+                  "description": "Updated description",
+                  "language": "en",
+                  "tags": ["tag"]
+                }
+                """.formatted(deckId);
+        String cardPayload = """
+                {
+                  "deckId": "%s",
+                  "deckVersion": 3,
+                  "cardId": "%s",
+                  "content": {"front":"Updated"},
+                  "templateVersion": 1,
+                  "tags": ["tag"],
+                  "publicFlag": true,
+                  "contentHash": "checksum-123"
+                }
+                """.formatted(deckId, cardId);
+
+        mockMvc.perform(patch("/decks/public/{deckId}", deckId)
+                        .with(jwt().jwt(j -> j.claim("sub", "user-123"))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_user.write")))
+                        .param("version", "3")
+                        .contentType("application/json")
+                        .content(deckPayload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Updated deck"));
+
+        mockMvc.perform(delete("/decks/public/{deckId}", deckId)
+                        .with(jwt().jwt(j -> j.claim("sub", "user-123"))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_user.write"))))
+                .andExpect(status().isOk());
+
+        mockMvc.perform(patch("/decks/public/{deckId}/cards/{cardId}", deckId, cardId)
+                        .with(jwt().jwt(j -> j.claim("sub", "user-123"))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_user.write")))
+                        .param("operationId", operationId.toString())
+                        .contentType("application/json")
+                        .content(cardPayload))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.cardId").value(cardId.toString()));
+
+        mockMvc.perform(delete("/decks/public/{deckId}/cards/{cardId}", deckId, cardId)
+                        .with(jwt().jwt(j -> j.claim("sub", "user-123"))
+                                .authorities(new SimpleGrantedAuthority("SCOPE_user.write")))
+                        .param("operationId", operationId.toString()))
+                .andExpect(status().isOk());
     }
 }

@@ -142,6 +142,9 @@ If the requested UI:
     - frontend lint
     - frontend tests
   If any of these cannot be run, or if a requested quality gate is not configured in the repo yet, explicitly state what was blocked or missing and why.
+- Before any push, re-run the full relevant quality gate on the exact branch/commit being pushed.
+- If the quality gate fails because of missing coverage or tests, add or update tests until the configured thresholds pass; do not push with a red gate.
+- Treat coverage thresholds as a hard requirement of done, not a best-effort check.
 
 ### 8.2 Documentation
 - Document non-obvious behavior (Javadoc/KDoc, README snippets, or inline comments).
