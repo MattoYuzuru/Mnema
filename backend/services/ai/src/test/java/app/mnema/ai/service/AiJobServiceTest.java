@@ -3,13 +3,17 @@ package app.mnema.ai.service;
 import app.mnema.ai.controller.dto.AiJobResponse;
 import app.mnema.ai.controller.dto.CreateAiJobRequest;
 import app.mnema.ai.domain.entity.AiQuotaEntity;
+import app.mnema.ai.domain.entity.AiProviderCredentialEntity;
+import app.mnema.ai.domain.type.AiJobStatus;
 import app.mnema.ai.domain.type.AiJobType;
 import app.mnema.ai.repository.AiJobRepository;
+import app.mnema.ai.repository.AiProviderCredentialRepository;
 import app.mnema.ai.repository.AiQuotaRepository;
 import app.mnema.ai.support.PostgresIntegrationTest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.NullNode;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -39,9 +43,19 @@ class AiJobServiceTest extends PostgresIntegrationTest {
     private AiJobRepository jobRepository;
 
     @Autowired
+    private AiProviderCredentialRepository credentialRepository;
+
+    @Autowired
     private AiQuotaService quotaService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    @BeforeEach
+    void cleanState() {
+        jobRepository.deleteAll();
+        credentialRepository.deleteAll();
+        quotaRepository.deleteAll();
+    }
 
     @Test
     void createJobIsIdempotent() {
@@ -94,6 +108,122 @@ class AiJobServiceTest extends PostgresIntegrationTest {
         AiQuotaEntity quota = quotaRepository.findByUserIdAndPeriodStart(userId, currentPeriodStart(userId))
                 .orElseThrow();
         assertThat(quota.getTokensUsed()).isEqualTo(0);
+    }
+
+    @Test
+    void listGetResultAndCancelReturnPersistedJobDetails() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        UUID credentialId = UUID.randomUUID();
+        seedQuota(userId, 1000);
+
+        AiProviderCredentialEntity credential = new AiProviderCredentialEntity();
+        credential.setId(credentialId);
+        credential.setUserId(userId);
+        credential.setProvider("openai");
+        credential.setAlias("Primary");
+        credential.setStatus(app.mnema.ai.domain.type.AiProviderStatus.active);
+        credential.setEncryptedSecret(new byte[]{1});
+        credential.setEncryptedDataKey(new byte[]{2});
+        credential.setKeyId("key-1");
+        credential.setNonce(new byte[]{3});
+        credential.setAad(new byte[]{4});
+        credential.setCreatedAt(Instant.now());
+        credential.setUpdatedAt(Instant.now());
+        credentialRepository.save(credential);
+
+        var params = objectMapper.createObjectNode();
+        params.put("providerCredentialId", credentialId.toString());
+        params.put("provider", "openai");
+        params.put("model", "gpt-4o-mini");
+
+        AiJobResponse created = jobService.createJob(jwtFor(userId), "token", new CreateAiJobRequest(
+                requestId,
+                deckId,
+                AiJobType.generic,
+                params,
+                null,
+                10,
+                null
+        ));
+
+        assertThat(jobService.listJobs(jwtFor(userId), deckId, 100)).singleElement().satisfies(job -> {
+            assertThat(job.providerCredentialId()).isEqualTo(credentialId);
+            assertThat(job.provider()).isEqualTo("openai");
+            assertThat(job.providerAlias()).isEqualTo("Primary");
+            assertThat(job.model()).isEqualTo("gpt-4o-mini");
+        });
+        assertThat(jobService.getJob(jwtFor(userId), created.jobId()).jobId()).isEqualTo(created.jobId());
+        assertThat(jobService.getJobResult(jwtFor(userId), created.jobId()).status()).isEqualTo(AiJobStatus.queued);
+
+        AiJobResponse canceled = jobService.cancelJob(jwtFor(userId), created.jobId());
+        assertThat(canceled.status()).isEqualTo(AiJobStatus.canceled);
+        assertThat(canceled.completedAt()).isNotNull();
+    }
+
+    @Test
+    void listAndCancelValidateInputAndJobOwnership() {
+        UUID userId = UUID.randomUUID();
+        UUID anotherUser = UUID.randomUUID();
+        seedQuota(userId, 1000);
+
+        ResponseStatusException badDeck = assertThrows(ResponseStatusException.class,
+                () -> jobService.listJobs(jwtFor(userId), null, 20));
+        assertThat(badDeck.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+
+        CreateAiJobRequest request = new CreateAiJobRequest(
+                UUID.randomUUID(),
+                null,
+                AiJobType.generic,
+                NullNode.getInstance(),
+                null,
+                10,
+                null
+        );
+        AiJobResponse created = jobService.createJob(jwtFor(userId), "token", request);
+
+        ResponseStatusException notFound = assertThrows(ResponseStatusException.class,
+                () -> jobService.getJob(jwtFor(anotherUser), created.jobId()));
+        assertThat(notFound.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+    }
+
+    @Test
+    void createJobRejectsConflictingRequestReuseAndFinishedCancel() {
+        UUID userId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        seedQuota(userId, 1000);
+
+        jobService.createJob(jwtFor(userId), "token", new CreateAiJobRequest(
+                requestId,
+                null,
+                AiJobType.generic,
+                objectMapper.createObjectNode().put("input", "first"),
+                null,
+                10,
+                null
+        ));
+
+        ResponseStatusException conflict = assertThrows(ResponseStatusException.class,
+                () -> jobService.createJob(jwtFor(userId), "token", new CreateAiJobRequest(
+                        requestId,
+                        null,
+                        AiJobType.generic,
+                        objectMapper.createObjectNode().put("input", "second"),
+                        null,
+                        10,
+                        null
+                )));
+        assertThat(conflict.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+
+        var job = jobRepository.findByRequestId(requestId).orElseThrow();
+        job.setStatus(AiJobStatus.completed);
+        job.setCompletedAt(Instant.now());
+        jobRepository.save(job);
+
+        ResponseStatusException finished = assertThrows(ResponseStatusException.class,
+                () -> jobService.cancelJob(jwtFor(userId), job.getJobId()));
+        assertThat(finished.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
 
     private void seedQuota(UUID userId, int tokensLimit) {

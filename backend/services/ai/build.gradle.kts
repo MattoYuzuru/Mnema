@@ -2,6 +2,7 @@ plugins {
 	java
 	id("org.springframework.boot")
 	id("io.spring.dependency-management") version "1.1.7"
+    id("jacoco")
 }
 
 group = "app.mnema"
@@ -58,4 +59,20 @@ dependencies {
 
 tasks.withType<Test> {
 	useJUnitPlatform()
+}
+
+tasks.named<org.gradle.testing.jacoco.tasks.JacocoReport>("jacocoTestReport") {
+    classDirectories.setFrom(
+            files(
+                    sourceSets.main.get().output.asFileTree.matching {
+                        exclude(
+                                "app/mnema/ai/provider/openai/**",
+                                "app/mnema/ai/provider/gemini/**",
+                                "app/mnema/ai/provider/grok/**",
+                                "app/mnema/ai/provider/qwen/**",
+                                "app/mnema/ai/provider/claude/**"
+                        )
+                    }
+            )
+    )
 }
