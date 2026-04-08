@@ -1,11 +1,34 @@
 import { Component, OnInit } from '@angular/core';
 import { DatePipe, NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { AdminApiService, AdminOverview, AdminUserEntry } from '../../core/services/admin-api.service';
 import { ModerationReportEntry, ModerationReportStats, ReportApiService } from '../../core/services/report-api.service';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
+
+interface ChartSliceView {
+    key: string;
+    count: number;
+    color: string;
+}
+
+interface ChartSegmentView {
+    color: string;
+    dasharray: string;
+    dashoffset: string;
+}
+
+interface ChartView {
+    title: string;
+    subtitle: string;
+    centerLabel: string;
+    total: number;
+    legend: ChartSliceView[];
+    segments: ChartSegmentView[];
+    label: (key: string) => string;
+}
 
 @Component({
     standalone: true,
@@ -43,10 +66,28 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             </div>
 
             <div class="chart-body">
-              <div class="pie-chart" [style.background]="pieBackground(chart.slices)"></div>
+              <div class="chart-visual" [class.empty]="chart.total === 0">
+                <svg class="pie-chart" viewBox="0 0 120 120" aria-hidden="true">
+                  <circle class="pie-track" cx="60" cy="60" r="44"></circle>
+                  <circle
+                    *ngFor="let segment of chart.segments"
+                    class="pie-segment"
+                    cx="60"
+                    cy="60"
+                    r="44"
+                    [attr.stroke]="segment.color"
+                    [attr.stroke-dasharray]="segment.dasharray"
+                    [attr.stroke-dashoffset]="segment.dashoffset"
+                  ></circle>
+                </svg>
+                <div class="chart-center">
+                  <strong>{{ chart.total }}</strong>
+                  <span>{{ chart.centerLabel | translate }}</span>
+                </div>
+              </div>
               <div class="chart-legend">
-                <div class="legend-item" *ngFor="let slice of chart.slices; let index = index">
-                  <span class="legend-dot" [style.background]="chartColor(index)"></span>
+                <div class="legend-item" *ngFor="let slice of chart.legend">
+                  <span class="legend-dot" [style.background]="slice.color"></span>
                   <span class="legend-label">{{ chart.label(slice.key) | translate }}</span>
                   <strong>{{ slice.count }}</strong>
                 </div>
@@ -214,7 +255,14 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             </div>
 
             <div class="report-list" *ngIf="openReports.length > 0; else noOpenReports">
-              <article class="report-card" *ngFor="let report of openReports">
+              <article
+                class="report-card interactive"
+                *ngFor="let report of openReports"
+                tabindex="0"
+                role="button"
+                (click)="openReportTarget(report)"
+                (keydown)="handleReportCardKeydown($event, report)"
+              >
                 <div class="report-copy">
                   <div class="user-name-row">
                     <strong>{{ report.targetTitle }}</strong>
@@ -225,9 +273,14 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                   <div class="meta-text">{{ report.createdAt | date:'medium' }}</div>
                   <div class="meta-text" *ngIf="report.details">{{ report.details }}</div>
                 </div>
-                <app-button variant="primary" size="sm" (click)="closeReport(report)">
-                  {{ 'adminPanel.closeReport' | translate }}
-                </app-button>
+                <div class="report-actions">
+                  <button class="report-link-btn" type="button" (click)="openReportTarget(report); $event.stopPropagation()">
+                    {{ 'adminPanel.openReportTarget' | translate }}
+                  </button>
+                  <app-button variant="primary" size="sm" (click)="closeReport(report); $event.stopPropagation()">
+                    {{ 'adminPanel.closeReport' | translate }}
+                  </app-button>
+                </div>
               </article>
             </div>
 
@@ -245,7 +298,14 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
             </div>
 
             <div class="report-list" *ngIf="closedReports.length > 0; else noClosedReports">
-              <article class="report-card compact" *ngFor="let report of closedReports">
+              <article
+                class="report-card compact interactive"
+                *ngFor="let report of closedReports"
+                tabindex="0"
+                role="button"
+                (click)="openReportTarget(report)"
+                (keydown)="handleReportCardKeydown($event, report)"
+              >
                 <div class="report-copy">
                   <div class="user-name-row">
                     <strong>{{ report.targetTitle }}</strong>
@@ -257,6 +317,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
                   <div class="meta-text">{{ (report.closedAt || report.updatedAt) | date:'medium' }}</div>
                   <div class="meta-text" *ngIf="report.resolutionNote">{{ report.resolutionNote }}</div>
                 </div>
+                <button class="report-link-btn" type="button" (click)="openReportTarget(report); $event.stopPropagation()">
+                  {{ 'adminPanel.openReportTarget' | translate }}
+                </button>
               </article>
             </div>
 
@@ -495,17 +558,62 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
       .chart-body {
         display: grid;
-        grid-template-columns: auto minmax(0, 1fr);
+        grid-template-columns: minmax(148px, auto) minmax(0, 1fr);
         gap: var(--spacing-lg);
         align-items: center;
       }
 
+      .chart-visual {
+        position: relative;
+        width: 148px;
+        height: 148px;
+        display: grid;
+        place-items: center;
+      }
+
       .pie-chart {
-        width: 132px;
-        height: 132px;
-        border-radius: 50%;
-        border: 8px solid rgba(255, 255, 255, 0.08);
-        box-shadow: inset 0 0 0 10px rgba(15, 23, 42, 0.18);
+        width: 148px;
+        height: 148px;
+        transform: rotate(-90deg);
+        overflow: visible;
+      }
+
+      .pie-track,
+      .pie-segment {
+        fill: none;
+        stroke-width: 12;
+      }
+
+      .pie-track {
+        stroke: rgba(148, 163, 184, 0.18);
+      }
+
+      .pie-segment {
+        transition: stroke-dasharray 180ms ease, stroke-dashoffset 180ms ease;
+      }
+
+      .chart-center {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 0.15rem;
+        text-align: center;
+        pointer-events: none;
+      }
+
+      .chart-center strong {
+        font-size: 1.65rem;
+        line-height: 1;
+      }
+
+      .chart-center span {
+        max-width: 84px;
+        color: var(--color-text-secondary);
+        font-size: 0.75rem;
+        line-height: 1.2;
       }
 
       .chart-legend,
@@ -516,7 +624,13 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         gap: var(--spacing-sm);
       }
 
-      .legend-item,
+      .legend-item {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
       .resolver-card {
         display: flex;
         align-items: center;
@@ -549,6 +663,42 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
       .report-copy {
         min-width: 0;
+      }
+
+      .report-actions {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: var(--spacing-xs);
+      }
+
+      .report-card.interactive {
+        cursor: pointer;
+        transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
+      }
+
+      .report-card.interactive:hover,
+      .report-card.interactive:focus-visible {
+        border-color: rgba(56, 189, 248, 0.34);
+        background: rgba(255, 255, 255, 0.07);
+        transform: translateY(-1px);
+        outline: none;
+      }
+
+      .report-link-btn {
+        border: none;
+        background: transparent;
+        color: #38bdf8;
+        font: inherit;
+        font-weight: 600;
+        padding: 0;
+        cursor: pointer;
+      }
+
+      .report-link-btn:hover,
+      .report-link-btn:focus-visible {
+        color: #7dd3fc;
+        outline: none;
       }
 
       .resolver-count {
@@ -613,7 +763,8 @@ export class AdminPanelComponent implements OnInit {
 
     constructor(
         private adminApi: AdminApiService,
-        private reportApi: ReportApiService
+        private reportApi: ReportApiService,
+        private router: Router
     ) {}
 
     ngOnInit(): void {
@@ -716,6 +867,34 @@ export class AdminPanelComponent implements OnInit {
         this.reportApi.closeReport(report.reportId, resolutionNote).subscribe({ next: () => this.reloadAll() });
     }
 
+    openReportTarget(report: ModerationReportEntry): void {
+        switch (report.targetType) {
+            case 'DECK':
+                void this.router.navigate(['/public-decks', report.targetId, 'browse']);
+                return;
+            case 'CARD':
+                if (!report.targetParentId) {
+                    return;
+                }
+                void this.router.navigate(
+                    ['/public-decks', report.targetParentId, 'browse'],
+                    { queryParams: { cardId: report.targetId } }
+                );
+                return;
+            case 'TEMPLATE':
+                void this.router.navigate(['/templates', report.targetId]);
+                return;
+        }
+    }
+
+    handleReportCardKeydown(event: KeyboardEvent, report: ModerationReportEntry): void {
+        if (event.key !== 'Enter' && event.key !== ' ') {
+            return;
+        }
+        event.preventDefault();
+        this.openReportTarget(report);
+    }
+
     statCards(): Array<{ value: number; label: string; hint: string }> {
         return [
             {
@@ -741,57 +920,93 @@ export class AdminPanelComponent implements OnInit {
         ];
     }
 
-    charts(): Array<{
-        title: string;
-        subtitle: string;
-        slices: Array<{ key: string; count: number }>;
-        label: (key: string) => string;
-    }> {
+    charts(): ChartView[] {
         return [
-            {
-                title: 'adminPanel.statusChartTitle',
-                subtitle: 'adminPanel.statusChartHint',
-                slices: [
+            this.buildChart(
+                'adminPanel.statusChartTitle',
+                'adminPanel.statusChartHint',
+                'adminPanel.chartTotal',
+                [
                     { key: 'OPEN', count: this.reportStats?.totalOpen ?? 0 },
                     { key: 'CLOSED', count: this.reportStats?.totalClosed ?? 0 }
                 ],
-                label: key => key === 'OPEN' ? 'adminPanel.reportStatusOpen' : 'adminPanel.reportStatusClosed'
-            },
-            {
-                title: 'adminPanel.targetsChartTitle',
-                subtitle: 'adminPanel.targetsChartHint',
-                slices: this.reportStats?.targetBreakdown ?? [],
-                label: key => this.reportTargetLabel(key)
-            },
-            {
-                title: 'adminPanel.reasonsChartTitle',
-                subtitle: 'adminPanel.reasonsChartHint',
-                slices: this.reportStats?.reasonBreakdown ?? [],
-                label: key => this.reportReasonLabel(key)
-            }
+                key => key === 'OPEN' ? 'adminPanel.reportStatusOpen' : 'adminPanel.reportStatusClosed',
+                ['#38bdf8', '#f97316']
+            ),
+            this.buildChart(
+                'adminPanel.targetsChartTitle',
+                'adminPanel.targetsChartHint',
+                'adminPanel.chartTotal',
+                this.reportStats?.targetBreakdown ?? [],
+                key => this.reportTargetLabel(key),
+                ['#34d399', '#f59e0b', '#8b5cf6']
+            ),
+            this.buildChart(
+                'adminPanel.reasonsChartTitle',
+                'adminPanel.reasonsChartHint',
+                'adminPanel.chartTotal',
+                this.reportStats?.reasonBreakdown ?? [],
+                key => this.reportReasonLabel(key),
+                ['#fb7185', '#38bdf8', '#f59e0b', '#34d399', '#a78bfa', '#f97316', '#22c55e']
+            )
         ];
     }
 
-    pieBackground(slices: Array<{ key: string; count: number }>): string {
-        const activeSlices = slices.filter(slice => slice.count > 0);
-        const total = activeSlices.reduce((sum, slice) => sum + slice.count, 0);
-        if (total === 0) {
-            return 'conic-gradient(rgba(148, 163, 184, 0.18) 0deg 360deg)';
-        }
-
-        let current = 0;
-        const segments = activeSlices.map((slice, index) => {
-            const start = (current / total) * 360;
-            current += slice.count;
-            const end = (current / total) * 360;
-            return `${this.chartColor(index)} ${start}deg ${end}deg`;
-        });
-        return `conic-gradient(${segments.join(', ')})`;
+    private buildChart(
+        title: string,
+        subtitle: string,
+        centerLabel: string,
+        slices: Array<{ key: string; count: number }>,
+        label: (key: string) => string,
+        palette: string[]
+    ): ChartView {
+        const ordered = this.orderChartSlices(slices).map((slice, index) => ({
+            ...slice,
+            color: palette[index % palette.length]
+        }));
+        return {
+            title,
+            subtitle,
+            centerLabel,
+            total: ordered.reduce((sum, slice) => sum + slice.count, 0),
+            legend: ordered,
+            segments: this.buildChartSegments(ordered),
+            label
+        };
     }
 
-    chartColor(index: number): string {
-        const palette = ['#38bdf8', '#f59e0b', '#10b981', '#fb7185', '#a78bfa', '#f97316', '#22c55e'];
-        return palette[index % palette.length];
+    private orderChartSlices(slices: Array<{ key: string; count: number }>): Array<{ key: string; count: number }> {
+        const nonZero = slices.filter(slice => slice.count > 0);
+        const base = nonZero.length > 0 ? nonZero : slices;
+        return [...base].sort((left, right) => {
+            if (left.count === right.count) {
+                return left.key.localeCompare(right.key);
+            }
+            return right.count - left.count;
+        });
+    }
+
+    private buildChartSegments(slices: ChartSliceView[]): ChartSegmentView[] {
+        const total = slices.reduce((sum, slice) => sum + slice.count, 0);
+        if (total === 0) {
+            return [];
+        }
+        const radius = 44;
+        const circumference = 2 * Math.PI * radius;
+        let offset = 0;
+
+        return slices
+            .filter(slice => slice.count > 0)
+            .map(slice => {
+                const length = (slice.count / total) * circumference;
+                const segment = {
+                    color: slice.color,
+                    dasharray: `${length} ${Math.max(circumference - length, 0)}`,
+                    dashoffset: `${-offset}`
+                };
+                offset += length;
+                return segment;
+            });
     }
 
     reportTargetLabel(targetType: string): string {

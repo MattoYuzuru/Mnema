@@ -2,7 +2,7 @@ import { Component, OnInit, HostListener, OnDestroy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { NgIf, NgFor, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
-import { forkJoin, of, Subscription } from 'rxjs';
+import { firstValueFrom, forkJoin, of, Subscription } from 'rxjs';
 import { catchError } from 'rxjs/operators';
 import { AuthService } from '../../auth.service';
 import { UserApiService } from '../../user-api.service';
@@ -108,7 +108,7 @@ import { ToastService } from '../../core/services/toast.service';
 
           <div class="cards-list" (scroll)="onListScroll($event)">
             <div *ngFor="let card of visibleCards; let index = index" class="cards-list-item" [class.active]="index === currentCardIndex">
-              <button class="card-preview" type="button" (click)="openCardFromList(index)">
+              <button class="card-preview" type="button" [attr.data-card-id]="card.cardId" (click)="openCardFromList(index)">
                 <span class="card-index">{{ index + 1 }}</span>
                 <div class="card-preview-body">
                   <span class="card-text">{{ getFrontPreview(card) }}</span>
@@ -902,6 +902,7 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     userPublicDeckIds: Set<string> = new Set();
     userPublicDeckIdsLoaded = false;
     private authSubscription?: Subscription;
+    private queryParamsSubscription?: Subscription;
     private userPublicDeckIdsLoading = false;
     showDeckEditModal = false;
     showCardEditModal = false;
@@ -918,6 +919,8 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
     reportTargetType: ReportTargetType = 'DECK';
     reportTargetId = '';
     reportSubject = '';
+    private requestedCardId: string | null = null;
+    private cardFocusInFlight = false;
 
     formatDescription(description?: string): string {
         return markdownToHtml((description || '').trim());
@@ -960,6 +963,7 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
 
     ngOnInit(): void {
         this.deckId = this.route.snapshot.paramMap.get('deckId') || '';
+        this.bindRouteQueryParams();
         this.bindAuth();
         if (this.deckId) {
             this.loadDeckData();
@@ -968,6 +972,7 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
 
     ngOnDestroy(): void {
         this.authSubscription?.unsubscribe();
+        this.queryParamsSubscription?.unsubscribe();
     }
 
     @HostListener('window:keydown', ['$event'])
@@ -1014,10 +1019,20 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
                 this.totalCards = size.cardsQty;
                 this.updateCanFork();
                 this.loading = false;
+                void this.focusRequestedCard();
             },
             error: err => {
                 console.error('Failed to load public deck:', err);
                 this.loading = false;
+            }
+        });
+    }
+
+    private bindRouteQueryParams(): void {
+        this.queryParamsSubscription = this.route.queryParamMap.subscribe(params => {
+            this.requestedCardId = params.get('cardId')?.trim() || null;
+            if (this.requestedCardId && this.deck && !this.loading) {
+                void this.focusRequestedCard();
             }
         });
     }
@@ -1200,9 +1215,7 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         this.publicDeckApi.getPublicDeckCards(this.deckId, undefined, nextPage, PublicCardBrowserComponent.PAGE_SIZE)
             .subscribe({
                 next: page => {
-                    const existingIds = new Set(this.cards.map(card => card.cardId));
-                    const newCards = page.content.filter(card => !existingIds.has(card.cardId));
-                    this.cards = [...this.cards, ...newCards];
+                    this.appendCards(page.content);
                     this.currentPage = page.number + 1;
                     this.hasMoreCards = !page.last;
                     this.totalCards = Math.max(this.totalCards, page.totalElements || 0);
@@ -1506,6 +1519,57 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
 
     private stripHtml(value: string): string {
         return value.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
+    }
+
+    private async focusRequestedCard(): Promise<void> {
+        const cardId = this.requestedCardId;
+        if (!cardId || this.cardFocusInFlight || !this.deckId) {
+            return;
+        }
+
+        this.cardFocusInFlight = true;
+        try {
+            let cardIndex = this.cards.findIndex(card => card.cardId === cardId);
+            while (cardIndex === -1 && this.hasMoreCards) {
+                const nextPage = this.currentPage + 1;
+                const page = await firstValueFrom(
+                    this.publicDeckApi.getPublicDeckCards(
+                        this.deckId,
+                        undefined,
+                        nextPage,
+                        PublicCardBrowserComponent.PAGE_SIZE
+                    )
+                );
+                this.appendCards(page.content);
+                this.currentPage = page.number + 1;
+                this.hasMoreCards = !page.last;
+                this.totalCards = Math.max(this.totalCards, page.totalElements || 0);
+                cardIndex = this.cards.findIndex(card => card.cardId === cardId);
+            }
+
+            if (cardIndex === -1) {
+                return;
+            }
+
+            this.currentCardIndex = cardIndex;
+            this.revealed = false;
+            queueMicrotask(() => this.scrollCardPreviewIntoView(cardId));
+        } catch (err) {
+            console.error('Failed to focus reported card', err);
+        } finally {
+            this.cardFocusInFlight = false;
+        }
+    }
+
+    private appendCards(cards: PublicCardDTO[]): void {
+        const existingIds = new Set(this.cards.map(card => card.cardId));
+        const newCards = cards.filter(card => !existingIds.has(card.cardId));
+        this.cards = [...this.cards, ...newCards];
+    }
+
+    private scrollCardPreviewIntoView(cardId: string): void {
+        const preview = document.querySelector<HTMLElement>(`.card-preview[data-card-id="${cardId}"]`);
+        preview?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
     }
 
     private openReportModal(targetType: ReportTargetType, targetId: string, subject: string): void {
