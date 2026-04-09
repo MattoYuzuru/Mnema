@@ -36,17 +36,20 @@ public class AiJobService {
     private final AiQuotaService quotaService;
     private final AiProviderCredentialRepository credentialRepository;
     private final ObjectMapper objectMapper;
+    private final AiJobExecutionService executionService;
 
     public AiJobService(AiJobRepository jobRepository,
                         CurrentUserProvider currentUserProvider,
                         AiQuotaService quotaService,
                         AiProviderCredentialRepository credentialRepository,
-                        ObjectMapper objectMapper) {
+                        ObjectMapper objectMapper,
+                        AiJobExecutionService executionService) {
         this.jobRepository = jobRepository;
         this.currentUserProvider = currentUserProvider;
         this.quotaService = quotaService;
         this.credentialRepository = credentialRepository;
         this.objectMapper = objectMapper;
+        this.executionService = executionService;
     }
 
     @Transactional
@@ -134,7 +137,8 @@ public class AiJobService {
         UUID userId = requireUserId(jwt);
         AiJobEntity job = jobRepository.findByJobIdAndUserId(jobId, userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "AI job not found"));
-        return new AiJobResultResponse(job.getJobId(), job.getStatus(), job.getResultSummary());
+        AiJobExecutionService.ExecutionSnapshot snapshot = executionService.snapshot(job.getJobId());
+        return new AiJobResultResponse(job.getJobId(), job.getStatus(), job.getResultSummary(), snapshot.steps());
     }
 
     @Transactional
@@ -220,6 +224,7 @@ public class AiJobService {
 
     private AiJobResponse toResponse(AiJobEntity job) {
         ProviderInfo providerInfo = resolveProviderInfo(job);
+        AiJobExecutionService.ExecutionSnapshot snapshot = executionService.snapshot(job.getJobId());
         return new AiJobResponse(
                 job.getJobId(),
                 job.getRequestId(),
@@ -235,7 +240,10 @@ public class AiJobService {
                 providerInfo.credentialId(),
                 providerInfo.provider(),
                 providerInfo.alias(),
-                providerInfo.model()
+                providerInfo.model(),
+                snapshot.currentStep(),
+                snapshot.completedSteps(),
+                snapshot.totalSteps()
         );
     }
 

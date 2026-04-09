@@ -1,5 +1,6 @@
 package app.mnema.ai.service;
 
+import app.mnema.ai.domain.type.AiJobStatus;
 import com.fasterxml.jackson.databind.JsonNode;
 
 import java.math.BigDecimal;
@@ -11,6 +12,18 @@ public record AiJobProcessingResult(
         Integer tokensIn,
         Integer tokensOut,
         BigDecimal costEstimate,
-        String promptHash
+        String promptHash,
+        AiJobStatus finalStatus
 ) {
+    public AiJobProcessingResult(
+            JsonNode resultSummary,
+            String provider,
+            String model,
+            Integer tokensIn,
+            Integer tokensOut,
+            BigDecimal costEstimate,
+            String promptHash
+    ) {
+        this(resultSummary, provider, model, tokensIn, tokensOut, costEstimate, promptHash, AiJobStatus.completed);
+    }
 }

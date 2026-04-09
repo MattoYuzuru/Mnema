@@ -195,7 +195,7 @@ public class AiJobWorker {
             return;
         }
         Instant now = Instant.now();
-        job.setStatus(AiJobStatus.completed);
+        job.setStatus(result != null && result.finalStatus() != null ? result.finalStatus() : AiJobStatus.completed);
         job.setProgress(100);
         job.setResultSummary(result == null ? null : result.resultSummary());
         job.setCompletedAt(now);

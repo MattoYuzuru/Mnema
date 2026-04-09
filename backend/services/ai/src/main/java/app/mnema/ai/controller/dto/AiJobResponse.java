@@ -21,6 +21,9 @@ public record AiJobResponse(
         UUID providerCredentialId,
         String provider,
         String providerAlias,
-        String model
+        String model,
+        String currentStep,
+        Integer completedSteps,
+        Integer totalSteps
 ) {
 }

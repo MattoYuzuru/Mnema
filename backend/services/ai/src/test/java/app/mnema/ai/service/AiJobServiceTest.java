@@ -48,6 +48,9 @@ class AiJobServiceTest extends PostgresIntegrationTest {
     @Autowired
     private AiQuotaService quotaService;
 
+    @Autowired
+    private AiJobExecutionService executionService;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
@@ -77,7 +80,11 @@ class AiJobServiceTest extends PostgresIntegrationTest {
         AiJobResponse second = jobService.createJob(jwtFor(userId), "token", request);
 
         assertThat(first.jobId()).isEqualTo(second.jobId());
-        assertThat(jobRepository.count()).isEqualTo(1);
+        assertThat(jobRepository.findByRequestId(requestId))
+                .isPresent()
+                .get()
+                .extracting(job -> job.getJobId())
+                .isEqualTo(first.jobId());
 
         AiQuotaEntity quota = quotaRepository.findByUserIdAndPeriodStart(userId, currentPeriodStart(userId))
                 .orElseThrow();
@@ -224,6 +231,39 @@ class AiJobServiceTest extends PostgresIntegrationTest {
         ResponseStatusException finished = assertThrows(ResponseStatusException.class,
                 () -> jobService.cancelJob(jwtFor(userId), job.getJobId()));
         assertThat(finished.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    void getJobAndResultExposeExecutionSteps() {
+        UUID userId = UUID.randomUUID();
+        seedQuota(userId, 1000);
+
+        AiJobResponse created = jobService.createJob(jwtFor(userId), "token", new CreateAiJobRequest(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                AiJobType.generic,
+                objectMapper.createObjectNode().put("mode", "generate_cards"),
+                null,
+                10,
+                null
+        ));
+
+        executionService.resetPlan(created.jobId(), java.util.List.of("prepare_context", "generate_content"));
+        executionService.markProcessing(created.jobId(), "prepare_context");
+
+        AiJobResponse processing = jobService.getJob(jwtFor(userId), created.jobId());
+        assertThat(processing.currentStep()).isEqualTo("prepare_context");
+        assertThat(processing.completedSteps()).isEqualTo(0);
+        assertThat(processing.totalSteps()).isEqualTo(2);
+
+        executionService.markCompleted(created.jobId(), "prepare_context");
+
+        var result = jobService.getJobResult(jwtFor(userId), created.jobId());
+        assertThat(result.steps()).hasSize(2);
+        assertThat(result.steps()).anySatisfy(step -> {
+            assertThat(step.stepName()).isEqualTo("prepare_context");
+            assertThat(step.status()).isEqualTo(app.mnema.ai.domain.type.AiJobStepStatus.completed);
+        });
     }
 
     private void seedQuota(UUID userId, int tokensLimit) {
