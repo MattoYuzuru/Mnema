@@ -64,5 +64,6 @@ describe('DeckProfileComponent', () => {
         i18n.setLanguage('ru');
 
         expect(component.formatAiJobStatus('completed')).toBe('Завершено');
+        expect(component.formatAiJobStatus('partial_success')).toBe('Частично завершено');
     });
 });

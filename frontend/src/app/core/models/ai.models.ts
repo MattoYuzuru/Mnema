@@ -45,7 +45,8 @@ export interface CreateAiProviderRequest {
 }
 
 export type AiJobType = 'generic' | 'enrich' | 'tts';
-export type AiJobStatus = 'queued' | 'processing' | 'completed' | 'failed' | 'canceled';
+export type AiJobStatus = 'queued' | 'processing' | 'completed' | 'partial_success' | 'failed' | 'canceled';
+export type AiJobStepStatus = 'queued' | 'processing' | 'completed' | 'failed';
 
 export interface CreateAiJobRequest {
     requestId: string;
@@ -71,12 +72,24 @@ export interface AiJobResponse {
     provider?: string | null;
     providerAlias?: string | null;
     model?: string | null;
+    currentStep?: string | null;
+    completedSteps?: number | null;
+    totalSteps?: number | null;
+}
+
+export interface AiJobStepResponse {
+    stepName: string;
+    status: AiJobStepStatus;
+    startedAt?: string | null;
+    endedAt?: string | null;
+    errorSummary?: string | null;
 }
 
 export interface AiJobResultResponse {
     jobId: string;
     status: AiJobStatus;
     resultSummary: unknown;
+    steps: AiJobStepResponse[];
 }
 
 export interface AiImportPreviewRequest {
