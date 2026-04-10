@@ -53,6 +53,8 @@ spec:
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AUTH_JWT_PRIVATE_KEY } }
             - name: USER_BASE_URL
               value: http://mnema-user/api/user
+            - name: USER_INTERNAL_TOKEN
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: USER_INTERNAL_TOKEN } }
             - name: TURNSTILE_SITE_KEY
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: TURNSTILE_SITE_KEY } }
             - name: TURNSTILE_SECRET_KEY

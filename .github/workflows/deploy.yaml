@@ -188,6 +188,14 @@ jobs:
         run: |
           AUTH_JWT_PUBLIC_KEY_B64=$(printf '%s' "$AUTH_JWT_PUBLIC_KEY" | base64 | tr -d '\n')
           AUTH_JWT_PRIVATE_KEY_B64=$(printf '%s' "$AUTH_JWT_PRIVATE_KEY" | base64 | tr -d '\n')
+          CURRENT_USER_INTERNAL_TOKEN_B64=$(kubectl -n "$NS" get secret mnema-secrets -o jsonpath='{.data.USER_INTERNAL_TOKEN}' 2>/dev/null || true)
+          if [ -n "${USER_INTERNAL_TOKEN:-}" ]; then
+            USER_INTERNAL_TOKEN_VALUE="$USER_INTERNAL_TOKEN"
+          elif [ -n "$CURRENT_USER_INTERNAL_TOKEN_B64" ]; then
+            USER_INTERNAL_TOKEN_VALUE=$(printf '%s' "$CURRENT_USER_INTERNAL_TOKEN_B64" | base64 -d)
+          else
+            USER_INTERNAL_TOKEN_VALUE=$(openssl rand -hex 24)
+          fi
           cat <<YAML | kubectl apply -f -
           apiVersion: v1
           kind: Secret
@@ -217,6 +225,7 @@ jobs:
             AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
             AWS_BUCKET_NAME: "${AWS_BUCKET_NAME}"
             MEDIA_INTERNAL_TOKEN: "${MEDIA_INTERNAL_TOKEN}"
+            USER_INTERNAL_TOKEN: "${USER_INTERNAL_TOKEN_VALUE}"
           YAML
         env:
           AUTH_ISSUER: ${{ secrets.AUTH_ISSUER }}
@@ -239,6 +248,7 @@ jobs:
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
           MEDIA_INTERNAL_TOKEN: ${{ secrets.MEDIA_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.USER_INTERNAL_TOKEN }}
 
       - name: Create/Update secret (grafana-secrets)
         run: |
@@ -309,6 +319,14 @@ jobs:
 
       - name: Create/Update secret (mnema-secrets)
         run: |
+          CURRENT_USER_INTERNAL_TOKEN_B64=$(kubectl -n "$NS" get secret mnema-secrets -o jsonpath='{.data.USER_INTERNAL_TOKEN}' 2>/dev/null || true)
+          if [ -n "${USER_INTERNAL_TOKEN:-}" ]; then
+            USER_INTERNAL_TOKEN_VALUE="$USER_INTERNAL_TOKEN"
+          elif [ -n "$CURRENT_USER_INTERNAL_TOKEN_B64" ]; then
+            USER_INTERNAL_TOKEN_VALUE=$(printf '%s' "$CURRENT_USER_INTERNAL_TOKEN_B64" | base64 -d)
+          else
+            USER_INTERNAL_TOKEN_VALUE=$(openssl rand -hex 24)
+          fi
           cat <<YAML | kubectl apply -f -
           apiVersion: v1
           kind: Secret
@@ -321,6 +339,7 @@ jobs:
             POSTGRES_USER: "${POSTGRES_USER}"
             POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
             MEDIA_INTERNAL_TOKEN: "${MEDIA_INTERNAL_TOKEN}"
+            USER_INTERNAL_TOKEN: "${USER_INTERNAL_TOKEN_VALUE}"
             AI_VAULT_MASTER_KEY: "${AI_VAULT_MASTER_KEY}"
             AI_VAULT_KEY_ID: "${AI_VAULT_KEY_ID}"
             AI_PROVIDER: "${AI_PROVIDER}"
@@ -330,6 +349,7 @@ jobs:
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           MEDIA_INTERNAL_TOKEN: ${{ secrets.MEDIA_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.USER_INTERNAL_TOKEN }}
           AI_VAULT_MASTER_KEY: ${{ secrets.AI_VAULT_MASTER_KEY }}
           AI_VAULT_KEY_ID: ${{ secrets.AI_VAULT_KEY_ID }}
           AI_PROVIDER: ${{ secrets.AI_PROVIDER }}

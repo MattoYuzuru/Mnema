@@ -42,6 +42,8 @@ spec:
               value: http://mnema-media/api/media
             - name: MEDIA_INTERNAL_TOKEN
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: MEDIA_INTERNAL_TOKEN } }
+            - name: USER_INTERNAL_TOKEN
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: USER_INTERNAL_TOKEN } }
             - name: REDIS_HOST
               value: redis
             - name: REDIS_PORT
