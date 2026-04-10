@@ -357,6 +357,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         int totalCreated = 0;
         int totalImages = 0;
         int totalTts = 0;
+        int totalTtsChars = 0;
         String ttsError = null;
         Integer tokensIn = null;
         Integer tokensOut = null;
@@ -393,6 +394,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 totalCreated += summary.path("createdCards").asInt(0);
                 totalImages += summary.path("imagesGenerated").asInt(0);
                 totalTts += summary.path("ttsGenerated").asInt(0);
+                totalTtsChars += summary.path("ttsCharsGenerated").asInt(0);
                 if (ttsError == null && summary.hasNonNull("ttsError")) {
                     ttsError = summary.get("ttsError").asText();
                 }
@@ -417,6 +419,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
         if (totalTts > 0) {
             summary.put("ttsGenerated", totalTts);
+        }
+        if (totalTtsChars > 0) {
+            summary.put("ttsCharsGenerated", totalTtsChars);
         }
         if (ttsError != null) {
             summary.put("ttsError", ttsError);
@@ -451,6 +456,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         int totalCreated = 0;
         int totalImages = 0;
         int totalTts = 0;
+        int totalTtsChars = 0;
         String ttsError = null;
         Integer tokensIn = null;
         Integer tokensOut = null;
@@ -490,6 +496,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 totalCreated += summary.path("createdCards").asInt(0);
                 totalImages += summary.path("imagesGenerated").asInt(0);
                 totalTts += summary.path("ttsGenerated").asInt(0);
+                totalTtsChars += summary.path("ttsCharsGenerated").asInt(0);
                 if (ttsError == null && summary.hasNonNull("ttsError")) {
                     ttsError = summary.get("ttsError").asText();
                 }
@@ -515,6 +522,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
         if (totalTts > 0) {
             summary.put("ttsGenerated", totalTts);
+        }
+        if (totalTtsChars > 0) {
+            summary.put("ttsCharsGenerated", totalTtsChars);
         }
         if (ttsError != null) {
             summary.put("ttsError", ttsError);
@@ -1046,6 +1056,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (!context.targetAudioFields().isEmpty()) {
             summary.put("ttsGenerated", ttsResult.generated());
             summary.put("ttsUpdatedCards", ttsResult.updatedCards());
+            if (ttsResult.charsGenerated() > 0) {
+                summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
+            }
             if (ttsError != null) {
                 summary.put("ttsError", ttsError);
             }
@@ -1141,6 +1154,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         summary.put("deckId", job.getDeckId().toString());
         summary.put("updatedCards", ttsResult.updatedCards());
         summary.put("ttsGenerated", ttsResult.generated());
+        if (ttsResult.charsGenerated() > 0) {
+            summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
+        }
         summary.put("candidates", missingCards.size());
         if (ttsResult.error() != null) {
             summary.put("ttsError", ttsResult.error());
@@ -1406,6 +1422,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (!context.targetAudioFields().isEmpty()) {
             summary.put("ttsGenerated", ttsResult.generated());
             summary.put("ttsUpdatedCards", ttsResult.updatedCards());
+            if (ttsResult.charsGenerated() > 0) {
+                summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
+            }
             if (ttsError != null) {
                 summary.put("ttsError", ttsError);
             }
@@ -1537,6 +1556,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         summary.put("cardId", cardId.toString());
         summary.put("updatedCards", ttsResult.updatedCards());
         summary.put("ttsGenerated", ttsResult.generated());
+        if (ttsResult.charsGenerated() > 0) {
+            summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
+        }
         if (ttsError != null) {
             summary.put("ttsError", ttsError);
         }
@@ -1727,6 +1749,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
         if (ttsResult.generated() > 0) {
             summary.put("ttsGenerated", ttsResult.generated());
+        }
+        if (ttsResult.charsGenerated() > 0) {
+            summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
         }
         if (ttsResult.error() != null) {
             summary.put("ttsError", ttsResult.error());
@@ -2688,6 +2713,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 new TtsApplyResult(
                         ttsContentResult.generated(),
                         ttsContentResult.updated() ? 1 : 0,
+                        ttsContentResult.charsGenerated(),
                         ttsContentResult.model(),
                         ttsContentResult.errors().isEmpty() ? null : ttsContentResult.errors().getFirst(),
                         ttsContentResult.updated() ? Set.of(card.userCardId()) : Set.of(),
@@ -2871,6 +2897,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         Set<UUID> mediaUpdatedCardIds = new LinkedHashSet<>();
         Map<UUID, List<String>> mediaCardErrors = new LinkedHashMap<>();
         int ttsGenerated = 0;
+        int ttsCharsGenerated = 0;
         int ttsUpdatedCards = 0;
         String ttsModel = null;
         String ttsError = null;
@@ -2916,6 +2943,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 imagesGenerated += contentResult.imagesGenerated();
                 videosGenerated += contentResult.videosGenerated();
                 ttsGenerated += ttsResult.generated();
+                ttsCharsGenerated += ttsResult.charsGenerated();
                 continue;
             }
             ankiSupport.applyIfPresent(updatedContent, template);
@@ -2933,6 +2961,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             imagesGenerated += contentResult.imagesGenerated();
             videosGenerated += contentResult.videosGenerated();
             ttsGenerated += ttsResult.generated();
+            ttsCharsGenerated += ttsResult.charsGenerated();
             if (contentResult.changed()) {
                 mediaUpdatedCardIds.add(card.userCardId());
             }
@@ -2943,7 +2972,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
         return new AtomicApplyResult(
                 new MediaApplyResult(mediaUpdatedCardIds.size(), imagesGenerated, videosGenerated, mediaUpdatedCardIds, mediaCardErrors),
-                new TtsApplyResult(ttsGenerated, ttsUpdatedCards, ttsModel, ttsError, ttsUpdatedCardIds, ttsCardErrors)
+                new TtsApplyResult(ttsGenerated, ttsUpdatedCards, ttsCharsGenerated, ttsModel, ttsError, ttsUpdatedCardIds, ttsCardErrors)
         );
     }
 
@@ -3059,12 +3088,17 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private record TtsApplyResult(int generated,
                                   int updatedCards,
+                                  int charsGenerated,
                                   String model,
                                   String error,
                                   Set<UUID> updatedCardIds,
                                   Map<UUID, List<String>> cardErrors) {
         private TtsApplyResult(int generated, int updatedCards, String model, String error) {
-            this(generated, updatedCards, model, error, Set.of(), Map.of());
+            this(generated, updatedCards, 0, model, error, Set.of(), Map.of());
+        }
+
+        private TtsApplyResult(int generated, int updatedCards, int charsGenerated, String model, String error) {
+            this(generated, updatedCards, charsGenerated, model, error, Set.of(), Map.of());
         }
     }
 
@@ -3080,6 +3114,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private record TtsContentApplyResult(boolean updated,
                                          int generated,
+                                         int charsGenerated,
                                          String model,
                                          List<String> errors) {
     }
@@ -3091,6 +3126,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     }
 
     private record DraftTtsPreparationResult(int generated,
+                                             int charsGenerated,
                                              String model,
                                              String error,
                                              Set<Integer> updatedDraftIndexes,
@@ -3444,6 +3480,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
 
         int generated = 0;
+        int charsGenerated = 0;
         int updatedCards = 0;
         String ttsError = null;
         Set<UUID> updatedCardIds = new LinkedHashSet<>();
@@ -3499,6 +3536,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 updatedContent.set(mapping.targetField(), audioNode);
                 updated = true;
                 generated++;
+                charsGenerated += text.length();
             }
             if (updated) {
                 UpdateUserCardRequest update = new UpdateUserCardRequest(
@@ -3516,7 +3554,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 updatedCardIds.add(card.userCardId());
             }
         }
-        return new TtsApplyResult(generated, updatedCards, model, ttsError, updatedCardIds, cardErrors);
+        return new TtsApplyResult(generated, updatedCards, charsGenerated, model, ttsError, updatedCardIds, cardErrors);
     }
 
     private TtsApplyResult applyTtsForMissingAudio(AiJobEntity job,
@@ -3571,6 +3609,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
 
         int generated = 0;
+        int charsGenerated = 0;
         int updatedCards = 0;
         String ttsError = null;
         Set<UUID> updatedCardIds = new LinkedHashSet<>();
@@ -3629,6 +3668,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 updatedContent.set(mapping.targetField(), audioNode);
                 updated = true;
                 generated++;
+                charsGenerated += text.length();
             }
             if (updated) {
                 ankiSupport.applyIfPresent(updatedContent, template);
@@ -3647,7 +3687,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 updatedCardIds.add(card.userCardId());
             }
         }
-        return new TtsApplyResult(generated, updatedCards, model, ttsError, updatedCardIds, cardErrors);
+        return new TtsApplyResult(generated, updatedCards, charsGenerated, model, ttsError, updatedCardIds, cardErrors);
     }
 
     private DraftTtsPreparationResult applyTtsToDrafts(AiJobEntity job,
@@ -3657,12 +3697,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                        CoreTemplateResponse template) {
         JsonNode ttsNode = params.path("tts");
         if (!ttsNode.path("enabled").asBoolean(false)) {
-            return new DraftTtsPreparationResult(0, null, null, Set.of(), Map.of());
+            return new DraftTtsPreparationResult(0, 0, null, null, Set.of(), Map.of());
         }
         if (drafts == null || drafts.isEmpty()) {
-            return new DraftTtsPreparationResult(0, null, null, Set.of(), Map.of());
+            return new DraftTtsPreparationResult(0, 0, null, null, Set.of(), Map.of());
         }
         int generated = 0;
+        int charsGenerated = 0;
         String model = null;
         String error = null;
         Set<Integer> updatedDraftIndexes = new LinkedHashSet<>();
@@ -3683,6 +3724,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     "draft-" + i
             );
             generated += result.generated();
+            charsGenerated += result.charsGenerated();
             if (model == null) {
                 model = result.model();
             }
@@ -3697,7 +3739,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 draftErrors.put(i, new ArrayList<>(result.errors()));
             }
         }
-        return new DraftTtsPreparationResult(generated, model, error, updatedDraftIndexes, draftErrors);
+        return new DraftTtsPreparationResult(generated, charsGenerated, model, error, updatedDraftIndexes, draftErrors);
     }
 
     private TtsContentApplyResult applyTtsToContent(AiJobEntity job,
@@ -3709,18 +3751,18 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                     UUID cardId,
                                                     String fileToken) {
         if (ttsNode == null || !ttsNode.path("enabled").asBoolean(false)) {
-            return new TtsContentApplyResult(false, 0, null, List.of());
+            return new TtsContentApplyResult(false, 0, 0, null, List.of());
         }
         if (updatedContent == null || template == null) {
-            return new TtsContentApplyResult(false, 0, null, List.of());
+            return new TtsContentApplyResult(false, 0, 0, null, List.of());
         }
         List<String> audioFields = resolveAudioFields(template);
         if (audioFields.isEmpty()) {
-            return new TtsContentApplyResult(false, 0, null, List.of());
+            return new TtsContentApplyResult(false, 0, 0, null, List.of());
         }
         List<String> textFields = resolveTextFields(template);
         if (textFields.isEmpty()) {
-            return new TtsContentApplyResult(false, 0, null, List.of());
+            return new TtsContentApplyResult(false, 0, 0, null, List.of());
         }
 
         List<TtsMapping> mappings = resolveTtsMappings(ttsNode, textFields, audioFields, template);
@@ -3731,12 +3773,12 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     .toList();
         }
         if (mappings.isEmpty()) {
-            return new TtsContentApplyResult(false, 0, null, List.of());
+            return new TtsContentApplyResult(false, 0, 0, null, List.of());
         }
 
         String model = textOrDefault(ttsNode.path("model"), props.defaultTtsModel());
         if (model == null || model.isBlank()) {
-            return new TtsContentApplyResult(false, 0, null, List.of());
+            return new TtsContentApplyResult(false, 0, 0, null, List.of());
         }
         String voice = textOrNull(ttsNode.path("voice"));
         if (voice == null && props.defaultVoice() != null && !props.defaultVoice().isBlank()) {
@@ -3753,6 +3795,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
         boolean updated = false;
         int generated = 0;
+        int charsGenerated = 0;
         List<String> errors = new ArrayList<>();
         for (TtsMapping mapping : mappings) {
             if (!isMissingAudio(updatedContent.get(mapping.targetField()))) {
@@ -3794,8 +3837,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             updatedContent.set(mapping.targetField(), buildMediaNode(mediaId, "audio"));
             updated = true;
             generated++;
+            charsGenerated += text.length();
         }
-        return new TtsContentApplyResult(updated, generated, model, errors);
+        return new TtsContentApplyResult(updated, generated, charsGenerated, model, errors);
     }
 
     private List<String> resolveAudioFields(CoreTemplateResponse template) {
@@ -4725,6 +4769,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         return new TtsApplyResult(
                 draftResult.generated(),
                 updatedCardIds.size(),
+                draftResult.charsGenerated(),
                 draftResult.model(),
                 draftResult.error(),
                 updatedCardIds,
@@ -4772,7 +4817,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private TtsApplyResult mergeTtsResults(TtsApplyResult left, TtsApplyResult right) {
         if (left == null) {
-            return right == null ? new TtsApplyResult(0, 0, null, null) : right;
+            return right == null ? new TtsApplyResult(0, 0, 0, null, null) : right;
         }
         if (right == null) {
             return left;
@@ -4786,6 +4831,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         return new TtsApplyResult(
                 left.generated() + right.generated(),
                 left.updatedCards() + right.updatedCards(),
+                left.charsGenerated() + right.charsGenerated(),
                 left.model() != null ? left.model() : right.model(),
                 left.error() != null ? left.error() : right.error(),
                 updatedCardIds,

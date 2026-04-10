@@ -79,6 +79,96 @@ class AiJobCostEstimatorTest {
     }
 
     @Test
+    void buildSnapshotUsesActualTtsCharsWhenSummaryProvidesThem() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", "missing_audio");
+        params.putArray("cardIds").add(UUID.randomUUID().toString()).add(UUID.randomUUID().toString());
+        ObjectNode tts = params.putObject("tts");
+        tts.put("enabled", true);
+        tts.put("model", "qwen3-tts-flash");
+        tts.put("maxChars", 300);
+
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("ttsGenerated", 2);
+        summary.put("ttsCharsGenerated", 120);
+
+        AiJobEntity job = new AiJobEntity();
+        job.setType(AiJobType.tts);
+        job.setParamsJson(params);
+        job.setResultSummary(summary);
+
+        AiUsageLedgerEntity usage = new AiUsageLedgerEntity();
+        usage.setTokensIn(0);
+        usage.setTokensOut(0);
+
+        var snapshot = estimator.buildSnapshot(job, "qwen", "qwen2.5-3b-instruct", usage);
+
+        assertThat(snapshot).isNotNull();
+        assertThat(snapshot.actualCost()).isEqualByComparingTo("0.008807");
+        assertThat(snapshot.actualCost()).isLessThan(new BigDecimal("0.044036"));
+    }
+
+    @Test
+    void buildSnapshotUsesActualOpenAiTtsChars() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", "missing_audio");
+        params.putArray("cardIds").add(UUID.randomUUID().toString());
+        ObjectNode tts = params.putObject("tts");
+        tts.put("enabled", true);
+        tts.put("model", "gpt-4o-mini-tts");
+        tts.put("maxChars", 300);
+
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("ttsGenerated", 1);
+        summary.put("ttsCharsGenerated", 200);
+
+        AiJobEntity job = new AiJobEntity();
+        job.setType(AiJobType.tts);
+        job.setParamsJson(params);
+        job.setResultSummary(summary);
+
+        AiUsageLedgerEntity usage = new AiUsageLedgerEntity();
+        usage.setTokensIn(0);
+        usage.setTokensOut(0);
+
+        var snapshot = estimator.buildSnapshot(job, "openai", "gpt-4.1-mini", usage);
+
+        assertThat(snapshot).isNotNull();
+        assertThat(snapshot.actualCost()).isEqualByComparingTo("0.000990");
+        assertThat(snapshot.actualCostCurrency()).isEqualTo("USD");
+    }
+
+    @Test
+    void buildSnapshotUsesActualGeminiTtsChars() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", "missing_audio");
+        params.putArray("cardIds").add(UUID.randomUUID().toString());
+        ObjectNode tts = params.putObject("tts");
+        tts.put("enabled", true);
+        tts.put("model", "gemini-2.5-flash-preview-tts");
+        tts.put("maxChars", 300);
+
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("ttsGenerated", 1);
+        summary.put("ttsCharsGenerated", 200);
+
+        AiJobEntity job = new AiJobEntity();
+        job.setType(AiJobType.tts);
+        job.setParamsJson(params);
+        job.setResultSummary(summary);
+
+        AiUsageLedgerEntity usage = new AiUsageLedgerEntity();
+        usage.setTokensIn(0);
+        usage.setTokensOut(0);
+
+        var snapshot = estimator.buildSnapshot(job, "gemini", "gemini-2.0-flash", usage);
+
+        assertThat(snapshot).isNotNull();
+        assertThat(snapshot.actualCost()).isEqualByComparingTo("0.000825");
+        assertThat(snapshot.actualCostCurrency()).isEqualTo("USD");
+    }
+
+    @Test
     void estimateRecordedCostFallsBackToSummaryCountsWhenProcessorReturnsZeroCost() {
         ObjectNode params = objectMapper.createObjectNode();
         params.put("mode", "missing_audio");
@@ -108,6 +198,66 @@ class AiJobCostEstimatorTest {
 
         assertThat(cost).isNotNull();
         assertThat(cost).isPositive();
+    }
+
+    @Test
+    void estimateRecordedCostPrefersActualTtsCharsOverMaxCharFallback() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", "missing_audio");
+        ObjectNode tts = params.putObject("tts");
+        tts.put("enabled", true);
+        tts.put("model", "grok-voice-mini");
+        tts.put("maxChars", 300);
+
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("ttsGenerated", 3);
+        summary.put("ttsCharsGenerated", 150);
+
+        AiJobEntity job = new AiJobEntity();
+        job.setParamsJson(params);
+        job.setResultSummary(summary);
+
+        AiJobProcessingResult result = new AiJobProcessingResult(
+                summary,
+                "grok",
+                "grok-4-fast-non-reasoning",
+                0,
+                0,
+                BigDecimal.ZERO,
+                "hash"
+        );
+
+        BigDecimal cost = estimator.estimateRecordedCost(job, result);
+
+        assertThat(cost).isEqualByComparingTo("0.000630");
+    }
+
+    @Test
+    void buildSnapshotFallsBackToConfiguredMaxCharsWhenActualCharsMissing() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", "missing_audio");
+        params.putArray("cardIds").add(UUID.randomUUID().toString()).add(UUID.randomUUID().toString());
+        ObjectNode tts = params.putObject("tts");
+        tts.put("enabled", true);
+        tts.put("model", "qwen3-tts-flash");
+        tts.put("maxChars", 300);
+
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("ttsGenerated", 2);
+
+        AiJobEntity job = new AiJobEntity();
+        job.setType(AiJobType.tts);
+        job.setParamsJson(params);
+        job.setResultSummary(summary);
+
+        AiUsageLedgerEntity usage = new AiUsageLedgerEntity();
+        usage.setTokensIn(0);
+        usage.setTokensOut(0);
+
+        var snapshot = estimator.buildSnapshot(job, "qwen", "qwen2.5-3b-instruct", usage);
+
+        assertThat(snapshot).isNotNull();
+        assertThat(snapshot.actualCost()).isEqualByComparingTo("0.044035");
     }
 
     @Test

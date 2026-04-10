@@ -74,7 +74,7 @@ public class AiJobCostEstimator {
         String model = normalize(result.model());
         Pricing pricing = resolveTextPricing(provider, normalize(resolvePrimaryModel(provider, model, job.getParamsJson())));
         BigDecimal total = estimateTextCost(result.tokensIn(), result.tokensOut(), pricing)
-                .add(estimateTtsCost(job.getParamsJson(), provider, resolveTtsModel(provider, job.getParamsJson()), actualTtsCount(job), true))
+                .add(estimateActualTtsCost(job, provider, resolveTtsModel(provider, job.getParamsJson())))
                 .add(estimateImageCost(job.getParamsJson(), provider, resolveImageModel(provider, job.getParamsJson()), actualImageCount(job)))
                 .add(estimateVideoCost(job.getParamsJson(), provider, resolveVideoModel(provider, job.getParamsJson()), actualVideoCount(job)));
         return scale(total);
@@ -116,7 +116,7 @@ public class AiJobCostEstimator {
                 : scale(usage.getCostEstimate() != null
                 ? usage.getCostEstimate()
                 : estimateTextCost(usage.getTokensIn(), usage.getTokensOut(), pricing)
-                        .add(estimateTtsCost(job.getParamsJson(), resolvedProvider, resolveTtsModel(resolvedProvider, job.getParamsJson()), actualTtsCount(job), true))
+                        .add(estimateActualTtsCost(job, resolvedProvider, resolveTtsModel(resolvedProvider, job.getParamsJson())))
                         .add(estimateImageCost(job.getParamsJson(), resolvedProvider, resolveImageModel(resolvedProvider, job.getParamsJson()), actualImageCount(job)))
                         .add(estimateVideoCost(job.getParamsJson(), resolvedProvider, resolveVideoModel(resolvedProvider, job.getParamsJson()), actualVideoCount(job))));
         if (planned.isEmpty() && usage == null) {
@@ -209,21 +209,42 @@ public class AiJobCostEstimator {
         String resolvedProvider = normalize(provider);
         String resolvedModel = normalize(ttsModel);
         int estimatedChars = estimateTtsChars(safeParams, count, actual);
+        return estimateTtsCostFromChars(resolvedProvider, resolvedModel, estimatedChars);
+    }
+
+    private BigDecimal estimateActualTtsCost(AiJobEntity job, String provider, String ttsModel) {
+        if (job == null) {
+            return ZERO;
+        }
+        int count = actualTtsCount(job);
+        if (count <= 0) {
+            return ZERO;
+        }
+        int actualChars = actualTtsChars(job);
+        if (actualChars > 0) {
+            return estimateTtsCostFromChars(normalize(provider), normalize(ttsModel), actualChars);
+        }
+        return estimateTtsCost(job.getParamsJson(), provider, ttsModel, count, true);
+    }
+
+    private BigDecimal estimateTtsCostFromChars(String provider,
+                                                String ttsModel,
+                                                int estimatedChars) {
         if (estimatedChars <= 0) {
             return ZERO;
         }
-        if ("qwen".equals(resolvedProvider)) {
+        if ("qwen".equals(provider)) {
             return perTenThousandChars(estimatedChars, new BigDecimal("0.733924"));
         }
-        if ("grok".equals(resolvedProvider)) {
+        if ("grok".equals(provider)) {
             return perMillionChars(estimatedChars, new BigDecimal("4.20"));
         }
-        if ("gemini".equals(resolvedProvider) && resolvedModel.contains("tts")) {
+        if ("gemini".equals(provider) && ttsModel.contains("tts")) {
             BigDecimal input = perMillion(tokensFromChars(estimatedChars, TEXT_TOKENS_PER_CHAR), new BigDecimal("0.50"));
             BigDecimal output = perMillion(tokensFromChars(estimatedChars, AUDIO_TOKENS_PER_CHAR), new BigDecimal("10.00"));
             return input.add(output);
         }
-        if ("openai".equals(resolvedProvider) && resolvedModel.contains("tts")) {
+        if ("openai".equals(provider) && ttsModel.contains("tts")) {
             BigDecimal input = perMillion(tokensFromChars(estimatedChars, TEXT_TOKENS_PER_CHAR), new BigDecimal("0.60"));
             BigDecimal output = perMillion(tokensFromChars(estimatedChars, AUDIO_TOKENS_PER_CHAR), new BigDecimal("12.00"));
             return input.add(output);
@@ -380,6 +401,11 @@ public class AiJobCostEstimator {
     private int actualTtsCount(AiJobEntity job) {
         JsonNode summary = job.getResultSummary();
         return summary == null ? 0 : positiveInt(summary.path("ttsGenerated"), 0);
+    }
+
+    private int actualTtsChars(AiJobEntity job) {
+        JsonNode summary = job.getResultSummary();
+        return summary == null ? 0 : positiveInt(summary.path("ttsCharsGenerated"), 0);
     }
 
     private int actualImageCount(AiJobEntity job) {

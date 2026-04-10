@@ -367,6 +367,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         int totalCreated = 0;
         int totalImages = 0;
         int totalTts = 0;
+        int totalTtsChars = 0;
         String ttsError = null;
         Integer tokensIn = null;
         Integer tokensOut = null;
@@ -403,6 +404,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                 totalCreated += summary.path("createdCards").asInt(0);
                 totalImages += summary.path("imagesGenerated").asInt(0);
                 totalTts += summary.path("ttsGenerated").asInt(0);
+                totalTtsChars += summary.path("ttsCharsGenerated").asInt(0);
                 if (ttsError == null && summary.hasNonNull("ttsError")) {
                     ttsError = summary.get("ttsError").asText();
                 }
@@ -427,6 +429,9 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         }
         if (totalTts > 0) {
             summary.put("ttsGenerated", totalTts);
+        }
+        if (totalTtsChars > 0) {
+            summary.put("ttsCharsGenerated", totalTtsChars);
         }
         if (ttsError != null) {
             summary.put("ttsError", ttsError);
@@ -461,6 +466,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         int totalCreated = 0;
         int totalImages = 0;
         int totalTts = 0;
+        int totalTtsChars = 0;
         String ttsError = null;
         Integer tokensIn = null;
         Integer tokensOut = null;
@@ -500,6 +506,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                 totalCreated += summary.path("createdCards").asInt(0);
                 totalImages += summary.path("imagesGenerated").asInt(0);
                 totalTts += summary.path("ttsGenerated").asInt(0);
+                totalTtsChars += summary.path("ttsCharsGenerated").asInt(0);
                 if (ttsError == null && summary.hasNonNull("ttsError")) {
                     ttsError = summary.get("ttsError").asText();
                 }
@@ -525,6 +532,9 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         }
         if (totalTts > 0) {
             summary.put("ttsGenerated", totalTts);
+        }
+        if (totalTtsChars > 0) {
+            summary.put("ttsCharsGenerated", totalTtsChars);
         }
         if (ttsError != null) {
             summary.put("ttsError", ttsError);
@@ -994,6 +1004,9 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         if (ttsResult.generated() > 0) {
             summary.put("ttsGenerated", ttsResult.generated());
         }
+        if (ttsResult.charsGenerated() > 0) {
+            summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
+        }
         if (ttsResult.error() != null) {
             summary.put("ttsError", ttsResult.error());
         }
@@ -1117,6 +1130,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             promptTtsResult = new TtsApplyResult(
                     applyResult.ttsGenerated(),
                     applyResult.ttsUpdatedCards(),
+                    applyResult.ttsCharsGenerated(),
                     applyResult.ttsUpdatedCardIds(),
                     applyResult.ttsModel(),
                     applyResult.ttsError()
@@ -1145,6 +1159,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                     ttsResult = new TtsApplyResult(
                             ttsResult.generated() + additionalTtsResult.generated(),
                             ttsResult.updatedCards() + additionalTtsResult.updatedCards(),
+                            ttsResult.charsGenerated() + additionalTtsResult.charsGenerated(),
                             mergeUpdatedCardIds(ttsResult.updatedCardIds(), additionalTtsResult.updatedCardIds()),
                             ttsResult.model() != null ? ttsResult.model() : additionalTtsResult.model(),
                             ttsError != null ? ttsError : additionalTtsResult.error()
@@ -1167,6 +1182,9 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         if (!context.targetAudioFields().isEmpty()) {
             summary.put("ttsGenerated", ttsResult.generated());
             summary.put("ttsUpdatedCards", ttsResult.updatedCards());
+            if (ttsResult.charsGenerated() > 0) {
+                summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
+            }
             if (ttsError != null) {
                 summary.put("ttsError", ttsError);
             }
@@ -1262,6 +1280,9 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         summary.put("deckId", job.getDeckId().toString());
         summary.put("updatedCards", ttsResult.updatedCards());
         summary.put("ttsGenerated", ttsResult.generated());
+        if (ttsResult.charsGenerated() > 0) {
+            summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
+        }
         summary.put("candidates", missingCards.size());
         if (ttsError != null) {
             summary.put("ttsError", ttsError);
@@ -1476,6 +1497,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             ttsResult = new TtsApplyResult(
                     applyResult.ttsGenerated(),
                     applyResult.ttsUpdatedCards(),
+                    applyResult.ttsCharsGenerated(),
                     applyResult.ttsUpdatedCardIds(),
                     applyResult.ttsModel(),
                     applyResult.ttsError()
@@ -1514,6 +1536,9 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         if (!context.targetAudioFields().isEmpty()) {
             summary.put("ttsGenerated", ttsResult.generated());
             summary.put("ttsUpdatedCards", ttsResult.updatedCards());
+            if (ttsResult.charsGenerated() > 0) {
+                summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
+            }
             if (ttsError != null) {
                 summary.put("ttsError", ttsError);
             }
@@ -1635,6 +1660,9 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         summary.put("cardId", cardId.toString());
         summary.put("updatedCards", ttsResult.updatedCards());
         summary.put("ttsGenerated", ttsResult.generated());
+        if (ttsResult.charsGenerated() > 0) {
+            summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
+        }
         if (ttsError != null) {
             summary.put("ttsError", ttsError);
         }
@@ -2415,7 +2443,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                                                                  List<String> targetAudioFields,
                                                                  String updateScope) {
         if (updates.isEmpty()) {
-            return new AtomicApplyResult(0, 0, 0, 0, null, null);
+            return new AtomicApplyResult(0, 0, 0, 0, 0, null, null);
         }
         Map<UUID, CoreUserCardResponse> cardMap = cards.stream()
                 .filter(card -> card != null && card.userCardId() != null)
@@ -2423,6 +2451,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         int updated = 0;
         int imagesGenerated = 0;
         int ttsGenerated = 0;
+        int ttsCharsGenerated = 0;
         int ttsUpdatedCards = 0;
         String ttsModel = null;
         String ttsError = null;
@@ -2444,6 +2473,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                 if (ttsModel == null) {
                     ttsModel = ttsApplyResult.model();
                 }
+                ttsCharsGenerated += ttsApplyResult.charsGenerated();
                 continue;
             }
             ankiSupport.applyIfPresent(updatedContent, template);
@@ -2462,6 +2492,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             updatedCardIds.add(card.userCardId());
             imagesGenerated += fieldApplyResult.imagesGenerated();
             ttsGenerated += ttsApplyResult.generated();
+            ttsCharsGenerated += ttsApplyResult.charsGenerated();
             if (ttsApplyResult.updated()) {
                 ttsUpdatedCards++;
                 ttsUpdatedCardIds.add(card.userCardId());
@@ -2473,7 +2504,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                 ttsError = ttsApplyResult.error();
             }
         }
-        return new AtomicApplyResult(updated, imagesGenerated, ttsGenerated, ttsUpdatedCards, ttsModel, ttsError, updatedCardIds, ttsUpdatedCardIds);
+        return new AtomicApplyResult(updated, imagesGenerated, ttsGenerated, ttsCharsGenerated, ttsUpdatedCards, ttsModel, ttsError, updatedCardIds, ttsUpdatedCardIds);
     }
 
     private boolean isMissingText(JsonNode node) {
@@ -2597,6 +2628,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     private record AtomicApplyResult(int updatedCards,
                                      int imagesGenerated,
                                      int ttsGenerated,
+                                     int ttsCharsGenerated,
                                      int ttsUpdatedCards,
                                      String ttsModel,
                                      String ttsError,
@@ -2605,10 +2637,11 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         private AtomicApplyResult(int updatedCards,
                                   int imagesGenerated,
                                   int ttsGenerated,
+                                  int ttsCharsGenerated,
                                   int ttsUpdatedCards,
                                   String ttsModel,
                                   String ttsError) {
-            this(updatedCards, imagesGenerated, ttsGenerated, ttsUpdatedCards, ttsModel, ttsError, Set.of(), Set.of());
+            this(updatedCards, imagesGenerated, ttsGenerated, ttsCharsGenerated, ttsUpdatedCards, ttsModel, ttsError, Set.of(), Set.of());
         }
 
         private AtomicApplyResult {
@@ -3029,9 +3062,13 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         return Set.copyOf(merged);
     }
 
-    private record TtsApplyResult(int generated, int updatedCards, Set<UUID> updatedCardIds, String model, String error) {
+    private record TtsApplyResult(int generated, int updatedCards, int charsGenerated, Set<UUID> updatedCardIds, String model, String error) {
         private TtsApplyResult(int generated, int updatedCards, String model, String error) {
-            this(generated, updatedCards, Set.of(), model, error);
+            this(generated, updatedCards, 0, Set.of(), model, error);
+        }
+
+        private TtsApplyResult(int generated, int updatedCards, int charsGenerated, String model, String error) {
+            this(generated, updatedCards, charsGenerated, Set.of(), model, error);
         }
 
         private TtsApplyResult {
@@ -3376,10 +3413,10 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                                                                     List<String> targetAudioFields,
                                                                     String updateScope) {
         if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
-            return new AtomicApplyResult(0, 0, 0, 0, null, null);
+            return new AtomicApplyResult(0, 0, 0, 0, 0, null, null);
         }
         if (response == null || !response.isObject()) {
-            return new AtomicApplyResult(0, 0, 0, 0, null, null);
+            return new AtomicApplyResult(0, 0, 0, 0, 0, null, null);
         }
         ObjectNode updatedContent = loadLatestContent(job.getJobId(), job.getDeckId(), card.userCardId(), accessToken, card.effectiveContent().deepCopy());
         ApplyMissingFieldsResult fieldApplyResult = applyMissingFieldsToContent(job, apiKey, updatedContent, response, fieldTypes, new java.util.HashSet<>(targetFields), imageConfig, card.userCardId());
@@ -3389,6 +3426,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                     0,
                     fieldApplyResult.imagesGenerated(),
                     ttsApplyResult.generated(),
+                    ttsApplyResult.charsGenerated(),
                     ttsApplyResult.updated() ? 1 : 0,
                     ttsApplyResult.model(),
                     ttsApplyResult.error(),
@@ -3412,6 +3450,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                 1,
                 fieldApplyResult.imagesGenerated(),
                 ttsApplyResult.generated(),
+                ttsApplyResult.charsGenerated(),
                 ttsApplyResult.updated() ? 1 : 0,
                 ttsApplyResult.model(),
                 ttsApplyResult.error(),
@@ -3713,6 +3752,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         String model = resolveTtsModel(ttsNode.path("model"));
 
         int generated = 0;
+        int charsGenerated = 0;
         int updatedCards = 0;
         String ttsError = null;
         Set<UUID> updatedCardIds = new java.util.LinkedHashSet<>();
@@ -3732,6 +3772,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                     card.userCardId().toString()
             );
             generated += ttsContentApplyResult.generated();
+            charsGenerated += ttsContentApplyResult.charsGenerated();
             if (ttsError == null && ttsContentApplyResult.error() != null) {
                 ttsError = ttsContentApplyResult.error();
             }
@@ -3751,7 +3792,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                 updatedCardIds.add(card.userCardId());
             }
         }
-        return new TtsApplyResult(generated, updatedCards, updatedCardIds, model, ttsError);
+        return new TtsApplyResult(generated, updatedCards, charsGenerated, updatedCardIds, model, ttsError);
     }
 
     private TtsApplyResult applyTtsForMissingAudio(AiJobEntity job,
@@ -3775,6 +3816,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         String model = resolveTtsModel(ttsNode.path("model"));
 
         int generated = 0;
+        int charsGenerated = 0;
         int updatedCards = 0;
         String ttsError = null;
         Set<UUID> updatedCardIds = new java.util.LinkedHashSet<>();
@@ -3794,6 +3836,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                     card.userCardId().toString()
             );
             generated += ttsContentApplyResult.generated();
+            charsGenerated += ttsContentApplyResult.charsGenerated();
             if (ttsError == null && ttsContentApplyResult.error() != null) {
                 ttsError = ttsContentApplyResult.error();
             }
@@ -3814,7 +3857,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                 updatedCardIds.add(card.userCardId());
             }
         }
-        return new TtsApplyResult(generated, updatedCards, updatedCardIds, model, ttsError);
+        return new TtsApplyResult(generated, updatedCards, charsGenerated, updatedCardIds, model, ttsError);
     }
 
     private TtsApplyResult applyTtsToDrafts(AiJobEntity job,
@@ -3830,6 +3873,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             return new TtsApplyResult(0, 0, null, null);
         }
         int generated = 0;
+        int charsGenerated = 0;
         int updatedCards = 0;
         String model = null;
         String ttsError = null;
@@ -3849,6 +3893,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                     "draft-" + i
             );
             generated += result.generated();
+            charsGenerated += result.charsGenerated();
             if (result.updated()) {
                 ankiSupport.applyIfPresent(draft.content(), template);
                 updatedCards++;
@@ -3860,7 +3905,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                 ttsError = result.error();
             }
         }
-        return new TtsApplyResult(generated, updatedCards, model, ttsError);
+        return new TtsApplyResult(generated, updatedCards, charsGenerated, model, ttsError);
     }
 
     private List<String> resolveAudioFields(CoreTemplateResponse template) {
@@ -3920,18 +3965,18 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                                                     UUID cardId,
                                                     String fileToken) {
         if (ttsNode == null || !ttsNode.path("enabled").asBoolean(false)) {
-            return new TtsContentApplyResult(false, 0, null, null);
+            return new TtsContentApplyResult(false, 0, 0, null, null);
         }
         if (updatedContent == null || template == null) {
-            return new TtsContentApplyResult(false, 0, null, null);
+            return new TtsContentApplyResult(false, 0, 0, null, null);
         }
         List<String> audioFields = resolveAudioFields(template);
         if (audioFields.isEmpty()) {
-            return new TtsContentApplyResult(false, 0, null, null);
+            return new TtsContentApplyResult(false, 0, 0, null, null);
         }
         List<String> textFields = resolveTextFields(template);
         if (textFields.isEmpty()) {
-            return new TtsContentApplyResult(false, 0, null, null);
+            return new TtsContentApplyResult(false, 0, 0, null, null);
         }
         List<TtsMapping> mappings = resolveTtsMappings(ttsNode, textFields, audioFields, template);
         if (targetFields != null && !targetFields.isEmpty()) {
@@ -3941,7 +3986,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                     .toList();
         }
         if (mappings.isEmpty()) {
-            return new TtsContentApplyResult(false, 0, null, null);
+            return new TtsContentApplyResult(false, 0, 0, null, null);
         }
         String model = resolveTtsModel(ttsNode.path("model"));
         String voice = resolveTtsVoice(ttsNode.path("voice"));
@@ -3953,6 +3998,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
 
         boolean updated = false;
         int generated = 0;
+        int charsGenerated = 0;
         String error = null;
         for (TtsMapping mapping : mappings) {
             if (!isMissingAudio(updatedContent.get(mapping.targetField()))) {
@@ -3997,8 +4043,9 @@ public class GeminiJobProcessor implements AiProviderProcessor {
             updatedContent.set(mapping.targetField(), buildMediaNode(mediaId, "audio"));
             updated = true;
             generated++;
+            charsGenerated += text.length();
         }
-        return new TtsContentApplyResult(updated, generated, model, error);
+        return new TtsContentApplyResult(updated, generated, charsGenerated, model, error);
     }
 
     private String resolveDefaultSourceField(CoreTemplateResponse template, List<String> textFields) {
@@ -4366,7 +4413,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
     private record TtsMapping(String sourceField, String targetField) {
     }
 
-    private record TtsContentApplyResult(boolean updated, int generated, String model, String error) {
+    private record TtsContentApplyResult(boolean updated, int generated, int charsGenerated, String model, String error) {
     }
 
     private record NormalizedAudio(byte[] data, String mimeType) {

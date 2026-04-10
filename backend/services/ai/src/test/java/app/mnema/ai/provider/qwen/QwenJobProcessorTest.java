@@ -84,8 +84,8 @@ class QwenJobProcessorTest {
         Object ttsResult = createInnerRecord(
                 QwenJobProcessor.class,
                 "TtsApplyResult",
-                new Class<?>[]{int.class, int.class, Set.class, String.class, String.class},
-                new Object[]{1, 1, Set.of(cardId), "qwen-tts", null}
+                new Class<?>[]{int.class, int.class, int.class, Set.class, String.class, String.class},
+                new Object[]{1, 1, 12, Set.of(cardId), "qwen-tts", null}
         );
 
         Method buildEnhanceItems = QwenJobProcessor.class.getDeclaredMethod("buildEnhanceItems", List.class, mediaResult.getClass(), ttsResult.getClass());

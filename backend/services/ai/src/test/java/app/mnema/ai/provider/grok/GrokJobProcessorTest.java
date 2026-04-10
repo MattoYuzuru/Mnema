@@ -84,8 +84,8 @@ class GrokJobProcessorTest {
         Object ttsResult = createInnerRecord(
                 GrokJobProcessor.class,
                 "TtsApplyResult",
-                new Class<?>[]{int.class, int.class, Set.class, String.class, String.class},
-                new Object[]{1, 1, Set.of(cardId), "grok-voice-mini", null}
+                new Class<?>[]{int.class, int.class, int.class, Set.class, String.class, String.class},
+                new Object[]{1, 1, 12, Set.of(cardId), "grok-voice-mini", null}
         );
 
         Method buildEnhanceItems = GrokJobProcessor.class.getDeclaredMethod("buildEnhanceItems", List.class, mediaResult.getClass(), ttsResult.getClass());

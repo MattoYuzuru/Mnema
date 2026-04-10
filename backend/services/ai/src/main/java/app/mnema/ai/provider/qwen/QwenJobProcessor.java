@@ -340,6 +340,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         int totalCreated = 0;
         int totalImages = 0;
         int totalTts = 0;
+        int totalTtsChars = 0;
         String ttsError = null;
         Integer tokensIn = null;
         Integer tokensOut = null;
@@ -376,6 +377,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 totalCreated += summary.path("createdCards").asInt(0);
                 totalImages += summary.path("imagesGenerated").asInt(0);
                 totalTts += summary.path("ttsGenerated").asInt(0);
+                totalTtsChars += summary.path("ttsCharsGenerated").asInt(0);
                 if (ttsError == null && summary.hasNonNull("ttsError")) {
                     ttsError = summary.get("ttsError").asText();
                 }
@@ -400,6 +402,9 @@ public class QwenJobProcessor implements AiProviderProcessor {
         }
         if (totalTts > 0) {
             summary.put("ttsGenerated", totalTts);
+        }
+        if (totalTtsChars > 0) {
+            summary.put("ttsCharsGenerated", totalTtsChars);
         }
         if (ttsError != null) {
             summary.put("ttsError", ttsError);
@@ -434,6 +439,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         int totalCreated = 0;
         int totalImages = 0;
         int totalTts = 0;
+        int totalTtsChars = 0;
         String ttsError = null;
         Integer tokensIn = null;
         Integer tokensOut = null;
@@ -473,6 +479,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 totalCreated += summary.path("createdCards").asInt(0);
                 totalImages += summary.path("imagesGenerated").asInt(0);
                 totalTts += summary.path("ttsGenerated").asInt(0);
+                totalTtsChars += summary.path("ttsCharsGenerated").asInt(0);
                 if (ttsError == null && summary.hasNonNull("ttsError")) {
                     ttsError = summary.get("ttsError").asText();
                 }
@@ -498,6 +505,9 @@ public class QwenJobProcessor implements AiProviderProcessor {
         }
         if (totalTts > 0) {
             summary.put("ttsGenerated", totalTts);
+        }
+        if (totalTtsChars > 0) {
+            summary.put("ttsCharsGenerated", totalTtsChars);
         }
         if (ttsError != null) {
             summary.put("ttsError", ttsError);
@@ -1033,6 +1043,9 @@ public class QwenJobProcessor implements AiProviderProcessor {
         if (!context.targetAudioFields().isEmpty()) {
             summary.put("ttsGenerated", ttsResult.generated());
             summary.put("ttsUpdatedCards", ttsResult.updatedCards());
+            if (ttsResult.charsGenerated() > 0) {
+                summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
+            }
             if (ttsError != null) {
                 summary.put("ttsError", ttsError);
             }
@@ -1119,6 +1132,9 @@ public class QwenJobProcessor implements AiProviderProcessor {
         summary.put("deckId", job.getDeckId().toString());
         summary.put("updatedCards", ttsResult.updatedCards());
         summary.put("ttsGenerated", ttsResult.generated());
+        if (ttsResult.charsGenerated() > 0) {
+            summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
+        }
         summary.put("candidates", missingCards.size());
         if (ttsResult.error() != null) {
             summary.put("ttsError", ttsResult.error());
@@ -1369,6 +1385,9 @@ public class QwenJobProcessor implements AiProviderProcessor {
         if (!context.targetAudioFields().isEmpty()) {
             summary.put("ttsGenerated", ttsResult.generated());
             summary.put("ttsUpdatedCards", ttsResult.updatedCards());
+            if (ttsResult.charsGenerated() > 0) {
+                summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
+            }
             if (ttsError != null) {
                 summary.put("ttsError", ttsError);
             }
@@ -1489,6 +1508,9 @@ public class QwenJobProcessor implements AiProviderProcessor {
         summary.put("cardId", cardId.toString());
         summary.put("updatedCards", ttsResult.updatedCards());
         summary.put("ttsGenerated", ttsResult.generated());
+        if (ttsResult.charsGenerated() > 0) {
+            summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
+        }
         if (ttsError != null) {
             summary.put("ttsError", ttsError);
         }
@@ -1661,6 +1683,9 @@ public class QwenJobProcessor implements AiProviderProcessor {
         }
         if (ttsResult.generated() > 0) {
             summary.put("ttsGenerated", ttsResult.generated());
+        }
+        if (ttsResult.charsGenerated() > 0) {
+            summary.put("ttsCharsGenerated", ttsResult.charsGenerated());
         }
         if (ttsResult.error() != null) {
             summary.put("ttsError", ttsResult.error());
@@ -2568,6 +2593,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 new TtsApplyResult(
                         ttsResult.generated(),
                         ttsResult.updated() ? 1 : 0,
+                        ttsResult.charsGenerated(),
                         ttsResult.updated() ? Set.of(card.userCardId()) : Set.of(),
                         ttsResult.model(),
                         ttsResult.error()
@@ -2746,6 +2772,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         int imagesGenerated = 0;
         int videosGenerated = 0;
         int ttsGenerated = 0;
+        int ttsCharsGenerated = 0;
         int ttsUpdatedCards = 0;
         String ttsModel = null;
         String ttsError = null;
@@ -2788,6 +2815,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 imagesGenerated += contentResult.imagesGenerated();
                 videosGenerated += contentResult.videosGenerated();
                 ttsGenerated += ttsResult.generated();
+                ttsCharsGenerated += ttsResult.charsGenerated();
                 continue;
             }
             ankiSupport.applyIfPresent(updatedContent, template);
@@ -2809,6 +2837,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
             imagesGenerated += contentResult.imagesGenerated();
             videosGenerated += contentResult.videosGenerated();
             ttsGenerated += ttsResult.generated();
+            ttsCharsGenerated += ttsResult.charsGenerated();
             if (ttsResult.updated()) {
                 ttsUpdatedCards++;
                 ttsUpdatedCardIds.add(card.userCardId());
@@ -2816,7 +2845,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         }
         return new AtomicApplyResult(
                 new MediaApplyResult(updated, updatedCardIds, imagesGenerated, videosGenerated),
-                new TtsApplyResult(ttsGenerated, ttsUpdatedCards, ttsUpdatedCardIds, ttsModel, ttsError)
+                new TtsApplyResult(ttsGenerated, ttsUpdatedCards, ttsCharsGenerated, ttsUpdatedCardIds, ttsModel, ttsError)
         );
     }
 
@@ -3106,9 +3135,13 @@ public class QwenJobProcessor implements AiProviderProcessor {
     private record ContentMutationResult(boolean changed, int imagesGenerated, int videosGenerated) {
     }
 
-    private record TtsApplyResult(int generated, int updatedCards, Set<UUID> updatedCardIds, String model, String error) {
+    private record TtsApplyResult(int generated, int updatedCards, int charsGenerated, Set<UUID> updatedCardIds, String model, String error) {
         private TtsApplyResult(int generated, int updatedCards, String model, String error) {
-            this(generated, updatedCards, Set.of(), model, error);
+            this(generated, updatedCards, 0, Set.of(), model, error);
+        }
+
+        private TtsApplyResult(int generated, int updatedCards, int charsGenerated, String model, String error) {
+            this(generated, updatedCards, charsGenerated, Set.of(), model, error);
         }
 
         private TtsApplyResult {
@@ -3126,7 +3159,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         }
     }
 
-    private record TtsContentApplyResult(boolean updated, int generated, String model, String error) {
+    private record TtsContentApplyResult(boolean updated, int generated, int charsGenerated, String model, String error) {
     }
 
     private record AtomicApplyResult(MediaApplyResult mediaResult, TtsApplyResult ttsResult) {
@@ -3448,6 +3481,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         }
 
         int generated = 0;
+        int charsGenerated = 0;
         int updatedCards = 0;
         String ttsError = null;
         Set<UUID> updatedCardIds = new LinkedHashSet<>();
@@ -3504,6 +3538,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 updatedContent.set(mapping.targetField(), audioNode);
                 updated = true;
                 generated++;
+                charsGenerated += text.length();
             }
             if (updated) {
                 UpdateUserCardRequest update = new UpdateUserCardRequest(
@@ -3521,7 +3556,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 updatedCardIds.add(card.userCardId());
             }
         }
-        return new TtsApplyResult(generated, updatedCards, updatedCardIds, model, ttsError);
+        return new TtsApplyResult(generated, updatedCards, charsGenerated, updatedCardIds, model, ttsError);
     }
 
     private TtsApplyResult applyTtsForMissingAudio(AiJobEntity job,
@@ -3567,6 +3602,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         }
 
         int generated = 0;
+        int charsGenerated = 0;
         int updatedCards = 0;
         String ttsError = null;
         Set<UUID> updatedCardIds = new LinkedHashSet<>();
@@ -3626,6 +3662,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 updatedContent.set(mapping.targetField(), audioNode);
                 updated = true;
                 generated++;
+                charsGenerated += text.length();
             }
             if (updated) {
                 ankiSupport.applyIfPresent(updatedContent, template);
@@ -3644,7 +3681,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 updatedCardIds.add(card.userCardId());
             }
         }
-        return new TtsApplyResult(generated, updatedCards, updatedCardIds, model, ttsError);
+        return new TtsApplyResult(generated, updatedCards, charsGenerated, updatedCardIds, model, ttsError);
     }
 
     private TtsApplyResult applyTtsToDrafts(AiJobEntity job,
@@ -3660,6 +3697,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
             return new TtsApplyResult(0, 0, null, null);
         }
         int generated = 0;
+        int charsGenerated = 0;
         int updatedCards = 0;
         String model = null;
         String ttsError = null;
@@ -3679,6 +3717,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
                     "draft-" + i
             );
             generated += result.generated();
+            charsGenerated += result.charsGenerated();
             if (result.updated()) {
                 ankiSupport.applyIfPresent(draft.content(), template);
                 updatedCards++;
@@ -3690,7 +3729,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 ttsError = result.error();
             }
         }
-        return new TtsApplyResult(generated, updatedCards, model, ttsError);
+        return new TtsApplyResult(generated, updatedCards, charsGenerated, model, ttsError);
     }
 
     private TtsContentApplyResult applyTtsToContent(AiJobEntity job,
@@ -3702,18 +3741,18 @@ public class QwenJobProcessor implements AiProviderProcessor {
                                                     UUID cardId,
                                                     String fileToken) {
         if (ttsNode == null || !ttsNode.path("enabled").asBoolean(false)) {
-            return new TtsContentApplyResult(false, 0, null, null);
+            return new TtsContentApplyResult(false, 0, 0, null, null);
         }
         if (updatedContent == null || template == null) {
-            return new TtsContentApplyResult(false, 0, null, null);
+            return new TtsContentApplyResult(false, 0, 0, null, null);
         }
         List<String> audioFields = resolveAudioFields(template);
         if (audioFields.isEmpty()) {
-            return new TtsContentApplyResult(false, 0, null, null);
+            return new TtsContentApplyResult(false, 0, 0, null, null);
         }
         List<String> textFields = resolveTextFields(template);
         if (textFields.isEmpty()) {
-            return new TtsContentApplyResult(false, 0, null, null);
+            return new TtsContentApplyResult(false, 0, 0, null, null);
         }
         List<TtsMapping> mappings = resolveTtsMappings(ttsNode, textFields, audioFields, template);
         if (targetFields != null && !targetFields.isEmpty()) {
@@ -3723,7 +3762,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
                     .toList();
         }
         if (mappings.isEmpty()) {
-            return new TtsContentApplyResult(false, 0, null, null);
+            return new TtsContentApplyResult(false, 0, 0, null, null);
         }
 
         String model = textOrDefault(ttsNode.path("model"), props.defaultTtsModel());
@@ -3736,6 +3775,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
 
         boolean updated = false;
         int generated = 0;
+        int charsGenerated = 0;
         String error = null;
         for (TtsMapping mapping : mappings) {
             if (!isMissingAudio(updatedContent.get(mapping.targetField()))) {
@@ -3781,8 +3821,9 @@ public class QwenJobProcessor implements AiProviderProcessor {
             updatedContent.set(mapping.targetField(), buildMediaNode(mediaId, "audio"));
             updated = true;
             generated++;
+            charsGenerated += text.length();
         }
-        return new TtsContentApplyResult(updated, generated, model, error);
+        return new TtsContentApplyResult(updated, generated, charsGenerated, model, error);
     }
 
     private TtsApplyResult mergeTtsResults(TtsApplyResult left, TtsApplyResult right) {
@@ -3795,6 +3836,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         return new TtsApplyResult(
                 left.generated() + right.generated(),
                 left.updatedCards() + right.updatedCards(),
+                left.charsGenerated() + right.charsGenerated(),
                 mergeUpdatedCardIds(left.updatedCardIds(), right.updatedCardIds()),
                 left.model() != null ? left.model() : right.model(),
                 left.error() != null ? left.error() : right.error()
