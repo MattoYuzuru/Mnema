@@ -14,6 +14,7 @@ import app.mnema.ai.domain.entity.AiProviderCredentialEntity;
 import app.mnema.ai.domain.type.AiJobType;
 import app.mnema.ai.domain.type.AiProviderStatus;
 import app.mnema.ai.repository.AiProviderCredentialRepository;
+import app.mnema.ai.service.AiJobExecutionService;
 import app.mnema.ai.service.AiJobProcessingResult;
 import app.mnema.ai.service.AiProviderProcessor;
 import app.mnema.ai.service.CardNoveltyService;
@@ -33,6 +34,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -49,6 +51,10 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
     private static final int MAX_CARDS = 50;
     private static final int GENERATE_MAX_ATTEMPTS = 4;
     private static final int NOVELTY_HINT_LIMIT = 24;
+    private static final String STEP_PREPARE_CONTEXT = "prepare_context";
+    private static final String STEP_GENERATE_CONTENT = "generate_content";
+    private static final String STEP_APPLY_CHANGES = "apply_changes";
+    private static final String STEP_ANALYZE_CONTENT = "analyze_content";
 
     private final ClaudeClient claudeClient;
     private final ClaudeProps props;
@@ -58,6 +64,7 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
     private final CardNoveltyService noveltyService;
     private final ObjectMapper objectMapper;
     private final AnkiTemplateSupport ankiSupport;
+    private final AiJobExecutionService executionService;
 
     public ClaudeJobProcessor(ClaudeClient claudeClient,
                               ClaudeProps props,
@@ -65,7 +72,8 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
                               AiProviderCredentialRepository credentialRepository,
                               CoreApiClient coreApiClient,
                               CardNoveltyService noveltyService,
-                              ObjectMapper objectMapper) {
+                              ObjectMapper objectMapper,
+                              AiJobExecutionService executionService) {
         this.claudeClient = claudeClient;
         this.props = props;
         this.secretVault = secretVault;
@@ -74,6 +82,7 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         this.noveltyService = noveltyService;
         this.objectMapper = objectMapper;
         this.ankiSupport = new AnkiTemplateSupport(objectMapper);
+        this.executionService = executionService;
     }
 
     @Override
@@ -88,6 +97,8 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         credential.setLastUsedAt(Instant.now());
         credential.setUpdatedAt(Instant.now());
         credentialRepository.save(credential);
+
+        executionService.resetPlan(job.getJobId(), resolveExecutionPlan(job));
 
         if (job.getType() == AiJobType.tts) {
             throw new IllegalStateException("Claude provider does not support TTS");
@@ -119,6 +130,37 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         return handleFreeformText(job, apiKey, params);
     }
 
+    private List<String> resolveExecutionPlan(AiJobEntity job) {
+        if (job == null || job.getType() == AiJobType.tts) {
+            return List.of();
+        }
+        JsonNode params = safeParams(job);
+        String mode = params.path("mode").asText();
+        if (MODE_AUDIT.equalsIgnoreCase(mode)) {
+            return List.of(STEP_PREPARE_CONTEXT, STEP_ANALYZE_CONTENT);
+        }
+        if (MODE_MISSING_FIELDS.equalsIgnoreCase(mode)) {
+            return List.of(STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_APPLY_CHANGES);
+        }
+        if (MODE_GENERATE_CARDS.equalsIgnoreCase(mode)) {
+            return List.of(STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_APPLY_CHANGES);
+        }
+        return List.of(STEP_GENERATE_CONTENT);
+    }
+
+    private <T> T runStep(AiJobEntity job, String stepName, AiJobExecutionService.StepOperation<T> operation) {
+        if (job == null || stepName == null || stepName.isBlank()) {
+            try {
+                return operation.run();
+            } catch (RuntimeException ex) {
+                throw ex;
+            } catch (Exception ex) {
+                throw new IllegalStateException(ex.getMessage(), ex);
+            }
+        }
+        return executionService.runStep(job.getJobId(), stepName, operation);
+    }
+
     private AiJobProcessingResult handleFreeformText(AiJobEntity job, String apiKey, JsonNode params) {
         String input = extractTextParam(params, "input", "prompt", "text");
         if (input == null || input.isBlank()) {
@@ -127,10 +169,11 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         String model = textOrDefault(params.path("model"), props.defaultModel());
         Integer maxOutputTokens = resolveMaxTokens(params.path("maxOutputTokens"));
 
-        ClaudeResponseResult response = claudeClient.createMessage(
+        String finalInput = input;
+        ClaudeResponseResult response = runStep(job, STEP_GENERATE_CONTENT, () -> claudeClient.createMessage(
                 apiKey,
-                new ClaudeMessageRequest(model, input, maxOutputTokens)
-        );
+                new ClaudeMessageRequest(model, finalInput, maxOutputTokens)
+        ));
 
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("text", response.outputText());
@@ -151,102 +194,127 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
             throw new IllegalStateException("Deck id is required for card generation");
         }
         String accessToken = job.getUserAccessToken();
-        CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
-        if (deck.publicDeckId() == null) {
-            throw new IllegalStateException("Deck template not found");
-        }
-        CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
-        if (publicDeck.templateId() == null) {
-            throw new IllegalStateException("Template id not found");
-        }
-        Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
-        CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
-        String updateScope = resolveUpdateScope(job, deck, publicDeck, params);
-
-        int count = resolveCount(params);
-        var allowedFields = resolveAllowedFields(params, template);
-        if (allowedFields.isEmpty()) {
-            throw new IllegalStateException("No supported fields to generate");
-        }
+        record GenerateContext(CorePublicDeckResponse publicDeck,
+                               CoreTemplateResponse template,
+                               int count,
+                               List<String> allowedFields,
+                               CardNoveltyService.NoveltyIndex noveltyIndex) {}
+        GenerateContext context = runStep(job, STEP_PREPARE_CONTEXT, () -> {
+            CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
+            if (deck.publicDeckId() == null) {
+                throw new IllegalStateException("Deck template not found");
+            }
+            CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
+            if (publicDeck.templateId() == null) {
+                throw new IllegalStateException("Template id not found");
+            }
+            Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
+            CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+            int count = resolveCount(params);
+            List<String> allowedFields = resolveAllowedFields(params, template);
+            if (allowedFields.isEmpty()) {
+                throw new IllegalStateException("No supported fields to generate");
+            }
+            CardNoveltyService.NoveltyIndex noveltyIndex = noveltyService.buildIndex(job.getDeckId(), accessToken, allowedFields);
+            return new GenerateContext(publicDeck, template, count, allowedFields, noveltyIndex);
+        });
 
         String userPrompt = extractTextParam(params, "input", "prompt", "text");
         String model = textOrDefault(params.path("model"), props.defaultModel());
         Integer maxOutputTokens = resolveMaxTokens(params.path("maxOutputTokens"));
 
-        CardNoveltyService.NoveltyIndex noveltyIndex = noveltyService.buildIndex(job.getDeckId(), accessToken, allowedFields);
-        List<CreateCardRequestPayload> uniqueRequests = new java.util.ArrayList<>();
-        int droppedEmpty = 0;
-        int droppedExact = 0;
-        int droppedPrimary = 0;
-        int droppedSemantic = 0;
-        ClaudeResponseResult response = null;
+        record GeneratedCards(ClaudeResponseResult response,
+                              List<CreateCardRequestPayload> requests,
+                              int droppedEmpty,
+                              int droppedExact,
+                              int droppedPrimary,
+                              int droppedSemantic) {}
+        GeneratedCards generated = runStep(job, STEP_GENERATE_CONTENT, () -> {
+            List<CreateCardRequestPayload> uniqueRequests = new java.util.ArrayList<>();
+            int droppedEmpty = 0;
+            int droppedExact = 0;
+            int droppedPrimary = 0;
+            int droppedSemantic = 0;
+            ClaudeResponseResult response = null;
 
-        for (int attempt = 0; attempt < GENERATE_MAX_ATTEMPTS && uniqueRequests.size() < count; attempt++) {
-            int remaining = count - uniqueRequests.size();
-            int candidateCount = resolveCandidateCount(remaining, attempt);
-            String prompt = buildCardsPrompt(
-                    augmentGeneratePrompt(userPrompt, noveltyIndex, attempt),
-                    template,
-                    publicDeck,
-                    allowedFields,
-                    candidateCount,
-                    job.getDeckId(),
-                    job.getUserAccessToken()
+            for (int attempt = 0; attempt < GENERATE_MAX_ATTEMPTS && uniqueRequests.size() < context.count(); attempt++) {
+                int remaining = context.count() - uniqueRequests.size();
+                int candidateCount = resolveCandidateCount(remaining, attempt);
+                String prompt = buildCardsPrompt(
+                        augmentGeneratePrompt(userPrompt, context.noveltyIndex(), attempt),
+                        context.template(),
+                        context.publicDeck(),
+                        context.allowedFields(),
+                        candidateCount,
+                        job.getDeckId(),
+                        job.getUserAccessToken()
+                );
+                response = claudeClient.createMessage(
+                        apiKey,
+                        new ClaudeMessageRequest(model, prompt, maxOutputTokens)
+                );
+
+                JsonNode parsed = parseJsonResponse(response.outputText());
+                List<CreateCardRequestPayload> cardRequests = buildCardRequests(parsed, context.allowedFields(), context.template());
+                CardNoveltyService.FilterResult<CreateCardRequestPayload> filtered = noveltyService.filterCandidates(
+                        cardRequests,
+                        CreateCardRequestPayload::content,
+                        context.allowedFields(),
+                        context.noveltyIndex(),
+                        remaining
+                );
+                uniqueRequests.addAll(filtered.accepted());
+                droppedEmpty += filtered.droppedEmpty();
+                droppedExact += filtered.droppedExact();
+                droppedPrimary += filtered.droppedPrimary();
+                droppedSemantic += filtered.droppedSemantic();
+            }
+
+            if (uniqueRequests.size() < context.count()) {
+                throw new IllegalStateException("Failed to generate enough unique cards. Try a more specific prompt.");
+            }
+
+            return new GeneratedCards(
+                    response,
+                    uniqueRequests.stream().limit(context.count()).toList(),
+                    droppedEmpty,
+                    droppedExact,
+                    droppedPrimary,
+                    droppedSemantic
             );
-            response = claudeClient.createMessage(
-                    apiKey,
-                    new ClaudeMessageRequest(model, prompt, maxOutputTokens)
-            );
+        });
 
-            JsonNode parsed = parseJsonResponse(response.outputText());
-            List<CreateCardRequestPayload> cardRequests = buildCardRequests(parsed, allowedFields, template);
-            CardNoveltyService.FilterResult<CreateCardRequestPayload> filtered = noveltyService.filterCandidates(
-                    cardRequests,
-                    CreateCardRequestPayload::content,
-                    allowedFields,
-                    noveltyIndex,
-                    remaining
-            );
-            uniqueRequests.addAll(filtered.accepted());
-            droppedEmpty += filtered.droppedEmpty();
-            droppedExact += filtered.droppedExact();
-            droppedPrimary += filtered.droppedPrimary();
-            droppedSemantic += filtered.droppedSemantic();
-        }
-
-        if (uniqueRequests.size() < count) {
-            throw new IllegalStateException("Failed to generate enough unique cards. Try a more specific prompt.");
-        }
-
-        List<CreateCardRequestPayload> limitedRequests = uniqueRequests.stream()
-                .limit(count)
-                .toList();
-
-        coreApiClient.addCards(job.getDeckId(), limitedRequests, accessToken, job.getJobId());
+        List<CoreUserCardResponse> createdCards = runStep(job, STEP_APPLY_CHANGES, () -> coreApiClient.addCards(
+                job.getDeckId(),
+                generated.requests(),
+                accessToken,
+                job.getJobId()
+        ));
 
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("mode", MODE_GENERATE_CARDS);
         summary.put("deckId", job.getDeckId().toString());
-        summary.put("templateId", publicDeck.templateId().toString());
-        summary.put("requestedCards", count);
-        summary.put("createdCards", limitedRequests.size());
-        summary.put("duplicatesSkippedExact", droppedExact);
-        summary.put("duplicatesSkippedPrimary", droppedPrimary);
-        summary.put("duplicatesSkippedSemantic", droppedSemantic);
-        if (droppedEmpty > 0) {
-            summary.put("candidatesSkippedEmpty", droppedEmpty);
+        summary.put("templateId", context.publicDeck().templateId().toString());
+        summary.put("requestedCards", context.count());
+        summary.put("createdCards", generated.requests().size());
+        summary.put("duplicatesSkippedExact", generated.droppedExact());
+        summary.put("duplicatesSkippedPrimary", generated.droppedPrimary());
+        summary.put("duplicatesSkippedSemantic", generated.droppedSemantic());
+        if (generated.droppedEmpty() > 0) {
+            summary.put("candidatesSkippedEmpty", generated.droppedEmpty());
         }
         ArrayNode fieldsNode = summary.putArray("fields");
-        for (String field : allowedFields) {
+        for (String field : context.allowedFields()) {
             fieldsNode.add(field);
         }
+        summary.set("items", buildGeneratedItems(createdCards, context.allowedFields()));
 
         return new AiJobProcessingResult(
                 summary,
                 PROVIDER,
-                response.model(),
-                response.inputTokens(),
-                response.outputTokens(),
+                generated.response().model(),
+                generated.response().inputTokens(),
+                generated.response().outputTokens(),
                 BigDecimal.ZERO,
                 job.getInputHash()
         );
@@ -257,28 +325,36 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
             throw new IllegalStateException("Deck id is required for missing field generation");
         }
         String accessToken = job.getUserAccessToken();
-        CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
-        if (deck.publicDeckId() == null) {
-            throw new IllegalStateException("Deck template not found");
-        }
-        CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
-        if (publicDeck.templateId() == null) {
-            throw new IllegalStateException("Template id not found");
-        }
-        Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
-        CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
-        String updateScope = resolveUpdateScope(job, deck, publicDeck, params);
-
-        List<String> targetFields = resolveAllowedFields(params, template);
-        if (targetFields.isEmpty()) {
-            throw new IllegalStateException("No supported fields to generate");
-        }
-        int limit = resolveLimit(params.path("limit"));
-        List<CoreUserCardResponse> missingCards = coreApiClient.getMissingFieldCards(
-                job.getDeckId(),
-                new CoreApiClient.MissingFieldCardsRequest(targetFields, limit, null),
-                accessToken
-        );
+        record MissingFieldsContext(CoreTemplateResponse template,
+                                    CorePublicDeckResponse publicDeck,
+                                    String updateScope,
+                                    List<String> targetFields,
+                                    List<CoreUserCardResponse> missingCards) {}
+        MissingFieldsContext context = runStep(job, STEP_PREPARE_CONTEXT, () -> {
+            CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
+            if (deck.publicDeckId() == null) {
+                throw new IllegalStateException("Deck template not found");
+            }
+            CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
+            if (publicDeck.templateId() == null) {
+                throw new IllegalStateException("Template id not found");
+            }
+            Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
+            CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+            String updateScope = resolveUpdateScope(job, deck, publicDeck, params);
+            List<String> targetFields = resolveAllowedFields(params, template);
+            if (targetFields.isEmpty()) {
+                throw new IllegalStateException("No supported fields to generate");
+            }
+            int limit = resolveLimit(params.path("limit"));
+            List<CoreUserCardResponse> missingCards = coreApiClient.getMissingFieldCards(
+                    job.getDeckId(),
+                    new CoreApiClient.MissingFieldCardsRequest(targetFields, limit, null),
+                    accessToken
+            );
+            return new MissingFieldsContext(template, publicDeck, updateScope, targetFields, missingCards);
+        });
+        List<CoreUserCardResponse> missingCards = context.missingCards();
         if (missingCards.isEmpty()) {
             ObjectNode summary = objectMapper.createObjectNode();
             summary.put("mode", MODE_MISSING_FIELDS);
@@ -297,26 +373,36 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         }
 
         String userPrompt = extractTextParam(params, "input", "prompt", "notes");
-        String prompt = buildMissingFieldsPrompt(userPrompt, template, publicDeck, targetFields, missingCards, job.getDeckId(), accessToken);
         String model = textOrDefault(params.path("model"), props.defaultModel());
         Integer maxOutputTokens = resolveMaxTokens(params.path("maxOutputTokens"));
 
-        ClaudeResponseResult response = claudeClient.createMessage(
-                apiKey,
-                new ClaudeMessageRequest(model, prompt, maxOutputTokens)
-        );
+        ClaudeResponseResult response = runStep(job, STEP_GENERATE_CONTENT, () -> {
+            String prompt = buildMissingFieldsPrompt(userPrompt, context.template(), context.publicDeck(), context.targetFields(), missingCards, job.getDeckId(), accessToken);
+            return claudeClient.createMessage(
+                    apiKey,
+                    new ClaudeMessageRequest(model, prompt, maxOutputTokens)
+            );
+        });
 
         JsonNode parsed = parseJsonResponse(response.outputText());
-        List<MissingFieldUpdate> updates = parseMissingFieldUpdates(parsed, targetFields);
-        int updated = applyMissingFieldUpdates(job, accessToken, template, missingCards, updates, updateScope);
+        List<MissingFieldUpdate> updates = parseMissingFieldUpdates(parsed, context.targetFields());
+        MissingFieldApplyResult applyResult = runStep(job, STEP_APPLY_CHANGES, () -> applyMissingFieldUpdates(
+                job,
+                accessToken,
+                context.template(),
+                missingCards,
+                updates,
+                context.updateScope()
+        ));
 
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("mode", MODE_MISSING_FIELDS);
         summary.put("deckId", job.getDeckId().toString());
-        summary.put("updatedCards", updated);
+        summary.put("updatedCards", applyResult.updatedCount());
         summary.put("candidates", missingCards.size());
         ArrayNode fieldsNode = summary.putArray("fields");
-        targetFields.forEach(fieldsNode::add);
+        context.targetFields().forEach(fieldsNode::add);
+        summary.set("items", buildUpdatedItems(missingCards, applyResult.updatedCardIds()));
 
         return new AiJobProcessingResult(
                 summary,
@@ -334,40 +420,48 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
             throw new IllegalStateException("Deck id is required for audit");
         }
         String accessToken = job.getUserAccessToken();
-        CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
-        if (deck.publicDeckId() == null) {
-            throw new IllegalStateException("Deck template not found");
-        }
-        CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
-        if (publicDeck.templateId() == null) {
-            throw new IllegalStateException("Template id not found");
-        }
-        Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
-        CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
-
-        int sampleLimit = resolveAuditSampleLimit(params.path("sampleLimit"));
-        List<CoreUserCardResponse> cards = coreApiClient.getUserCards(job.getDeckId(), 1, sampleLimit, accessToken).content();
-        List<String> targetFields = resolveAllowedFields(params, template);
-        if (targetFields.isEmpty()) {
-            throw new IllegalStateException("No supported fields to audit");
-        }
-
-        AuditAnalyzer.AuditContext analysis = AuditAnalyzer.analyze(objectMapper, template, cards, targetFields);
-        String prompt = buildAuditPrompt(params, template, publicDeck, targetFields, cards, analysis);
         String model = textOrDefault(params.path("model"), props.defaultModel());
         Integer maxOutputTokens = resolveMaxTokens(params.path("maxOutputTokens"));
+        record AuditContextData(CoreTemplateResponse template,
+                                CorePublicDeckResponse publicDeck,
+                                List<CoreUserCardResponse> cards,
+                                List<String> targetFields,
+                                AuditAnalyzer.AuditContext analysis) {}
+        AuditContextData context = runStep(job, STEP_PREPARE_CONTEXT, () -> {
+            CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
+            if (deck.publicDeckId() == null) {
+                throw new IllegalStateException("Deck template not found");
+            }
+            CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
+            if (publicDeck.templateId() == null) {
+                throw new IllegalStateException("Template id not found");
+            }
+            Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
+            CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+            int sampleLimit = resolveAuditSampleLimit(params.path("sampleLimit"));
+            List<CoreUserCardResponse> cards = coreApiClient.getUserCards(job.getDeckId(), 1, sampleLimit, accessToken).content();
+            List<String> targetFields = resolveAllowedFields(params, template);
+            if (targetFields.isEmpty()) {
+                throw new IllegalStateException("No supported fields to audit");
+            }
+            AuditAnalyzer.AuditContext analysis = AuditAnalyzer.analyze(objectMapper, template, cards, targetFields);
+            return new AuditContextData(template, publicDeck, cards, targetFields, analysis);
+        });
 
-        ClaudeResponseResult response = claudeClient.createMessage(
-                apiKey,
-                new ClaudeMessageRequest(model, prompt, maxOutputTokens)
-        );
+        ClaudeResponseResult response = runStep(job, STEP_ANALYZE_CONTENT, () -> {
+            String prompt = buildAuditPrompt(params, context.template(), context.publicDeck(), context.targetFields(), context.cards(), context.analysis());
+            return claudeClient.createMessage(
+                    apiKey,
+                    new ClaudeMessageRequest(model, prompt, maxOutputTokens)
+            );
+        });
 
         JsonNode parsed = parseJsonResponse(response.outputText());
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("mode", MODE_AUDIT);
         summary.put("deckId", job.getDeckId().toString());
-        summary.set("auditStats", analysis.summary());
-        summary.set("auditIssues", analysis.issues());
+        summary.set("auditStats", context.analysis().summary());
+        summary.set("auditIssues", context.analysis().issues());
         summary.set("aiSummary", parsed);
 
         return new AiJobProcessingResult(
@@ -830,19 +924,20 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         return updates;
     }
 
-    private int applyMissingFieldUpdates(AiJobEntity job,
-                                         String accessToken,
-                                         CoreTemplateResponse template,
-                                         List<CoreUserCardResponse> cards,
-                                         List<MissingFieldUpdate> updates,
-                                         String updateScope) {
+    private MissingFieldApplyResult applyMissingFieldUpdates(AiJobEntity job,
+                                                             String accessToken,
+                                                             CoreTemplateResponse template,
+                                                             List<CoreUserCardResponse> cards,
+                                                             List<MissingFieldUpdate> updates,
+                                                             String updateScope) {
         if (updates.isEmpty()) {
-            return 0;
+            return new MissingFieldApplyResult(0, Set.of());
         }
         Map<UUID, CoreUserCardResponse> cardMap = cards.stream()
                 .filter(card -> card != null && card.userCardId() != null)
                 .collect(java.util.stream.Collectors.toMap(CoreUserCardResponse::userCardId, card -> card, (a, b) -> a));
         int updated = 0;
+        Set<UUID> updatedCardIds = new java.util.LinkedHashSet<>();
         for (MissingFieldUpdate update : updates) {
             CoreUserCardResponse card = cardMap.get(update.userCardId());
             if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
@@ -876,8 +971,9 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
             UUID operationId = resolveUpdateOperationId(cardScope, job);
             coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope, operationId);
             updated++;
+            updatedCardIds.add(card.userCardId());
         }
-        return updated;
+        return new MissingFieldApplyResult(updated, updatedCardIds);
     }
 
     private boolean isMissingText(JsonNode node) {
@@ -891,6 +987,9 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
     }
 
     private record MissingFieldUpdate(UUID userCardId, ObjectNode fields) {
+    }
+
+    private record MissingFieldApplyResult(int updatedCount, Set<UUID> updatedCardIds) {
     }
 
     private String buildFieldHints(CoreTemplateResponse template, List<String> fields) {
@@ -963,6 +1062,89 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
             requests.add(new CreateCardRequestPayload(content, null, null, null, null, null));
         }
         return requests;
+    }
+
+    private ArrayNode buildGeneratedItems(List<CoreUserCardResponse> createdCards, List<String> preferredFields) {
+        ArrayNode items = objectMapper.createArrayNode();
+        if (createdCards == null || createdCards.isEmpty()) {
+            return items;
+        }
+        for (CoreUserCardResponse card : createdCards) {
+            if (card == null || card.userCardId() == null) {
+                continue;
+            }
+            ObjectNode item = objectMapper.createObjectNode();
+            item.put("cardId", card.userCardId().toString());
+            String preview = extractPreview(card.effectiveContent(), preferredFields);
+            if (preview != null) {
+                item.put("preview", preview);
+            }
+            item.put("status", "completed");
+            item.putArray("completedStages").add("text");
+            items.add(item);
+        }
+        return items;
+    }
+
+    private ArrayNode buildUpdatedItems(List<CoreUserCardResponse> cards, Set<UUID> updatedCardIds) {
+        ArrayNode items = objectMapper.createArrayNode();
+        if (cards == null || cards.isEmpty()) {
+            return items;
+        }
+        for (CoreUserCardResponse card : cards) {
+            if (card == null || card.userCardId() == null) {
+                continue;
+            }
+            ObjectNode item = objectMapper.createObjectNode();
+            item.put("cardId", card.userCardId().toString());
+            String preview = extractPreview(card.effectiveContent(), List.of());
+            if (preview != null) {
+                item.put("preview", preview);
+            }
+            boolean updated = updatedCardIds != null && updatedCardIds.contains(card.userCardId());
+            item.put("status", updated ? "completed" : "skipped");
+            if (updated) {
+                item.putArray("completedStages").add("content");
+            } else {
+                item.putArray("completedStages");
+            }
+            items.add(item);
+        }
+        return items;
+    }
+
+    private String extractPreview(JsonNode content, List<String> preferredFields) {
+        if (content == null || !content.isObject()) {
+            return null;
+        }
+        if (preferredFields != null) {
+            for (String field : preferredFields) {
+                String value = extractPreviewValue(content.get(field));
+                if (value != null) {
+                    return value;
+                }
+            }
+        }
+        var fields = content.fields();
+        while (fields.hasNext()) {
+            var entry = fields.next();
+            String value = extractPreviewValue(entry.getValue());
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String extractPreviewValue(JsonNode value) {
+        if (value == null || !value.isTextual()) {
+            return null;
+        }
+        String text = value.asText().trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        return text.length() > 120 ? text.substring(0, 120) + "..." : text;
     }
 
     private String buildFewShotExamples(UUID deckId, String accessToken, List<String> fields) {
