@@ -1073,15 +1073,7 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
             if (card == null || card.userCardId() == null) {
                 continue;
             }
-            ObjectNode item = objectMapper.createObjectNode();
-            item.put("cardId", card.userCardId().toString());
-            String preview = extractPreview(card.effectiveContent(), preferredFields);
-            if (preview != null) {
-                item.put("preview", preview);
-            }
-            item.put("status", "completed");
-            item.putArray("completedStages").add("text");
-            items.add(item);
+            items.add(buildItemNode(card.userCardId(), extractPreview(card.effectiveContent(), preferredFields), List.of("text"), List.of()));
         }
         return items;
     }
@@ -1095,22 +1087,46 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
             if (card == null || card.userCardId() == null) {
                 continue;
             }
-            ObjectNode item = objectMapper.createObjectNode();
-            item.put("cardId", card.userCardId().toString());
-            String preview = extractPreview(card.effectiveContent(), List.of());
-            if (preview != null) {
-                item.put("preview", preview);
-            }
             boolean updated = updatedCardIds != null && updatedCardIds.contains(card.userCardId());
-            item.put("status", updated ? "completed" : "skipped");
-            if (updated) {
-                item.putArray("completedStages").add("content");
-            } else {
-                item.putArray("completedStages");
-            }
-            items.add(item);
+            items.add(buildItemNode(
+                    card.userCardId(),
+                    extractPreview(card.effectiveContent(), List.of()),
+                    updated ? List.of("content") : List.of(),
+                    List.of()
+            ));
         }
         return items;
+    }
+
+    private ObjectNode buildItemNode(UUID cardId,
+                                     String preview,
+                                     List<String> completedStages,
+                                     List<String> errors) {
+        ObjectNode item = objectMapper.createObjectNode();
+        item.put("cardId", cardId.toString());
+        if (preview != null && !preview.isBlank()) {
+            item.put("preview", preview);
+        }
+        ArrayNode completedStagesNode = item.putArray("completedStages");
+        if (completedStages != null) {
+            completedStages.forEach(completedStagesNode::add);
+        }
+        if (errors != null && !errors.isEmpty()) {
+            ArrayNode errorNode = item.putArray("errors");
+            errors.forEach(errorNode::add);
+        }
+        String status;
+        if (errors != null && !errors.isEmpty() && completedStagesNode.isEmpty()) {
+            status = "failed";
+        } else if (errors != null && !errors.isEmpty()) {
+            status = "partial_success";
+        } else if (!completedStagesNode.isEmpty()) {
+            status = "completed";
+        } else {
+            status = "skipped";
+        }
+        item.put("status", status);
+        return item;
     }
 
     private String extractPreview(JsonNode content, List<String> preferredFields) {

@@ -347,6 +347,8 @@ public class QwenJobProcessor implements AiProviderProcessor {
         String model = null;
         String templateId = null;
         JsonNode fieldsNode = null;
+        ArrayNode itemResults = objectMapper.createArrayNode();
+        boolean hasPartialFailures = false;
 
         while (remaining > 0) {
             int count = Math.min(batchSize, remaining);
@@ -377,7 +379,11 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 if (ttsError == null && summary.hasNonNull("ttsError")) {
                     ttsError = summary.get("ttsError").asText();
                 }
+                if (summary.has("items") && summary.get("items").isArray()) {
+                    summary.get("items").forEach(itemResults::add);
+                }
             }
+            hasPartialFailures = hasPartialFailures || batchResult.finalStatus() == AiJobStatus.partial_success;
             remaining -= count;
         }
 
@@ -401,6 +407,9 @@ public class QwenJobProcessor implements AiProviderProcessor {
         if (fieldsNode != null) {
             summary.set("fields", fieldsNode);
         }
+        if (!itemResults.isEmpty()) {
+            summary.set("items", itemResults);
+        }
 
         return new AiJobProcessingResult(
                 summary,
@@ -409,7 +418,8 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 tokensIn,
                 tokensOut,
                 cost,
-                job.getInputHash()
+                job.getInputHash(),
+                resolveFinalStatus(hasPartialFailures || ttsError != null)
         );
     }
 
@@ -432,6 +442,8 @@ public class QwenJobProcessor implements AiProviderProcessor {
         String templateId = null;
         JsonNode fieldsNode = null;
         int offset = 0;
+        ArrayNode itemResults = objectMapper.createArrayNode();
+        boolean hasPartialFailures = false;
 
         while (remaining > 0) {
             int count = Math.min(batchSize, remaining);
@@ -464,7 +476,11 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 if (ttsError == null && summary.hasNonNull("ttsError")) {
                     ttsError = summary.get("ttsError").asText();
                 }
+                if (summary.has("items") && summary.get("items").isArray()) {
+                    summary.get("items").forEach(itemResults::add);
+                }
             }
+            hasPartialFailures = hasPartialFailures || batchResult.finalStatus() == AiJobStatus.partial_success;
             remaining -= count;
             offset += count;
         }
@@ -489,6 +505,9 @@ public class QwenJobProcessor implements AiProviderProcessor {
         if (fieldsNode != null) {
             summary.set("fields", fieldsNode);
         }
+        if (!itemResults.isEmpty()) {
+            summary.set("items", itemResults);
+        }
 
         return new AiJobProcessingResult(
                 summary,
@@ -497,7 +516,8 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 tokensIn,
                 tokensOut,
                 cost,
-                job.getInputHash()
+                job.getInputHash(),
+                resolveFinalStatus(hasPartialFailures || ttsError != null)
         );
     }
 
@@ -1019,6 +1039,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         }
         ArrayNode fieldsNode = summary.putArray("fields");
         context.targetFields().forEach(fieldsNode::add);
+        summary.set("items", buildEnhanceItems(missingCards, mediaResult, ttsResult));
 
         return new AiJobProcessingResult(
                 summary,
@@ -1102,6 +1123,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         }
         ArrayNode fieldsNode = summary.putArray("fields");
         context.targetFields().forEach(fieldsNode::add);
+        summary.set("items", buildAudioItems(missingCards, ttsResult));
 
         return new AiJobProcessingResult(
                 summary,
@@ -1354,6 +1376,13 @@ public class QwenJobProcessor implements AiProviderProcessor {
         allFields.addAll(context.promptFields());
         allFields.addAll(context.targetAudioFields());
         allFields.forEach(fieldsNode::add);
+        CoreUserCardResponse cardResponse = new CoreUserCardResponse(
+                context.card().userCardId(),
+                context.card().publicCardId(),
+                context.card().isCustom(),
+                context.card().effectiveContent()
+        );
+        summary.set("items", buildEnhanceItems(List.of(cardResponse), mediaResult, ttsResult));
 
         return new AiJobProcessingResult(
                 summary,
@@ -1463,6 +1492,13 @@ public class QwenJobProcessor implements AiProviderProcessor {
         }
         ArrayNode fieldsNode = summary.putArray("fields");
         missingTargets.forEach(fieldsNode::add);
+        CoreUserCardResponse cardResponse = new CoreUserCardResponse(
+                context.card().userCardId(),
+                context.card().publicCardId(),
+                context.card().isCustom(),
+                context.card().effectiveContent()
+        );
+        summary.set("items", buildAudioItems(List.of(cardResponse), ttsResult));
 
         return new AiJobProcessingResult(
                 summary,
@@ -1637,6 +1673,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         for (String field : context.allowedFields()) {
             fieldsNode.add(field);
         }
+        summary.set("items", buildGeneratedCardItems(createdCards, limitedDrafts, context.allowedFields()));
 
         return new AiJobProcessingResult(
                 summary,
@@ -2447,7 +2484,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
             }
         }
         if (!changed) {
-            return new MediaApplyResult(0, imagesGenerated, videosGenerated);
+            return new MediaApplyResult(0, Set.of(), imagesGenerated, videosGenerated);
         }
         ankiSupport.applyIfPresent(updatedContent, template);
         UpdateUserCardRequest updateRequest = new UpdateUserCardRequest(
@@ -2461,7 +2498,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         String cardScope = resolveCardUpdateScope(updateScope, card);
         UUID operationId = resolveUpdateOperationId(cardScope, job);
         coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope, operationId);
-        return new MediaApplyResult(1, imagesGenerated, videosGenerated);
+        return new MediaApplyResult(1, Set.of(card.userCardId()), imagesGenerated, videosGenerated);
     }
 
     private AtomicApplyResult applyCardMissingFieldUpdateAtomically(AiJobEntity job,
@@ -2520,8 +2557,19 @@ public class QwenJobProcessor implements AiProviderProcessor {
             coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope, operationId);
         }
         return new AtomicApplyResult(
-                new MediaApplyResult(contentResult.changed() ? 1 : 0, contentResult.imagesGenerated(), contentResult.videosGenerated()),
-                new TtsApplyResult(ttsResult.generated(), ttsResult.updated() ? 1 : 0, ttsResult.model(), ttsResult.error())
+                new MediaApplyResult(
+                        contentResult.changed() ? 1 : 0,
+                        contentResult.changed() ? Set.of(card.userCardId()) : Set.of(),
+                        contentResult.imagesGenerated(),
+                        contentResult.videosGenerated()
+                ),
+                new TtsApplyResult(
+                        ttsResult.generated(),
+                        ttsResult.updated() ? 1 : 0,
+                        ttsResult.updated() ? Set.of(card.userCardId()) : Set.of(),
+                        ttsResult.model(),
+                        ttsResult.error()
+                )
         );
     }
 
@@ -2581,6 +2629,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 .filter(card -> card != null && card.userCardId() != null)
                 .collect(java.util.stream.Collectors.toMap(CoreUserCardResponse::userCardId, card -> card, (a, b) -> a));
         int updated = 0;
+        Set<UUID> updatedCardIds = new LinkedHashSet<>();
         int imagesGenerated = 0;
         int videosGenerated = 0;
         for (MissingFieldUpdate update : updates) {
@@ -2667,8 +2716,9 @@ public class QwenJobProcessor implements AiProviderProcessor {
             UUID operationId = resolveUpdateOperationId(cardScope, job);
             coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope, operationId);
             updated++;
+            updatedCardIds.add(card.userCardId());
         }
-        return new MediaApplyResult(updated, imagesGenerated, videosGenerated);
+        return new MediaApplyResult(updated, updatedCardIds, imagesGenerated, videosGenerated);
     }
 
     private AtomicApplyResult applyMissingFieldUpdatesAtomically(AiJobEntity job,
@@ -2697,6 +2747,8 @@ public class QwenJobProcessor implements AiProviderProcessor {
         int ttsUpdatedCards = 0;
         String ttsModel = null;
         String ttsError = null;
+        Set<UUID> updatedCardIds = new LinkedHashSet<>();
+        Set<UUID> ttsUpdatedCardIds = new LinkedHashSet<>();
         for (MissingFieldUpdate update : updates) {
             CoreUserCardResponse card = cardMap.get(update.userCardId());
             if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
@@ -2749,16 +2801,20 @@ public class QwenJobProcessor implements AiProviderProcessor {
             UUID operationId = resolveUpdateOperationId(cardScope, job);
             coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope, operationId);
             updated += contentResult.changed() ? 1 : 0;
+            if (contentResult.changed()) {
+                updatedCardIds.add(card.userCardId());
+            }
             imagesGenerated += contentResult.imagesGenerated();
             videosGenerated += contentResult.videosGenerated();
             ttsGenerated += ttsResult.generated();
             if (ttsResult.updated()) {
                 ttsUpdatedCards++;
+                ttsUpdatedCardIds.add(card.userCardId());
             }
         }
         return new AtomicApplyResult(
-                new MediaApplyResult(updated, imagesGenerated, videosGenerated),
-                new TtsApplyResult(ttsGenerated, ttsUpdatedCards, ttsModel, ttsError)
+                new MediaApplyResult(updated, updatedCardIds, imagesGenerated, videosGenerated),
+                new TtsApplyResult(ttsGenerated, ttsUpdatedCards, ttsUpdatedCardIds, ttsModel, ttsError)
         );
     }
 
@@ -2863,13 +2919,209 @@ public class QwenJobProcessor implements AiProviderProcessor {
     private record CardDraft(ObjectNode content, Map<String, String> mediaPrompts) {
     }
 
+    private ArrayNode buildGeneratedCardItems(List<CoreUserCardResponse> createdCards,
+                                              List<CardDraft> drafts,
+                                              List<String> preferredFields) {
+        ArrayNode items = objectMapper.createArrayNode();
+        int limit = Math.min(createdCards == null ? 0 : createdCards.size(), drafts == null ? 0 : drafts.size());
+        for (int i = 0; i < limit; i++) {
+            CoreUserCardResponse card = createdCards.get(i);
+            CardDraft draft = drafts.get(i);
+            if (card == null || card.userCardId() == null) {
+                continue;
+            }
+            List<String> completedStages = new ArrayList<>();
+            completedStages.add("text");
+            if (hasMediaKind(draft == null ? null : draft.content(), "audio")) {
+                completedStages.add("tts");
+            }
+            if (hasNonAudioMedia(draft == null ? null : draft.content())) {
+                completedStages.add("media");
+            }
+            items.add(buildItemNode(
+                    card.userCardId(),
+                    extractCardPreview(card.effectiveContent(), preferredFields, draft == null ? null : draft.content()),
+                    completedStages,
+                    List.of()
+            ));
+        }
+        return items;
+    }
+
+    private ArrayNode buildEnhanceItems(List<CoreUserCardResponse> cards,
+                                        MediaApplyResult mediaResult,
+                                        TtsApplyResult ttsResult) {
+        ArrayNode items = objectMapper.createArrayNode();
+        if (cards == null || cards.isEmpty()) {
+            return items;
+        }
+        for (CoreUserCardResponse card : cards) {
+            if (card == null || card.userCardId() == null) {
+                continue;
+            }
+            List<String> completedStages = new ArrayList<>();
+            if (mediaResult.updatedCardIds().contains(card.userCardId())) {
+                completedStages.add("content");
+            }
+            if (ttsResult.updatedCardIds().contains(card.userCardId())) {
+                completedStages.add("tts");
+            }
+            items.add(buildItemNode(
+                    card.userCardId(),
+                    extractCardPreview(card.effectiveContent(), List.of(), null),
+                    completedStages,
+                    List.of()
+            ));
+        }
+        return items;
+    }
+
+    private ArrayNode buildAudioItems(List<CoreUserCardResponse> cards, TtsApplyResult ttsResult) {
+        return buildEnhanceItems(cards, new MediaApplyResult(0, Set.of(), 0, 0), ttsResult);
+    }
+
+    private ObjectNode buildItemNode(UUID cardId,
+                                     String preview,
+                                     List<String> completedStages,
+                                     List<String> errors) {
+        ObjectNode item = objectMapper.createObjectNode();
+        item.put("cardId", cardId.toString());
+        if (preview != null && !preview.isBlank()) {
+            item.put("preview", preview);
+        }
+        ArrayNode completedStagesNode = item.putArray("completedStages");
+        if (completedStages != null) {
+            completedStages.forEach(completedStagesNode::add);
+        }
+        if (errors != null && !errors.isEmpty()) {
+            ArrayNode errorNode = item.putArray("errors");
+            errors.forEach(errorNode::add);
+        }
+        String status;
+        if (errors != null && !errors.isEmpty() && completedStagesNode.isEmpty()) {
+            status = "failed";
+        } else if (errors != null && !errors.isEmpty()) {
+            status = "partial_success";
+        } else if (!completedStagesNode.isEmpty()) {
+            status = "completed";
+        } else {
+            status = "skipped";
+        }
+        item.put("status", status);
+        return item;
+    }
+
+    private String extractCardPreview(JsonNode primaryContent, List<String> preferredFields, JsonNode fallbackContent) {
+        String preview = extractPreviewFromContent(primaryContent, preferredFields);
+        if (preview != null) {
+            return preview;
+        }
+        return extractPreviewFromContent(fallbackContent, preferredFields);
+    }
+
+    private String extractPreviewFromContent(JsonNode content, List<String> preferredFields) {
+        if (content == null || !content.isObject() || content.isEmpty()) {
+            return null;
+        }
+        if (preferredFields != null) {
+            for (String field : preferredFields) {
+                String value = extractPreviewValue(content.get(field));
+                if (value != null) {
+                    return value;
+                }
+            }
+        }
+        var iterator = content.fields();
+        while (iterator.hasNext()) {
+            var entry = iterator.next();
+            String value = extractPreviewValue(entry.getValue());
+            if (value != null) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    private String extractPreviewValue(JsonNode value) {
+        if (value == null || value.isNull() || !value.isTextual()) {
+            return null;
+        }
+        String text = value.asText().trim();
+        if (text.isEmpty()) {
+            return null;
+        }
+        return text.length() > 120 ? text.substring(0, 120) + "..." : text;
+    }
+
+    private boolean hasNonAudioMedia(JsonNode content) {
+        if (content == null || !content.isObject()) {
+            return false;
+        }
+        var iterator = content.fields();
+        while (iterator.hasNext()) {
+            JsonNode value = iterator.next().getValue();
+            if (value != null && value.isObject() && value.hasNonNull("mediaId")) {
+                String kind = value.path("kind").asText("");
+                if (!"audio".equalsIgnoreCase(kind)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean hasMediaKind(JsonNode content, String kind) {
+        if (content == null || !content.isObject() || kind == null || kind.isBlank()) {
+            return false;
+        }
+        var iterator = content.fields();
+        while (iterator.hasNext()) {
+            JsonNode value = iterator.next().getValue();
+            if (value != null
+                    && value.isObject()
+                    && value.hasNonNull("mediaId")
+                    && kind.equalsIgnoreCase(value.path("kind").asText(""))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private Set<UUID> mergeUpdatedCardIds(Set<UUID> left, Set<UUID> right) {
+        if ((left == null || left.isEmpty()) && (right == null || right.isEmpty())) {
+            return Set.of();
+        }
+        LinkedHashSet<UUID> merged = new LinkedHashSet<>();
+        if (left != null) {
+            merged.addAll(left);
+        }
+        if (right != null) {
+            merged.addAll(right);
+        }
+        return Set.copyOf(merged);
+    }
+
     private record ContentMutationResult(boolean changed, int imagesGenerated, int videosGenerated) {
     }
 
-    private record TtsApplyResult(int generated, int updatedCards, String model, String error) {
+    private record TtsApplyResult(int generated, int updatedCards, Set<UUID> updatedCardIds, String model, String error) {
+        private TtsApplyResult(int generated, int updatedCards, String model, String error) {
+            this(generated, updatedCards, Set.of(), model, error);
+        }
+
+        private TtsApplyResult {
+            updatedCardIds = updatedCardIds == null ? Set.of() : Set.copyOf(updatedCardIds);
+        }
     }
 
-    private record MediaApplyResult(int updatedCards, int imagesGenerated, int videosGenerated) {
+    private record MediaApplyResult(int updatedCards, Set<UUID> updatedCardIds, int imagesGenerated, int videosGenerated) {
+        private MediaApplyResult(int updatedCards, int imagesGenerated, int videosGenerated) {
+            this(updatedCards, Set.of(), imagesGenerated, videosGenerated);
+        }
+
+        private MediaApplyResult {
+            updatedCardIds = updatedCardIds == null ? Set.of() : Set.copyOf(updatedCardIds);
+        }
     }
 
     private record TtsContentApplyResult(boolean updated, int generated, String model, String error) {
@@ -3196,6 +3448,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         int generated = 0;
         int updatedCards = 0;
         String ttsError = null;
+        Set<UUID> updatedCardIds = new LinkedHashSet<>();
         for (CoreUserCardResponse card : createdCards) {
             if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
                 continue;
@@ -3263,9 +3516,10 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 UUID operationId = resolveUpdateOperationId(cardScope, job);
                 coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken, cardScope, operationId);
                 updatedCards++;
+                updatedCardIds.add(card.userCardId());
             }
         }
-        return new TtsApplyResult(generated, updatedCards, model, ttsError);
+        return new TtsApplyResult(generated, updatedCards, updatedCardIds, model, ttsError);
     }
 
     private TtsApplyResult applyTtsForMissingAudio(AiJobEntity job,
@@ -3313,6 +3567,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         int generated = 0;
         int updatedCards = 0;
         String ttsError = null;
+        Set<UUID> updatedCardIds = new LinkedHashSet<>();
         for (CoreUserCardResponse card : cards) {
             if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
                 continue;
@@ -3384,9 +3639,10 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 UUID operationId = resolveUpdateOperationId(cardScope, job);
                 coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken, cardScope, operationId);
                 updatedCards++;
+                updatedCardIds.add(card.userCardId());
             }
         }
-        return new TtsApplyResult(generated, updatedCards, model, ttsError);
+        return new TtsApplyResult(generated, updatedCards, updatedCardIds, model, ttsError);
     }
 
     private TtsApplyResult applyTtsToDrafts(AiJobEntity job,
@@ -3537,6 +3793,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
         return new TtsApplyResult(
                 left.generated() + right.generated(),
                 left.updatedCards() + right.updatedCards(),
+                mergeUpdatedCardIds(left.updatedCardIds(), right.updatedCardIds()),
                 left.model() != null ? left.model() : right.model(),
                 left.error() != null ? left.error() : right.error()
         );

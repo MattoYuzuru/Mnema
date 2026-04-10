@@ -13,10 +13,13 @@ import app.mnema.ai.service.CardNoveltyService;
 import app.mnema.ai.vault.SecretVault;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -59,6 +62,42 @@ class QwenJobProcessorTest {
                 "generate_content",
                 "apply_changes"
         );
+    }
+
+    @Test
+    void buildEnhanceItemsUsesCanonicalItemContract() throws Exception {
+        QwenJobProcessor processor = createProcessor();
+        UUID cardId = UUID.randomUUID();
+        CoreApiClient.CoreUserCardResponse card = new CoreApiClient.CoreUserCardResponse(
+                cardId,
+                null,
+                false,
+                OBJECT_MAPPER.createObjectNode().put("front", "Hola")
+        );
+
+        Object mediaResult = createInnerRecord(
+                QwenJobProcessor.class,
+                "MediaApplyResult",
+                new Class<?>[]{int.class, Set.class, int.class, int.class},
+                new Object[]{1, Set.of(cardId), 1, 0}
+        );
+        Object ttsResult = createInnerRecord(
+                QwenJobProcessor.class,
+                "TtsApplyResult",
+                new Class<?>[]{int.class, int.class, Set.class, String.class, String.class},
+                new Object[]{1, 1, Set.of(cardId), "qwen-tts", null}
+        );
+
+        Method buildEnhanceItems = QwenJobProcessor.class.getDeclaredMethod("buildEnhanceItems", List.class, mediaResult.getClass(), ttsResult.getClass());
+        buildEnhanceItems.setAccessible(true);
+        ArrayNode items = (ArrayNode) buildEnhanceItems.invoke(processor, List.of(card), mediaResult, ttsResult);
+
+        assertThat(items).hasSize(1);
+        JsonNode item = items.get(0);
+        assertThat(item.path("cardId").asText()).isEqualTo(cardId.toString());
+        assertThat(item.path("preview").asText()).isEqualTo("Hola");
+        assertThat(item.path("status").asText()).isEqualTo("completed");
+        assertThat(item.path("completedStages")).extracting(JsonNode::asText).containsExactly("content", "tts");
     }
 
     private static QwenJobProcessor createProcessor() {
@@ -109,5 +148,24 @@ class QwenJobProcessorTest {
         job.setProgress(0);
         job.setParamsJson(params);
         return job;
+    }
+
+    private static Object createInnerRecord(Class<?> owner,
+                                            String simpleName,
+                                            Class<?>[] parameterTypes,
+                                            Object[] args) throws Exception {
+        Class<?> type = findInnerClass(owner, simpleName);
+        Constructor<?> constructor = type.getDeclaredConstructor(parameterTypes);
+        constructor.setAccessible(true);
+        return constructor.newInstance(args);
+    }
+
+    private static Class<?> findInnerClass(Class<?> owner, String simpleName) {
+        for (Class<?> candidate : owner.getDeclaredClasses()) {
+            if (candidate.getSimpleName().equals(simpleName)) {
+                return candidate;
+            }
+        }
+        throw new IllegalStateException("Inner class not found: " + simpleName);
     }
 }
