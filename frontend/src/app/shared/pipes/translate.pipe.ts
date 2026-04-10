@@ -1,6 +1,6 @@
 import { Pipe, PipeTransform, ChangeDetectorRef, OnDestroy } from '@angular/core';
 import { Subscription } from 'rxjs';
-import { I18nService } from '../../core/services/i18n.service';
+import { I18nService, TranslationParams } from '../../core/services/i18n.service';
 
 @Pipe({
     name: 'translate',
@@ -10,6 +10,7 @@ import { I18nService } from '../../core/services/i18n.service';
 export class TranslatePipe implements PipeTransform, OnDestroy {
     private value = '';
     private lastKey = '';
+    private lastParams?: TranslationParams;
     private subscription?: Subscription;
 
     constructor(
@@ -17,21 +18,32 @@ export class TranslatePipe implements PipeTransform, OnDestroy {
         private cdr: ChangeDetectorRef
     ) {
         this.subscription = this.i18n.currentLanguage$.subscribe(() => {
-            this.updateValue(this.lastKey);
+            this.updateValue(this.lastKey, this.lastParams);
         });
     }
 
-    transform(key: string): string {
-        if (key !== this.lastKey) {
+    transform(key: string, params?: TranslationParams): string {
+        const paramsChanged = !this.areParamsEqual(params, this.lastParams);
+        if (key !== this.lastKey || paramsChanged) {
             this.lastKey = key;
-            this.updateValue(key);
+            this.lastParams = params ? { ...params } : undefined;
+            this.updateValue(key, params);
         }
         return this.value;
     }
 
-    private updateValue(key: string): void {
-        this.value = this.i18n.translate(key);
+    private updateValue(key: string, params?: TranslationParams): void {
+        this.value = this.i18n.translate(key, params);
         this.cdr.markForCheck();
+    }
+
+    private areParamsEqual(left?: TranslationParams, right?: TranslationParams): boolean {
+        const leftEntries = Object.entries(left ?? {});
+        const rightEntries = Object.entries(right ?? {});
+        if (leftEntries.length !== rightEntries.length) {
+            return false;
+        }
+        return leftEntries.every(([key, value]) => right?.[key] === value);
     }
 
     ngOnDestroy(): void {

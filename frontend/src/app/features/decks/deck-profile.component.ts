@@ -1926,7 +1926,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         return status === 'completed' || status === 'partial_success' || status === 'failed' || status === 'canceled';
     }
 
-    formatAiJobStatus(status: string): string {
+    formatAiJobStatus(status?: string | null): string {
         if (!status) {
             return '';
         }

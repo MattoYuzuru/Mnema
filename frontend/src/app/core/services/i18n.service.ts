@@ -7,6 +7,8 @@ interface Translations {
     [key: string]: string;
 }
 
+export type TranslationParams = Record<string, string | number | boolean | null | undefined>;
+
 const translations: Record<Language, Translations> = {
     en: {
         'app.name': 'Mnema',
@@ -2367,12 +2369,19 @@ export class I18nService {
         localStorage.setItem(this.storageKey, lang);
     }
 
-    translate(key: string): string {
+    translate(key: string, params?: TranslationParams): string {
         const lang = this.currentLanguage;
-        return translations[lang][key] || key;
+        const template = translations[lang][key] || key;
+        if (!params) {
+            return template;
+        }
+        return Object.entries(params).reduce((result, [paramKey, value]) => {
+            const normalized = value ?? '';
+            return result.replaceAll(`{{${paramKey}}}`, String(normalized));
+        }, template);
     }
 
-    t(key: string): string {
-        return this.translate(key);
+    t(key: string, params?: TranslationParams): string {
+        return this.translate(key, params);
     }
 }
