@@ -209,7 +209,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
             return List.of(STEP_LOAD_SOURCE, STEP_ANALYZE_CONTENT);
         }
         if (MODE_IMPORT_GENERATE.equalsIgnoreCase(mode)) {
-            return List.of(STEP_LOAD_SOURCE, STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_APPLY_CHANGES, STEP_GENERATE_AUDIO, STEP_GENERATE_MEDIA);
+            return List.of(STEP_LOAD_SOURCE, STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_GENERATE_MEDIA, STEP_GENERATE_AUDIO, STEP_APPLY_CHANGES);
         }
         if (MODE_AUDIT.equalsIgnoreCase(mode) || MODE_CARD_AUDIT.equalsIgnoreCase(mode)) {
             return List.of(STEP_PREPARE_CONTEXT, STEP_ANALYZE_CONTENT);
@@ -218,10 +218,10 @@ public class QwenJobProcessor implements AiProviderProcessor {
             return List.of(STEP_PREPARE_CONTEXT, STEP_GENERATE_AUDIO);
         }
         if (MODE_CARD_MISSING_FIELDS.equalsIgnoreCase(mode) || MODE_MISSING_FIELDS.equalsIgnoreCase(mode)) {
-            return List.of(STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_APPLY_CHANGES, STEP_GENERATE_AUDIO);
+            return List.of(STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_APPLY_CHANGES);
         }
         if (MODE_GENERATE_CARDS.equalsIgnoreCase(mode)) {
-            return List.of(STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_APPLY_CHANGES, STEP_GENERATE_AUDIO, STEP_GENERATE_MEDIA);
+            return List.of(STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_GENERATE_MEDIA, STEP_GENERATE_AUDIO, STEP_APPLY_CHANGES);
         }
         return List.of(STEP_GENERATE_CONTENT);
     }
@@ -934,6 +934,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
 
         QwenChatResult response = null;
         MediaApplyResult mediaResult = new MediaApplyResult(0, 0, 0);
+        TtsApplyResult promptTtsResult = new TtsApplyResult(0, 0, null, null);
         if (!promptCards.isEmpty()) {
             String userPrompt = extractTextParam(params, "input", "prompt", "notes");
             String prompt = buildMissingFieldsPrompt(userPrompt, context.template(), context.publicDeck(), context.promptFields(), promptCards, job.getDeckId(), accessToken);
@@ -952,20 +953,47 @@ public class QwenJobProcessor implements AiProviderProcessor {
             List<MissingFieldUpdate> updates = parseMissingFieldUpdates(parsed, context.promptFields());
             ImageConfig imageConfig = resolveImageConfig(params, !context.promptFields().isEmpty());
             VideoConfig videoConfig = resolveVideoConfig(params, !context.promptFields().isEmpty());
-            mediaResult = runStep(job, STEP_APPLY_CHANGES, () -> applyMissingFieldUpdates(job, apiKey, accessToken, context.template(), promptCards, updates, context.fieldTypes(), selection.allowedFieldsByCard(), imageConfig, videoConfig, context.updateScope()));
+            AtomicApplyResult applyResult = runStep(job, STEP_APPLY_CHANGES, () -> applyMissingFieldUpdatesAtomically(
+                    job,
+                    apiKey,
+                    accessToken,
+                    params,
+                    context.template(),
+                    promptCards,
+                    updates,
+                    context.fieldTypes(),
+                    selection.allowedFieldsByCard(),
+                    imageConfig,
+                    videoConfig,
+                    context.targetAudioFields(),
+                    context.updateScope()
+            ));
+            mediaResult = applyResult.mediaResult();
+            promptTtsResult = applyResult.ttsResult();
         }
 
-        TtsApplyResult ttsResult = new TtsApplyResult(0, 0, null, null);
-        String ttsError = null;
+        TtsApplyResult ttsResult = promptTtsResult;
+        String ttsError = promptTtsResult.error();
         if (!context.targetAudioFields().isEmpty()) {
             if (!params.path("tts").path("enabled").asBoolean(false)) {
                 ttsError = "TTS settings are required for audio fields";
             } else {
-                List<CoreUserCardResponse> audioCards = filterCardsForAudio(missingCards, context.targetAudioFields(), selection.allowedFieldsByCard());
+                Set<UUID> promptCardIds = promptCards.stream()
+                        .map(CoreUserCardResponse::userCardId)
+                        .filter(Objects::nonNull)
+                        .collect(java.util.stream.Collectors.toSet());
+                List<CoreUserCardResponse> audioCards = filterCardsForAudio(
+                        missingCards.stream()
+                                .filter(card -> card == null || card.userCardId() == null || !promptCardIds.contains(card.userCardId()))
+                                .toList(),
+                        context.targetAudioFields(),
+                        selection.allowedFieldsByCard()
+                );
                 if (!audioCards.isEmpty()) {
-                    ttsResult = runStep(job, STEP_GENERATE_AUDIO, () -> applyTtsForMissingAudio(job, apiKey, params, audioCards, context.template(), context.targetAudioFields(), context.updateScope()));
-                    if (ttsError == null && ttsResult.error() != null) {
-                        ttsError = ttsResult.error();
+                    TtsApplyResult additionalTtsResult = runStep(job, STEP_GENERATE_AUDIO, () -> applyTtsForMissingAudio(job, apiKey, params, audioCards, context.template(), context.targetAudioFields(), context.updateScope()));
+                    ttsResult = mergeTtsResults(ttsResult, additionalTtsResult);
+                    if (ttsError == null && additionalTtsResult.error() != null) {
+                        ttsError = additionalTtsResult.error();
                     }
                 }
             }
@@ -1246,6 +1274,7 @@ public class QwenJobProcessor implements AiProviderProcessor {
 
         QwenChatResult response = null;
         MediaApplyResult mediaResult = new MediaApplyResult(0, 0, 0);
+        TtsApplyResult ttsResult = new TtsApplyResult(0, 0, null, null);
         if (!context.promptFields().isEmpty()) {
             String prompt = buildCardMissingFieldsPrompt(context.publicDeck(), context.template(), context.card(), context.promptFields());
             ObjectNode responseFormat = buildCardMissingFieldsResponseFormat(context.promptFields());
@@ -1262,15 +1291,30 @@ public class QwenJobProcessor implements AiProviderProcessor {
             JsonNode parsed = parseJsonResponse(response.outputText());
             ImageConfig imageConfig = resolveImageConfig(params, true);
             VideoConfig videoConfig = resolveVideoConfig(params, true);
-            mediaResult = runStep(job, STEP_APPLY_CHANGES, () -> applyCardMissingFieldUpdate(job, apiKey, accessToken, context.template(), context.card(), parsed, context.promptFields(), context.fieldTypes(), imageConfig, videoConfig, context.updateScope()));
+            AtomicApplyResult applyResult = runStep(job, STEP_APPLY_CHANGES, () -> applyCardMissingFieldUpdateAtomically(
+                    job,
+                    apiKey,
+                    accessToken,
+                    params,
+                    context.template(),
+                    context.card(),
+                    parsed,
+                    context.promptFields(),
+                    context.fieldTypes(),
+                    imageConfig,
+                    videoConfig,
+                    context.targetAudioFields(),
+                    context.updateScope()
+            ));
+            mediaResult = applyResult.mediaResult();
+            ttsResult = applyResult.ttsResult();
         }
 
-        TtsApplyResult ttsResult = new TtsApplyResult(0, 0, null, null);
-        String ttsError = null;
+        String ttsError = ttsResult.error();
         if (!context.targetAudioFields().isEmpty()) {
             if (!params.path("tts").path("enabled").asBoolean(false)) {
                 ttsError = "TTS settings are required for audio fields";
-            } else {
+            } else if (context.promptFields().isEmpty()) {
                 CoreUserCardResponse cardResponse = new CoreUserCardResponse(
                         context.card().userCardId(),
                         context.card().publicCardId(),
@@ -1550,6 +1594,10 @@ public class QwenJobProcessor implements AiProviderProcessor {
         List<CardDraft> limitedDrafts = uniqueDrafts.stream()
                 .limit(context.count())
                 .toList();
+        ImageConfig imageConfig = resolveImageConfig(params, true);
+        VideoConfig videoConfig = resolveVideoConfig(params, true);
+        MediaApplyResult mediaResult = runStep(job, STEP_GENERATE_MEDIA, () -> prepareDraftMedia(job, apiKey, context.template(), limitedDrafts, context.fieldTypes(), imageConfig, videoConfig));
+        TtsApplyResult ttsResult = runStep(job, STEP_GENERATE_AUDIO, () -> applyTtsToDrafts(job, apiKey, params, limitedDrafts, context.template()));
         List<CreateCardRequestPayload> limitedRequests = limitedDrafts.stream()
                 .map(draft -> new CreateCardRequestPayload(draft.content(), null, null, null, null, null))
                 .toList();
@@ -1560,10 +1608,6 @@ public class QwenJobProcessor implements AiProviderProcessor {
                 accessToken,
                 job.getJobId()
         ));
-        TtsApplyResult ttsResult = runStep(job, STEP_GENERATE_AUDIO, () -> applyTtsIfNeeded(job, apiKey, params, createdCards, context.template(), context.updateScope()));
-        ImageConfig imageConfig = resolveImageConfig(params, true);
-        VideoConfig videoConfig = resolveVideoConfig(params, true);
-        MediaApplyResult mediaResult = runStep(job, STEP_GENERATE_MEDIA, () -> applyMediaPromptsToNewCards(job, apiKey, accessToken, context.template(), createdCards, limitedDrafts, context.fieldTypes(), imageConfig, videoConfig, context.updateScope()));
 
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("mode", MODE_GENERATE_CARDS);
@@ -2420,6 +2464,67 @@ public class QwenJobProcessor implements AiProviderProcessor {
         return new MediaApplyResult(1, imagesGenerated, videosGenerated);
     }
 
+    private AtomicApplyResult applyCardMissingFieldUpdateAtomically(AiJobEntity job,
+                                                                    String apiKey,
+                                                                    String accessToken,
+                                                                    JsonNode params,
+                                                                    CoreTemplateResponse template,
+                                                                    CoreApiClient.CoreUserCardDetail card,
+                                                                    JsonNode response,
+                                                                    List<String> targetFields,
+                                                                    Map<String, String> fieldTypes,
+                                                                    ImageConfig imageConfig,
+                                                                    VideoConfig videoConfig,
+                                                                    List<String> targetAudioFields,
+                                                                    String updateScope) {
+        if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
+            return new AtomicApplyResult(new MediaApplyResult(0, 0, 0), new TtsApplyResult(0, 0, null, null));
+        }
+        if (response == null || !response.isObject()) {
+            return new AtomicApplyResult(new MediaApplyResult(0, 0, 0), new TtsApplyResult(0, 0, null, null));
+        }
+        ObjectNode updatedContent = loadLatestContent(job.getJobId(), job.getDeckId(), card.userCardId(), accessToken, card.effectiveContent().deepCopy());
+        ContentMutationResult contentResult = applyMissingFieldsToContent(
+                job,
+                apiKey,
+                updatedContent,
+                response,
+                fieldTypes,
+                new LinkedHashSet<>(targetFields),
+                imageConfig,
+                videoConfig,
+                card.userCardId().toString()
+        );
+        TtsContentApplyResult ttsResult = applyTtsToContent(
+                job,
+                apiKey,
+                params.path("tts"),
+                updatedContent,
+                template,
+                targetAudioFields,
+                card.userCardId(),
+                card.userCardId().toString()
+        );
+        if (contentResult.changed() || ttsResult.updated()) {
+            ankiSupport.applyIfPresent(updatedContent, template);
+            UpdateUserCardRequest updateRequest = new UpdateUserCardRequest(
+                    card.userCardId(),
+                    null,
+                    false,
+                    false,
+                    card.personalNote(),
+                    updatedContent
+            );
+            String cardScope = resolveCardUpdateScope(updateScope, card);
+            UUID operationId = resolveUpdateOperationId(cardScope, job);
+            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope, operationId);
+        }
+        return new AtomicApplyResult(
+                new MediaApplyResult(contentResult.changed() ? 1 : 0, contentResult.imagesGenerated(), contentResult.videosGenerated()),
+                new TtsApplyResult(ttsResult.generated(), ttsResult.updated() ? 1 : 0, ttsResult.model(), ttsResult.error())
+        );
+    }
+
     private List<MissingFieldUpdate> parseMissingFieldUpdates(JsonNode response, List<String> allowedFields) {
         JsonNode updatesNode = response.path("updates");
         if (!updatesNode.isArray()) {
@@ -2566,6 +2671,97 @@ public class QwenJobProcessor implements AiProviderProcessor {
         return new MediaApplyResult(updated, imagesGenerated, videosGenerated);
     }
 
+    private AtomicApplyResult applyMissingFieldUpdatesAtomically(AiJobEntity job,
+                                                                 String apiKey,
+                                                                 String accessToken,
+                                                                 JsonNode params,
+                                                                 CoreTemplateResponse template,
+                                                                 List<CoreUserCardResponse> cards,
+                                                                 List<MissingFieldUpdate> updates,
+                                                                 Map<String, String> fieldTypes,
+                                                                 Map<UUID, Set<String>> allowedFieldsByCard,
+                                                                 ImageConfig imageConfig,
+                                                                 VideoConfig videoConfig,
+                                                                 List<String> targetAudioFields,
+                                                                 String updateScope) {
+        if (updates.isEmpty()) {
+            return new AtomicApplyResult(new MediaApplyResult(0, 0, 0), new TtsApplyResult(0, 0, null, null));
+        }
+        Map<UUID, CoreUserCardResponse> cardMap = cards.stream()
+                .filter(card -> card != null && card.userCardId() != null)
+                .collect(java.util.stream.Collectors.toMap(CoreUserCardResponse::userCardId, card -> card, (a, b) -> a));
+        int updated = 0;
+        int imagesGenerated = 0;
+        int videosGenerated = 0;
+        int ttsGenerated = 0;
+        int ttsUpdatedCards = 0;
+        String ttsModel = null;
+        String ttsError = null;
+        for (MissingFieldUpdate update : updates) {
+            CoreUserCardResponse card = cardMap.get(update.userCardId());
+            if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
+                continue;
+            }
+            ObjectNode updatedContent = loadLatestContent(job.getJobId(), job.getDeckId(), card.userCardId(), accessToken, card.effectiveContent().deepCopy());
+            ContentMutationResult contentResult = applyMissingFieldsToContent(
+                    job,
+                    apiKey,
+                    updatedContent,
+                    update.fields(),
+                    fieldTypes,
+                    allowedFieldsByCard.get(update.userCardId()),
+                    imageConfig,
+                    videoConfig,
+                    update.userCardId().toString()
+            );
+            TtsContentApplyResult ttsResult = applyTtsToContent(
+                    job,
+                    apiKey,
+                    params.path("tts"),
+                    updatedContent,
+                    template,
+                    targetAudioFields,
+                    card.userCardId(),
+                    card.userCardId().toString()
+            );
+            if (ttsModel == null) {
+                ttsModel = ttsResult.model();
+            }
+            if (ttsError == null && ttsResult.error() != null) {
+                ttsError = ttsResult.error();
+            }
+            if (!contentResult.changed() && !ttsResult.updated()) {
+                imagesGenerated += contentResult.imagesGenerated();
+                videosGenerated += contentResult.videosGenerated();
+                ttsGenerated += ttsResult.generated();
+                continue;
+            }
+            ankiSupport.applyIfPresent(updatedContent, template);
+            UpdateUserCardRequest updateRequest = new UpdateUserCardRequest(
+                    card.userCardId(),
+                    null,
+                    false,
+                    false,
+                    null,
+                    updatedContent
+            );
+            String cardScope = resolveCardUpdateScope(updateScope, card);
+            UUID operationId = resolveUpdateOperationId(cardScope, job);
+            coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope, operationId);
+            updated += contentResult.changed() ? 1 : 0;
+            imagesGenerated += contentResult.imagesGenerated();
+            videosGenerated += contentResult.videosGenerated();
+            ttsGenerated += ttsResult.generated();
+            if (ttsResult.updated()) {
+                ttsUpdatedCards++;
+            }
+        }
+        return new AtomicApplyResult(
+                new MediaApplyResult(updated, imagesGenerated, videosGenerated),
+                new TtsApplyResult(ttsGenerated, ttsUpdatedCards, ttsModel, ttsError)
+        );
+    }
+
     private boolean isMissingText(JsonNode node) {
         if (node == null || node.isNull()) {
             return true;
@@ -2574,6 +2770,87 @@ public class QwenJobProcessor implements AiProviderProcessor {
             return node.asText().trim().isEmpty();
         }
         return false;
+    }
+
+    private ContentMutationResult applyMissingFieldsToContent(AiJobEntity job,
+                                                              String apiKey,
+                                                              ObjectNode updatedContent,
+                                                              JsonNode fieldsNode,
+                                                              Map<String, String> fieldTypes,
+                                                              Set<String> allowedFields,
+                                                              ImageConfig imageConfig,
+                                                              VideoConfig videoConfig,
+                                                              String contentToken) {
+        if (updatedContent == null || fieldsNode == null || !fieldsNode.isObject()) {
+            return new ContentMutationResult(false, 0, 0);
+        }
+        boolean changed = false;
+        int imagesGenerated = 0;
+        int videosGenerated = 0;
+        var it = fieldsNode.fields();
+        while (it.hasNext()) {
+            var entry = it.next();
+            String field = entry.getKey();
+            JsonNode value = entry.getValue();
+            if (allowedFields != null && !allowedFields.isEmpty() && !allowedFields.contains(field)) {
+                continue;
+            }
+            if (value == null || !value.isTextual()) {
+                continue;
+            }
+            String text = value.asText().trim();
+            if (text.isEmpty()) {
+                continue;
+            }
+            String fieldType = fieldTypes.get(field);
+            if (fieldType == null || isTextFieldType(fieldType)) {
+                if (isMissingText(updatedContent.get(field))) {
+                    updatedContent.put(field, text);
+                    changed = true;
+                }
+                continue;
+            }
+            if ("image".equals(fieldType)) {
+                if (!imageConfig.enabled() || !isMissingMedia(updatedContent.get(field))) {
+                    continue;
+                }
+                try {
+                    MediaUpload upload = generateImage(job, apiKey, imageConfig, text);
+                    updatedContent.set(field, buildMediaNode(upload.mediaId(), "image"));
+                    changed = true;
+                    imagesGenerated++;
+                } catch (Exception ex) {
+                    LOGGER.warn("Qwen image generation failed jobId={} content={} field={} model={} promptLength={}",
+                            job.getJobId(),
+                            contentToken,
+                            field,
+                            imageConfig.model(),
+                            text.length(),
+                            ex);
+                }
+                continue;
+            }
+            if ("video".equals(fieldType)) {
+                if (!videoConfig.enabled() || !isMissingMedia(updatedContent.get(field))) {
+                    continue;
+                }
+                try {
+                    MediaUpload upload = generateVideo(job, apiKey, videoConfig, text);
+                    updatedContent.set(field, buildMediaNode(upload.mediaId(), "video"));
+                    changed = true;
+                    videosGenerated++;
+                } catch (Exception ex) {
+                    LOGGER.warn("Qwen video generation failed jobId={} content={} field={} model={} promptLength={}",
+                            job.getJobId(),
+                            contentToken,
+                            field,
+                            videoConfig.model(),
+                            text.length(),
+                            ex);
+                }
+            }
+        }
+        return new ContentMutationResult(changed, imagesGenerated, videosGenerated);
     }
 
     private boolean isMissingAudio(JsonNode node) {
@@ -2586,10 +2863,19 @@ public class QwenJobProcessor implements AiProviderProcessor {
     private record CardDraft(ObjectNode content, Map<String, String> mediaPrompts) {
     }
 
+    private record ContentMutationResult(boolean changed, int imagesGenerated, int videosGenerated) {
+    }
+
     private record TtsApplyResult(int generated, int updatedCards, String model, String error) {
     }
 
     private record MediaApplyResult(int updatedCards, int imagesGenerated, int videosGenerated) {
+    }
+
+    private record TtsContentApplyResult(boolean updated, int generated, String model, String error) {
+    }
+
+    private record AtomicApplyResult(MediaApplyResult mediaResult, TtsApplyResult ttsResult) {
     }
 
     private record MissingCardSelection(List<CoreUserCardResponse> cards,
@@ -3103,6 +3389,159 @@ public class QwenJobProcessor implements AiProviderProcessor {
         return new TtsApplyResult(generated, updatedCards, model, ttsError);
     }
 
+    private TtsApplyResult applyTtsToDrafts(AiJobEntity job,
+                                            String apiKey,
+                                            JsonNode params,
+                                            List<CardDraft> drafts,
+                                            CoreTemplateResponse template) {
+        JsonNode ttsNode = params.path("tts");
+        if (!ttsNode.path("enabled").asBoolean(false)) {
+            return new TtsApplyResult(0, 0, null, null);
+        }
+        if (drafts == null || drafts.isEmpty()) {
+            return new TtsApplyResult(0, 0, null, null);
+        }
+        int generated = 0;
+        int updatedCards = 0;
+        String model = null;
+        String ttsError = null;
+        for (int i = 0; i < drafts.size(); i++) {
+            CardDraft draft = drafts.get(i);
+            if (draft == null || draft.content() == null) {
+                continue;
+            }
+            TtsContentApplyResult result = applyTtsToContent(
+                    job,
+                    apiKey,
+                    ttsNode,
+                    draft.content(),
+                    template,
+                    null,
+                    null,
+                    "draft-" + i
+            );
+            generated += result.generated();
+            if (result.updated()) {
+                ankiSupport.applyIfPresent(draft.content(), template);
+                updatedCards++;
+            }
+            if (model == null) {
+                model = result.model();
+            }
+            if (ttsError == null && result.error() != null) {
+                ttsError = result.error();
+            }
+        }
+        return new TtsApplyResult(generated, updatedCards, model, ttsError);
+    }
+
+    private TtsContentApplyResult applyTtsToContent(AiJobEntity job,
+                                                    String apiKey,
+                                                    JsonNode ttsNode,
+                                                    ObjectNode updatedContent,
+                                                    CoreTemplateResponse template,
+                                                    List<String> targetFields,
+                                                    UUID cardId,
+                                                    String fileToken) {
+        if (ttsNode == null || !ttsNode.path("enabled").asBoolean(false)) {
+            return new TtsContentApplyResult(false, 0, null, null);
+        }
+        if (updatedContent == null || template == null) {
+            return new TtsContentApplyResult(false, 0, null, null);
+        }
+        List<String> audioFields = resolveAudioFields(template);
+        if (audioFields.isEmpty()) {
+            return new TtsContentApplyResult(false, 0, null, null);
+        }
+        List<String> textFields = resolveTextFields(template);
+        if (textFields.isEmpty()) {
+            return new TtsContentApplyResult(false, 0, null, null);
+        }
+        List<TtsMapping> mappings = resolveTtsMappings(ttsNode, textFields, audioFields, template);
+        if (targetFields != null && !targetFields.isEmpty()) {
+            Set<String> allowedTargets = new LinkedHashSet<>(targetFields);
+            mappings = mappings.stream()
+                    .filter(mapping -> allowedTargets.contains(mapping.targetField()))
+                    .toList();
+        }
+        if (mappings.isEmpty()) {
+            return new TtsContentApplyResult(false, 0, null, null);
+        }
+
+        String model = textOrDefault(ttsNode.path("model"), props.defaultTtsModel());
+        String voice = textOrDefault(ttsNode.path("voice"), props.defaultVoice());
+        String format = textOrDefault(ttsNode.path("format"), props.defaultTtsFormat());
+        int maxChars = ttsNode.path("maxChars").isInt() ? ttsNode.path("maxChars").asInt() : 300;
+        if (maxChars < 1) {
+            maxChars = 1;
+        }
+
+        boolean updated = false;
+        int generated = 0;
+        String error = null;
+        for (TtsMapping mapping : mappings) {
+            if (!isMissingAudio(updatedContent.get(mapping.targetField()))) {
+                continue;
+            }
+            String text = extractTextValue(updatedContent, mapping.sourceField());
+            if (text == null || text.isBlank() || text.length() > maxChars) {
+                continue;
+            }
+            QwenSpeechResult audio;
+            try {
+                audio = createSpeechWithRetry(
+                        job,
+                        apiKey,
+                        new QwenSpeechRequest(model, text, voice, null),
+                        cardId,
+                        mapping.targetField()
+                );
+            } catch (Exception ex) {
+                if (error == null) {
+                    error = summarizeError(ex);
+                    LOGGER.warn("Qwen TTS failed jobId={} cardId={} field={} error={}",
+                            job.getJobId(),
+                            cardId,
+                            mapping.targetField(),
+                            error);
+                }
+                continue;
+            }
+            String contentType = audio.mimeType() == null || audio.mimeType().isBlank()
+                    ? resolveAudioContentType(format)
+                    : audio.mimeType();
+            String extension = resolveAudioExtensionFromMimeType(contentType, format);
+            String fileName = "ai-tts-" + job.getJobId() + "-" + fileToken + "-" + mapping.targetField() + "." + extension;
+            UUID mediaId = mediaApiClient.directUpload(
+                    job.getUserId(),
+                    "card_audio",
+                    contentType,
+                    fileName,
+                    audio.data().length,
+                    new ByteArrayInputStream(audio.data())
+            );
+            updatedContent.set(mapping.targetField(), buildMediaNode(mediaId, "audio"));
+            updated = true;
+            generated++;
+        }
+        return new TtsContentApplyResult(updated, generated, model, error);
+    }
+
+    private TtsApplyResult mergeTtsResults(TtsApplyResult left, TtsApplyResult right) {
+        if (left == null) {
+            return right == null ? new TtsApplyResult(0, 0, null, null) : right;
+        }
+        if (right == null) {
+            return left;
+        }
+        return new TtsApplyResult(
+                left.generated() + right.generated(),
+                left.updatedCards() + right.updatedCards(),
+                left.model() != null ? left.model() : right.model(),
+                left.error() != null ? left.error() : right.error()
+        );
+    }
+
     private List<String> resolveAudioFields(CoreTemplateResponse template) {
         if (template == null || template.fields() == null) {
             return List.of();
@@ -3383,6 +3822,99 @@ public class QwenJobProcessor implements AiProviderProcessor {
             updated++;
         }
         return new MediaApplyResult(updated, imagesGenerated, videosGenerated);
+    }
+
+    private MediaApplyResult prepareDraftMedia(AiJobEntity job,
+                                               String apiKey,
+                                               CoreTemplateResponse template,
+                                               List<CardDraft> drafts,
+                                               Map<String, String> fieldTypes,
+                                               ImageConfig imageConfig,
+                                               VideoConfig videoConfig) {
+        if (drafts == null || drafts.isEmpty()) {
+            return new MediaApplyResult(0, 0, 0);
+        }
+        int updated = 0;
+        int imagesGenerated = 0;
+        int videosGenerated = 0;
+        for (int i = 0; i < drafts.size(); i++) {
+            CardDraft draft = drafts.get(i);
+            if (draft == null || draft.content() == null) {
+                continue;
+            }
+            ContentMutationResult result = applyDraftMediaToContent(job, apiKey, draft.content(), draft.mediaPrompts(), fieldTypes, imageConfig, videoConfig, "draft-" + i);
+            if (result.changed()) {
+                ankiSupport.applyIfPresent(draft.content(), template);
+                updated++;
+            }
+            imagesGenerated += result.imagesGenerated();
+            videosGenerated += result.videosGenerated();
+        }
+        return new MediaApplyResult(updated, imagesGenerated, videosGenerated);
+    }
+
+    private ContentMutationResult applyDraftMediaToContent(AiJobEntity job,
+                                                           String apiKey,
+                                                           ObjectNode updatedContent,
+                                                           Map<String, String> mediaPrompts,
+                                                           Map<String, String> fieldTypes,
+                                                           ImageConfig imageConfig,
+                                                           VideoConfig videoConfig,
+                                                           String draftToken) {
+        if (updatedContent == null || mediaPrompts == null || mediaPrompts.isEmpty()) {
+            return new ContentMutationResult(false, 0, 0);
+        }
+        boolean changed = false;
+        int imagesGenerated = 0;
+        int videosGenerated = 0;
+        for (Map.Entry<String, String> entry : mediaPrompts.entrySet()) {
+            String field = entry.getKey();
+            String prompt = entry.getValue();
+            if (prompt == null || prompt.isBlank()) {
+                continue;
+            }
+            String fieldType = fieldTypes.get(field);
+            if ("image".equals(fieldType)) {
+                if (!imageConfig.enabled() || !isMissingMedia(updatedContent.get(field))) {
+                    continue;
+                }
+                try {
+                    MediaUpload upload = generateImage(job, apiKey, imageConfig, prompt.trim());
+                    updatedContent.set(field, buildMediaNode(upload.mediaId(), "image"));
+                    changed = true;
+                    imagesGenerated++;
+                } catch (Exception ex) {
+                    LOGGER.warn("Qwen image generation failed jobId={} draft={} field={} model={} promptLength={}",
+                            job.getJobId(),
+                            draftToken,
+                            field,
+                            imageConfig.model(),
+                            prompt.length(),
+                            ex);
+                }
+                continue;
+            }
+            if ("video".equals(fieldType)) {
+                if (!videoConfig.enabled() || !isMissingMedia(updatedContent.get(field))) {
+                    continue;
+                }
+                try {
+                    MediaUpload upload = generateVideo(job, apiKey, videoConfig, prompt.trim());
+                    updatedContent.set(field, buildMediaNode(upload.mediaId(), "video"));
+                    changed = true;
+                    videosGenerated++;
+                } catch (Exception ex) {
+                    LOGGER.warn("Qwen video generation failed jobId={} draft={} field={} model={} promptLength={}",
+                            job.getJobId(),
+                            draftToken,
+                            field,
+                            videoConfig.model(),
+                            prompt.length(),
+                            ex);
+                }
+            }
+        }
+        return new ContentMutationResult(changed, imagesGenerated, videosGenerated);
     }
 
     private ImageConfig resolveImageConfig(JsonNode params, boolean hasPromptFields) {
