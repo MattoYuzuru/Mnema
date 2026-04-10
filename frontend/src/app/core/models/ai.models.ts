@@ -75,6 +75,9 @@ export interface AiJobResponse {
     currentStep?: string | null;
     completedSteps?: number | null;
     totalSteps?: number | null;
+    estimatedSecondsRemaining?: number | null;
+    estimatedCompletionAt?: string | null;
+    queueAhead?: number | null;
 }
 
 export interface AiJobStepResponse {

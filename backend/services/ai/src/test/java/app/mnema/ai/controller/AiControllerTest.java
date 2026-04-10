@@ -141,7 +141,10 @@ class AiControllerTest {
                 "gpt-4o-mini",
                 null,
                 0,
-                0
+                0,
+                null,
+                null,
+                null
         );
     }
 }

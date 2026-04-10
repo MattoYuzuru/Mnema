@@ -24,6 +24,9 @@ public record AiJobResponse(
         String model,
         String currentStep,
         Integer completedSteps,
-        Integer totalSteps
+        Integer totalSteps,
+        Integer estimatedSecondsRemaining,
+        Instant estimatedCompletionAt,
+        Integer queueAhead
 ) {
 }

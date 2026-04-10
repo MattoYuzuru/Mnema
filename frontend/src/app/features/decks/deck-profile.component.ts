@@ -214,10 +214,16 @@ import { ToastService } from '../../core/services/toast.service';
               </div>
             </div>
 
-            <div *ngIf="entry.job.currentStep || entry.job.totalSteps" class="ai-job-step-row">
+            <div *ngIf="entry.job.currentStep || entry.job.totalSteps || hasAiEta(entry.job)" class="ai-job-step-row">
               <span *ngIf="entry.job.currentStep" class="ai-job-step-pill">{{ formatAiStepName(entry.job.currentStep) }}</span>
               <span *ngIf="entry.job.totalSteps" class="ai-job-step-count">
                 {{ entry.job.completedSteps || 0 }}/{{ entry.job.totalSteps }}
+              </span>
+              <span *ngIf="formatAiEtaLabel(entry.job)" class="ai-job-eta-pill">
+                {{ formatAiEtaLabel(entry.job) }}
+              </span>
+              <span *ngIf="formatAiQueueHint(entry.job)" class="ai-job-queue-hint">
+                {{ formatAiQueueHint(entry.job) }}
               </span>
             </div>
 
@@ -910,13 +916,24 @@ import { ToastService } from '../../core/services/toast.service';
 
       .ai-job-step-pill,
       .ai-job-step-count,
-      .ai-job-stage-chip {
+      .ai-job-stage-chip,
+      .ai-job-eta-pill {
         padding: 0.18rem 0.6rem;
         border-radius: 999px;
         border: 1px solid var(--glass-border);
         background: rgba(255, 255, 255, 0.45);
         color: var(--color-text-secondary);
         font-size: 0.78rem;
+      }
+
+      .ai-job-eta-pill {
+        background: rgba(14, 116, 144, 0.08);
+        color: #0f766e;
+      }
+
+      .ai-job-queue-hint {
+        font-size: 0.78rem;
+        color: var(--color-text-muted);
       }
 
       .ai-job-result {
@@ -1916,6 +1933,57 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             .join(' ');
     }
 
+    hasAiEta(job?: AiJobResponse | null): boolean {
+        return !!job && job.estimatedSecondsRemaining !== null && job.estimatedSecondsRemaining !== undefined && job.estimatedSecondsRemaining > 0;
+    }
+
+    formatAiEtaLabel(job?: AiJobResponse | null): string {
+        if (!this.hasAiEta(job)) {
+            return '';
+        }
+        const prefix = this.i18n.translate('deckProfile.aiJobsEtaAbout');
+        const suffix = this.i18n.translate('deckProfile.aiJobsEtaRemaining');
+        return `${prefix} ${this.formatAiEta(job!.estimatedSecondsRemaining || 0)} ${suffix}`.trim();
+    }
+
+    formatAiQueueHint(job?: AiJobResponse | null): string {
+        if (!job || job.status !== 'queued') {
+            return '';
+        }
+        const ahead = job.queueAhead ?? 0;
+        if (ahead <= 0) {
+            return '';
+        }
+        if (this.i18n.currentLanguage === 'ru') {
+            const label = this.resolveRuCountWord(ahead, 'задание', 'задания', 'заданий');
+            return `Перед ним ${ahead} ${label}`;
+        }
+        return ahead === 1 ? '1 earlier job ahead' : `${ahead} earlier jobs ahead`;
+    }
+
+    formatAiEta(totalSeconds: number): string {
+        const seconds = Math.max(0, Math.round(totalSeconds));
+        if (seconds < 60) {
+            return this.i18n.currentLanguage === 'ru' ? `${seconds} сек` : `${seconds} sec`;
+        }
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const remainingSeconds = seconds % 60;
+        if (hours > 0) {
+            return this.i18n.currentLanguage === 'ru'
+                ? `${hours} ч ${minutes} мин`
+                : `${hours} hr ${minutes} min`;
+        }
+        if (minutes >= 5 || remainingSeconds === 0) {
+            return this.i18n.currentLanguage === 'ru'
+                ? `${minutes} мин`
+                : `${minutes} min`;
+        }
+        return this.i18n.currentLanguage === 'ru'
+            ? `${minutes} мин ${remainingSeconds} сек`
+            : `${minutes} min ${remainingSeconds} sec`;
+    }
+
     formatJson(value: unknown): string {
         try {
             return JSON.stringify(value ?? {}, null, 2);
@@ -2125,6 +2193,21 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     private isRetryableAiItem(item: AiResultItem): boolean {
         const status = (item?.status || '').trim().toLowerCase();
         return status === 'failed' || status === 'partial_success' || status === 'skipped';
+    }
+
+    private resolveRuCountWord(count: number, one: string, few: string, many: string): string {
+        const mod100 = count % 100;
+        const mod10 = count % 10;
+        if (mod100 >= 11 && mod100 <= 14) {
+            return many;
+        }
+        if (mod10 === 1) {
+            return one;
+        }
+        if (mod10 >= 2 && mod10 <= 4) {
+            return few;
+        }
+        return many;
     }
 
     learn(): void {

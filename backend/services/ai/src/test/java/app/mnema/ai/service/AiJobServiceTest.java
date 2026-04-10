@@ -253,11 +253,18 @@ class AiJobServiceTest extends PostgresIntegrationTest {
 
         executionService.resetPlan(created.jobId(), java.util.List.of("prepare_context", "generate_content"));
         executionService.markProcessing(created.jobId(), "prepare_context");
+        AiJobEntity processingJob = jobRepository.findByJobIdAndUserId(created.jobId(), userId).orElseThrow();
+        processingJob.setStatus(AiJobStatus.processing);
+        processingJob.setStartedAt(Instant.now());
+        jobRepository.save(processingJob);
 
         AiJobResponse processing = jobService.getJob(jwtFor(userId), created.jobId());
         assertThat(processing.currentStep()).isEqualTo("prepare_context");
         assertThat(processing.completedSteps()).isEqualTo(0);
         assertThat(processing.totalSteps()).isEqualTo(2);
+        assertThat(processing.estimatedSecondsRemaining()).isNotNull().isPositive();
+        assertThat(processing.estimatedCompletionAt()).isNotNull().isAfter(Instant.now().minusSeconds(1));
+        assertThat(processing.queueAhead()).isNull();
 
         executionService.markCompleted(created.jobId(), "prepare_context");
 
@@ -347,6 +354,62 @@ class AiJobServiceTest extends PostgresIntegrationTest {
                 () -> jobService.retryFailedJob(jwtFor(userId), "token", created.jobId()));
 
         assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+    }
+
+    @Test
+    void queuedJobsExposeQueueAheadAndEta() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        seedQuota(userId, 5000);
+
+        AiJobResponse first = jobService.createJob(jwtFor(userId), "token", new CreateAiJobRequest(
+                UUID.randomUUID(),
+                deckId,
+                AiJobType.enrich,
+                objectMapper.createObjectNode().put("mode", "generate_cards").put("count", 4).put("provider", "openai"),
+                null,
+                10,
+                null
+        ));
+        AiJobResponse second = jobService.createJob(jwtFor(userId), "token", new CreateAiJobRequest(
+                UUID.randomUUID(),
+                deckId,
+                AiJobType.enrich,
+                objectMapper.createObjectNode().put("mode", "generate_cards").put("count", 4).put("provider", "openai"),
+                null,
+                10,
+                null
+        ));
+        AiJobResponse third = jobService.createJob(jwtFor(userId), "token", new CreateAiJobRequest(
+                UUID.randomUUID(),
+                deckId,
+                AiJobType.enrich,
+                objectMapper.createObjectNode().put("mode", "generate_cards").put("count", 4).put("provider", "openai"),
+                null,
+                10,
+                null
+        ));
+
+        AiJobEntity firstJob = jobRepository.findByJobIdAndUserId(first.jobId(), userId).orElseThrow();
+        firstJob.setStatus(AiJobStatus.processing);
+        firstJob.setCreatedAt(Instant.now().minusSeconds(60));
+        jobRepository.save(firstJob);
+
+        AiJobEntity secondJob = jobRepository.findByJobIdAndUserId(second.jobId(), userId).orElseThrow();
+        secondJob.setStatus(AiJobStatus.processing);
+        secondJob.setCreatedAt(Instant.now().minusSeconds(30));
+        jobRepository.save(secondJob);
+
+        AiJobEntity thirdJob = jobRepository.findByJobIdAndUserId(third.jobId(), userId).orElseThrow();
+        thirdJob.setStatus(AiJobStatus.queued);
+        thirdJob.setCreatedAt(Instant.now());
+        jobRepository.save(thirdJob);
+
+        AiJobResponse queued = jobService.getJob(jwtFor(userId), third.jobId());
+
+        assertThat(queued.queueAhead()).isEqualTo(2);
+        assertThat(queued.estimatedSecondsRemaining()).isNotNull().isPositive();
+        assertThat(queued.estimatedCompletionAt()).isNotNull().isAfter(Instant.now().minusSeconds(1));
     }
 
     private void seedQuota(UUID userId, int tokensLimit) {

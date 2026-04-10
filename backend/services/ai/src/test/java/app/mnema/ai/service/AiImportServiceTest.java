@@ -52,7 +52,8 @@ class AiImportServiceTest {
         ObjectNode stt = objectMapper.createObjectNode().put("enabled", true);
         AiJobResponse response = new AiJobResponse(
                 UUID.randomUUID(), requestId, deckId, AiJobType.generic, AiJobStatus.queued, 0,
-                Instant.now(), Instant.now(), null, null, null, providerCredentialId, "openai", null, "gpt", null, 0, 0
+                Instant.now(), Instant.now(), null, null, null, providerCredentialId, "openai", null, "gpt", null, 0, 0,
+                null, null, null
         );
         when(jobService.createJob(eq(jwt), eq("access-token"), org.mockito.ArgumentMatchers.any(CreateAiJobRequest.class)))
                 .thenReturn(response);
@@ -98,7 +99,8 @@ class AiImportServiceTest {
         ObjectNode video = objectMapper.createObjectNode().put("enabled", false);
         AiJobResponse response = new AiJobResponse(
                 UUID.randomUUID(), requestId, deckId, AiJobType.generic, AiJobStatus.queued, 0,
-                Instant.now(), Instant.now(), null, null, null, null, "gemini", null, "model", null, 0, 0
+                Instant.now(), Instant.now(), null, null, null, null, "gemini", null, "model", null, 0, 0,
+                null, null, null
         );
         when(jobService.createJob(eq(jwt), eq("access-token"), org.mockito.ArgumentMatchers.any(CreateAiJobRequest.class)))
                 .thenReturn(response);

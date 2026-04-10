@@ -41,19 +41,22 @@ public class AiJobService {
     private final AiProviderCredentialRepository credentialRepository;
     private final ObjectMapper objectMapper;
     private final AiJobExecutionService executionService;
+    private final AiJobEtaEstimator etaEstimator;
 
     public AiJobService(AiJobRepository jobRepository,
                         CurrentUserProvider currentUserProvider,
                         AiQuotaService quotaService,
                         AiProviderCredentialRepository credentialRepository,
                         ObjectMapper objectMapper,
-                        AiJobExecutionService executionService) {
+                        AiJobExecutionService executionService,
+                        AiJobEtaEstimator etaEstimator) {
         this.jobRepository = jobRepository;
         this.currentUserProvider = currentUserProvider;
         this.quotaService = quotaService;
         this.credentialRepository = credentialRepository;
         this.objectMapper = objectMapper;
         this.executionService = executionService;
+        this.etaEstimator = etaEstimator;
     }
 
     @Transactional
@@ -356,6 +359,7 @@ public class AiJobService {
     private AiJobResponse toResponse(AiJobEntity job) {
         ProviderInfo providerInfo = resolveProviderInfo(job);
         AiJobExecutionService.ExecutionSnapshot snapshot = executionService.snapshot(job.getJobId());
+        AiJobEtaEstimator.EtaEstimate eta = etaEstimator.estimate(job, snapshot, providerInfo.provider());
         return new AiJobResponse(
                 job.getJobId(),
                 job.getRequestId(),
@@ -374,7 +378,10 @@ public class AiJobService {
                 providerInfo.model(),
                 snapshot.currentStep(),
                 snapshot.completedSteps(),
-                snapshot.totalSteps()
+                snapshot.totalSteps(),
+                eta.estimatedSecondsRemaining(),
+                eta.estimatedCompletionAt(),
+                eta.queueAhead()
         );
     }
 
