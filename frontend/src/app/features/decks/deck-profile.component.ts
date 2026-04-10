@@ -16,7 +16,7 @@ import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { ReviewDeckAlgorithmResponse } from '../../core/models/review.models';
 import { ImportJobResponse, ImportSourceType } from '../../core/models/import.models';
-import { AiJobResponse, AiJobStatus, AiJobType } from '../../core/models/ai.models';
+import { AiJobResponse, AiJobResultResponse, AiJobStatus, AiJobStepResponse, AiJobType } from '../../core/models/ai.models';
 import { DECK_LANGUAGE_OPTIONS } from '../../core/models/language.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { ButtonComponent } from '../../shared/components/button.component';
@@ -173,6 +173,7 @@ import { ToastService } from '../../core/services/toast.service';
                 <div class="ai-job-meta">
                   <span class="ai-job-status-pill"
                         [class.completed]="entry.job.status === 'completed'"
+                        [class.partial]="entry.job.status === 'partial_success'"
                         [class.failed]="entry.job.status === 'failed'"
                         [class.canceled]="entry.job.status === 'canceled'">
                     {{ formatAiJobStatus(entry.job.status) }}
@@ -182,15 +183,28 @@ import { ToastService } from '../../core/services/toast.service';
                   <span *ngIf="entry.job.model" class="ai-job-model">{{ entry.job.model }}</span>
                 </div>
               </div>
-              <app-button
-                variant="ghost"
-                size="sm"
-                tone="danger"
-                [disabled]="!canCancelAiJob(entry.job.status) || cancelingAiJobs.has(entry.job.jobId)"
-                (click)="cancelAiJob(entry.job.jobId)"
-              >
-                {{ cancelingAiJobs.has(entry.job.jobId) ? ('deckProfile.aiJobsCanceling' | translate) : ('deckProfile.aiJobsCancel' | translate) }}
-              </app-button>
+              <div class="ai-job-actions">
+                <app-button
+                  *ngIf="canRetryAiJob(entry)"
+                  variant="ghost"
+                  size="sm"
+                  [disabled]="retryingAiJobs.has(entry.job.jobId)"
+                  (click)="retryFailedAiJob(entry)"
+                >
+                  {{ retryingAiJobs.has(entry.job.jobId)
+                    ? ('deckProfile.aiJobsRetrying' | translate)
+                    : ('deckProfile.aiJobsRetryFailed' | translate:{ count: countRetryableAiItems(entry.resultSummary) }) }}
+                </app-button>
+                <app-button
+                  variant="ghost"
+                  size="sm"
+                  tone="danger"
+                  [disabled]="!canCancelAiJob(entry.job.status) || cancelingAiJobs.has(entry.job.jobId)"
+                  (click)="cancelAiJob(entry.job.jobId)"
+                >
+                  {{ cancelingAiJobs.has(entry.job.jobId) ? ('deckProfile.aiJobsCanceling' | translate) : ('deckProfile.aiJobsCancel' | translate) }}
+                </app-button>
+              </div>
             </div>
 
             <div class="ai-job-status-row">
@@ -198,6 +212,24 @@ import { ToastService } from '../../core/services/toast.service';
               <div class="ai-job-progress" role="progressbar" [attr.aria-valuenow]="entry.job.progress" aria-valuemin="0" aria-valuemax="100">
                 <div class="ai-job-progress-bar" [style.width.%]="entry.job.progress"></div>
               </div>
+            </div>
+
+            <div *ngIf="entry.job.currentStep || entry.job.totalSteps || hasAiEta(entry.job)" class="ai-job-step-row">
+              <span *ngIf="entry.job.currentStep" class="ai-job-step-pill">{{ formatAiStepName(entry.job.currentStep) }}</span>
+              <span *ngIf="entry.job.totalSteps" class="ai-job-step-count">
+                {{ entry.job.completedSteps || 0 }}/{{ entry.job.totalSteps }}
+              </span>
+              <span *ngIf="formatAiEtaLabel(entry.job)" class="ai-job-eta-pill">
+                {{ formatAiEtaLabel(entry.job) }}
+              </span>
+              <span *ngIf="formatAiQueueHint(entry.job)" class="ai-job-queue-hint">
+                {{ formatAiQueueHint(entry.job) }}
+              </span>
+            </div>
+
+            <div *ngIf="formatAiUsageLabel(entry.job) || formatAiCostLabel(entry.job)" class="ai-job-cost-row">
+              <span *ngIf="formatAiUsageLabel(entry.job)" class="ai-job-cost-pill">{{ formatAiUsageLabel(entry.job) }}</span>
+              <span *ngIf="formatAiCostLabel(entry.job)" class="ai-job-cost-pill">{{ formatAiCostLabel(entry.job) }}</span>
             </div>
 
             <div *ngIf="entry.job.status === 'failed'" class="ai-job-error" role="alert">
@@ -268,9 +300,60 @@ import { ToastService } from '../../core/services/toast.service';
                     </div>
                   </div>
                 </div>
-                <pre *ngIf="!isAuditResult(result)" class="ai-job-result-json">{{ formatJson(result) }}</pre>
+                <div *ngIf="!isAuditResult(result) && hasStructuredAiResult(result)" class="ai-job-summary">
+                  <div class="ai-job-summary-grid">
+                    <div *ngFor="let metric of summarizeAiResult(result)" class="ai-job-metric">
+                      <span>{{ metric.label }}</span>
+                      <strong>{{ metric.value }}</strong>
+                    </div>
+                  </div>
+
+                  <div *ngIf="getAiResultItems(result).length > 0" class="ai-job-items">
+                    <div class="ai-job-items-header">
+                      <div class="ai-job-items-title">Cards</div>
+                      <div class="ai-job-items-count">{{ getAiResultItems(result).length }}</div>
+                    </div>
+                    <div class="ai-job-items-list">
+                      <div *ngFor="let item of getAiResultItems(result)" class="ai-job-item">
+                        <div class="ai-job-item-main">
+                          <div class="ai-job-item-title">{{ item.preview || item.cardId }}</div>
+                          <div class="ai-job-item-meta">
+                            <span class="ai-job-status-pill"
+                                  [class.completed]="item.status === 'completed'"
+                                  [class.partial]="item.status === 'partial_success'"
+                                  [class.failed]="item.status === 'failed'"
+                                  [class.canceled]="item.status === 'skipped'">
+                              {{ formatAiJobStatus(item.status) }}
+                            </span>
+                            <span *ngIf="item.cardId" class="ai-job-key">{{ shortId(item.cardId) }}</span>
+                          </div>
+                        </div>
+                        <div *ngIf="item.completedStages?.length" class="ai-job-stage-list">
+                          <span *ngFor="let stage of item.completedStages" class="ai-job-stage-chip">
+                            {{ formatAiStepName(stage) }}
+                          </span>
+                        </div>
+                        <div *ngIf="item.errors?.length" class="ai-job-item-errors">
+                          <div *ngFor="let error of item.errors">{{ error }}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div *ngIf="entry.resultSteps.length > 0" class="ai-job-steps">
+                    <div class="ai-job-items-header">
+                      <div class="ai-job-items-title">Execution steps</div>
+                    </div>
+                    <div class="ai-job-stage-list">
+                      <span *ngFor="let step of entry.resultSteps" class="ai-job-stage-chip">
+                        {{ formatAiStepName(step.stepName) }} · {{ formatAiJobStatus(step.status) }}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <pre *ngIf="!isAuditResult(result) && !hasStructuredAiResult(result)" class="ai-job-result-json">{{ formatJson(result) }}</pre>
               </ng-container>
-              <div *ngIf="!entry.resultLoading && !entry.resultSummary && entry.job.status !== 'completed'" class="empty-state">
+              <div *ngIf="!entry.resultLoading && !entry.resultSummary && !isTerminalAiJob(entry.job.status)" class="empty-state">
                 {{ 'deckProfile.aiJobsResultPending' | translate }}
               </div>
             </div>
@@ -740,6 +823,13 @@ import { ToastService } from '../../core/services/toast.service';
         align-items: flex-start;
       }
 
+      .ai-job-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        justify-content: flex-end;
+      }
+
       .ai-job-title {
         font-weight: 600;
       }
@@ -776,6 +866,11 @@ import { ToastService } from '../../core/services/toast.service';
       .ai-job-status-pill.completed {
         background: rgba(34, 197, 94, 0.12);
         color: #15803d;
+      }
+
+      .ai-job-status-pill.partial {
+        background: rgba(245, 158, 11, 0.16);
+        color: #b45309;
       }
 
       .ai-job-status-pill.failed {
@@ -816,6 +911,49 @@ import { ToastService } from '../../core/services/toast.service';
         font-size: 0.85rem;
       }
 
+      .ai-job-step-row {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-sm);
+        flex-wrap: wrap;
+      }
+
+      .ai-job-cost-row {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-sm);
+        flex-wrap: wrap;
+      }
+
+      .ai-job-step-pill,
+      .ai-job-step-count,
+      .ai-job-stage-chip,
+      .ai-job-eta-pill,
+      .ai-job-cost-pill {
+        padding: 0.18rem 0.6rem;
+        border-radius: 999px;
+        border: 1px solid var(--glass-border);
+        background: rgba(255, 255, 255, 0.45);
+        color: var(--color-text-secondary);
+        font-size: 0.78rem;
+      }
+
+      .ai-job-eta-pill {
+        background: rgba(14, 116, 144, 0.08);
+        color: #0f766e;
+      }
+
+      .ai-job-queue-hint {
+        font-size: 0.78rem;
+        color: var(--color-text-muted);
+      }
+
+      .ai-job-cost-pill {
+        background: rgba(15, 23, 42, 0.04);
+      }
+
       .ai-job-result {
         margin-top: var(--spacing-md);
       }
@@ -831,6 +969,99 @@ import { ToastService } from '../../core/services/toast.service';
         max-width: 100%;
         white-space: pre-wrap;
         word-break: break-word;
+      }
+
+      .ai-job-summary {
+        display: grid;
+        gap: var(--spacing-md);
+      }
+
+      .ai-job-summary-grid {
+        display: grid;
+        gap: var(--spacing-sm);
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      }
+
+      .ai-job-metric {
+        display: grid;
+        gap: 0.2rem;
+        padding: var(--spacing-sm);
+        border-radius: var(--border-radius-md);
+        border: 1px solid var(--glass-border);
+        background: rgba(255, 255, 255, 0.48);
+        font-size: 0.82rem;
+        color: var(--color-text-secondary);
+      }
+
+      .ai-job-metric strong {
+        color: var(--color-text-primary);
+        font-size: 1rem;
+      }
+
+      .ai-job-items,
+      .ai-job-steps {
+        display: grid;
+        gap: var(--spacing-sm);
+      }
+
+      .ai-job-items-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
+      .ai-job-items-title {
+        font-weight: 600;
+      }
+
+      .ai-job-items-count {
+        color: var(--color-text-muted);
+        font-size: 0.82rem;
+      }
+
+      .ai-job-items-list {
+        display: grid;
+        gap: var(--spacing-sm);
+        max-height: 280px;
+        overflow: auto;
+        padding-right: var(--spacing-xs);
+      }
+
+      .ai-job-item {
+        display: grid;
+        gap: var(--spacing-xs);
+        padding: var(--spacing-sm);
+        border-radius: var(--border-radius-md);
+        border: 1px solid var(--glass-border);
+        background: rgba(255, 255, 255, 0.56);
+      }
+
+      .ai-job-item-main {
+        display: flex;
+        justify-content: space-between;
+        gap: var(--spacing-sm);
+        align-items: flex-start;
+      }
+
+      .ai-job-item-title {
+        font-weight: 500;
+        color: var(--color-text-primary);
+        overflow-wrap: anywhere;
+      }
+
+      .ai-job-item-meta,
+      .ai-job-stage-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+      }
+
+      .ai-job-item-errors {
+        display: grid;
+        gap: 0.2rem;
+        color: #b91c1c;
+        font-size: 0.8rem;
       }
 
       .ai-audit-report {
@@ -1372,6 +1603,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     aiJobsLoading = false;
     aiJobsError = '';
     cancelingAiJobs = new Set<string>();
+    retryingAiJobs = new Set<string>();
     editForm!: FormGroup;
     tagError = '';
     tagInput = '';
@@ -1432,6 +1664,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
 
     private exportPollHandle: ReturnType<typeof setInterval> | null = null;
     private aiJobPollers = new Map<string, number>();
+    private notifiedAiJobs = new Set<string>();
 
     constructor(
         private route: ActivatedRoute,
@@ -1590,6 +1823,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             return;
         }
         this.upsertAiJob(job);
+        this.toast.info('deckProfile.aiJobQueued');
         if (job.status === 'queued' || job.status === 'processing') {
             this.startAiPolling(job.jobId);
         }
@@ -1602,7 +1836,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         if (this.aiJobs.length === 0) {
             return [];
         }
-        const completed = this.aiJobs.filter(entry => entry.job.status === 'completed');
+        const completed = this.aiJobs.filter(entry => entry.job.status === 'completed' || entry.job.status === 'partial_success');
         const target = (completed.length > 0 ? completed : this.aiJobs).reduce((latest, current) => {
             return this.resolveJobTimestamp(current.job) > this.resolveJobTimestamp(latest.job) ? current : latest;
         });
@@ -1626,6 +1860,27 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             },
             error: () => {
                 this.cancelingAiJobs.delete(jobId);
+            }
+        });
+    }
+
+    retryFailedAiJob(entry: AiJobEntry): void {
+        if (!entry?.job?.jobId || this.retryingAiJobs.has(entry.job.jobId) || !this.canRetryAiJob(entry)) {
+            return;
+        }
+        this.retryingAiJobs.add(entry.job.jobId);
+        this.aiApi.retryFailedJob(entry.job.jobId).subscribe({
+            next: job => {
+                this.retryingAiJobs.delete(entry.job.jobId);
+                this.upsertAiJob(job);
+                this.toast.info('deckProfile.aiJobRetryQueued');
+                if (job.status === 'queued' || job.status === 'processing') {
+                    this.startAiPolling(job.jobId);
+                }
+            },
+            error: () => {
+                this.retryingAiJobs.delete(entry.job.jobId);
+                this.toast.error('deckProfile.aiJobRetryFailed');
             }
         });
     }
@@ -1667,14 +1922,137 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         return status === 'queued' || status === 'processing';
     }
 
-    formatAiJobStatus(status: string): string {
+    isTerminalAiJob(status: AiJobStatus): boolean {
+        return status === 'completed' || status === 'partial_success' || status === 'failed' || status === 'canceled';
+    }
+
+    formatAiJobStatus(status?: string | null): string {
         if (!status) {
             return '';
         }
-        const normalized = status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
-        const key = `deckProfile.aiJobsStatus${normalized}`;
+        const parts = status
+            .split('_')
+            .map(part => part ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase() : '')
+            .filter(Boolean);
+        const normalized = parts.join(' ');
+        const key = `deckProfile.aiJobsStatus${parts.join('')}`;
         const translated = this.i18n.translate(key);
         return translated === key ? normalized : translated;
+    }
+
+    formatAiStepName(stepName?: string | null): string {
+        const raw = (stepName || '').trim();
+        if (!raw) {
+            return '';
+        }
+        return raw
+            .split('_')
+            .map(part => part ? part.charAt(0).toUpperCase() + part.slice(1).toLowerCase() : '')
+            .join(' ');
+    }
+
+    hasAiEta(job?: AiJobResponse | null): boolean {
+        return !!job && job.estimatedSecondsRemaining !== null && job.estimatedSecondsRemaining !== undefined && job.estimatedSecondsRemaining > 0;
+    }
+
+    formatAiEtaLabel(job?: AiJobResponse | null): string {
+        if (!this.hasAiEta(job)) {
+            return '';
+        }
+        const prefix = this.i18n.translate('deckProfile.aiJobsEtaAbout');
+        const suffix = this.i18n.translate('deckProfile.aiJobsEtaRemaining');
+        return `${prefix} ${this.formatAiEta(job!.estimatedSecondsRemaining || 0)} ${suffix}`.trim();
+    }
+
+    formatAiQueueHint(job?: AiJobResponse | null): string {
+        if (!job || job.status !== 'queued') {
+            return '';
+        }
+        const ahead = job.queueAhead ?? 0;
+        if (ahead <= 0) {
+            return '';
+        }
+        if (this.i18n.currentLanguage === 'ru') {
+            const label = this.resolveRuCountWord(ahead, 'задание', 'задания', 'заданий');
+            return `Перед ним ${ahead} ${label}`;
+        }
+        return ahead === 1 ? '1 earlier job ahead' : `${ahead} earlier jobs ahead`;
+    }
+
+    formatAiEta(totalSeconds: number): string {
+        const seconds = Math.max(0, Math.round(totalSeconds));
+        if (seconds < 60) {
+            return this.i18n.currentLanguage === 'ru' ? `${seconds} сек` : `${seconds} sec`;
+        }
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const remainingSeconds = seconds % 60;
+        if (hours > 0) {
+            return this.i18n.currentLanguage === 'ru'
+                ? `${hours} ч ${minutes} мин`
+                : `${hours} hr ${minutes} min`;
+        }
+        if (minutes >= 5 || remainingSeconds === 0) {
+            return this.i18n.currentLanguage === 'ru'
+                ? `${minutes} мин`
+                : `${minutes} min`;
+        }
+        return this.i18n.currentLanguage === 'ru'
+            ? `${minutes} мин ${remainingSeconds} сек`
+            : `${minutes} min ${remainingSeconds} sec`;
+    }
+
+    formatAiUsageLabel(job?: AiJobResponse | null): string {
+        const cost = job?.cost;
+        if (!cost) {
+            return '';
+        }
+        const hasActual = (cost.actualInputTokens || 0) > 0 || (cost.actualOutputTokens || 0) > 0;
+        const hasEstimate = (cost.estimatedInputTokens || 0) > 0 || (cost.estimatedOutputTokens || 0) > 0;
+        if (!hasActual && !hasEstimate) {
+            return '';
+        }
+        const input = this.formatCompactNumber(hasActual ? cost.actualInputTokens || 0 : cost.estimatedInputTokens || 0);
+        const output = this.formatCompactNumber(hasActual ? cost.actualOutputTokens || 0 : cost.estimatedOutputTokens || 0);
+        const label = hasActual
+            ? this.i18n.translate('deckProfile.aiJobsTokensActual')
+            : this.i18n.translate('deckProfile.aiJobsTokensEstimated');
+        return `${label}: ${input} in / ${output} out`;
+    }
+
+    formatAiCostLabel(job?: AiJobResponse | null): string {
+        const cost = job?.cost;
+        if (!cost) {
+            return '';
+        }
+        const actualValue = cost.actualCost;
+        const estimatedValue = cost.estimatedCost;
+        const hasActual = actualValue !== null && actualValue !== undefined && actualValue > 0;
+        const hasEstimate = estimatedValue !== null && estimatedValue !== undefined && estimatedValue > 0;
+        if (!hasActual && !hasEstimate) {
+            return '';
+        }
+        const value = hasActual ? actualValue! : estimatedValue!;
+        const currency = (hasActual ? cost.actualCostCurrency : cost.estimatedCostCurrency) || '';
+        const label = hasActual
+            ? this.i18n.translate('deckProfile.aiJobsCostActual')
+            : this.i18n.translate('deckProfile.aiJobsCostEstimated');
+        return `${label}: ${this.formatAiCurrency(value, currency)}`;
+    }
+
+    formatAiCurrency(value: number, currency?: string | null): string {
+        const normalized = (currency || '').trim().toUpperCase();
+        const locale = this.i18n.currentLanguage === 'ru' ? 'ru-RU' : 'en-US';
+        if (normalized === 'USD' || normalized === 'CNY') {
+            return new Intl.NumberFormat(locale, {
+                style: 'currency',
+                currency: normalized,
+                minimumFractionDigits: value < 0.1 ? 4 : 2,
+                maximumFractionDigits: value < 0.1 ? 4 : 2
+            }).format(value);
+        }
+        const rounded = value < 0.1 ? value.toFixed(4) : value.toFixed(2);
+        return normalized ? `${rounded} ${normalized}` : rounded;
     }
 
     formatJson(value: unknown): string {
@@ -1689,6 +2067,66 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         return !!result && typeof result === 'object' && (result as any).mode === 'audit';
     }
 
+    hasStructuredAiResult(result: unknown): boolean {
+        if (!result || typeof result !== 'object') {
+            return false;
+        }
+        const candidate = result as any;
+        return Array.isArray(candidate.items) || candidate.mode === 'generate_cards' || candidate.mode === 'missing_fields' || candidate.mode === 'missing_audio' || candidate.mode === 'card_missing_fields' || candidate.mode === 'card_missing_audio';
+    }
+
+    getAiResultItems(result: unknown): AiResultItem[] {
+        if (!result || typeof result !== 'object') {
+            return [];
+        }
+        const items = (result as any).items;
+        if (!Array.isArray(items)) {
+            return [];
+        }
+        return items.filter(item => item && typeof item === 'object');
+    }
+
+    countRetryableAiItems(result: unknown): number {
+        return this.getAiResultItems(result).filter(item => this.isRetryableAiItem(item)).length;
+    }
+
+    canRetryAiJob(entry: AiJobEntry): boolean {
+        if (!entry || entry.resultLoading || this.retryingAiJobs.has(entry.job.jobId)) {
+            return false;
+        }
+        if (!this.isTerminalAiJob(entry.job.status) || entry.job.status === 'canceled') {
+            return false;
+        }
+        return this.countRetryableAiItems(entry.resultSummary) > 0;
+    }
+
+    summarizeAiResult(result: unknown): Array<{ label: string; value: string }> {
+        if (!result || typeof result !== 'object') {
+            return [];
+        }
+        const candidate = result as any;
+        const metrics: Array<{ label: string; value: string }> = [];
+        this.pushMetric(metrics, 'Created', candidate.createdCards);
+        this.pushMetric(metrics, 'Updated', candidate.updatedCards ?? candidate.updated);
+        this.pushMetric(metrics, 'Candidates', candidate.candidates);
+        this.pushMetric(metrics, 'Requested', candidate.requestedCards);
+        this.pushMetric(metrics, 'TTS', candidate.ttsGenerated);
+        this.pushMetric(metrics, 'Images', candidate.imagesGenerated);
+        this.pushMetric(metrics, 'Videos', candidate.videosGenerated);
+        if (metrics.length === 0 && Array.isArray(candidate.items)) {
+            this.pushMetric(metrics, 'Cards', candidate.items.length);
+        }
+        return metrics;
+    }
+
+    shortId(value?: string | null): string {
+        const raw = (value || '').trim();
+        if (!raw) {
+            return '';
+        }
+        return raw.length > 8 ? raw.slice(0, 8) : raw;
+    }
+
     private loadAiJobs(): void {
         if (!this.userDeckId) {
             return;
@@ -1699,12 +2137,12 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         this.aiJobPollers.clear();
         this.aiApi.listJobs(this.userDeckId).subscribe({
             next: jobs => {
-                this.aiJobs = jobs.map(job => ({ job, resultSummary: null, resultLoading: false }));
+                this.aiJobs = jobs.map(job => ({ job, resultSummary: null, resultLoading: false, resultSteps: [] }));
                 this.aiJobsLoading = false;
                 for (const entry of this.aiJobs) {
                     if (entry.job.status === 'queued' || entry.job.status === 'processing') {
                         this.startAiPolling(entry.job.jobId);
-                    } else if (entry.job.status === 'completed') {
+                    } else if (entry.job.status === 'completed' || entry.job.status === 'partial_success' || entry.job.status === 'failed') {
                         this.fetchAiResult(entry.job.jobId);
                     }
                 }
@@ -1719,7 +2157,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     private upsertAiJob(job: AiJobResponse): void {
         const index = this.aiJobs.findIndex(entry => entry.job.jobId === job.jobId);
         if (index === -1) {
-            this.aiJobs = [{ job, resultSummary: null, resultLoading: false }, ...this.aiJobs];
+            this.aiJobs = [{ job, resultSummary: null, resultLoading: false, resultSteps: [] }, ...this.aiJobs];
             return;
         }
         const entry = this.aiJobs[index];
@@ -1746,10 +2184,12 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     private refreshAiJob(jobId: string): void {
         this.aiApi.getJob(jobId).subscribe({
             next: job => {
+                const previousStatus = this.aiJobs.find(entry => entry.job.jobId === jobId)?.job.status;
                 this.upsertAiJob(job);
-                if (job.status === 'completed' || job.status === 'failed' || job.status === 'canceled') {
+                if (this.isTerminalAiJob(job.status)) {
                     this.stopAiPolling(jobId);
-                    if (job.status === 'completed') {
+                    this.notifyAiJobFinished(job, previousStatus);
+                    if (job.status === 'completed' || job.status === 'partial_success' || job.status === 'failed') {
                         this.fetchAiResult(jobId);
                     }
                 }
@@ -1776,9 +2216,9 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             : entry
         );
         this.aiApi.getJobResult(jobId).subscribe({
-            next: result => {
+            next: (result: AiJobResultResponse) => {
                 this.aiJobs = this.aiJobs.map(entry => entry.job.jobId === jobId
-                    ? { ...entry, resultLoading: false, resultSummary: result.resultSummary }
+                    ? { ...entry, resultLoading: false, resultSummary: result.resultSummary, resultSteps: result.steps || [] }
                     : entry
                 );
             },
@@ -1789,6 +2229,67 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                 );
             }
         });
+    }
+
+    private notifyAiJobFinished(job: AiJobResponse, previousStatus?: AiJobStatus): void {
+        if (this.notifiedAiJobs.has(job.jobId) || previousStatus === job.status) {
+            return;
+        }
+        if (!this.isTerminalAiJob(job.status)) {
+            return;
+        }
+        this.notifiedAiJobs.add(job.jobId);
+        if (job.status === 'completed') {
+            this.toast.success('deckProfile.aiJobCompleted');
+            return;
+        }
+        if (job.status === 'partial_success') {
+            this.toast.warning('deckProfile.aiJobPartial');
+            return;
+        }
+        if (job.status === 'failed') {
+            this.toast.error('deckProfile.aiJobFailedToast');
+            return;
+        }
+        this.toast.info('deckProfile.aiJobCanceled');
+    }
+
+    private pushMetric(target: Array<{ label: string; value: string }>, label: string, value: unknown): void {
+        if (value === null || value === undefined || value === '') {
+            return;
+        }
+        target.push({ label, value: String(value) });
+    }
+
+    private isRetryableAiItem(item: AiResultItem): boolean {
+        const status = (item?.status || '').trim().toLowerCase();
+        return status === 'failed' || status === 'partial_success' || status === 'skipped';
+    }
+
+    private resolveRuCountWord(count: number, one: string, few: string, many: string): string {
+        const mod100 = count % 100;
+        const mod10 = count % 10;
+        if (mod100 >= 11 && mod100 <= 14) {
+            return many;
+        }
+        if (mod10 === 1) {
+            return one;
+        }
+        if (mod10 >= 2 && mod10 <= 4) {
+            return few;
+        }
+        return many;
+    }
+
+    private formatCompactNumber(value: number): string {
+        const absolute = Math.abs(value);
+        if (absolute >= 1_000_000) {
+            return `${(value / 1_000_000).toFixed(1)}M`;
+        }
+        if (absolute >= 1_000) {
+            return `${(value / 1_000).toFixed(1)}k`;
+        }
+        return `${Math.round(value)}`;
     }
 
     learn(): void {
@@ -2272,4 +2773,13 @@ type AiJobEntry = {
     job: AiJobResponse;
     resultSummary: unknown | null;
     resultLoading: boolean;
+    resultSteps: AiJobStepResponse[];
+};
+
+type AiResultItem = {
+    cardId?: string;
+    preview?: string;
+    status?: string;
+    completedStages?: string[];
+    errors?: string[];
 };

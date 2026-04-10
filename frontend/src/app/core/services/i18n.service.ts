@@ -7,6 +7,8 @@ interface Translations {
     [key: string]: string;
 }
 
+export type TranslationParams = Record<string, string | number | boolean | null | undefined>;
+
 const translations: Record<Language, Translations> = {
     en: {
         'app.name': 'Mnema',
@@ -581,13 +583,30 @@ const translations: Record<Language, Translations> = {
         'deckProfile.aiJobsStatusQueued': 'Queued',
         'deckProfile.aiJobsStatusProcessing': 'Processing',
         'deckProfile.aiJobsStatusCompleted': 'Completed',
+        'deckProfile.aiJobsStatusPartialSuccess': 'Partial success',
         'deckProfile.aiJobsStatusFailed': 'Failed',
         'deckProfile.aiJobsStatusCanceled': 'Canceled',
+        'deckProfile.aiJobsStatusSkipped': 'Skipped',
         'deckProfile.aiJobsCancel': 'Cancel',
         'deckProfile.aiJobsCanceling': 'Canceling...',
+        'deckProfile.aiJobsRetryFailed': 'Retry failed only ({{count}})',
+        'deckProfile.aiJobsRetrying': 'Retrying...',
         'deckProfile.aiJobsFailed': 'This AI job failed. Please try again.',
         'deckProfile.aiJobsResultLoading': 'Loading summary...',
         'deckProfile.aiJobsResultPending': 'Summary will appear once the job completes.',
+        'deckProfile.aiJobsEtaAbout': 'About',
+        'deckProfile.aiJobsEtaRemaining': 'remaining',
+        'deckProfile.aiJobsTokensEstimated': 'Estimated tokens',
+        'deckProfile.aiJobsTokensActual': 'Actual tokens',
+        'deckProfile.aiJobsCostEstimated': 'Estimated cost',
+        'deckProfile.aiJobsCostActual': 'Actual cost',
+        'deckProfile.aiJobQueued': 'AI job added to the queue.',
+        'deckProfile.aiJobRetryQueued': 'Retry queued for failed AI items.',
+        'deckProfile.aiJobCompleted': 'AI generation completed for this deck.',
+        'deckProfile.aiJobPartial': 'AI generation finished with partial results.',
+        'deckProfile.aiJobFailedToast': 'AI generation failed.',
+        'deckProfile.aiJobRetryFailed': 'Failed to retry AI items.',
+        'deckProfile.aiJobCanceled': 'AI job canceled.',
         'deckProfile.saveSuccess': 'Deck changes saved.',
         'deckProfile.saveError': 'Failed to save deck changes.',
         'deckProfile.syncSuccess': 'Deck synced to the latest version.',
@@ -1731,13 +1750,30 @@ const translations: Record<Language, Translations> = {
         'deckProfile.aiJobsStatusQueued': 'В очереди',
         'deckProfile.aiJobsStatusProcessing': 'В обработке',
         'deckProfile.aiJobsStatusCompleted': 'Завершено',
+        'deckProfile.aiJobsStatusPartialSuccess': 'Частично завершено',
         'deckProfile.aiJobsStatusFailed': 'Ошибка',
         'deckProfile.aiJobsStatusCanceled': 'Отменено',
+        'deckProfile.aiJobsStatusSkipped': 'Пропущено',
         'deckProfile.aiJobsCancel': 'Отменить',
         'deckProfile.aiJobsCanceling': 'Отмена...',
+        'deckProfile.aiJobsRetryFailed': 'Повторить только неудачные ({{count}})',
+        'deckProfile.aiJobsRetrying': 'Повторный запуск...',
         'deckProfile.aiJobsFailed': 'AI задание завершилось с ошибкой. Попробуйте ещё раз.',
         'deckProfile.aiJobsResultLoading': 'Загрузка результата...',
         'deckProfile.aiJobsResultPending': 'Результат появится после завершения.',
+        'deckProfile.aiJobsEtaAbout': 'Около',
+        'deckProfile.aiJobsEtaRemaining': 'осталось',
+        'deckProfile.aiJobsTokensEstimated': 'Оценка токенов',
+        'deckProfile.aiJobsTokensActual': 'Фактические токены',
+        'deckProfile.aiJobsCostEstimated': 'Оценка цены',
+        'deckProfile.aiJobsCostActual': 'Фактическая цена',
+        'deckProfile.aiJobQueued': 'AI задание поставлено в очередь.',
+        'deckProfile.aiJobRetryQueued': 'Повторный запуск неудачных AI-элементов поставлен в очередь.',
+        'deckProfile.aiJobCompleted': 'AI генерация для этой колоды завершена.',
+        'deckProfile.aiJobPartial': 'AI генерация завершилась частично.',
+        'deckProfile.aiJobFailedToast': 'AI генерация завершилась ошибкой.',
+        'deckProfile.aiJobRetryFailed': 'Не удалось повторно запустить AI-элементы.',
+        'deckProfile.aiJobCanceled': 'AI задание отменено.',
         'deckProfile.saveSuccess': 'Изменения колоды сохранены.',
         'deckProfile.saveError': 'Не удалось сохранить изменения колоды.',
         'deckProfile.syncSuccess': 'Колода синхронизирована с последней версией.',
@@ -2333,12 +2369,19 @@ export class I18nService {
         localStorage.setItem(this.storageKey, lang);
     }
 
-    translate(key: string): string {
+    translate(key: string, params?: TranslationParams): string {
         const lang = this.currentLanguage;
-        return translations[lang][key] || key;
+        const template = translations[lang][key] || key;
+        if (!params) {
+            return template;
+        }
+        return Object.entries(params).reduce((result, [paramKey, value]) => {
+            const normalized = value ?? '';
+            return result.replaceAll(`{{${paramKey}}}`, String(normalized));
+        }, template);
     }
 
-    t(key: string): string {
-        return this.translate(key);
+    t(key: string, params?: TranslationParams): string {
+        return this.translate(key, params);
     }
 }

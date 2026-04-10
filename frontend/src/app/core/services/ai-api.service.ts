@@ -7,6 +7,7 @@ import {
     AiRuntimeCapabilities,
     CreateAiProviderRequest,
     CreateAiJobRequest,
+    AiJobPreflightResponse,
     AiJobResponse,
     AiJobResultResponse,
     AiImportPreviewRequest,
@@ -77,6 +78,10 @@ export class AiApiService {
         return this.http.post<AiJobResponse>(`${this.baseUrl}/jobs`, request);
     }
 
+    preflightJob(request: CreateAiJobRequest): Observable<AiJobPreflightResponse> {
+        return this.http.post<AiJobPreflightResponse>(`${this.baseUrl}/jobs/preflight`, request);
+    }
+
     getJob(jobId: string): Observable<AiJobResponse> {
         return this.http.get<AiJobResponse>(`${this.baseUrl}/jobs/${jobId}`);
     }
@@ -96,6 +101,10 @@ export class AiApiService {
 
     cancelJob(jobId: string): Observable<AiJobResponse> {
         return this.http.post<AiJobResponse>(`${this.baseUrl}/jobs/${jobId}/cancel`, {});
+    }
+
+    retryFailedJob(jobId: string): Observable<AiJobResponse> {
+        return this.http.post<AiJobResponse>(`${this.baseUrl}/jobs/${jobId}/retry-failed`, {});
     }
 
     createImportPreview(request: AiImportPreviewRequest): Observable<AiJobResponse> {

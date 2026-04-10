@@ -64,5 +64,14 @@ describe('DeckProfileComponent', () => {
         i18n.setLanguage('ru');
 
         expect(component.formatAiJobStatus('completed')).toBe('Завершено');
+        expect(component.formatAiJobStatus('partial_success')).toBe('Частично завершено');
+    });
+
+    it('returns an empty label for missing AI job status', () => {
+        expect(component.formatAiJobStatus(undefined)).toBe('');
+    });
+
+    it('interpolates translation params for retry labels', () => {
+        expect(i18n.translate('deckProfile.aiJobsRetryFailed', { count: 3 })).toBe('Retry failed only (3)');
     });
 });

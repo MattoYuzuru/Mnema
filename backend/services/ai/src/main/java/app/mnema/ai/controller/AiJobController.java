@@ -1,6 +1,7 @@
 package app.mnema.ai.controller;
 
 import app.mnema.ai.controller.dto.AiJobResponse;
+import app.mnema.ai.controller.dto.AiJobPreflightResponse;
 import app.mnema.ai.controller.dto.AiJobResultResponse;
 import app.mnema.ai.controller.dto.CreateAiJobRequest;
 import app.mnema.ai.service.AiJobService;
@@ -35,6 +36,12 @@ public class AiJobController {
         return jobService.createJob(jwt, accessToken, request);
     }
 
+    @PostMapping("/preflight")
+    public AiJobPreflightResponse preflight(@AuthenticationPrincipal Jwt jwt,
+                                            @Valid @RequestBody CreateAiJobRequest request) {
+        return jobService.preflightJob(jwt, request);
+    }
+
     @GetMapping
     public List<AiJobResponse> list(@AuthenticationPrincipal Jwt jwt,
                                     @RequestParam UUID deckId,
@@ -58,5 +65,12 @@ public class AiJobController {
     public AiJobResponse cancel(@AuthenticationPrincipal Jwt jwt,
                                 @PathVariable UUID jobId) {
         return jobService.cancelJob(jwt, jobId);
+    }
+
+    @PostMapping("/{jobId}/retry-failed")
+    public AiJobResponse retryFailed(@AuthenticationPrincipal Jwt jwt,
+                                     @PathVariable UUID jobId) {
+        String accessToken = jwt == null ? null : jwt.getTokenValue();
+        return jobService.retryFailedJob(jwt, accessToken, jobId);
     }
 }

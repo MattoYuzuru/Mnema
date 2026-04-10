@@ -2,14 +2,17 @@ package app.mnema.ai.controller;
 
 import app.mnema.ai.controller.dto.AiImportGenerateRequest;
 import app.mnema.ai.controller.dto.AiImportPreviewRequest;
+import app.mnema.ai.controller.dto.AiJobPreflightResponse;
 import app.mnema.ai.controller.dto.AiJobResponse;
 import app.mnema.ai.controller.dto.AiJobResultResponse;
+import app.mnema.ai.controller.dto.AiJobStepResponse;
 import app.mnema.ai.controller.dto.AiRuntimeCapabilitiesResponse;
 import app.mnema.ai.controller.dto.AiProviderResponse;
 import app.mnema.ai.controller.dto.CreateAiJobRequest;
 import app.mnema.ai.controller.dto.CreateAiProviderRequest;
 import app.mnema.ai.controller.dto.UpdateAiProviderStatusRequest;
 import app.mnema.ai.domain.type.AiJobStatus;
+import app.mnema.ai.domain.type.AiJobStepStatus;
 import app.mnema.ai.domain.type.AiJobType;
 import app.mnema.ai.domain.type.AiProviderStatus;
 import app.mnema.ai.service.AiImportService;
@@ -58,14 +61,41 @@ class AiControllerTest {
         UUID deckId = UUID.randomUUID();
         CreateAiJobRequest request = new CreateAiJobRequest(UUID.randomUUID(), deckId, AiJobType.generic, objectMapper.createObjectNode(), null, null, null);
         AiJobResponse response = jobResponse(deckId);
-        AiJobResultResponse result = new AiJobResultResponse(jobId, AiJobStatus.completed, objectMapper.createObjectNode().put("ok", true));
+        AiJobPreflightResponse preflight = new AiJobPreflightResponse(
+                deckId,
+                AiJobType.generic,
+                null,
+                "openai",
+                null,
+                "gpt-4.1-mini",
+                "generate_cards",
+                objectMapper.createObjectNode().put("mode", "generate_cards"),
+                "Create 10 new cards.",
+                10,
+                List.of("front", "back"),
+                List.of("text"),
+                List.of(),
+                List.of(),
+                null,
+                60,
+                Instant.now().plusSeconds(60),
+                1
+        );
+        AiJobResultResponse result = new AiJobResultResponse(
+                jobId,
+                AiJobStatus.completed,
+                objectMapper.createObjectNode().put("ok", true),
+                List.of(new AiJobStepResponse("generate_content", AiJobStepStatus.completed, Instant.now(), Instant.now(), null))
+        );
         when(jwt.getTokenValue()).thenReturn("access-token");
+        when(jobService.preflightJob(jwt, request)).thenReturn(preflight);
         when(jobService.createJob(jwt, "access-token", request)).thenReturn(response);
         when(jobService.listJobs(jwt, deckId, 25)).thenReturn(List.of(response));
         when(jobService.getJob(jwt, jobId)).thenReturn(response);
         when(jobService.getJobResult(jwt, jobId)).thenReturn(result);
         when(jobService.cancelJob(jwt, jobId)).thenReturn(response);
 
+        assertThat(controller.preflight(jwt, request)).isEqualTo(preflight);
         assertThat(controller.create(jwt, request)).isEqualTo(response);
         assertThat(controller.list(jwt, deckId, 25)).containsExactly(response);
         assertThat(controller.getJob(jwt, jobId)).isEqualTo(response);
@@ -131,7 +161,14 @@ class AiControllerTest {
                 null,
                 "openai",
                 null,
-                "gpt-4o-mini"
+                "gpt-4o-mini",
+                null,
+                0,
+                0,
+                null,
+                null,
+                null,
+                null
         );
     }
 }

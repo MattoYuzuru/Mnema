@@ -39,9 +39,12 @@ class AiJobWorkerTest {
     @Mock
     private AiUsageLedgerService usageLedgerService;
 
+    @Mock
+    private AiJobCostEstimator costEstimator;
+
     @Test
     void claimNextJobReturnsEmptyWhenNothingClaimedAndEntityWhenFound() {
-        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, "worker-1", 300, 3, 1000, 8000, 1);
+        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, costEstimator, "worker-1", 300, 3, 1000, 8000, 1);
         UUID jobId = UUID.randomUUID();
         AiJobEntity job = queuedJob(jobId);
 
@@ -56,7 +59,7 @@ class AiJobWorkerTest {
 
     @Test
     void markCompletedStoresSummaryAndUsage() {
-        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, "worker-1", 300, 3, 1000, 8000, 1);
+        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, costEstimator, "worker-1", 300, 3, 1000, 8000, 1);
         AiJobEntity job = queuedJob(UUID.randomUUID());
         job.setStatus(AiJobStatus.processing);
         job.setLockedAt(Instant.now());
@@ -73,6 +76,8 @@ class AiJobWorkerTest {
                 "prompt-hash"
         );
 
+        when(costEstimator.estimateRecordedCost(job, result)).thenReturn(BigDecimal.ONE);
+
         worker.markCompleted(job, result);
 
         assertThat(job.getStatus()).isEqualTo(AiJobStatus.completed);
@@ -86,7 +91,7 @@ class AiJobWorkerTest {
 
     @Test
     void markFailedRetriesThenFailsPermanently() {
-        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, "worker-1", 300, 2, 1000, 8000, 1);
+        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, costEstimator, "worker-1", 300, 2, 1000, 8000, 1);
         AiJobEntity job = queuedJob(UUID.randomUUID());
         job.setAttempts(0);
 
@@ -105,7 +110,7 @@ class AiJobWorkerTest {
 
     @Test
     void markMethodsSkipCanceledJobsAndPrivateTimingHelpersStayBounded() throws Exception {
-        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, "worker-1", 30, 3, 1000, 8000, 1);
+        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, costEstimator, "worker-1", 30, 3, 1000, 8000, 1);
         AiJobEntity canceled = queuedJob(UUID.randomUUID());
         canceled.setStatus(AiJobStatus.canceled);
         when(jdbcTemplate.query(eq("select status from app_ai.ai_jobs where job_id = ?"), any(org.springframework.jdbc.core.ResultSetExtractor.class), eq(canceled.getJobId())))

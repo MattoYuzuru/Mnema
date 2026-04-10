@@ -1,11 +1,12 @@
-import { Component, EventEmitter, Input, OnInit, Output, computed, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, Injector, computed, effect, inject, signal } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AiApiService } from '../../core/services/ai-api.service';
 import { TemplateApiService } from '../../core/services/template-api.service';
-import { AiJobResponse, AiProviderCredential, AiRuntimeCapabilities } from '../../core/models/ai.models';
+import { AiJobPreflightResponse, AiJobResponse, AiProviderCredential, AiRuntimeCapabilities, CreateAiJobRequest } from '../../core/models/ai.models';
 import { FieldTemplateDTO } from '../../core/models/template.models';
 import { ButtonComponent } from '../../shared/components/button.component';
+import { AiPreflightPanelComponent } from '../../shared/components/ai-preflight-panel.component';
 import { I18nService } from '../../core/services/i18n.service';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
@@ -15,7 +16,7 @@ type TtsMapping = { sourceField: string; targetField: string };
 @Component({
     selector: 'app-ai-add-cards-modal',
     standalone: true,
-    imports: [NgFor, NgIf, FormsModule, ButtonComponent, TranslatePipe],
+    imports: [NgFor, NgIf, FormsModule, ButtonComponent, TranslatePipe, AiPreflightPanelComponent],
     template: `
     <div class="modal-overlay" (click)="close()">
       <div class="modal-content ai-modal" (click)="$event.stopPropagation()">
@@ -325,6 +326,14 @@ type TtsMapping = { sourceField: string; targetField: string };
           <div *ngIf="createSuccess()" class="success-state" role="status">
             {{ createSuccess() }}
           </div>
+          <div *ngIf="preflightError()" class="error-state" role="alert">
+            {{ preflightError() }}
+          </div>
+          <app-ai-preflight-panel
+            *ngIf="preflight()"
+            [preflight]="preflight()"
+            title="Review generation plan"
+          />
         </div>
 
         <div class="modal-footer">
@@ -334,7 +343,7 @@ type TtsMapping = { sourceField: string; targetField: string };
             (click)="submit()"
             [disabled]="!canSubmit()"
           >
-            {{ creating() ? ('aiAdd.queueing' | translate) : ('aiAdd.generate' | translate) }}
+            {{ submitLabel() }}
           </app-button>
         </div>
       </div>
@@ -486,8 +495,14 @@ export class AiAddCardsModalComponent implements OnInit {
     modelName = signal('');
     prompt = signal('');
     creating = signal(false);
+    preflighting = signal(false);
     createError = signal('');
     createSuccess = signal('');
+    preflightError = signal('');
+    preflight = signal<AiJobPreflightResponse | null>(null);
+    pendingRequestId = signal(this.generateRequestId());
+    private lastPreflightSignature = signal('');
+    private readonly injector = inject(Injector);
 
     templateFields = signal<FieldTemplateDTO[]>([]);
     textFields = signal<FieldTemplateDTO[]>([]);
@@ -561,6 +576,16 @@ export class AiAddCardsModalComponent implements OnInit {
     );
     readonly imageModelOptions = computed(() => this.resolveImageModelOptions(this.selectedProvider()));
     readonly videoModelOptions = computed(() => this.resolveVideoModelOptions(this.selectedProvider()));
+    readonly preflightSignature = computed(() => JSON.stringify(this.buildCreateJobRequest().params ?? {}));
+    readonly submitLabel = computed(() => {
+        if (this.creating()) {
+            return this.i18n.translate('aiAdd.queueing');
+        }
+        if (this.preflighting()) {
+            return 'Analyzing...';
+        }
+        return this.preflight() ? 'Confirm and generate' : 'Analyze plan';
+    });
 
     private readonly openAiVoices = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer'];
     private readonly geminiVoices = [
@@ -659,6 +684,16 @@ export class AiAddCardsModalComponent implements OnInit {
         this.loadRuntimeCapabilities();
         this.loadProviders();
         this.loadTemplateFields();
+        effect(() => {
+            const signature = this.preflightSignature();
+            const lastSignature = this.lastPreflightSignature();
+            if (!this.preflight() || !lastSignature || signature === lastSignature) {
+                return;
+            }
+            this.preflight.set(null);
+            this.preflightError.set('');
+            this.pendingRequestId.set(this.generateRequestId());
+        }, { injector: this.injector });
     }
 
     private loadRuntimeCapabilities(): void {
@@ -760,6 +795,7 @@ export class AiAddCardsModalComponent implements OnInit {
 
     canSubmit(): boolean {
         return !this.creating()
+            && !this.preflighting()
             && !!this.selectedCredentialId()
             && this.cardsCount() > 0
             && this.selectedFields().size > 0
@@ -768,18 +804,65 @@ export class AiAddCardsModalComponent implements OnInit {
 
     submit(): void {
         if (!this.canSubmit()) return;
+        if (!this.preflight()) {
+            this.runPreflight();
+            return;
+        }
         this.creating.set(true);
         this.createError.set('');
         this.createSuccess.set('');
 
+        this.aiApi.createJob({
+            requestId: this.pendingRequestId(),
+            deckId: this.userDeckId,
+            type: 'enrich',
+            params: this.preflight()?.normalizedParams || this.buildCreateJobRequest().params
+        }).subscribe({
+            next: job => {
+                this.creating.set(false);
+                this.preflight.set(null);
+                this.preflightError.set('');
+                this.lastPreflightSignature.set('');
+                this.pendingRequestId.set(this.generateRequestId());
+                this.clearDraft();
+                this.jobCreated.emit(job);
+                this.close();
+            },
+            error: err => {
+                this.creating.set(false);
+                this.createError.set(err?.error?.message || this.i18n.translate('aiAdd.createError'));
+            }
+        });
+    }
+
+    private runPreflight(): void {
+        this.preflighting.set(true);
+        this.createError.set('');
+        this.createSuccess.set('');
+        this.preflightError.set('');
+        const request = this.buildCreateJobRequest();
+        this.aiApi.preflightJob(request).subscribe({
+            next: preflight => {
+                this.preflighting.set(false);
+                this.preflight.set(preflight);
+                this.lastPreflightSignature.set(this.preflightSignature());
+                this.pendingRequestId.set(request.requestId);
+            },
+            error: err => {
+                this.preflighting.set(false);
+                this.preflightError.set(err?.error?.message || 'Failed to analyze AI generation');
+            }
+        });
+    }
+
+    private buildCreateJobRequest(): CreateAiJobRequest {
         const fields = Array.from(this.selectedFields());
         const input = this.buildPrompt(fields);
         const tts = this.buildTtsParams();
         const image = this.buildImageParams(fields);
         const video = this.buildVideoParams(fields);
-
-        this.aiApi.createJob({
-            requestId: this.generateRequestId(),
+        return {
+            requestId: this.pendingRequestId(),
             deckId: this.userDeckId,
             type: 'enrich',
             params: {
@@ -794,18 +877,7 @@ export class AiAddCardsModalComponent implements OnInit {
                 ...(image ? { image } : {}),
                 ...(video ? { video } : {})
             }
-        }).subscribe({
-            next: job => {
-                this.creating.set(false);
-                this.clearDraft();
-                this.jobCreated.emit(job);
-                this.close();
-            },
-            error: err => {
-                this.creating.set(false);
-                this.createError.set(err?.error?.message || this.i18n.translate('aiAdd.createError'));
-            }
-        });
+        };
     }
 
     close(): void {
