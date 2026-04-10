@@ -6,12 +6,15 @@ import { MediaApiService } from '../../core/services/media-api.service';
 import { TemplateApiService } from '../../core/services/template-api.service';
 import {
     AiImportPreviewSummary,
+    AiJobPreflightResponse,
     AiJobResponse,
     AiProviderCredential,
-    AiRuntimeCapabilities
+    AiRuntimeCapabilities,
+    CreateAiJobRequest
 } from '../../core/models/ai.models';
 import { FieldTemplateDTO } from '../../core/models/template.models';
 import { ButtonComponent } from '../../shared/components/button.component';
+import { AiPreflightPanelComponent } from '../../shared/components/ai-preflight-panel.component';
 import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
@@ -74,7 +77,7 @@ interface EncodingOption {
 @Component({
     selector: 'app-ai-import-modal',
     standalone: true,
-    imports: [NgIf, NgFor, NgClass, FormsModule, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe],
+    imports: [NgIf, NgFor, NgClass, FormsModule, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe, AiPreflightPanelComponent],
     template: `
     <div class="modal-overlay" (click)="close(false)">
       <div class="modal-content ai-modal" (click)="$event.stopPropagation()">
@@ -513,6 +516,12 @@ interface EncodingOption {
           </section>
 
           <p *ngIf="createError()" class="error-state" role="alert">{{ createError() }}</p>
+          <p *ngIf="preflightError()" class="error-state" role="alert">{{ preflightError() }}</p>
+          <app-ai-preflight-panel
+            *ngIf="preflight()"
+            [preflight]="preflight()"
+            title="Review import plan"
+          />
         </div>
 
         <div class="modal-footer">
@@ -522,7 +531,7 @@ interface EncodingOption {
             (click)="createCards()"
             [disabled]="!canCreate()"
           >
-            {{ creating() ? ('aiImport.creating' | translate) : ('aiImport.createButton' | translate) }}
+            {{ submitLabel() }}
           </app-button>
         </div>
       </div>
@@ -918,7 +927,12 @@ export class AiImportModalComponent implements OnInit {
     confirmLarge = signal(false);
     estimatedCount = signal(10);
     createError = signal('');
+    preflightError = signal('');
+    preflight = signal<AiJobPreflightResponse | null>(null);
+    preflighting = signal(false);
     creating = signal(false);
+    pendingRequestId = signal(this.generateRequestId());
+    private readonly lastPreflightSignature = signal('');
     private readonly draftReady = signal(false);
     private readonly injector = inject(Injector);
     private storageKey = '';
@@ -978,6 +992,16 @@ export class AiImportModalComponent implements OnInit {
     readonly importSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'text', ['openai', 'gemini', 'qwen', 'ollama']));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
     readonly sttModelPlaceholder = computed(() => this.resolveSttModelPlaceholder(this.selectedProvider()));
+    readonly preflightSignature = computed(() => JSON.stringify(this.buildCreateJobRequest().params ?? {}));
+    readonly submitLabel = computed(() => {
+        if (this.creating()) {
+            return 'Creating...';
+        }
+        if (this.preflighting()) {
+            return 'Analyzing...';
+        }
+        return this.preflight() ? 'Confirm and create' : 'Analyze plan';
+    });
     readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
     readonly selectedSourceType = computed(() => this.fileInfo()?.sourceType || 'unknown');
     readonly showEncoding = computed(() => {
@@ -1110,6 +1134,16 @@ export class AiImportModalComponent implements OnInit {
         this.loadRuntimeCapabilities();
         this.loadProviders();
         this.loadTemplateFields();
+        effect(() => {
+            const signature = this.preflightSignature();
+            const lastSignature = this.lastPreflightSignature();
+            if (!this.preflight() || !lastSignature || signature === lastSignature) {
+                return;
+            }
+            this.preflight.set(null);
+            this.preflightError.set('');
+            this.pendingRequestId.set(this.generateRequestId());
+        }, { injector: this.injector });
     }
 
     private loadRuntimeCapabilities(): void {
@@ -1461,36 +1495,25 @@ export class AiImportModalComponent implements OnInit {
         if (!this.canCreate()) {
             return;
         }
-        const fileInfo = this.fileInfo();
-        if (!fileInfo) return;
+        if (!this.preflight()) {
+            this.runCreatePreflight();
+            return;
+        }
         this.creating.set(true);
         this.createError.set('');
 
-        const fields = Array.from(this.selectedFields());
-        const tts = this.buildTtsParams();
-        const image = this.buildImageParams(fields);
-        const video = this.buildVideoParams(fields);
-        const stt = this.buildSttParams();
-
-        this.aiApi.createImportGenerate({
-            requestId: this.generateRequestId(),
+        this.aiApi.createJob({
+            requestId: this.pendingRequestId(),
             deckId: this.userDeckId,
-            sourceMediaId: fileInfo.mediaId,
-            fields,
-            count: this.clampCount(this.estimatedCount()),
-            providerCredentialId: this.selectedCredentialId() || undefined,
-            provider: this.selectedProvider() || undefined,
-            model: this.modelName().trim() || undefined,
-            sourceType: fileInfo.sourceType,
-            encoding: this.showEncoding() && this.encoding() !== 'auto' ? this.encoding() : undefined,
-            instructions: this.notes().trim() || undefined,
-            ...(stt ? { stt } : {}),
-            ...(tts ? { tts } : {}),
-            ...(image ? { image } : {}),
-            ...(video ? { video } : {})
+            type: 'generic',
+            params: this.preflight()?.normalizedParams || this.buildCreateJobRequest().params
         }).subscribe({
             next: job => {
                 this.creating.set(false);
+                this.preflight.set(null);
+                this.preflightError.set('');
+                this.lastPreflightSignature.set('');
+                this.pendingRequestId.set(this.generateRequestId());
                 this.jobCreated.emit(job);
                 this.close(true);
             },
@@ -1516,7 +1539,57 @@ export class AiImportModalComponent implements OnInit {
             && this.importSupported()
             && this.selectedFields().size > 0
             && (!this.requiresConfirmation() || this.confirmLarge())
-            && !this.creating();
+            && !this.creating()
+            && !this.preflighting();
+    }
+
+    private runCreatePreflight(): void {
+        this.preflighting.set(true);
+        this.preflightError.set('');
+        this.createError.set('');
+        const request = this.buildCreateJobRequest();
+        this.aiApi.preflightJob(request).subscribe({
+            next: preflight => {
+                this.preflighting.set(false);
+                this.preflight.set(preflight);
+                this.lastPreflightSignature.set(this.preflightSignature());
+                this.pendingRequestId.set(request.requestId);
+            },
+            error: err => {
+                this.preflighting.set(false);
+                this.preflightError.set(err?.error?.message || 'Failed to analyze import');
+            }
+        });
+    }
+
+    private buildCreateJobRequest(): CreateAiJobRequest {
+        const fileInfo = this.fileInfo();
+        const fields = Array.from(this.selectedFields());
+        const tts = this.buildTtsParams();
+        const image = this.buildImageParams(fields);
+        const video = this.buildVideoParams(fields);
+        const stt = this.buildSttParams();
+        return {
+            requestId: this.pendingRequestId(),
+            deckId: this.userDeckId,
+            type: 'generic',
+            params: {
+                sourceMediaId: fileInfo?.mediaId,
+                fields,
+                count: this.clampCount(this.estimatedCount()),
+                providerCredentialId: this.selectedCredentialId() || undefined,
+                provider: this.selectedProvider() || undefined,
+                model: this.modelName().trim() || undefined,
+                sourceType: fileInfo?.sourceType,
+                encoding: this.showEncoding() && this.encoding() !== 'auto' ? this.encoding() : undefined,
+                instructions: this.notes().trim() || undefined,
+                mode: 'import_generate',
+                ...(stt ? { stt } : {}),
+                ...(tts ? { tts } : {}),
+                ...(image ? { image } : {}),
+                ...(video ? { video } : {})
+            }
+        };
     }
 
     onCountChange(value: number): void {

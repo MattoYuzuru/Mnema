@@ -1,6 +1,7 @@
 package app.mnema.ai.service;
 
 import app.mnema.ai.controller.dto.AiJobResponse;
+import app.mnema.ai.controller.dto.AiJobPreflightResponse;
 import app.mnema.ai.controller.dto.CreateAiJobRequest;
 import app.mnema.ai.domain.entity.AiJobEntity;
 import app.mnema.ai.domain.entity.AiQuotaEntity;
@@ -416,6 +417,74 @@ class AiJobServiceTest extends PostgresIntegrationTest {
         assertThat(queued.queueAhead()).isEqualTo(2);
         assertThat(queued.estimatedSecondsRemaining()).isNotNull().isPositive();
         assertThat(queued.estimatedCompletionAt()).isNotNull().isAfter(Instant.now().minusSeconds(1));
+    }
+
+    @Test
+    void preflightReturnsNormalizedPlanEtaAndCost() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        UUID credentialId = UUID.randomUUID();
+        seedQuota(userId, 5000);
+
+        AiProviderCredentialEntity credential = new AiProviderCredentialEntity();
+        credential.setId(credentialId);
+        credential.setUserId(userId);
+        credential.setProvider("openai");
+        credential.setAlias("Primary");
+        credential.setStatus(app.mnema.ai.domain.type.AiProviderStatus.active);
+        credential.setEncryptedSecret(new byte[]{1});
+        credential.setEncryptedDataKey(new byte[]{2});
+        credential.setKeyId("key-1");
+        credential.setNonce(new byte[]{3});
+        credential.setAad(new byte[]{4});
+        credential.setCreatedAt(Instant.now());
+        credential.setUpdatedAt(Instant.now());
+        credentialRepository.save(credential);
+
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", " generate_cards ");
+        params.put("providerCredentialId", credentialId.toString());
+        params.put("provider", " openai ");
+        params.put("model", " gpt-4.1-mini ");
+        params.put("input", "  Generate fruits  ");
+        params.put("count", 4);
+        ArrayNode fields = params.putArray("fields");
+        fields.add(" Front ");
+        fields.add("Back");
+        fields.add("Front");
+        ObjectNode tts = params.putObject("tts");
+        tts.put("enabled", true);
+        tts.put("model", " gpt-4o-mini-tts ");
+
+        AiJobPreflightResponse preflight = jobService.preflightJob(jwtFor(userId), new CreateAiJobRequest(
+                UUID.randomUUID(),
+                deckId,
+                AiJobType.enrich,
+                params,
+                null,
+                null,
+                null
+        ));
+
+        assertThat(preflight.deckId()).isEqualTo(deckId);
+        assertThat(preflight.providerCredentialId()).isEqualTo(credentialId);
+        assertThat(preflight.providerAlias()).isEqualTo("Primary");
+        assertThat(preflight.provider()).isEqualTo("openai");
+        assertThat(preflight.model()).isEqualTo("gpt-4.1-mini");
+        assertThat(preflight.mode()).isEqualTo("generate_cards");
+        assertThat(preflight.normalizedParams().path("input").asText()).isEqualTo("Generate fruits");
+        assertThat(preflight.normalizedParams().path("fields")).extracting(JsonNode::asText).containsExactly("Front", "Back", "Front");
+        assertThat(preflight.fields()).containsExactly("Front", "Back");
+        assertThat(preflight.plannedStages()).containsExactly("text", "audio");
+        assertThat(preflight.items()).hasSize(4);
+        assertThat(preflight.items()).allSatisfy(item -> {
+            assertThat(item.itemType()).isEqualTo("new_card");
+            assertThat(item.plannedStages()).containsExactly("text", "audio");
+        });
+        assertThat(preflight.cost()).isNotNull();
+        assertThat(preflight.cost().estimatedInputTokens()).isNotNull().isPositive();
+        assertThat(preflight.estimatedSecondsRemaining()).isNotNull().isPositive();
+        assertThat(preflight.estimatedCompletionAt()).isNotNull().isAfter(Instant.now().minusSeconds(1));
     }
 
     private void seedQuota(UUID userId, int tokensLimit) {

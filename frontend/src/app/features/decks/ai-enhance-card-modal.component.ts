@@ -1,10 +1,11 @@
-import { Component, EventEmitter, Input, OnInit, Output, computed, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, Injector, computed, effect, inject, signal } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AiApiService } from '../../core/services/ai-api.service';
 import { CardApiService } from '../../core/services/card-api.service';
-import { AiJobResponse, AiProviderCredential, AiRuntimeCapabilities } from '../../core/models/ai.models';
+import { AiJobPreflightResponse, AiJobResponse, AiProviderCredential, AiRuntimeCapabilities, CreateAiJobRequest } from '../../core/models/ai.models';
 import { ButtonComponent } from '../../shared/components/button.component';
+import { AiPreflightPanelComponent } from '../../shared/components/ai-preflight-panel.component';
 import { UserCardDTO } from '../../core/models/user-card.models';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
@@ -24,7 +25,7 @@ interface CardAuditSummary {
 @Component({
     selector: 'app-ai-enhance-card-modal',
     standalone: true,
-    imports: [NgIf, NgFor, FormsModule, ButtonComponent, TranslatePipe],
+    imports: [NgIf, NgFor, FormsModule, ButtonComponent, TranslatePipe, AiPreflightPanelComponent],
     template: `
     <div class="modal-overlay" (click)="close()">
       <div class="modal-content ai-modal" (click)="$event.stopPropagation()">
@@ -203,8 +204,14 @@ interface CardAuditSummary {
               (click)="runFillMissingFields()"
               [disabled]="runningFill() || !selectedCredentialId()"
             >
-              {{ runningFill() ? ('cardEnhance.filling' | translate) : ('cardEnhance.fillMissing' | translate) }}
+              {{ fillButtonLabel() }}
             </app-button>
+            <div *ngIf="fillPreflightError()" class="field-hint error-text">{{ fillPreflightError() }}</div>
+            <app-ai-preflight-panel
+              *ngIf="fillPreflight()"
+              [preflight]="fillPreflight()"
+              title="Review card update plan"
+            />
           </div>
 
           <div class="audit-panel">
@@ -434,8 +441,14 @@ export class AiEnhanceCardModalComponent implements OnInit {
     runningAudit = signal(false);
     runningFill = signal(false);
     auditError = signal('');
+    fillPreflightError = signal('');
+    fillPreflight = signal<AiJobPreflightResponse | null>(null);
+    preflightingFill = signal(false);
     auditSummary = signal<CardAuditSummary | null>(null);
     auditUpdatedAt = signal<string | null>(null);
+    pendingFillRequestId = signal(this.generateRequestId());
+    private readonly lastFillPreflightSignature = signal('');
+    private readonly injector = inject(Injector);
 
     ttsEnabled = signal(true);
     ttsModel = signal('');
@@ -484,6 +497,16 @@ export class AiEnhanceCardModalComponent implements OnInit {
             return [...this.openAiVoices, 'custom'];
         }
         return ['custom'];
+    });
+    readonly fillPreflightSignature = computed(() => JSON.stringify(this.buildFillMissingRequest().params ?? {}));
+    readonly fillButtonLabel = computed(() => {
+        if (this.runningFill()) {
+            return 'Filling...';
+        }
+        if (this.preflightingFill()) {
+            return 'Analyzing...';
+        }
+        return this.fillPreflight() ? 'Confirm and fill' : 'Fill missing';
     });
 
     private readonly openAiVoices = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer'];
@@ -580,6 +603,16 @@ export class AiEnhanceCardModalComponent implements OnInit {
         this.restoreAudit();
         this.loadRuntimeCapabilities();
         this.loadProviders();
+        effect(() => {
+            const signature = this.fillPreflightSignature();
+            const lastSignature = this.lastFillPreflightSignature();
+            if (!this.fillPreflight() || !lastSignature || signature === lastSignature) {
+                return;
+            }
+            this.fillPreflight.set(null);
+            this.fillPreflightError.set('');
+            this.pendingFillRequestId.set(this.generateRequestId());
+        }, { injector: this.injector });
     }
 
     private loadRuntimeCapabilities(): void {
@@ -703,34 +736,73 @@ export class AiEnhanceCardModalComponent implements OnInit {
             .filter(field => this.isFieldSelectedForFill(field))
             .map(field => field.name);
         if (missing.length === 0) return;
+        if (!this.fillPreflight()) {
+            this.runFillPreflight();
+            return;
+        }
         this.runningFill.set(true);
-        this.auditError.set('');
-        const requestId = this.generateRequestId();
+        this.fillPreflightError.set('');
+        this.aiApi.createJob({
+            requestId: this.pendingFillRequestId(),
+            deckId: this.userDeckId,
+            type: 'generic',
+            params: this.fillPreflight()?.normalizedParams || this.buildFillMissingRequest().params
+        }).subscribe({
+            next: job => {
+                this.fillPreflight.set(null);
+                this.fillPreflightError.set('');
+                this.lastFillPreflightSignature.set('');
+                this.pendingFillRequestId.set(this.generateRequestId());
+                this.pollJob(job, 'fill');
+            },
+            error: err => {
+                this.runningFill.set(false);
+                this.fillPreflightError.set(err?.error?.message || 'Failed to start fill');
+            }
+        });
+    }
+
+    private runFillPreflight(): void {
+        this.preflightingFill.set(true);
+        this.fillPreflightError.set('');
+        const request = this.buildFillMissingRequest();
+        this.aiApi.preflightJob(request).subscribe({
+            next: preflight => {
+                this.preflightingFill.set(false);
+                this.fillPreflight.set(preflight);
+                this.lastFillPreflightSignature.set(this.fillPreflightSignature());
+                this.pendingFillRequestId.set(request.requestId);
+            },
+            error: err => {
+                this.preflightingFill.set(false);
+                this.fillPreflightError.set(err?.error?.message || 'Failed to analyze card update');
+            }
+        });
+    }
+
+    private buildFillMissingRequest(): CreateAiJobRequest {
+        const missing = this.missingFields()
+            .filter(field => this.isFieldSelectedForFill(field))
+            .map(field => field.name);
         const tts = this.buildTtsParams(missing);
         const image = this.buildImageParams(missing);
         const video = this.buildVideoParams(missing);
-        this.aiApi.createJob({
-            requestId,
+        return {
+            requestId: this.pendingFillRequestId(),
             deckId: this.userDeckId,
             type: 'generic',
             params: {
                 providerCredentialId: this.selectedCredentialId(),
                 provider: this.selectedProvider() || undefined,
                 mode: 'card_missing_fields',
-                cardId: this.card.userCardId,
+                cardId: this.card?.userCardId,
                 fields: missing,
                 updateScope: this.updateScope(),
                 ...(tts ? { tts } : {}),
                 ...(image ? { image } : {}),
                 ...(video ? { video } : {})
             }
-        }).subscribe({
-            next: job => this.pollJob(job, 'fill'),
-            error: err => {
-                this.runningFill.set(false);
-                this.auditError.set(err?.error?.message || 'Failed to start fill');
-            }
-        });
+        };
     }
 
     private pollJob(job: AiJobResponse, action: 'audit' | 'fill'): void {

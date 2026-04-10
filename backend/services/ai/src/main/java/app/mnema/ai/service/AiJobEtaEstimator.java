@@ -75,12 +75,30 @@ public class AiJobEtaEstimator {
         return new EtaEstimate(Math.max(5, remainingSeconds), estimatedCompletionAt, queueAhead);
     }
 
+    public EtaEstimate estimatePlanned(AiJobType type, JsonNode params, String provider) {
+        JsonNode safeParams = params == null ? com.fasterxml.jackson.databind.node.NullNode.getInstance() : params;
+        int remainingSeconds = estimatePlannedExecutionSeconds(type, safeParams, provider);
+        if (remainingSeconds <= 0) {
+            return EtaEstimate.unavailable();
+        }
+        Instant now = Instant.now();
+        int queueAhead = countRunnableJobs(now);
+        int queueWait = estimateQueueWaitSeconds(queueAhead, remainingSeconds);
+        int totalSeconds = Math.max(5, remainingSeconds + queueWait);
+        return new EtaEstimate(totalSeconds, now.plusSeconds(totalSeconds), queueAhead);
+    }
+
     private int estimateQueueWaitSeconds(int jobsAhead, int ownRemainingSeconds) {
         if (jobsAhead <= 0) {
             return 0;
         }
         int slotSeconds = clamp(ownRemainingSeconds, 20, 300);
         return Math.max(0, Math.floorDiv(jobsAhead, concurrentJobs) * slotSeconds);
+    }
+
+    private int countRunnableJobs(Instant now) {
+        long result = jobRepository.countRunnableJobs(RUNNABLE_STATUSES, now);
+        return (int) Math.max(0L, Math.min(Integer.MAX_VALUE, result));
     }
 
     private int estimateRemainingExecutionSeconds(AiJobEntity job,
@@ -135,6 +153,20 @@ public class AiJobEtaEstimator {
                 .sum();
     }
 
+    private int estimatePlannedExecutionSeconds(AiJobType type,
+                                                JsonNode params,
+                                                String provider) {
+        List<String> stepNames = plannedSteps(type, params);
+        if (stepNames.isEmpty()) {
+            return 20;
+        }
+        int total = 0;
+        for (String stepName : stepNames) {
+            total += estimateStepSeconds(stepName, type, params, provider, null);
+        }
+        return total;
+    }
+
     private int estimateFromProgress(AiJobEntity job,
                                      AiJobExecutionService.ExecutionSnapshot snapshot,
                                      String provider) {
@@ -145,10 +177,17 @@ public class AiJobEtaEstimator {
     }
 
     private int estimateStepSeconds(String stepName, AiJobEntity job, String provider) {
+        return estimateStepSeconds(stepName, job.getType(), safeParams(job), provider, job);
+    }
+
+    private int estimateStepSeconds(String stepName,
+                                    AiJobType type,
+                                    JsonNode params,
+                                    String provider,
+                                    AiJobEntity job) {
         String normalizedStep = normalize(stepName);
-        String mode = resolveMode(job);
-        JsonNode params = safeParams(job);
-        int targetCount = resolveTargetCount(job);
+        String mode = resolveMode(type, params, job == null ? null : job.getResultSummary());
+        int targetCount = resolveTargetCount(type, params, job == null ? null : job.getResultSummary());
         int fieldCount = resolveFieldCount(params);
         boolean ttsRequested = isTtsRequested(mode, params);
         boolean imageEnabled = isGenerationEnabled(params.path("image"));
@@ -230,12 +269,15 @@ public class AiJobEtaEstimator {
     }
 
     private int resolveTargetCount(AiJobEntity job) {
-        JsonNode params = safeParams(job);
+        return resolveTargetCount(job.getType(), safeParams(job), job.getResultSummary());
+    }
+
+    private int resolveTargetCount(AiJobType type, JsonNode params, JsonNode summary) {
         JsonNode cardIds = params.path("cardIds");
         if (cardIds.isArray() && !cardIds.isEmpty()) {
             return clamp(cardIds.size(), 1, 100);
         }
-        JsonNode items = job.getResultSummary() == null ? null : job.getResultSummary().path("items");
+        JsonNode items = summary == null ? null : summary.path("items");
         if (items != null && items.isArray() && !items.isEmpty()) {
             return clamp(items.size(), 1, 100);
         }
@@ -255,8 +297,8 @@ public class AiJobEtaEstimator {
         if (fieldLimit > 0) {
             return clamp(fieldLimit, 1, 100);
         }
-        String mode = resolveMode(job);
-        if (mode.startsWith("card_") || job.getType() == AiJobType.tts) {
+        String mode = resolveMode(type, params, summary);
+        if (mode.startsWith("card_") || type == AiJobType.tts) {
             return 1;
         }
         return "generate_cards".equals(mode) ? 10 : 3;
@@ -306,14 +348,19 @@ public class AiJobEtaEstimator {
     }
 
     private String resolveMode(AiJobEntity job) {
-        JsonNode params = safeParams(job);
+        return resolveMode(job.getType(), safeParams(job), job.getResultSummary());
+    }
+
+    private String resolveMode(AiJobType type, JsonNode params, JsonNode summary) {
         String mode = params.path("mode").asText(null);
         if (hasText(mode)) {
             return normalize(mode);
         }
-        JsonNode summary = job.getResultSummary();
         if (summary != null && hasText(summary.path("mode").asText(null))) {
             return normalize(summary.path("mode").asText());
+        }
+        if (type == AiJobType.tts) {
+            return "missing_audio";
         }
         return "generic";
     }
@@ -342,6 +389,34 @@ public class AiJobEtaEstimator {
         }
         long result = jobRepository.countRunnableJobsAhead(jobId, RUNNABLE_STATUSES, createdAt, now);
         return (int) Math.max(0L, Math.min(Integer.MAX_VALUE, result));
+    }
+
+    private List<String> plannedSteps(AiJobType type, JsonNode params) {
+        String mode = resolveMode(type, params, null);
+        boolean hasSource = hasText(params.path("sourceMediaId").asText(null)) || hasText(params.path("sourceText").asText(null));
+        boolean ttsRequested = isTtsRequested(mode, params);
+        boolean imageEnabled = isGenerationEnabled(params.path("image"));
+        boolean videoEnabled = isGenerationEnabled(params.path("video"));
+        java.util.ArrayList<String> steps = new java.util.ArrayList<>();
+        if (hasSource) {
+            steps.add("load_source");
+        }
+        if (mode.startsWith("import_")) {
+            steps.add("analyze_content");
+        } else {
+            steps.add("prepare_context");
+        }
+        steps.add("generate_content");
+        if (imageEnabled || videoEnabled) {
+            steps.add("generate_media");
+        }
+        if (ttsRequested) {
+            steps.add("generate_audio");
+        }
+        if (!mode.contains("audit")) {
+            steps.add("apply_changes");
+        }
+        return steps;
     }
 
     private boolean isTerminal(AiJobStatus status) {

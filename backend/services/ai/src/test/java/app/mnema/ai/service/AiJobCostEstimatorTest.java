@@ -177,4 +177,31 @@ class AiJobCostEstimatorTest {
         assertThat(snapshot.actualInputTokens()).isNull();
         assertThat(snapshot.actualCost()).isNull();
     }
+
+    @Test
+    void buildPlannedSnapshotReturnsEstimateForPreflight() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", "import_generate");
+        params.put("count", 3);
+        params.put("sourceMediaId", UUID.randomUUID().toString());
+        params.putArray("fields").add("front").add("back");
+
+        var snapshot = estimator.buildPlannedSnapshot(AiJobType.generic, params, "openai", "gpt-4.1-mini");
+
+        assertThat(snapshot).isNotNull();
+        assertThat(snapshot.estimatedInputTokens()).isPositive();
+        assertThat(snapshot.estimatedOutputTokens()).isPositive();
+        assertThat(snapshot.estimatedCost()).isPositive();
+        assertThat(snapshot.actualInputTokens()).isNull();
+        assertThat(snapshot.actualCost()).isNull();
+    }
+
+    @Test
+    void buildPlannedSnapshotReturnsNullWhenNoPlannedEstimateExists() {
+        var snapshot = estimator.buildPlannedSnapshot(AiJobType.generic, null, null, null);
+
+        assertThat(snapshot).isNotNull();
+        assertThat(snapshot.estimatedInputTokens()).isPositive();
+        assertThat(snapshot.actualCost()).isNull();
+    }
 }

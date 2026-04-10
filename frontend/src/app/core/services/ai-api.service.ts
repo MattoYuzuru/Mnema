@@ -7,6 +7,7 @@ import {
     AiRuntimeCapabilities,
     CreateAiProviderRequest,
     CreateAiJobRequest,
+    AiJobPreflightResponse,
     AiJobResponse,
     AiJobResultResponse,
     AiImportPreviewRequest,
@@ -75,6 +76,10 @@ export class AiApiService {
 
     createJob(request: CreateAiJobRequest): Observable<AiJobResponse> {
         return this.http.post<AiJobResponse>(`${this.baseUrl}/jobs`, request);
+    }
+
+    preflightJob(request: CreateAiJobRequest): Observable<AiJobPreflightResponse> {
+        return this.http.post<AiJobPreflightResponse>(`${this.baseUrl}/jobs/preflight`, request);
     }
 
     getJob(jobId: string): Observable<AiJobResponse> {

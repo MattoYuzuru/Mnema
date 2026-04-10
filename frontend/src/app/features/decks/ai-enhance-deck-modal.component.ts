@@ -1,14 +1,15 @@
-import { Component, EventEmitter, Input, OnInit, Output, computed, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, Injector, computed, effect, inject, signal } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AiApiService } from '../../core/services/ai-api.service';
 import { CardApiService } from '../../core/services/card-api.service';
 import { TemplateApiService } from '../../core/services/template-api.service';
-import { AiJobResponse, AiProviderCredential, AiRuntimeCapabilities } from '../../core/models/ai.models';
+import { AiJobPreflightResponse, AiJobResponse, AiProviderCredential, AiRuntimeCapabilities, CreateAiJobRequest } from '../../core/models/ai.models';
 import { FieldTemplateDTO } from '../../core/models/template.models';
 import { MissingFieldStat } from '../../core/models/user-card.models';
 import { ButtonComponent } from '../../shared/components/button.component';
+import { AiPreflightPanelComponent } from '../../shared/components/ai-preflight-panel.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 type EnhanceOption = { key: string; label: string; description: string; enabled: boolean };
@@ -19,7 +20,7 @@ type FieldLimitMap = Record<string, number>;
 @Component({
     selector: 'app-ai-enhance-deck-modal',
     standalone: true,
-    imports: [NgFor, NgIf, FormsModule, ButtonComponent, TranslatePipe],
+    imports: [NgFor, NgIf, FormsModule, ButtonComponent, TranslatePipe, AiPreflightPanelComponent],
     template: `
     <div class="modal-overlay" (click)="close()">
       <div class="modal-content ai-modal" (click)="$event.stopPropagation()">
@@ -397,6 +398,14 @@ type FieldLimitMap = Record<string, number>;
           <div *ngIf="createSuccess()" class="success-state" role="status">
             {{ createSuccess() }}
           </div>
+          <div *ngIf="preflightError()" class="error-state" role="alert">
+            {{ preflightError() }}
+          </div>
+          <app-ai-preflight-panel
+            *ngIf="preflight()"
+            [preflight]="preflight()"
+            title="Review enhancement plan"
+          />
         </div>
 
         <div class="modal-footer">
@@ -406,7 +415,7 @@ type FieldLimitMap = Record<string, number>;
             (click)="submit()"
             [disabled]="!canSubmit()"
           >
-            {{ creating() ? 'Queueing...' : 'Start enhancement' }}
+            {{ submitLabel() }}
           </app-button>
         </div>
       </div>
@@ -610,8 +619,15 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     modelName = signal('');
     notes = signal('');
     creating = signal(false);
+    preflighting = signal(false);
     createError = signal('');
     createSuccess = signal('');
+    preflightError = signal('');
+    preflight = signal<AiJobPreflightResponse | null>(null);
+    selectedScope = signal<'local' | 'global'>('local');
+    pendingRequestId = signal(this.generateRequestId());
+    private lastPreflightSignature = signal('');
+    private readonly injector = inject(Injector);
     showScopePrompt = signal(false);
     loadingTemplate = signal(false);
     templateFields = signal<FieldTemplateDTO[]>([]);
@@ -671,6 +687,16 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     });
     readonly formatOptions = ['mp3', 'ogg', 'wav'];
     readonly ttsFormatOptions = computed(() => ['gemini', 'qwen'].includes(this.selectedProvider()) ? ['wav'] : this.formatOptions);
+    readonly preflightSignature = computed(() => JSON.stringify(this.buildCreateJobRequest(this.selectedScope()).params ?? {}));
+    readonly submitLabel = computed(() => {
+        if (this.creating()) {
+            return 'Queueing...';
+        }
+        if (this.preflighting()) {
+            return 'Analyzing...';
+        }
+        return this.preflight() ? 'Confirm and start' : 'Analyze plan';
+    });
 
     private readonly optionDescriptions: Record<string, string> = {
         ['audit']: 'Find inconsistencies and weak cards.',
@@ -812,6 +838,16 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         this.loadRuntimeCapabilities();
         this.loadProviders();
         this.loadTemplateFields();
+        effect(() => {
+            const signature = this.preflightSignature();
+            const lastSignature = this.lastPreflightSignature();
+            if (!this.preflight() || !lastSignature || signature === lastSignature) {
+                return;
+            }
+            this.preflight.set(null);
+            this.preflightError.set('');
+            this.pendingRequestId.set(this.generateRequestId());
+        }, { injector: this.injector });
     }
 
     private loadRuntimeCapabilities(): void {
@@ -924,6 +960,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
     canSubmit(): boolean {
         return !this.creating()
+            && !this.preflighting()
             && !!this.selectedCredentialId()
             && this.selectedOptions().size > 0
             && (!this.selectedOptions().has('missing_fields') || this.selectedMissingFields().size > 0)
@@ -937,11 +974,13 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             this.showScopePrompt.set(true);
             return;
         }
+        this.selectedScope.set('local');
         this.startEnhancement('local');
     }
 
     confirmScopeAndStart(scope: 'local' | 'global'): void {
         this.showScopePrompt.set(false);
+        this.selectedScope.set(scope);
         this.startEnhancement(scope);
     }
 
@@ -951,6 +990,10 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
     private startEnhancement(scope: 'local' | 'global'): void {
         if (!this.canSubmit()) {
+            return;
+        }
+        if (!this.preflight()) {
+            this.runPreflight(scope);
             return;
         }
         this.creating.set(true);
@@ -976,15 +1019,60 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     }
 
     private queueEnhancementJob(scope: 'local' | 'global', actions: string[]): void {
+        this.aiApi.createJob({
+            requestId: this.pendingRequestId(),
+            deckId: this.userDeckId,
+            type: 'generic',
+            params: this.preflight()?.normalizedParams || this.buildCreateJobRequest(scope).params
+        }).subscribe({
+            next: job => {
+                this.creating.set(false);
+                this.preflight.set(null);
+                this.preflightError.set('');
+                this.lastPreflightSignature.set('');
+                this.pendingRequestId.set(this.generateRequestId());
+                this.clearDraft();
+                this.jobCreated.emit(job);
+                this.close();
+            },
+            error: err => {
+                this.creating.set(false);
+                this.createError.set(err?.error?.message || 'Failed to create AI job');
+            }
+        });
+    }
+
+    private runPreflight(scope: 'local' | 'global'): void {
+        this.preflighting.set(true);
+        this.preflightError.set('');
+        this.createError.set('');
+        this.createSuccess.set('');
+        const request = this.buildCreateJobRequest(scope);
+        this.aiApi.preflightJob(request).subscribe({
+            next: preflight => {
+                this.preflighting.set(false);
+                this.preflight.set(preflight);
+                this.lastPreflightSignature.set(this.preflightSignature());
+                this.pendingRequestId.set(request.requestId);
+            },
+            error: err => {
+                this.preflighting.set(false);
+                this.preflightError.set(err?.error?.message || 'Failed to analyze deck enhancement');
+            }
+        });
+    }
+
+    private buildCreateJobRequest(scope: 'local' | 'global'): CreateAiJobRequest {
+        const selected = this.selectedOptions();
+        const actions = Array.from(selected).filter(action => action === 'audit' || action === 'missing_fields');
         const input = this.buildPrompt(actions);
         const missingSelected = actions.includes('missing_fields');
         const tts = this.ttsEnabled() ? this.buildTtsParams() : null;
         const image = this.imageEnabled() ? this.buildImageParams() : null;
         const video = this.videoEnabled() ? this.buildVideoParams() : null;
         const fieldLimits = missingSelected ? this.buildFieldLimitsPayload() : [];
-
-        this.aiApi.createJob({
-            requestId: this.generateRequestId(),
+        return {
+            requestId: this.pendingRequestId(),
             deckId: this.userDeckId,
             type: 'generic',
             params: {
@@ -1002,18 +1090,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                     ...(video ? { video } : {})
                 } : {})
             }
-        }).subscribe({
-            next: job => {
-                this.creating.set(false);
-                this.clearDraft();
-                this.jobCreated.emit(job);
-                this.close();
-            },
-            error: err => {
-                this.creating.set(false);
-                this.createError.set(err?.error?.message || 'Failed to create AI job');
-            }
-        });
+        };
     }
 
     private autoResolveDuplicates(scope: 'local' | 'global'): Promise<void> {

@@ -80,6 +80,26 @@ public class AiJobCostEstimator {
         return scale(total);
     }
 
+    public AiJobCostResponse buildPlannedSnapshot(AiJobType type,
+                                                  JsonNode params,
+                                                  String provider,
+                                                  String model) {
+        PlannedCost planned = estimatePlanned(type, params, provider, model);
+        if (planned.isEmpty()) {
+            return null;
+        }
+        return new AiJobCostResponse(
+                planned.inputTokens(),
+                planned.outputTokens(),
+                planned.cost(),
+                planned.currency(),
+                null,
+                null,
+                null,
+                null
+        );
+    }
+
     public AiJobCostResponse buildSnapshot(AiJobEntity job,
                                            String provider,
                                            String model,

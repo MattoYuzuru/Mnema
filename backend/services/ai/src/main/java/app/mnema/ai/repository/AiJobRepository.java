@@ -38,4 +38,13 @@ public interface AiJobRepository extends JpaRepository<AiJobEntity, UUID> {
                                 @Param("statuses") List<AiJobStatus> statuses,
                                 @Param("createdAt") Instant createdAt,
                                 @Param("now") Instant now);
+
+    @Query("""
+            select count(j)
+            from AiJobEntity j
+            where j.status in :statuses
+              and (j.nextRunAt is null or j.nextRunAt <= :now)
+            """)
+    long countRunnableJobs(@Param("statuses") List<AiJobStatus> statuses,
+                           @Param("now") Instant now);
 }

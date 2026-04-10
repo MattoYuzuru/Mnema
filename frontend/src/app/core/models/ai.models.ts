@@ -90,6 +90,35 @@ export interface AiJobResponse {
     queueAhead?: number | null;
 }
 
+export interface AiJobPreflightItem {
+    itemType?: string | null;
+    cardId?: string | null;
+    preview?: string | null;
+    fields?: string[] | null;
+    plannedStages?: string[] | null;
+}
+
+export interface AiJobPreflightResponse {
+    deckId?: string | null;
+    type: AiJobType;
+    providerCredentialId?: string | null;
+    provider?: string | null;
+    providerAlias?: string | null;
+    model?: string | null;
+    mode?: string | null;
+    normalizedParams?: Record<string, unknown> | null;
+    summary?: string | null;
+    targetCount?: number | null;
+    fields?: string[] | null;
+    plannedStages?: string[] | null;
+    warnings?: string[] | null;
+    items?: AiJobPreflightItem[] | null;
+    cost?: AiJobResponse['cost'];
+    estimatedSecondsRemaining?: number | null;
+    estimatedCompletionAt?: string | null;
+    queueAhead?: number | null;
+}
+
 export interface AiJobStepResponse {
     stepName: string;
     status: AiJobStepStatus;

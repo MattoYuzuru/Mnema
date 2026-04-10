@@ -1,6 +1,7 @@
 package app.mnema.ai.controller;
 
 import app.mnema.ai.controller.dto.AiJobResponse;
+import app.mnema.ai.controller.dto.AiJobPreflightResponse;
 import app.mnema.ai.controller.dto.AiJobResultResponse;
 import app.mnema.ai.controller.dto.CreateAiJobRequest;
 import app.mnema.ai.service.AiJobService;
@@ -33,6 +34,12 @@ public class AiJobController {
                                 @Valid @RequestBody CreateAiJobRequest request) {
         String accessToken = jwt == null ? null : jwt.getTokenValue();
         return jobService.createJob(jwt, accessToken, request);
+    }
+
+    @PostMapping("/preflight")
+    public AiJobPreflightResponse preflight(@AuthenticationPrincipal Jwt jwt,
+                                            @Valid @RequestBody CreateAiJobRequest request) {
+        return jobService.preflightJob(jwt, request);
     }
 
     @GetMapping
