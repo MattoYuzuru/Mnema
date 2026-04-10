@@ -11,6 +11,7 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.util.Base64;
 import java.util.Locale;
@@ -18,27 +19,34 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Duration;
 
 @Component
 public class OpenAiClient {
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
+    private final Duration requestReadTimeout;
 
     public OpenAiClient(RestClient.Builder restClientBuilder,
                         OpenAiProps props,
                         ObjectMapper objectMapper) {
+        long connectTimeoutMs = positiveOrDefault(props.requestConnectTimeoutMs(), 10_000L);
+        long readTimeoutMs = positiveOrDefault(props.requestReadTimeoutMs(), 600_000L);
         // local-ai-gateway runs on uvicorn (HTTP/1.1); forcing h1 avoids h2c upgrade failures
         JdkClientHttpRequestFactory http11Factory = new JdkClientHttpRequestFactory(
                 HttpClient.newBuilder()
+                        .connectTimeout(Duration.ofMillis(connectTimeoutMs))
                         .version(HttpClient.Version.HTTP_1_1)
                         .build()
         );
+        http11Factory.setReadTimeout(Duration.ofMillis(readTimeoutMs));
         this.restClient = restClientBuilder
                 .requestFactory(http11Factory)
                 .baseUrl(props.baseUrl())
                 .build();
         this.objectMapper = objectMapper;
+        this.requestReadTimeout = Duration.ofMillis(readTimeoutMs);
     }
 
     public OpenAiResponseResult createResponse(String apiKey, OpenAiResponseRequest request) {
@@ -395,6 +403,7 @@ public class OpenAiClient {
         try {
             HttpRequest.Builder builder = HttpRequest.newBuilder()
                     .uri(URI.create(imageUrl))
+                    .timeout(requestReadTimeout)
                     .GET();
             if (hasApiKey(apiKey)) {
                 builder.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
@@ -414,5 +423,44 @@ public class OpenAiClient {
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to download image bytes", ex);
         }
+    }
+
+    static boolean isRetryableTransportFailure(Throwable throwable) {
+        Throwable current = throwable;
+        while (current != null) {
+            if (current instanceof java.net.http.HttpTimeoutException
+                    || current instanceof java.net.SocketTimeoutException
+                    || current instanceof java.net.ConnectException
+                    || current instanceof java.net.NoRouteToHostException
+                    || current instanceof java.net.UnknownHostException) {
+                return true;
+            }
+            if (current instanceof java.io.IOException && !(current instanceof java.io.InterruptedIOException)) {
+                return true;
+            }
+            if (current instanceof RestClientException && current.getCause() == null) {
+                String message = current.getMessage();
+                if (message != null) {
+                    String normalized = message.toLowerCase(Locale.ROOT);
+                    if (normalized.contains("timed out")
+                            || normalized.contains("connection reset")
+                            || normalized.contains("connection refused")
+                            || normalized.contains("broken pipe")
+                            || normalized.contains("i/o error")
+                            || normalized.contains("eof")) {
+                        return true;
+                    }
+                }
+            }
+            current = current.getCause();
+        }
+        return false;
+    }
+
+    private static long positiveOrDefault(Long value, long fallback) {
+        if (value == null || value <= 0) {
+            return fallback;
+        }
+        return value;
     }
 }

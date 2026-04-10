@@ -21,7 +21,7 @@ class AiJobCostEstimatorTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final AiJobCostEstimator estimator = new AiJobCostEstimator(
-            new OpenAiProps("https://api.openai.com", "", "gpt-4.1-mini", "gpt-4o-mini-tts", "alloy", "mp3", "", "", "1024x1024", "standard", "natural", "png", "", 8, "1280x720", 60, 5, 2000L, 30000L),
+            new OpenAiProps("https://api.openai.com", "", "gpt-4.1-mini", "gpt-4o-mini-tts", "alloy", "mp3", "", "", "1024x1024", "standard", "natural", "png", "", 8, "1280x720", 60, 12, 5, 2000L, 30000L, 10000L, 600000L),
             new GeminiProps("https://generativelanguage.googleapis.com", "gemini-2.0-flash", "gemini-2.5-flash-preview-tts", "Kore", "audio/wav", "gemini-2.0-flash", "gemini-2.5-flash-image", 10, 5, 2000L, 30000L),
             new QwenProps("https://dashscope.aliyuncs.com/compatible-mode/v1", "https://dashscope.aliyuncs.com", "qwen2.5-3b-instruct", "qwen3-vl-flash", "qwen3-tts-flash", "Cherry", "wav", "qwen3-asr-flash", "qwen-image-plus", "1024x1024", null, null, "png", "wan2.2-t2v-plus", 10, "1280x720", 60, 5, 2000L, 30000L),
             new GrokProps("https://api.x.ai", "grok-4-fast-non-reasoning", "grok-voice-mini", "sage", "mp3", "", "grok-imagine-image", "1024x1024", null, null, "jpg", "grok-imagine-video", 8, "1280x720", 60, 5, 2000L, 30000L)
@@ -258,6 +258,25 @@ class AiJobCostEstimatorTest {
 
         assertThat(snapshot).isNotNull();
         assertThat(snapshot.actualCost()).isEqualByComparingTo("0.044035");
+    }
+
+    @Test
+    void buildPlannedSnapshotTreatsOllamaAsZeroCostLocalProvider() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", "generate_cards");
+        params.put("provider", "ollama");
+        params.put("model", "qwen3:8b");
+        params.put("count", 3);
+        params.putArray("fields").add("front").add("back");
+        params.putObject("tts").put("enabled", true).put("model", "kokoro-tts").put("maxChars", 180);
+
+        var snapshot = estimator.buildPlannedSnapshot(AiJobType.enrich, params, "ollama", "qwen3:8b");
+
+        assertThat(snapshot).isNotNull();
+        assertThat(snapshot.estimatedInputTokens()).isPositive();
+        assertThat(snapshot.estimatedOutputTokens()).isPositive();
+        assertThat(snapshot.estimatedCost()).isEqualByComparingTo("0.000000");
+        assertThat(snapshot.estimatedCostCurrency()).isNull();
     }
 
     @Test

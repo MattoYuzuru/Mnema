@@ -487,6 +487,38 @@ class AiJobServiceTest extends PostgresIntegrationTest {
         assertThat(preflight.estimatedCompletionAt()).isNotNull().isAfter(Instant.now().minusSeconds(1));
     }
 
+    @Test
+    void preflightAddsSelfHostWarningsForOllamaAudioAndVideo() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", "generate_cards");
+        params.put("provider", "ollama");
+        params.put("model", "qwen3:8b");
+        params.put("count", 2);
+        params.putArray("fields").add("Front").add("Back");
+        params.putObject("tts").put("enabled", true).put("model", "kokoro-tts");
+        params.putObject("video").put("enabled", true).put("durationSeconds", 4);
+
+        AiJobPreflightResponse preflight = jobService.preflightJob(jwtFor(userId), new CreateAiJobRequest(
+                UUID.randomUUID(),
+                deckId,
+                AiJobType.enrich,
+                params,
+                null,
+                null,
+                null
+        ));
+
+        assertThat(preflight.provider()).isEqualTo("ollama");
+        assertThat(preflight.warnings()).anySatisfy(warning -> assertThat(warning).contains("Local TTS"));
+        assertThat(preflight.warnings()).anySatisfy(warning -> assertThat(warning).contains("Local video generation"));
+        assertThat(preflight.cost()).isNotNull();
+        assertThat(preflight.cost().estimatedCost()).isEqualByComparingTo("0.000000");
+        assertThat(preflight.cost().estimatedCostCurrency()).isNull();
+    }
+
     private void seedQuota(UUID userId, int tokensLimit) {
         LocalDate periodStart = currentPeriodStart(userId);
         LocalDate periodEnd = quotaService.currentPeriodEnd(userId);

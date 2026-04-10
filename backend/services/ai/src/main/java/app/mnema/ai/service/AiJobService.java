@@ -144,7 +144,7 @@ public class AiJobService {
         List<String> fields = resolveFields(normalizedParams);
         List<String> plannedStages = resolvePlannedStages(mode, normalizedParams);
         List<AiJobPreflightItemResponse> items = buildPlannedItems(mode, normalizedParams, fields, plannedStages, targetCount);
-        List<String> warnings = buildPreflightWarnings(mode, items, targetCount);
+        List<String> warnings = buildPreflightWarnings(mode, items, targetCount, providerInfo.provider(), normalizedParams);
         AiJobEtaEstimator.EtaEstimate eta = etaEstimator.estimatePlanned(jobType, normalizedParams, providerInfo.provider());
         AiJobCostResponse cost = costEstimator.buildPlannedSnapshot(jobType, normalizedParams, providerInfo.provider(), providerInfo.model());
         return new AiJobPreflightResponse(
@@ -585,13 +585,27 @@ public class AiJobService {
 
     private List<String> buildPreflightWarnings(String mode,
                                                 List<AiJobPreflightItemResponse> items,
-                                                Integer targetCount) {
+                                                Integer targetCount,
+                                                String provider,
+                                                JsonNode params) {
         ArrayList<String> warnings = new ArrayList<>();
         if (targetCount != null && targetCount > items.size()) {
             warnings.add("Showing the first " + items.size() + " planned items.");
         }
         if (mode.contains("audio") || items.stream().anyMatch(item -> item.plannedStages().contains("audio"))) {
             warnings.add("Audio generation can dominate runtime on larger batches.");
+        }
+        String normalizedProvider = normalizeProvider(provider);
+        if ("ollama".equals(normalizedProvider)) {
+            if (isGenerationEnabled(params.path("tts")) || mode.contains("audio")) {
+                warnings.add("Local TTS depends on your self-host audio backend or Ollama experimental audio endpoints. Verify the gateway and selected voice/model before long runs.");
+            }
+            if (isGenerationEnabled(params.path("image"))) {
+                warnings.add("Local image generation can be experimental depending on the configured backend and GPU memory. Expect longer runtime on larger batches.");
+            }
+            if (isGenerationEnabled(params.path("video"))) {
+                warnings.add("Local video generation is the heaviest self-host path. Use short duration, low concurrency, and confirm the video backend is configured.");
+            }
         }
         return warnings;
     }
@@ -766,6 +780,17 @@ public class AiJobService {
             return value.isEmpty() ? null : value;
         }
         return null;
+    }
+
+    private String normalizeProvider(String provider) {
+        if (provider == null || provider.isBlank()) {
+            return "";
+        }
+        String normalized = provider.trim().toLowerCase(java.util.Locale.ROOT);
+        if ("local-openai".equals(normalized)) {
+            return "ollama";
+        }
+        return normalized;
     }
 
     private record ProviderInfo(UUID credentialId, String provider, String alias, String model) {

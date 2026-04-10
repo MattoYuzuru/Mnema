@@ -145,6 +145,30 @@ class AiControllerTest {
         assertThat(runtimeController.capabilities()).isEqualTo(capabilities);
     }
 
+    @Test
+    void jobAndImportControllersHandleMissingJwtAccessTokens() {
+        AiJobController jobController = new AiJobController(jobService);
+        AiImportController importController = new AiImportController(importService);
+        UUID deckId = UUID.randomUUID();
+        UUID jobId = UUID.randomUUID();
+        UUID requestId = UUID.randomUUID();
+        UUID sourceMediaId = UUID.randomUUID();
+        AiJobResponse response = jobResponse(deckId);
+        CreateAiJobRequest request = new CreateAiJobRequest(requestId, deckId, AiJobType.generic, objectMapper.createObjectNode(), null, null, null);
+        AiImportPreviewRequest previewRequest = new AiImportPreviewRequest(requestId, deckId, sourceMediaId, null, "ollama", "qwen3:8b", "pdf", "utf-8", "en", null, null);
+        AiImportGenerateRequest generateRequest = new AiImportGenerateRequest(requestId, deckId, sourceMediaId, List.of("Front"), 3, null, "ollama", "qwen3:8b", "pdf", "utf-8", "en", null, null, null, null, null);
+
+        when(jobService.createJob(null, null, request)).thenReturn(response);
+        when(jobService.retryFailedJob(null, null, jobId)).thenReturn(response);
+        when(importService.createPreviewJob(null, null, previewRequest)).thenReturn(response);
+        when(importService.createGenerateJob(null, null, generateRequest)).thenReturn(response);
+
+        assertThat(jobController.create(null, request)).isEqualTo(response);
+        assertThat(jobController.retryFailed(null, jobId)).isEqualTo(response);
+        assertThat(importController.preview(null, previewRequest)).isEqualTo(response);
+        assertThat(importController.generate(null, generateRequest)).isEqualTo(response);
+    }
+
     private AiJobResponse jobResponse(UUID deckId) {
         return new AiJobResponse(
                 UUID.randomUUID(),

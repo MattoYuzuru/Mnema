@@ -259,7 +259,8 @@ public class AiJobEtaEstimator {
     }
 
     private int resolveProviderTtsRequestsPerMinute(String provider) {
-        return switch (normalize(provider)) {
+        return switch (normalizeProvider(provider)) {
+            case "ollama" -> positiveInt(openAiProps.localTtsRequestsPerMinute(), 12);
             case "gemini" -> positiveInt(geminiProps.ttsRequestsPerMinute(), 10);
             case "qwen" -> positiveInt(qwenProps.ttsRequestsPerMinute(), 60);
             case "grok" -> positiveInt(grokProps.ttsRequestsPerMinute(), 60);
@@ -453,6 +454,14 @@ public class AiJobEtaEstimator {
 
     private String normalize(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private String normalizeProvider(String value) {
+        String normalized = normalize(value);
+        if ("local-openai".equals(normalized)) {
+            return "ollama";
+        }
+        return normalized;
     }
 
     private int clamp(int value, int min, int max) {

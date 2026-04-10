@@ -36,6 +36,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.io.ByteArrayInputStream;
@@ -4650,12 +4651,14 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                          OpenAiSpeechRequest request,
                                          UUID cardId,
                                          String targetField) {
+        JsonNode params = safeParams(job);
+        boolean localProvider = isLocalOllamaRequest(params);
         int maxRetries = resolveTtsMaxRetries();
         long delayMs = resolveTtsRetryInitialDelayMs();
         long maxDelayMs = resolveTtsRetryMaxDelayMs();
         int attempts = 0;
         while (true) {
-            throttleTtsRequests();
+            throttleTtsRequests(localProvider);
             try {
                 return openAiClient.createSpeech(apiKey, request);
             } catch (RestClientResponseException ex) {
@@ -4682,12 +4685,28 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     throw new IllegalStateException("OpenAI TTS retry interrupted");
                 }
                 attempts++;
+            } catch (RestClientException ex) {
+                if (!OpenAiClient.isRetryableTransportFailure(ex) || attempts >= maxRetries) {
+                    throw ex;
+                }
+                long waitMs = delayMs;
+                delayMs = Math.min(delayMs * 2, maxDelayMs);
+                LOGGER.warn("OpenAI TTS transport failure jobId={} cardId={} field={} waitMs={} message={}",
+                        job.getJobId(),
+                        cardId,
+                        targetField,
+                        waitMs,
+                        summarizeError(ex));
+                if (!sleepQuietly(waitMs)) {
+                    throw new IllegalStateException("OpenAI TTS retry interrupted");
+                }
+                attempts++;
             }
         }
     }
 
-    private void throttleTtsRequests() {
-        int rpm = resolveTtsRequestsPerMinute();
+    private void throttleTtsRequests(boolean localProvider) {
+        int rpm = resolveTtsRequestsPerMinute(localProvider);
         if (rpm <= 0) {
             return;
         }
@@ -4707,10 +4726,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
     }
 
-    private int resolveTtsRequestsPerMinute() {
-        Integer rpm = props.ttsRequestsPerMinute();
+    private int resolveTtsRequestsPerMinute(boolean localProvider) {
+        Integer rpm = localProvider ? props.localTtsRequestsPerMinute() : props.ttsRequestsPerMinute();
         if (rpm == null) {
-            return DEFAULT_TTS_REQUESTS_PER_MINUTE;
+            return localProvider ? 12 : DEFAULT_TTS_REQUESTS_PER_MINUTE;
         }
         return Math.max(rpm, 0);
     }

@@ -15,13 +15,18 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.ResourceAccessException;
 
 import java.lang.reflect.Method;
+import java.net.SocketTimeoutException;
 import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class OpenAiJobProcessorTest {
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
@@ -108,6 +113,60 @@ class OpenAiJobProcessorTest {
     }
 
     @Test
+    void isLocalOllamaRequestRecognizesLocalProviderAliases() throws Exception {
+        OpenAiJobProcessor processor = createProcessor();
+        Method isLocalOllamaRequest = OpenAiJobProcessor.class.getDeclaredMethod("isLocalOllamaRequest", JsonNode.class);
+        isLocalOllamaRequest.setAccessible(true);
+
+        boolean ollama = (boolean) isLocalOllamaRequest.invoke(processor, OBJECT_MAPPER.createObjectNode().put("provider", "ollama"));
+        boolean localOpenAi = (boolean) isLocalOllamaRequest.invoke(processor, OBJECT_MAPPER.createObjectNode().put("provider", "local-openai"));
+        boolean openAi = (boolean) isLocalOllamaRequest.invoke(processor, OBJECT_MAPPER.createObjectNode().put("provider", "openai"));
+
+        assertThat(ollama).isTrue();
+        assertThat(localOpenAi).isTrue();
+        assertThat(openAi).isFalse();
+    }
+
+    @Test
+    void createSpeechWithRetryRetriesTransportFailuresForLocalProvider() throws Exception {
+        OpenAiClient client = mock(OpenAiClient.class);
+        when(client.createSpeech(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any()))
+                .thenThrow(new ResourceAccessException("Read timed out", new SocketTimeoutException("Read timed out")))
+                .thenReturn(new byte[]{1, 2, 3});
+
+        OpenAiJobProcessor processor = createProcessor(client);
+        ObjectNode params = OBJECT_MAPPER.createObjectNode();
+        params.put("provider", "ollama");
+        params.put("mode", "missing_audio");
+        params.putObject("tts")
+                .put("enabled", true)
+                .put("model", "kokoro-tts");
+        AiJobEntity job = createJob(params, AiJobType.tts);
+
+        Method createSpeechWithRetry = OpenAiJobProcessor.class.getDeclaredMethod(
+                "createSpeechWithRetry",
+                AiJobEntity.class,
+                String.class,
+                OpenAiSpeechRequest.class,
+                UUID.class,
+                String.class
+        );
+        createSpeechWithRetry.setAccessible(true);
+
+        byte[] result = (byte[]) createSpeechWithRetry.invoke(
+                processor,
+                job,
+                "",
+                new OpenAiSpeechRequest("kokoro-tts", "hola", "alloy", "mp3"),
+                UUID.randomUUID(),
+                "audio"
+        );
+
+        assertThat(result).containsExactly(1, 2, 3);
+        verify(client, times(2)).createSpeech(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     void resolveLocalGenerateBatchSizeKeepsLargeOllamaRequestsSmall() throws Exception {
         OpenAiJobProcessor processor = createProcessor();
         ObjectNode params = OBJECT_MAPPER.createObjectNode();
@@ -140,8 +199,12 @@ class OpenAiJobProcessorTest {
     }
 
     private static OpenAiJobProcessor createProcessor() {
+        return createProcessor(mock(OpenAiClient.class));
+    }
+
+    private static OpenAiJobProcessor createProcessor(OpenAiClient openAiClient) {
         return new OpenAiJobProcessor(
-                mock(OpenAiClient.class),
+                openAiClient,
                 new OpenAiProps(
                         "https://api.openai.com/v1",
                         "",
@@ -159,9 +222,12 @@ class OpenAiJobProcessorTest {
                         5,
                         "720p",
                         60,
+                        12,
                         5,
                         2_000L,
-                        30_000L
+                        30_000L,
+                        10_000L,
+                        600_000L
                 ),
                 mock(SecretVault.class),
                 mock(AiProviderCredentialRepository.class),

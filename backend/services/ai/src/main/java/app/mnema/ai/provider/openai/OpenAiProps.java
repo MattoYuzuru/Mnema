@@ -20,8 +20,11 @@ public record OpenAiProps(
         Integer defaultVideoDurationSeconds,
         String defaultVideoResolution,
         Integer ttsRequestsPerMinute,
+        Integer localTtsRequestsPerMinute,
         Integer ttsMaxRetries,
         Long ttsRetryInitialDelayMs,
-        Long ttsRetryMaxDelayMs
+        Long ttsRetryMaxDelayMs,
+        Long requestConnectTimeoutMs,
+        Long requestReadTimeoutMs
 ) {
 }

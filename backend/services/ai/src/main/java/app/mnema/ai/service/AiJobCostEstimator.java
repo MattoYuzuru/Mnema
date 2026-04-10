@@ -46,7 +46,7 @@ public class AiJobCostEstimator {
                                        String provider,
                                        String model) {
         JsonNode safeParams = params == null ? NullNode.getInstance() : params;
-        String resolvedProvider = normalize(provider);
+        String resolvedProvider = normalizeProvider(provider);
         String resolvedModel = normalize(resolvePrimaryModel(resolvedProvider, model, safeParams));
         int estimatedInputTokens = estimateInputTokens(type, safeParams);
         int estimatedOutputTokens = estimateOutputTokens(type, safeParams);
@@ -70,7 +70,7 @@ public class AiJobCostEstimator {
         if (result.costEstimate() != null && result.costEstimate().compareTo(BigDecimal.ZERO) > 0) {
             return scale(result.costEstimate());
         }
-        String provider = normalize(result.provider());
+        String provider = normalizeProvider(result.provider());
         String model = normalize(result.model());
         Pricing pricing = resolveTextPricing(provider, normalize(resolvePrimaryModel(provider, model, job.getParamsJson())));
         BigDecimal total = estimateTextCost(result.tokensIn(), result.tokensOut(), pricing)
@@ -108,7 +108,7 @@ public class AiJobCostEstimator {
             return null;
         }
         PlannedCost planned = estimatePlanned(job.getType(), job.getParamsJson(), provider, model);
-        String resolvedProvider = normalize(provider);
+        String resolvedProvider = normalizeProvider(provider);
         String resolvedModel = normalize(resolvePrimaryModel(resolvedProvider, model, job.getParamsJson()));
         Pricing pricing = resolveTextPricing(resolvedProvider, resolvedModel);
         BigDecimal actualCost = usage == null
@@ -206,7 +206,7 @@ public class AiJobCostEstimator {
             return ZERO;
         }
         JsonNode safeParams = params == null ? NullNode.getInstance() : params;
-        String resolvedProvider = normalize(provider);
+        String resolvedProvider = normalizeProvider(provider);
         String resolvedModel = normalize(ttsModel);
         int estimatedChars = estimateTtsChars(safeParams, count, actual);
         return estimateTtsCostFromChars(resolvedProvider, resolvedModel, estimatedChars);
@@ -222,7 +222,7 @@ public class AiJobCostEstimator {
         }
         int actualChars = actualTtsChars(job);
         if (actualChars > 0) {
-            return estimateTtsCostFromChars(normalize(provider), normalize(ttsModel), actualChars);
+            return estimateTtsCostFromChars(normalizeProvider(provider), normalize(ttsModel), actualChars);
         }
         return estimateTtsCost(job.getParamsJson(), provider, ttsModel, count, true);
     }
@@ -231,6 +231,9 @@ public class AiJobCostEstimator {
                                                 String ttsModel,
                                                 int estimatedChars) {
         if (estimatedChars <= 0) {
+            return ZERO;
+        }
+        if ("ollama".equals(provider)) {
             return ZERO;
         }
         if ("qwen".equals(provider)) {
@@ -260,7 +263,7 @@ public class AiJobCostEstimator {
         if (imageCount <= 0) {
             return ZERO;
         }
-        String resolvedProvider = normalize(provider);
+        String resolvedProvider = normalizeProvider(provider);
         String resolvedModel = normalize(imageModel);
         if ("gemini".equals(resolvedProvider) && resolvedModel.contains("flash-image")) {
             return new BigDecimal("0.039").multiply(BigDecimal.valueOf(imageCount));
@@ -279,7 +282,7 @@ public class AiJobCostEstimator {
         if (videoCount <= 0) {
             return ZERO;
         }
-        String resolvedProvider = normalize(provider);
+        String resolvedProvider = normalizeProvider(provider);
         String resolvedModel = normalize(videoModel);
         int durationSeconds = positiveInt(params.path("video").path("durationSeconds"), 8);
         if ("qwen".equals(resolvedProvider) && resolvedModel.contains("wan2.2-t2v-plus")) {
@@ -291,9 +294,10 @@ public class AiJobCostEstimator {
     }
 
     private Pricing resolveTextPricing(String provider, String model) {
-        String resolvedProvider = normalize(provider);
+        String resolvedProvider = normalizeProvider(provider);
         String resolvedModel = normalize(model);
         return switch (resolvedProvider) {
+            case "ollama" -> new Pricing(null, BigDecimal.ZERO, BigDecimal.ZERO);
             case "openai" -> {
                 if (resolvedModel.contains("gpt-4.1-mini")) {
                     yield new Pricing("USD", new BigDecimal("0.40"), new BigDecimal("1.60"));
@@ -323,7 +327,7 @@ public class AiJobCostEstimator {
                 yield new Pricing("CNY", new BigDecimal("0.30"), new BigDecimal("0.90"));
             }
             case "grok" -> new Pricing("USD", new BigDecimal("0.20"), new BigDecimal("0.50"));
-            default -> new Pricing("USD", BigDecimal.ZERO, BigDecimal.ZERO);
+            default -> new Pricing(null, BigDecimal.ZERO, BigDecimal.ZERO);
         };
     }
 
@@ -336,8 +340,8 @@ public class AiJobCostEstimator {
         if (hasText(fromParams)) {
             return fromParams;
         }
-        return switch (normalize(provider)) {
-            case "openai" -> openAiProps.defaultModel();
+        return switch (normalizeProvider(provider)) {
+            case "openai", "ollama" -> openAiProps.defaultModel();
             case "gemini" -> geminiProps.defaultModel();
             case "qwen" -> qwenProps.defaultModel();
             case "grok" -> grokProps.defaultModel();
@@ -351,8 +355,8 @@ public class AiJobCostEstimator {
         if (hasText(explicit)) {
             return explicit;
         }
-        return switch (normalize(provider)) {
-            case "openai" -> openAiProps.defaultTtsModel();
+        return switch (normalizeProvider(provider)) {
+            case "openai", "ollama" -> openAiProps.defaultTtsModel();
             case "gemini" -> geminiProps.defaultTtsModel();
             case "qwen" -> qwenProps.defaultTtsModel();
             case "grok" -> grokProps.defaultTtsModel();
@@ -366,7 +370,8 @@ public class AiJobCostEstimator {
         if (hasText(explicit)) {
             return explicit;
         }
-        return switch (normalize(provider)) {
+        return switch (normalizeProvider(provider)) {
+            case "ollama" -> openAiProps.defaultImageModel();
             case "gemini" -> null;
             case "qwen" -> qwenProps.defaultImageModel();
             case "grok" -> grokProps.defaultImageModel();
@@ -380,7 +385,8 @@ public class AiJobCostEstimator {
         if (hasText(explicit)) {
             return explicit;
         }
-        return switch (normalize(provider)) {
+        return switch (normalizeProvider(provider)) {
+            case "ollama" -> openAiProps.defaultVideoModel();
             case "qwen" -> qwenProps.defaultVideoModel();
             case "grok" -> grokProps.defaultVideoModel();
             default -> null;
@@ -561,6 +567,14 @@ public class AiJobCostEstimator {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private String normalizeProvider(String provider) {
+        String normalized = normalize(provider);
+        if ("local-openai".equals(normalized)) {
+            return "ollama";
+        }
+        return normalized;
     }
 
     private String normalize(String value) {
