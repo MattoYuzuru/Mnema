@@ -931,7 +931,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 throw new IllegalStateException("No supported fields to generate");
             }
 
-            MissingCardSelection selection = selectMissingCards(job.getDeckId(), targetFields, params, accessToken);
+            MissingCardSelection selection = selectMissingCards(job.getDeckId(), targetFields, fieldTypes, params, accessToken);
             return new MissingFieldsContext(template, publicDeck, updateScope, fieldTypes, promptFields, targetAudioFields, targetFields, selection);
         });
         List<CoreUserCardResponse> missingCards = context.selection().cards();
@@ -1097,12 +1097,14 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             if (targetFields.isEmpty()) {
                 throw new IllegalStateException("No audio fields selected");
             }
-            int limit = resolveLimit(params.path("limit"));
-            List<CoreUserCardResponse> missingCards = coreApiClient.getMissingFieldCards(
+            Map<String, String> fieldTypes = resolveFieldTypes(template);
+            List<CoreUserCardResponse> missingCards = selectMissingCards(
                     job.getDeckId(),
-                    new CoreApiClient.MissingFieldCardsRequest(targetFields, limit, null),
+                    new LinkedHashSet<>(targetFields),
+                    fieldTypes,
+                    params,
                     accessToken
-            );
+            ).cards();
             return new MissingAudioContext(template, updateScope, targetFields, missingCards);
         });
         List<CoreUserCardResponse> missingCards = context.missingCards();
@@ -3870,8 +3872,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private MissingCardSelection selectMissingCards(UUID deckId,
                                                     Set<String> targetFields,
+                                                    Map<String, String> fieldTypes,
                                                     JsonNode params,
                                                     String accessToken) {
+        Set<UUID> requestedCardIds = resolveRequestedCardIds(params);
+        if (!requestedCardIds.isEmpty()) {
+            return selectRequestedCards(deckId, requestedCardIds, targetFields, fieldTypes, params, accessToken);
+        }
         Map<String, Integer> fieldLimits = extractFieldLimits(params);
         if (!fieldLimits.isEmpty()) {
             LinkedHashMap<String, Integer> filtered = new LinkedHashMap<>();
@@ -3889,6 +3896,80 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 accessToken
         );
         return new MissingCardSelection(cards, Map.of());
+    }
+
+    private MissingCardSelection selectRequestedCards(UUID deckId,
+                                                      Set<UUID> requestedCardIds,
+                                                      Set<String> targetFields,
+                                                      Map<String, String> fieldTypes,
+                                                      JsonNode params,
+                                                      String accessToken) {
+        if (requestedCardIds == null || requestedCardIds.isEmpty()) {
+            return new MissingCardSelection(List.of(), Map.of());
+        }
+        Set<String> limitedFields = extractFieldLimits(params).keySet();
+        List<String> orderedFields = new ArrayList<>(targetFields);
+        LinkedHashMap<UUID, CoreUserCardResponse> cards = new LinkedHashMap<>();
+        Map<UUID, Set<String>> allowedFieldsByCard = new HashMap<>();
+        for (UUID cardId : requestedCardIds) {
+            if (cardId == null) {
+                continue;
+            }
+            try {
+                CoreApiClient.CoreUserCardDetail detail = coreApiClient.getUserCard(deckId, cardId, accessToken);
+                if (detail == null || detail.effectiveContent() == null || !detail.effectiveContent().isObject()) {
+                    continue;
+                }
+                LinkedHashSet<String> missingFields = new LinkedHashSet<>();
+                for (String field : orderedFields) {
+                    if (field == null || field.isBlank()) {
+                        continue;
+                    }
+                    if (!limitedFields.isEmpty() && !limitedFields.contains(field)) {
+                        continue;
+                    }
+                    if (isFieldMissing(detail.effectiveContent().get(field), fieldTypes.get(field))) {
+                        missingFields.add(field);
+                    }
+                }
+                if (missingFields.isEmpty()) {
+                    continue;
+                }
+                cards.put(cardId, new CoreUserCardResponse(detail.userCardId(), detail.publicCardId(), detail.isCustom(), detail.effectiveContent()));
+                allowedFieldsByCard.put(cardId, missingFields);
+            } catch (Exception ex) {
+                LOGGER.warn("OpenAI retry selection failed deckId={} cardId={}", deckId, cardId, ex);
+            }
+        }
+        return new MissingCardSelection(new ArrayList<>(cards.values()), allowedFieldsByCard);
+    }
+
+    private Set<UUID> resolveRequestedCardIds(JsonNode params) {
+        if (params == null || params.isNull()) {
+            return Set.of();
+        }
+        JsonNode node = params.get("cardIds");
+        if (node == null || !node.isArray()) {
+            return Set.of();
+        }
+        LinkedHashSet<UUID> cardIds = new LinkedHashSet<>();
+        for (JsonNode item : node) {
+            UUID parsed = parseUuid(item == null ? null : item.asText(null));
+            if (parsed != null) {
+                cardIds.add(parsed);
+            }
+        }
+        return Set.copyOf(cardIds);
+    }
+
+    private boolean isFieldMissing(JsonNode value, String fieldType) {
+        if ("audio".equals(fieldType)) {
+            return isMissingAudio(value);
+        }
+        if ("image".equals(fieldType) || "video".equals(fieldType)) {
+            return isMissingMedia(value);
+        }
+        return isMissingText(value);
     }
 
     private MissingCardSelection selectMissingCardsWithLimits(UUID deckId,

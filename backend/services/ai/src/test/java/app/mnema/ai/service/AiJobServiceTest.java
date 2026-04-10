@@ -2,6 +2,7 @@ package app.mnema.ai.service;
 
 import app.mnema.ai.controller.dto.AiJobResponse;
 import app.mnema.ai.controller.dto.CreateAiJobRequest;
+import app.mnema.ai.domain.entity.AiJobEntity;
 import app.mnema.ai.domain.entity.AiQuotaEntity;
 import app.mnema.ai.domain.entity.AiProviderCredentialEntity;
 import app.mnema.ai.domain.type.AiJobStatus;
@@ -12,6 +13,8 @@ import app.mnema.ai.repository.AiQuotaRepository;
 import app.mnema.ai.support.PostgresIntegrationTest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.NullNode;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -264,6 +267,86 @@ class AiJobServiceTest extends PostgresIntegrationTest {
             assertThat(step.stepName()).isEqualTo("prepare_context");
             assertThat(step.status()).isEqualTo(app.mnema.ai.domain.type.AiJobStepStatus.completed);
         });
+    }
+
+    @Test
+    void retryFailedJobCreatesTargetedRetryForGenerateCards() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        seedQuota(userId, 2000);
+
+        UUID originalRequestId = UUID.randomUUID();
+        AiJobResponse created = jobService.createJob(jwtFor(userId), "token", new CreateAiJobRequest(
+                originalRequestId,
+                deckId,
+                AiJobType.enrich,
+                objectMapper.createObjectNode()
+                        .put("mode", "generate_cards")
+                        .put("input", "Generate animals")
+                        .put("provider", "openai"),
+                null,
+                10,
+                null
+        ));
+
+        UUID failedCardId = UUID.randomUUID();
+        AiJobEntity job = jobRepository.findByJobIdAndUserId(created.jobId(), userId).orElseThrow();
+        job.setStatus(AiJobStatus.partial_success);
+        job.setCompletedAt(Instant.now());
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("mode", "generate_cards");
+        ArrayNode fields = summary.putArray("fields");
+        fields.add("front");
+        fields.add("back");
+        ArrayNode items = summary.putArray("items");
+        ObjectNode failedItem = items.addObject();
+        failedItem.put("cardId", failedCardId.toString());
+        failedItem.put("status", "partial_success");
+        failedItem.putArray("completedStages").add("text");
+        job.setResultSummary(summary);
+        jobRepository.save(job);
+
+        AiJobResponse retry = jobService.retryFailedJob(jwtFor(userId), "token", created.jobId());
+        AiJobEntity retryJob = jobRepository.findByJobIdAndUserId(retry.jobId(), userId).orElseThrow();
+
+        assertThat(retryJob.getJobId()).isNotEqualTo(created.jobId());
+        assertThat(retryJob.getType()).isEqualTo(AiJobType.enrich);
+        assertThat(retryJob.getParamsJson().path("mode").asText()).isEqualTo("missing_fields");
+        assertThat(retryJob.getParamsJson().path("retryOfJobId").asText()).isEqualTo(created.jobId().toString());
+        assertThat(retryJob.getParamsJson().path("cardIds")).extracting(JsonNode::asText).containsExactly(failedCardId.toString());
+        assertThat(retryJob.getParamsJson().path("fields")).extracting(JsonNode::asText).containsExactly("front", "back");
+    }
+
+    @Test
+    void retryFailedJobRejectsJobsWithoutRetryableItems() {
+        UUID userId = UUID.randomUUID();
+        seedQuota(userId, 1000);
+
+        AiJobResponse created = jobService.createJob(jwtFor(userId), "token", new CreateAiJobRequest(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                AiJobType.generic,
+                objectMapper.createObjectNode().put("mode", "missing_fields"),
+                null,
+                10,
+                null
+        ));
+
+        AiJobEntity job = jobRepository.findByJobIdAndUserId(created.jobId(), userId).orElseThrow();
+        job.setStatus(AiJobStatus.completed);
+        ObjectNode summary = objectMapper.createObjectNode();
+        summary.put("mode", "missing_fields");
+        ArrayNode items = summary.putArray("items");
+        ObjectNode item = items.addObject();
+        item.put("cardId", UUID.randomUUID().toString());
+        item.put("status", "completed");
+        job.setResultSummary(summary);
+        jobRepository.save(job);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> jobService.retryFailedJob(jwtFor(userId), "token", created.jobId()));
+
+        assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
     }
 
     private void seedQuota(UUID userId, int tokensLimit) {

@@ -11,7 +11,9 @@ import app.mnema.ai.repository.AiProviderCredentialRepository;
 import app.mnema.ai.security.CurrentUserProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.NullNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -23,6 +25,8 @@ import org.springframework.data.domain.PageRequest;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Objects;
@@ -158,6 +162,18 @@ public class AiJobService {
         return toResponse(jobRepository.save(job));
     }
 
+    @Transactional
+    public AiJobResponse retryFailedJob(Jwt jwt, String accessToken, UUID jobId) {
+        UUID userId = requireUserId(jwt);
+        AiJobEntity job = jobRepository.findByJobIdAndUserId(jobId, userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "AI job not found"));
+        if (!isRetryableTerminalStatus(job.getStatus())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "AI job is not ready for retry");
+        }
+        CreateAiJobRequest retryRequest = buildRetryRequest(job);
+        return createJob(jwt, accessToken, retryRequest);
+    }
+
     private UUID requireUserId(Jwt jwt) {
         try {
             return currentUserProvider.requireUserId(jwt);
@@ -220,6 +236,121 @@ public class AiJobService {
         } catch (Exception ex) {
             throw new IllegalStateException("Failed to compute input hash", ex);
         }
+    }
+
+    private CreateAiJobRequest buildRetryRequest(AiJobEntity job) {
+        ObjectNode params = copyParams(job.getParamsJson());
+        ObjectNode summary = asObject(job.getResultSummary());
+        String mode = textOrNull(summary.path("mode"));
+        if (mode == null) {
+            mode = textOrNull(params.path("mode"));
+        }
+        if (mode == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "AI job mode is not available for retry");
+        }
+
+        List<RetryItem> retryItems = extractRetryItems(summary.path("items"));
+        if (retryItems.isEmpty() && !isSingleCardRetryMode(mode)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "AI job has no failed items to retry");
+        }
+
+        params.put("retryOfJobId", job.getJobId().toString());
+        params.put("retryStrategy", "failed_items");
+
+        switch (mode) {
+            case "generate_cards" -> buildGenerateRetryParams(params, summary, retryItems);
+            case "missing_fields", "missing_audio" -> addRetryCardIds(params, retryItems);
+            case "card_missing_fields", "card_missing_audio" -> {
+                if (retryItems.isEmpty() && parseUuid(params.path("cardId").asText(null)) == null) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "AI job has no failed card to retry");
+                }
+            }
+            default -> throw new ResponseStatusException(HttpStatus.CONFLICT, "Retry is not supported for this AI job");
+        }
+
+        return new CreateAiJobRequest(
+                UUID.randomUUID(),
+                job.getDeckId(),
+                job.getType(),
+                params,
+                null,
+                null,
+                null
+        );
+    }
+
+    private void buildGenerateRetryParams(ObjectNode params, ObjectNode summary, List<RetryItem> retryItems) {
+        addRetryCardIds(params, retryItems);
+        params.put("mode", "missing_fields");
+        if (!params.hasNonNull("updateScope")) {
+            params.put("updateScope", "local");
+        }
+        params.remove(List.of("count", "countLimit"));
+        if (!params.has("fields") && summary.has("fields")) {
+            params.set("fields", summary.get("fields").deepCopy());
+        }
+    }
+
+    private void addRetryCardIds(ObjectNode params, List<RetryItem> retryItems) {
+        LinkedHashSet<UUID> cardIds = retryItems.stream()
+                .map(RetryItem::cardId)
+                .filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        if (cardIds.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "AI job has no retryable card ids");
+        }
+        ArrayNode cardIdsNode = params.putArray("cardIds");
+        cardIds.forEach(cardId -> cardIdsNode.add(cardId.toString()));
+    }
+
+    private List<RetryItem> extractRetryItems(JsonNode itemsNode) {
+        if (itemsNode == null || !itemsNode.isArray()) {
+            return List.of();
+        }
+        List<RetryItem> items = new java.util.ArrayList<>();
+        for (JsonNode item : itemsNode) {
+            if (item == null || !item.isObject()) {
+                continue;
+            }
+            String status = textOrNull(item.get("status"));
+            if (!isRetryableItemStatus(status)) {
+                continue;
+            }
+            items.add(new RetryItem(parseUuid(textOrNull(item.get("cardId"))), status));
+        }
+        return items;
+    }
+
+    private boolean isRetryableItemStatus(String status) {
+        if (status == null) {
+            return false;
+        }
+        return switch (status.trim().toLowerCase()) {
+            case "failed", "partial_success", "skipped" -> true;
+            default -> false;
+        };
+    }
+
+    private boolean isRetryableTerminalStatus(AiJobStatus status) {
+        return status == AiJobStatus.completed || status == AiJobStatus.partial_success || status == AiJobStatus.failed;
+    }
+
+    private boolean isSingleCardRetryMode(String mode) {
+        return "card_missing_fields".equalsIgnoreCase(mode) || "card_missing_audio".equalsIgnoreCase(mode);
+    }
+
+    private ObjectNode copyParams(JsonNode params) {
+        if (params == null || params.isNull() || !params.isObject()) {
+            return objectMapper.createObjectNode();
+        }
+        return params.deepCopy();
+    }
+
+    private ObjectNode asObject(JsonNode node) {
+        if (node == null || node.isNull() || !node.isObject()) {
+            return objectMapper.createObjectNode();
+        }
+        return (ObjectNode) node;
     }
 
     private AiJobResponse toResponse(AiJobEntity job) {
@@ -287,5 +418,8 @@ public class AiJobService {
     }
 
     private record ProviderInfo(UUID credentialId, String provider, String alias, String model) {
+    }
+
+    private record RetryItem(UUID cardId, String status) {
     }
 }

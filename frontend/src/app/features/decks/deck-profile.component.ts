@@ -183,15 +183,28 @@ import { ToastService } from '../../core/services/toast.service';
                   <span *ngIf="entry.job.model" class="ai-job-model">{{ entry.job.model }}</span>
                 </div>
               </div>
-              <app-button
-                variant="ghost"
-                size="sm"
-                tone="danger"
-                [disabled]="!canCancelAiJob(entry.job.status) || cancelingAiJobs.has(entry.job.jobId)"
-                (click)="cancelAiJob(entry.job.jobId)"
-              >
-                {{ cancelingAiJobs.has(entry.job.jobId) ? ('deckProfile.aiJobsCanceling' | translate) : ('deckProfile.aiJobsCancel' | translate) }}
-              </app-button>
+              <div class="ai-job-actions">
+                <app-button
+                  *ngIf="canRetryAiJob(entry)"
+                  variant="ghost"
+                  size="sm"
+                  [disabled]="retryingAiJobs.has(entry.job.jobId)"
+                  (click)="retryFailedAiJob(entry)"
+                >
+                  {{ retryingAiJobs.has(entry.job.jobId)
+                    ? ('deckProfile.aiJobsRetrying' | translate)
+                    : ('deckProfile.aiJobsRetryFailed' | translate:{ count: countRetryableAiItems(entry.resultSummary) }) }}
+                </app-button>
+                <app-button
+                  variant="ghost"
+                  size="sm"
+                  tone="danger"
+                  [disabled]="!canCancelAiJob(entry.job.status) || cancelingAiJobs.has(entry.job.jobId)"
+                  (click)="cancelAiJob(entry.job.jobId)"
+                >
+                  {{ cancelingAiJobs.has(entry.job.jobId) ? ('deckProfile.aiJobsCanceling' | translate) : ('deckProfile.aiJobsCancel' | translate) }}
+                </app-button>
+              </div>
             </div>
 
             <div class="ai-job-status-row">
@@ -797,6 +810,13 @@ import { ToastService } from '../../core/services/toast.service';
         justify-content: space-between;
         gap: var(--spacing-md);
         align-items: flex-start;
+      }
+
+      .ai-job-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-sm);
+        justify-content: flex-end;
       }
 
       .ai-job-title {
@@ -1548,6 +1568,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     aiJobsLoading = false;
     aiJobsError = '';
     cancelingAiJobs = new Set<string>();
+    retryingAiJobs = new Set<string>();
     editForm!: FormGroup;
     tagError = '';
     tagInput = '';
@@ -1808,6 +1829,27 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         });
     }
 
+    retryFailedAiJob(entry: AiJobEntry): void {
+        if (!entry?.job?.jobId || this.retryingAiJobs.has(entry.job.jobId) || !this.canRetryAiJob(entry)) {
+            return;
+        }
+        this.retryingAiJobs.add(entry.job.jobId);
+        this.aiApi.retryFailedJob(entry.job.jobId).subscribe({
+            next: job => {
+                this.retryingAiJobs.delete(entry.job.jobId);
+                this.upsertAiJob(job);
+                this.toast.info('deckProfile.aiJobRetryQueued');
+                if (job.status === 'queued' || job.status === 'processing') {
+                    this.startAiPolling(job.jobId);
+                }
+            },
+            error: () => {
+                this.retryingAiJobs.delete(entry.job.jobId);
+                this.toast.error('deckProfile.aiJobRetryFailed');
+            }
+        });
+    }
+
     trackAiJob(_: number, entry: AiJobEntry): string {
         return entry.job.jobId;
     }
@@ -1905,6 +1947,20 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         return items.filter(item => item && typeof item === 'object');
     }
 
+    countRetryableAiItems(result: unknown): number {
+        return this.getAiResultItems(result).filter(item => this.isRetryableAiItem(item)).length;
+    }
+
+    canRetryAiJob(entry: AiJobEntry): boolean {
+        if (!entry || entry.resultLoading || this.retryingAiJobs.has(entry.job.jobId)) {
+            return false;
+        }
+        if (!this.isTerminalAiJob(entry.job.status) || entry.job.status === 'canceled') {
+            return false;
+        }
+        return this.countRetryableAiItems(entry.resultSummary) > 0;
+    }
+
     summarizeAiResult(result: unknown): Array<{ label: string; value: string }> {
         if (!result || typeof result !== 'object') {
             return [];
@@ -1947,7 +2003,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                 for (const entry of this.aiJobs) {
                     if (entry.job.status === 'queued' || entry.job.status === 'processing') {
                         this.startAiPolling(entry.job.jobId);
-                    } else if (entry.job.status === 'completed' || entry.job.status === 'partial_success') {
+                    } else if (entry.job.status === 'completed' || entry.job.status === 'partial_success' || entry.job.status === 'failed') {
                         this.fetchAiResult(entry.job.jobId);
                     }
                 }
@@ -1994,7 +2050,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
                 if (this.isTerminalAiJob(job.status)) {
                     this.stopAiPolling(jobId);
                     this.notifyAiJobFinished(job, previousStatus);
-                    if (job.status === 'completed' || job.status === 'partial_success') {
+                    if (job.status === 'completed' || job.status === 'partial_success' || job.status === 'failed') {
                         this.fetchAiResult(jobId);
                     }
                 }
@@ -2064,6 +2120,11 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             return;
         }
         target.push({ label, value: String(value) });
+    }
+
+    private isRetryableAiItem(item: AiResultItem): boolean {
+        const status = (item?.status || '').trim().toLowerCase();
+        return status === 'failed' || status === 'partial_success' || status === 'skipped';
     }
 
     learn(): void {

@@ -59,4 +59,11 @@ public class AiJobController {
                                 @PathVariable UUID jobId) {
         return jobService.cancelJob(jwt, jobId);
     }
+
+    @PostMapping("/{jobId}/retry-failed")
+    public AiJobResponse retryFailed(@AuthenticationPrincipal Jwt jwt,
+                                     @PathVariable UUID jobId) {
+        String accessToken = jwt == null ? null : jwt.getTokenValue();
+        return jobService.retryFailedJob(jwt, accessToken, jobId);
+    }
 }

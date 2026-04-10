@@ -346,12 +346,7 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
             if (targetFields.isEmpty()) {
                 throw new IllegalStateException("No supported fields to generate");
             }
-            int limit = resolveLimit(params.path("limit"));
-            List<CoreUserCardResponse> missingCards = coreApiClient.getMissingFieldCards(
-                    job.getDeckId(),
-                    new CoreApiClient.MissingFieldCardsRequest(targetFields, limit, null),
-                    accessToken
-            );
+            List<CoreUserCardResponse> missingCards = selectMissingCards(job.getDeckId(), targetFields, params, accessToken);
             return new MissingFieldsContext(template, publicDeck, updateScope, targetFields, missingCards);
         });
         List<CoreUserCardResponse> missingCards = context.missingCards();
@@ -502,16 +497,6 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
         return job.getParamsJson() == null ? objectMapper.createObjectNode() : job.getParamsJson();
     }
 
-    private UUID parseUuid(String raw) {
-        if (raw == null || raw.isBlank()) {
-            return null;
-        }
-        try {
-            return UUID.fromString(raw);
-        } catch (IllegalArgumentException ex) {
-            return null;
-        }
-    }
 
     private String textOrDefault(JsonNode node, String fallback) {
         if (node == null || node.isNull()) {
@@ -1150,6 +1135,88 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
             }
         }
         return null;
+    }
+
+    private List<CoreUserCardResponse> selectMissingCards(UUID deckId,
+                                                          List<String> targetFields,
+                                                          JsonNode params,
+                                                          String accessToken) {
+        Set<UUID> requestedCardIds = resolveRequestedCardIds(params);
+        if (!requestedCardIds.isEmpty()) {
+            return selectRequestedCards(deckId, requestedCardIds, targetFields, accessToken);
+        }
+        int limit = resolveLimit(params.path("limit"));
+        return coreApiClient.getMissingFieldCards(
+                deckId,
+                new CoreApiClient.MissingFieldCardsRequest(targetFields, limit, null),
+                accessToken
+        );
+    }
+
+    private List<CoreUserCardResponse> selectRequestedCards(UUID deckId,
+                                                            Set<UUID> requestedCardIds,
+                                                            List<String> targetFields,
+                                                            String accessToken) {
+        if (requestedCardIds == null || requestedCardIds.isEmpty()) {
+            return List.of();
+        }
+        List<CoreUserCardResponse> cards = new java.util.ArrayList<>();
+        for (UUID cardId : requestedCardIds) {
+            if (cardId == null) {
+                continue;
+            }
+            try {
+                CoreApiClient.CoreUserCardDetail detail = coreApiClient.getUserCard(deckId, cardId, accessToken);
+                if (detail == null || detail.effectiveContent() == null || !detail.effectiveContent().isObject()) {
+                    continue;
+                }
+                boolean hasMissingTarget = false;
+                for (String field : targetFields) {
+                    if (field == null || field.isBlank()) {
+                        continue;
+                    }
+                    if (isMissingText(detail.effectiveContent().get(field))) {
+                        hasMissingTarget = true;
+                        break;
+                    }
+                }
+                if (!hasMissingTarget) {
+                    continue;
+                }
+                cards.add(new CoreUserCardResponse(detail.userCardId(), detail.publicCardId(), detail.isCustom(), detail.effectiveContent()));
+            } catch (Exception ignored) {
+            }
+        }
+        return cards;
+    }
+
+    private Set<UUID> resolveRequestedCardIds(JsonNode params) {
+        if (params == null || params.isNull()) {
+            return Set.of();
+        }
+        JsonNode node = params.get("cardIds");
+        if (node == null || !node.isArray()) {
+            return Set.of();
+        }
+        java.util.LinkedHashSet<UUID> cardIds = new java.util.LinkedHashSet<>();
+        for (JsonNode item : node) {
+            UUID parsed = parseUuid(item == null ? null : item.asText(null));
+            if (parsed != null) {
+                cardIds.add(parsed);
+            }
+        }
+        return Set.copyOf(cardIds);
+    }
+
+    private UUID parseUuid(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return UUID.fromString(raw);
+        } catch (IllegalArgumentException ex) {
+            return null;
+        }
     }
 
     private String extractPreviewValue(JsonNode value) {
