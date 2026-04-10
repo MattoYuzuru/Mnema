@@ -1,13 +1,16 @@
 package app.mnema.ai.service;
 
 import app.mnema.ai.controller.dto.AiJobResponse;
+import app.mnema.ai.controller.dto.AiJobCostResponse;
 import app.mnema.ai.controller.dto.AiJobResultResponse;
 import app.mnema.ai.controller.dto.CreateAiJobRequest;
 import app.mnema.ai.domain.entity.AiJobEntity;
+import app.mnema.ai.domain.entity.AiUsageLedgerEntity;
 import app.mnema.ai.domain.type.AiJobStatus;
 import app.mnema.ai.domain.type.AiJobType;
 import app.mnema.ai.repository.AiJobRepository;
 import app.mnema.ai.repository.AiProviderCredentialRepository;
+import app.mnema.ai.repository.AiUsageLedgerRepository;
 import app.mnema.ai.security.CurrentUserProvider;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,24 +42,30 @@ public class AiJobService {
     private final CurrentUserProvider currentUserProvider;
     private final AiQuotaService quotaService;
     private final AiProviderCredentialRepository credentialRepository;
+    private final AiUsageLedgerRepository usageLedgerRepository;
     private final ObjectMapper objectMapper;
     private final AiJobExecutionService executionService;
     private final AiJobEtaEstimator etaEstimator;
+    private final AiJobCostEstimator costEstimator;
 
     public AiJobService(AiJobRepository jobRepository,
                         CurrentUserProvider currentUserProvider,
                         AiQuotaService quotaService,
                         AiProviderCredentialRepository credentialRepository,
+                        AiUsageLedgerRepository usageLedgerRepository,
                         ObjectMapper objectMapper,
                         AiJobExecutionService executionService,
-                        AiJobEtaEstimator etaEstimator) {
+                        AiJobEtaEstimator etaEstimator,
+                        AiJobCostEstimator costEstimator) {
         this.jobRepository = jobRepository;
         this.currentUserProvider = currentUserProvider;
         this.quotaService = quotaService;
         this.credentialRepository = credentialRepository;
+        this.usageLedgerRepository = usageLedgerRepository;
         this.objectMapper = objectMapper;
         this.executionService = executionService;
         this.etaEstimator = etaEstimator;
+        this.costEstimator = costEstimator;
     }
 
     @Transactional
@@ -81,7 +90,9 @@ public class AiJobService {
         }
 
         Instant now = Instant.now();
-        int estimatedTokens = estimateTokens(jobType, request.deckId(), params);
+        ProviderInfo requestProviderInfo = resolveProviderInfo(userId, params);
+        AiJobCostEstimator.PlannedCost plannedCost = costEstimator.estimatePlanned(jobType, params, requestProviderInfo.provider(), requestProviderInfo.model());
+        int estimatedTokens = estimateTokens(jobType, request.deckId(), params, plannedCost);
 
         AiJobEntity job = new AiJobEntity();
         job.setJobId(UUID.randomUUID());
@@ -125,10 +136,13 @@ public class AiJobService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "deckId is required");
         }
         int safeLimit = Math.max(1, Math.min(limit, 50));
-        return jobRepository
+        List<AiJobEntity> jobs = jobRepository
                 .findByUserIdAndDeckIdOrderByCreatedAtDesc(userId, deckId, PageRequest.of(0, safeLimit))
-                .map(this::toResponse)
                 .getContent();
+        Map<UUID, AiUsageLedgerEntity> usageByJobId = loadUsageByJobId(jobs);
+        return jobs.stream()
+                .map(job -> toResponse(job, usageByJobId.get(job.getJobId())))
+                .toList();
     }
 
     @Transactional(readOnly = true)
@@ -213,7 +227,14 @@ public class AiJobService {
         return computeHash(type, deckId, params);
     }
 
-    private int estimateTokens(AiJobType type, UUID deckId, JsonNode params) {
+    private int estimateTokens(AiJobType type, UUID deckId, JsonNode params, AiJobCostEstimator.PlannedCost plannedCost) {
+        int plannedTokens = 0;
+        if (plannedCost != null) {
+            plannedTokens = Math.max(0, nullToZero(plannedCost.inputTokens()) + nullToZero(plannedCost.outputTokens()));
+        }
+        if (plannedTokens > 0) {
+            return plannedTokens;
+        }
         try {
             Map<String, Object> payloadMap = new java.util.LinkedHashMap<>();
             payloadMap.put("type", type);
@@ -357,9 +378,15 @@ public class AiJobService {
     }
 
     private AiJobResponse toResponse(AiJobEntity job) {
+        AiUsageLedgerEntity usage = loadUsageByJobId(List.of(job)).get(job.getJobId());
+        return toResponse(job, usage);
+    }
+
+    private AiJobResponse toResponse(AiJobEntity job, AiUsageLedgerEntity usage) {
         ProviderInfo providerInfo = resolveProviderInfo(job);
         AiJobExecutionService.ExecutionSnapshot snapshot = executionService.snapshot(job.getJobId());
         AiJobEtaEstimator.EtaEstimate eta = etaEstimator.estimate(job, snapshot, providerInfo.provider());
+        AiJobCostResponse cost = costEstimator.buildSnapshot(job, providerInfo.provider(), providerInfo.model(), usage);
         return new AiJobResponse(
                 job.getJobId(),
                 job.getRequestId(),
@@ -379,6 +406,7 @@ public class AiJobService {
                 snapshot.currentStep(),
                 snapshot.completedSteps(),
                 snapshot.totalSteps(),
+                cost,
                 eta.estimatedSecondsRemaining(),
                 eta.estimatedCompletionAt(),
                 eta.queueAhead()
@@ -386,7 +414,10 @@ public class AiJobService {
     }
 
     private ProviderInfo resolveProviderInfo(AiJobEntity job) {
-        JsonNode params = job.getParamsJson();
+        return resolveProviderInfo(job.getUserId(), job.getParamsJson());
+    }
+
+    private ProviderInfo resolveProviderInfo(UUID userId, JsonNode params) {
         if (params == null || params.isNull()) {
             return new ProviderInfo(null, null, null, null);
         }
@@ -400,9 +431,33 @@ public class AiJobService {
         if (credentialId == null) {
             return new ProviderInfo(null, providerFromParams, null, resolvedModel);
         }
-        return credentialRepository.findByIdAndUserId(credentialId, job.getUserId())
+        return credentialRepository.findByIdAndUserId(credentialId, userId)
                 .map(credential -> new ProviderInfo(credentialId, credential.getProvider(), credential.getAlias(), resolvedModel))
                 .orElseGet(() -> new ProviderInfo(credentialId, providerFromParams, null, resolvedModel));
+    }
+
+    private Map<UUID, AiUsageLedgerEntity> loadUsageByJobId(List<AiJobEntity> jobs) {
+        if (jobs == null || jobs.isEmpty()) {
+            return Map.of();
+        }
+        List<UUID> jobIds = jobs.stream()
+                .map(AiJobEntity::getJobId)
+                .filter(Objects::nonNull)
+                .toList();
+        if (jobIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, AiUsageLedgerEntity> result = new java.util.LinkedHashMap<>();
+        for (AiUsageLedgerEntity usage : usageLedgerRepository.findByJobIdInOrderByCreatedAtDesc(jobIds)) {
+            if (usage.getJobId() != null) {
+                result.putIfAbsent(usage.getJobId(), usage);
+            }
+        }
+        return result;
+    }
+
+    private int nullToZero(Integer value) {
+        return value == null ? 0 : Math.max(value, 0);
     }
 
     private UUID parseUuid(String raw) {

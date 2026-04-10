@@ -33,6 +33,7 @@ public class AiJobWorker {
     private final AiJobRepository jobRepository;
     private final AiJobProcessor jobProcessor;
     private final AiUsageLedgerService usageLedgerService;
+    private final AiJobCostEstimator costEstimator;
     private final String workerId;
     private final Duration lockTtl;
     private final int maxAttempts;
@@ -47,6 +48,7 @@ public class AiJobWorker {
                        AiJobRepository jobRepository,
                        AiJobProcessor jobProcessor,
                        AiUsageLedgerService usageLedgerService,
+                       AiJobCostEstimator costEstimator,
                        @Value("${app.ai.jobs.worker-id:}") String workerId,
                        @Value("${app.ai.jobs.lock-ttl-seconds:300}") long lockTtlSeconds,
                        @Value("${app.ai.jobs.max-attempts:3}") int maxAttempts,
@@ -57,6 +59,7 @@ public class AiJobWorker {
         this.jobRepository = jobRepository;
         this.jobProcessor = jobProcessor;
         this.usageLedgerService = usageLedgerService;
+        this.costEstimator = costEstimator;
         this.workerId = (workerId == null || workerId.isBlank()) ? defaultWorkerId() : workerId;
         this.lockTtl = Duration.ofSeconds(lockTtlSeconds);
         this.maxAttempts = Math.max(maxAttempts, 1);
@@ -205,13 +208,14 @@ public class AiJobWorker {
         job.setNextRunAt(null);
         job.setErrorMessage(null);
         if (result != null) {
+            java.math.BigDecimal resolvedCost = costEstimator.estimateRecordedCost(job, result);
             usageLedgerService.recordUsage(
                     job.getRequestId(),
                     job.getJobId(),
                     job.getUserId(),
                     result.tokensIn(),
                     result.tokensOut(),
-                    result.costEstimate(),
+                    resolvedCost,
                     result.provider(),
                     result.model(),
                     resolvePromptHash(job, result)

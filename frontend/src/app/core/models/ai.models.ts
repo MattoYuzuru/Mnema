@@ -75,6 +75,16 @@ export interface AiJobResponse {
     currentStep?: string | null;
     completedSteps?: number | null;
     totalSteps?: number | null;
+    cost?: {
+        estimatedInputTokens?: number | null;
+        estimatedOutputTokens?: number | null;
+        estimatedCost?: number | null;
+        estimatedCostCurrency?: string | null;
+        actualInputTokens?: number | null;
+        actualOutputTokens?: number | null;
+        actualCost?: number | null;
+        actualCostCurrency?: string | null;
+    } | null;
     estimatedSecondsRemaining?: number | null;
     estimatedCompletionAt?: string | null;
     queueAhead?: number | null;

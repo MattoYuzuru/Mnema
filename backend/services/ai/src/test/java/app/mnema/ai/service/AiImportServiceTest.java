@@ -53,6 +53,7 @@ class AiImportServiceTest {
         AiJobResponse response = new AiJobResponse(
                 UUID.randomUUID(), requestId, deckId, AiJobType.generic, AiJobStatus.queued, 0,
                 Instant.now(), Instant.now(), null, null, null, providerCredentialId, "openai", null, "gpt", null, 0, 0,
+                null,
                 null, null, null
         );
         when(jobService.createJob(eq(jwt), eq("access-token"), org.mockito.ArgumentMatchers.any(CreateAiJobRequest.class)))
@@ -100,6 +101,7 @@ class AiImportServiceTest {
         AiJobResponse response = new AiJobResponse(
                 UUID.randomUUID(), requestId, deckId, AiJobType.generic, AiJobStatus.queued, 0,
                 Instant.now(), Instant.now(), null, null, null, null, "gemini", null, "model", null, 0, 0,
+                null,
                 null, null, null
         );
         when(jobService.createJob(eq(jwt), eq("access-token"), org.mockito.ArgumentMatchers.any(CreateAiJobRequest.class)))

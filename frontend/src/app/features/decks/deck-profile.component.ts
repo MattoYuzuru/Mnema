@@ -227,6 +227,11 @@ import { ToastService } from '../../core/services/toast.service';
               </span>
             </div>
 
+            <div *ngIf="formatAiUsageLabel(entry.job) || formatAiCostLabel(entry.job)" class="ai-job-cost-row">
+              <span *ngIf="formatAiUsageLabel(entry.job)" class="ai-job-cost-pill">{{ formatAiUsageLabel(entry.job) }}</span>
+              <span *ngIf="formatAiCostLabel(entry.job)" class="ai-job-cost-pill">{{ formatAiCostLabel(entry.job) }}</span>
+            </div>
+
             <div *ngIf="entry.job.status === 'failed'" class="ai-job-error" role="alert">
               {{ 'deckProfile.aiJobsFailed' | translate }}
             </div>
@@ -914,10 +919,19 @@ import { ToastService } from '../../core/services/toast.service';
         flex-wrap: wrap;
       }
 
+      .ai-job-cost-row {
+        display: flex;
+        align-items: center;
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-sm);
+        flex-wrap: wrap;
+      }
+
       .ai-job-step-pill,
       .ai-job-step-count,
       .ai-job-stage-chip,
-      .ai-job-eta-pill {
+      .ai-job-eta-pill,
+      .ai-job-cost-pill {
         padding: 0.18rem 0.6rem;
         border-radius: 999px;
         border: 1px solid var(--glass-border);
@@ -934,6 +948,10 @@ import { ToastService } from '../../core/services/toast.service';
       .ai-job-queue-hint {
         font-size: 0.78rem;
         color: var(--color-text-muted);
+      }
+
+      .ai-job-cost-pill {
+        background: rgba(15, 23, 42, 0.04);
       }
 
       .ai-job-result {
@@ -1984,6 +2002,59 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             : `${minutes} min ${remainingSeconds} sec`;
     }
 
+    formatAiUsageLabel(job?: AiJobResponse | null): string {
+        const cost = job?.cost;
+        if (!cost) {
+            return '';
+        }
+        const hasActual = (cost.actualInputTokens || 0) > 0 || (cost.actualOutputTokens || 0) > 0;
+        const hasEstimate = (cost.estimatedInputTokens || 0) > 0 || (cost.estimatedOutputTokens || 0) > 0;
+        if (!hasActual && !hasEstimate) {
+            return '';
+        }
+        const input = this.formatCompactNumber(hasActual ? cost.actualInputTokens || 0 : cost.estimatedInputTokens || 0);
+        const output = this.formatCompactNumber(hasActual ? cost.actualOutputTokens || 0 : cost.estimatedOutputTokens || 0);
+        const label = hasActual
+            ? this.i18n.translate('deckProfile.aiJobsTokensActual')
+            : this.i18n.translate('deckProfile.aiJobsTokensEstimated');
+        return `${label}: ${input} in / ${output} out`;
+    }
+
+    formatAiCostLabel(job?: AiJobResponse | null): string {
+        const cost = job?.cost;
+        if (!cost) {
+            return '';
+        }
+        const actualValue = cost.actualCost;
+        const estimatedValue = cost.estimatedCost;
+        const hasActual = actualValue !== null && actualValue !== undefined && actualValue > 0;
+        const hasEstimate = estimatedValue !== null && estimatedValue !== undefined && estimatedValue > 0;
+        if (!hasActual && !hasEstimate) {
+            return '';
+        }
+        const value = hasActual ? actualValue! : estimatedValue!;
+        const currency = (hasActual ? cost.actualCostCurrency : cost.estimatedCostCurrency) || '';
+        const label = hasActual
+            ? this.i18n.translate('deckProfile.aiJobsCostActual')
+            : this.i18n.translate('deckProfile.aiJobsCostEstimated');
+        return `${label}: ${this.formatAiCurrency(value, currency)}`;
+    }
+
+    formatAiCurrency(value: number, currency?: string | null): string {
+        const normalized = (currency || '').trim().toUpperCase();
+        const locale = this.i18n.currentLanguage === 'ru' ? 'ru-RU' : 'en-US';
+        if (normalized === 'USD' || normalized === 'CNY') {
+            return new Intl.NumberFormat(locale, {
+                style: 'currency',
+                currency: normalized,
+                minimumFractionDigits: value < 0.1 ? 4 : 2,
+                maximumFractionDigits: value < 0.1 ? 4 : 2
+            }).format(value);
+        }
+        const rounded = value < 0.1 ? value.toFixed(4) : value.toFixed(2);
+        return normalized ? `${rounded} ${normalized}` : rounded;
+    }
+
     formatJson(value: unknown): string {
         try {
             return JSON.stringify(value ?? {}, null, 2);
@@ -2208,6 +2279,17 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             return few;
         }
         return many;
+    }
+
+    private formatCompactNumber(value: number): string {
+        const absolute = Math.abs(value);
+        if (absolute >= 1_000_000) {
+            return `${(value / 1_000_000).toFixed(1)}M`;
+        }
+        if (absolute >= 1_000) {
+            return `${(value / 1_000).toFixed(1)}k`;
+        }
+        return `${Math.round(value)}`;
     }
 
     learn(): void {

@@ -54,6 +54,9 @@ class AiJobServiceTest extends PostgresIntegrationTest {
     @Autowired
     private AiJobExecutionService executionService;
 
+    @Autowired
+    private AiJobCostEstimator costEstimator;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @BeforeEach
@@ -66,7 +69,7 @@ class AiJobServiceTest extends PostgresIntegrationTest {
     @Test
     void createJobIsIdempotent() {
         UUID userId = UUID.randomUUID();
-        seedQuota(userId, 100);
+        seedQuota(userId, 5000);
 
         UUID requestId = UUID.randomUUID();
         CreateAiJobRequest request = new CreateAiJobRequest(
@@ -91,7 +94,7 @@ class AiJobServiceTest extends PostgresIntegrationTest {
 
         AiQuotaEntity quota = quotaRepository.findByUserIdAndPeriodStart(userId, currentPeriodStart(userId))
                 .orElseThrow();
-        assertThat(quota.getTokensUsed()).isEqualTo(estimateTokens(AiJobType.generic, null, NullNode.getInstance()));
+        assertThat(quota.getTokensUsed()).isEqualTo(estimateTokens(AiJobType.generic, NullNode.getInstance(), null, null));
     }
 
     @Test
@@ -106,7 +109,7 @@ class AiJobServiceTest extends PostgresIntegrationTest {
                 10,
                 null
         );
-        int estimate = estimateTokens(AiJobType.generic, null, NullNode.getInstance());
+        int estimate = estimateTokens(AiJobType.generic, NullNode.getInstance(), null, null);
         seedQuota(userId, Math.max(estimate - 1, 0));
 
         ResponseStatusException ex = assertThrows(ResponseStatusException.class,
@@ -126,7 +129,7 @@ class AiJobServiceTest extends PostgresIntegrationTest {
         UUID deckId = UUID.randomUUID();
         UUID requestId = UUID.randomUUID();
         UUID credentialId = UUID.randomUUID();
-        seedQuota(userId, 1000);
+        seedQuota(userId, 10000);
 
         AiProviderCredentialEntity credential = new AiProviderCredentialEntity();
         credential.setId(credentialId);
@@ -176,7 +179,7 @@ class AiJobServiceTest extends PostgresIntegrationTest {
     void listAndCancelValidateInputAndJobOwnership() {
         UUID userId = UUID.randomUUID();
         UUID anotherUser = UUID.randomUUID();
-        seedQuota(userId, 1000);
+        seedQuota(userId, 10000);
 
         ResponseStatusException badDeck = assertThrows(ResponseStatusException.class,
                 () -> jobService.listJobs(jwtFor(userId), null, 20));
@@ -202,7 +205,7 @@ class AiJobServiceTest extends PostgresIntegrationTest {
     void createJobRejectsConflictingRequestReuseAndFinishedCancel() {
         UUID userId = UUID.randomUUID();
         UUID requestId = UUID.randomUUID();
-        seedQuota(userId, 1000);
+        seedQuota(userId, 10000);
 
         jobService.createJob(jwtFor(userId), "token", new CreateAiJobRequest(
                 requestId,
@@ -239,13 +242,13 @@ class AiJobServiceTest extends PostgresIntegrationTest {
     @Test
     void getJobAndResultExposeExecutionSteps() {
         UUID userId = UUID.randomUUID();
-        seedQuota(userId, 1000);
+        seedQuota(userId, 10000);
 
         AiJobResponse created = jobService.createJob(jwtFor(userId), "token", new CreateAiJobRequest(
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 AiJobType.generic,
-                objectMapper.createObjectNode().put("mode", "generate_cards"),
+                objectMapper.createObjectNode().put("mode", "generate_cards").put("provider", "openai").put("model", "gpt-4.1-mini"),
                 null,
                 10,
                 null
@@ -262,6 +265,9 @@ class AiJobServiceTest extends PostgresIntegrationTest {
         assertThat(processing.currentStep()).isEqualTo("prepare_context");
         assertThat(processing.completedSteps()).isEqualTo(0);
         assertThat(processing.totalSteps()).isEqualTo(2);
+        assertThat(processing.cost()).isNotNull();
+        assertThat(processing.cost().estimatedInputTokens()).isNotNull().isPositive();
+        assertThat(processing.cost().estimatedCost()).isNotNull().isPositive();
         assertThat(processing.estimatedSecondsRemaining()).isNotNull().isPositive();
         assertThat(processing.estimatedCompletionAt()).isNotNull().isAfter(Instant.now().minusSeconds(1));
         assertThat(processing.queueAhead()).isNull();
@@ -327,7 +333,7 @@ class AiJobServiceTest extends PostgresIntegrationTest {
     @Test
     void retryFailedJobRejectsJobsWithoutRetryableItems() {
         UUID userId = UUID.randomUUID();
-        seedQuota(userId, 1000);
+        seedQuota(userId, 10000);
 
         AiJobResponse created = jobService.createJob(jwtFor(userId), "token", new CreateAiJobRequest(
                 UUID.randomUUID(),
@@ -439,17 +445,10 @@ class AiJobServiceTest extends PostgresIntegrationTest {
                 .build();
     }
 
-    private int estimateTokens(AiJobType type, UUID deckId, JsonNode params) {
-        try {
-            var payload = new java.util.LinkedHashMap<String, Object>();
-            payload.put("type", type);
-            payload.put("deckId", deckId);
-            payload.put("params", params);
-            byte[] bytes = objectMapper.writeValueAsBytes(payload);
-            int estimated = (int) Math.ceil(bytes.length / 4.0);
-            return Math.max(1, estimated);
-        } catch (Exception ex) {
-            throw new IllegalStateException(ex);
-        }
+    private int estimateTokens(AiJobType type, JsonNode params, String provider, String model) {
+        AiJobCostEstimator.PlannedCost planned = costEstimator.estimatePlanned(type, params, provider, model);
+        return Math.max(1,
+                (planned.inputTokens() == null ? 0 : planned.inputTokens())
+                        + (planned.outputTokens() == null ? 0 : planned.outputTokens()));
     }
 }

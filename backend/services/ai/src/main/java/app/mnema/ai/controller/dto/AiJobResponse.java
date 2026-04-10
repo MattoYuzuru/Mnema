@@ -25,6 +25,7 @@ public record AiJobResponse(
         String currentStep,
         Integer completedSteps,
         Integer totalSteps,
+        AiJobCostResponse cost,
         Integer estimatedSecondsRemaining,
         Instant estimatedCompletionAt,
         Integer queueAhead
