@@ -2,6 +2,9 @@ package app.mnema.ai.provider.gemini;
 
 import app.mnema.ai.client.core.CoreApiClient;
 import app.mnema.ai.client.media.MediaApiClient;
+import app.mnema.ai.domain.entity.AiJobEntity;
+import app.mnema.ai.domain.type.AiJobStatus;
+import app.mnema.ai.domain.type.AiJobType;
 import app.mnema.ai.repository.AiProviderCredentialRepository;
 import app.mnema.ai.service.AiImportContentService;
 import app.mnema.ai.service.AiJobExecutionService;
@@ -55,32 +58,7 @@ class GeminiJobProcessorTest {
     @SuppressWarnings("unchecked")
     void resolveTtsMappingsDefaultsToAllAudioFields() throws Exception {
         ObjectMapper mapper = new ObjectMapper();
-        GeminiJobProcessor processor = new GeminiJobProcessor(
-                mock(GeminiClient.class),
-                new GeminiProps(
-                        "https://generativelanguage.googleapis.com",
-                        "gemini-2.0-flash",
-                        "gemini-2.5-flash-preview-tts",
-                        "Kore",
-                        "audio/wav",
-                        "gemini-2.0-flash",
-                        "gemini-2.5-flash-image",
-                        10,
-                        5,
-                        2_000L,
-                        30_000L
-                ),
-                mock(SecretVault.class),
-                mock(AiProviderCredentialRepository.class),
-                mock(MediaApiClient.class),
-                mock(AiImportContentService.class),
-                mock(AudioChunkingService.class),
-                mock(CoreApiClient.class),
-                mock(CardNoveltyService.class),
-                mapper,
-                mock(AiJobExecutionService.class),
-                200_000
-        );
+        GeminiJobProcessor processor = createProcessor(mapper);
 
         CoreApiClient.CoreTemplateResponse template = new CoreApiClient.CoreTemplateResponse(
                 UUID.randomUUID(),
@@ -124,6 +102,85 @@ class GeminiJobProcessorTest {
         assertThat(mappings).hasSize(2);
         assertThat(sources).containsOnly("front");
         assertThat(targets).containsExactly("audio1", "audio2");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void resolveExecutionPlanForGenerateCardsAppliesChangesLast() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        GeminiJobProcessor processor = createProcessor(mapper);
+        AiJobEntity job = createJob(mapper.createObjectNode().put("mode", "generate_cards"), AiJobType.generic);
+
+        Method resolveExecutionPlan = GeminiJobProcessor.class.getDeclaredMethod("resolveExecutionPlan", AiJobEntity.class);
+        resolveExecutionPlan.setAccessible(true);
+        List<String> plan = (List<String>) resolveExecutionPlan.invoke(processor, job);
+
+        assertThat(plan).containsExactly(
+                "prepare_context",
+                "generate_content",
+                "generate_media",
+                "generate_audio",
+                "apply_changes"
+        );
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void resolveExecutionPlanForMissingFieldsCollapsesToSingleApplyStage() throws Exception {
+        ObjectMapper mapper = new ObjectMapper();
+        GeminiJobProcessor processor = createProcessor(mapper);
+        AiJobEntity job = createJob(mapper.createObjectNode().put("mode", "missing_fields"), AiJobType.generic);
+
+        Method resolveExecutionPlan = GeminiJobProcessor.class.getDeclaredMethod("resolveExecutionPlan", AiJobEntity.class);
+        resolveExecutionPlan.setAccessible(true);
+        List<String> plan = (List<String>) resolveExecutionPlan.invoke(processor, job);
+
+        assertThat(plan).containsExactly(
+                "prepare_context",
+                "generate_content",
+                "apply_changes"
+        );
+    }
+
+    private static GeminiJobProcessor createProcessor(ObjectMapper mapper) {
+        return new GeminiJobProcessor(
+                mock(GeminiClient.class),
+                new GeminiProps(
+                        "https://generativelanguage.googleapis.com",
+                        "gemini-2.0-flash",
+                        "gemini-2.5-flash-preview-tts",
+                        "Kore",
+                        "audio/wav",
+                        "gemini-2.0-flash",
+                        "gemini-2.5-flash-image",
+                        10,
+                        5,
+                        2_000L,
+                        30_000L
+                ),
+                mock(SecretVault.class),
+                mock(AiProviderCredentialRepository.class),
+                mock(MediaApiClient.class),
+                mock(AiImportContentService.class),
+                mock(AudioChunkingService.class),
+                mock(CoreApiClient.class),
+                mock(CardNoveltyService.class),
+                mapper,
+                mock(AiJobExecutionService.class),
+                200_000
+        );
+    }
+
+    private static AiJobEntity createJob(com.fasterxml.jackson.databind.JsonNode params, AiJobType type) {
+        AiJobEntity job = new AiJobEntity();
+        job.setJobId(UUID.randomUUID());
+        job.setRequestId(UUID.randomUUID());
+        job.setUserId(UUID.randomUUID());
+        job.setType(type);
+        job.setStatus(AiJobStatus.queued);
+        job.setProgress(0);
+        job.setParamsJson(params);
+        return job;
     }
 
     private static String invokeString(Method method, Object target) {
