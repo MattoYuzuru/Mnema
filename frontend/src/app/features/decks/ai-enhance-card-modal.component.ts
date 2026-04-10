@@ -222,7 +222,7 @@ interface CardAuditSummary {
               (click)="runAudit()"
               [disabled]="runningAudit() || !selectedCredentialId()"
             >
-              {{ auditSummary() ? ('cardEnhance.runAgain' | translate) : ('cardEnhance.runAudit' | translate) }}
+              {{ auditButtonLabel() }}
             </app-button>
             <div *ngIf="auditUpdatedAt()" class="field-hint">
               {{ 'cardEnhance.lastAudit' | translate }} {{ auditUpdatedAt() }}
@@ -230,6 +230,14 @@ interface CardAuditSummary {
             <div *ngIf="auditError()" class="error-state" role="alert">
               {{ auditError() }}
             </div>
+            <div *ngIf="auditPreflightError()" class="field-hint error-text">
+              {{ auditPreflightError() }}
+            </div>
+            <app-ai-preflight-panel
+              *ngIf="auditPreflight()"
+              [preflight]="auditPreflight()"
+              title="Review audit plan"
+            />
             <div *ngIf="auditSummary()" class="audit-results">
               <p class="audit-summary" *ngIf="auditSummary()?.summary">{{ auditSummary()?.summary }}</p>
               <div class="audit-item" *ngFor="let item of auditSummary()?.items || []">
@@ -441,12 +449,17 @@ export class AiEnhanceCardModalComponent implements OnInit {
     runningAudit = signal(false);
     runningFill = signal(false);
     auditError = signal('');
+    auditPreflightError = signal('');
+    auditPreflight = signal<AiJobPreflightResponse | null>(null);
+    preflightingAudit = signal(false);
     fillPreflightError = signal('');
     fillPreflight = signal<AiJobPreflightResponse | null>(null);
     preflightingFill = signal(false);
     auditSummary = signal<CardAuditSummary | null>(null);
     auditUpdatedAt = signal<string | null>(null);
+    pendingAuditRequestId = signal(this.generateRequestId());
     pendingFillRequestId = signal(this.generateRequestId());
+    private readonly lastAuditPreflightSignature = signal('');
     private readonly lastFillPreflightSignature = signal('');
     private readonly injector = inject(Injector);
 
@@ -507,6 +520,19 @@ export class AiEnhanceCardModalComponent implements OnInit {
             return 'Analyzing...';
         }
         return this.fillPreflight() ? 'Confirm and fill' : 'Fill missing';
+    });
+    readonly auditPreflightSignature = computed(() => JSON.stringify(this.buildAuditRequest().params ?? {}));
+    readonly auditButtonLabel = computed(() => {
+        if (this.runningAudit()) {
+            return this.auditSummary() ? 'Running again...' : 'Running...';
+        }
+        if (this.preflightingAudit()) {
+            return 'Analyzing...';
+        }
+        if (this.auditPreflight()) {
+            return 'Confirm and audit';
+        }
+        return this.auditSummary() ? 'Run again' : 'Run audit';
     });
 
     private readonly openAiVoices = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer'];
@@ -603,6 +629,16 @@ export class AiEnhanceCardModalComponent implements OnInit {
         this.restoreAudit();
         this.loadRuntimeCapabilities();
         this.loadProviders();
+        effect(() => {
+            const signature = this.auditPreflightSignature();
+            const lastSignature = this.lastAuditPreflightSignature();
+            if (!this.auditPreflight() || !lastSignature || signature === lastSignature) {
+                return;
+            }
+            this.auditPreflight.set(null);
+            this.auditPreflightError.set('');
+            this.pendingAuditRequestId.set(this.generateRequestId());
+        }, { injector: this.injector });
         effect(() => {
             const signature = this.fillPreflightSignature();
             const lastSignature = this.lastFillPreflightSignature();
@@ -708,26 +744,62 @@ export class AiEnhanceCardModalComponent implements OnInit {
 
     runAudit(): void {
         if (!this.card || !this.selectedCredentialId()) return;
+        if (!this.auditPreflight()) {
+            this.runAuditPreflight();
+            return;
+        }
         this.runningAudit.set(true);
         this.auditError.set('');
-        const requestId = this.generateRequestId();
         this.aiApi.createJob({
-            requestId,
+            requestId: this.pendingAuditRequestId(),
+            deckId: this.userDeckId,
+            type: 'generic',
+            params: this.auditPreflight()?.normalizedParams || this.buildAuditRequest().params
+        }).subscribe({
+            next: job => {
+                this.auditPreflight.set(null);
+                this.auditPreflightError.set('');
+                this.lastAuditPreflightSignature.set('');
+                this.pendingAuditRequestId.set(this.generateRequestId());
+                this.pollJob(job, 'audit');
+            },
+            error: err => {
+                this.runningAudit.set(false);
+                this.auditError.set(err?.error?.message || 'Failed to start audit');
+            }
+        });
+    }
+
+    private runAuditPreflight(): void {
+        this.preflightingAudit.set(true);
+        this.auditPreflightError.set('');
+        const request = this.buildAuditRequest();
+        this.aiApi.preflightJob(request).subscribe({
+            next: preflight => {
+                this.preflightingAudit.set(false);
+                this.auditPreflight.set(preflight);
+                this.lastAuditPreflightSignature.set(this.auditPreflightSignature());
+                this.pendingAuditRequestId.set(request.requestId);
+            },
+            error: err => {
+                this.preflightingAudit.set(false);
+                this.auditPreflightError.set(err?.error?.message || 'Failed to analyze audit');
+            }
+        });
+    }
+
+    private buildAuditRequest(): CreateAiJobRequest {
+        return {
+            requestId: this.pendingAuditRequestId(),
             deckId: this.userDeckId,
             type: 'generic',
             params: {
                 providerCredentialId: this.selectedCredentialId(),
                 provider: this.selectedProvider() || undefined,
                 mode: 'card_audit',
-                cardId: this.card.userCardId
+                cardId: this.card?.userCardId
             }
-        }).subscribe({
-            next: job => this.pollJob(job, 'audit'),
-            error: err => {
-                this.runningAudit.set(false);
-                this.auditError.set(err?.error?.message || 'Failed to start audit');
-            }
-        });
+        };
     }
 
     runFillMissingFields(): void {

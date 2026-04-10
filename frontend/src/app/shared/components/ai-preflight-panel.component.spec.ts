@@ -18,4 +18,13 @@ describe('AiPreflightPanelComponent', () => {
         expect(component.formatTokens(1200, 3400)).toContain('in 1.2K');
         expect(component.formatTokens(1200, 3400)).toContain('out 3.4K');
     });
+
+    it('formats provider and model label', () => {
+        expect(component.providerLabel({
+            type: 'generic',
+            provider: 'openai',
+            providerAlias: 'Primary',
+            model: 'gpt-4.1-mini'
+        })).toBe('Primary · gpt-4.1-mini');
+    });
 });

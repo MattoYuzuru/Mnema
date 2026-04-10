@@ -25,6 +25,11 @@ import { AiJobPreflightResponse } from '../../core/models/ai.models';
 
         <p *ngIf="preflight.summary" class="preflight-summary">{{ preflight.summary }}</p>
 
+        <div *ngIf="providerLabel(preflight)" class="meta-line provider-line">
+          <span class="meta-label">Provider</span>
+          <span>{{ providerLabel(preflight) }}</span>
+        </div>
+
         <div class="preflight-meta">
           <div class="meta-card">
             <span class="meta-label">ETA</span>
@@ -136,6 +141,9 @@ import { AiJobPreflightResponse } from '../../core/models/ai.models';
         margin-top: var(--spacing-sm);
         color: var(--color-text-primary);
       }
+      .provider-line {
+        margin-top: var(--spacing-md);
+      }
       .planned-items {
         margin-top: var(--spacing-md);
       }
@@ -210,5 +218,17 @@ export class AiPreflightPanelComponent {
             return '0';
         }
         return Intl.NumberFormat(undefined, { notation: 'compact', maximumFractionDigits: value >= 1000 ? 1 : 0 }).format(value);
+    }
+
+    providerLabel(preflight: AiJobPreflightResponse | null): string {
+        if (!preflight) {
+            return '';
+        }
+        const provider = preflight.providerAlias || preflight.provider || '';
+        const model = preflight.model || '';
+        if (provider && model) {
+            return `${provider} · ${model}`;
+        }
+        return provider || model;
     }
 }
