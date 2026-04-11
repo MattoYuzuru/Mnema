@@ -36,8 +36,18 @@ check_requirements() {
   fi
 }
 
-docker_gpu_available() {
-  docker run --rm --gpus all alpine:3.20 true >/dev/null 2>&1
+docker_gpu_mode() {
+  if docker run --rm --gpus all alpine:3.20 true >/dev/null 2>&1; then
+    echo "gpus"
+    return
+  fi
+
+  if docker run --rm --device nvidia.com/gpu=all alpine:3.20 true >/dev/null 2>&1; then
+    echo "cdi"
+    return
+  fi
+
+  echo "none"
 }
 
 stop_existing_local_stack() {
@@ -467,6 +477,7 @@ OLLAMA_AUDIO_EXPERIMENTAL=$ollama_audio_experimental
 OLLAMA_IMAGE_EXPERIMENTAL=$ollama_image_experimental
 OLLAMA_GPU_ENABLED=$ollama_gpu_enabled
 OLLAMA_VISIBLE_GPUS=$ollama_visible_gpus
+DOCKER_GPU_MODE=${DOCKER_GPU_MODE:-none}
 
 GROK_BASE_URL=
 
@@ -488,6 +499,7 @@ write_override_file() {
   local local_audio_models="$5"
   local openai_tts_model="$6"
   local local_image_default_model="$7"
+  local docker_gpu_mode="$8"
   local ollama_gpu_block=""
   local local_ai_gateway_extra_depends=""
   local local_audio_gateway_block=""
@@ -497,8 +509,13 @@ write_override_file() {
   local extra_volumes=""
 
   if [[ "$ollama_gpu_enabled" == "true" ]]; then
-    ollama_gpu_block=$'    gpus: all\n    environment:\n      NVIDIA_VISIBLE_DEVICES: "${OLLAMA_VISIBLE_GPUS}"\n      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"'
-    local_image_gpu_block=$'    gpus: all'
+    if [[ "$docker_gpu_mode" == "cdi" ]]; then
+      ollama_gpu_block=$'    devices:\n      - "nvidia.com/gpu=${OLLAMA_VISIBLE_GPUS}"\n    environment:\n      NVIDIA_VISIBLE_DEVICES: "${OLLAMA_VISIBLE_GPUS}"\n      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"'
+      local_image_gpu_block=$'    devices:\n      - "nvidia.com/gpu=${OLLAMA_VISIBLE_GPUS}"'
+    else
+      ollama_gpu_block=$'    gpus: all\n    environment:\n      NVIDIA_VISIBLE_DEVICES: "${OLLAMA_VISIBLE_GPUS}"\n      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"'
+      local_image_gpu_block=$'    gpus: all'
+    fi
     local_image_gpu_env=$'      NVIDIA_VISIBLE_DEVICES: "${OLLAMA_VISIBLE_GPUS}"\n      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"'
   fi
 
@@ -1084,7 +1101,8 @@ fi
 
 OLLAMA_GPU_ENABLED="false"
 OLLAMA_VISIBLE_GPUS="all"
-if docker_gpu_available; then
+DOCKER_GPU_MODE="$(docker_gpu_mode)"
+if [[ "$DOCKER_GPU_MODE" != "none" ]]; then
   OLLAMA_GPU_ENABLED="true"
   mapfile -t gpu_entries < <(detect_gpu_entries || true)
   if (( ${#gpu_entries[@]} > 1 )); then
@@ -1166,7 +1184,7 @@ if [[ "$IMAGE_BACKEND_MODE" == "diffusers" ]]; then
 fi
 
 write_env_file "$DB_USER" "$DB_PASSWORD" "$DB_NAME" "$POSTGRES_PORT" "$MINIO_USER" "$MINIO_PASSWORD" "$OPENAI_DEFAULT_MODEL" "$LOCAL_AI_GATEWAY_PORT" "$OPENAI_TTS_MODEL" "$OPENAI_STT_MODEL" "$OPENAI_IMAGE_MODEL" "$LOCAL_AUDIO_BASE_URL" "$LOCAL_IMAGE_BASE_URL" "$LOCAL_TTS_VOICES" "$OLLAMA_GPU_ENABLED" "$OLLAMA_VISIBLE_GPUS" "$REMOTE_OPENAI_BASE_URL" "$OLLAMA_AUDIO_EXPERIMENTAL" "$OLLAMA_IMAGE_EXPERIMENTAL" "$LOCAL_AUDIO_MODELS" "$LOCAL_IMAGE_DEFAULT_MODEL" "$LOCAL_AUDIO_GATEWAY_PORT" "$LOCAL_IMAGE_GATEWAY_PORT"
-write_override_file "$OPENAI_DEFAULT_MODEL" "$OLLAMA_GPU_ENABLED" "$AUDIO_BACKEND_MODE" "$IMAGE_BACKEND_MODE" "$LOCAL_AUDIO_MODELS" "$OPENAI_TTS_MODEL" "$LOCAL_IMAGE_DEFAULT_MODEL"
+write_override_file "$OPENAI_DEFAULT_MODEL" "$OLLAMA_GPU_ENABLED" "$AUDIO_BACKEND_MODE" "$IMAGE_BACKEND_MODE" "$LOCAL_AUDIO_MODELS" "$OPENAI_TTS_MODEL" "$LOCAL_IMAGE_DEFAULT_MODEL" "$DOCKER_GPU_MODE"
 
 echo "[info] Generated: $ENV_FILE"
 echo "[info] Generated: $OVERRIDE_FILE"
@@ -1239,6 +1257,7 @@ echo "[info] Ollama audio experimental: ${OLLAMA_AUDIO_EXPERIMENTAL}"
 echo "[info] Ollama image experimental: ${OLLAMA_IMAGE_EXPERIMENTAL}"
 echo "[info] Ollama GPU enabled: ${OLLAMA_GPU_ENABLED}"
 if [[ "$OLLAMA_GPU_ENABLED" == "true" ]]; then
+  echo "[info] Docker GPU mode: ${DOCKER_GPU_MODE}"
   echo "[info] Ollama visible GPUs: ${OLLAMA_VISIBLE_GPUS}"
 fi
 

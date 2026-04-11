@@ -138,9 +138,18 @@ function Print-PortInfo {
     }
 }
 
-function Test-DockerGpuAvailable {
+function Get-DockerGpuMode {
     $null = & docker run --rm --gpus all alpine:3.20 true 2>$null
-    return $LASTEXITCODE -eq 0
+    if ($LASTEXITCODE -eq 0) {
+        return 'gpus'
+    }
+
+    $null = & docker run --rm --device nvidia.com/gpu=all alpine:3.20 true 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        return 'cdi'
+    }
+
+    return 'none'
 }
 
 function Get-NvidiaDeviceIds {
@@ -326,8 +335,9 @@ else {
 
 $ollamaGpuEnabled = 'false'
 $ollamaVisibleGpus = 'all'
+$dockerGpuMode = Get-DockerGpuMode
 $gpuDeviceIds = Get-NvidiaDeviceIds
-if (Test-DockerGpuAvailable) {
+if ($dockerGpuMode -ne 'none') {
     $ollamaGpuEnabled = 'true'
     if ($gpuDeviceIds.Count -gt 1) {
         Write-Host "[info] Detected multiple GPUs: $($gpuDeviceIds -join ',')"
@@ -447,6 +457,7 @@ OLLAMA_AUDIO_EXPERIMENTAL=$ollamaAudioExperimental
 OLLAMA_IMAGE_EXPERIMENTAL=$ollamaImageExperimental
 OLLAMA_GPU_ENABLED=$ollamaGpuEnabled
 OLLAMA_VISIBLE_GPUS=$ollamaVisibleGpus
+DOCKER_GPU_MODE=$dockerGpuMode
 
 GROK_BASE_URL=
 
@@ -512,7 +523,9 @@ if ($imageBackendMode -eq 'diffusers') {
     build:
       context: ./scripts/local-image-gateway
       dockerfile: Dockerfile
+__LOCAL_IMAGE_GPU_BLOCK__
     environment:
+__LOCAL_IMAGE_GPU_ENV__
       IMAGE_DEFAULT_MODEL: "$localImageDefaultModel"
       HF_HOME: "/models/hf"
     ports: !override
@@ -700,14 +713,47 @@ ${extraVolumes}
 
 $ollamaGpuBlock = ''
 if ($ollamaGpuEnabled -eq 'true') {
-    $ollamaGpuBlock = @"
+    if ($dockerGpuMode -eq 'cdi') {
+        $ollamaGpuBlock = @"
+    devices:
+      - "nvidia.com/gpu=`${OLLAMA_VISIBLE_GPUS}"
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "`${OLLAMA_VISIBLE_GPUS}"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+"@
+    }
+    else {
+        $ollamaGpuBlock = @"
     gpus: all
     environment:
       NVIDIA_VISIBLE_DEVICES: "`${OLLAMA_VISIBLE_GPUS}"
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
 "@
+    }
 }
 $overrideContent = $overrideContent.Replace('__OLLAMA_GPU_BLOCK__', $ollamaGpuBlock)
+
+$localImageGpuBlock = ''
+$localImageGpuEnv = ''
+if ($ollamaGpuEnabled -eq 'true') {
+    if ($dockerGpuMode -eq 'cdi') {
+        $localImageGpuBlock = @"
+    devices:
+      - "nvidia.com/gpu=`${OLLAMA_VISIBLE_GPUS}"
+"@
+    }
+    else {
+        $localImageGpuBlock = @"
+    gpus: all
+"@
+    }
+    $localImageGpuEnv = @"
+      NVIDIA_VISIBLE_DEVICES: "`${OLLAMA_VISIBLE_GPUS}"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+"@
+}
+$overrideContent = $overrideContent.Replace('__LOCAL_IMAGE_GPU_BLOCK__', $localImageGpuBlock)
+$overrideContent = $overrideContent.Replace('__LOCAL_IMAGE_GPU_ENV__', $localImageGpuEnv)
 
 Set-Content -Path $OverrideFile -Value $overrideContent -Encoding UTF8
 
