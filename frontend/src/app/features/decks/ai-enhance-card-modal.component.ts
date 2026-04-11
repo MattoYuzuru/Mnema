@@ -492,6 +492,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
     readonly ttsSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'tts', ['openai', 'gemini', 'qwen']));
     readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'grok', 'ollama']));
     readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'grok', 'ollama']));
+    readonly ttsModelOptions = computed(() => this.runtimeTtsModelOptions());
     readonly imageModelOptions = computed(() => this.resolveImageModelOptions(this.selectedProvider()));
     readonly videoModelOptions = computed(() => this.resolveVideoModelOptions(this.selectedProvider()));
     readonly voiceOptions = computed(() => {
@@ -1217,8 +1218,8 @@ export class AiEnhanceCardModalComponent implements OnInit {
         if (!this.ttsEnabled() || !this.ttsSupported()) {
             return null;
         }
-        const model = this.ttsModel().trim();
-        if (!model) {
+        const model = this.resolveTtsModel();
+        if (!model && this.selectedProvider() !== 'ollama') {
             return null;
         }
         const audioFields = this.missingAudioFields().map(field => field.name);
@@ -1230,7 +1231,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
         }
         return {
             enabled: true,
-            model,
+            ...(model ? { model } : {}),
             voice: this.resolveVoice() || undefined,
             format: this.resolveAudioFormat()
         };
@@ -1240,6 +1241,26 @@ export class AiEnhanceCardModalComponent implements OnInit {
         const voices = this.runtimeCapabilities()?.ollama?.voices || [];
         const unique = Array.from(new Set(voices.map(voice => String(voice || '').trim()).filter(Boolean)));
         return unique.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    }
+
+    private runtimeTtsModelOptions(): string[] {
+        if (this.selectedProvider() !== 'ollama') {
+            return [];
+        }
+        const runtime = this.runtimeCapabilities()?.ollama?.models || [];
+        const models = runtime
+            .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('tts'))
+            .map(model => model.name)
+            .filter(name => !!name && name.trim().length > 0);
+        return Array.from(new Set(models)).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    }
+
+    private resolveTtsModel(): string {
+        const explicit = this.ttsModel().trim();
+        if (explicit) {
+            return explicit;
+        }
+        return '';
     }
 
     private buildImageParams(missingFields: string[]): Record<string, unknown> | null {

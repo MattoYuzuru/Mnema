@@ -273,6 +273,13 @@ async def _load_audio_models() -> list[dict[str, Any]]:
         model_id = str(model.get("id", "")).strip()
         if not model_id:
             continue
+        caps: set[str] = set()
+        metadata = model.get("metadata") if isinstance(model.get("metadata"), dict) else {}
+        for cap in metadata.get("capabilities", []):
+            cap_text = str(cap).strip().lower()
+            if cap_text:
+                caps.add(cap_text)
+        caps.add("tts")
         result.append(
             {
                 "id": model_id,
@@ -280,7 +287,7 @@ async def _load_audio_models() -> list[dict[str, Any]]:
                 "owned_by": str(model.get("owned_by") or "audio-backend"),
                 "created": model.get("created"),
                 "metadata": {
-                    "capabilities": sorted(_capabilities_from_model_name(model_id)),
+                    "capabilities": sorted(caps),
                 },
             }
         )
