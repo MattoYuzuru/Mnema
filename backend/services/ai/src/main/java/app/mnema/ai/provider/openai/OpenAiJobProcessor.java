@@ -372,7 +372,37 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             int count = Math.min(batchSize, remaining);
             ObjectNode batchParams = baseParams.deepCopy();
             batchParams.put("count", count);
-            AiJobProcessingResult batchResult = handleGenerateCards(job, apiKey, batchParams);
+            AiJobProcessingResult batchResult;
+            try {
+                batchResult = handleGenerateCards(job, apiKey, batchParams);
+            } catch (RuntimeException ex) {
+                if (totalCreated > 0) {
+                    ObjectNode summary = buildGenerateCardsBatchSummary(
+                            job,
+                            totalCount,
+                            totalCreated,
+                            totalImages,
+                            totalTts,
+                            totalTtsChars,
+                            ttsError,
+                            templateId,
+                            fieldsNode,
+                            itemResults
+                    );
+                    summary.put("generationError", summarizeBatchError(ex));
+                    return new AiJobProcessingResult(
+                            summary,
+                            PROVIDER,
+                            model,
+                            tokensIn,
+                            tokensOut,
+                            cost,
+                            job.getInputHash(),
+                            AiJobStatus.partial_success
+                    );
+                }
+                throw ex;
+            }
             model = batchResult.model();
             if (batchResult.tokensIn() != null) {
                 tokensIn = (tokensIn == null ? 0 : tokensIn) + batchResult.tokensIn();
@@ -406,6 +436,41 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             remaining -= count;
         }
 
+        ObjectNode summary = buildGenerateCardsBatchSummary(
+                job,
+                totalCount,
+                totalCreated,
+                totalImages,
+                totalTts,
+                totalTtsChars,
+                ttsError,
+                templateId,
+                fieldsNode,
+                itemResults
+        );
+
+        return new AiJobProcessingResult(
+                summary,
+                PROVIDER,
+                model,
+                tokensIn,
+                tokensOut,
+                cost,
+                job.getInputHash(),
+                resolveFinalStatus(hasPartialFailures || ttsError != null)
+        );
+    }
+
+    private ObjectNode buildGenerateCardsBatchSummary(AiJobEntity job,
+                                                      int totalCount,
+                                                      int totalCreated,
+                                                      int totalImages,
+                                                      int totalTts,
+                                                      int totalTtsChars,
+                                                      String ttsError,
+                                                      String templateId,
+                                                      JsonNode fieldsNode,
+                                                      ArrayNode itemResults) {
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("mode", MODE_GENERATE_CARDS);
         summary.put("deckId", job.getDeckId().toString());
@@ -432,17 +497,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (!itemResults.isEmpty()) {
             summary.set("items", itemResults);
         }
-
-        return new AiJobProcessingResult(
-                summary,
-                PROVIDER,
-                model,
-                tokensIn,
-                tokensOut,
-                cost,
-                job.getInputHash(),
-                resolveFinalStatus(hasPartialFailures || ttsError != null)
-        );
+        return summary;
     }
 
     private AiJobProcessingResult handleGenerateCardsBatchedForItems(AiJobEntity job,
@@ -1657,9 +1712,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
             for (int attempt = 0; attempt < GENERATE_MAX_ATTEMPTS && uniqueDrafts.size() < context.count(); attempt++) {
                 int remaining = context.count() - uniqueDrafts.size();
-                int candidateCount = resolveCandidateCount(remaining, attempt);
+                boolean localOllamaRequest = isLocalOllamaRequest(params);
+                int candidateCount = resolveCandidateCount(remaining, attempt, localOllamaRequest);
                 String prompt = buildCardsPrompt(
-                        augmentGeneratePrompt(userPrompt, context.noveltyIndex(), attempt),
+                        augmentGeneratePrompt(userPrompt, context.noveltyIndex(), attempt, localOllamaRequest),
                         context.template(),
                         context.publicDeck(),
                         context.allowedFields(),
@@ -1974,7 +2030,15 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     }
 
     private int resolveCandidateCount(int remaining, int attempt) {
+        return resolveCandidateCount(remaining, attempt, false);
+    }
+
+    private int resolveCandidateCount(int remaining, int attempt, boolean localOllamaRequest) {
         int safeRemaining = Math.max(1, remaining);
+        if (localOllamaRequest) {
+            int extra = attempt == 0 ? 2 : 4;
+            return Math.min(safeRemaining + extra, 12);
+        }
         int boosted = attempt == 0
                 ? Math.max(safeRemaining * 3, safeRemaining + 10)
                 : Math.max(safeRemaining * 2, safeRemaining + 6);
@@ -1982,10 +2046,18 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     }
 
     private String augmentGeneratePrompt(String userPrompt, CardNoveltyService.NoveltyIndex noveltyIndex, int attempt) {
+        return augmentGeneratePrompt(userPrompt, noveltyIndex, attempt, false);
+    }
+
+    private String augmentGeneratePrompt(String userPrompt,
+                                         CardNoveltyService.NoveltyIndex noveltyIndex,
+                                         int attempt,
+                                         boolean localOllamaRequest) {
         if (attempt <= 0) {
             return userPrompt;
         }
-        List<String> snippets = noveltyService.buildAvoidSnippets(noveltyIndex, NOVELTY_HINT_LIMIT);
+        int hintLimit = localOllamaRequest ? 8 : NOVELTY_HINT_LIMIT;
+        List<String> snippets = noveltyService.buildAvoidSnippets(noveltyIndex, hintLimit);
         if (snippets.isEmpty()) {
             return userPrompt;
         }
@@ -2025,8 +2097,16 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private int resolveLocalGenerateBatchSize(JsonNode params) {
         int fields = params != null && params.path("fields").isArray() ? params.path("fields").size() : 0;
-        int batchSize = fields > 0 ? 50 / fields : 10;
-        return Math.max(5, Math.min(batchSize, 10));
+        int batchSize = fields > 0 ? 30 / fields : 6;
+        return Math.max(4, Math.min(batchSize, 8));
+    }
+
+    private String summarizeBatchError(Exception ex) {
+        if (ex == null || ex.getMessage() == null) {
+            return "Batch generation failed";
+        }
+        String message = ex.getMessage().replaceAll("[\\r\\n]+", " ").trim();
+        return message.length() > 500 ? message.substring(0, 500) + "..." : message;
     }
 
     private int resolveLimit(JsonNode node) {
