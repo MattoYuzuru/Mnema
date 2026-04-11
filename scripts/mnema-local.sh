@@ -40,6 +40,16 @@ docker_gpu_available() {
   docker run --rm --gpus all alpine:3.20 true >/dev/null 2>&1
 }
 
+stop_existing_local_stack() {
+  if [[ "$DRY_RUN" == "1" ]]; then
+    return
+  fi
+  if [[ -f "$ENV_FILE" && -f "$OVERRIDE_FILE" ]]; then
+    echo "[info] Stopping existing Mnema local stack before reconfiguring ports..."
+    docker compose --env-file "$ENV_FILE" -f "$ROOT_DIR/docker-compose.yml" -f "$OVERRIDE_FILE" down --remove-orphans || true
+  fi
+}
+
 detect_gpu_entries() {
   if ! command_exists nvidia-smi; then
     return
@@ -568,24 +578,31 @@ services:
   auth:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
+      AUTH_LOGIN_PAGE_URL: "http://localhost:${FRONTEND_PORT}/login"
+      AUTH_LOGOUT_DEFAULT_REDIRECT: "http://localhost:${FRONTEND_PORT}/"
+      AUTH_WEB_REDIRECT_URIS: "http://localhost:${FRONTEND_PORT}/,http://127.0.0.1:${FRONTEND_PORT}/,http://localhost:3005/,http://127.0.0.1:3005/,https://mnema.app/"
     ports: !override
       - "${AUTH_PORT}:8080"
 
   user:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
     ports: !override
       - "${USER_PORT}:8080"
 
   core:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
     ports: !override
       - "${CORE_PORT}:8080"
 
   media:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
     depends_on:
       minio:
         condition: service_healthy
@@ -595,12 +612,14 @@ services:
   import:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
     ports: !override
       - "${IMPORT_PORT}:8080"
 
   ai:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
       AI_SYSTEM_MANAGED_PROVIDER_ENABLED: "true"
       AI_SYSTEM_PROVIDER_NAME: "ollama"
       AI_OLLAMA_ENABLED: "true"
@@ -619,6 +638,14 @@ services:
 
   frontend:
     environment:
+      MNEMA_AUTH_SERVER_URL: "http://localhost:${AUTH_PORT}"
+      MNEMA_API_BASE_URL: "http://localhost:${USER_PORT}/api/user"
+      MNEMA_CORE_API_BASE_URL: "http://localhost:${CORE_PORT}/api/core"
+      MNEMA_MEDIA_API_BASE_URL: "http://localhost:${MEDIA_PORT}/api/media"
+      MNEMA_IMPORT_API_BASE_URL: "http://localhost:${IMPORT_PORT}/api/import"
+      MNEMA_AI_API_BASE_URL: "http://localhost:${AI_PORT}/api/ai"
+      MNEMA_FEATURE_FEDERATED_AUTH_ENABLED: "false"
+      MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING: "false"
       MNEMA_FEATURE_AI_SYSTEM_PROVIDER_ENABLED: "true"
       MNEMA_FEATURE_AI_SYSTEM_PROVIDER_NAME: "ollama"
     ports: !override
@@ -1099,6 +1126,8 @@ if docker_gpu_available; then
 else
   echo "[warn] Docker GPU runtime is not available. Ollama will run on CPU."
 fi
+
+stop_existing_local_stack
 
 POSTGRES_PORT="$(next_free_port 5432)"
 REDIS_PORT="$(next_free_port 6379 "$POSTGRES_PORT")"

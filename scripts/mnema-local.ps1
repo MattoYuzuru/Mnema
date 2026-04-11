@@ -15,6 +15,16 @@ function Test-Command {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Stop-ExistingLocalStack {
+    if ($DryRun) {
+        return
+    }
+    if ((Test-Path $EnvFile) -and (Test-Path $OverrideFile)) {
+        Write-Host '[info] Stopping existing Mnema local stack before reconfiguring ports...'
+        & docker compose --env-file $EnvFile -f (Join-Path $RootDir 'docker-compose.yml') -f $OverrideFile down --remove-orphans
+    }
+}
+
 function Test-PortBusy {
     param([int]$Port)
     $listener = $null
@@ -328,6 +338,8 @@ else {
     Write-Host '[warn] Docker GPU runtime is not available. Ollama will run on CPU.'
 }
 
+Stop-ExistingLocalStack
+
 $POSTGRES_PORT = Get-NextFreePort -StartPort 5432
 $REDIS_PORT = Get-NextFreePort -StartPort 6379
 $AUTH_PORT = Get-NextFreePort -StartPort 8083
@@ -530,24 +542,31 @@ services:
   auth:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
+      AUTH_LOGIN_PAGE_URL: "http://localhost:${FRONTEND_PORT}/login"
+      AUTH_LOGOUT_DEFAULT_REDIRECT: "http://localhost:${FRONTEND_PORT}/"
+      AUTH_WEB_REDIRECT_URIS: "http://localhost:${FRONTEND_PORT}/,http://127.0.0.1:${FRONTEND_PORT}/,http://localhost:3005/,http://127.0.0.1:3005/,https://mnema.app/"
     ports: !override
       - "${AUTH_PORT}:8080"
 
   user:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
     ports: !override
       - "${USER_PORT}:8080"
 
   core:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
     ports: !override
       - "${CORE_PORT}:8080"
 
   media:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
     depends_on:
       minio:
         condition: service_healthy
@@ -557,12 +576,14 @@ services:
   import:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
     ports: !override
       - "${IMPORT_PORT}:8080"
 
   ai:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
       AI_SYSTEM_MANAGED_PROVIDER_ENABLED: "true"
       AI_SYSTEM_PROVIDER_NAME: "ollama"
       AI_OLLAMA_ENABLED: "true"
@@ -581,6 +602,14 @@ services:
 
   frontend:
     environment:
+      MNEMA_AUTH_SERVER_URL: "http://localhost:${AUTH_PORT}"
+      MNEMA_API_BASE_URL: "http://localhost:${USER_PORT}/api/user"
+      MNEMA_CORE_API_BASE_URL: "http://localhost:${CORE_PORT}/api/core"
+      MNEMA_MEDIA_API_BASE_URL: "http://localhost:${MEDIA_PORT}/api/media"
+      MNEMA_IMPORT_API_BASE_URL: "http://localhost:${IMPORT_PORT}/api/import"
+      MNEMA_AI_API_BASE_URL: "http://localhost:${AI_PORT}/api/ai"
+      MNEMA_FEATURE_FEDERATED_AUTH_ENABLED: "false"
+      MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING: "false"
       MNEMA_FEATURE_AI_SYSTEM_PROVIDER_ENABLED: "true"
       MNEMA_FEATURE_AI_SYSTEM_PROVIDER_NAME: "ollama"
     ports: !override
