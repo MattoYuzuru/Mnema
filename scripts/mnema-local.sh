@@ -671,7 +671,7 @@ ${local_ai_gateway_extra_depends}
     ports: !override
       - "${LOCAL_AI_GATEWAY_PORT}:8089"
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8089/health" ]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8089/health', timeout=5)" ]
       interval: 5s
       timeout: 3s
       retries: 20
