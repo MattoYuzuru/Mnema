@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import subprocess
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +14,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 app = FastAPI(title="Mnema Local Audio Gateway", version="1.0.0")
+logger = logging.getLogger("mnema.local_audio_gateway")
 
 PIPER_DATA_DIR = Path(os.getenv("PIPER_DATA_DIR", "/models/piper"))
 PIPER_DOWNLOAD_DIR = Path(os.getenv("PIPER_DOWNLOAD_DIR", str(PIPER_DATA_DIR)))
@@ -70,12 +73,22 @@ def _content_type(audio_format: str) -> str:
     raise HTTPException(status_code=400, detail=f"Unsupported response_format: {audio_format}")
 
 
-def _run_piper(text: str, voice: str, target_path: Path) -> None:
-    PIPER_DATA_DIR.mkdir(parents=True, exist_ok=True)
-    PIPER_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+def _local_voice_model_path(voice: str) -> Path | None:
+    if "/" in voice or "\\" in voice or voice.endswith(".onnx"):
+        return Path(voice)
+    return PIPER_DATA_DIR / f"{voice}.onnx"
 
-    cmd = [
-        "piper",
+
+def _local_voice_is_ready(model_path: Path) -> bool:
+    return model_path.exists() and Path(f"{model_path}.json").exists()
+
+
+def _piper_model_args(voice: str) -> list[str]:
+    model_path = _local_voice_model_path(voice)
+    if model_path and _local_voice_is_ready(model_path):
+        return ["--model", str(model_path)]
+
+    return [
         "--model",
         voice,
         "--data-dir",
@@ -83,9 +96,20 @@ def _run_piper(text: str, voice: str, target_path: Path) -> None:
         "--download-dir",
         str(PIPER_DOWNLOAD_DIR),
         "--update-voices",
+    ]
+
+
+def _run_piper(text: str, voice: str, target_path: Path) -> None:
+    PIPER_DATA_DIR.mkdir(parents=True, exist_ok=True)
+    PIPER_DOWNLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+    cmd = [
+        "piper",
+        *_piper_model_args(voice),
         "--output_file",
         str(target_path),
     ]
+    started = time.monotonic()
     try:
         proc = subprocess.run(
             cmd,
@@ -99,11 +123,22 @@ def _run_piper(text: str, voice: str, target_path: Path) -> None:
     except subprocess.TimeoutExpired as exc:
         raise HTTPException(status_code=504, detail=f"Piper synthesis timed out for {voice}") from exc
 
+    elapsed_ms = int((time.monotonic() - started) * 1000)
     if proc.returncode != 0:
         stderr = proc.stderr.strip() or proc.stdout.strip() or "unknown piper error"
+        logger.warning("piper synthesis failed voice=%s elapsed_ms=%s error=%s", voice, elapsed_ms, stderr[-500:])
         raise HTTPException(status_code=502, detail=f"Piper synthesis failed for {voice}: {stderr[-1000:]}")
     if not target_path.exists() or target_path.stat().st_size == 0:
+        logger.warning("piper synthesis produced empty audio voice=%s elapsed_ms=%s", voice, elapsed_ms)
         raise HTTPException(status_code=502, detail=f"Piper synthesis produced empty audio for {voice}")
+    logger.info(
+        "piper synthesis completed voice=%s chars=%s bytes=%s elapsed_ms=%s local_model=%s",
+        voice,
+        len(text),
+        target_path.stat().st_size,
+        elapsed_ms,
+        bool(_local_voice_model_path(voice) and _local_voice_is_ready(_local_voice_model_path(voice))),
+    )
 
 
 def _convert_audio(source: Path, target: Path, target_format: str) -> None:
