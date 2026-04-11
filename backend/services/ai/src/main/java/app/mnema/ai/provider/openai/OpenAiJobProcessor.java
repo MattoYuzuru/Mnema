@@ -205,7 +205,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             return handleMissingFields(job, apiKey, params);
         }
         if (MODE_GENERATE_CARDS.equalsIgnoreCase(mode)) {
-            return handleGenerateCards(job, apiKey, params);
+            return handleGenerateCardsMaybeBatched(job, apiKey, params);
         }
         return handleFreeformText(job, apiKey, params);
     }
@@ -2007,6 +2007,26 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             batchSize = MAX_IMPORT_BATCH;
         }
         return batchSize;
+    }
+
+    private AiJobProcessingResult handleGenerateCardsMaybeBatched(AiJobEntity job, String apiKey, JsonNode params) {
+        int total = resolveCount(params);
+        int batchSize = resolveLocalGenerateBatchSize(params);
+        if (!isLocalOllamaRequest(params) || total <= batchSize) {
+            return handleGenerateCards(job, apiKey, params);
+        }
+
+        ObjectNode batchedParams = params != null && params.isObject()
+                ? ((ObjectNode) params).deepCopy()
+                : objectMapper.createObjectNode();
+        batchedParams.put("count", total);
+        return handleGenerateCardsBatched(job, apiKey, batchedParams, total, batchSize);
+    }
+
+    private int resolveLocalGenerateBatchSize(JsonNode params) {
+        int fields = params != null && params.path("fields").isArray() ? params.path("fields").size() : 0;
+        int batchSize = fields > 0 ? 50 / fields : 10;
+        return Math.max(5, Math.min(batchSize, 10));
     }
 
     private int resolveLimit(JsonNode node) {
