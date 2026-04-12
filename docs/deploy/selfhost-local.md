@@ -31,7 +31,7 @@
 Перед запуском убедитесь, что доступны:
 
 - Docker Engine + Docker Compose plugin (`docker compose version`)
-- если хотите GPU для Ollama: Docker GPU runtime (`docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi`)
+- если хотите GPU для Ollama и local TTS backends (`Qwen3-TTS`, `Kokoro`): Docker GPU runtime (`docker run --rm --gpus all nvidia/cuda:12.3.2-base-ubuntu22.04 nvidia-smi`)
 
 ### Linux (NVIDIA)
 
@@ -45,18 +45,18 @@
 - интерактивно (стрелками) выбирает:
   - primary/secondary text model;
   - optional vision model;
-  - local Piper TTS voices;
+  - local TTS providers (`Piper`, `Qwen3-TTS`, `Kokoro`);
   - optional image model;
   - GPU device для Ollama при нескольких GPU;
 - спрашивает режимы backend-ов:
-  - audio: `piper` (default) / `ollama` (experimental) / `custom` / `none`;
+  - audio: `local` (default, multi-provider TTS) / `ollama` (experimental) / `custom` / `none`;
   - image: `ollama` (experimental, default) / `diffusers` / `custom` / `none`;
 - заполняет `OPENAI_*` модели и gateway-переменные (`REMOTE_OPENAI_BASE_URL`, `OLLAMA_AUDIO_EXPERIMENTAL`, `OLLAMA_IMAGE_EXPERIMENTAL`);
 - автоматически проверяет доступность Docker GPU runtime и включает `gpus: all` для `ollama` (fallback на CPU с предупреждением, если runtime недоступен);
 - генерирует `.env.local`;
 - генерирует `.mnema/compose.ports.yml`;
 - запускает `docker compose pull`, поднимает `ollama + local-ai-gateway` и выбранные local gateway dependencies;
-- делает `ollama pull` только для Ollama text/vision/image моделей; Piper voices загружаются `local-audio-gateway` при старте;
+- делает `ollama pull` только для Ollama text/vision/image моделей; `local-audio-gateway` сам подкачивает дефолтные local TTS assets при старте и догружает новые voices/model assets при первом реальном использовании;
 - затем поднимает весь стек;
 - включает профиль `SPRING_PROFILES_ACTIVE=dev,selfhost-local` для backend сервисов.
 - в конце печатает команды для ручного управления моделями (`ollama list/pull/run`, `curl /api/tags`).
@@ -77,7 +77,7 @@ MNEMA_DRY_RUN=1 ./scripts/mnema-local.sh
 - `9000` / `9001` (MinIO API/console)
 - `11434` (Ollama)
 - `8090` (Local AI Gateway)
-- `8091` (Local Audio Gateway, если выбран `piper`)
+- `8091` (Local Audio Gateway, если выбран `local`)
 - `8092` (Local Image Gateway, если выбран `diffusers`)
 
 Если порт занят, выбирается следующий свободный (`+1`, `+2`, ...). В консоль выводится, какой порт заменен.
@@ -97,7 +97,7 @@ MNEMA_DRY_RUN=1 ./scripts/mnema-local.sh
   - default provider для self-host: `ollama`;
   - OpenAI-compatible base URL указывает на `local-ai-gateway` (`OPENAI_BASE_URL=http://local-ai-gateway:8089`);
   - text/chat/vision идут через Ollama;
-  - TTS идет через `local-audio-gateway` на Piper, если выбран режим `piper`;
+  - TTS идет через `local-audio-gateway` на локальные провайдеры (`Piper`, `Qwen3-TTS`, `Kokoro`), если выбран режим `local`;
   - image идет через Ollama OpenAI-compatible endpoint или через `local-image-gateway`, если выбран режим `diffusers`;
   - STT/video проксируются gateway в соответствующие локальные backends при их настройке;
   - персональные provider keys остаются доступны в UI (можно использовать одновременно system provider и внешние ключи).
@@ -109,9 +109,12 @@ Gateway поднимается вместе со стеком и дает еди
 
 Локальные переменные в `.env.local`:
 
-- `LOCAL_AUDIO_BASE_URL` — backend для `/v1/audio/*` (например локальный Speaches/Orpheus/Piper-gateway)
-- `LOCAL_AUDIO_MODELS` — выбранные Piper voices через запятую для встроенного `local-audio-gateway`
-- `LOCAL_AUDIO_PRELOAD` — скачивать выбранные Piper voices при старте gateway (`true` по умолчанию)
+- `LOCAL_AUDIO_BASE_URL` — backend для `/v1/audio/*` (например встроенный `local-audio-gateway` или внешний OpenAI-compatible audio service)
+- `LOCAL_AUDIO_MODELS` — локальные TTS model ids для встроенного `local-audio-gateway` (`piper-tts,qwen3-tts,kokoro-82m`)
+- `LOCAL_AUDIO_PRELOAD` — preload дефолтных local TTS assets при старте gateway (`true` по умолчанию)
+- `LOCAL_AUDIO_PIPER_VOICES` — дефолтные Piper voices, которые будут поставлены при старте и показаны в UI
+- `LOCAL_AUDIO_QWEN_VOICES` — дефолтные Qwen speakers, которые будут показаны в UI после preload модели
+- `LOCAL_AUDIO_KOKORO_VOICES` — дефолтные Kokoro voices, которые будут поставлены при старте
 - `LOCAL_IMAGE_BASE_URL` — backend для `/v1/images/*` (если хотите вынести image отдельно)
 - `LOCAL_IMAGE_DEFAULT_MODEL` — default model для встроенного `local-image-gateway`
 - `LOCAL_VIDEO_BASE_URL` — backend для `/v1/videos*`
@@ -129,14 +132,19 @@ Gateway поднимается вместе со стеком и дает еди
 
 ## Local Audio Gateway
 
-Режим `piper` поднимает `local-audio-gateway` и выставляет `LOCAL_AUDIO_BASE_URL=http://local-audio-gateway:8091`.
+Режим `local` поднимает `local-audio-gateway` и выставляет `LOCAL_AUDIO_BASE_URL=http://local-audio-gateway:8091`.
 
 Gateway реализует минимальный OpenAI-compatible контур:
-- `GET /v1/models` возвращает выбранные Piper voices как TTS models;
-- `GET /v1/audio/voices` возвращает эти же voices для UI;
+- `GET /v1/models` возвращает локальные TTS models (`piper-tts`, `qwen3-tts`, `kokoro-82m`);
+- `GET /v1/audio/voices` возвращает уже установленные / preload voices для UI;
 - `POST /v1/audio/speech` генерирует `wav`, `mp3` или `ogg`.
 
-Выбранные voices хранятся в volume `mnema_piper_data`. Первый старт скачивает `voices.json`, `.onnx` и `.onnx.json` из Piper voice registry; последующие старты используют кеш.
+Assets хранятся в volume `mnema_audio_data`. Первый старт preload-ит дефолтные assets, а любые новые voices/model assets догружаются лениво в момент первой генерации и затем переиспользуются из кеша.
+
+Практический UX:
+- в bootstrap-скрипте выбираются только local TTS providers, а не конкретные voices;
+- в UI пользователь выбирает `TTS model`, а при необходимости вводит `custom voice` вручную;
+- если voice еще не установлен, gateway сам пытается скачать/подготовить его при первом `POST /v1/audio/speech`, после чего voice появляется в `/v1/audio/voices` как локально доступный.
 
 Проверка после запуска:
 
@@ -144,7 +152,7 @@ Gateway реализует минимальный OpenAI-compatible контур
 curl http://localhost:8090/v1/audio/voices
 curl -sS http://localhost:8090/v1/audio/speech \
   -H 'Content-Type: application/json' \
-  -d '{"model":"ru_RU-irina-medium","voice":"ru_RU-irina-medium","input":"Проверка локального синтеза речи.","response_format":"wav"}' \
+  -d '{"model":"piper-tts","voice":"ru_RU-irina-medium","input":"Проверка локального синтеза речи.","response_format":"wav"}' \
   --output mnema-tts-sample.wav
 ```
 

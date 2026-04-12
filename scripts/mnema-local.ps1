@@ -267,8 +267,9 @@ $minioPassword = Prompt-ValidatedPassword -Prompt 'MinIO root password' -Default
 $starterModelRecommended = Get-RecommendedOllamaModel
 $openAiDefaultModel = Prompt-WithDefault -Prompt 'Starter Ollama text model' -Default $starterModelRecommended
 Write-Host '[setup] Offline audio backend for TTS/STT'
-$audioBackendMode = Prompt-Choice -Prompt 'Audio backend mode (piper/ollama/custom/none)' -Default 'piper' -Allowed @('piper', 'ollama', 'custom', 'none')
+$audioBackendMode = Prompt-Choice -Prompt 'Audio backend mode (local/ollama/custom/none)' -Default 'local' -Allowed @('local', 'ollama', 'custom', 'none')
 $openAiTtsModel = ''
+$openAiTtsVoice = ''
 $openAiSttModel = ''
 $openAiImageModel = ''
 $localAudioBaseUrl = ''
@@ -276,15 +277,38 @@ $localImageBaseUrl = ''
 $localAudioModels = ''
 $localImageDefaultModel = ''
 $localTtsVoices = ''
+$localAudioDefaultVoice = ''
+$localAudioPiperVoices = ''
+$localAudioQwenVoices = ''
+$localAudioKokoroVoices = ''
 $remoteOpenAiBaseUrl = 'https://api.openai.com'
 $ollamaAudioExperimental = 'false'
 $ollamaImageExperimental = 'true'
-if ($audioBackendMode -eq 'piper') {
-    $localAudioModels = Prompt-WithDefault -Prompt 'Piper TTS voices comma-separated' -Default 'ru_RU-irina-medium,en_US-lessac-medium'
+if ($audioBackendMode -eq 'local') {
+    Write-Host '[info] Local TTS provider catalogs:'
+    Write-Host '       Piper voices: https://rhasspy.github.io/piper-samples/'
+    Write-Host '       Qwen3-TTS models/speakers: https://github.com/QwenLM/Qwen3-TTS'
+    Write-Host '       Kokoro voices: https://github.com/hexgrad/kokoro'
+    $localAudioModels = Prompt-WithDefault -Prompt 'Local TTS providers comma-separated (piper-tts,qwen3-tts,kokoro-82m)' -Default 'piper-tts,qwen3-tts,kokoro-82m'
     if (-not [string]::IsNullOrWhiteSpace($localAudioModels)) {
-        $openAiTtsModel = ($localAudioModels.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })[0]
-        $localTtsVoices = $localAudioModels
+        $localAudioPiperVoices = 'ru_RU-irina-medium,en_US-lessac-medium'
+        $localAudioQwenVoices = 'Vivian,Ryan'
+        $localAudioKokoroVoices = 'af_heart,af_bella'
+        $localTtsVoices = "$localAudioPiperVoices,$localAudioQwenVoices,$localAudioKokoroVoices"
         $localAudioBaseUrl = 'http://local-audio-gateway:8091'
+        if ($localAudioModels -match '(^|,\s*)piper-tts(\s*,|$)') {
+            $openAiTtsModel = 'piper-tts'
+            $openAiTtsVoice = 'ru_RU-irina-medium'
+        }
+        elseif ($localAudioModels -match '(^|,\s*)qwen3-tts(\s*,|$)') {
+            $openAiTtsModel = 'qwen3-tts'
+            $openAiTtsVoice = 'Vivian'
+        }
+        else {
+            $openAiTtsModel = 'kokoro-82m'
+            $openAiTtsVoice = 'af_heart'
+        }
+        $localAudioDefaultVoice = $openAiTtsVoice
     }
     else {
         $audioBackendMode = 'none'
@@ -295,6 +319,7 @@ elseif ($audioBackendMode -eq 'ollama') {
     Write-Host '[warn] Ollama audio compatibility is experimental; choose only existing Ollama models.'
     $openAiTtsModel = Prompt-WithDefault -Prompt 'Ollama TTS model (optional)' -Default ''
     $openAiTtsModel = Normalize-OllamaModelName -Value $openAiTtsModel
+    $openAiTtsVoice = ''
     $openAiSttModel = Prompt-WithDefault -Prompt 'Ollama STT model (optional)' -Default ''
     $localTtsVoices = Prompt-WithDefault -Prompt 'Fallback TTS voices comma-separated (optional)' -Default ''
 }
@@ -302,6 +327,7 @@ elseif ($audioBackendMode -eq 'custom') {
     $localAudioBaseUrl = Prompt-WithDefault -Prompt 'Local audio backend URL (inside docker network)' -Default 'http://host.docker.internal:8000'
     $openAiTtsModel = Prompt-WithDefault -Prompt 'Default TTS model (optional)' -Default ''
     $openAiTtsModel = Normalize-OllamaModelName -Value $openAiTtsModel
+    $openAiTtsVoice = Prompt-WithDefault -Prompt 'Default TTS voice (optional)' -Default ''
     $openAiSttModel = Prompt-WithDefault -Prompt 'Default STT model (optional)' -Default ''
     $localTtsVoices = Prompt-WithDefault -Prompt 'Fallback TTS voices comma-separated (optional)' -Default ''
 }
@@ -379,7 +405,7 @@ Print-PortInfo -Name 'minio-api' -DefaultPort 9000 -FinalPort $MINIO_API_PORT
 Print-PortInfo -Name 'minio-console' -DefaultPort 9001 -FinalPort $MINIO_CONSOLE_PORT
 Print-PortInfo -Name 'ollama' -DefaultPort 11434 -FinalPort $OLLAMA_PORT
 Print-PortInfo -Name 'local-ai-gateway' -DefaultPort 8090 -FinalPort $LOCAL_AI_GATEWAY_PORT
-if ($audioBackendMode -eq 'piper') {
+if ($audioBackendMode -eq 'local') {
     Print-PortInfo -Name 'local-audio-gateway' -DefaultPort 8091 -FinalPort $LOCAL_AUDIO_GATEWAY_PORT
 }
 if ($imageBackendMode -eq 'diffusers') {
@@ -433,7 +459,7 @@ OLLAMA_BASE_URL=http://ollama:11434
 OPENAI_SYSTEM_API_KEY=
 OPENAI_DEFAULT_MODEL=$openAiDefaultModel
 OPENAI_TTS_MODEL=$openAiTtsModel
-OPENAI_TTS_VOICE=
+OPENAI_TTS_VOICE=$openAiTtsVoice
 OPENAI_TTS_FORMAT=wav
 OPENAI_STT_MODEL=$openAiSttModel
 OPENAI_IMAGE_MODEL=$openAiImageModel
@@ -446,8 +472,11 @@ LOCAL_AI_GATEWAY_TIMEOUT_SECONDS=600
 LOCAL_AUDIO_BASE_URL=$localAudioBaseUrl
 LOCAL_AUDIO_MODELS=$localAudioModels
 LOCAL_AUDIO_DEFAULT_MODEL=$openAiTtsModel
-LOCAL_AUDIO_DEFAULT_VOICE=$openAiTtsModel
+LOCAL_AUDIO_DEFAULT_VOICE=$localAudioDefaultVoice
 LOCAL_AUDIO_PRELOAD=true
+LOCAL_AUDIO_PIPER_VOICES=$localAudioPiperVoices
+LOCAL_AUDIO_QWEN_VOICES=$localAudioQwenVoices
+LOCAL_AUDIO_KOKORO_VOICES=$localAudioKokoroVoices
 LOCAL_IMAGE_BASE_URL=$localImageBaseUrl
 LOCAL_IMAGE_DEFAULT_MODEL=$localImageDefaultModel
 LOCAL_VIDEO_BASE_URL=
@@ -476,12 +505,31 @@ $localAiGatewayExtraDepends = ''
 $localAudioGatewayBlock = ''
 $localImageGatewayBlock = ''
 $extraVolumes = ''
-if ($audioBackendMode -eq 'piper') {
+$localAudioGpuBlock = ''
+$localAudioGpuEnv = ''
+if ($ollamaGpuEnabled -eq 'true') {
+    if ($dockerGpuMode -eq 'cdi') {
+        $localAudioGpuBlock = @"
+    devices:
+      - "nvidia.com/gpu=`${OLLAMA_VISIBLE_GPUS}"
+"@
+    }
+    else {
+        $localAudioGpuBlock = @"
+    gpus: all
+"@
+    }
+    $localAudioGpuEnv = @"
+      NVIDIA_VISIBLE_DEVICES: "`${OLLAMA_VISIBLE_GPUS}"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+"@
+}
+if ($audioBackendMode -eq 'local') {
     $localAiGatewayExtraDepends += @"
       local-audio-gateway:
         condition: service_healthy
 "@
-    $extraVolumes += "  mnema_piper_data:`n"
+    $extraVolumes += "  mnema_audio_data:`n"
     $localAudioGatewayBlock = @"
 
   local-audio-gateway:
@@ -489,17 +537,23 @@ if ($audioBackendMode -eq 'piper') {
     build:
       context: ./scripts/local-audio-gateway
       dockerfile: Dockerfile
+$localAudioGpuBlock
     environment:
+$localAudioGpuEnv
       LOCAL_AUDIO_MODELS: "$localAudioModels"
       LOCAL_AUDIO_DEFAULT_MODEL: "$openAiTtsModel"
-      LOCAL_AUDIO_DEFAULT_VOICE: "$openAiTtsModel"
+      LOCAL_AUDIO_DEFAULT_VOICE: "$openAiTtsVoice"
       LOCAL_AUDIO_PRELOAD: "`${LOCAL_AUDIO_PRELOAD}"
-      PIPER_DATA_DIR: "/models/piper"
-      PIPER_DOWNLOAD_DIR: "/models/piper"
+      LOCAL_AUDIO_PIPER_VOICES: "`${LOCAL_AUDIO_PIPER_VOICES}"
+      LOCAL_AUDIO_QWEN_VOICES: "`${LOCAL_AUDIO_QWEN_VOICES}"
+      LOCAL_AUDIO_KOKORO_VOICES: "`${LOCAL_AUDIO_KOKORO_VOICES}"
+      PIPER_DATA_DIR: "/models/audio/piper"
+      PIPER_DOWNLOAD_DIR: "/models/audio/piper"
+      HF_HOME: "/models/audio/hf"
     ports: !override
       - "`${LOCAL_AUDIO_GATEWAY_PORT}:8091"
     volumes:
-      - mnema_piper_data:/models/piper
+      - mnema_audio_data:/models/audio
     healthcheck:
       test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8091/health', timeout=5)" ]
       interval: 10s
@@ -775,7 +829,7 @@ Write-Host "[ok] MinIO API: http://localhost:$MINIO_API_PORT"
 Write-Host "[ok] MinIO Console: http://localhost:$MINIO_CONSOLE_PORT"
 Write-Host "[ok] Ollama API: http://localhost:$OLLAMA_PORT"
 Write-Host "[ok] Local AI Gateway: http://localhost:$LOCAL_AI_GATEWAY_PORT"
-if ($audioBackendMode -eq 'piper') {
+if ($audioBackendMode -eq 'local') {
     Write-Host "[ok] Local Audio Gateway: http://localhost:$LOCAL_AUDIO_GATEWAY_PORT"
 }
 if ($imageBackendMode -eq 'diffusers') {
@@ -786,13 +840,13 @@ Write-Host "[info] Ollama GPU enabled: $ollamaGpuEnabled"
 if ($ollamaGpuEnabled -eq 'true') {
     Write-Host "[info] Ollama visible GPUs: $ollamaVisibleGpus"
 }
-if ($audioBackendMode -eq 'piper') {
+if ($audioBackendMode -eq 'local') {
     $audioCheck = & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T local-ai-gateway python -c "import os,sys,urllib.request; u=os.getenv('AUDIO_BASE_URL','').rstrip('/'); sys.exit(0 if urllib.request.urlopen(u + '/v1/models', timeout=10).status < 500 else 1)" 2>$null
     if ($LASTEXITCODE -eq 0) {
-        Write-Host '[ok] Local Piper audio backend is reachable from local-ai-gateway.'
+        Write-Host '[ok] Local audio backend is reachable from local-ai-gateway.'
     }
     else {
-        Write-Host '[warn] Local Piper audio backend is not reachable from local-ai-gateway.'
+        Write-Host '[warn] Local audio backend is not reachable from local-ai-gateway.'
     }
 }
 elseif ($audioBackendMode -eq 'custom') {
@@ -854,7 +908,7 @@ if ($null -ne $ollamaHealth) {
     Write-Host "[info] Optional vision model (OCR/image understanding): $visionRecommended"
     Write-Host "[info] Notes:"
     Write-Host "       - Ollama OpenAI-compatible endpoints cover text/vision and experimental images."
-    Write-Host "       - Audio endpoints are experimental in Ollama mode; prefer piper or custom audio backend for stability."
+    Write-Host "       - Audio endpoints are experimental in Ollama mode; prefer local multi-TTS or a custom audio backend for stability."
     $pullChoice = Read-Host 'Pull starter text model now? [y/N]'
     if ($pullChoice -match '^[Yy]$') {
         & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T ollama ollama pull $recommended
