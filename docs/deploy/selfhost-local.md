@@ -45,17 +45,19 @@
 - интерактивно (стрелками) выбирает:
   - primary/secondary text model;
   - optional vision model;
-  - optional TTS/STT модели;
+  - local Piper TTS voices;
   - optional image model;
   - GPU device для Ollama при нескольких GPU;
 - спрашивает режимы backend-ов:
-  - audio: `ollama` (experimental) / `custom` / `none` (рекомендуемый дефолт: `none`);
-  - image: `ollama` (experimental) / `custom` / `none`;
+  - audio: `piper` (default) / `ollama` (experimental) / `custom` / `none`;
+  - image: `ollama` (experimental, default) / `diffusers` / `custom` / `none`;
 - заполняет `OPENAI_*` модели и gateway-переменные (`REMOTE_OPENAI_BASE_URL`, `OLLAMA_AUDIO_EXPERIMENTAL`, `OLLAMA_IMAGE_EXPERIMENTAL`);
 - автоматически проверяет доступность Docker GPU runtime и включает `gpus: all` для `ollama` (fallback на CPU с предупреждением, если runtime недоступен);
 - генерирует `.env.local`;
 - генерирует `.mnema/compose.ports.yml`;
-- запускает `docker compose pull`, поднимает `ollama + local-ai-gateway`, делает `ollama pull` выбранных моделей и затем поднимает весь стек;
+- запускает `docker compose pull`, поднимает `ollama + local-ai-gateway` и выбранные local gateway dependencies;
+- делает `ollama pull` только для Ollama text/vision/image моделей; Piper voices загружаются `local-audio-gateway` при старте;
+- затем поднимает весь стек;
 - включает профиль `SPRING_PROFILES_ACTIVE=dev,selfhost-local` для backend сервисов.
 - в конце печатает команды для ручного управления моделями (`ollama list/pull/run`, `curl /api/tags`).
 
@@ -75,6 +77,8 @@ MNEMA_DRY_RUN=1 ./scripts/mnema-local.sh
 - `9000` / `9001` (MinIO API/console)
 - `11434` (Ollama)
 - `8090` (Local AI Gateway)
+- `8091` (Local Audio Gateway, если выбран `piper`)
+- `8092` (Local Image Gateway, если выбран `diffusers`)
 
 Если порт занят, выбирается следующий свободный (`+1`, `+2`, ...). В консоль выводится, какой порт заменен.
 
@@ -93,7 +97,9 @@ MNEMA_DRY_RUN=1 ./scripts/mnema-local.sh
   - default provider для self-host: `ollama`;
   - OpenAI-compatible base URL указывает на `local-ai-gateway` (`OPENAI_BASE_URL=http://local-ai-gateway:8089`);
   - text/chat/vision идут через Ollama;
-  - TTS/STT/image/video проксируются gateway в соответствующие локальные backends при их настройке;
+  - TTS идет через `local-audio-gateway` на Piper, если выбран режим `piper`;
+  - image идет через Ollama OpenAI-compatible endpoint или через `local-image-gateway`, если выбран режим `diffusers`;
+  - STT/video проксируются gateway в соответствующие локальные backends при их настройке;
   - персональные provider keys остаются доступны в UI (можно использовать одновременно system provider и внешние ключи).
   - runtime discovery endpoint: `GET /api/ai/runtime/capabilities`.
 
@@ -104,7 +110,10 @@ Gateway поднимается вместе со стеком и дает еди
 Локальные переменные в `.env.local`:
 
 - `LOCAL_AUDIO_BASE_URL` — backend для `/v1/audio/*` (например локальный Speaches/Orpheus/Piper-gateway)
+- `LOCAL_AUDIO_MODELS` — выбранные Piper voices через запятую для встроенного `local-audio-gateway`
+- `LOCAL_AUDIO_PRELOAD` — скачивать выбранные Piper voices при старте gateway (`true` по умолчанию)
 - `LOCAL_IMAGE_BASE_URL` — backend для `/v1/images/*` (если хотите вынести image отдельно)
+- `LOCAL_IMAGE_DEFAULT_MODEL` — default model для встроенного `local-image-gateway`
 - `LOCAL_VIDEO_BASE_URL` — backend для `/v1/videos*`
 - `LOCAL_TTS_VOICES` — fallback список голосов через запятую, если audio backend не отдает `/v1/audio/voices`
 - `LOCAL_AI_GATEWAY_TIMEOUT_SECONDS` — timeout для upstream запросов gateway (по умолчанию `600`)
@@ -117,6 +126,32 @@ Gateway поднимается вместе со стеком и дает еди
 Примечание: по официальной документации Ollama OpenAI-compat гарантирован для chat/responses/completions и experimental image endpoint; audio endpoint-ы остаются experimental/ограниченными в зависимости от сборки и моделей.
 
 Для Linux-host audio backend используется `host.docker.internal` через `extra_hosts` в `local-ai-gateway`. Если после старта видите warning про недоступный audio backend, проверьте `LOCAL_AUDIO_BASE_URL` и что backend действительно слушает указанный порт.
+
+## Local Audio Gateway
+
+Режим `piper` поднимает `local-audio-gateway` и выставляет `LOCAL_AUDIO_BASE_URL=http://local-audio-gateway:8091`.
+
+Gateway реализует минимальный OpenAI-compatible контур:
+- `GET /v1/models` возвращает выбранные Piper voices как TTS models;
+- `GET /v1/audio/voices` возвращает эти же voices для UI;
+- `POST /v1/audio/speech` генерирует `wav`, `mp3` или `ogg`.
+
+Выбранные voices хранятся в volume `mnema_piper_data`. Первый старт скачивает `voices.json`, `.onnx` и `.onnx.json` из Piper voice registry; последующие старты используют кеш.
+
+Проверка после запуска:
+
+```bash
+curl http://localhost:8090/v1/audio/voices
+curl -sS http://localhost:8090/v1/audio/speech \
+  -H 'Content-Type: application/json' \
+  -d '{"model":"ru_RU-irina-medium","voice":"ru_RU-irina-medium","input":"Проверка локального синтеза речи.","response_format":"wav"}' \
+  --output mnema-tts-sample.wav
+```
+
+## Local Image Gateway
+
+Режим `diffusers` поднимает `local-image-gateway` и выставляет `LOCAL_IMAGE_BASE_URL=http://local-image-gateway:8092`.
+Это простой fallback backend для `/v1/images/generations` на Diffusers/SD Turbo. По умолчанию image generation остается в режиме `ollama`, потому что Diffusers backend существенно тяжелее по Docker image, RAM/VRAM и времени первого скачивания модели.
 
 ## Оценка ресурсов (приблизительно)
 

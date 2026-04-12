@@ -991,6 +991,7 @@ export class AiImportModalComponent implements OnInit {
     });
     readonly importSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'text', ['openai', 'gemini', 'qwen', 'ollama']));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
+    readonly ttsModelOptions = computed(() => this.runtimeTtsModelOptions());
     readonly sttModelPlaceholder = computed(() => this.resolveSttModelPlaceholder(this.selectedProvider()));
     readonly preflightSignature = computed(() => JSON.stringify(this.buildCreateJobRequest().params ?? {}));
     readonly submitLabel = computed(() => {
@@ -1807,8 +1808,8 @@ export class AiImportModalComponent implements OnInit {
         if (!this.hasAudioFields() || !this.ttsEnabled() || !this.ttsSupported()) {
             return null;
         }
-        const model = this.ttsModel().trim();
-        if (!model) {
+        const model = this.resolveTtsModel();
+        if (!model && this.selectedProvider() !== 'ollama') {
             return null;
         }
         const mappings = this.ttsMappings()
@@ -1818,7 +1819,7 @@ export class AiImportModalComponent implements OnInit {
         }
         return {
             enabled: true,
-            model,
+            ...(model ? { model } : {}),
             voice: this.resolveVoice() || undefined,
             format: this.ttsFormat(),
             maxChars: this.ttsMaxChars(),
@@ -1950,6 +1951,26 @@ export class AiImportModalComponent implements OnInit {
         return unique.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     }
 
+    private runtimeTtsModelOptions(): string[] {
+        if (this.selectedProvider() !== 'ollama') {
+            return [];
+        }
+        const runtime = this.runtimeCapabilities()?.ollama?.models || [];
+        const models = runtime
+            .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('tts'))
+            .map(model => model.name)
+            .filter(name => !!name && name.trim().length > 0);
+        return Array.from(new Set(models)).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    }
+
+    private resolveTtsModel(): string {
+        const explicit = this.ttsModel().trim();
+        if (explicit) {
+            return explicit;
+        }
+        return '';
+    }
+
     public voiceLabel(voice: string): string {
         if (voice === 'custom') return 'Custom';
         return voice;
@@ -2021,7 +2042,7 @@ export class AiImportModalComponent implements OnInit {
 
     private resolveTtsModelPlaceholder(provider: string): string {
         if (provider === 'ollama') {
-            return 'ollama-tts-model';
+            return this.ttsModelOptions()[0] || 'ollama-tts-model';
         }
         if (provider === 'openai') {
             return 'gpt-4o-mini-tts';

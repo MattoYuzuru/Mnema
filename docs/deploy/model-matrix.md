@@ -12,9 +12,10 @@ Ollama хорошо подходит для text/chat/vision и частично
 ## Рекомендуемое разделение по задачам
 
 - Text/chat/vision: `Ollama`
-- STT: `whisper.cpp server` (или иной локальный ASR сервис)
-- TTS: `Piper` (или иной локальный TTS сервис)
-- Image/video/gif: `ComfyUI` (+ video pipelines)
+- STT: `whisper.cpp server` (или иной локальный ASR сервис; сейчас не поднимается дефолтным bootstrap)
+- TTS: `local-audio-gateway` + `Piper`
+- Image: Ollama OpenAI-compatible image endpoint по умолчанию; `local-image-gateway` + Diffusers как тяжелый fallback
+- Video/gif: `ComfyUI` или отдельный worker
 - orchestration: `local-ai-gateway` (единая OpenAI-compatible точка для Mnema)
 
 ## Gateway схема
@@ -22,7 +23,7 @@ Ollama хорошо подходит для text/chat/vision и частично
 - `OPENAI_BASE_URL` в Mnema -> `local-ai-gateway`
 - `local-ai-gateway` маршрутизирует:
   - `/v1/responses`, `/v1/chat/completions` -> `Ollama`
-  - `/v1/audio/*` -> `LOCAL_AUDIO_BASE_URL` (если задан), иначе fallback в Ollama только при `OLLAMA_AUDIO_EXPERIMENTAL=true` и доступных Ollama `/v1/audio` endpoint-ах
+  - `/v1/audio/*` -> `LOCAL_AUDIO_BASE_URL` (в дефолтном self-host это `local-audio-gateway` на Piper), иначе fallback в Ollama только при `OLLAMA_AUDIO_EXPERIMENTAL=true` и доступных Ollama `/v1/audio` endpoint-ах
   - `/v1/images/*` -> `LOCAL_IMAGE_BASE_URL` (если задан), иначе fallback в Ollama при `OLLAMA_IMAGE_EXPERIMENTAL=true`
   - `/v1/videos*` -> `LOCAL_VIDEO_BASE_URL` (если задан), иначе fallback
 - при наличии Bearer API key gateway может проксировать `/v1/*` в `REMOTE_OPENAI_BASE_URL` (по умолчанию `https://api.openai.com`)
@@ -63,13 +64,20 @@ Ollama хорошо подходит для text/chat/vision и частично
 
 ## TTS (локально)
 
-- `Piper` голоса для CPU-friendly режима
+- bootstrap default: `Piper` через `local-audio-gateway`
+- рекомендуемые CPU-friendly voices:
+  - `ru_RU-irina-medium`
+  - `ru_RU-ruslan-medium`
+  - `en_US-lessac-medium`
+  - `en_US-amy-low`
+  - `en_US-ryan-low`
 - более тяжелые neural TTS в отдельном GPU сервисе при необходимости
 
 ## Image
 
-- SDXL/FLUX pipeline через ComfyUI
-- для Ollama image generation использовать только как опцию с осторожностью
+- bootstrap default: Ollama image generation (`x/z-image-turbo` или `x/flux2-klein`) через OpenAI-compatible `/v1/images/generations`
+- fallback режим `diffusers`: `local-image-gateway` с `local-sd-turbo` / `stabilityai/sd-turbo`
+- production-like SDXL/FLUX pipeline лучше держать через ComfyUI или отдельный image worker
 
 ## Video / GIF
 

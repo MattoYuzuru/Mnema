@@ -15,11 +15,15 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 @Service
 public class AudioChunkingService {
 
     private static final Logger log = LoggerFactory.getLogger(AudioChunkingService.class);
+    private static final Pattern TERMINAL_CONTROL_SEQUENCE = Pattern.compile(
+            "\\u001B\\][^\\u0007]*(?:\\u0007|\\u001B\\\\)?|\\u001B\\[[0-?]*[ -/]*[@-~]"
+    );
 
     private final int maxSeconds;
     private final int chunkSeconds;
@@ -177,7 +181,10 @@ public class AudioChunkingService {
         if (output == null) {
             return "";
         }
-        String trimmed = output.trim();
+        String trimmed = TERMINAL_CONTROL_SEQUENCE.matcher(output)
+                .replaceAll("")
+                .replaceAll("[\\p{Cntrl}&&[^\\r\\n\\t]]", "")
+                .trim();
         if (trimmed.length() <= 300) {
             return trimmed;
         }

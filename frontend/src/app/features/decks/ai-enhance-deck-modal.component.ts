@@ -663,6 +663,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     });
     readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
+    readonly ttsModelOptions = computed(() => this.runtimeTtsModelOptions());
     readonly ttsSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'tts', ['openai', 'gemini', 'qwen']));
     readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'grok', 'ollama']));
     readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'grok', 'ollama']));
@@ -1550,7 +1551,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     private resolveTtsModelPlaceholder(provider: string): string {
         switch (provider) {
             case 'ollama':
-                return 'ollama-tts-model';
+                return this.ttsModelOptions()[0] || 'ollama-tts-model';
             case 'openai':
                 return 'gpt-4o-mini-tts';
             case 'gemini':
@@ -1659,6 +1660,26 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         return unique.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     }
 
+    private runtimeTtsModelOptions(): string[] {
+        if (this.selectedProvider() !== 'ollama') {
+            return [];
+        }
+        const runtime = this.runtimeCapabilities()?.ollama?.models || [];
+        const models = runtime
+            .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('tts'))
+            .map(model => model.name)
+            .filter(name => !!name && name.trim().length > 0);
+        return Array.from(new Set(models)).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+    }
+
+    private resolveTtsModel(): string {
+        const explicit = this.ttsModel().trim();
+        if (explicit) {
+            return explicit;
+        }
+        return '';
+    }
+
     private setOptionState(key: string, enabled: boolean, description?: string): void {
         this.options.update(list => list.map(option => {
             if (option.key !== key) {
@@ -1714,8 +1735,8 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (!this.hasAudioFields() || !this.ttsSupported()) {
             return null;
         }
-        const model = this.ttsModel().trim();
-        if (!model) {
+        const model = this.resolveTtsModel();
+        if (!model && this.selectedProvider() !== 'ollama') {
             return null;
         }
         const targets = new Set(this.ttsTargetFields().map(field => field.name));
@@ -1729,7 +1750,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         }
         return {
             enabled: true,
-            model,
+            ...(model ? { model } : {}),
             voice: this.resolveVoice() || undefined,
             format: this.ttsFormat(),
             maxChars: this.ttsMaxChars(),

@@ -40,6 +40,11 @@ frontend/node_modules
 !/scripts/mnema-public.ps1
 !/scripts/local-ai-gateway/
 !/scripts/local-ai-gateway/**
+!/scripts/local-audio-gateway/
+!/scripts/local-audio-gateway/**
+!/scripts/local-image-gateway/
+!/scripts/local-image-gateway/**
+**/__pycache__/
 build
 /test_decks
 /first-cool-liquid-glass

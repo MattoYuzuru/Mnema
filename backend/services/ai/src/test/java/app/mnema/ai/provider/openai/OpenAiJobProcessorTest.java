@@ -107,6 +107,38 @@ class OpenAiJobProcessorTest {
         );
     }
 
+    @Test
+    void resolveLocalGenerateBatchSizeKeepsLargeOllamaRequestsSmall() throws Exception {
+        OpenAiJobProcessor processor = createProcessor();
+        ObjectNode params = OBJECT_MAPPER.createObjectNode();
+        params.putArray("fields")
+                .add("markdown")
+                .add("markdown_3")
+                .add("markdown_2")
+                .add("markdown_4")
+                .add("field")
+                .add("field_2");
+
+        Method resolveLocalGenerateBatchSize = OpenAiJobProcessor.class.getDeclaredMethod("resolveLocalGenerateBatchSize", JsonNode.class);
+        resolveLocalGenerateBatchSize.setAccessible(true);
+        int batchSize = (int) resolveLocalGenerateBatchSize.invoke(processor, params);
+
+        assertThat(batchSize).isEqualTo(5);
+    }
+
+    @Test
+    void resolveCandidateCountKeepsLocalOllamaSchemaSmall() throws Exception {
+        OpenAiJobProcessor processor = createProcessor();
+
+        Method resolveCandidateCount = OpenAiJobProcessor.class.getDeclaredMethod("resolveCandidateCount", int.class, int.class, boolean.class);
+        resolveCandidateCount.setAccessible(true);
+        int localCandidates = (int) resolveCandidateCount.invoke(processor, 5, 0, true);
+        int remoteCandidates = (int) resolveCandidateCount.invoke(processor, 5, 0, false);
+
+        assertThat(localCandidates).isEqualTo(7);
+        assertThat(remoteCandidates).isEqualTo(15);
+    }
+
     private static OpenAiJobProcessor createProcessor() {
         return new OpenAiJobProcessor(
                 mock(OpenAiClient.class),

@@ -15,6 +15,16 @@ function Test-Command {
     return [bool](Get-Command $Name -ErrorAction SilentlyContinue)
 }
 
+function Stop-ExistingLocalStack {
+    if ($DryRun) {
+        return
+    }
+    if ((Test-Path $EnvFile) -and (Test-Path $OverrideFile)) {
+        Write-Host '[info] Stopping existing Mnema local stack before reconfiguring ports...'
+        & docker compose --env-file $EnvFile -f (Join-Path $RootDir 'docker-compose.yml') -f $OverrideFile down --remove-orphans
+    }
+}
+
 function Test-PortBusy {
     param([int]$Port)
     $listener = $null
@@ -128,9 +138,18 @@ function Print-PortInfo {
     }
 }
 
-function Test-DockerGpuAvailable {
+function Get-DockerGpuMode {
     $null = & docker run --rm --gpus all alpine:3.20 true 2>$null
-    return $LASTEXITCODE -eq 0
+    if ($LASTEXITCODE -eq 0) {
+        return 'gpus'
+    }
+
+    $null = & docker run --rm --device nvidia.com/gpu=all alpine:3.20 true 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        return 'cdi'
+    }
+
+    return 'none'
 }
 
 function Get-NvidiaDeviceIds {
@@ -248,17 +267,30 @@ $minioPassword = Prompt-ValidatedPassword -Prompt 'MinIO root password' -Default
 $starterModelRecommended = Get-RecommendedOllamaModel
 $openAiDefaultModel = Prompt-WithDefault -Prompt 'Starter Ollama text model' -Default $starterModelRecommended
 Write-Host '[setup] Offline audio backend for TTS/STT'
-$audioBackendMode = Prompt-Choice -Prompt 'Audio backend mode (custom/ollama/none)' -Default 'none' -Allowed @('ollama', 'custom', 'none')
+$audioBackendMode = Prompt-Choice -Prompt 'Audio backend mode (piper/ollama/custom/none)' -Default 'piper' -Allowed @('piper', 'ollama', 'custom', 'none')
 $openAiTtsModel = ''
 $openAiSttModel = ''
 $openAiImageModel = ''
 $localAudioBaseUrl = ''
 $localImageBaseUrl = ''
+$localAudioModels = ''
+$localImageDefaultModel = ''
 $localTtsVoices = ''
 $remoteOpenAiBaseUrl = 'https://api.openai.com'
 $ollamaAudioExperimental = 'false'
 $ollamaImageExperimental = 'true'
-if ($audioBackendMode -eq 'ollama') {
+if ($audioBackendMode -eq 'piper') {
+    $localAudioModels = Prompt-WithDefault -Prompt 'Piper TTS voices comma-separated' -Default 'ru_RU-irina-medium,en_US-lessac-medium'
+    if (-not [string]::IsNullOrWhiteSpace($localAudioModels)) {
+        $openAiTtsModel = ($localAudioModels.Split(',') | ForEach-Object { $_.Trim() } | Where-Object { $_ })[0]
+        $localTtsVoices = $localAudioModels
+        $localAudioBaseUrl = 'http://local-audio-gateway:8091'
+    }
+    else {
+        $audioBackendMode = 'none'
+    }
+}
+elseif ($audioBackendMode -eq 'ollama') {
     $ollamaAudioExperimental = 'true'
     Write-Host '[warn] Ollama audio compatibility is experimental; choose only existing Ollama models.'
     $openAiTtsModel = Prompt-WithDefault -Prompt 'Ollama TTS model (optional)' -Default ''
@@ -275,15 +307,27 @@ elseif ($audioBackendMode -eq 'custom') {
 }
 
 Write-Host '[setup] Image backend'
-$imageBackendMode = Prompt-Choice -Prompt 'Image backend mode (ollama/custom/none)' -Default 'ollama' -Allowed @('ollama', 'custom', 'none')
+$imageBackendMode = Prompt-Choice -Prompt 'Image backend mode (ollama/diffusers/custom/none)' -Default 'ollama' -Allowed @('ollama', 'diffusers', 'custom', 'none')
 if ($imageBackendMode -eq 'ollama') {
     $ollamaImageExperimental = 'true'
     $openAiImageModel = Prompt-WithDefault -Prompt 'Ollama image model (optional)' -Default 'x/z-image-turbo'
+}
+elseif ($imageBackendMode -eq 'diffusers') {
+    $ollamaImageExperimental = 'false'
+    $openAiImageModel = Prompt-WithDefault -Prompt 'Local Diffusers image model' -Default 'local-sd-turbo'
+    $localImageDefaultModel = $openAiImageModel
+    if (-not [string]::IsNullOrWhiteSpace($openAiImageModel)) {
+        $localImageBaseUrl = 'http://local-image-gateway:8092'
+    }
+    else {
+        $imageBackendMode = 'none'
+    }
 }
 elseif ($imageBackendMode -eq 'custom') {
     $ollamaImageExperimental = 'false'
     $localImageBaseUrl = Prompt-WithDefault -Prompt 'Local image backend URL (inside docker network)' -Default 'http://host.docker.internal:8188'
     $openAiImageModel = Prompt-WithDefault -Prompt 'Default image model (optional)' -Default ''
+    $localImageDefaultModel = $openAiImageModel
 }
 else {
     $ollamaImageExperimental = 'false'
@@ -291,8 +335,9 @@ else {
 
 $ollamaGpuEnabled = 'false'
 $ollamaVisibleGpus = 'all'
+$dockerGpuMode = Get-DockerGpuMode
 $gpuDeviceIds = Get-NvidiaDeviceIds
-if (Test-DockerGpuAvailable) {
+if ($dockerGpuMode -ne 'none') {
     $ollamaGpuEnabled = 'true'
     if ($gpuDeviceIds.Count -gt 1) {
         Write-Host "[info] Detected multiple GPUs: $($gpuDeviceIds -join ',')"
@@ -302,6 +347,8 @@ if (Test-DockerGpuAvailable) {
 else {
     Write-Host '[warn] Docker GPU runtime is not available. Ollama will run on CPU.'
 }
+
+Stop-ExistingLocalStack
 
 $POSTGRES_PORT = Get-NextFreePort -StartPort 5432
 $REDIS_PORT = Get-NextFreePort -StartPort 6379
@@ -316,6 +363,8 @@ $MINIO_API_PORT = Get-NextFreePort -StartPort 9000
 $MINIO_CONSOLE_PORT = Get-NextFreePort -StartPort 9001
 $OLLAMA_PORT = Get-NextFreePort -StartPort 11434
 $LOCAL_AI_GATEWAY_PORT = Get-NextFreePort -StartPort 8090
+$LOCAL_AUDIO_GATEWAY_PORT = Get-NextFreePort -StartPort 8091
+$LOCAL_IMAGE_GATEWAY_PORT = Get-NextFreePort -StartPort 8092
 
 Print-PortInfo -Name 'postgres' -DefaultPort 5432 -FinalPort $POSTGRES_PORT
 Print-PortInfo -Name 'redis' -DefaultPort 6379 -FinalPort $REDIS_PORT
@@ -330,6 +379,12 @@ Print-PortInfo -Name 'minio-api' -DefaultPort 9000 -FinalPort $MINIO_API_PORT
 Print-PortInfo -Name 'minio-console' -DefaultPort 9001 -FinalPort $MINIO_CONSOLE_PORT
 Print-PortInfo -Name 'ollama' -DefaultPort 11434 -FinalPort $OLLAMA_PORT
 Print-PortInfo -Name 'local-ai-gateway' -DefaultPort 8090 -FinalPort $LOCAL_AI_GATEWAY_PORT
+if ($audioBackendMode -eq 'piper') {
+    Print-PortInfo -Name 'local-audio-gateway' -DefaultPort 8091 -FinalPort $LOCAL_AUDIO_GATEWAY_PORT
+}
+if ($imageBackendMode -eq 'diffusers') {
+    Print-PortInfo -Name 'local-image-gateway' -DefaultPort 8092 -FinalPort $LOCAL_IMAGE_GATEWAY_PORT
+}
 
 $envContent = @"
 POSTGRES_DB=$dbName
@@ -385,9 +440,16 @@ OPENAI_IMAGE_MODEL=$openAiImageModel
 OPENAI_VIDEO_MODEL=
 
 LOCAL_AI_GATEWAY_PORT=$LOCAL_AI_GATEWAY_PORT
+LOCAL_AUDIO_GATEWAY_PORT=$LOCAL_AUDIO_GATEWAY_PORT
+LOCAL_IMAGE_GATEWAY_PORT=$LOCAL_IMAGE_GATEWAY_PORT
 LOCAL_AI_GATEWAY_TIMEOUT_SECONDS=600
 LOCAL_AUDIO_BASE_URL=$localAudioBaseUrl
+LOCAL_AUDIO_MODELS=$localAudioModels
+LOCAL_AUDIO_DEFAULT_MODEL=$openAiTtsModel
+LOCAL_AUDIO_DEFAULT_VOICE=$openAiTtsModel
+LOCAL_AUDIO_PRELOAD=true
 LOCAL_IMAGE_BASE_URL=$localImageBaseUrl
+LOCAL_IMAGE_DEFAULT_MODEL=$localImageDefaultModel
 LOCAL_VIDEO_BASE_URL=
 LOCAL_TTS_VOICES=$localTtsVoices
 REMOTE_OPENAI_BASE_URL=$remoteOpenAiBaseUrl
@@ -395,6 +457,7 @@ OLLAMA_AUDIO_EXPERIMENTAL=$ollamaAudioExperimental
 OLLAMA_IMAGE_EXPERIMENTAL=$ollamaImageExperimental
 OLLAMA_GPU_ENABLED=$ollamaGpuEnabled
 OLLAMA_VISIBLE_GPUS=$ollamaVisibleGpus
+DOCKER_GPU_MODE=$dockerGpuMode
 
 GROK_BASE_URL=
 
@@ -409,54 +472,131 @@ MINIO_ROOT_PASSWORD=$minioPassword
 
 Set-Content -Path $EnvFile -Value $envContent -Encoding UTF8
 
+$localAiGatewayExtraDepends = ''
+$localAudioGatewayBlock = ''
+$localImageGatewayBlock = ''
+$extraVolumes = ''
+if ($audioBackendMode -eq 'piper') {
+    $localAiGatewayExtraDepends += @"
+      local-audio-gateway:
+        condition: service_healthy
+"@
+    $extraVolumes += "  mnema_piper_data:`n"
+    $localAudioGatewayBlock = @"
+
+  local-audio-gateway:
+    networks: [ mnema_net ]
+    build:
+      context: ./scripts/local-audio-gateway
+      dockerfile: Dockerfile
+    environment:
+      LOCAL_AUDIO_MODELS: "$localAudioModels"
+      LOCAL_AUDIO_DEFAULT_MODEL: "$openAiTtsModel"
+      LOCAL_AUDIO_DEFAULT_VOICE: "$openAiTtsModel"
+      LOCAL_AUDIO_PRELOAD: "`${LOCAL_AUDIO_PRELOAD}"
+      PIPER_DATA_DIR: "/models/piper"
+      PIPER_DOWNLOAD_DIR: "/models/piper"
+    ports: !override
+      - "`${LOCAL_AUDIO_GATEWAY_PORT}:8091"
+    volumes:
+      - mnema_piper_data:/models/piper
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8091/health', timeout=5)" ]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+"@
+}
+if ($imageBackendMode -eq 'diffusers') {
+    if (-not [string]::IsNullOrWhiteSpace($localAiGatewayExtraDepends)) {
+        $localAiGatewayExtraDepends += "`n"
+    }
+    $localAiGatewayExtraDepends += @"
+      local-image-gateway:
+        condition: service_healthy
+"@
+    $extraVolumes += "  mnema_hf_cache:`n"
+    $localImageGatewayBlock = @"
+
+  local-image-gateway:
+    networks: [ mnema_net ]
+    build:
+      context: ./scripts/local-image-gateway
+      dockerfile: Dockerfile
+__LOCAL_IMAGE_GPU_BLOCK__
+    environment:
+__LOCAL_IMAGE_GPU_ENV__
+      IMAGE_DEFAULT_MODEL: "$localImageDefaultModel"
+      HF_HOME: "/models/hf"
+    ports: !override
+      - "`${LOCAL_IMAGE_GATEWAY_PORT}:8092"
+    volumes:
+      - mnema_hf_cache:/models/hf
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8092/health', timeout=5)" ]
+      interval: 10s
+      timeout: 5s
+      retries: 60
+"@
+}
+
 $overrideContent = @"
 services:
   postgres:
     env_file:
       - "$EnvFileForCompose"
-    ports:
-      - "$POSTGRES_PORT:5432"
+    ports: !override
+      - "${POSTGRES_PORT}:5432"
 
   redis:
-    ports:
-      - "$REDIS_PORT:6379"
+    ports: !override
+      - "${REDIS_PORT}:6379"
 
   auth:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
-    ports:
-      - "$AUTH_PORT:8080"
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
+      AUTH_LOGIN_PAGE_URL: "http://localhost:${FRONTEND_PORT}/login"
+      AUTH_LOGOUT_DEFAULT_REDIRECT: "http://localhost:${FRONTEND_PORT}/"
+      AUTH_WEB_REDIRECT_URIS: "http://localhost:${FRONTEND_PORT}/,http://127.0.0.1:${FRONTEND_PORT}/,http://localhost:3005/,http://127.0.0.1:3005/,https://mnema.app/"
+    ports: !override
+      - "${AUTH_PORT}:8080"
 
   user:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
-    ports:
-      - "$USER_PORT:8080"
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
+    ports: !override
+      - "${USER_PORT}:8080"
 
   core:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
-    ports:
-      - "$CORE_PORT:8080"
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
+    ports: !override
+      - "${CORE_PORT}:8080"
 
   media:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
     depends_on:
       minio:
         condition: service_healthy
-    ports:
-      - "$MEDIA_PORT:8080"
+    ports: !override
+      - "${MEDIA_PORT}:8080"
 
   import:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
-    ports:
-      - "$IMPORT_PORT:8080"
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
+    ports: !override
+      - "${IMPORT_PORT}:8080"
 
   ai:
     environment:
       SPRING_PROFILES_ACTIVE: dev,selfhost-local
+      APP_CORS_ORIGINS: "http://localhost:${FRONTEND_PORT},http://127.0.0.1:${FRONTEND_PORT},http://localhost:3005,http://127.0.0.1:3005"
       AI_SYSTEM_MANAGED_PROVIDER_ENABLED: "true"
       AI_SYSTEM_PROVIDER_NAME: "ollama"
       AI_OLLAMA_ENABLED: "true"
@@ -470,15 +610,23 @@ services:
       OPENAI_STT_MODEL: "$openAiSttModel"
       OPENAI_IMAGE_MODEL: "`${OPENAI_IMAGE_MODEL}"
       OPENAI_VIDEO_MODEL: "`${OPENAI_VIDEO_MODEL}"
-    ports:
-      - "$AI_PORT:8080"
+    ports: !override
+      - "${AI_PORT}:8080"
 
   frontend:
     environment:
+      MNEMA_AUTH_SERVER_URL: "http://localhost:${AUTH_PORT}"
+      MNEMA_API_BASE_URL: "http://localhost:${USER_PORT}/api/user"
+      MNEMA_CORE_API_BASE_URL: "http://localhost:${CORE_PORT}/api/core"
+      MNEMA_MEDIA_API_BASE_URL: "http://localhost:${MEDIA_PORT}/api/media"
+      MNEMA_IMPORT_API_BASE_URL: "http://localhost:${IMPORT_PORT}/api/import"
+      MNEMA_AI_API_BASE_URL: "http://localhost:${AI_PORT}/api/ai"
+      MNEMA_FEATURE_FEDERATED_AUTH_ENABLED: "false"
+      MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING: "false"
       MNEMA_FEATURE_AI_SYSTEM_PROVIDER_ENABLED: "true"
       MNEMA_FEATURE_AI_SYSTEM_PROVIDER_NAME: "ollama"
-    ports:
-      - "$FRONTEND_PORT:80"
+    ports: !override
+      - "${FRONTEND_PORT}:80"
 
   minio:
     networks: [ mnema_net ]
@@ -487,9 +635,9 @@ services:
     environment:
       MINIO_ROOT_USER: "$minioUser"
       MINIO_ROOT_PASSWORD: "$minioPassword"
-    ports:
-      - "$MINIO_API_PORT:9000"
-      - "$MINIO_CONSOLE_PORT:9001"
+    ports: !override
+      - "${MINIO_API_PORT}:9000"
+      - "${MINIO_CONSOLE_PORT}:9001"
     volumes:
       - mnema_minio_data:/data
     healthcheck:
@@ -523,13 +671,16 @@ services:
     depends_on:
       ollama:
         condition: service_started
-    ports:
-      - "$LOCAL_AI_GATEWAY_PORT:8089"
+${localAiGatewayExtraDepends}
+    ports: !override
+      - "${LOCAL_AI_GATEWAY_PORT}:8089"
     healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8089/health" ]
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8089/health', timeout=5)" ]
       interval: 5s
       timeout: 3s
       retries: 20
+${localAudioGatewayBlock}
+${localImageGatewayBlock}
 
   minio-init:
     networks: [ mnema_net ]
@@ -549,26 +700,60 @@ services:
     networks: [ mnema_net ]
     image: ollama/ollama:latest
 __OLLAMA_GPU_BLOCK__
-    ports:
-      - "$OLLAMA_PORT:11434"
+    ports: !override
+      - "${OLLAMA_PORT}:11434"
     volumes:
       - mnema_ollama_data:/root/.ollama
 
 volumes:
   mnema_minio_data:
   mnema_ollama_data:
+${extraVolumes}
 "@
 
 $ollamaGpuBlock = ''
 if ($ollamaGpuEnabled -eq 'true') {
-    $ollamaGpuBlock = @"
+    if ($dockerGpuMode -eq 'cdi') {
+        $ollamaGpuBlock = @"
+    devices:
+      - "nvidia.com/gpu=`${OLLAMA_VISIBLE_GPUS}"
+    environment:
+      NVIDIA_VISIBLE_DEVICES: "`${OLLAMA_VISIBLE_GPUS}"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+"@
+    }
+    else {
+        $ollamaGpuBlock = @"
     gpus: all
     environment:
       NVIDIA_VISIBLE_DEVICES: "`${OLLAMA_VISIBLE_GPUS}"
       NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
 "@
+    }
 }
 $overrideContent = $overrideContent.Replace('__OLLAMA_GPU_BLOCK__', $ollamaGpuBlock)
+
+$localImageGpuBlock = ''
+$localImageGpuEnv = ''
+if ($ollamaGpuEnabled -eq 'true') {
+    if ($dockerGpuMode -eq 'cdi') {
+        $localImageGpuBlock = @"
+    devices:
+      - "nvidia.com/gpu=`${OLLAMA_VISIBLE_GPUS}"
+"@
+    }
+    else {
+        $localImageGpuBlock = @"
+    gpus: all
+"@
+    }
+    $localImageGpuEnv = @"
+      NVIDIA_VISIBLE_DEVICES: "`${OLLAMA_VISIBLE_GPUS}"
+      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"
+"@
+}
+$overrideContent = $overrideContent.Replace('__LOCAL_IMAGE_GPU_BLOCK__', $localImageGpuBlock)
+$overrideContent = $overrideContent.Replace('__LOCAL_IMAGE_GPU_ENV__', $localImageGpuEnv)
 
 Set-Content -Path $OverrideFile -Value $overrideContent -Encoding UTF8
 
@@ -590,12 +775,27 @@ Write-Host "[ok] MinIO API: http://localhost:$MINIO_API_PORT"
 Write-Host "[ok] MinIO Console: http://localhost:$MINIO_CONSOLE_PORT"
 Write-Host "[ok] Ollama API: http://localhost:$OLLAMA_PORT"
 Write-Host "[ok] Local AI Gateway: http://localhost:$LOCAL_AI_GATEWAY_PORT"
+if ($audioBackendMode -eq 'piper') {
+    Write-Host "[ok] Local Audio Gateway: http://localhost:$LOCAL_AUDIO_GATEWAY_PORT"
+}
+if ($imageBackendMode -eq 'diffusers') {
+    Write-Host "[ok] Local Image Gateway: http://localhost:$LOCAL_IMAGE_GATEWAY_PORT"
+}
 Write-Host "[info] Audio backend mode: $audioBackendMode"
 Write-Host "[info] Ollama GPU enabled: $ollamaGpuEnabled"
 if ($ollamaGpuEnabled -eq 'true') {
     Write-Host "[info] Ollama visible GPUs: $ollamaVisibleGpus"
 }
-if ($audioBackendMode -eq 'custom') {
+if ($audioBackendMode -eq 'piper') {
+    $audioCheck = & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T local-ai-gateway python -c "import os,sys,urllib.request; u=os.getenv('AUDIO_BASE_URL','').rstrip('/'); sys.exit(0 if urllib.request.urlopen(u + '/v1/models', timeout=10).status < 500 else 1)" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host '[ok] Local Piper audio backend is reachable from local-ai-gateway.'
+    }
+    else {
+        Write-Host '[warn] Local Piper audio backend is not reachable from local-ai-gateway.'
+    }
+}
+elseif ($audioBackendMode -eq 'custom') {
     Write-Host "[info] Audio backend URL: $localAudioBaseUrl"
     $audioCheck = & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T local-ai-gateway python -c "import os,sys,urllib.request; u=os.getenv('AUDIO_BASE_URL','').rstrip('/'); sys.exit(0 if (not u) else 0 if urllib.request.urlopen(u + '/v1/models', timeout=5).status < 500 else 1)" 2>$null
     if ($LASTEXITCODE -eq 0) {
@@ -616,7 +816,17 @@ if ($audioBackendMode -eq 'ollama') {
         Write-Host '       Keep TTS model empty or switch audio backend mode to custom.'
     }
 }
-if ($imageBackendMode -eq 'custom') {
+if ($imageBackendMode -eq 'diffusers') {
+    Write-Host "[info] Image backend URL: $localImageBaseUrl"
+    $imageCheck = & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T local-ai-gateway python -c "import os,sys,urllib.request; u=os.getenv('IMAGE_BASE_URL','').rstrip('/'); sys.exit(0 if urllib.request.urlopen(u + '/v1/models', timeout=10).status < 500 else 1)" 2>$null
+    if ($LASTEXITCODE -eq 0) {
+        Write-Host '[ok] Local Diffusers image backend is reachable from local-ai-gateway.'
+    }
+    else {
+        Write-Host '[warn] Local Diffusers image backend is not reachable from local-ai-gateway.'
+    }
+}
+elseif ($imageBackendMode -eq 'custom') {
     Write-Host "[info] Image backend URL: $localImageBaseUrl"
     $imageCheck = & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T local-ai-gateway python -c "import os,sys,urllib.request; u=os.getenv('IMAGE_BASE_URL','').rstrip('/'); sys.exit(0 if (not u) else 0 if urllib.request.urlopen(u + '/v1/models', timeout=5).status < 500 else 1)" 2>$null
     if ($LASTEXITCODE -eq 0) {
@@ -644,7 +854,7 @@ if ($null -ne $ollamaHealth) {
     Write-Host "[info] Optional vision model (OCR/image understanding): $visionRecommended"
     Write-Host "[info] Notes:"
     Write-Host "       - Ollama OpenAI-compatible endpoints cover text/vision and experimental images."
-    Write-Host "       - Audio endpoints are experimental in Ollama mode; prefer custom audio backend for production stability."
+    Write-Host "       - Audio endpoints are experimental in Ollama mode; prefer piper or custom audio backend for stability."
     $pullChoice = Read-Host 'Pull starter text model now? [y/N]'
     if ($pullChoice -match '^[Yy]$') {
         & docker compose --env-file $EnvFile -f docker-compose.yml -f $OverrideFile exec -T ollama ollama pull $recommended

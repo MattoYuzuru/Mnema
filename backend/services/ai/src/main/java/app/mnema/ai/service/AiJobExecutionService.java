@@ -9,6 +9,7 @@ import app.mnema.ai.repository.AiJobRepository;
 import app.mnema.ai.repository.AiJobStepRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Instant;
 import java.util.ArrayList;
@@ -22,11 +23,14 @@ public class AiJobExecutionService {
 
     private final AiJobStepRepository stepRepository;
     private final AiJobRepository jobRepository;
+    private final TransactionTemplate transactionTemplate;
 
     public AiJobExecutionService(AiJobStepRepository stepRepository,
-                                 AiJobRepository jobRepository) {
+                                 AiJobRepository jobRepository,
+                                 TransactionTemplate transactionTemplate) {
         this.stepRepository = stepRepository;
         this.jobRepository = jobRepository;
+        this.transactionTemplate = transactionTemplate;
     }
 
     @Transactional
@@ -50,7 +54,6 @@ public class AiJobExecutionService {
         });
     }
 
-    @Transactional
     public <T> T runStep(UUID jobId, String stepName, StepOperation<T> operation) {
         markProcessing(jobId, stepName);
         try {
@@ -63,19 +66,16 @@ public class AiJobExecutionService {
         }
     }
 
-    @Transactional
     public void markProcessing(UUID jobId, String stepName) {
-        updateStep(jobId, stepName, AiJobStepStatus.processing, null);
+        updateStepInTransaction(jobId, stepName, AiJobStepStatus.processing, null);
     }
 
-    @Transactional
     public void markCompleted(UUID jobId, String stepName) {
-        updateStep(jobId, stepName, AiJobStepStatus.completed, null);
+        updateStepInTransaction(jobId, stepName, AiJobStepStatus.completed, null);
     }
 
-    @Transactional
     public void markFailed(UUID jobId, String stepName, String errorSummary) {
-        updateStep(jobId, stepName, AiJobStepStatus.failed, errorSummary);
+        updateStepInTransaction(jobId, stepName, AiJobStepStatus.failed, errorSummary);
     }
 
     @Transactional(readOnly = true)
@@ -133,6 +133,10 @@ public class AiJobExecutionService {
         step.setErrorSummary(errorSummary);
         stepRepository.save(step);
         refreshProgress(jobId, now);
+    }
+
+    private void updateStepInTransaction(UUID jobId, String stepName, AiJobStepStatus status, String errorSummary) {
+        transactionTemplate.executeWithoutResult(ignored -> updateStep(jobId, stepName, status, errorSummary));
     }
 
     private void refreshProgress(UUID jobId, Instant now) {
