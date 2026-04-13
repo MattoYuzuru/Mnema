@@ -76,11 +76,11 @@ public class MediaApiClient {
     }
 
     private String resolveAuthToken(String accessToken) {
-        if (accessToken != null && !accessToken.isBlank()) {
-            return accessToken;
-        }
         if (props.internalToken() != null && !props.internalToken().isBlank()) {
             return props.internalToken();
+        }
+        if (accessToken != null && !accessToken.isBlank()) {
+            return accessToken;
         }
         return null;
     }

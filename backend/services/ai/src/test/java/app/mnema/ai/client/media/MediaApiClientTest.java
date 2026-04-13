@@ -46,7 +46,7 @@ class MediaApiClientTest {
                         """.formatted(mediaId), MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://media.mnema.app/resolve"))
                 .andExpect(method(HttpMethod.POST))
-                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer internal-token"))
                 .andExpect(jsonPath("$.urlTarget").value("INTERNAL"))
                 .andRespond(withSuccess("""
                         [{"mediaId":"%s","kind":"ai_import","mimeType":"text/plain","url":"https://cdn/%s.txt","sizeBytes":12}]

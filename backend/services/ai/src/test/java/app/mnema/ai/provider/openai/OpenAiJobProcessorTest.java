@@ -3,8 +3,10 @@ package app.mnema.ai.provider.openai;
 import app.mnema.ai.client.core.CoreApiClient;
 import app.mnema.ai.client.media.MediaApiClient;
 import app.mnema.ai.domain.entity.AiJobEntity;
+import app.mnema.ai.domain.entity.AiProviderCredentialEntity;
 import app.mnema.ai.domain.type.AiJobStatus;
 import app.mnema.ai.domain.type.AiJobType;
+import app.mnema.ai.domain.type.AiProviderStatus;
 import app.mnema.ai.repository.AiProviderCredentialRepository;
 import app.mnema.ai.service.AiImportContentService;
 import app.mnema.ai.service.AiJobExecutionService;
@@ -19,7 +21,9 @@ import org.springframework.web.client.ResourceAccessException;
 
 import java.lang.reflect.Method;
 import java.net.SocketTimeoutException;
+import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -196,6 +200,83 @@ class OpenAiJobProcessorTest {
 
         assertThat(localCandidates).isEqualTo(7);
         assertThat(remoteCandidates).isEqualTo(15);
+    }
+
+    @Test
+    void resolveCredentialSkipsUserOpenAiKeysForLocalOllamaRequests() throws Exception {
+        AiProviderCredentialRepository credentialRepository = mock(AiProviderCredentialRepository.class);
+        UUID userId = UUID.randomUUID();
+        UUID credentialId = UUID.randomUUID();
+        AiProviderCredentialEntity credential = new AiProviderCredentialEntity(
+                credentialId,
+                userId,
+                "openai",
+                "remote",
+                new byte[]{1},
+                null,
+                null,
+                null,
+                null,
+                AiProviderStatus.active,
+                Instant.now(),
+                null,
+                Instant.now()
+        );
+        when(credentialRepository.findByIdAndUserId(credentialId, userId)).thenReturn(Optional.of(credential));
+
+        OpenAiJobProcessor processor = new OpenAiJobProcessor(
+                mock(OpenAiClient.class),
+                new OpenAiProps(
+                        "https://api.openai.com/v1",
+                        "system-key",
+                        "gpt-4.1-mini",
+                        "gpt-4o-mini-tts",
+                        "alloy",
+                        "mp3",
+                        "gpt-4o-mini-transcribe",
+                        "gpt-image-1-mini",
+                        "1024x1024",
+                        "low",
+                        "natural",
+                        "png",
+                        "sora-2",
+                        5,
+                        "720p",
+                        60,
+                        12,
+                        5,
+                        2_000L,
+                        30_000L,
+                        10_000L,
+                        600_000L
+                ),
+                mock(SecretVault.class),
+                credentialRepository,
+                mock(MediaApiClient.class),
+                mock(AiImportContentService.class),
+                mock(AudioChunkingService.class),
+                mock(CoreApiClient.class),
+                mock(CardNoveltyService.class),
+                OBJECT_MAPPER,
+                mock(AiJobExecutionService.class),
+                200_000
+        );
+        ObjectNode params = OBJECT_MAPPER.createObjectNode();
+        params.put("provider", "ollama");
+        params.put("providerCredentialId", credentialId.toString());
+        AiJobEntity job = createJob(params, AiJobType.generic);
+        job.setUserId(userId);
+
+        Method resolveCredential = OpenAiJobProcessor.class.getDeclaredMethod("resolveCredential", AiJobEntity.class);
+        resolveCredential.setAccessible(true);
+        Object credentialSelection = resolveCredential.invoke(processor, job);
+        Method credentialMethod = credentialSelection.getClass().getDeclaredMethod("credential");
+        Method apiKeyMethod = credentialSelection.getClass().getDeclaredMethod("apiKey");
+        credentialMethod.setAccessible(true);
+        apiKeyMethod.setAccessible(true);
+
+        assertThat(credentialMethod.invoke(credentialSelection)).isNull();
+        assertThat(apiKeyMethod.invoke(credentialSelection)).isEqualTo("");
     }
 
     private static OpenAiJobProcessor createProcessor() {

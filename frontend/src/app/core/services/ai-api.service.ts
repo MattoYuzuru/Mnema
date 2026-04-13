@@ -75,11 +75,11 @@ export class AiApiService {
     }
 
     createJob(request: CreateAiJobRequest): Observable<AiJobResponse> {
-        return this.http.post<AiJobResponse>(`${this.baseUrl}/jobs`, request);
+        return this.http.post<AiJobResponse>(`${this.baseUrl}/jobs`, this.normalizeSystemProviderJobRequest(request));
     }
 
     preflightJob(request: CreateAiJobRequest): Observable<AiJobPreflightResponse> {
-        return this.http.post<AiJobPreflightResponse>(`${this.baseUrl}/jobs/preflight`, request);
+        return this.http.post<AiJobPreflightResponse>(`${this.baseUrl}/jobs/preflight`, this.normalizeSystemProviderJobRequest(request));
     }
 
     getJob(jobId: string): Observable<AiJobResponse> {
@@ -108,10 +108,32 @@ export class AiApiService {
     }
 
     createImportPreview(request: AiImportPreviewRequest): Observable<AiJobResponse> {
-        return this.http.post<AiJobResponse>(`${this.baseUrl}/imports/preview`, request);
+        return this.http.post<AiJobResponse>(`${this.baseUrl}/imports/preview`, this.normalizeSystemProviderImportRequest(request));
     }
 
     createImportGenerate(request: AiImportGenerateRequest): Observable<AiJobResponse> {
-        return this.http.post<AiJobResponse>(`${this.baseUrl}/imports/generate`, request);
+        return this.http.post<AiJobResponse>(`${this.baseUrl}/imports/generate`, this.normalizeSystemProviderImportRequest(request));
+    }
+
+    private normalizeSystemProviderImportRequest<T extends { providerCredentialId?: string | null }>(request: T): T {
+        if (request.providerCredentialId !== AiApiService.SYSTEM_PROVIDER_ID) {
+            return request;
+        }
+        const normalized = { ...request };
+        delete normalized.providerCredentialId;
+        return normalized;
+    }
+
+    private normalizeSystemProviderJobRequest(request: CreateAiJobRequest): CreateAiJobRequest {
+        const providerCredentialId = request.params?.['providerCredentialId'];
+        if (providerCredentialId !== AiApiService.SYSTEM_PROVIDER_ID) {
+            return request;
+        }
+        const params = { ...(request.params ?? {}) };
+        delete params['providerCredentialId'];
+        return {
+            ...request,
+            params
+        };
     }
 }

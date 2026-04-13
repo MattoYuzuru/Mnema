@@ -1899,6 +1899,11 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private CredentialSelection resolveCredential(AiJobEntity job) {
         JsonNode params = safeParams(job);
+        if (isLocalOllamaRequest(params)) {
+            // Local self-host runs through the gateway without bearer auth. Sending any OpenAI-style
+            // credential would route the request to the remote OpenAI backend instead of Ollama/local gateways.
+            return new CredentialSelection(null, "");
+        }
         UUID credentialId = parseUuid(params.path("providerCredentialId").asText(null));
         if (credentialId != null) {
             Optional<AiProviderCredentialEntity> byId = credentialRepository.findByIdAndUserId(credentialId, job.getUserId());
