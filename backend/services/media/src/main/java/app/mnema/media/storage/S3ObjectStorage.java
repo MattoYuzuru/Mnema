@@ -1,6 +1,7 @@
 package app.mnema.media.storage;
 
 import app.mnema.media.config.S3Props;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.awscore.presigner.PresignedRequest;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -24,12 +25,17 @@ public class S3ObjectStorage implements ObjectStorage {
     private static final String CACHE_CONTROL = "public, max-age=31536000, immutable";
 
     private final S3Client s3Client;
-    private final S3Presigner presigner;
+    private final S3Presigner publicPresigner;
+    private final S3Presigner internalPresigner;
     private final String bucket;
 
-    public S3ObjectStorage(S3Client s3Client, S3Presigner presigner, S3Props props) {
+    public S3ObjectStorage(S3Client s3Client,
+                           @Qualifier("publicS3Presigner") S3Presigner publicPresigner,
+                           @Qualifier("internalS3Presigner") S3Presigner internalPresigner,
+                           S3Props props) {
         this.s3Client = s3Client;
-        this.presigner = presigner;
+        this.publicPresigner = publicPresigner;
+        this.internalPresigner = internalPresigner;
         this.bucket = props.bucket();
     }
 
@@ -47,7 +53,7 @@ public class S3ObjectStorage implements ObjectStorage {
                 .putObjectRequest(request)
                 .build();
 
-        var presigned = presigner.presignPutObject(presign);
+        var presigned = publicPresigner.presignPutObject(presign);
         return new PresignedUrl(presigned.url().toString(), flattenHeaders(presigned));
     }
 
@@ -78,7 +84,7 @@ public class S3ObjectStorage implements ObjectStorage {
                 .uploadPartRequest(request)
                 .build();
 
-        PresignedUploadPartRequest presigned = presigner.presignUploadPart(presign);
+        PresignedUploadPartRequest presigned = publicPresigner.presignUploadPart(presign);
         return new PresignedPart(partNumber, presigned.url().toString(), flattenHeaders(presigned));
     }
 
@@ -136,6 +142,15 @@ public class S3ObjectStorage implements ObjectStorage {
 
     @Override
     public PresignedUrl presignGet(String key, Duration ttl, String fileName) {
+        return presignGet(publicPresigner, key, ttl, fileName);
+    }
+
+    @Override
+    public PresignedUrl presignGetInternal(String key, Duration ttl, String fileName) {
+        return presignGet(internalPresigner, key, ttl, fileName);
+    }
+
+    private PresignedUrl presignGet(S3Presigner presigner, String key, Duration ttl, String fileName) {
         GetObjectRequest.Builder requestBuilder = GetObjectRequest.builder()
                 .bucket(bucket)
                 .key(key)

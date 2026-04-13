@@ -55,7 +55,10 @@ public class MediaApiClient {
     }
 
     public List<MediaResolved> resolve(List<UUID> mediaIds, String accessToken) {
-        Map<String, Object> payload = Map.of("mediaIds", mediaIds);
+        Map<String, Object> payload = Map.of(
+                "mediaIds", mediaIds,
+                "urlTarget", "INTERNAL"
+        );
         RestClient.RequestBodySpec request = restClient.post()
                 .uri("/resolve")
                 .contentType(MediaType.APPLICATION_JSON)

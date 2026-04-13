@@ -16,6 +16,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -63,12 +64,14 @@ class MediaApiClientTest {
         server.expect(requestTo("https://media.mnema.app/resolve"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer internal-token"))
+                .andExpect(jsonPath("$.urlTarget").value("INTERNAL"))
                 .andRespond(withSuccess("""
                         [{"mediaId":"%s","url":"https://cdn.example/%s.png"}]
                         """.formatted(first, first), MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://media.mnema.app/resolve"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer internal-token"))
+                .andExpect(jsonPath("$.urlTarget").value("INTERNAL"))
                 .andRespond(withSuccess("""
                         [{"mediaId":"%s","url":"https://cdn.example/%s.png"},{"mediaId":"%s","url":"https://cdn.example/%s.png"}]
                         """.formatted(first, first, second, second), MediaType.APPLICATION_JSON));

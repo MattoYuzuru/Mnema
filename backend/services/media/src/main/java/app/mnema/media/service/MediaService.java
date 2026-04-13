@@ -6,6 +6,7 @@ import app.mnema.media.controller.dto.CompleteUploadResponse;
 import app.mnema.media.controller.dto.CreateUploadRequest;
 import app.mnema.media.controller.dto.CreateUploadResponse;
 import app.mnema.media.controller.dto.DirectUploadRequest;
+import app.mnema.media.controller.dto.ResolveUrlTarget;
 import app.mnema.media.controller.dto.ResolvedMedia;
 import app.mnema.media.controller.dto.UploadPartResponse;
 import app.mnema.media.domain.entity.MediaAssetEntity;
@@ -310,12 +311,16 @@ public class MediaService {
     }
 
     @Transactional(readOnly = true)
-    public List<ResolvedMedia> resolve(Jwt jwt, List<UUID> mediaIds) {
+    public List<ResolvedMedia> resolve(Jwt jwt, List<UUID> mediaIds, ResolveUrlTarget urlTarget) {
         List<MediaAssetEntity> assets = assetRepository.findByMediaIdIn(mediaIds);
         var byId = assets.stream()
                 .collect(java.util.stream.Collectors.toMap(MediaAssetEntity::getMediaId, a -> a));
         var userIdOpt = currentUserProvider.getUserId(jwt);
         boolean hasInternalScope = scopeHelper.hasAnyScope(jwt, INTERNAL_SCOPES);
+        ResolveUrlTarget effectiveTarget = urlTarget == null ? ResolveUrlTarget.PUBLIC : urlTarget;
+        if (effectiveTarget == ResolveUrlTarget.INTERNAL && !hasInternalScope) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Internal media resolve required");
+        }
 
         return mediaIds.stream()
                 .map(id -> {
@@ -329,7 +334,9 @@ public class MediaService {
                     if (asset.getStatus() != MediaStatus.ready) {
                         throw new ResponseStatusException(HttpStatus.CONFLICT, "Media not ready: " + asset.getMediaId());
                     }
-                    return resolveCache.resolve(asset);
+                    return effectiveTarget == ResolveUrlTarget.INTERNAL
+                            ? resolveCache.resolveInternal(asset)
+                            : resolveCache.resolvePublic(asset);
                 })
                 .toList();
     }

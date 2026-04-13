@@ -48,7 +48,10 @@ class S3ObjectStorageTest {
     private S3Client s3Client;
 
     @Mock
-    private S3Presigner presigner;
+    private S3Presigner publicPresigner;
+
+    @Mock
+    private S3Presigner internalPresigner;
 
     private S3ObjectStorage storage;
 
@@ -56,7 +59,8 @@ class S3ObjectStorageTest {
     void setUp() {
         storage = new S3ObjectStorage(
                 s3Client,
-                presigner,
+                publicPresigner,
+                internalPresigner,
                 new S3Props("mnema-bucket", "eu-central-1", "https://s3.example", "https://cdn.example", true, "key", "secret")
         );
     }
@@ -66,7 +70,7 @@ class S3ObjectStorageTest {
         PresignedPutObjectRequest presigned = mock(PresignedPutObjectRequest.class);
         when(presigned.url()).thenReturn(java.net.URI.create("https://upload.example/object").toURL());
         when(presigned.signedHeaders()).thenReturn(Map.of("x-amz-meta-test", List.of("a", "b")));
-        when(presigner.presignPutObject(any(PutObjectPresignRequest.class))).thenReturn(presigned);
+        when(publicPresigner.presignPutObject(any(PutObjectPresignRequest.class))).thenReturn(presigned);
 
         PresignedUrl result = storage.presignPut("media/key", "image/png", Duration.ofMinutes(5));
 
@@ -74,7 +78,7 @@ class S3ObjectStorageTest {
         assertThat(result.headers()).containsEntry("x-amz-meta-test", "a,b");
 
         ArgumentCaptor<PutObjectPresignRequest> captor = ArgumentCaptor.forClass(PutObjectPresignRequest.class);
-        verify(presigner).presignPutObject(captor.capture());
+        verify(publicPresigner).presignPutObject(captor.capture());
         PutObjectRequest request = captor.getValue().putObjectRequest();
         assertThat(request.bucket()).isEqualTo("mnema-bucket");
         assertThat(request.key()).isEqualTo("media/key");
@@ -126,7 +130,7 @@ class S3ObjectStorageTest {
         PresignedUploadPartRequest presigned = mock(PresignedUploadPartRequest.class);
         when(presigned.url()).thenReturn(java.net.URI.create("https://upload.example/part").toURL());
         when(presigned.signedHeaders()).thenReturn(Map.of("x-test", List.of("value")));
-        when(presigner.presignUploadPart(any(UploadPartPresignRequest.class))).thenReturn(presigned);
+        when(publicPresigner.presignUploadPart(any(UploadPartPresignRequest.class))).thenReturn(presigned);
 
         PresignedPart result = storage.presignUploadPart("media/key", "upload-1", 7, Duration.ofMinutes(15));
 
@@ -135,7 +139,7 @@ class S3ObjectStorageTest {
         assertThat(result.headers()).containsEntry("x-test", "value");
 
         ArgumentCaptor<UploadPartPresignRequest> captor = ArgumentCaptor.forClass(UploadPartPresignRequest.class);
-        verify(presigner).presignUploadPart(captor.capture());
+        verify(publicPresigner).presignUploadPart(captor.capture());
         UploadPartRequest request = captor.getValue().uploadPartRequest();
         assertThat(request.bucket()).isEqualTo("mnema-bucket");
         assertThat(request.key()).isEqualTo("media/key");
@@ -184,7 +188,7 @@ class S3ObjectStorageTest {
         PresignedGetObjectRequest named = mock(PresignedGetObjectRequest.class);
         when(named.url()).thenReturn(java.net.URI.create("https://download.example/object").toURL());
         when(named.signedHeaders()).thenReturn(Map.of("host", List.of("download.example")));
-        when(presigner.presignGetObject(any(GetObjectPresignRequest.class))).thenReturn(named);
+        when(publicPresigner.presignGetObject(any(GetObjectPresignRequest.class))).thenReturn(named);
 
         PresignedUrl result = storage.presignGet("media/file", Duration.ofMinutes(3), " bad\\name\"\n.pdf ");
         PresignedUrl noName = storage.presignGet("media/file", Duration.ofMinutes(1), "   ");
@@ -194,7 +198,7 @@ class S3ObjectStorageTest {
         assertThat(noName.url()).isEqualTo("https://download.example/object");
 
         ArgumentCaptor<GetObjectPresignRequest> captor = ArgumentCaptor.forClass(GetObjectPresignRequest.class);
-        verify(presigner, org.mockito.Mockito.times(2)).presignGetObject(captor.capture());
+        verify(publicPresigner, org.mockito.Mockito.times(2)).presignGetObject(captor.capture());
         GetObjectRequest withName = captor.getAllValues().get(0).getObjectRequest();
         GetObjectRequest withoutName = captor.getAllValues().get(1).getObjectRequest();
 
@@ -203,5 +207,18 @@ class S3ObjectStorageTest {
         assertThat(withName.responseContentDisposition())
                 .isEqualTo("attachment; filename=\"bad_name_.pdf\"; filename*=UTF-8''bad_name_.pdf");
         assertThat(withoutName.responseContentDisposition()).isNull();
+    }
+
+    @Test
+    void presignInternalGetUsesInternalPresigner() throws Exception {
+        PresignedGetObjectRequest internal = mock(PresignedGetObjectRequest.class);
+        when(internal.url()).thenReturn(java.net.URI.create("http://minio:9000/mnema-bucket/media/file").toURL());
+        when(internal.signedHeaders()).thenReturn(Map.of());
+        when(internalPresigner.presignGetObject(any(GetObjectPresignRequest.class))).thenReturn(internal);
+
+        PresignedUrl result = storage.presignGetInternal("media/file", Duration.ofMinutes(2), "file.zip");
+
+        assertThat(result.url()).startsWith("http://minio:9000/");
+        verify(internalPresigner).presignGetObject(any(GetObjectPresignRequest.class));
     }
 }

@@ -1,6 +1,7 @@
 package app.mnema.media.controller;
 
 import app.mnema.media.controller.dto.ResolveRequest;
+import app.mnema.media.controller.dto.ResolveUrlTarget;
 import app.mnema.media.controller.dto.ResolvedMedia;
 import app.mnema.media.domain.type.MediaKind;
 import app.mnema.media.service.MediaService;
@@ -31,12 +32,12 @@ class MediaControllerTest {
     void delegatesResolveAndDelete() {
         MediaController controller = new MediaController(mediaService);
         UUID mediaId = UUID.randomUUID();
-        ResolveRequest request = new ResolveRequest(List.of(mediaId));
+        ResolveRequest request = new ResolveRequest(List.of(mediaId), ResolveUrlTarget.PUBLIC);
         List<ResolvedMedia> resolved = List.of(new ResolvedMedia(
                 mediaId, MediaKind.card_image, "https://cdn/x", "image/png", 10L, null, null, null, Instant.now()
         ));
 
-        when(mediaService.resolve(jwt, List.of(mediaId))).thenReturn(resolved);
+        when(mediaService.resolve(jwt, List.of(mediaId), ResolveUrlTarget.PUBLIC)).thenReturn(resolved);
 
         assertThat(controller.resolve(jwt, request)).isEqualTo(resolved);
         controller.delete(jwt, mediaId);
