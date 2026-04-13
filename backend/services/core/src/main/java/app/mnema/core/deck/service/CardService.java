@@ -105,6 +105,14 @@ public class CardService {
                 .map(this::toUserCardDTO);
     }
 
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('SCOPE_core.internal')")
+    public Page<UserCardDTO> getUserCardsByDeckInternal(UUID userDeckId, int page, int limit) {
+        UserDeckEntity deck = userDeckRepository.findById(userDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+        return getUserCardsByDeck(deck.getUserId(), userDeckId, page, limit);
+    }
+
     // Получить одну карту юзера
     @Transactional(readOnly = true)
     @PreAuthorize("hasAuthority('SCOPE_user.read')")
@@ -117,6 +125,14 @@ public class CardService {
         }
 
         return toUserCardDTO(card);
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('SCOPE_core.internal')")
+    public UserCardDTO getUserCardInternal(UUID userDeckId, UUID userCardId) {
+        UserCardEntity card = userCardRepository.findById(userCardId)
+                .orElseThrow(() -> new IllegalArgumentException("User card not found: " + userCardId));
+        return getUserCard(card.getUserId(), userDeckId, userCardId);
     }
 
     @Transactional(readOnly = true)
@@ -242,6 +258,14 @@ public class CardService {
             }
         }
         return ordered.isEmpty() ? List.of() : Collections.unmodifiableList(ordered);
+    }
+
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('SCOPE_core.internal')")
+    public List<UserCardDTO> getMissingFieldCardsInternal(UUID userDeckId, MissingFieldCardsRequest request) {
+        UserDeckEntity deck = userDeckRepository.findById(userDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+        return getMissingFieldCards(deck.getUserId(), userDeckId, request);
     }
 
     @Transactional(readOnly = true)
@@ -1091,6 +1115,16 @@ public class CardService {
         return result;
     }
 
+    @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_core.internal')")
+    public List<UserCardDTO> addNewCardsToDeckBatchInternal(UUID userDeckId,
+                                                            List<CreateCardRequest> requests,
+                                                            UUID operationId) {
+        UserDeckEntity deck = userDeckRepository.findById(userDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+        return addNewCardsToDeckBatch(deck.getUserId(), userDeckId, requests, operationId);
+    }
+
     private NewDeckVersion createNewDeckVersion(PublicDeckEntity latestDeck, Instant now) {
         int newVersion = latestDeck.getVersion() + 1;
 
@@ -1306,6 +1340,18 @@ public class CardService {
 
         UserCardEntity saved = userCardRepository.save(card);
         return toUserCardDTO(saved);
+    }
+
+    @Transactional
+    @PreAuthorize("hasAuthority('SCOPE_core.internal')")
+    public UserCardDTO updateUserCardInternal(UUID userDeckId,
+                                              UUID userCardId,
+                                              UserCardDTO dto,
+                                              boolean updateGlobally,
+                                              UUID operationId) {
+        UserCardEntity card = userCardRepository.findById(userCardId)
+                .orElseThrow(() -> new IllegalArgumentException("User card not found: " + userCardId));
+        return updateUserCard(card.getUserId(), userDeckId, userCardId, dto, updateGlobally, operationId);
     }
 
     private UserCardDTO updateUserCardGlobally(UUID currentUserId,

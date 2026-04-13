@@ -81,7 +81,7 @@ class CoreApiClientTest {
                         [{"userCardId":"%s","effectiveContent":{"Front":"Q"}}]
                         """.formatted(userCardId), MediaType.APPLICATION_JSON));
 
-        CoreApiClient client = new CoreApiClient(builder, new CoreClientProps("https://core.mnema.app"));
+        CoreApiClient client = new CoreApiClient(builder, new CoreClientProps("https://core.mnema.app", ""));
 
         CoreUserDeckResponse deck = client.getUserDeck(userDeckId, "access-token");
         CorePublicDeckResponse publicDeck = client.getPublicDeck(publicDeckId, 7);
@@ -123,7 +123,7 @@ class CoreApiClientTest {
                         {"userCardId":"%s","effectiveContent":{"Front":"Updated"}}
                         """.formatted(userCardId), MediaType.APPLICATION_JSON));
 
-        CoreApiClient client = new CoreApiClient(builder, new CoreClientProps("https://core.mnema.app"));
+        CoreApiClient client = new CoreApiClient(builder, new CoreClientProps("https://core.mnema.app", ""));
         ObjectNode content = objectMapper.createObjectNode().put("Front", "Q");
 
         List<CoreUserCardResponse> created = client.addCards(
@@ -155,7 +155,7 @@ class CoreApiClientTest {
                 .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://core.mnema.app/decks/%s/cards".formatted(userDeckId) + "?page=1&limit=10"))
                 .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
-        CoreApiClient client = new CoreApiClient(builder, new CoreClientProps("https://core.mnema.app"));
+        CoreApiClient client = new CoreApiClient(builder, new CoreClientProps("https://core.mnema.app", ""));
 
         assertThat(client.addCards(userDeckId, List.of(), "access-token")).isEmpty();
         assertThat(client.getUserCards(userDeckId, 1, 10, "access-token").content()).isEmpty();
@@ -166,6 +166,43 @@ class CoreApiClientTest {
         assertThatThrownBy(() -> client.getPublicDeck(userDeckId, null))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("Core public deck response is empty");
+        server.verify();
+    }
+
+    @Test
+    void usesInternalRoutesWhenInternalTokenConfigured() {
+        UUID userDeckId = UUID.randomUUID();
+        UUID templateId = UUID.randomUUID();
+        UUID userCardId = UUID.randomUUID();
+        RestClient.Builder builder = RestClient.builder().baseUrl("https://core.mnema.app");
+        MockRestServiceServer server = MockRestServiceServer.bindTo(builder).ignoreExpectOrder(true).build();
+        server.expect(requestTo("https://core.mnema.app/internal/decks/%s".formatted(userDeckId)))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer core-internal"))
+                .andRespond(withSuccess("""
+                        {"userDeckId":"%s","publicDeckId":"%s","currentVersion":7,"templateVersion":3}
+                        """.formatted(userDeckId, UUID.randomUUID()), MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://core.mnema.app/internal/templates/%s?version=3".formatted(templateId)))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer core-internal"))
+                .andRespond(withSuccess("""
+                        {"templateId":"%s","version":3,"fields":[]}
+                        """.formatted(templateId), MediaType.APPLICATION_JSON));
+        server.expect(requestTo("https://core.mnema.app/internal/decks/%s/cards?page=1&limit=3".formatted(userDeckId)))
+                .andExpect(method(HttpMethod.GET))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer core-internal"))
+                .andRespond(withSuccess("""
+                        {"content":[{"userCardId":"%s","effectiveContent":{"Front":"Q"}}]}
+                        """.formatted(userCardId), MediaType.APPLICATION_JSON));
+
+        CoreApiClient client = new CoreApiClient(builder, new CoreClientProps("https://core.mnema.app", "core-internal"));
+
+        assertThat(client.getUserDeck(userDeckId, "expired-user-token").userDeckId()).isEqualTo(userDeckId);
+        assertThat(client.getTemplate(templateId, 3, "expired-user-token").templateId()).isEqualTo(templateId);
+        assertThat(client.getUserCards(userDeckId, 1, 3, "expired-user-token").content())
+                .singleElement()
+                .extracting(CoreUserCardResponse::userCardId)
+                .isEqualTo(userCardId);
         server.verify();
     }
 }

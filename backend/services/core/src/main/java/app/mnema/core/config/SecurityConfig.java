@@ -1,13 +1,18 @@
 package app.mnema.core.config;
 
+import app.mnema.core.security.CoreInternalAuthProps;
+import app.mnema.core.security.InternalTokenAuthFilter;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenAuthenticationFilter;
+import org.springframework.security.oauth2.server.resource.web.BearerTokenResolver;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
@@ -17,31 +22,52 @@ import java.util.List;
 
 @Configuration
 @EnableMethodSecurity
-@EnableConfigurationProperties(CorsProps.class)
+@EnableConfigurationProperties({CorsProps.class, CoreInternalAuthProps.class})
 public class SecurityConfig {
 
     @Bean
     public SecurityFilterChain securityFilterChain(HttpSecurity http,
-                                                   CorsConfigurationSource corsConfigurationSource) throws Exception {
+                                                   CorsConfigurationSource corsConfigurationSource,
+                                                   InternalTokenAuthFilter internalTokenAuthFilter,
+                                                   BearerTokenResolver bearerTokenResolver) throws Exception {
         http
                 .cors(cors -> cors.configurationSource(corsConfigurationSource))
                 .csrf(AbstractHttpConfigurer::disable)
                 .authorizeHttpRequests(auth -> auth
-                        // health/info/prometheus - открыты
                         .requestMatchers("/actuator/health/**", "/actuator/info", "/actuator/prometheus").permitAll()
-
-                        // Публичные колоды можно смотреть без токена
+                        .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.GET, "/decks/public/**").permitAll()
-
-                        // Всё остальное - только с токеном
+                        .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .anyRequest().authenticated()
                 )
-                // JWT Resource Server, issuer-uri настроен через properties
                 .oauth2ResourceServer(oauth2 -> oauth2
                         .jwt(Customizer.withDefaults())
+                        .bearerTokenResolver(bearerTokenResolver)
                 );
 
+        http.addFilterBefore(internalTokenAuthFilter, BearerTokenAuthenticationFilter.class);
+
         return http.build();
+    }
+
+    @Bean
+    public BearerTokenResolver bearerTokenResolver(CoreInternalAuthProps props) {
+        return request -> {
+            String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+            if (authHeader == null || !authHeader.startsWith("Bearer ")) {
+                return null;
+            }
+            String token = authHeader.substring("Bearer ".length());
+            if (token.equals(props.internalToken())) {
+                return null;
+            }
+            return token;
+        };
+    }
+
+    @Bean
+    public InternalTokenAuthFilter internalTokenAuthFilter(CoreInternalAuthProps props) {
+        return new InternalTokenAuthFilter(props);
     }
 
     @Bean

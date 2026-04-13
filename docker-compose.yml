@@ -93,6 +93,7 @@ services:
       AUTH_ISSUER_URI: http://auth:8080
       USER_BASE_URL: http://user:8080/api/user
       USER_INTERNAL_TOKEN: ${USER_INTERNAL_TOKEN:-mnema-user-internal-dev}
+      CORE_INTERNAL_TOKEN: ${CORE_INTERNAL_TOKEN:-mnema-core-internal-dev}
       MEDIA_BASE_URL: http://media:8080/api/media
       MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
       REDIS_HOST: redis
@@ -166,6 +167,7 @@ services:
       SPRING_FLYWAY_ENABLED: "true"
       AUTH_ISSUER_URI: http://auth:8080
       CORE_BASE_URL: http://core:8080/api/core
+      CORE_INTERNAL_TOKEN: ${CORE_INTERNAL_TOKEN:-mnema-core-internal-dev}
       MEDIA_BASE_URL: http://media:8080/api/media
       MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
       REDIS_HOST: redis

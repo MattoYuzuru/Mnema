@@ -172,6 +172,14 @@ public class DeckService {
         return toUserDeckDTO(deck);
     }
 
+    @Transactional(readOnly = true)
+    @PreAuthorize("hasAuthority('SCOPE_core.internal')")
+    public UserDeckDTO getUserDeckInternal(UUID userDeckId) {
+        UserDeckEntity deck = userDeckRepository.findById(userDeckId)
+                .orElseThrow(() -> new IllegalArgumentException("User deck not found: " + userDeckId));
+        return getUserDeck(deck.getUserId(), userDeckId);
+    }
+
     // Создать новую колоду: создаём public_decks v1 и user_decks
     @Transactional
     @PreAuthorize("hasAuthority('SCOPE_user.write')")

@@ -21,15 +21,17 @@ public class CoreApiClient {
     private static final Logger LOGGER = LoggerFactory.getLogger(CoreApiClient.class);
 
     private final RestClient restClient;
+    private final String internalToken;
 
     public CoreApiClient(RestClient.Builder restClientBuilder, CoreClientProps props) {
         this.restClient = restClientBuilder.baseUrl(props.baseUrl()).build();
+        this.internalToken = props.internalToken();
     }
 
     public CoreUserDeckResponse getUserDeck(UUID userDeckId, String accessToken) {
         CoreUserDeckResponse response = restClient.get()
-                .uri("/decks/{userDeckId}", userDeckId)
-                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .uri(hasInternalToken() ? "/internal/decks/{userDeckId}" : "/decks/{userDeckId}", userDeckId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(resolveAuthToken(accessToken)))
                 .retrieve()
                 .body(CoreUserDeckResponse.class);
         if (response == null) {
@@ -58,13 +60,13 @@ public class CoreApiClient {
     public CoreTemplateResponse getTemplate(UUID templateId, Integer version, String accessToken) {
         CoreTemplateResponse response = restClient.get()
                 .uri(uriBuilder -> {
-                    uriBuilder.path("/templates/{templateId}");
+                    uriBuilder.path(hasInternalToken() ? "/internal/templates/{templateId}" : "/templates/{templateId}");
                     if (version != null) {
                         uriBuilder.queryParam("version", version);
                     }
                     return uriBuilder.build(templateId);
                 })
-                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .header(HttpHeaders.AUTHORIZATION, bearer(resolveAuthToken(accessToken)))
                 .retrieve()
                 .body(CoreTemplateResponse.class);
         if (response == null) {
@@ -87,10 +89,12 @@ public class CoreApiClient {
             return List.of();
         }
         List<CoreUserCardResponse> response = restClient.post()
-                .uri(uriBuilder -> uriBuilder.path("/decks/{userDeckId}/cards/batch")
+                .uri(uriBuilder -> uriBuilder.path(hasInternalToken()
+                                ? "/internal/decks/{userDeckId}/cards/batch"
+                                : "/decks/{userDeckId}/cards/batch")
                         .queryParamIfPresent("operationId", java.util.Optional.ofNullable(operationId))
                         .build(userDeckId))
-                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .header(HttpHeaders.AUTHORIZATION, bearer(resolveAuthToken(accessToken)))
                 .body(requests)
                 .retrieve()
                 .body(CARD_LIST_TYPE);
@@ -138,7 +142,9 @@ public class CoreApiClient {
                                                   UUID operationId) {
         CoreUserCardResponse response = restClient.patch()
                 .uri(uriBuilder -> {
-                    uriBuilder.path("/decks/{userDeckId}/cards/{userCardId}");
+                    uriBuilder.path(hasInternalToken()
+                            ? "/internal/decks/{userDeckId}/cards/{userCardId}"
+                            : "/decks/{userDeckId}/cards/{userCardId}");
                     if (scope != null && !scope.isBlank()) {
                         uriBuilder.queryParam("scope", scope);
                     }
@@ -147,7 +153,7 @@ public class CoreApiClient {
                     }
                     return uriBuilder.build(userDeckId, userCardId);
                 })
-                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .header(HttpHeaders.AUTHORIZATION, bearer(resolveAuthToken(accessToken)))
                 .body(request)
                 .retrieve()
                 .body(CoreUserCardResponse.class);
@@ -188,11 +194,11 @@ public class CoreApiClient {
     public CoreUserCardPage getUserCards(UUID userDeckId, int page, int limit, String accessToken) {
         CoreUserCardPage response = restClient.get()
                 .uri(uriBuilder -> uriBuilder
-                        .path("/decks/{userDeckId}/cards")
+                        .path(hasInternalToken() ? "/internal/decks/{userDeckId}/cards" : "/decks/{userDeckId}/cards")
                         .queryParam("page", page)
                         .queryParam("limit", limit)
                         .build(userDeckId))
-                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .header(HttpHeaders.AUTHORIZATION, bearer(resolveAuthToken(accessToken)))
                 .retrieve()
                 .body(CoreUserCardPage.class);
         if (response == null) {
@@ -203,8 +209,12 @@ public class CoreApiClient {
 
     public CoreUserCardDetail getUserCard(UUID userDeckId, UUID userCardId, String accessToken) {
         CoreUserCardDetail response = restClient.get()
-                .uri("/decks/{userDeckId}/cards/{userCardId}", userDeckId, userCardId)
-                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .uri(hasInternalToken()
+                                ? "/internal/decks/{userDeckId}/cards/{userCardId}"
+                                : "/decks/{userDeckId}/cards/{userCardId}",
+                        userDeckId,
+                        userCardId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(resolveAuthToken(accessToken)))
                 .retrieve()
                 .body(CoreUserCardDetail.class);
         if (response == null) {
@@ -220,12 +230,26 @@ public class CoreApiClient {
             return List.of();
         }
         List<CoreUserCardResponse> response = restClient.post()
-                .uri("/decks/{userDeckId}/cards/missing-fields/cards", userDeckId)
-                .header(HttpHeaders.AUTHORIZATION, bearer(accessToken))
+                .uri(hasInternalToken()
+                                ? "/internal/decks/{userDeckId}/cards/missing-fields/cards"
+                                : "/decks/{userDeckId}/cards/missing-fields/cards",
+                        userDeckId)
+                .header(HttpHeaders.AUTHORIZATION, bearer(resolveAuthToken(accessToken)))
                 .body(request)
                 .retrieve()
                 .body(CARD_LIST_TYPE);
         return response == null ? List.of() : response;
+    }
+
+    private boolean hasInternalToken() {
+        return internalToken != null && !internalToken.isBlank();
+    }
+
+    private String resolveAuthToken(String accessToken) {
+        if (hasInternalToken()) {
+            return internalToken;
+        }
+        return accessToken;
     }
 
     private String bearer(String token) {

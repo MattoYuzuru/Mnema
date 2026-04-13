@@ -223,6 +223,24 @@ class TemplateServiceTest {
     }
 
     @Test
+    void getCardTemplateByIdInternal_reusesTemplateLookup() {
+        UUID templateId = UUID.randomUUID();
+        CardTemplateEntity template = template(templateId, 3, json("{\"layout\":\"entity\"}"), json("{\"ai\":\"entity\"}"), "entity.png");
+        CardTemplateVersionEntity requestedVersion = version(templateId, 2, json("{\"layout\":\"v2\"}"), json("{\"ai\":\"v2\"}"), "v2.png");
+
+        when(cardTemplateRepository.findById(templateId)).thenReturn(Optional.of(template));
+        when(cardTemplateVersionRepository.findByTemplateIdAndVersion(templateId, 2)).thenReturn(Optional.of(requestedVersion));
+        when(fieldTemplateRepository.findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, 2))
+                .thenReturn(List.of(fieldEntity(UUID.randomUUID(), templateId, 2, "front", "Front", true, true, 0)));
+
+        CardTemplateDTO result = templateService.getCardTemplateByIdInternal(templateId, 2);
+
+        assertThat(result.templateId()).isEqualTo(templateId);
+        assertThat(result.version()).isEqualTo(2);
+        assertThat(result.fields()).singleElement().satisfies(field -> assertThat(field.name()).isEqualTo("front"));
+    }
+
+    @Test
     void getCardTemplateById_throwsWhenVersionMissing() {
         UUID templateId = UUID.randomUUID();
 

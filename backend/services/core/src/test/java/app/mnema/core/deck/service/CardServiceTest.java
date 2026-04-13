@@ -118,6 +118,21 @@ class CardServiceTest {
     }
 
     @Test
+    void getUserCardsByDeckInternal_usesDeckOwnerForLookup() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        UserCardEntity cardEntity = userCard(userId, deckId, null, true, false, "note", null, textContent("front", "Q"));
+
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(userDeck(deckId, userId, null)));
+        when(userCardRepository.findByUserDeckIdAndDeletedFalseOrderByCreatedAtAscUserCardIdAsc(eq(deckId), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(cardEntity), PageRequest.of(0, 25), 1));
+
+        Page<UserCardDTO> result = cardService.getUserCardsByDeckInternal(deckId, 1, 25);
+
+        assertThat(result.getContent()).singleElement().satisfies(dto -> assertThat(dto.personalNote()).isEqualTo("note"));
+    }
+
+    @Test
     void getUserCard_returnsEffectiveContentForOwner() {
         UUID userId = UUID.randomUUID();
         UUID deckId = UUID.randomUUID();
@@ -131,6 +146,23 @@ class CardServiceTest {
         UserCardDTO result = cardService.getUserCard(userId, deckId, card.getUserCardId());
 
         assertThat(result.tags()).containsExactly("public");
+        assertThat(result.effectiveContent()).isEqualTo(json("{\"front\":\"base\",\"back\":\"override\"}"));
+    }
+
+    @Test
+    void getUserCardInternal_usesCardOwnerForLookup() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        UUID publicCardId = UUID.randomUUID();
+        UserCardEntity card = userCard(userId, deckId, publicCardId, false, false, "note", null, textContent("back", "override"));
+        PublicCardEntity publicCard = publicCard(UUID.randomUUID(), 2, publicCardId, textContent("front", "base"), new String[]{"public"}, true, "chk");
+
+        when(userCardRepository.findById(card.getUserCardId())).thenReturn(Optional.of(card));
+        when(publicCardRepository.findFirstByCardIdOrderByDeckVersionDesc(publicCardId)).thenReturn(Optional.of(publicCard));
+
+        UserCardDTO result = cardService.getUserCardInternal(deckId, card.getUserCardId());
+
+        assertThat(result.userCardId()).isEqualTo(card.getUserCardId());
         assertThat(result.effectiveContent()).isEqualTo(json("{\"front\":\"base\",\"back\":\"override\"}"));
     }
 
@@ -204,6 +236,28 @@ class CardServiceTest {
         );
 
         assertThat(result).extracting(UserCardDTO::userCardId).containsExactly(firstId, secondId, thirdId);
+    }
+
+    @Test
+    void getMissingFieldCardsInternal_usesDeckOwnerForLookup() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        UUID firstId = UUID.randomUUID();
+
+        UserCardEntity first = userCard(userId, deckId, null, true, false, "first", null, textContent("front", "A"));
+        first.setUserCardId(firstId);
+
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(userDeck(deckId, userId, null)));
+        when(userCardRepository.findMissingFieldCardIds(userId, deckId, "front", 1)).thenReturn(List.of(firstId));
+        when(userCardRepository.findByUserIdAndUserDeckIdAndUserCardIdIn(userId, deckId, List.of(firstId)))
+                .thenReturn(List.of(first));
+
+        List<UserCardDTO> result = cardService.getMissingFieldCardsInternal(
+                deckId,
+                new MissingFieldCardsRequest(List.of("front"), 1, null)
+        );
+
+        assertThat(result).singleElement().satisfies(dto -> assertThat(dto.userCardId()).isEqualTo(firstId));
     }
 
     @Test
