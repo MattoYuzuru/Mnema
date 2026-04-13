@@ -51,6 +51,7 @@ public class AiJobService {
     private final AiJobExecutionService executionService;
     private final AiJobEtaEstimator etaEstimator;
     private final AiJobCostEstimator costEstimator;
+    private final AiJobCancellationRegistry cancellationRegistry;
 
     public AiJobService(AiJobRepository jobRepository,
                         CurrentUserProvider currentUserProvider,
@@ -60,7 +61,8 @@ public class AiJobService {
                         ObjectMapper objectMapper,
                         AiJobExecutionService executionService,
                         AiJobEtaEstimator etaEstimator,
-                        AiJobCostEstimator costEstimator) {
+                        AiJobCostEstimator costEstimator,
+                        AiJobCancellationRegistry cancellationRegistry) {
         this.jobRepository = jobRepository;
         this.currentUserProvider = currentUserProvider;
         this.quotaService = quotaService;
@@ -70,6 +72,7 @@ public class AiJobService {
         this.executionService = executionService;
         this.etaEstimator = etaEstimator;
         this.costEstimator = costEstimator;
+        this.cancellationRegistry = cancellationRegistry;
     }
 
     @Transactional
@@ -216,7 +219,9 @@ public class AiJobService {
         job.setStatus(AiJobStatus.canceled);
         job.setUpdatedAt(Instant.now());
         job.setCompletedAt(Instant.now());
-        return toResponse(jobRepository.save(job));
+        AiJobEntity saved = jobRepository.save(job);
+        cancellationRegistry.cancel(jobId);
+        return toResponse(saved);
     }
 
     @Transactional

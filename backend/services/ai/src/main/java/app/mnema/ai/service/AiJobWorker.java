@@ -43,12 +43,14 @@ public class AiJobWorker {
     private final Semaphore jobSlots;
     private final ExecutorService executor;
     private final ScheduledExecutorService heartbeatScheduler;
+    private final AiJobCancellationRegistry cancellationRegistry;
 
     public AiJobWorker(JdbcTemplate jdbcTemplate,
                        AiJobRepository jobRepository,
                        AiJobProcessor jobProcessor,
                        AiUsageLedgerService usageLedgerService,
                        AiJobCostEstimator costEstimator,
+                       AiJobCancellationRegistry cancellationRegistry,
                        @Value("${app.ai.jobs.worker-id:}") String workerId,
                        @Value("${app.ai.jobs.lock-ttl-seconds:300}") long lockTtlSeconds,
                        @Value("${app.ai.jobs.max-attempts:3}") int maxAttempts,
@@ -60,6 +62,7 @@ public class AiJobWorker {
         this.jobProcessor = jobProcessor;
         this.usageLedgerService = usageLedgerService;
         this.costEstimator = costEstimator;
+        this.cancellationRegistry = cancellationRegistry;
         this.workerId = (workerId == null || workerId.isBlank()) ? defaultWorkerId() : workerId;
         this.lockTtl = Duration.ofSeconds(lockTtlSeconds);
         this.maxAttempts = Math.max(maxAttempts, 1);
@@ -86,18 +89,20 @@ public class AiJobWorker {
     }
 
     private void handleJob(AiJobEntity job) {
-        if (isCanceled(job.getJobId())) {
-            return;
-        }
-        ScheduledFuture<?> heartbeat = scheduleLockHeartbeat(job.getJobId());
-        try {
-            AiJobProcessingResult result = jobProcessor.process(job);
-            markCompleted(job, result);
-        } catch (Exception ex) {
-            log.warn("AI job failed jobId={} errorType={} message={}", job.getJobId(), ex.getClass().getSimpleName(), safeMessage(ex));
-            markFailed(job, ex);
-        } finally {
-            heartbeat.cancel(false);
+        try (AiJobCancellationRegistry.Registration ignored = cancellationRegistry.register(job.getJobId())) {
+            if (isCanceled(job.getJobId())) {
+                return;
+            }
+            ScheduledFuture<?> heartbeat = scheduleLockHeartbeat(job.getJobId());
+            try {
+                AiJobProcessingResult result = jobProcessor.process(job);
+                markCompleted(job, result);
+            } catch (Exception ex) {
+                log.warn("AI job failed jobId={} errorType={} message={}", job.getJobId(), ex.getClass().getSimpleName(), safeMessage(ex));
+                markFailed(job, ex);
+            } finally {
+                heartbeat.cancel(false);
+            }
         }
     }
 

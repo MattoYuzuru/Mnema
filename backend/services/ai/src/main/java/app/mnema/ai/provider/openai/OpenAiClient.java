@@ -3,6 +3,8 @@ package app.mnema.ai.provider.openai;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.MediaType;
@@ -24,9 +26,13 @@ import java.time.Duration;
 @Component
 public class OpenAiClient {
 
+    private static final Logger LOGGER = LoggerFactory.getLogger(OpenAiClient.class);
+    private static final int LOCAL_EMPTY_RESPONSE_MAX_ATTEMPTS = 3;
+
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
     private final Duration requestReadTimeout;
+    private final boolean localGatewayBaseUrl;
 
     public OpenAiClient(RestClient.Builder restClientBuilder,
                         OpenAiProps props,
@@ -47,6 +53,7 @@ public class OpenAiClient {
                 .build();
         this.objectMapper = objectMapper;
         this.requestReadTimeout = Duration.ofMillis(readTimeoutMs);
+        this.localGatewayBaseUrl = isLocalGatewayBaseUrl(props.baseUrl());
     }
 
     public OpenAiResponseResult createResponse(String apiKey, OpenAiResponseRequest request) {
@@ -60,39 +67,8 @@ public class OpenAiClient {
             ObjectNode textNode = payload.putObject("text");
             textNode.set("format", request.responseFormat());
         }
-
-        RestClient.RequestBodySpec spec = restClient.post()
-                .uri("/v1/responses")
-                .contentType(MediaType.APPLICATION_JSON);
-        if (hasApiKey(apiKey)) {
-            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
-        }
-        JsonNode response;
-        try {
-            response = spec.body(payload)
-                    .retrieve()
-                    .body(JsonNode.class);
-        } catch (HttpClientErrorException ex) {
-            if (!shouldFallbackToChatCompat(ex)) {
-                throw ex;
-            }
-            response = createChatCompletionCompat(apiKey, request.model(), request.input(), request.maxOutputTokens());
-        }
-
-        if (response == null) {
-            throw new IllegalStateException("OpenAI response is empty");
-        }
-
-        String outputText = OpenAiResponseParser.extractText(response);
-        String model = response.path("model").asText(null);
-        JsonNode usage = response.path("usage");
-        Integer inputTokens = usage.hasNonNull("input_tokens")
-                ? usage.get("input_tokens").asInt()
-                : (usage.hasNonNull("prompt_tokens") ? usage.get("prompt_tokens").asInt() : null);
-        Integer outputTokens = usage.hasNonNull("output_tokens")
-                ? usage.get("output_tokens").asInt()
-                : (usage.hasNonNull("completion_tokens") ? usage.get("completion_tokens").asInt() : null);
-        return new OpenAiResponseResult(outputText, model, inputTokens, outputTokens, response);
+        JsonNode response = createResponseJson(apiKey, payload, request.model(), request.input(), request.maxOutputTokens());
+        return toResponseResult(response);
     }
 
     public OpenAiResponseResult createResponseWithInput(String apiKey,
@@ -110,32 +86,67 @@ public class OpenAiClient {
             ObjectNode textNode = payload.putObject("text");
             textNode.set("format", responseFormat);
         }
+        String compatInput = input == null ? "" : (input.isTextual() ? input.asText() : input.toString());
+        JsonNode response = createResponseJson(apiKey, payload, model, compatInput, maxOutputTokens);
+        return toResponseResult(response);
+    }
 
+    private JsonNode createResponseJson(String apiKey,
+                                        ObjectNode payload,
+                                        String model,
+                                        String compatInput,
+                                        Integer maxOutputTokens) {
+        int attempts = localGatewayBaseUrl ? LOCAL_EMPTY_RESPONSE_MAX_ATTEMPTS : 1;
+        JsonNode lastResponse = null;
+        for (int attempt = 1; attempt <= attempts; attempt++) {
+            JsonNode response = executeResponsesRequest(apiKey, payload, model, compatInput, maxOutputTokens);
+            if (response == null) {
+                throw new IllegalStateException("OpenAI response is empty");
+            }
+            lastResponse = response;
+            String outputText = OpenAiResponseParser.extractText(response);
+            if (!outputText.isBlank()) {
+                return response;
+            }
+            if (attempt < attempts) {
+                LOGGER.warn("OpenAI-compatible response missing usable text attempt={} model={} summary={}",
+                        attempt,
+                        model,
+                        summarizeResponse(response));
+            }
+        }
+        throw new IllegalStateException("AI response is empty; " + summarizeResponse(lastResponse));
+    }
+
+    private JsonNode executeResponsesRequest(String apiKey,
+                                             ObjectNode payload,
+                                             String model,
+                                             String compatInput,
+                                             Integer maxOutputTokens) {
         RestClient.RequestBodySpec spec = restClient.post()
                 .uri("/v1/responses")
                 .contentType(MediaType.APPLICATION_JSON);
         if (hasApiKey(apiKey)) {
             spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
         }
-        JsonNode response;
         try {
-            response = spec.body(payload)
+            return spec.body(payload)
                     .retrieve()
                     .body(JsonNode.class);
         } catch (HttpClientErrorException ex) {
             if (!shouldFallbackToChatCompat(ex)) {
                 throw ex;
             }
-            String compatInput = input == null ? "" : (input.isTextual() ? input.asText() : input.toString());
-            response = createChatCompletionCompat(apiKey, model, compatInput, maxOutputTokens);
+            return createChatCompletionCompat(apiKey, model, compatInput, maxOutputTokens);
         }
+    }
 
+    private OpenAiResponseResult toResponseResult(JsonNode response) {
         if (response == null) {
             throw new IllegalStateException("OpenAI response is empty");
         }
-
         String outputText = OpenAiResponseParser.extractText(response);
-        String responseModel = response.path("model").asText(null);
+        String model = response.path("model").asText(null);
         JsonNode usage = response.path("usage");
         Integer inputTokens = usage.hasNonNull("input_tokens")
                 ? usage.get("input_tokens").asInt()
@@ -143,7 +154,7 @@ public class OpenAiClient {
         Integer outputTokens = usage.hasNonNull("output_tokens")
                 ? usage.get("output_tokens").asInt()
                 : (usage.hasNonNull("completion_tokens") ? usage.get("completion_tokens").asInt() : null);
-        return new OpenAiResponseResult(outputText, responseModel, inputTokens, outputTokens, response);
+        return new OpenAiResponseResult(outputText, model, inputTokens, outputTokens, response);
     }
 
     private JsonNode createChatCompletionCompat(String apiKey,
@@ -193,6 +204,49 @@ public class OpenAiClient {
         String message = ex.getMessage();
         String combined = (body == null ? "" : body) + " " + (message == null ? "" : message);
         return shouldFallbackToChatCompat(ex.getStatusCode().value(), combined);
+    }
+
+    static boolean isLocalGatewayBaseUrl(String baseUrl) {
+        if (baseUrl == null || baseUrl.isBlank()) {
+            return false;
+        }
+        try {
+            URI uri = URI.create(baseUrl);
+            String host = uri.getHost();
+            if (host == null || host.isBlank()) {
+                return false;
+            }
+            String normalized = host.toLowerCase(Locale.ROOT);
+            return "localhost".equals(normalized)
+                    || "127.0.0.1".equals(normalized)
+                    || "::1".equals(normalized)
+                    || "local-ai-gateway".equals(normalized)
+                    || normalized.endsWith(".local");
+        } catch (IllegalArgumentException ex) {
+            return false;
+        }
+    }
+
+    static String summarizeResponse(JsonNode response) {
+        if (response == null || response.isNull()) {
+            return "response=null";
+        }
+        String status = response.path("status").asText("");
+        String model = response.path("model").asText("");
+        String outputTypes = "";
+        JsonNode output = response.path("output");
+        if (output.isArray() && !output.isEmpty()) {
+            StringBuilder builder = new StringBuilder();
+            for (JsonNode item : output) {
+                if (!builder.isEmpty()) {
+                    builder.append(',');
+                }
+                builder.append(item.path("type").asText("?"));
+            }
+            outputTypes = builder.toString();
+        }
+        int choices = response.path("choices").isArray() ? response.path("choices").size() : 0;
+        return "status=" + status + ", model=" + model + ", outputTypes=" + outputTypes + ", choices=" + choices;
     }
 
     public byte[] createSpeech(String apiKey, OpenAiSpeechRequest request) {

@@ -25,14 +25,8 @@ public final class OpenAiResponseParser {
                 }
                 for (JsonNode part : content) {
                     String type = part.path("type").asText();
-                    if ("output_text".equals(type)) {
-                        String text = part.path("text").asText();
-                        if (!text.isBlank()) {
-                            if (!builder.isEmpty()) {
-                                builder.append('\n');
-                            }
-                            builder.append(text);
-                        }
+                    if ("output_text".equals(type) || "text".equals(type)) {
+                        appendText(builder, part.path("text").asText());
                     }
                 }
             }
@@ -50,18 +44,22 @@ public final class OpenAiResponseParser {
                 if (content.isArray()) {
                     StringBuilder builder = new StringBuilder();
                     for (JsonNode part : content) {
-                        String text = part.path("text").asText("");
-                        if (!text.isBlank()) {
-                            if (!builder.isEmpty()) {
-                                builder.append('\n');
-                            }
-                            builder.append(text);
-                        }
+                        appendText(builder, part.path("text").asText(""));
                     }
                     return builder.toString();
                 }
             }
         }
         return "";
+    }
+
+    private static void appendText(StringBuilder builder, String text) {
+        if (text == null || text.isBlank()) {
+            return;
+        }
+        if (!builder.isEmpty()) {
+            builder.append('\n');
+        }
+        builder.append(text);
     }
 }

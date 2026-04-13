@@ -1584,7 +1584,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
         Map<String, String> fieldTypes = resolveFieldTypes(template);
         CardNoveltyService.NoveltyIndex noveltyIndex = noveltyService.buildIndex(job.getDeckId(), accessToken, allowedFields);
-        String fewShotExamples = buildFewShotExamples(job.getDeckId(), accessToken, allowedFields);
+        String fewShotExamples = isLocalOllamaRequest(params) ? "" : buildFewShotExamples(job.getDeckId(), accessToken, allowedFields);
         return new GenerationContext(deck, publicDeck, template, updateScope, count, allowedFields, fieldTypes, noveltyIndex, fewShotExamples);
     }
 
@@ -1617,7 +1617,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     context.publicDeck(),
                     context.allowedFields(),
                     candidateCount,
-                    context.fewShotExamples()
+                    context.fewShotExamples(),
+                    localOllamaRequest
             );
             JsonNode responseFormat = buildCardsSchema(context.allowedFields(), candidateCount);
             OpenAiResponseResult response = openAiClient.createResponse(
@@ -3267,7 +3268,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                     CorePublicDeckResponse publicDeck,
                                     List<String> fields,
                                     int count,
-                                    String fewShotExamples) {
+                                    String fewShotExamples,
+                                    boolean compactPrompt) {
         String fieldList = String.join(", ", fields);
         StringBuilder builder = new StringBuilder();
         builder.append("You are generating flashcards for a deck template. ");
@@ -3284,7 +3286,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
 
         String deckName = publicDeck == null ? null : publicDeck.name();
-        String deckDescription = publicDeck == null ? null : publicDeck.description();
+        String deckDescription = publicDeck == null ? null : limitPromptText(publicDeck.description(), compactPrompt ? 180 : 600);
         String deckLanguage = publicDeck == null ? null : publicDeck.language();
         if (deckName != null && !deckName.isBlank()) {
             builder.append("Deck name: ").append(deckName.trim()).append(". ");
@@ -3298,7 +3300,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
         if (template != null) {
             String templateName = template.name();
-            String templateDescription = template.description();
+            String templateDescription = limitPromptText(template.description(), compactPrompt ? 180 : 600);
             if (templateName != null && !templateName.isBlank()) {
                 builder.append("Template name: ").append(templateName.trim()).append(". ");
             }
@@ -3309,13 +3311,15 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             if (!fieldHints.isBlank()) {
                 builder.append("Field hints: ").append(fieldHints).append(". ");
             }
-            String profile = formatAiProfile(template.aiProfile());
+            String profile = compactPrompt
+                    ? formatAiProfileLimited(template.aiProfile(), 240)
+                    : formatAiProfile(template.aiProfile());
             if (!profile.isBlank()) {
                 builder.append("Template AI profile: ").append(profile).append(". ");
             }
         }
 
-        if (fewShotExamples != null && !fewShotExamples.isBlank()) {
+        if (!compactPrompt && fewShotExamples != null && !fewShotExamples.isBlank()) {
             builder.append("Examples from existing cards: ").append(fewShotExamples).append(". ");
         }
 
@@ -3323,6 +3327,17 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             builder.append("User instructions: ").append(userPrompt.trim());
         }
         return builder.toString().trim();
+    }
+
+    private String limitPromptText(String text, int maxChars) {
+        if (text == null) {
+            return null;
+        }
+        String trimmed = text.trim();
+        if (trimmed.length() <= maxChars) {
+            return trimmed;
+        }
+        return trimmed.substring(0, maxChars) + "...";
     }
 
     private JsonNode buildCardsSchema(List<String> fields, int count) {
@@ -3463,12 +3478,15 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     }
 
     private String formatAiProfile(JsonNode aiProfile) {
+        return formatAiProfileLimited(aiProfile, 800);
+    }
+
+    private String formatAiProfileLimited(JsonNode aiProfile, int max) {
         if (aiProfile == null || aiProfile.isNull()) {
             return "";
         }
         String raw = aiProfile.isTextual() ? aiProfile.asText() : aiProfile.toString();
         String trimmed = raw.trim();
-        int max = 800;
         if (trimmed.length() <= max) {
             return trimmed;
         }
