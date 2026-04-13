@@ -79,8 +79,18 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private static final int MAX_IMPORT_CARDS = 500;
     private static final int MIN_IMPORT_BATCH = 10;
     private static final int MAX_IMPORT_BATCH = 50;
+    private static final int LOCAL_IMPORT_MIN_BATCH = 3;
+    private static final int LOCAL_IMPORT_MAX_BATCH = 6;
     private static final int GENERATE_MAX_ATTEMPTS = 4;
     private static final int NOVELTY_HINT_LIMIT = 24;
+    private static final int LOCAL_IMPORT_FULL_CONTEXT_CHARS = 2400;
+    private static final int REMOTE_IMPORT_FULL_CONTEXT_CHARS = 7000;
+    private static final int LOCAL_IMPORT_EXCERPT_HEAD_CHARS = 1100;
+    private static final int LOCAL_IMPORT_EXCERPT_TAIL_CHARS = 800;
+    private static final int REMOTE_IMPORT_EXCERPT_HEAD_CHARS = 2200;
+    private static final int REMOTE_IMPORT_EXCERPT_TAIL_CHARS = 1600;
+    private static final int LOCAL_IMPORT_OUTLINE_CHARS = 1200;
+    private static final int REMOTE_IMPORT_OUTLINE_CHARS = 2600;
     private static final Duration VIDEO_POLL_INTERVAL = Duration.ofSeconds(5);
     private static final Duration VIDEO_POLL_TIMEOUT = Duration.ofMinutes(5);
     private static final Pattern RETRY_IN_PATTERN = Pattern.compile("retry in\\s*([0-9]+(?:\\.[0-9]+)?)s", Pattern.CASE_INSENSITIVE);
@@ -320,6 +330,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private AiJobProcessingResult handleImportGenerate(AiJobEntity job, String apiKey, JsonNode params) {
         AiImportContentService.ImportTextPayload payload = runStep(job, params, STEP_LOAD_SOURCE, () -> loadImportPayload(job, apiKey, params));
+        boolean localOllamaRequest = isLocalOllamaRequest(params);
+        List<String> items = ImportItemExtractor.extractItems(payload.text());
+        String sharedContext = buildImportSharedContext(payload, items, localOllamaRequest);
 
         ObjectNode updatedParams = params.isObject()
                 ? ((ObjectNode) params).deepCopy()
@@ -329,19 +342,18 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         int requested = params.path("count").isInt() ? params.path("count").asInt() : 10;
         int total = Math.min(Math.max(requested, 1), MAX_IMPORT_CARDS);
         int batchSize = resolveImportBatchSize(params);
-        List<String> items = ImportItemExtractor.extractItems(payload.text());
         if (!items.isEmpty()) {
             int available = Math.min(items.size(), MAX_IMPORT_CARDS);
             total = Math.min(total, available);
             List<String> requestedItems = items.subList(0, total);
             if (total <= batchSize) {
                 updatedParams.put("count", total);
-                updatedParams.put("input", buildImportGenerateItemsPrompt(requestedItems, params, payload.truncated()));
+                updatedParams.put("input", buildImportGenerateItemsPrompt(requestedItems, params, payload.truncated(), sharedContext, 0, total));
                 return handleGenerateCards(job, apiKey, updatedParams);
             }
-            return handleGenerateCardsBatchedForItems(job, apiKey, updatedParams, requestedItems, batchSize, params, payload.truncated());
+            return handleGenerateCardsBatchedForItems(job, apiKey, updatedParams, requestedItems, batchSize, params, payload.truncated(), sharedContext);
         }
-        updatedParams.put("input", buildImportGeneratePrompt(payload, params));
+        updatedParams.put("input", buildImportGeneratePrompt(params, payload.truncated(), sharedContext));
         if (total <= batchSize) {
             updatedParams.put("count", total);
             return handleGenerateCards(job, apiKey, updatedParams);
@@ -354,151 +366,19 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                              ObjectNode baseParams,
                                                              int totalCount,
                                                              int batchSize) {
-        int remaining = totalCount;
-        int totalCreated = 0;
-        int totalImages = 0;
-        int totalTts = 0;
-        int totalTtsChars = 0;
-        String ttsError = null;
-        Integer tokensIn = null;
-        Integer tokensOut = null;
-        BigDecimal cost = BigDecimal.ZERO;
-        String model = null;
-        String templateId = null;
-        JsonNode fieldsNode = null;
-        ArrayNode itemResults = objectMapper.createArrayNode();
-        boolean hasPartialFailures = false;
-
-        while (remaining > 0) {
-            int count = Math.min(batchSize, remaining);
-            ObjectNode batchParams = baseParams.deepCopy();
-            batchParams.put("count", count);
-            AiJobProcessingResult batchResult;
-            try {
-                batchResult = handleGenerateCards(job, apiKey, batchParams);
-            } catch (RuntimeException ex) {
-                if (totalCreated > 0) {
-                    ObjectNode summary = buildGenerateCardsBatchSummary(
-                            job,
-                            totalCount,
-                            totalCreated,
-                            totalImages,
-                            totalTts,
-                            totalTtsChars,
-                            ttsError,
-                            templateId,
-                            fieldsNode,
-                            itemResults
-                    );
-                    summary.put("generationError", summarizeBatchError(ex));
-                    return new AiJobProcessingResult(
-                            summary,
-                            PROVIDER,
-                            model,
-                            tokensIn,
-                            tokensOut,
-                            cost,
-                            job.getInputHash(),
-                            AiJobStatus.partial_success
-                    );
-                }
-                throw ex;
-            }
-            model = batchResult.model();
-            if (batchResult.tokensIn() != null) {
-                tokensIn = (tokensIn == null ? 0 : tokensIn) + batchResult.tokensIn();
-            }
-            if (batchResult.tokensOut() != null) {
-                tokensOut = (tokensOut == null ? 0 : tokensOut) + batchResult.tokensOut();
-            }
-            if (batchResult.costEstimate() != null) {
-                cost = cost.add(batchResult.costEstimate());
-            }
-            JsonNode summary = batchResult.resultSummary();
-            if (summary != null && summary.isObject()) {
-                if (templateId == null && summary.hasNonNull("templateId")) {
-                    templateId = summary.get("templateId").asText();
-                }
-                if (fieldsNode == null && summary.has("fields")) {
-                    fieldsNode = summary.get("fields");
-                }
-                totalCreated += summary.path("createdCards").asInt(0);
-                totalImages += summary.path("imagesGenerated").asInt(0);
-                totalTts += summary.path("ttsGenerated").asInt(0);
-                totalTtsChars += summary.path("ttsCharsGenerated").asInt(0);
-                if (ttsError == null && summary.hasNonNull("ttsError")) {
-                    ttsError = summary.get("ttsError").asText();
-                }
-                if (summary.has("items") && summary.get("items").isArray()) {
-                    summary.get("items").forEach(itemResults::add);
-                }
-            }
-            hasPartialFailures = hasPartialFailures || batchResult.finalStatus() == AiJobStatus.partial_success;
-            remaining -= count;
-        }
-
-        ObjectNode summary = buildGenerateCardsBatchSummary(
+        String accessToken = job.getUserAccessToken();
+        GenerationContext context = runStep(job, baseParams, STEP_PREPARE_CONTEXT, () -> prepareGenerationContext(job, baseParams, accessToken));
+        String userPrompt = extractTextParam(baseParams, "input", "prompt", "text");
+        GeneratedDraftBatch generated = runStep(job, baseParams, STEP_GENERATE_CONTENT, () -> generateDraftsBatched(
                 job,
+                apiKey,
+                baseParams,
+                context,
                 totalCount,
-                totalCreated,
-                totalImages,
-                totalTts,
-                totalTtsChars,
-                ttsError,
-                templateId,
-                fieldsNode,
-                itemResults
-        );
-
-        return new AiJobProcessingResult(
-                summary,
-                PROVIDER,
-                model,
-                tokensIn,
-                tokensOut,
-                cost,
-                job.getInputHash(),
-                resolveFinalStatus(hasPartialFailures || ttsError != null)
-        );
-    }
-
-    private ObjectNode buildGenerateCardsBatchSummary(AiJobEntity job,
-                                                      int totalCount,
-                                                      int totalCreated,
-                                                      int totalImages,
-                                                      int totalTts,
-                                                      int totalTtsChars,
-                                                      String ttsError,
-                                                      String templateId,
-                                                      JsonNode fieldsNode,
-                                                      ArrayNode itemResults) {
-        ObjectNode summary = objectMapper.createObjectNode();
-        summary.put("mode", MODE_GENERATE_CARDS);
-        summary.put("deckId", job.getDeckId().toString());
-        if (templateId != null) {
-            summary.put("templateId", templateId);
-        }
-        summary.put("requestedCards", totalCount);
-        summary.put("createdCards", totalCreated);
-        if (totalImages > 0) {
-            summary.put("imagesGenerated", totalImages);
-        }
-        if (totalTts > 0) {
-            summary.put("ttsGenerated", totalTts);
-        }
-        if (totalTtsChars > 0) {
-            summary.put("ttsCharsGenerated", totalTtsChars);
-        }
-        if (ttsError != null) {
-            summary.put("ttsError", ttsError);
-        }
-        if (fieldsNode != null) {
-            summary.set("fields", fieldsNode);
-        }
-        if (!itemResults.isEmpty()) {
-            summary.set("items", itemResults);
-        }
-        return summary;
+                batchSize,
+                (offset, count) -> userPrompt
+        ));
+        return applyGeneratedDrafts(job, apiKey, baseParams, context, generated, totalCount, accessToken);
     }
 
     private AiJobProcessingResult handleGenerateCardsBatchedForItems(AiJobEntity job,
@@ -507,101 +387,27 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                                      List<String> items,
                                                                      int batchSize,
                                                                      JsonNode params,
-                                                                     boolean truncated) {
-        int remaining = items.size();
-        int totalCreated = 0;
-        int totalImages = 0;
-        int totalTts = 0;
-        int totalTtsChars = 0;
-        String ttsError = null;
-        Integer tokensIn = null;
-        Integer tokensOut = null;
-        BigDecimal cost = BigDecimal.ZERO;
-        String model = null;
-        String templateId = null;
-        JsonNode fieldsNode = null;
-        int offset = 0;
-        ArrayNode itemResults = objectMapper.createArrayNode();
-        boolean hasPartialFailures = false;
-
-        while (remaining > 0) {
-            int count = Math.min(batchSize, remaining);
-            List<String> batchItems = items.subList(offset, offset + count);
-            ObjectNode batchParams = baseParams.deepCopy();
-            batchParams.put("count", count);
-            batchParams.put("input", buildImportGenerateItemsPrompt(batchItems, params, truncated));
-            AiJobProcessingResult batchResult = handleGenerateCards(job, apiKey, batchParams);
-            model = batchResult.model();
-            if (batchResult.tokensIn() != null) {
-                tokensIn = (tokensIn == null ? 0 : tokensIn) + batchResult.tokensIn();
-            }
-            if (batchResult.tokensOut() != null) {
-                tokensOut = (tokensOut == null ? 0 : tokensOut) + batchResult.tokensOut();
-            }
-            if (batchResult.costEstimate() != null) {
-                cost = cost.add(batchResult.costEstimate());
-            }
-            JsonNode summary = batchResult.resultSummary();
-            if (summary != null && summary.isObject()) {
-                if (templateId == null && summary.hasNonNull("templateId")) {
-                    templateId = summary.get("templateId").asText();
-                }
-                if (fieldsNode == null && summary.has("fields")) {
-                    fieldsNode = summary.get("fields");
-                }
-                totalCreated += summary.path("createdCards").asInt(0);
-                totalImages += summary.path("imagesGenerated").asInt(0);
-                totalTts += summary.path("ttsGenerated").asInt(0);
-                totalTtsChars += summary.path("ttsCharsGenerated").asInt(0);
-                if (ttsError == null && summary.hasNonNull("ttsError")) {
-                    ttsError = summary.get("ttsError").asText();
-                }
-                if (summary.has("items") && summary.get("items").isArray()) {
-                    summary.get("items").forEach(itemResults::add);
-                }
-            }
-            hasPartialFailures = hasPartialFailures || batchResult.finalStatus() == AiJobStatus.partial_success;
-            remaining -= count;
-            offset += count;
-        }
-
-        ObjectNode summary = objectMapper.createObjectNode();
-        summary.put("mode", MODE_GENERATE_CARDS);
-        summary.put("deckId", job.getDeckId().toString());
-        if (templateId != null) {
-            summary.put("templateId", templateId);
-        }
-        summary.put("requestedCards", items.size());
-        summary.put("createdCards", totalCreated);
-        if (totalImages > 0) {
-            summary.put("imagesGenerated", totalImages);
-        }
-        if (totalTts > 0) {
-            summary.put("ttsGenerated", totalTts);
-        }
-        if (totalTtsChars > 0) {
-            summary.put("ttsCharsGenerated", totalTtsChars);
-        }
-        if (ttsError != null) {
-            summary.put("ttsError", ttsError);
-        }
-        if (fieldsNode != null) {
-            summary.set("fields", fieldsNode);
-        }
-        if (!itemResults.isEmpty()) {
-            summary.set("items", itemResults);
-        }
-
-        return new AiJobProcessingResult(
-                summary,
-                PROVIDER,
-                model,
-                tokensIn,
-                tokensOut,
-                cost,
-                job.getInputHash(),
-                resolveFinalStatus(hasPartialFailures || ttsError != null)
-        );
+                                                                     boolean truncated,
+                                                                     String sharedContext) {
+        String accessToken = job.getUserAccessToken();
+        GenerationContext context = runStep(job, baseParams, STEP_PREPARE_CONTEXT, () -> prepareGenerationContext(job, baseParams, accessToken));
+        GeneratedDraftBatch generated = runStep(job, baseParams, STEP_GENERATE_CONTENT, () -> generateDraftsBatched(
+                job,
+                apiKey,
+                baseParams,
+                context,
+                items.size(),
+                batchSize,
+                (offset, count) -> buildImportGenerateItemsPrompt(
+                        items.subList(offset, offset + count),
+                        params,
+                        truncated,
+                        sharedContext,
+                        offset,
+                        items.size()
+                )
+        ));
+        return applyGeneratedDrafts(job, apiKey, baseParams, context, generated, items.size(), accessToken);
     }
 
     private String buildImportPreviewPrompt(AiImportContentService.ImportTextPayload payload, JsonNode params) {
@@ -625,14 +431,29 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         return builder.toString().trim();
     }
 
-    private String buildImportGenerateItemsPrompt(List<String> items, JsonNode params, boolean truncated) {
+    private String buildImportGenerateItemsPrompt(List<String> items,
+                                                  JsonNode params,
+                                                  boolean truncated,
+                                                  String sharedContext,
+                                                  int offset,
+                                                  int totalItems) {
         StringBuilder builder = new StringBuilder();
+        if (sharedContext != null && !sharedContext.isBlank()) {
+            builder.append(sharedContext).append("\n\n");
+        }
+        int batchStart = offset + 1;
+        int batchEnd = offset + items.size();
+        builder.append("You are generating flashcards from an ordered source. ");
+        builder.append("Keep terminology, chronology, and dependencies consistent with the shared source context. ");
+        builder.append("This batch covers items ").append(batchStart).append("-").append(batchEnd)
+                .append(" out of ").append(totalItems).append(". ");
         builder.append("Items to convert into flashcards (use each item exactly once):");
         for (int i = 0; i < items.size(); i++) {
-            builder.append("\n").append(i + 1).append(". ").append(items.get(i));
+            builder.append("\n").append(batchStart + i).append(". ").append(items.get(i));
         }
         builder.append("\nCreate one card per item. Use the item text verbatim in the most relevant field.");
         builder.append(" Do not invent new items or repeat any item.");
+        builder.append(" Preserve prerequisites, ordering, and technical details when the source is procedural.");
         String language = textOrNull(params.path("language"));
         if (language != null) {
             builder.append(" Language hint: ").append(language).append(".");
@@ -647,10 +468,14 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         return builder.toString().trim();
     }
 
-    private String buildImportGeneratePrompt(AiImportContentService.ImportTextPayload payload, JsonNode params) {
+    private String buildImportGeneratePrompt(JsonNode params, boolean truncated, String sharedContext) {
         StringBuilder builder = new StringBuilder();
-        builder.append("Source material:\n").append(payload.text()).append("\n\n");
-        builder.append("Create flashcards from this material. If a selected field is missing, infer or create a helpful value.");
+        if (sharedContext != null && !sharedContext.isBlank()) {
+            builder.append(sharedContext).append("\n\n");
+        }
+        builder.append("Create flashcards from this material. ");
+        builder.append("Preserve terminology, chronology, dependencies, and step ordering when they matter. ");
+        builder.append("If a selected field is missing, infer or create a helpful value.");
         String language = textOrNull(params.path("language"));
         if (language != null) {
             builder.append(" Language hint: ").append(language).append(".");
@@ -659,10 +484,62 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (instructions != null) {
             builder.append(" User instructions: ").append(instructions).append(".");
         }
-        if (payload.truncated()) {
+        if (truncated) {
             builder.append(" The source may be truncated.");
         }
         return builder.toString().trim();
+    }
+
+    private String buildImportSharedContext(AiImportContentService.ImportTextPayload payload,
+                                            List<String> items,
+                                            boolean localOllamaRequest) {
+        if (payload == null || payload.text() == null || payload.text().isBlank()) {
+            return "";
+        }
+        String text = payload.text().trim();
+        int fullBudget = localOllamaRequest ? LOCAL_IMPORT_FULL_CONTEXT_CHARS : REMOTE_IMPORT_FULL_CONTEXT_CHARS;
+        if (text.length() <= fullBudget) {
+            return "Shared source context:\n" + text;
+        }
+
+        int headBudget = localOllamaRequest ? LOCAL_IMPORT_EXCERPT_HEAD_CHARS : REMOTE_IMPORT_EXCERPT_HEAD_CHARS;
+        int tailBudget = localOllamaRequest ? LOCAL_IMPORT_EXCERPT_TAIL_CHARS : REMOTE_IMPORT_EXCERPT_TAIL_CHARS;
+        int outlineBudget = localOllamaRequest ? LOCAL_IMPORT_OUTLINE_CHARS : REMOTE_IMPORT_OUTLINE_CHARS;
+        StringBuilder builder = new StringBuilder();
+        builder.append("Shared source context (condensed to fit the local model context window):");
+        builder.append("\nBeginning excerpt:\n").append(text, 0, Math.min(headBudget, text.length()));
+        if (text.length() > headBudget + 50) {
+            int tailStart = Math.max(headBudget, text.length() - tailBudget);
+            builder.append("\n...\nEnding excerpt:\n").append(text.substring(tailStart));
+        }
+        String outline = buildImportItemOutline(items, outlineBudget);
+        if (!outline.isBlank()) {
+            builder.append("\nOrdered outline:\n").append(outline);
+        }
+        return builder.toString().trim();
+    }
+
+    private String buildImportItemOutline(List<String> items, int maxChars) {
+        if (items == null || items.isEmpty() || maxChars < 32) {
+            return "";
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < items.size(); i++) {
+            String entry = (i + 1) + ". " + items.get(i).trim();
+            int projected = builder.length() + entry.length() + 1;
+            if (projected > maxChars) {
+                if (!builder.isEmpty()) {
+                    builder.append('\n');
+                }
+                builder.append("... (").append(items.size() - i).append(" more items)");
+                break;
+            }
+            if (!builder.isEmpty()) {
+                builder.append('\n');
+            }
+            builder.append(entry);
+        }
+        return builder.toString();
     }
 
     private AiImportContentService.ImportTextPayload loadImportPayload(AiJobEntity job, String apiKey, JsonNode params) {
@@ -1675,92 +1552,175 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             throw new IllegalStateException("Deck id is required for card generation");
         }
         String accessToken = job.getUserAccessToken();
-        GenerationContext context = runStep(job, params, STEP_PREPARE_CONTEXT, () -> {
-            CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
-            if (deck.publicDeckId() == null) {
-                throw new IllegalStateException("Deck template not found");
-            }
-            CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
-            if (publicDeck.templateId() == null) {
-                throw new IllegalStateException("Template id not found");
-            }
-            Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
-            CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
-            String updateScope = resolveUpdateScope(job, deck, publicDeck, params);
-            int count = resolveCount(params);
-            List<String> allowedFields = resolveAllowedFields(params, template);
-            if (allowedFields.isEmpty()) {
-                throw new IllegalStateException("No supported fields to generate");
-            }
-            Map<String, String> fieldTypes = resolveFieldTypes(template);
-            CardNoveltyService.NoveltyIndex noveltyIndex = noveltyService.buildIndex(job.getDeckId(), accessToken, allowedFields);
-            return new GenerationContext(deck, publicDeck, template, updateScope, count, allowedFields, fieldTypes, noveltyIndex);
-        });
-
+        GenerationContext context = runStep(job, params, STEP_PREPARE_CONTEXT, () -> prepareGenerationContext(job, params, accessToken));
         String userPrompt = extractTextParam(params, "input", "prompt", "text");
+        GeneratedDraftBatch generated = runStep(job, params, STEP_GENERATE_CONTENT, () -> generateDrafts(
+                job,
+                apiKey,
+                params,
+                context,
+                context.count(),
+                userPrompt
+        ));
+        return applyGeneratedDrafts(job, apiKey, params, context, generated, context.count(), accessToken);
+    }
+
+    private GenerationContext prepareGenerationContext(AiJobEntity job, JsonNode params, String accessToken) {
+        CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
+        if (deck.publicDeckId() == null) {
+            throw new IllegalStateException("Deck template not found");
+        }
+        CorePublicDeckResponse publicDeck = coreApiClient.getPublicDeck(deck.publicDeckId(), deck.currentVersion());
+        if (publicDeck.templateId() == null) {
+            throw new IllegalStateException("Template id not found");
+        }
+        Integer templateVersion = deck.templateVersion() != null ? deck.templateVersion() : publicDeck.templateVersion();
+        CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
+        String updateScope = resolveUpdateScope(job, deck, publicDeck, params);
+        int count = resolveCount(params);
+        List<String> allowedFields = resolveAllowedFields(params, template);
+        if (allowedFields.isEmpty()) {
+            throw new IllegalStateException("No supported fields to generate");
+        }
+        Map<String, String> fieldTypes = resolveFieldTypes(template);
+        CardNoveltyService.NoveltyIndex noveltyIndex = noveltyService.buildIndex(job.getDeckId(), accessToken, allowedFields);
+        String fewShotExamples = buildFewShotExamples(job.getDeckId(), accessToken, allowedFields);
+        return new GenerationContext(deck, publicDeck, template, updateScope, count, allowedFields, fieldTypes, noveltyIndex, fewShotExamples);
+    }
+
+    private GeneratedDraftBatch generateDrafts(AiJobEntity job,
+                                               String apiKey,
+                                               JsonNode params,
+                                               GenerationContext context,
+                                               int requestedCount,
+                                               String userPrompt) {
         String model = textOrDefault(params.path("model"), props.defaultModel());
         Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
                 ? params.path("maxOutputTokens").asInt()
                 : null;
+        boolean localOllamaRequest = isLocalOllamaRequest(params);
+        List<CardDraft> uniqueDrafts = new ArrayList<>();
+        int droppedEmpty = 0;
+        int droppedExact = 0;
+        int droppedPrimary = 0;
+        int droppedSemantic = 0;
+        Integer totalTokensIn = null;
+        Integer totalTokensOut = null;
+        String responseModel = null;
 
-        GeneratedDraftBatch generated = runStep(job, params, STEP_GENERATE_CONTENT, () -> {
-            List<CardDraft> uniqueDrafts = new ArrayList<>();
-            int droppedEmpty = 0;
-            int droppedExact = 0;
-            int droppedPrimary = 0;
-            int droppedSemantic = 0;
-            OpenAiResponseResult response = null;
-
-            for (int attempt = 0; attempt < GENERATE_MAX_ATTEMPTS && uniqueDrafts.size() < context.count(); attempt++) {
-                int remaining = context.count() - uniqueDrafts.size();
-                boolean localOllamaRequest = isLocalOllamaRequest(params);
-                int candidateCount = resolveCandidateCount(remaining, attempt, localOllamaRequest);
-                String prompt = buildCardsPrompt(
-                        augmentGeneratePrompt(userPrompt, context.noveltyIndex(), attempt, localOllamaRequest),
-                        context.template(),
-                        context.publicDeck(),
-                        context.allowedFields(),
-                        candidateCount,
-                        job.getDeckId(),
-                        job.getUserAccessToken()
-                );
-                JsonNode responseFormat = buildCardsSchema(context.allowedFields(), candidateCount);
-
-                response = openAiClient.createResponse(
-                        apiKey,
-                        new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
-                );
-
-                JsonNode parsed = parseJsonResponse(response.outputText());
-                List<CardDraft> drafts = buildCardDrafts(parsed, context.allowedFields(), context.template(), context.fieldTypes());
-                CardNoveltyService.FilterResult<CardDraft> filtered = noveltyService.filterCandidates(
-                        drafts,
-                        CardDraft::content,
-                        context.allowedFields(),
-                        context.noveltyIndex(),
-                        remaining
-                );
-                uniqueDrafts.addAll(filtered.accepted());
-                droppedEmpty += filtered.droppedEmpty();
-                droppedExact += filtered.droppedExact();
-                droppedPrimary += filtered.droppedPrimary();
-                droppedSemantic += filtered.droppedSemantic();
-            }
-
-            if (uniqueDrafts.size() < context.count()) {
-                throw new IllegalStateException("Failed to generate enough unique cards. Try a more specific prompt.");
-            }
-
-            return new GeneratedDraftBatch(
-                    response,
-                    uniqueDrafts.stream().limit(context.count()).toList(),
-                    droppedEmpty,
-                    droppedExact,
-                    droppedPrimary,
-                    droppedSemantic
+        for (int attempt = 0; attempt < GENERATE_MAX_ATTEMPTS && uniqueDrafts.size() < requestedCount; attempt++) {
+            int remaining = requestedCount - uniqueDrafts.size();
+            int candidateCount = resolveCandidateCount(remaining, attempt, localOllamaRequest);
+            String prompt = buildCardsPrompt(
+                    augmentGeneratePrompt(userPrompt, context.noveltyIndex(), attempt, localOllamaRequest),
+                    context.template(),
+                    context.publicDeck(),
+                    context.allowedFields(),
+                    candidateCount,
+                    context.fewShotExamples()
             );
-        });
+            JsonNode responseFormat = buildCardsSchema(context.allowedFields(), candidateCount);
+            OpenAiResponseResult response = openAiClient.createResponse(
+                    apiKey,
+                    new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
+            );
+            responseModel = response.model();
+            totalTokensIn = sumNullable(totalTokensIn, response.inputTokens());
+            totalTokensOut = sumNullable(totalTokensOut, response.outputTokens());
 
+            JsonNode parsed = parseJsonResponse(response.outputText());
+            List<CardDraft> drafts = buildCardDrafts(parsed, context.allowedFields(), context.template(), context.fieldTypes());
+            CardNoveltyService.FilterResult<CardDraft> filtered = noveltyService.filterCandidates(
+                    drafts,
+                    CardDraft::content,
+                    context.allowedFields(),
+                    context.noveltyIndex(),
+                    remaining
+            );
+            uniqueDrafts.addAll(filtered.accepted());
+            droppedEmpty += filtered.droppedEmpty();
+            droppedExact += filtered.droppedExact();
+            droppedPrimary += filtered.droppedPrimary();
+            droppedSemantic += filtered.droppedSemantic();
+        }
+
+        if (uniqueDrafts.size() < requestedCount) {
+            throw new IllegalStateException("Failed to generate enough unique cards. Try a more specific prompt.");
+        }
+
+        return new GeneratedDraftBatch(
+                responseModel,
+                totalTokensIn,
+                totalTokensOut,
+                uniqueDrafts.stream().limit(requestedCount).toList(),
+                droppedEmpty,
+                droppedExact,
+                droppedPrimary,
+                droppedSemantic
+        );
+    }
+
+    private GeneratedDraftBatch generateDraftsBatched(AiJobEntity job,
+                                                      String apiKey,
+                                                      JsonNode params,
+                                                      GenerationContext context,
+                                                      int totalCount,
+                                                      int batchSize,
+                                                      BatchPromptFactory promptFactory) {
+        int remaining = totalCount;
+        int offset = 0;
+        List<CardDraft> drafts = new ArrayList<>();
+        int droppedEmpty = 0;
+        int droppedExact = 0;
+        int droppedPrimary = 0;
+        int droppedSemantic = 0;
+        Integer totalTokensIn = null;
+        Integer totalTokensOut = null;
+        String model = null;
+
+        while (remaining > 0) {
+            int count = Math.min(batchSize, remaining);
+            GeneratedDraftBatch batch = generateDrafts(
+                    job,
+                    apiKey,
+                    params,
+                    context,
+                    count,
+                    promptFactory.build(offset, count)
+            );
+            drafts.addAll(batch.drafts());
+            droppedEmpty += batch.droppedEmpty();
+            droppedExact += batch.droppedExact();
+            droppedPrimary += batch.droppedPrimary();
+            droppedSemantic += batch.droppedSemantic();
+            totalTokensIn = sumNullable(totalTokensIn, batch.inputTokens());
+            totalTokensOut = sumNullable(totalTokensOut, batch.outputTokens());
+            if (model == null) {
+                model = batch.model();
+            }
+            remaining -= count;
+            offset += count;
+        }
+
+        return new GeneratedDraftBatch(
+                model,
+                totalTokensIn,
+                totalTokensOut,
+                List.copyOf(drafts),
+                droppedEmpty,
+                droppedExact,
+                droppedPrimary,
+                droppedSemantic
+        );
+    }
+
+    private AiJobProcessingResult applyGeneratedDrafts(AiJobEntity job,
+                                                       String apiKey,
+                                                       JsonNode params,
+                                                       GenerationContext context,
+                                                       GeneratedDraftBatch generated,
+                                                       int requestedCount,
+                                                       String accessToken) {
         ImageConfig imageConfig = resolveImageConfig(params, true);
         VideoConfig videoConfig = resolveVideoConfig(params, true);
         DraftMediaPreparationResult draftMediaResult = runStep(job, params, STEP_GENERATE_MEDIA, () -> prepareDraftMedia(
@@ -1779,13 +1739,12 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 generated.drafts(),
                 context.template()
         ));
-        List<CreateCardRequestPayload> limitedRequests = generated.drafts().stream()
+        List<CreateCardRequestPayload> requests = generated.drafts().stream()
                 .map(draft -> new CreateCardRequestPayload(draft.content(), null, null, null, null, null))
                 .toList();
-
         List<CoreUserCardResponse> createdCards = runStep(job, params, STEP_APPLY_CHANGES, () -> coreApiClient.addCards(
                 job.getDeckId(),
-                limitedRequests,
+                requests,
                 accessToken,
                 job.getJobId()
         ));
@@ -1796,8 +1755,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         summary.put("mode", MODE_GENERATE_CARDS);
         summary.put("deckId", job.getDeckId().toString());
         summary.put("templateId", context.publicDeck().templateId().toString());
-        summary.put("requestedCards", context.count());
-        summary.put("createdCards", limitedRequests.size());
+        summary.put("requestedCards", requestedCount);
+        summary.put("createdCards", requests.size());
         summary.put("duplicatesSkippedExact", generated.droppedExact());
         summary.put("duplicatesSkippedPrimary", generated.droppedPrimary());
         summary.put("duplicatesSkippedSemantic", generated.droppedSemantic());
@@ -1828,15 +1787,25 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         return new AiJobProcessingResult(
                 summary,
                 PROVIDER,
-                generated.response().model(),
-                generated.response().inputTokens(),
-                generated.response().outputTokens(),
+                generated.model(),
+                generated.inputTokens(),
+                generated.outputTokens(),
                 BigDecimal.ZERO,
                 job.getInputHash(),
                 resolveFinalStatus(ttsResult.error() != null
                         || !ttsResult.cardErrors().isEmpty()
                         || !mediaResult.cardErrors().isEmpty())
         );
+    }
+
+    private Integer sumNullable(Integer left, Integer right) {
+        if (left == null) {
+            return right;
+        }
+        if (right == null) {
+            return left;
+        }
+        return left + right;
     }
 
     private AiJobProcessingResult handleTts(AiJobEntity job, String apiKey) {
@@ -2077,6 +2046,16 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private int resolveImportBatchSize(JsonNode params) {
         int fields = params.path("fields").isArray() ? params.path("fields").size() : 0;
+        if (isLocalOllamaRequest(params)) {
+            int localBatchSize = fields > 0 ? 24 / fields : LOCAL_IMPORT_MAX_BATCH;
+            if (localBatchSize < LOCAL_IMPORT_MIN_BATCH) {
+                localBatchSize = LOCAL_IMPORT_MIN_BATCH;
+            }
+            if (localBatchSize > LOCAL_IMPORT_MAX_BATCH) {
+                localBatchSize = LOCAL_IMPORT_MAX_BATCH;
+            }
+            return localBatchSize;
+        }
         int batchSize = fields > 0 ? 200 / fields : MAX_IMPORT_BATCH;
         if (batchSize < MIN_IMPORT_BATCH) {
             batchSize = MIN_IMPORT_BATCH;
@@ -2105,14 +2084,6 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         int fields = params != null && params.path("fields").isArray() ? params.path("fields").size() : 0;
         int batchSize = fields > 0 ? 30 / fields : 6;
         return Math.max(4, Math.min(batchSize, 8));
-    }
-
-    private String summarizeBatchError(Exception ex) {
-        if (ex == null || ex.getMessage() == null) {
-            return "Batch generation failed";
-        }
-        String message = ex.getMessage().replaceAll("[\\r\\n]+", " ").trim();
-        return message.length() > 500 ? message.substring(0, 500) + "..." : message;
     }
 
     private int resolveLimit(JsonNode node) {
@@ -3250,15 +3221,23 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                      int count,
                                      List<String> allowedFields,
                                      Map<String, String> fieldTypes,
-                                     CardNoveltyService.NoveltyIndex noveltyIndex) {
+                                     CardNoveltyService.NoveltyIndex noveltyIndex,
+                                     String fewShotExamples) {
     }
 
-    private record GeneratedDraftBatch(OpenAiResponseResult response,
+    private record GeneratedDraftBatch(String model,
+                                       Integer inputTokens,
+                                       Integer outputTokens,
                                        List<CardDraft> drafts,
                                        int droppedEmpty,
                                        int droppedExact,
                                        int droppedPrimary,
                                        int droppedSemantic) {
+    }
+
+    @FunctionalInterface
+    private interface BatchPromptFactory {
+        String build(int offset, int count);
     }
 
     private record MissingCardSelection(List<CoreUserCardResponse> cards,
@@ -3288,8 +3267,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                     CorePublicDeckResponse publicDeck,
                                     List<String> fields,
                                     int count,
-                                    UUID deckId,
-                                    String accessToken) {
+                                    String fewShotExamples) {
         String fieldList = String.join(", ", fields);
         StringBuilder builder = new StringBuilder();
         builder.append("You are generating flashcards for a deck template. ");
@@ -3337,9 +3315,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             }
         }
 
-        String examples = buildFewShotExamples(deckId, accessToken, fields);
-        if (!examples.isBlank()) {
-            builder.append("Examples from existing cards: ").append(examples).append(". ");
+        if (fewShotExamples != null && !fewShotExamples.isBlank()) {
+            builder.append("Examples from existing cards: ").append(fewShotExamples).append(". ");
         }
 
         if (userPrompt != null && !userPrompt.isBlank()) {

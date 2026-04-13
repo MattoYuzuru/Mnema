@@ -25,8 +25,10 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -190,6 +192,24 @@ class OpenAiJobProcessorTest {
     }
 
     @Test
+    void resolveImportBatchSizeKeepsLocalOllamaImportsSmall() throws Exception {
+        OpenAiJobProcessor processor = createProcessor();
+        ObjectNode params = OBJECT_MAPPER.createObjectNode();
+        params.put("provider", "ollama");
+        params.putArray("fields")
+                .add("front")
+                .add("back")
+                .add("hint")
+                .add("note");
+
+        Method resolveImportBatchSize = OpenAiJobProcessor.class.getDeclaredMethod("resolveImportBatchSize", JsonNode.class);
+        resolveImportBatchSize.setAccessible(true);
+        int batchSize = (int) resolveImportBatchSize.invoke(processor, params);
+
+        assertThat(batchSize).isEqualTo(6);
+    }
+
+    @Test
     void resolveCandidateCountKeepsLocalOllamaSchemaSmall() throws Exception {
         OpenAiJobProcessor processor = createProcessor();
 
@@ -277,6 +297,136 @@ class OpenAiJobProcessorTest {
 
         assertThat(credentialMethod.invoke(credentialSelection)).isNull();
         assertThat(apiKeyMethod.invoke(credentialSelection)).isEqualTo("");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void handleGenerateCardsMaybeBatchedAddsCardsOnceForLocalAtomicBatching() throws Exception {
+        OpenAiClient openAiClient = mock(OpenAiClient.class);
+        CoreApiClient coreApiClient = mock(CoreApiClient.class);
+        CardNoveltyService noveltyService = new CardNoveltyService(coreApiClient);
+        OpenAiJobProcessor processor = new OpenAiJobProcessor(
+                openAiClient,
+                new OpenAiProps(
+                        "https://api.openai.com/v1",
+                        "",
+                        "qwen3:4b",
+                        "gpt-4o-mini-tts",
+                        "alloy",
+                        "mp3",
+                        "gpt-4o-mini-transcribe",
+                        "gpt-image-1-mini",
+                        "1024x1024",
+                        "low",
+                        "natural",
+                        "png",
+                        "sora-2",
+                        5,
+                        "720p",
+                        60,
+                        12,
+                        5,
+                        2_000L,
+                        30_000L,
+                        10_000L,
+                        600_000L
+                ),
+                mock(SecretVault.class),
+                mock(AiProviderCredentialRepository.class),
+                mock(MediaApiClient.class),
+                mock(AiImportContentService.class),
+                mock(AudioChunkingService.class),
+                coreApiClient,
+                noveltyService,
+                OBJECT_MAPPER,
+                mock(AiJobExecutionService.class),
+                200_000
+        );
+
+        UUID deckId = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
+        UUID templateId = UUID.randomUUID();
+        ObjectNode params = OBJECT_MAPPER.createObjectNode();
+        params.put("__skipStepTracking", true);
+        params.put("provider", "ollama");
+        params.put("mode", "generate_cards");
+        params.put("count", 9);
+        params.putArray("fields").add("front").add("back");
+        params.put("input", "Generate atomic cards");
+        AiJobEntity job = createJob(params, AiJobType.generic);
+        job.setDeckId(deckId);
+        job.setUserAccessToken("token");
+
+        when(coreApiClient.getUserDeck(deckId, "token"))
+                .thenReturn(new CoreApiClient.CoreUserDeckResponse(deckId, publicDeckId, 1, 1));
+        when(coreApiClient.getPublicDeck(publicDeckId, 1))
+                .thenReturn(new CoreApiClient.CorePublicDeckResponse(
+                        publicDeckId,
+                        1,
+                        UUID.randomUUID(),
+                        "Deck",
+                        "Desc",
+                        "en",
+                        templateId,
+                        1
+                ));
+        when(coreApiClient.getTemplate(templateId, 1, "token"))
+                .thenReturn(new CoreApiClient.CoreTemplateResponse(
+                        templateId,
+                        1,
+                        1,
+                        "Basic",
+                        "",
+                        null,
+                        null,
+                        List.of(
+                                new CoreApiClient.CoreFieldTemplate(UUID.randomUUID(), "front", "Front", "text", true, true, 0),
+                                new CoreApiClient.CoreFieldTemplate(UUID.randomUUID(), "back", "Back", "text", true, false, 1)
+                        )
+                ));
+        when(coreApiClient.getUserCards(deckId, 1, 3, "token"))
+                .thenReturn(new CoreApiClient.CoreUserCardPage(List.of()));
+        when(coreApiClient.getUserCards(deckId, 1, 200, "token"))
+                .thenReturn(new CoreApiClient.CoreUserCardPage(List.of()));
+
+        AtomicInteger sequence = new AtomicInteger(1);
+        when(openAiClient.createResponse(any(), any())).thenAnswer(invocation -> {
+            OpenAiResponseRequest request = invocation.getArgument(1);
+            int count = request.responseFormat()
+                    .path("schema")
+                    .path("properties")
+                    .path("cards")
+                    .path("minItems")
+                    .asInt();
+            StringBuilder json = new StringBuilder("{\"cards\":[");
+            for (int i = 0; i < count; i++) {
+                if (i > 0) {
+                    json.append(',');
+                }
+                int id = sequence.getAndIncrement();
+                json.append("{\"fields\":{\"front\":\"Q").append(id).append("\",\"back\":\"A").append(id).append("\"}}");
+            }
+            json.append("]}");
+            return new OpenAiResponseResult(json.toString(), "qwen3:4b", 100, 50, OBJECT_MAPPER.createObjectNode());
+        });
+        when(coreApiClient.addCards(any(), any(), any(), any())).thenAnswer(invocation -> {
+            List<CoreApiClient.CreateCardRequestPayload> requests = invocation.getArgument(1);
+            return requests.stream()
+                    .map(request -> new CoreApiClient.CoreUserCardResponse(UUID.randomUUID(), null, true, request.content()))
+                    .toList();
+        });
+
+        Method handleGenerateCardsMaybeBatched = OpenAiJobProcessor.class.getDeclaredMethod(
+                "handleGenerateCardsMaybeBatched",
+                AiJobEntity.class,
+                String.class,
+                JsonNode.class
+        );
+        handleGenerateCardsMaybeBatched.setAccessible(true);
+        Object result = handleGenerateCardsMaybeBatched.invoke(processor, job, "", params);
+        assertThat(result).isInstanceOf(app.mnema.ai.service.AiJobProcessingResult.class);
+
+        verify(coreApiClient, times(1)).addCards(any(), any(), any(), any());
     }
 
     private static OpenAiJobProcessor createProcessor() {
