@@ -134,6 +134,94 @@ export interface AiJobResultResponse {
     steps: AiJobStepResponse[];
 }
 
+export interface AiResultItemSummary {
+    cardId?: string;
+    preview?: string;
+    status?: string;
+    completedStages?: string[];
+    errors?: string[];
+}
+
+export interface AiSourceCoverageSummary {
+    sourceItemsTotal?: number;
+    sourceItemsUsed?: number;
+    alteredSourceItems?: number;
+    missingSourceIndexes?: number[];
+    missingNumberedItems?: number[];
+}
+
+export interface AiQualityGateItemSummary {
+    draftIndex?: number;
+    decision?: string;
+    summary?: string;
+    issues?: string[];
+    focusFields?: string[];
+}
+
+export interface AiQualityGateSummary {
+    auditedDrafts?: number;
+    flaggedDrafts?: number;
+    repairRequested?: number;
+    repairedDrafts?: number;
+    finalFlaggedDrafts?: number;
+    qualityScore?: number;
+    model?: string;
+    warning?: string;
+    items?: AiQualityGateItemSummary[];
+    finalItems?: AiQualityGateItemSummary[];
+}
+
+export interface AiUsageCallSummary {
+    stage?: string;
+    attempt?: number;
+    requestedCount?: number;
+    candidateCount?: number;
+    model?: string;
+    inputTokens?: number;
+    outputTokens?: number;
+    cachedInputTokens?: number;
+    reasoningOutputTokens?: number;
+    durationMs?: number;
+}
+
+export interface AiUsageStageSummary {
+    inputTokens?: number;
+    outputTokens?: number;
+    requests?: number;
+    model?: string;
+    charsGenerated?: number;
+    imagesGenerated?: number;
+    videosGenerated?: number;
+    calls?: AiUsageCallSummary[];
+}
+
+export interface AiGenerationUsageSummary {
+    textGeneration?: AiUsageStageSummary;
+    draftAudit?: AiUsageStageSummary;
+    draftRepair?: AiUsageStageSummary;
+    draftFinalAudit?: AiUsageStageSummary;
+    tts?: AiUsageStageSummary;
+    media?: AiUsageStageSummary;
+}
+
+export interface AiStructuredJobResultSummary {
+    mode?: string;
+    createdCards?: number;
+    updatedCards?: number;
+    updated?: number;
+    candidates?: number;
+    requestedCards?: number;
+    ttsGenerated?: number;
+    ttsCharsGenerated?: number;
+    imagesGenerated?: number;
+    videosGenerated?: number;
+    sourceCoverage?: AiSourceCoverageSummary;
+    qualityGate?: AiQualityGateSummary;
+    usage?: AiGenerationUsageSummary;
+    fields?: string[];
+    items?: AiResultItemSummary[];
+}
+
 export interface AiImportPreviewRequest {
     requestId: string;
     deckId: string;

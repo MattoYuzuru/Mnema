@@ -565,6 +565,8 @@ APP_ENV=dev
 - [x] P2 slice: После repair выполнять final audit pass, считать quality score и отбрасывать явно битые/слишком короткие TTS-файлы до upload.
 - [ ] P2: Ввести eval-наборы на реальные import-кейсы, включая юридическую лексику, языковые пары, PDF/DOCX вырезки, OCR/STT шум и локальные модели.
 - [x] P2 slice: Добавить fixture-backed regression tests на реальные import quality кейсы с буквальными и смешанными переводами юридической лексики.
+- [x] P2 slice: Расширить fixture-backed import quality cases дополнительными сбойными юридическими терминами вроде `affidavit` и `discovery (legal process)`, чтобы quality gate ловил не только буквальные переводы, но и грубые смысловые подмены.
+- [x] UX slice: В deck AI job result panel показывать `qualityGate`, `sourceCoverage` и `usage` breakdown вместо сырого JSON, чтобы новые этапы и token accounting были видны в UI.
 
 #### Data / Quality
 - [ ] Больше e2e на критические пользовательские потоки.

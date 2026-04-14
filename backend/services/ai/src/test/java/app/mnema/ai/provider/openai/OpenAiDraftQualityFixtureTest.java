@@ -138,61 +138,56 @@ class OpenAiDraftQualityFixtureTest {
         when(openAiClient.createResponse(any(), any())).thenAnswer(invocation -> {
             OpenAiResponseRequest request = invocation.getArgument(1);
             String formatName = request.responseFormat().path("name").asText();
-            String body;
+            JsonNode body;
             if ("mnema_cards".equals(formatName)) {
-                StringBuilder json = new StringBuilder("{\"cards\":[");
+                ObjectNode json = OBJECT_MAPPER.createObjectNode();
+                var cards = json.putArray("cards");
                 for (int i = 0; i < fixtures.size(); i++) {
-                    if (i > 0) {
-                        json.append(',');
-                    }
                     FixtureCase fixture = fixtures.get(i);
                     int sourceIndex = i + 1;
-                    json.append("{")
-                            .append("\"sourceIndex\":").append(sourceIndex).append(",")
-                            .append("\"sourceText\":\"").append(fixture.sourceText()).append("\",")
-                            .append("\"fields\":{")
-                            .append("\"term\":\"").append(fixture.sourceText()).append("\",")
-                            .append("\"translation\":\"").append(fixture.badTranslation()).append("\",")
-                            .append("\"example\":\"Example ").append(sourceIndex).append("\"")
-                            .append("}}");
+                    ObjectNode card = cards.addObject();
+                    card.put("sourceIndex", sourceIndex);
+                    card.put("sourceText", fixture.sourceText());
+                    ObjectNode fields = card.putObject("fields");
+                    fields.put("term", fixture.sourceText());
+                    fields.put("translation", fixture.badTranslation());
+                    fields.put("example", "Example " + sourceIndex);
                 }
-                json.append("]}");
-                body = json.toString();
+                body = json;
             } else if ("mnema_draft_audit".equals(formatName)) {
-                StringBuilder json = new StringBuilder("{\"items\":[");
+                ObjectNode json = OBJECT_MAPPER.createObjectNode();
+                var items = json.putArray("items");
                 boolean repairedPass = draftAuditCalls.getAndIncrement() > 0;
                 for (int i = 0; i < fixtures.size(); i++) {
-                    if (i > 0) {
-                        json.append(',');
-                    }
                     FixtureCase fixture = fixtures.get(i);
+                    ObjectNode item = items.addObject();
+                    item.put("draftIndex", i);
                     if (repairedPass) {
-                        json.append("{\"draftIndex\":").append(i)
-                                .append(",\"decision\":\"accept\",\"summary\":\"fixed\",\"issues\":[],\"focusFields\":[]}");
+                        item.put("decision", "accept");
+                        item.put("summary", "fixed");
+                        item.putArray("issues");
+                        item.putArray("focusFields");
                     } else {
-                        json.append("{\"draftIndex\":").append(i)
-                                .append(",\"decision\":\"repair\",\"summary\":\"").append(fixture.issue()).append("\",")
-                                .append("\"issues\":[\"").append(fixture.issue()).append("\"],")
-                                .append("\"focusFields\":[\"translation\"]}");
+                        item.put("decision", "repair");
+                        item.put("summary", fixture.issue());
+                        item.putArray("issues").add(fixture.issue());
+                        item.putArray("focusFields").add("translation");
                     }
                 }
-                json.append("]}");
-                body = json.toString();
+                body = json;
             } else if ("mnema_draft_repair".equals(formatName)) {
-                StringBuilder json = new StringBuilder("{\"repairs\":[");
+                ObjectNode json = OBJECT_MAPPER.createObjectNode();
+                var repairs = json.putArray("repairs");
                 for (int i = 0; i < fixtures.size(); i++) {
-                    if (i > 0) {
-                        json.append(',');
-                    }
                     FixtureCase fixture = fixtures.get(i);
-                    json.append("{\"draftIndex\":").append(i).append(",\"fields\":{")
-                            .append("\"term\":\"").append(fixture.sourceText()).append("\",")
-                            .append("\"translation\":\"").append(fixture.goodTranslation()).append("\",")
-                            .append("\"example\":\"Example ").append(i + 1).append("\"")
-                            .append("}}");
+                    ObjectNode repair = repairs.addObject();
+                    repair.put("draftIndex", i);
+                    ObjectNode fields = repair.putObject("fields");
+                    fields.put("term", fixture.expectedTerm());
+                    fields.put("translation", fixture.goodTranslation());
+                    fields.put("example", "Example " + (i + 1));
                 }
-                json.append("]}");
-                body = json.toString();
+                body = json;
             } else {
                 throw new AssertionError("Unexpected response format: " + formatName);
             }
@@ -202,7 +197,7 @@ class OpenAiDraftQualityFixtureTest {
             usage.put("output_tokens", 50);
             usage.putObject("input_tokens_details").put("cached_tokens", 10);
             usage.putObject("output_tokens_details").put("reasoning_tokens", 5);
-            return new OpenAiResponseResult(body, "qwen3:4b", 100, 50, raw);
+            return new OpenAiResponseResult(body.toString(), "qwen3:4b", 100, 50, raw);
         });
 
         List<CoreApiClient.CreateCardRequestPayload> capturedRequests = new ArrayList<>();
@@ -226,6 +221,7 @@ class OpenAiDraftQualityFixtureTest {
 
         assertThat(capturedRequests).hasSize(fixtures.size());
         for (int i = 0; i < fixtures.size(); i++) {
+            assertThat(capturedRequests.get(i).content().path("term").asText()).isEqualTo(fixtures.get(i).expectedTerm());
             assertThat(capturedRequests.get(i).content().path("translation").asText()).isEqualTo(fixtures.get(i).goodTranslation());
         }
         assertThat(result.resultSummary().path("qualityGate").path("repairRequested").asInt()).isEqualTo(fixtures.size());
@@ -264,8 +260,14 @@ class OpenAiDraftQualityFixtureTest {
     }
 
     private record FixtureCase(String sourceText,
+                               String expectedTerm,
                                String badTranslation,
                                String goodTranslation,
                                String issue) {
+        private FixtureCase {
+            if (expectedTerm == null || expectedTerm.isBlank()) {
+                expectedTerm = sourceText;
+            }
+        }
     }
 }
