@@ -100,6 +100,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private static final long DEFAULT_TTS_RETRY_INITIAL_DELAY_MS = 2000L;
     private static final long DEFAULT_TTS_RETRY_MAX_DELAY_MS = 30000L;
     private static final int DEFAULT_VISION_MAX_OUTPUT_TOKENS = 800;
+    private static final int DEFAULT_SOURCE_NORMALIZATION_MAX_OUTPUT_TOKENS = 1500;
     private static final String STEP_LOAD_SOURCE = "load_source";
     private static final String STEP_PREPARE_CONTEXT = "prepare_context";
     private static final String STEP_ANALYZE_CONTENT = "analyze_content";
@@ -107,6 +108,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private static final String STEP_APPLY_CHANGES = "apply_changes";
     private static final String STEP_GENERATE_AUDIO = "generate_audio";
     private static final String STEP_GENERATE_MEDIA = "generate_media";
+    private static final String STAGE_SOURCE_NORMALIZATION = "source_normalization";
 
     private final OpenAiClient openAiClient;
     private final OpenAiProps props;
@@ -340,13 +342,15 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         boolean localOllamaRequest = isLocalOllamaRequest(params);
         ImportItemExtractor.ItemExtraction itemExtraction = ImportItemExtractor.extract(payload.text());
         List<ImportItemExtractor.SourceItem> items = itemExtraction.items();
-        String sharedContext = buildImportSharedContext(payload, items, localOllamaRequest);
 
         ObjectNode updatedParams = params.isObject()
                 ? ((ObjectNode) params).deepCopy()
                 : objectMapper.createObjectNode();
         updatedParams.put("mode", MODE_GENERATE_CARDS);
         updatedParams.put("countLimit", MAX_IMPORT_CARDS);
+        if (payload.extraction() != null) {
+            updatedParams.put("sourceExtraction", payload.extraction());
+        }
         int requested = params.path("count").isInt() ? params.path("count").asInt() : 10;
         int total = Math.min(Math.max(requested, 1), MAX_IMPORT_CARDS);
         int batchSize = resolveImportBatchSize(params);
@@ -354,18 +358,32 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             int available = Math.min(items.size(), MAX_IMPORT_CARDS);
             total = Math.min(total, available);
             List<ImportItemExtractor.SourceItem> requestedItems = items.subList(0, total);
+            String accessToken = job.getUserAccessToken();
+            PreparedImportGenerationContext prepared = runStep(job, updatedParams, STEP_PREPARE_CONTEXT, () -> prepareImportGenerationContext(
+                    job,
+                    apiKey,
+                    updatedParams,
+                    accessToken,
+                    payload,
+                    requestedItems,
+                    localOllamaRequest
+            ));
             return handleGenerateCardsBatchedForItems(
                     job,
                     apiKey,
                     updatedParams,
-                    requestedItems,
+                    prepared.context(),
+                    prepared.items(),
+                    prepared.sourceNormalizationResult(),
                     itemExtraction.missingNumbers(),
                     batchSize,
                     params,
                     payload.truncated(),
-                    sharedContext
+                    prepared.sharedContext(),
+                    accessToken
             );
         }
+        String sharedContext = buildImportSharedContext(payload, items, localOllamaRequest);
         updatedParams.put("input", buildImportGeneratePrompt(params, payload.truncated(), sharedContext));
         if (total <= batchSize) {
             updatedParams.put("count", total);
@@ -398,14 +416,15 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private AiJobProcessingResult handleGenerateCardsBatchedForItems(AiJobEntity job,
                                                                      String apiKey,
                                                                      ObjectNode baseParams,
+                                                                     GenerationContext context,
                                                                      List<ImportItemExtractor.SourceItem> items,
+                                                                     SourceNormalizationResult sourceNormalizationResult,
                                                                      List<Integer> missingNumbers,
                                                                      int batchSize,
                                                                      JsonNode params,
                                                                      boolean truncated,
-                                                                     String sharedContext) {
-        String accessToken = job.getUserAccessToken();
-        GenerationContext context = runStep(job, baseParams, STEP_PREPARE_CONTEXT, () -> prepareGenerationContext(job, baseParams, accessToken));
+                                                                     String sharedContext,
+                                                                     String accessToken) {
         GeneratedDraftBatch generated = runStep(job, baseParams, STEP_GENERATE_CONTENT, () -> generateDraftsBatchedForItems(
                 job,
                 apiKey,
@@ -419,7 +438,29 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 sharedContext
         ));
         GeneratedDraftBatch qualityChecked = maybeRunDraftQualityGate(job, apiKey, baseParams, context, generated);
+        if (sourceNormalizationResult != null) {
+            qualityChecked = withSourceNormalizationResult(qualityChecked, sourceNormalizationResult);
+        }
         return applyGeneratedDrafts(job, apiKey, baseParams, context, qualityChecked, items.size(), accessToken);
+    }
+
+    private PreparedImportGenerationContext prepareImportGenerationContext(AiJobEntity job,
+                                                                           String apiKey,
+                                                                           JsonNode params,
+                                                                           String accessToken,
+                                                                           AiImportContentService.ImportTextPayload payload,
+                                                                           List<ImportItemExtractor.SourceItem> items,
+                                                                           boolean localOllamaRequest) {
+        GenerationContext context = prepareGenerationContext(job, params, accessToken);
+        List<ImportItemExtractor.SourceItem> effectiveItems = items == null ? List.of() : List.copyOf(items);
+        SourceNormalizationResult normalizationResult = null;
+        if (isSourceNormalizationSupported(payload, effectiveItems)) {
+            NormalizedSourceItems normalized = normalizeImportSourceItems(apiKey, params, context, payload, effectiveItems, localOllamaRequest);
+            effectiveItems = normalized.items();
+            normalizationResult = normalized.result();
+        }
+        String sharedContext = buildImportSharedContext(payload, effectiveItems, localOllamaRequest);
+        return new PreparedImportGenerationContext(context, effectiveItems, sharedContext, normalizationResult);
     }
 
     private String buildImportPreviewPrompt(AiImportContentService.ImportTextPayload payload, JsonNode params) {
@@ -554,6 +595,207 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             builder.append(entry);
         }
         return builder.toString();
+    }
+
+    private boolean isSourceNormalizationSupported(AiImportContentService.ImportTextPayload payload,
+                                                   List<ImportItemExtractor.SourceItem> items) {
+        if (payload == null || items == null || items.isEmpty()) {
+            return false;
+        }
+        String extraction = normalize(payload.extraction());
+        return "ocr".equals(extraction) || "stt".equals(extraction);
+    }
+
+    private NormalizedSourceItems normalizeImportSourceItems(String apiKey,
+                                                            JsonNode params,
+                                                            GenerationContext context,
+                                                            AiImportContentService.ImportTextPayload payload,
+                                                            List<ImportItemExtractor.SourceItem> items,
+                                                            boolean localOllamaRequest) {
+        String extraction = normalize(payload == null ? null : payload.extraction());
+        String model = resolveSourceNormalizationModel(params);
+        String prompt = buildSourceNormalizationPrompt(params, context, payload, items, localOllamaRequest);
+        JsonNode responseFormat = buildSourceNormalizationResponseFormat();
+        long startedAtNs = System.nanoTime();
+        try {
+            OpenAiResponseResult response = openAiClient.createResponse(
+                    apiKey,
+                    new OpenAiResponseRequest(
+                            model,
+                            prompt,
+                            resolveSourceNormalizationMaxOutputTokens(items.size()),
+                            responseFormat
+                    )
+            );
+            UsageEvent usageEvent = buildUsageEvent(
+                    STAGE_SOURCE_NORMALIZATION,
+                    0,
+                    items.size(),
+                    items.size(),
+                    response,
+                    elapsedMillis(startedAtNs)
+            );
+            JsonNode parsed = parseJsonResponse(response.outputText());
+            List<ImportItemExtractor.SourceItem> normalizedItems = parseSourceNormalizationItems(parsed, items);
+            int normalizedCount = countNormalizedSourceItems(items, normalizedItems);
+            return new NormalizedSourceItems(
+                    normalizedItems,
+                    new SourceNormalizationResult(
+                            extraction,
+                            response.model(),
+                            items.size(),
+                            normalizedCount,
+                            List.of(usageEvent),
+                            normalizedCount == 0 ? "source normalization made no changes" : null
+                    )
+            );
+        } catch (Exception ex) {
+            LOGGER.warn("AI source normalization skipped extraction={} items={} reason={}", extraction, items.size(), summarizeError(ex));
+            return new NormalizedSourceItems(
+                    List.copyOf(items),
+                    new SourceNormalizationResult(
+                            extraction,
+                            model,
+                            items.size(),
+                            0,
+                            List.of(),
+                            summarizeError(ex)
+                    )
+            );
+        }
+    }
+
+    private String buildSourceNormalizationPrompt(JsonNode params,
+                                                  GenerationContext context,
+                                                  AiImportContentService.ImportTextPayload payload,
+                                                  List<ImportItemExtractor.SourceItem> items,
+                                                  boolean localOllamaRequest) {
+        StringBuilder builder = new StringBuilder();
+        builder.append("You are cleaning source terms extracted from noisy OCR or speech-to-text before flashcard generation. ");
+        builder.append("Fix only obvious OCR/STT corruption, casing, punctuation, spacing, or split/merged words. ");
+        builder.append("Do not translate, paraphrase, expand, or simplify the terms. ");
+        builder.append("If you are not confident a change is correct, keep the original text. ");
+        if (payload != null && hasText(payload.extraction())) {
+            builder.append("Extraction type: ").append(payload.extraction().trim()).append(". ");
+        }
+        if (context != null && context.publicDeck() != null && hasText(context.publicDeck().language())) {
+            builder.append("Deck language: ").append(context.publicDeck().language().trim()).append(". ");
+        }
+        String instructions = textOrNull(params.path("instructions"));
+        if (instructions != null) {
+            builder.append("User instructions: ").append(limitPromptText(instructions, 300)).append(". ");
+        }
+        String sharedContext = buildImportSharedContext(payload, items, localOllamaRequest);
+        if (!sharedContext.isBlank()) {
+            builder.append(sharedContext).append("\n\n");
+        }
+        builder.append("Items to normalize:");
+        for (ImportItemExtractor.SourceItem item : items) {
+            builder.append("\nsourceIndex=").append(item.sourceIndex()).append("; sourceText=").append(item.text());
+        }
+        builder.append("\nReturn JSON with an items array. ");
+        builder.append("Each item must contain sourceIndex and normalizedText. ");
+        builder.append("Preserve the exact sourceIndex values and include every item exactly once.");
+        return builder.toString().trim();
+    }
+
+    private JsonNode buildSourceNormalizationResponseFormat() {
+        ObjectNode schema = objectMapper.createObjectNode();
+        schema.put("type", "object");
+        schema.put("additionalProperties", false);
+        ObjectNode properties = schema.putObject("properties");
+        ObjectNode itemsNode = properties.putObject("items");
+        itemsNode.put("type", "array");
+        ObjectNode itemSchema = itemsNode.putObject("items");
+        itemSchema.put("type", "object");
+        itemSchema.put("additionalProperties", false);
+        ObjectNode itemProps = itemSchema.putObject("properties");
+        itemProps.putObject("sourceIndex").put("type", "integer");
+        itemProps.putObject("normalizedText").put("type", "string");
+        itemSchema.putArray("required").add("sourceIndex").add("normalizedText");
+        schema.putArray("required").add("items");
+
+        ObjectNode responseFormat = objectMapper.createObjectNode();
+        responseFormat.put("type", "json_schema");
+        responseFormat.put("name", "mnema_source_normalization");
+        responseFormat.set("schema", schema);
+        responseFormat.put("strict", true);
+        return responseFormat;
+    }
+
+    private Integer resolveSourceNormalizationMaxOutputTokens(int itemCount) {
+        return Math.max(500, Math.min(DEFAULT_SOURCE_NORMALIZATION_MAX_OUTPUT_TOKENS, Math.max(1, itemCount) * 80));
+    }
+
+    private String resolveSourceNormalizationModel(JsonNode params) {
+        String configured = textOrNull(params == null ? null : params.path("sourceNormalization").path("model"));
+        if (configured != null) {
+            return configured;
+        }
+        return textOrDefault(params == null ? null : params.path("model"), props.defaultModel());
+    }
+
+    private List<ImportItemExtractor.SourceItem> parseSourceNormalizationItems(JsonNode response,
+                                                                               List<ImportItemExtractor.SourceItem> originalItems) {
+        JsonNode itemsNode = response.path("items");
+        if (!itemsNode.isArray()) {
+            throw new IllegalStateException("AI response missing source normalization items");
+        }
+        Map<Integer, ImportItemExtractor.SourceItem> originalByIndex = new LinkedHashMap<>();
+        for (ImportItemExtractor.SourceItem item : originalItems) {
+            originalByIndex.put(item.sourceIndex(), item);
+        }
+        Map<Integer, ImportItemExtractor.SourceItem> normalizedByIndex = new LinkedHashMap<>();
+        for (JsonNode node : itemsNode) {
+            if (!node.path("sourceIndex").canConvertToInt()) {
+                throw new IllegalStateException("AI source normalization item missing sourceIndex");
+            }
+            int sourceIndex = node.path("sourceIndex").asInt();
+            ImportItemExtractor.SourceItem original = originalByIndex.get(sourceIndex);
+            if (original == null) {
+                throw new IllegalStateException("AI source normalization returned unexpected sourceIndex " + sourceIndex);
+            }
+            if (normalizedByIndex.containsKey(sourceIndex)) {
+                throw new IllegalStateException("AI source normalization duplicated sourceIndex " + sourceIndex);
+            }
+            String normalizedText = textOrNull(node.path("normalizedText"));
+            if (normalizedText == null || normalizedText.isBlank()) {
+                throw new IllegalStateException("AI source normalization returned blank text for sourceIndex " + sourceIndex);
+            }
+            String cleaned = MULTI_SPACE_PATTERN.matcher(normalizedText.trim()).replaceAll(" ");
+            normalizedByIndex.put(sourceIndex, new ImportItemExtractor.SourceItem(
+                    sourceIndex,
+                    original.lineNumber(),
+                    cleaned,
+                    ImportItemExtractor.normalizeKey(cleaned)
+            ));
+        }
+        List<ImportItemExtractor.SourceItem> normalized = new ArrayList<>();
+        for (ImportItemExtractor.SourceItem original : originalItems) {
+            ImportItemExtractor.SourceItem item = normalizedByIndex.get(original.sourceIndex());
+            if (item == null) {
+                throw new IllegalStateException("AI source normalization missed sourceIndex " + original.sourceIndex());
+            }
+            normalized.add(item);
+        }
+        return List.copyOf(normalized);
+    }
+
+    private int countNormalizedSourceItems(List<ImportItemExtractor.SourceItem> originalItems,
+                                           List<ImportItemExtractor.SourceItem> normalizedItems) {
+        if (originalItems == null || normalizedItems == null) {
+            return 0;
+        }
+        int count = Math.min(originalItems.size(), normalizedItems.size());
+        int changed = 0;
+        for (int i = 0; i < count; i++) {
+            String original = ImportItemExtractor.normalizeKey(originalItems.get(i).text());
+            String normalized = ImportItemExtractor.normalizeKey(normalizedItems.get(i).text());
+            if (!original.equals(normalized)) {
+                changed++;
+            }
+        }
+        return changed;
     }
 
     private AiImportContentService.ImportTextPayload loadImportPayload(AiJobEntity job, String apiKey, JsonNode params) {
@@ -819,6 +1061,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             normalized = normalized.substring(0, separator).trim();
         }
         return normalized;
+    }
+
+    private String normalize(String value) {
+        return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
 
     private JsonNode buildImportPreviewSchema(int maxCards) {
@@ -1690,6 +1936,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 droppedSemantic,
                 null,
                 List.copyOf(usageEvents),
+                null,
                 null
         );
     }
@@ -1766,6 +2013,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 droppedSemantic,
                 null,
                 List.copyOf(usageEvents),
+                null,
                 null
         );
     }
@@ -1833,6 +2081,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 0,
                 new SourceCoverage(items.size(), drafts.size(), List.of(), 0, missingNumbers == null ? List.of() : List.copyOf(missingNumbers)),
                 List.copyOf(usageEvents),
+                null,
                 null
         );
     }
@@ -1898,6 +2147,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                         0,
                         new SourceCoverage(sourceItems.size(), validation.orderedDrafts().size(), List.of(), 0, List.of()),
                         List.copyOf(usageEvents),
+                        null,
                         null
                 );
             }
@@ -1977,7 +2227,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     generated.droppedSemantic(),
                     generated.sourceCoverage(),
                     generated.usageEvents(),
-                    quality
+                    quality,
+                    generated.sourceNormalizationResult()
             );
         }
     }
@@ -2044,7 +2295,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 generated.droppedSemantic(),
                 generated.sourceCoverage(),
                 generated.usageEvents(),
-                quality
+                quality,
+                generated.sourceNormalizationResult()
         );
     }
 
@@ -2204,6 +2456,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (generated.sourceCoverage() != null) {
             summary.set("sourceCoverage", buildSourceCoverageNode(generated.sourceCoverage()));
         }
+        if (generated.sourceNormalizationResult() != null) {
+            summary.set("sourceNormalization", buildSourceNormalizationNode(generated.sourceNormalizationResult()));
+        }
         if (generated.qualityResult() != null) {
             summary.set("qualityGate", buildDraftQualityNode(generated.qualityResult()));
         }
@@ -2258,6 +2513,22 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         return node;
     }
 
+    private ObjectNode buildSourceNormalizationNode(SourceNormalizationResult normalization) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put("reviewedItems", normalization.reviewedItems());
+        node.put("normalizedItems", normalization.normalizedItems());
+        if (normalization.extraction() != null) {
+            node.put("extraction", normalization.extraction());
+        }
+        if (normalization.model() != null) {
+            node.put("model", normalization.model());
+        }
+        if (normalization.warning() != null) {
+            node.put("warning", normalization.warning());
+        }
+        return node;
+    }
+
     private ObjectNode buildGenerationUsageDetails(GeneratedDraftBatch generated,
                                                    TtsApplyResult ttsResult,
                                                    MediaApplyResult mediaResult) {
@@ -2265,6 +2536,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (generated != null) {
             ObjectNode textNode = details.putObject("textGeneration");
             populateUsageStageNode(textNode, generated.usageEvents());
+            if (generated.sourceNormalizationResult() != null && !generated.sourceNormalizationResult().usageEvents().isEmpty()) {
+                ObjectNode normalizationNode = details.putObject("sourceNormalization");
+                populateUsageStageNode(normalizationNode, generated.sourceNormalizationResult().usageEvents());
+                if (generated.sourceNormalizationResult().model() != null) {
+                    normalizationNode.put("model", generated.sourceNormalizationResult().model());
+                }
+            }
             if (generated.qualityResult() != null && !generated.qualityResult().auditUsageEvents().isEmpty()) {
                 ObjectNode auditNode = details.putObject("draftAudit");
                 populateUsageStageNode(auditNode, generated.qualityResult().auditUsageEvents());
@@ -2301,6 +2579,27 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             mediaNode.put("videosGenerated", mediaResult.videosGenerated());
         }
         return details;
+    }
+
+    private GeneratedDraftBatch withSourceNormalizationResult(GeneratedDraftBatch batch,
+                                                              SourceNormalizationResult sourceNormalizationResult) {
+        if (batch == null) {
+            return null;
+        }
+        return new GeneratedDraftBatch(
+                batch.model(),
+                batch.inputTokens(),
+                batch.outputTokens(),
+                batch.drafts(),
+                batch.droppedEmpty(),
+                batch.droppedExact(),
+                batch.droppedPrimary(),
+                batch.droppedSemantic(),
+                batch.sourceCoverage(),
+                batch.usageEvents(),
+                batch.qualityResult(),
+                sourceNormalizationResult
+        );
     }
 
     private void populateUsageStageNode(ObjectNode node, List<UsageEvent> events) {
@@ -4089,7 +4388,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                        int droppedSemantic,
                                        SourceCoverage sourceCoverage,
                                        List<UsageEvent> usageEvents,
-                                       DraftQualityResult qualityResult) {
+                                       DraftQualityResult qualityResult,
+                                       SourceNormalizationResult sourceNormalizationResult) {
     }
 
     private record UsageEvent(String stage,
@@ -4109,6 +4409,18 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                   List<Integer> missingSourceIndexes,
                                   int alteredSourceItems,
                                   List<Integer> missingNumberedItems) {
+    }
+
+    private record SourceNormalizationResult(String extraction,
+                                             String model,
+                                             int reviewedItems,
+                                             int normalizedItems,
+                                             List<UsageEvent> usageEvents,
+                                             String warning) {
+    }
+
+    private record NormalizedSourceItems(List<ImportItemExtractor.SourceItem> items,
+                                         SourceNormalizationResult result) {
     }
 
     private record SourceDraftValidation(boolean valid,
@@ -4159,6 +4471,12 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                       List<DraftQualityItem> finalItems,
                                       List<UsageEvent> finalAuditUsageEvents,
                                       String warning) {
+    }
+
+    private record PreparedImportGenerationContext(GenerationContext context,
+                                                   List<ImportItemExtractor.SourceItem> items,
+                                                   String sharedContext,
+                                                   SourceNormalizationResult sourceNormalizationResult) {
     }
 
     @FunctionalInterface

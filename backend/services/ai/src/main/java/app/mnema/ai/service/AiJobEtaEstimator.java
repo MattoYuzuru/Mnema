@@ -197,10 +197,14 @@ public class AiJobEtaEstimator {
         boolean imageEnabled = isGenerationEnabled(params.path("image"));
         boolean videoEnabled = isGenerationEnabled(params.path("video"));
         int audioRequests = Math.max(1, targetCount * resolveAudioMappingCount(params));
+        boolean noisySourceNormalization = isNoisySourceNormalizationRequested(mode, params);
 
         return switch (normalizedStep) {
             case "load_source" -> estimateLoadSourceSeconds(params);
-            case "prepare_context" -> 4 + Math.min(targetCount, 20) * ("generate_cards".equals(mode) ? 2 : 1) + Math.max(0, fieldCount - 1);
+            case "prepare_context" -> 4
+                    + Math.min(targetCount, 20) * ("generate_cards".equals(mode) ? 2 : 1)
+                    + Math.max(0, fieldCount - 1)
+                    + (noisySourceNormalization ? 8 + Math.min(targetCount, 20) : 0);
             case "analyze_content" -> 8 + Math.min(targetCount, 20) * 2;
             case "generate_content" -> estimateGenerateContentSeconds(mode, targetCount, fieldCount, provider, params);
             case "generate_media" -> estimateGenerateMediaSeconds(params, targetCount, imageEnabled, videoEnabled);
@@ -223,6 +227,14 @@ public class AiJobEtaEstimator {
             case "image", "png", "jpg", "jpeg" -> seconds + 8;
             default -> seconds;
         };
+    }
+
+    private boolean isNoisySourceNormalizationRequested(String mode, JsonNode params) {
+        if (!"import_generate".equals(mode) && !"generate_cards".equals(mode)) {
+            return false;
+        }
+        String extraction = normalize(params.path("sourceExtraction").asText(null));
+        return "ocr".equals(extraction) || "stt".equals(extraction);
     }
 
     private int estimateGenerateContentSeconds(String mode, int targetCount, int fieldCount, String provider, JsonNode params) {

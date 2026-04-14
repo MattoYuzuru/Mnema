@@ -139,6 +139,25 @@ class AiJobEtaEstimatorTest {
     }
 
     @Test
+    void estimatePlannedAccountsForOcrSourceNormalization() {
+        ObjectNode cleanParams = objectMapper.createObjectNode();
+        cleanParams.put("mode", "import_generate");
+        cleanParams.put("count", 12);
+        cleanParams.put("sourceMediaId", UUID.randomUUID().toString());
+        cleanParams.put("sourceExtraction", "pdf");
+        cleanParams.putArray("fields").add("term").add("translation").add("example");
+
+        ObjectNode noisyParams = cleanParams.deepCopy();
+        noisyParams.put("sourceExtraction", "ocr");
+        when(jobRepository.countRunnableJobs(any(List.class), any(Instant.class))).thenReturn(0L);
+
+        AiJobEtaEstimator.EtaEstimate cleanEta = estimator.estimatePlanned(AiJobType.generic, cleanParams, "openai");
+        AiJobEtaEstimator.EtaEstimate noisyEta = estimator.estimatePlanned(AiJobType.generic, noisyParams, "openai");
+
+        assertThat(noisyEta.estimatedSecondsRemaining()).isNotNull().isGreaterThan(cleanEta.estimatedSecondsRemaining());
+    }
+
+    @Test
     void estimateProcessingTracksMixedStepStatuses() {
         AiJobEntity job = new AiJobEntity();
         job.setJobId(UUID.randomUUID());

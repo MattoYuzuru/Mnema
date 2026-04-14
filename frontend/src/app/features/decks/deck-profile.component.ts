@@ -27,6 +27,7 @@ import {
     AiQualityGateSummary,
     AiResultItemSummary,
     AiSourceCoverageSummary,
+    AiSourceNormalizationSummary,
     AiStructuredJobResultSummary,
     AiUsageStageSummary
 } from '../../core/models/ai.models';
@@ -396,6 +397,28 @@ import { ToastService } from '../../core/services/toast.service';
                       <span class="ai-job-inline-label">Missing numbered items</span>
                       <span class="ai-job-stage-chip">{{ coverage.missingNumberedItems?.join(', ') }}</span>
                     </div>
+                  </div>
+
+                  <div *ngIf="getAiResultSourceNormalization(result) as normalization" class="ai-job-panel">
+                    <div class="ai-job-items-header">
+                      <div class="ai-job-items-title">Source normalization</div>
+                      <div *ngIf="normalization.model" class="ai-job-items-count">{{ normalization.model }}</div>
+                    </div>
+                    <div class="ai-job-summary-grid">
+                      <div class="ai-job-metric">
+                        <span>Reviewed</span>
+                        <strong>{{ normalization.reviewedItems ?? 0 }}</strong>
+                      </div>
+                      <div class="ai-job-metric">
+                        <span>Normalized</span>
+                        <strong>{{ normalization.normalizedItems ?? 0 }}</strong>
+                      </div>
+                      <div class="ai-job-metric" *ngIf="normalization.extraction">
+                        <span>Extraction</span>
+                        <strong>{{ normalization.extraction }}</strong>
+                      </div>
+                    </div>
+                    <div *ngIf="normalization.warning" class="ai-job-warning">{{ normalization.warning }}</div>
                   </div>
 
                   <ng-container *ngIf="getAiResultUsageStages(result) as usageStages">
@@ -2258,6 +2281,10 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         return this.getStructuredAiResult(result)?.sourceCoverage || null;
     }
 
+    getAiResultSourceNormalization(result: unknown): AiSourceNormalizationSummary | null {
+        return this.getStructuredAiResult(result)?.sourceNormalization || null;
+    }
+
     getAiResultQualityGate(result: unknown): AiQualityGateSummary | null {
         return this.getStructuredAiResult(result)?.qualityGate || null;
     }
@@ -2277,7 +2304,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
             return [];
         }
         const stages: Array<{ key: string; label: string; summary: AiUsageStageSummary }> = [];
-        const stageKeys: Array<keyof AiGenerationUsageSummary> = ['textGeneration', 'draftAudit', 'draftRepair', 'draftFinalAudit', 'tts', 'media'];
+        const stageKeys: Array<keyof AiGenerationUsageSummary> = ['textGeneration', 'sourceNormalization', 'draftAudit', 'draftRepair', 'draftFinalAudit', 'tts', 'media'];
         for (const key of stageKeys) {
             const summary = usage[key];
             if (!summary || typeof summary !== 'object' || !this.hasUsageStageSignal(summary)) {
@@ -2499,6 +2526,8 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         switch (stage) {
             case 'textGeneration':
                 return 'Text generation';
+            case 'sourceNormalization':
+                return 'Source normalization';
             case 'draftAudit':
                 return 'Draft audit';
             case 'draftRepair':

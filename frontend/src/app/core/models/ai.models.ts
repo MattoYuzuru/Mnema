@@ -150,6 +150,14 @@ export interface AiSourceCoverageSummary {
     missingNumberedItems?: number[];
 }
 
+export interface AiSourceNormalizationSummary {
+    extraction?: string;
+    reviewedItems?: number;
+    normalizedItems?: number;
+    model?: string;
+    warning?: string;
+}
+
 export interface AiQualityGateItemSummary {
     draftIndex?: number;
     decision?: string;
@@ -197,6 +205,7 @@ export interface AiUsageStageSummary {
 
 export interface AiGenerationUsageSummary {
     textGeneration?: AiUsageStageSummary;
+    sourceNormalization?: AiUsageStageSummary;
     draftAudit?: AiUsageStageSummary;
     draftRepair?: AiUsageStageSummary;
     draftFinalAudit?: AiUsageStageSummary;
@@ -216,6 +225,7 @@ export interface AiStructuredJobResultSummary {
     imagesGenerated?: number;
     videosGenerated?: number;
     sourceCoverage?: AiSourceCoverageSummary;
+    sourceNormalization?: AiSourceNormalizationSummary;
     qualityGate?: AiQualityGateSummary;
     usage?: AiGenerationUsageSummary;
     fields?: string[];

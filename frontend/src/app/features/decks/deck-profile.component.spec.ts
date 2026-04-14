@@ -102,6 +102,12 @@ describe('DeckProfileComponent', () => {
                 missingSourceIndexes: [],
                 missingNumberedItems: [5]
             },
+            sourceNormalization: {
+                extraction: 'ocr',
+                reviewedItems: 6,
+                normalizedItems: 2,
+                model: 'qwen3:32b'
+            },
             usage: {
                 textGeneration: {
                     requests: 2,
@@ -118,6 +124,12 @@ describe('DeckProfileComponent', () => {
                     outputTokens: 48,
                     calls: [{ durationMs: 900 }]
                 },
+                sourceNormalization: {
+                    requests: 1,
+                    inputTokens: 30,
+                    outputTokens: 12,
+                    calls: [{ durationMs: 400 }]
+                },
                 tts: {
                     requests: 6,
                     charsGenerated: 240
@@ -127,8 +139,9 @@ describe('DeckProfileComponent', () => {
 
         expect(component.getAiResultQualityGate(result)?.qualityScore).toBe(94);
         expect(component.getAiResultSourceCoverage(result)?.missingNumberedItems).toEqual([5]);
+        expect(component.getAiResultSourceNormalization(result)?.normalizedItems).toBe(2);
         expect(component.getAiQualityReviewItems(result)).toHaveSize(1);
-        expect(component.getAiResultUsageStages(result).map(stage => stage.key)).toEqual(['textGeneration', 'draftAudit', 'tts']);
+        expect(component.getAiResultUsageStages(result).map(stage => stage.key)).toEqual(['textGeneration', 'sourceNormalization', 'draftAudit', 'tts']);
         expect(component.resolveUsageCachedTokens(component.getAiResultUsageStages(result)[0].summary)).toBe(60);
         expect(component.resolveUsageReasoningTokens(component.getAiResultUsageStages(result)[0].summary)).toBe(20);
         expect(component.resolveUsageDurationMs(component.getAiResultUsageStages(result)[0].summary)).toBe(2_000);
