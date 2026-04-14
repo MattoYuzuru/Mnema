@@ -437,6 +437,9 @@ public class AiJobEtaEstimator {
             steps.add("prepare_context");
         }
         steps.add("generate_content");
+        if (isDraftQualityGateEnabled(mode, params)) {
+            steps.add("analyze_content");
+        }
         if (imageEnabled || videoEnabled) {
             steps.add("generate_media");
         }
@@ -479,6 +482,17 @@ public class AiJobEtaEstimator {
 
     private boolean hasText(String value) {
         return value != null && !value.isBlank();
+    }
+
+    private boolean isDraftQualityGateEnabled(String mode, JsonNode params) {
+        if (!"generate_cards".equals(mode) && !"import_generate".equals(mode)) {
+            return false;
+        }
+        JsonNode qualityGate = params == null ? null : params.path("qualityGate");
+        if (qualityGate != null && qualityGate.isObject() && qualityGate.has("enabled")) {
+            return qualityGate.path("enabled").asBoolean(false);
+        }
+        return true;
     }
 
     private String normalize(String value) {

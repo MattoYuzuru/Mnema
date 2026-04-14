@@ -561,6 +561,7 @@ APP_ENV=dev
 - [ ] P1: Вынести rate-limit wrapper для всех AI провайдеров: RPM/TPM buckets, `Retry-After`, exponential backoff with jitter, split-batch-on-timeout и checkpoint после успешного batch.
 - [x] P1 slice: Вынести общий retry/backoff wrapper для text/vision response-вызовов OpenAI-compatible, Claude, Gemini, Grok и Qwen с учетом `Retry-After` и retryable transport failures.
 - [ ] P2: Добавить draft -> audit -> repair контур: отдельная проверка фактической корректности, переводов, доменной терминологии, примеров, медиа-промптов и audio quality перед финальным apply.
+- [x] P2 slice: Для OpenAI-compatible/local `generate_cards` и `import_generate` добавить pre-apply draft quality gate: отдельный audit pass, targeted repair pass по проблемным draft-ам и запись `draftAudit`/`draftRepair` usage в `result_summary`.
 - [ ] P2: Ввести eval-наборы на реальные import-кейсы, включая юридическую лексику, языковые пары, PDF/DOCX вырезки, OCR/STT шум и локальные модели.
 
 #### Data / Quality
