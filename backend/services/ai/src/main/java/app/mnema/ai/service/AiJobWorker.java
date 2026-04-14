@@ -223,7 +223,8 @@ public class AiJobWorker {
                     resolvedCost,
                     result.provider(),
                     result.model(),
-                    resolvePromptHash(job, result)
+                    resolvePromptHash(job, result),
+                    result.usageDetails()
             );
         }
         jobRepository.save(job);

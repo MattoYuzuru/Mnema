@@ -1615,6 +1615,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         Integer totalTokensIn = null;
         Integer totalTokensOut = null;
         String responseModel = null;
+        List<UsageEvent> usageEvents = new ArrayList<>();
 
         for (int attempt = 0; attempt < GENERATE_MAX_ATTEMPTS && uniqueDrafts.size() < requestedCount; attempt++) {
             int remaining = requestedCount - uniqueDrafts.size();
@@ -1631,13 +1632,23 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     localOllamaRequest
             );
             JsonNode responseFormat = buildCardsSchema(context.allowedFields(), candidateCount);
+            long startedAtNs = System.nanoTime();
             OpenAiResponseResult response = openAiClient.createResponse(
                     apiKey,
                     new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
             );
+            long durationMs = elapsedMillis(startedAtNs);
             responseModel = response.model();
             totalTokensIn = sumNullable(totalTokensIn, response.inputTokens());
             totalTokensOut = sumNullable(totalTokensOut, response.outputTokens());
+            usageEvents.add(buildUsageEvent(
+                    STEP_GENERATE_CONTENT,
+                    attempt,
+                    remaining,
+                    candidateCount,
+                    response,
+                    durationMs
+            ));
 
             JsonNode parsed = parseJsonResponse(response.outputText());
             List<CardDraft> drafts = buildCardDrafts(parsed, context.allowedFields(), context.template(), context.fieldTypes());
@@ -1668,7 +1679,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 droppedExact,
                 droppedPrimary,
                 droppedSemantic,
-                null
+                null,
+                List.copyOf(usageEvents)
         );
     }
 
@@ -1700,6 +1712,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         Integer totalTokensIn = null;
         Integer totalTokensOut = null;
         String model = null;
+        List<UsageEvent> usageEvents = new ArrayList<>();
 
         while (remaining > 0) {
             int count = Math.min(batchSize, remaining);
@@ -1719,6 +1732,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             droppedSemantic += batch.droppedSemantic();
             totalTokensIn = sumNullable(totalTokensIn, batch.inputTokens());
             totalTokensOut = sumNullable(totalTokensOut, batch.outputTokens());
+            usageEvents.addAll(batch.usageEvents());
             if (model == null) {
                 model = batch.model();
             }
@@ -1735,7 +1749,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 droppedExact,
                 droppedPrimary,
                 droppedSemantic,
-                null
+                null,
+                List.copyOf(usageEvents)
         );
     }
 
@@ -1755,6 +1770,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         Integer totalTokensIn = null;
         Integer totalTokensOut = null;
         String model = null;
+        List<UsageEvent> usageEvents = new ArrayList<>();
 
         while (remaining > 0) {
             int count = Math.min(batchSize, remaining);
@@ -1777,6 +1793,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             drafts.addAll(batch.drafts());
             totalTokensIn = sumNullable(totalTokensIn, batch.inputTokens());
             totalTokensOut = sumNullable(totalTokensOut, batch.outputTokens());
+            usageEvents.addAll(batch.usageEvents());
             if (model == null) {
                 model = batch.model();
             }
@@ -1793,7 +1810,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 0,
                 0,
                 0,
-                new SourceCoverage(items.size(), drafts.size(), List.of(), 0, missingNumbers == null ? List.of() : List.copyOf(missingNumbers))
+                new SourceCoverage(items.size(), drafts.size(), List.of(), 0, missingNumbers == null ? List.of() : List.copyOf(missingNumbers)),
+                List.copyOf(usageEvents)
         );
     }
 
@@ -1812,6 +1830,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         Integer totalTokensOut = null;
         String responseModel = null;
         SourceDraftValidation lastValidation = null;
+        List<UsageEvent> usageEvents = new ArrayList<>();
 
         for (int attempt = 0; attempt < GENERATE_MAX_ATTEMPTS; attempt++) {
             String prompt = buildCardsPrompt(
@@ -1824,13 +1843,23 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     localOllamaRequest
             );
             JsonNode responseFormat = buildCardsSchema(context.allowedFields(), sourceItems.size(), true);
+            long startedAtNs = System.nanoTime();
             OpenAiResponseResult response = openAiClient.createResponse(
                     apiKey,
                     new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
             );
+            long durationMs = elapsedMillis(startedAtNs);
             responseModel = response.model();
             totalTokensIn = sumNullable(totalTokensIn, response.inputTokens());
             totalTokensOut = sumNullable(totalTokensOut, response.outputTokens());
+            usageEvents.add(buildUsageEvent(
+                    STEP_GENERATE_CONTENT,
+                    attempt,
+                    sourceItems.size(),
+                    sourceItems.size(),
+                    response,
+                    durationMs
+            ));
 
             JsonNode parsed = parseJsonResponse(response.outputText());
             List<CardDraft> drafts = buildCardDrafts(parsed, context.allowedFields(), context.template(), context.fieldTypes(), true);
@@ -1845,7 +1874,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                         0,
                         0,
                         0,
-                        new SourceCoverage(sourceItems.size(), validation.orderedDrafts().size(), List.of(), 0, List.of())
+                        new SourceCoverage(sourceItems.size(), validation.orderedDrafts().size(), List.of(), 0, List.of()),
+                        List.copyOf(usageEvents)
                 );
             }
             lastValidation = validation;
@@ -1921,6 +1951,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (generated.sourceCoverage() != null) {
             summary.set("sourceCoverage", buildSourceCoverageNode(generated.sourceCoverage()));
         }
+        ObjectNode usageDetails = buildGenerationUsageDetails(generated, ttsResult, mediaResult);
+        if (!usageDetails.isEmpty()) {
+            summary.set("usage", usageDetails);
+        }
         ArrayNode fieldsNode = summary.putArray("fields");
         for (String field : context.allowedFields()) {
             fieldsNode.add(field);
@@ -1937,7 +1971,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 job.getInputHash(),
                 resolveFinalStatus(ttsResult.error() != null
                         || !ttsResult.cardErrors().isEmpty()
-                        || !mediaResult.cardErrors().isEmpty())
+                        || !mediaResult.cardErrors().isEmpty()),
+                usageDetails.isEmpty() ? null : usageDetails
         );
     }
 
@@ -1965,6 +2000,94 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             coverage.missingNumberedItems().forEach(missingNumbers::add);
         }
         return node;
+    }
+
+    private ObjectNode buildGenerationUsageDetails(GeneratedDraftBatch generated,
+                                                   TtsApplyResult ttsResult,
+                                                   MediaApplyResult mediaResult) {
+        ObjectNode details = objectMapper.createObjectNode();
+        if (generated != null) {
+            ObjectNode textNode = details.putObject("textGeneration");
+            textNode.put("inputTokens", nullToZero(generated.inputTokens()));
+            textNode.put("outputTokens", nullToZero(generated.outputTokens()));
+            textNode.put("requests", generated.usageEvents() == null ? 0 : generated.usageEvents().size());
+            ArrayNode calls = textNode.putArray("calls");
+            if (generated.usageEvents() != null) {
+                for (UsageEvent event : generated.usageEvents()) {
+                    calls.add(buildUsageEventNode(event));
+                }
+            }
+        }
+        if (ttsResult != null && ttsResult.generated() > 0) {
+            ObjectNode ttsNode = details.putObject("tts");
+            ttsNode.put("requests", ttsResult.generated());
+            ttsNode.put("charsGenerated", ttsResult.charsGenerated());
+            if (ttsResult.model() != null) {
+                ttsNode.put("model", ttsResult.model());
+            }
+        }
+        if (mediaResult != null && (mediaResult.imagesGenerated() > 0 || mediaResult.videosGenerated() > 0)) {
+            ObjectNode mediaNode = details.putObject("media");
+            mediaNode.put("imagesGenerated", mediaResult.imagesGenerated());
+            mediaNode.put("videosGenerated", mediaResult.videosGenerated());
+        }
+        return details;
+    }
+
+    private ObjectNode buildUsageEventNode(UsageEvent event) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put("stage", event.stage());
+        node.put("attempt", event.attempt());
+        node.put("requestedCount", event.requestedCount());
+        node.put("candidateCount", event.candidateCount());
+        if (event.model() != null) {
+            node.put("model", event.model());
+        }
+        node.put("inputTokens", nullToZero(event.inputTokens()));
+        node.put("outputTokens", nullToZero(event.outputTokens()));
+        node.put("cachedInputTokens", nullToZero(event.cachedInputTokens()));
+        node.put("reasoningOutputTokens", nullToZero(event.reasoningOutputTokens()));
+        node.put("durationMs", event.durationMs());
+        return node;
+    }
+
+    private UsageEvent buildUsageEvent(String stage,
+                                       int attempt,
+                                       int requestedCount,
+                                       int candidateCount,
+                                       OpenAiResponseResult response,
+                                       long durationMs) {
+        JsonNode usage = response == null || response.raw() == null
+                ? null
+                : response.raw().path("usage");
+        return new UsageEvent(
+                stage,
+                attempt,
+                requestedCount,
+                candidateCount,
+                response == null ? null : response.model(),
+                response == null ? null : response.inputTokens(),
+                response == null ? null : response.outputTokens(),
+                readNestedInt(usage, "input_tokens_details", "cached_tokens"),
+                readNestedInt(usage, "output_tokens_details", "reasoning_tokens"),
+                durationMs
+        );
+    }
+
+    private Integer readNestedInt(JsonNode node, String objectField, String intField) {
+        if (node == null || node.isMissingNode() || node.isNull()) {
+            return null;
+        }
+        JsonNode value = node.path(objectField).path(intField);
+        return value.canConvertToInt() ? value.asInt() : null;
+    }
+
+    private int nullToZero(Integer value) {
+        return value == null ? 0 : Math.max(value, 0);
+    }
+
+    private long elapsedMillis(long startedAtNs) {
+        return Math.max(0L, java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedAtNs));
     }
 
     private AiJobProcessingResult handleTts(AiJobEntity job, String apiKey) {
@@ -3395,7 +3518,20 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                        int droppedExact,
                                        int droppedPrimary,
                                        int droppedSemantic,
-                                       SourceCoverage sourceCoverage) {
+                                       SourceCoverage sourceCoverage,
+                                       List<UsageEvent> usageEvents) {
+    }
+
+    private record UsageEvent(String stage,
+                              int attempt,
+                              int requestedCount,
+                              int candidateCount,
+                              String model,
+                              Integer inputTokens,
+                              Integer outputTokens,
+                              Integer cachedInputTokens,
+                              Integer reasoningOutputTokens,
+                              long durationMs) {
     }
 
     private record SourceCoverage(int sourceItemsTotal,

@@ -554,7 +554,9 @@ APP_ENV=dev
 - [x] P0: Не применять item-by-line контракт к PDF/DOCX/учебниковым вырезкам и другому связному материалу, если источник не распознан как список; такие источники остаются в режиме генерации из свободного материала.
 - [x] P0: Чистить markdown/html/URL из текста перед TTS, чтобы короткие карточки озвучивались нейтральнее и без служебного мусора.
 - [ ] P1: Писать в `result_summary` и usage ledger расширенный breakdown: text input/output tokens, cached/reasoning tokens, per-batch usage, TTS chars/requests, image/video request counts.
+- [x] P1 slice: Для OpenAI-compatible/local card generation писать text generation request breakdown, cached/reasoning tokens, durationMs, TTS chars/requests и media counts в `result_summary.usage` и `ai_usage_ledger.details`.
 - [ ] P1: Перейти от step-based ETA к weighted progress по единицам работы: content batches, audit/repair batches, TTS requests, image/video requests, rolling average per provider/model.
+- [x] P1 slice: Уточнить ETA для local/OpenAI-compatible `import_generate`/`generate_cards`, учитывая batch size, число полей и локальный throughput; исправить planned import steps для `import_generate`.
 - [ ] P1: Вынести rate-limit wrapper для всех AI провайдеров: RPM/TPM buckets, `Retry-After`, exponential backoff with jitter, split-batch-on-timeout и checkpoint после успешного batch.
 - [ ] P2: Добавить draft -> audit -> repair контур: отдельная проверка фактической корректности, переводов, доменной терминологии, примеров, медиа-промптов и audio quality перед финальным apply.
 - [ ] P2: Ввести eval-наборы на реальные import-кейсы, включая юридическую лексику, языковые пары, PDF/DOCX вырезки, OCR/STT шум и локальные модели.

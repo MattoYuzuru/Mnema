@@ -89,7 +89,7 @@ class AiDomainModelTest {
         quota.setCostLimit(BigDecimal.ONE);
         assertThat(quota.getCostLimit()).isEqualByComparingTo(BigDecimal.ONE);
 
-        AiUsageLedgerEntity ledger = new AiUsageLedgerEntity(1L, requestId, jobId, userId, "openai", "gpt", 12, 34, BigDecimal.ONE, "hash", now);
+        AiUsageLedgerEntity ledger = new AiUsageLedgerEntity(1L, requestId, jobId, userId, "openai", "gpt", 12, 34, BigDecimal.ONE, "hash", objectMapper.createObjectNode().put("requests", 1), now);
         assertThat(ledger.getId()).isEqualTo(1L);
         assertThat(ledger.getRequestId()).isEqualTo(requestId);
         assertThat(ledger.getJobId()).isEqualTo(jobId);
@@ -100,6 +100,7 @@ class AiDomainModelTest {
         assertThat(ledger.getTokensOut()).isEqualTo(34);
         assertThat(ledger.getCostEstimate()).isEqualByComparingTo(BigDecimal.ONE);
         assertThat(ledger.getPromptHash()).isEqualTo("hash");
+        assertThat(ledger.getDetails().path("requests").asInt()).isEqualTo(1);
         assertThat(ledger.getCreatedAt()).isEqualTo(now);
         ledger.setId(2L);
         ledger.setRequestId(UUID.randomUUID());
@@ -111,6 +112,7 @@ class AiDomainModelTest {
         ledger.setTokensOut(2);
         ledger.setCostEstimate(BigDecimal.TEN);
         ledger.setPromptHash("hash-2");
+        ledger.setDetails(objectMapper.createObjectNode().put("requests", 2));
         ledger.setCreatedAt(now.plusSeconds(1));
         assertThat(ledger.getId()).isEqualTo(2L);
         assertThat(ledger.getProvider()).isEqualTo("gemini");
@@ -119,6 +121,7 @@ class AiDomainModelTest {
         assertThat(ledger.getTokensOut()).isEqualTo(2);
         assertThat(ledger.getCostEstimate()).isEqualByComparingTo(BigDecimal.TEN);
         assertThat(ledger.getPromptHash()).isEqualTo("hash-2");
+        assertThat(ledger.getDetails().path("requests").asInt()).isEqualTo(2);
         assertThat(ledger.getCreatedAt()).isEqualTo(now.plusSeconds(1));
 
         AiJobStepEntity step = new AiJobStepEntity(jobId, "generate", AiJobStepStatus.completed, now, now.plusSeconds(5), null);

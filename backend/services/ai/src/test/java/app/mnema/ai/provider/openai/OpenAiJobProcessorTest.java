@@ -419,7 +419,13 @@ class OpenAiJobProcessorTest {
                 json.append("{\"fields\":{\"front\":\"Q").append(id).append("\",\"back\":\"A").append(id).append("\"}}");
             }
             json.append("]}");
-            return new OpenAiResponseResult(json.toString(), "qwen3:4b", 100, 50, OBJECT_MAPPER.createObjectNode());
+            ObjectNode raw = OBJECT_MAPPER.createObjectNode();
+            ObjectNode usage = raw.putObject("usage");
+            usage.put("input_tokens", 100);
+            usage.put("output_tokens", 50);
+            usage.putObject("input_tokens_details").put("cached_tokens", 10);
+            usage.putObject("output_tokens_details").put("reasoning_tokens", 5);
+            return new OpenAiResponseResult(json.toString(), "qwen3:4b", 100, 50, raw);
         });
         when(coreApiClient.addCards(any(), any(), any(), any())).thenAnswer(invocation -> {
             List<CoreApiClient.CreateCardRequestPayload> requests = invocation.getArgument(1);
@@ -619,7 +625,13 @@ class OpenAiJobProcessorTest {
                         .append("}}");
             }
             json.append("]}");
-            return new OpenAiResponseResult(json.toString(), "qwen3:4b", 100, 50, OBJECT_MAPPER.createObjectNode());
+            ObjectNode raw = OBJECT_MAPPER.createObjectNode();
+            ObjectNode usage = raw.putObject("usage");
+            usage.put("input_tokens", 100);
+            usage.put("output_tokens", 50);
+            usage.putObject("input_tokens_details").put("cached_tokens", 10);
+            usage.putObject("output_tokens_details").put("reasoning_tokens", 5);
+            return new OpenAiResponseResult(json.toString(), "qwen3:4b", 100, 50, raw);
         });
         when(coreApiClient.addCards(any(), any(), any(), any())).thenAnswer(invocation -> {
             List<CoreApiClient.CreateCardRequestPayload> requests = invocation.getArgument(1);
@@ -643,6 +655,10 @@ class OpenAiJobProcessorTest {
         app.mnema.ai.service.AiJobProcessingResult processingResult = (app.mnema.ai.service.AiJobProcessingResult) result;
         assertThat(processingResult.resultSummary().path("sourceCoverage").path("sourceItemsTotal").asInt()).isEqualTo(8);
         assertThat(processingResult.resultSummary().path("sourceCoverage").path("sourceItemsUsed").asInt()).isEqualTo(8);
+        assertThat(processingResult.resultSummary().path("usage").path("textGeneration").path("requests").asInt()).isEqualTo(2);
+        assertThat(processingResult.resultSummary().path("usage").path("textGeneration").path("inputTokens").asInt()).isEqualTo(200);
+        assertThat(processingResult.resultSummary().path("usage").path("textGeneration").path("calls").get(0).path("cachedInputTokens").asInt()).isEqualTo(10);
+        assertThat(processingResult.usageDetails().path("textGeneration").path("calls").get(0).path("reasoningOutputTokens").asInt()).isEqualTo(5);
         verify(coreApiClient, times(1)).addCards(any(), any(), any(), any());
     }
 

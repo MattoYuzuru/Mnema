@@ -119,6 +119,26 @@ class AiJobEtaEstimatorTest {
     }
 
     @Test
+    void estimatePlannedUsesSlowerLocalImportContentThroughput() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", "import_generate");
+        params.put("count", 40);
+        params.put("sourceMediaId", UUID.randomUUID().toString());
+        params.putArray("fields")
+                .add("term")
+                .add("translation")
+                .add("example")
+                .add("note")
+                .add("audio");
+        when(jobRepository.countRunnableJobs(any(List.class), any(Instant.class))).thenReturn(0L);
+
+        AiJobEtaEstimator.EtaEstimate localEta = estimator.estimatePlanned(AiJobType.generic, params, "ollama");
+        AiJobEtaEstimator.EtaEstimate openAiEta = estimator.estimatePlanned(AiJobType.generic, params, "openai");
+
+        assertThat(localEta.estimatedSecondsRemaining()).isNotNull().isGreaterThan(openAiEta.estimatedSecondsRemaining());
+    }
+
+    @Test
     void estimateProcessingTracksMixedStepStatuses() {
         AiJobEntity job = new AiJobEntity();
         job.setJobId(UUID.randomUUID());

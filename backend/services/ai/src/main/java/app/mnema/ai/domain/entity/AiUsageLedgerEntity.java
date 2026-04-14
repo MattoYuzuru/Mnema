@@ -1,11 +1,14 @@
 package app.mnema.ai.domain.entity;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.time.Instant;
@@ -47,6 +50,10 @@ public class AiUsageLedgerEntity {
     @Column(name = "prompt_hash")
     private String promptHash;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "details", columnDefinition = "jsonb")
+    private JsonNode details;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
 
@@ -63,6 +70,7 @@ public class AiUsageLedgerEntity {
                                Integer tokensOut,
                                BigDecimal costEstimate,
                                String promptHash,
+                               JsonNode details,
                                Instant createdAt) {
         this.id = id;
         this.requestId = requestId;
@@ -74,6 +82,7 @@ public class AiUsageLedgerEntity {
         this.tokensOut = tokensOut;
         this.costEstimate = costEstimate;
         this.promptHash = promptHash;
+        this.details = details;
         this.createdAt = createdAt;
     }
 
@@ -155,6 +164,14 @@ public class AiUsageLedgerEntity {
 
     public void setPromptHash(String promptHash) {
         this.promptHash = promptHash;
+    }
+
+    public JsonNode getDetails() {
+        return details;
+    }
+
+    public void setDetails(JsonNode details) {
+        this.details = details;
     }
 
     public Instant getCreatedAt() {

@@ -4,6 +4,8 @@ import app.mnema.ai.domain.entity.AiJobEntity;
 import app.mnema.ai.domain.type.AiJobStatus;
 import app.mnema.ai.domain.type.AiJobType;
 import app.mnema.ai.repository.AiJobRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -68,15 +70,19 @@ class AiJobWorkerTest {
         job.setLockedAt(Instant.now());
         job.setLockedBy("worker-1");
         job.setInputHash("hash-1");
+        ObjectMapper objectMapper = new ObjectMapper();
+        ObjectNode usageDetails = objectMapper.createObjectNode().put("requests", 1);
 
         AiJobProcessingResult result = new AiJobProcessingResult(
-                new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("ok", true),
+                objectMapper.createObjectNode().put("ok", true),
                 "openai",
                 "gpt-4o",
                 12,
                 34,
                 BigDecimal.ONE,
-                "prompt-hash"
+                "prompt-hash",
+                AiJobStatus.completed,
+                usageDetails
         );
 
         when(costEstimator.estimateRecordedCost(job, result)).thenReturn(BigDecimal.ONE);
@@ -88,7 +94,7 @@ class AiJobWorkerTest {
         assertThat(job.getLockedAt()).isNull();
         assertThat(job.getLockedBy()).isNull();
         assertThat(job.getCompletedAt()).isNotNull();
-        verify(usageLedgerService).recordUsage(job.getRequestId(), job.getJobId(), job.getUserId(), 12, 34, BigDecimal.ONE, "openai", "gpt-4o", "prompt-hash");
+        verify(usageLedgerService).recordUsage(job.getRequestId(), job.getJobId(), job.getUserId(), 12, 34, BigDecimal.ONE, "openai", "gpt-4o", "prompt-hash", usageDetails);
         verify(jobRepository).save(job);
     }
 
@@ -123,7 +129,7 @@ class AiJobWorkerTest {
         worker.markFailed(canceled, new IllegalStateException("boom"));
 
         verify(jobRepository, never()).save(any());
-        verify(usageLedgerService, never()).recordUsage(any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(usageLedgerService, never()).recordUsage(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
 
         Method heartbeatMethod = AiJobWorker.class.getDeclaredMethod("resolveHeartbeatIntervalMs");
         heartbeatMethod.setAccessible(true);
