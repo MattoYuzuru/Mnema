@@ -397,6 +397,15 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                              ObjectNode baseParams,
                                                              int totalCount,
                                                              int batchSize) {
+        return handleGenerateCardsBatched(job, apiKey, baseParams, totalCount, batchSize, batchSize);
+    }
+
+    private AiJobProcessingResult handleGenerateCardsBatched(AiJobEntity job,
+                                                             String apiKey,
+                                                             ObjectNode baseParams,
+                                                             int totalCount,
+                                                             int batchSize,
+                                                             int initialBatchSize) {
         String accessToken = job.getUserAccessToken();
         GenerationContext context = runStep(job, baseParams, STEP_PREPARE_CONTEXT, () -> prepareGenerationContext(job, baseParams, accessToken));
         String userPrompt = extractTextParam(baseParams, "input", "prompt", "text");
@@ -407,6 +416,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 context,
                 totalCount,
                 batchSize,
+                initialBatchSize,
                 (offset, count) -> userPrompt
         ));
         GeneratedDraftBatch qualityChecked = maybeRunDraftQualityGate(job, apiKey, baseParams, context, generated);
@@ -1950,7 +1960,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                       int totalCount,
                                                       int batchSize,
                                                       BatchPromptFactory promptFactory) {
-        return generateDraftsBatched(job, apiKey, params, context, totalCount, batchSize, promptFactory, true);
+        return generateDraftsBatched(job, apiKey, params, context, totalCount, batchSize, batchSize, promptFactory, true);
     }
 
     private GeneratedDraftBatch generateDraftsBatched(AiJobEntity job,
@@ -1959,6 +1969,28 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                       GenerationContext context,
                                                       int totalCount,
                                                       int batchSize,
+                                                      int initialBatchSize,
+                                                      BatchPromptFactory promptFactory) {
+        return generateDraftsBatched(
+                job,
+                apiKey,
+                params,
+                context,
+                totalCount,
+                batchSize,
+                initialBatchSize,
+                promptFactory,
+                true
+        );
+    }
+
+    private GeneratedDraftBatch generateDraftsBatched(AiJobEntity job,
+                                                      String apiKey,
+                                                      JsonNode params,
+                                                      GenerationContext context,
+                                                      int totalCount,
+                                                      int batchSize,
+                                                      int initialBatchSize,
                                                       BatchPromptFactory promptFactory,
                                                       boolean expandCandidateCount) {
         int remaining = totalCount;
@@ -1974,7 +2006,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         List<UsageEvent> usageEvents = new ArrayList<>();
 
         while (remaining > 0) {
-            int count = Math.min(batchSize, remaining);
+            int currentBatchSize = offset == 0
+                    ? Math.max(1, Math.min(initialBatchSize, batchSize))
+                    : batchSize;
+            int count = Math.min(currentBatchSize, remaining);
             GeneratedDraftBatch batch = generateDrafts(
                     job,
                     apiKey,
@@ -3057,8 +3092,12 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private AiJobProcessingResult handleGenerateCardsMaybeBatched(AiJobEntity job, String apiKey, JsonNode params) {
         int total = resolveCount(params);
+        if (!isLocalOllamaRequest(params)) {
+            return handleGenerateCards(job, apiKey, params);
+        }
         int batchSize = resolveLocalGenerateBatchSize(params);
-        if (!isLocalOllamaRequest(params) || total <= batchSize) {
+        int initialBatchSize = resolveLocalGenerateInitialBatchSize(params, batchSize);
+        if (total <= initialBatchSize) {
             return handleGenerateCards(job, apiKey, params);
         }
 
@@ -3066,13 +3105,21 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 ? ((ObjectNode) params).deepCopy()
                 : objectMapper.createObjectNode();
         batchedParams.put("count", total);
-        return handleGenerateCardsBatched(job, apiKey, batchedParams, total, batchSize);
+        return handleGenerateCardsBatched(job, apiKey, batchedParams, total, batchSize, initialBatchSize);
     }
 
     private int resolveLocalGenerateBatchSize(JsonNode params) {
         int fields = params != null && params.path("fields").isArray() ? params.path("fields").size() : 0;
         int batchSize = fields > 0 ? 30 / fields : 6;
         return Math.max(4, Math.min(batchSize, 8));
+    }
+
+    private int resolveLocalGenerateInitialBatchSize(JsonNode params, int batchSize) {
+        int safeBatchSize = Math.max(1, batchSize);
+        int fields = params != null && params.path("fields").isArray() ? params.path("fields").size() : 0;
+        int initialBatchSize = fields > 0 ? 20 / fields : 4;
+        initialBatchSize = Math.max(3, Math.min(initialBatchSize, 4));
+        return Math.min(initialBatchSize, safeBatchSize);
     }
 
     private int resolveLimit(JsonNode node) {

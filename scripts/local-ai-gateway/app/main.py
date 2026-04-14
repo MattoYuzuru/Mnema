@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, Response
 app = FastAPI(title="Mnema Local AI Gateway", version="1.0.0")
 LOGGER = logging.getLogger("mnema.local_ai_gateway")
 
-TIMEOUT_SECONDS = float(os.getenv("GATEWAY_TIMEOUT_SECONDS", "600"))
+TIMEOUT_SECONDS = float(os.getenv("GATEWAY_TIMEOUT_SECONDS", "570"))
 HTTP_TIMEOUT = httpx.Timeout(connect=10.0, read=TIMEOUT_SECONDS, write=TIMEOUT_SECONDS, pool=TIMEOUT_SECONDS)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
 REMOTE_OPENAI_BASE_URL = os.getenv("REMOTE_OPENAI_BASE_URL", "https://api.openai.com").strip().rstrip("/")

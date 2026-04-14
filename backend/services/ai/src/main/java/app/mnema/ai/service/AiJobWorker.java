@@ -237,22 +237,42 @@ public class AiJobWorker {
         }
         Instant now = Instant.now();
         int attempts = job.getAttempts() == null ? 1 : job.getAttempts() + 1;
+        String errorSummary = ex == null ? "Job failed" : ex.getClass().getSimpleName();
+        AiJobStatus nextStatus = attempts < maxAttempts ? AiJobStatus.queued : AiJobStatus.failed;
+        Instant nextRunAt = nextStatus == AiJobStatus.queued ? now.plusMillis(computeBackoff(attempts)) : null;
+        Instant completedAt = nextStatus == AiJobStatus.failed ? now : null;
+
         job.setAttempts(attempts);
         job.setLockedAt(null);
         job.setLockedBy(null);
         job.setUpdatedAt(now);
-        String errorSummary = ex == null ? "Job failed" : ex.getClass().getSimpleName();
         job.setErrorMessage(errorSummary);
+        job.setStatus(nextStatus);
+        job.setNextRunAt(nextRunAt);
+        job.setCompletedAt(completedAt);
 
-        if (attempts < maxAttempts) {
-            job.setStatus(AiJobStatus.queued);
-            job.setNextRunAt(now.plusMillis(computeBackoff(attempts)));
-        } else {
-            job.setStatus(AiJobStatus.failed);
-            job.setCompletedAt(now);
-            job.setNextRunAt(null);
-        }
-        jobRepository.save(job);
+        jdbcTemplate.update(
+                """
+                update app_ai.ai_jobs
+                set attempts = ?,
+                    status = ?,
+                    next_run_at = ?,
+                    completed_at = ?,
+                    error_message = ?,
+                    locked_at = null,
+                    locked_by = null,
+                    updated_at = ?
+                where job_id = ?
+                  and status <> 'canceled'
+                """,
+                attempts,
+                nextStatus.name(),
+                nextRunAt,
+                completedAt,
+                errorSummary,
+                now,
+                job.getJobId()
+        );
     }
 
     private long computeBackoff(int attempts) {
