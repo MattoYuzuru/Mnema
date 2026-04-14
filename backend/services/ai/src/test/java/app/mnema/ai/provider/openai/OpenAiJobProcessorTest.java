@@ -224,6 +224,17 @@ class OpenAiJobProcessorTest {
     }
 
     @Test
+    void sanitizeTtsTextStripsMarkdownAndUrls() throws Exception {
+        OpenAiJobProcessor processor = createProcessor();
+        Method sanitizeTtsText = OpenAiJobProcessor.class.getDeclaredMethod("sanitizeTtsText", String.class);
+        sanitizeTtsText.setAccessible(true);
+
+        String sanitized = (String) sanitizeTtsText.invoke(processor, "**subpoena** [link](https://example.test) `note`");
+
+        assertThat(sanitized).isEqualTo("subpoena link note");
+    }
+
+    @Test
     void resolveCredentialSkipsUserOpenAiKeysForLocalOllamaRequests() throws Exception {
         AiProviderCredentialRepository credentialRepository = mock(AiProviderCredentialRepository.class);
         UUID userId = UUID.randomUUID();
@@ -561,6 +572,17 @@ class OpenAiJobProcessorTest {
                 .thenReturn(new CoreApiClient.CoreUserCardPage(List.of()));
 
         List<Integer> schemaCounts = new ArrayList<>();
+        List<Boolean> schemaHasSourceTracking = new ArrayList<>();
+        String[] sourceTerms = {
+                "subpoena",
+                "plaintiff",
+                "bailiff",
+                "deposition",
+                "affidavit",
+                "injunction",
+                "paralegal",
+                "pro bono"
+        };
         AtomicInteger sequence = new AtomicInteger(1);
         when(openAiClient.createResponse(any(), any())).thenAnswer(invocation -> {
             OpenAiResponseRequest request = invocation.getArgument(1);
@@ -571,14 +593,25 @@ class OpenAiJobProcessorTest {
                     .path("minItems")
                     .asInt();
             schemaCounts.add(count);
+            schemaHasSourceTracking.add(request.responseFormat()
+                    .path("schema")
+                    .path("properties")
+                    .path("cards")
+                    .path("items")
+                    .path("properties")
+                    .has("sourceIndex"));
             StringBuilder json = new StringBuilder("{\"cards\":[");
             for (int i = 0; i < count; i++) {
                 if (i > 0) {
                     json.append(',');
                 }
                 int id = sequence.getAndIncrement();
-                json.append("{\"fields\":{")
-                        .append("\"markdown\":\"term ").append(id).append("\",")
+                String sourceText = sourceTerms[id - 1];
+                json.append("{")
+                        .append("\"sourceIndex\":").append(id).append(",")
+                        .append("\"sourceText\":\"").append(sourceText).append("\",")
+                        .append("\"fields\":{")
+                        .append("\"markdown\":\"").append(sourceText).append("\",")
                         .append("\"markdown_2\":\"translation ").append(id).append("\",")
                         .append("\"markdown_3\":\"example ").append(id).append("\",")
                         .append("\"markdown_4\":\"note ").append(id).append("\",")
@@ -606,6 +639,10 @@ class OpenAiJobProcessorTest {
         assertThat(result).isInstanceOf(app.mnema.ai.service.AiJobProcessingResult.class);
 
         assertThat(schemaCounts).containsExactly(4, 4);
+        assertThat(schemaHasSourceTracking).containsExactly(true, true);
+        app.mnema.ai.service.AiJobProcessingResult processingResult = (app.mnema.ai.service.AiJobProcessingResult) result;
+        assertThat(processingResult.resultSummary().path("sourceCoverage").path("sourceItemsTotal").asInt()).isEqualTo(8);
+        assertThat(processingResult.resultSummary().path("sourceCoverage").path("sourceItemsUsed").asInt()).isEqualTo(8);
         verify(coreApiClient, times(1)).addCards(any(), any(), any(), any());
     }
 

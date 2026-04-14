@@ -549,6 +549,16 @@ APP_ENV=dev
 - [ ] Улучшить cost-controls (пер-провайдер бюджеты, warnings, caps).
 - [ ] Расширить AI-audit: семантические дубликаты, factual consistency checks.
 
+#### AI quality/reliability roadmap
+- [x] P0: Для распознанных списков items в OpenAI-compatible/local AI import pipeline хранить `sourceIndex/sourceText`, не превращать заголовки в карточки и валидировать покрытие источника перед записью карточек.
+- [x] P0: Не применять item-by-line контракт к PDF/DOCX/учебниковым вырезкам и другому связному материалу, если источник не распознан как список; такие источники остаются в режиме генерации из свободного материала.
+- [x] P0: Чистить markdown/html/URL из текста перед TTS, чтобы короткие карточки озвучивались нейтральнее и без служебного мусора.
+- [ ] P1: Писать в `result_summary` и usage ledger расширенный breakdown: text input/output tokens, cached/reasoning tokens, per-batch usage, TTS chars/requests, image/video request counts.
+- [ ] P1: Перейти от step-based ETA к weighted progress по единицам работы: content batches, audit/repair batches, TTS requests, image/video requests, rolling average per provider/model.
+- [ ] P1: Вынести rate-limit wrapper для всех AI провайдеров: RPM/TPM buckets, `Retry-After`, exponential backoff with jitter, split-batch-on-timeout и checkpoint после успешного batch.
+- [ ] P2: Добавить draft -> audit -> repair контур: отдельная проверка фактической корректности, переводов, доменной терминологии, примеров, медиа-промптов и audio quality перед финальным apply.
+- [ ] P2: Ввести eval-наборы на реальные import-кейсы, включая юридическую лексику, языковые пары, PDF/DOCX вырезки, OCR/STT шум и локальные модели.
+
 #### Data / Quality
 - [ ] Больше e2e на критические пользовательские потоки.
 - [ ] Тесты несовместимых import edge-cases (коррупция, экзотические кодировки, broken media refs).

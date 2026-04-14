@@ -94,6 +94,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private static final Duration VIDEO_POLL_INTERVAL = Duration.ofSeconds(5);
     private static final Duration VIDEO_POLL_TIMEOUT = Duration.ofMinutes(5);
     private static final Pattern RETRY_IN_PATTERN = Pattern.compile("retry in\\s*([0-9]+(?:\\.[0-9]+)?)s", Pattern.CASE_INSENSITIVE);
+    private static final Pattern MULTI_SPACE_PATTERN = Pattern.compile("\\s+");
     private static final int DEFAULT_TTS_REQUESTS_PER_MINUTE = 60;
     private static final int DEFAULT_TTS_MAX_RETRIES = 5;
     private static final long DEFAULT_TTS_RETRY_INITIAL_DELAY_MS = 2000L;
@@ -331,7 +332,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private AiJobProcessingResult handleImportGenerate(AiJobEntity job, String apiKey, JsonNode params) {
         AiImportContentService.ImportTextPayload payload = runStep(job, params, STEP_LOAD_SOURCE, () -> loadImportPayload(job, apiKey, params));
         boolean localOllamaRequest = isLocalOllamaRequest(params);
-        List<String> items = ImportItemExtractor.extractItems(payload.text());
+        ImportItemExtractor.ItemExtraction itemExtraction = ImportItemExtractor.extract(payload.text());
+        List<ImportItemExtractor.SourceItem> items = itemExtraction.items();
         String sharedContext = buildImportSharedContext(payload, items, localOllamaRequest);
 
         ObjectNode updatedParams = params.isObject()
@@ -345,13 +347,18 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (!items.isEmpty()) {
             int available = Math.min(items.size(), MAX_IMPORT_CARDS);
             total = Math.min(total, available);
-            List<String> requestedItems = items.subList(0, total);
-            if (total <= batchSize) {
-                updatedParams.put("count", total);
-                updatedParams.put("input", buildImportGenerateItemsPrompt(requestedItems, params, payload.truncated(), sharedContext, 0, total));
-                return handleGenerateCards(job, apiKey, updatedParams);
-            }
-            return handleGenerateCardsBatchedForItems(job, apiKey, updatedParams, requestedItems, batchSize, params, payload.truncated(), sharedContext);
+            List<ImportItemExtractor.SourceItem> requestedItems = items.subList(0, total);
+            return handleGenerateCardsBatchedForItems(
+                    job,
+                    apiKey,
+                    updatedParams,
+                    requestedItems,
+                    itemExtraction.missingNumbers(),
+                    batchSize,
+                    params,
+                    payload.truncated(),
+                    sharedContext
+            );
         }
         updatedParams.put("input", buildImportGeneratePrompt(params, payload.truncated(), sharedContext));
         if (total <= batchSize) {
@@ -384,29 +391,25 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private AiJobProcessingResult handleGenerateCardsBatchedForItems(AiJobEntity job,
                                                                      String apiKey,
                                                                      ObjectNode baseParams,
-                                                                     List<String> items,
+                                                                     List<ImportItemExtractor.SourceItem> items,
+                                                                     List<Integer> missingNumbers,
                                                                      int batchSize,
                                                                      JsonNode params,
                                                                      boolean truncated,
                                                                      String sharedContext) {
         String accessToken = job.getUserAccessToken();
         GenerationContext context = runStep(job, baseParams, STEP_PREPARE_CONTEXT, () -> prepareGenerationContext(job, baseParams, accessToken));
-        GeneratedDraftBatch generated = runStep(job, baseParams, STEP_GENERATE_CONTENT, () -> generateDraftsBatched(
+        GeneratedDraftBatch generated = runStep(job, baseParams, STEP_GENERATE_CONTENT, () -> generateDraftsBatchedForItems(
                 job,
                 apiKey,
                 baseParams,
                 context,
-                items.size(),
                 batchSize,
-                (offset, count) -> buildImportGenerateItemsPrompt(
-                        items.subList(offset, offset + count),
-                        params,
-                        truncated,
-                        sharedContext,
-                        offset,
-                        items.size()
-                ),
-                false
+                items,
+                missingNumbers,
+                params,
+                truncated,
+                sharedContext
         ));
         return applyGeneratedDrafts(job, apiKey, baseParams, context, generated, items.size(), accessToken);
     }
@@ -432,7 +435,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         return builder.toString().trim();
     }
 
-    private String buildImportGenerateItemsPrompt(List<String> items,
+    private String buildImportGenerateItemsPrompt(List<ImportItemExtractor.SourceItem> items,
                                                   JsonNode params,
                                                   boolean truncated,
                                                   String sharedContext,
@@ -449,10 +452,11 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         builder.append("This batch covers items ").append(batchStart).append("-").append(batchEnd)
                 .append(" out of ").append(totalItems).append(". ");
         builder.append("Items to convert into flashcards (use each item exactly once):");
-        for (int i = 0; i < items.size(); i++) {
-            builder.append("\n").append(batchStart + i).append(". ").append(items.get(i));
+        for (ImportItemExtractor.SourceItem item : items) {
+            builder.append("\nsourceIndex=").append(item.sourceIndex()).append("; sourceText=").append(item.text());
         }
-        builder.append("\nCreate one card per item. Use the item text verbatim in the most relevant field.");
+        builder.append("\nCreate one card per item. Return sourceIndex exactly as shown and sourceText exactly equal to the item text.");
+        builder.append(" Use sourceText verbatim in the most relevant field.");
         builder.append(" Do not invent new items or repeat any item.");
         builder.append(" Preserve prerequisites, ordering, and technical details when the source is procedural.");
         String language = textOrNull(params.path("language"));
@@ -492,7 +496,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     }
 
     private String buildImportSharedContext(AiImportContentService.ImportTextPayload payload,
-                                            List<String> items,
+                                            List<ImportItemExtractor.SourceItem> items,
                                             boolean localOllamaRequest) {
         if (payload == null || payload.text() == null || payload.text().isBlank()) {
             return "";
@@ -520,13 +524,14 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         return builder.toString().trim();
     }
 
-    private String buildImportItemOutline(List<String> items, int maxChars) {
+    private String buildImportItemOutline(List<ImportItemExtractor.SourceItem> items, int maxChars) {
         if (items == null || items.isEmpty() || maxChars < 32) {
             return "";
         }
         StringBuilder builder = new StringBuilder();
         for (int i = 0; i < items.size(); i++) {
-            String entry = (i + 1) + ". " + items.get(i).trim();
+            ImportItemExtractor.SourceItem item = items.get(i);
+            String entry = item.sourceIndex() + ". " + item.text().trim();
             int projected = builder.length() + entry.length() + 1;
             if (projected > maxChars) {
                 if (!builder.isEmpty()) {
@@ -1662,7 +1667,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 droppedEmpty,
                 droppedExact,
                 droppedPrimary,
-                droppedSemantic
+                droppedSemantic,
+                null
         );
     }
 
@@ -1728,8 +1734,124 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 droppedEmpty,
                 droppedExact,
                 droppedPrimary,
-                droppedSemantic
+                droppedSemantic,
+                null
         );
+    }
+
+    private GeneratedDraftBatch generateDraftsBatchedForItems(AiJobEntity job,
+                                                              String apiKey,
+                                                              JsonNode params,
+                                                              GenerationContext context,
+                                                              int batchSize,
+                                                              List<ImportItemExtractor.SourceItem> items,
+                                                              List<Integer> missingNumbers,
+                                                              JsonNode originalParams,
+                                                              boolean truncated,
+                                                              String sharedContext) {
+        int remaining = items.size();
+        int offset = 0;
+        List<CardDraft> drafts = new ArrayList<>();
+        Integer totalTokensIn = null;
+        Integer totalTokensOut = null;
+        String model = null;
+
+        while (remaining > 0) {
+            int count = Math.min(batchSize, remaining);
+            List<ImportItemExtractor.SourceItem> batchItems = items.subList(offset, offset + count);
+            GeneratedDraftBatch batch = generateDraftsForItems(
+                    job,
+                    apiKey,
+                    params,
+                    context,
+                    batchItems,
+                    buildImportGenerateItemsPrompt(
+                            batchItems,
+                            originalParams,
+                            truncated,
+                            sharedContext,
+                            offset,
+                            items.size()
+                    )
+            );
+            drafts.addAll(batch.drafts());
+            totalTokensIn = sumNullable(totalTokensIn, batch.inputTokens());
+            totalTokensOut = sumNullable(totalTokensOut, batch.outputTokens());
+            if (model == null) {
+                model = batch.model();
+            }
+            remaining -= count;
+            offset += count;
+        }
+
+        return new GeneratedDraftBatch(
+                model,
+                totalTokensIn,
+                totalTokensOut,
+                List.copyOf(drafts),
+                0,
+                0,
+                0,
+                0,
+                new SourceCoverage(items.size(), drafts.size(), List.of(), 0, missingNumbers == null ? List.of() : List.copyOf(missingNumbers))
+        );
+    }
+
+    private GeneratedDraftBatch generateDraftsForItems(AiJobEntity job,
+                                                       String apiKey,
+                                                       JsonNode params,
+                                                       GenerationContext context,
+                                                       List<ImportItemExtractor.SourceItem> sourceItems,
+                                                       String userPrompt) {
+        String model = textOrDefault(params.path("model"), props.defaultModel());
+        Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
+                ? params.path("maxOutputTokens").asInt()
+                : null;
+        boolean localOllamaRequest = isLocalOllamaRequest(params);
+        Integer totalTokensIn = null;
+        Integer totalTokensOut = null;
+        String responseModel = null;
+        SourceDraftValidation lastValidation = null;
+
+        for (int attempt = 0; attempt < GENERATE_MAX_ATTEMPTS; attempt++) {
+            String prompt = buildCardsPrompt(
+                    appendSourceValidationHint(userPrompt, lastValidation),
+                    context.template(),
+                    context.publicDeck(),
+                    context.allowedFields(),
+                    sourceItems.size(),
+                    context.fewShotExamples(),
+                    localOllamaRequest
+            );
+            JsonNode responseFormat = buildCardsSchema(context.allowedFields(), sourceItems.size(), true);
+            OpenAiResponseResult response = openAiClient.createResponse(
+                    apiKey,
+                    new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
+            );
+            responseModel = response.model();
+            totalTokensIn = sumNullable(totalTokensIn, response.inputTokens());
+            totalTokensOut = sumNullable(totalTokensOut, response.outputTokens());
+
+            JsonNode parsed = parseJsonResponse(response.outputText());
+            List<CardDraft> drafts = buildCardDrafts(parsed, context.allowedFields(), context.template(), context.fieldTypes(), true);
+            SourceDraftValidation validation = validateSourceDrafts(drafts, sourceItems, context.allowedFields());
+            if (validation.valid()) {
+                return new GeneratedDraftBatch(
+                        responseModel,
+                        totalTokensIn,
+                        totalTokensOut,
+                        validation.orderedDrafts(),
+                        0,
+                        0,
+                        0,
+                        0,
+                        new SourceCoverage(sourceItems.size(), validation.orderedDrafts().size(), List.of(), 0, List.of())
+                );
+            }
+            lastValidation = validation;
+        }
+
+        throw new IllegalStateException("AI response failed source coverage validation: " + summarizeSourceValidation(lastValidation));
     }
 
     private AiJobProcessingResult applyGeneratedDrafts(AiJobEntity job,
@@ -1796,6 +1918,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (mediaResult.videosGenerated() > 0) {
             summary.put("videosGenerated", mediaResult.videosGenerated());
         }
+        if (generated.sourceCoverage() != null) {
+            summary.set("sourceCoverage", buildSourceCoverageNode(generated.sourceCoverage()));
+        }
         ArrayNode fieldsNode = summary.putArray("fields");
         for (String field : context.allowedFields()) {
             fieldsNode.add(field);
@@ -1824,6 +1949,22 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             return left;
         }
         return left + right;
+    }
+
+    private ObjectNode buildSourceCoverageNode(SourceCoverage coverage) {
+        ObjectNode node = objectMapper.createObjectNode();
+        node.put("sourceItemsTotal", coverage.sourceItemsTotal());
+        node.put("sourceItemsUsed", coverage.sourceItemsUsed());
+        node.put("alteredSourceItems", coverage.alteredSourceItems());
+        ArrayNode missing = node.putArray("missingSourceIndexes");
+        if (coverage.missingSourceIndexes() != null) {
+            coverage.missingSourceIndexes().forEach(missing::add);
+        }
+        ArrayNode missingNumbers = node.putArray("missingNumberedItems");
+        if (coverage.missingNumberedItems() != null) {
+            coverage.missingNumberedItems().forEach(missingNumbers::add);
+        }
+        return node;
     }
 
     private AiJobProcessingResult handleTts(AiJobEntity job, String apiKey) {
@@ -3172,7 +3313,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private record MissingFieldUpdate(UUID userCardId, ObjectNode fields) {
     }
 
-    private record CardDraft(ObjectNode content, Map<String, String> mediaPrompts) {
+    private record CardDraft(ObjectNode content,
+                             Map<String, String> mediaPrompts,
+                             Integer sourceIndex,
+                             String sourceText) {
     }
 
     private record ContentMutationResult(boolean changed,
@@ -3250,7 +3394,23 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                        int droppedEmpty,
                                        int droppedExact,
                                        int droppedPrimary,
-                                       int droppedSemantic) {
+                                       int droppedSemantic,
+                                       SourceCoverage sourceCoverage) {
+    }
+
+    private record SourceCoverage(int sourceItemsTotal,
+                                  int sourceItemsUsed,
+                                  List<Integer> missingSourceIndexes,
+                                  int alteredSourceItems,
+                                  List<Integer> missingNumberedItems) {
+    }
+
+    private record SourceDraftValidation(boolean valid,
+                                         List<CardDraft> orderedDrafts,
+                                         List<Integer> missingSourceIndexes,
+                                         List<String> alteredSourceTexts,
+                                         int duplicateSourceIndexes,
+                                         int unexpectedSourceIndexes) {
     }
 
     @FunctionalInterface
@@ -3358,6 +3518,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     }
 
     private JsonNode buildCardsSchema(List<String> fields, int count) {
+        return buildCardsSchema(fields, count, false);
+    }
+
+    private JsonNode buildCardsSchema(List<String> fields, int count, boolean includeSourceTracking) {
         ObjectNode schema = objectMapper.createObjectNode();
         schema.put("type", "object");
         ObjectNode properties = schema.putObject("properties");
@@ -3368,6 +3532,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         ObjectNode items = cards.putObject("items");
         items.put("type", "object");
         ObjectNode itemProps = items.putObject("properties");
+        if (includeSourceTracking) {
+            itemProps.putObject("sourceIndex").put("type", "integer");
+            itemProps.putObject("sourceText").put("type", "string");
+        }
         ObjectNode fieldsNode = itemProps.putObject("fields");
         fieldsNode.put("type", "object");
         ObjectNode fieldProps = fieldsNode.putObject("properties");
@@ -3379,7 +3547,12 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         for (String field : fields) {
             requiredFields.add(field);
         }
-        items.putArray("required").add("fields");
+        ArrayNode itemRequired = items.putArray("required");
+        if (includeSourceTracking) {
+            itemRequired.add("sourceIndex");
+            itemRequired.add("sourceText");
+        }
+        itemRequired.add("fields");
         items.put("additionalProperties", false);
         schema.put("additionalProperties", false);
         schema.putArray("required").add("cards");
@@ -3407,6 +3580,14 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                             List<String> fields,
                                             CoreTemplateResponse template,
                                             Map<String, String> fieldTypes) {
+        return buildCardDrafts(response, fields, template, fieldTypes, false);
+    }
+
+    private List<CardDraft> buildCardDrafts(JsonNode response,
+                                            List<String> fields,
+                                            CoreTemplateResponse template,
+                                            Map<String, String> fieldTypes,
+                                            boolean includeSourceTracking) {
         JsonNode cardsNode = response.path("cards");
         if (!cardsNode.isArray()) {
             throw new IllegalStateException("AI response missing cards array");
@@ -3417,6 +3598,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             if (!fieldsNode.isObject()) {
                 continue;
             }
+            Integer sourceIndex = includeSourceTracking && cardNode.path("sourceIndex").canConvertToInt()
+                    ? cardNode.path("sourceIndex").asInt()
+                    : null;
+            String sourceText = includeSourceTracking ? textOrNull(cardNode.path("sourceText")) : null;
             ObjectNode content = objectMapper.createObjectNode();
             Map<String, String> mediaPrompts = new LinkedHashMap<>();
             boolean hasValue = false;
@@ -3443,9 +3628,113 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 continue;
             }
             ankiSupport.applyIfPresent(content, template);
-            drafts.add(new CardDraft(content, mediaPrompts));
+            drafts.add(new CardDraft(content, mediaPrompts, sourceIndex, sourceText));
         }
         return drafts;
+    }
+
+    private String appendSourceValidationHint(String userPrompt, SourceDraftValidation validation) {
+        if (validation == null || validation.valid()) {
+            return userPrompt;
+        }
+        String hint = "Previous response failed source coverage validation. "
+                + "Regenerate every requested item exactly once, preserve sourceIndex/sourceText exactly, "
+                + "and put sourceText verbatim in a text field. "
+                + summarizeSourceValidation(validation);
+        if (userPrompt == null || userPrompt.isBlank()) {
+            return hint;
+        }
+        return userPrompt.trim() + "\n\n" + hint;
+    }
+
+    private SourceDraftValidation validateSourceDrafts(List<CardDraft> drafts,
+                                                       List<ImportItemExtractor.SourceItem> sourceItems,
+                                                       List<String> allowedFields) {
+        if (sourceItems == null || sourceItems.isEmpty()) {
+            return new SourceDraftValidation(true, drafts == null ? List.of() : List.copyOf(drafts), List.of(), List.of(), 0, 0);
+        }
+        Map<Integer, ImportItemExtractor.SourceItem> expectedByIndex = new LinkedHashMap<>();
+        for (ImportItemExtractor.SourceItem item : sourceItems) {
+            expectedByIndex.put(item.sourceIndex(), item);
+        }
+        Map<Integer, CardDraft> acceptedByIndex = new LinkedHashMap<>();
+        List<Integer> missingIndexes = new ArrayList<>();
+        List<String> alteredTexts = new ArrayList<>();
+        int duplicateSourceIndexes = 0;
+        int unexpectedSourceIndexes = 0;
+        if (drafts != null) {
+            for (CardDraft draft : drafts) {
+                if (draft == null || draft.sourceIndex() == null) {
+                    unexpectedSourceIndexes++;
+                    continue;
+                }
+                ImportItemExtractor.SourceItem expected = expectedByIndex.get(draft.sourceIndex());
+                if (expected == null) {
+                    unexpectedSourceIndexes++;
+                    continue;
+                }
+                if (acceptedByIndex.containsKey(draft.sourceIndex())) {
+                    duplicateSourceIndexes++;
+                    continue;
+                }
+                String normalizedSource = ImportItemExtractor.normalizeKey(draft.sourceText());
+                boolean sourceTextMatches = expected.normalizedKey().equals(normalizedSource);
+                boolean contentContainsSource = draftContainsSourceText(draft, expected, allowedFields);
+                if (!sourceTextMatches || !contentContainsSource) {
+                    alteredTexts.add(expected.sourceIndex() + ": " + expected.text());
+                    continue;
+                }
+                acceptedByIndex.put(draft.sourceIndex(), draft);
+            }
+        }
+        for (ImportItemExtractor.SourceItem expected : sourceItems) {
+            if (!acceptedByIndex.containsKey(expected.sourceIndex())) {
+                missingIndexes.add(expected.sourceIndex());
+            }
+        }
+        List<CardDraft> orderedDrafts = sourceItems.stream()
+                .map(item -> acceptedByIndex.get(item.sourceIndex()))
+                .filter(Objects::nonNull)
+                .toList();
+        boolean valid = missingIndexes.isEmpty()
+                && alteredTexts.isEmpty()
+                && duplicateSourceIndexes == 0
+                && unexpectedSourceIndexes == 0
+                && orderedDrafts.size() == sourceItems.size();
+        return new SourceDraftValidation(valid, orderedDrafts, missingIndexes, alteredTexts, duplicateSourceIndexes, unexpectedSourceIndexes);
+    }
+
+    private boolean draftContainsSourceText(CardDraft draft,
+                                            ImportItemExtractor.SourceItem expected,
+                                            List<String> allowedFields) {
+        if (draft == null || draft.content() == null || expected == null) {
+            return false;
+        }
+        String expectedKey = expected.normalizedKey();
+        if (expectedKey.isBlank()) {
+            return false;
+        }
+        for (String field : allowedFields) {
+            JsonNode value = draft.content().get(field);
+            if (value == null || !value.isTextual()) {
+                continue;
+            }
+            String normalizedValue = ImportItemExtractor.normalizeKey(value.asText());
+            if (normalizedValue.equals(expectedKey) || normalizedValue.contains(expectedKey)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private String summarizeSourceValidation(SourceDraftValidation validation) {
+        if (validation == null) {
+            return "no validation details";
+        }
+        return "missingSourceIndexes=" + validation.missingSourceIndexes()
+                + ", alteredSourceItems=" + validation.alteredSourceTexts().size()
+                + ", duplicateSourceIndexes=" + validation.duplicateSourceIndexes()
+                + ", unexpectedSourceIndexes=" + validation.unexpectedSourceIndexes();
     }
 
     private String buildFieldHints(CoreTemplateResponse template, List<String> fields) {
@@ -3610,7 +3899,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             ObjectNode updatedContent = loadLatestContent(job.getJobId(), job.getDeckId(), card.userCardId(), accessToken, card.effectiveContent().deepCopy());
             boolean updated = false;
             for (TtsMapping mapping : mappings) {
-                String text = extractTextValue(updatedContent, mapping.sourceField());
+                String text = sanitizeTtsText(extractTextValue(updatedContent, mapping.sourceField()));
                 if (text == null || text.isBlank()) {
                     continue;
                 }
@@ -3742,7 +4031,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 if (!isMissingAudio(updatedContent.get(mapping.targetField()))) {
                     continue;
                 }
-                String text = extractTextValue(card.effectiveContent(), mapping.sourceField());
+                String text = sanitizeTtsText(extractTextValue(card.effectiveContent(), mapping.sourceField()));
                 if (text == null || text.isBlank()) {
                     continue;
                 }
@@ -3919,7 +4208,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             if (!isMissingAudio(updatedContent.get(mapping.targetField()))) {
                 continue;
             }
-            String text = extractTextValue(updatedContent, mapping.sourceField());
+            String text = sanitizeTtsText(extractTextValue(updatedContent, mapping.sourceField()));
             if (text == null || text.isBlank() || text.length() > maxChars) {
                 continue;
             }
@@ -4661,6 +4950,23 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             return node.asText();
         }
         return null;
+    }
+
+    private String sanitizeTtsText(String text) {
+        if (text == null) {
+            return null;
+        }
+        String sanitized = text;
+        sanitized = sanitized.replaceAll("!\\[([^\\]]*)]\\([^)]*\\)", "$1");
+        sanitized = sanitized.replaceAll("\\[([^\\]]+)]\\([^)]*\\)", "$1");
+        sanitized = sanitized.replaceAll("https?://\\S+", "");
+        sanitized = sanitized.replaceAll("<[^>]+>", " ");
+        sanitized = sanitized.replaceAll("`{1,3}", "");
+        sanitized = sanitized.replaceAll("[*_~#>]+", "");
+        sanitized = sanitized.replaceAll("&nbsp;", " ");
+        sanitized = sanitized.replaceAll("&amp;", "and");
+        sanitized = MULTI_SPACE_PATTERN.matcher(sanitized).replaceAll(" ").trim();
+        return sanitized.isBlank() ? null : sanitized;
     }
 
     private byte[] createSpeechWithRetry(AiJobEntity job,
