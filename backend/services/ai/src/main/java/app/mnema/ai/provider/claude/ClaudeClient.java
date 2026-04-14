@@ -1,15 +1,20 @@
 package app.mnema.ai.provider.claude;
 
+import app.mnema.ai.provider.support.ProviderRetrySupport;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 @Component
 public class ClaudeClient {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(ClaudeClient.class);
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -38,14 +43,14 @@ public class ClaudeClient {
         text.put("type", "text");
         text.put("text", request.input());
 
-        JsonNode response = restClient.post()
+        JsonNode response = ProviderRetrySupport.executeTextRequest("Claude", LOGGER, () -> restClient.post()
                 .uri("/v1/messages")
                 .header("x-api-key", apiKey)
                 .header("anthropic-version", props.apiVersion())
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(payload)
                 .retrieve()
-                .body(JsonNode.class);
+                .body(JsonNode.class));
 
         if (response == null) {
             throw new IllegalStateException("Claude response is empty");

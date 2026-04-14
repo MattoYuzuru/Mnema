@@ -132,6 +132,10 @@ public class AiJobEtaEstimator {
         if (remaining <= 0) {
             return estimateFromProgress(job, snapshot, provider);
         }
+        int progressBased = estimateFromProgress(job, snapshot, provider);
+        if (progressBased > 0) {
+            return Math.min(remaining, progressBased);
+        }
         return remaining;
     }
 

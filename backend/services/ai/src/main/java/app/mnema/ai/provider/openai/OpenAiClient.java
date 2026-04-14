@@ -1,5 +1,6 @@
 package app.mnema.ai.provider.openai;
 
+import app.mnema.ai.provider.support.ProviderRetrySupport;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -13,7 +14,6 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
-import org.springframework.web.client.RestClientException;
 
 import java.util.Base64;
 import java.util.Locale;
@@ -123,22 +123,24 @@ public class OpenAiClient {
                                              String model,
                                              String compatInput,
                                              Integer maxOutputTokens) {
-        RestClient.RequestBodySpec spec = restClient.post()
-                .uri("/v1/responses")
-                .contentType(MediaType.APPLICATION_JSON);
-        if (hasApiKey(apiKey)) {
-            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
-        }
-        try {
-            return spec.body(payload)
-                    .retrieve()
-                    .body(JsonNode.class);
-        } catch (HttpClientErrorException ex) {
-            if (!shouldFallbackToChatCompat(ex)) {
-                throw ex;
+        return ProviderRetrySupport.executeTextRequest("OpenAI", LOGGER, () -> {
+            RestClient.RequestBodySpec spec = restClient.post()
+                    .uri("/v1/responses")
+                    .contentType(MediaType.APPLICATION_JSON);
+            if (hasApiKey(apiKey)) {
+                spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
             }
-            return createChatCompletionCompat(apiKey, model, compatInput, maxOutputTokens);
-        }
+            try {
+                return spec.body(payload)
+                        .retrieve()
+                        .body(JsonNode.class);
+            } catch (HttpClientErrorException ex) {
+                if (!shouldFallbackToChatCompat(ex)) {
+                    throw ex;
+                }
+                return createChatCompletionCompat(apiKey, model, compatInput, maxOutputTokens);
+            }
+        });
     }
 
     private OpenAiResponseResult toResponseResult(JsonNode response) {
@@ -480,35 +482,7 @@ public class OpenAiClient {
     }
 
     static boolean isRetryableTransportFailure(Throwable throwable) {
-        Throwable current = throwable;
-        while (current != null) {
-            if (current instanceof java.net.http.HttpTimeoutException
-                    || current instanceof java.net.SocketTimeoutException
-                    || current instanceof java.net.ConnectException
-                    || current instanceof java.net.NoRouteToHostException
-                    || current instanceof java.net.UnknownHostException) {
-                return true;
-            }
-            if (current instanceof java.io.IOException && !(current instanceof java.io.InterruptedIOException)) {
-                return true;
-            }
-            if (current instanceof RestClientException && current.getCause() == null) {
-                String message = current.getMessage();
-                if (message != null) {
-                    String normalized = message.toLowerCase(Locale.ROOT);
-                    if (normalized.contains("timed out")
-                            || normalized.contains("connection reset")
-                            || normalized.contains("connection refused")
-                            || normalized.contains("broken pipe")
-                            || normalized.contains("i/o error")
-                            || normalized.contains("eof")) {
-                        return true;
-                    }
-                }
-            }
-            current = current.getCause();
-        }
-        return false;
+        return ProviderRetrySupport.isRetryableTransportFailure(throwable);
     }
 
     private static long positiveOrDefault(Long value, long fallback) {

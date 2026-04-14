@@ -557,7 +557,9 @@ APP_ENV=dev
 - [x] P1 slice: Для OpenAI-compatible/local card generation писать text generation request breakdown, cached/reasoning tokens, durationMs, TTS chars/requests и media counts в `result_summary.usage` и `ai_usage_ledger.details`.
 - [ ] P1: Перейти от step-based ETA к weighted progress по единицам работы: content batches, audit/repair batches, TTS requests, image/video requests, rolling average per provider/model.
 - [x] P1 slice: Уточнить ETA для local/OpenAI-compatible `import_generate`/`generate_cards`, учитывая batch size, число полей и локальный throughput; исправить planned import steps для `import_generate`.
+- [x] P1 slice: Обновлять `progress` по фактической доле текущего batch/audio/media шага и подмешивать этот прогресс в ETA для длинных `processing`-шагов.
 - [ ] P1: Вынести rate-limit wrapper для всех AI провайдеров: RPM/TPM buckets, `Retry-After`, exponential backoff with jitter, split-batch-on-timeout и checkpoint после успешного batch.
+- [x] P1 slice: Вынести общий retry/backoff wrapper для text/vision response-вызовов OpenAI-compatible, Claude, Gemini, Grok и Qwen с учетом `Retry-After` и retryable transport failures.
 - [ ] P2: Добавить draft -> audit -> repair контур: отдельная проверка фактической корректности, переводов, доменной терминологии, примеров, медиа-промптов и audio quality перед финальным apply.
 - [ ] P2: Ввести eval-наборы на реальные import-кейсы, включая юридическую лексику, языковые пары, PDF/DOCX вырезки, OCR/STT шум и локальные модели.
 

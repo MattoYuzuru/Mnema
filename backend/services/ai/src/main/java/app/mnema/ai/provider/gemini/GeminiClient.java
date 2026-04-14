@@ -1,9 +1,12 @@
 package app.mnema.ai.provider.gemini;
 
+import app.mnema.ai.provider.support.ProviderRetrySupport;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
@@ -12,7 +15,9 @@ import java.util.Base64;
 
 @Component
 public class GeminiClient {
-    
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(GeminiClient.class);
+
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
@@ -42,13 +47,13 @@ public class GeminiClient {
             generationConfig.set("responseSchema", request.responseSchema());
         }
 
-        JsonNode response = restClient.post()
+        JsonNode response = ProviderRetrySupport.executeTextRequest("Gemini", LOGGER, () -> restClient.post()
                 .uri("/v1beta/models/{model}:generateContent", request.model())
                 .header("x-goog-api-key", apiKey)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(payload)
                 .retrieve()
-                .body(JsonNode.class);
+                .body(JsonNode.class));
 
         if (response == null) {
             throw new IllegalStateException("Gemini response is empty");
@@ -83,13 +88,13 @@ public class GeminiClient {
 
         applyGenerationConfig(payload, request);
 
-        JsonNode response = restClient.post()
+        JsonNode response = ProviderRetrySupport.executeTextRequest("Gemini", LOGGER, () -> restClient.post()
                 .uri("/v1beta/models/{model}:generateContent", request.model())
                 .header("x-goog-api-key", apiKey)
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(payload)
                 .retrieve()
-                .body(JsonNode.class);
+                .body(JsonNode.class));
 
         if (response == null) {
             throw new IllegalStateException("Gemini response is empty");

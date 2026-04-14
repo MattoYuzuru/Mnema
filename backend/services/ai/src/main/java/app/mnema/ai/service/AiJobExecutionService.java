@@ -78,6 +78,31 @@ public class AiJobExecutionService {
         updateStepInTransaction(jobId, stepName, AiJobStepStatus.failed, errorSummary);
     }
 
+    public void updateStepProgress(UUID jobId, String stepName, double fraction) {
+        if (jobId == null || stepName == null || stepName.isBlank()) {
+            return;
+        }
+        transactionTemplate.executeWithoutResult(ignored -> {
+            List<AiJobStepEntity> steps = loadSteps(jobId);
+            Optional<AiJobEntity> jobOpt = jobRepository.findById(jobId);
+            if (jobOpt.isEmpty()) {
+                return;
+            }
+            AiJobEntity job = jobOpt.get();
+            if (job.getStatus() == AiJobStatus.completed
+                    || job.getStatus() == AiJobStatus.partial_success
+                    || job.getStatus() == AiJobStatus.failed
+                    || job.getStatus() == AiJobStatus.canceled) {
+                return;
+            }
+            double normalizedFraction = Math.max(0.0d, Math.min(fraction, 1.0d));
+            int progress = calculateProgress(steps, stepName.trim(), normalizedFraction);
+            job.setProgress(progress);
+            job.setUpdatedAt(Instant.now());
+            jobRepository.save(job);
+        });
+    }
+
     @Transactional(readOnly = true)
     public ExecutionSnapshot snapshot(UUID jobId) {
         List<AiJobStepEntity> steps = loadSteps(jobId);
@@ -159,18 +184,59 @@ public class AiJobExecutionService {
     }
 
     private int calculateProgress(List<AiJobStepEntity> steps) {
+        return calculateProgress(steps, null, null);
+    }
+
+    private int calculateProgress(List<AiJobStepEntity> steps, String hintedStepName, Double hintedFraction) {
         if (steps == null || steps.isEmpty()) {
             return 0;
         }
-        int total = steps.size();
-        long completed = steps.stream().filter(step -> step.getStatus() == AiJobStepStatus.completed).count();
-        boolean processing = steps.stream().anyMatch(step -> step.getStatus() == AiJobStepStatus.processing);
-        double value = completed + (processing ? 0.5d : 0d);
-        int progress = (int) Math.floor((value / total) * 100.0d);
+        int totalWeight = steps.stream()
+                .mapToInt(step -> resolveStepWeight(step.getStepName()))
+                .sum();
+        if (totalWeight <= 0) {
+            totalWeight = steps.size();
+        }
+        double value = 0.0d;
+        boolean processing = false;
+        for (AiJobStepEntity step : steps) {
+            int weight = resolveStepWeight(step.getStepName());
+            if (step.getStatus() == AiJobStepStatus.completed) {
+                value += weight;
+                continue;
+            }
+            if (step.getStatus() == AiJobStepStatus.processing) {
+                processing = true;
+                double fraction = 0.5d;
+                if (hintedStepName != null
+                        && hintedFraction != null
+                        && hintedStepName.equals(step.getStepName())) {
+                    fraction = Math.max(0.0d, Math.min(hintedFraction, 0.99d));
+                }
+                value += weight * fraction;
+            }
+        }
+        int progress = (int) Math.floor((value / totalWeight) * 100.0d);
         if (processing && progress >= 100) {
             return 99;
         }
         return Math.max(0, Math.min(progress, 99));
+    }
+
+    private int resolveStepWeight(String stepName) {
+        if (stepName == null || stepName.isBlank()) {
+            return 10;
+        }
+        return switch (stepName.trim()) {
+            case "load_source" -> 10;
+            case "prepare_context" -> 8;
+            case "analyze_content" -> 12;
+            case "generate_content" -> 36;
+            case "generate_media" -> 14;
+            case "generate_audio" -> 14;
+            case "apply_changes" -> 6;
+            default -> 10;
+        };
     }
 
     private List<AiJobStepEntity> loadSteps(UUID jobId) {

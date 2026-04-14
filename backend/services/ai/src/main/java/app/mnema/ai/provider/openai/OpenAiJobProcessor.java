@@ -1738,6 +1738,11 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             }
             remaining -= count;
             offset += count;
+            executionService.updateStepProgress(
+                    job.getJobId(),
+                    STEP_GENERATE_CONTENT,
+                    offset / (double) Math.max(1, totalCount)
+            );
         }
 
         return new GeneratedDraftBatch(
@@ -1799,6 +1804,11 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             }
             remaining -= count;
             offset += count;
+            executionService.updateStepProgress(
+                    job.getJobId(),
+                    STEP_GENERATE_CONTENT,
+                    offset / (double) Math.max(1, items.size())
+            );
         }
 
         return new GeneratedDraftBatch(
@@ -4281,6 +4291,11 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             if (!result.errors().isEmpty()) {
                 draftErrors.put(i, new ArrayList<>(result.errors()));
             }
+            executionService.updateStepProgress(
+                    job.getJobId(),
+                    STEP_GENERATE_AUDIO,
+                    (i + 1) / (double) Math.max(1, drafts.size())
+            );
         }
         return new DraftTtsPreparationResult(generated, charsGenerated, model, error, updatedDraftIndexes, draftErrors);
     }
@@ -4789,6 +4804,11 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             if (!result.errors().isEmpty()) {
                 draftErrors.put(i, new ArrayList<>(result.errors()));
             }
+            executionService.updateStepProgress(
+                    job.getJobId(),
+                    STEP_GENERATE_MEDIA,
+                    (i + 1) / (double) Math.max(1, drafts.size())
+            );
         }
         return new DraftMediaPreparationResult(imagesGenerated, videosGenerated, updatedDraftIndexes, draftErrors);
     }

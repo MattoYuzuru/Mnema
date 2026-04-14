@@ -1,9 +1,12 @@
 package app.mnema.ai.provider.grok;
 
+import app.mnema.ai.provider.support.ProviderRetrySupport;
 import app.mnema.ai.provider.openai.OpenAiResponseParser;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -13,6 +16,8 @@ import java.util.Base64;
 
 @Component
 public class GrokClient {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(GrokClient.class);
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -38,13 +43,13 @@ public class GrokClient {
             textNode.set("format", request.responseFormat());
         }
 
-        JsonNode response = restClient.post()
+        JsonNode response = ProviderRetrySupport.executeTextRequest("Grok", LOGGER, () -> restClient.post()
                 .uri("/v1/responses")
                 .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(payload)
                 .retrieve()
-                .body(JsonNode.class);
+                .body(JsonNode.class));
 
         if (response == null) {
             throw new IllegalStateException("Grok response is empty");
@@ -74,13 +79,13 @@ public class GrokClient {
             textNode.set("format", responseFormat);
         }
 
-        JsonNode response = restClient.post()
+        JsonNode response = ProviderRetrySupport.executeTextRequest("Grok", LOGGER, () -> restClient.post()
                 .uri("/v1/responses")
                 .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(payload)
                 .retrieve()
-                .body(JsonNode.class);
+                .body(JsonNode.class));
 
         if (response == null) {
             throw new IllegalStateException("Grok response is empty");

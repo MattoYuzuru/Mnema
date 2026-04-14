@@ -196,4 +196,32 @@ class AiJobEtaEstimatorTest {
         assertThat(eta.estimatedSecondsRemaining()).isNotNull().isPositive();
         assertThat(eta.queueAhead()).isNull();
     }
+
+    @Test
+    void estimatePrefersProgressAwareEtaForLongRunningProcessingStep() {
+        AiJobEntity job = new AiJobEntity();
+        job.setJobId(UUID.randomUUID());
+        job.setStatus(AiJobStatus.processing);
+        job.setType(AiJobType.enrich);
+        job.setProgress(85);
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", "generate_cards");
+        params.put("count", 12);
+        params.putArray("fields").add("front").add("back");
+        job.setParamsJson(params);
+
+        Instant now = Instant.now();
+        AiJobEtaEstimator.EtaEstimate eta = estimator.estimate(job, new AiJobExecutionService.ExecutionSnapshot(
+                "generate_content",
+                1,
+                2,
+                List.of(
+                        new AiJobStepResponse("prepare_context", AiJobStepStatus.completed, now.minusSeconds(40), now.minusSeconds(35), null),
+                        new AiJobStepResponse("generate_content", AiJobStepStatus.processing, now.minusSeconds(5), null, null)
+                )
+        ), "openai");
+
+        assertThat(eta.estimatedSecondsRemaining()).isNotNull().isPositive().isLessThan(30);
+        assertThat(eta.queueAhead()).isNull();
+    }
 }
