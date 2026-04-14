@@ -811,7 +811,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (source.truncated() && !mimeType.startsWith("text/")) {
             throw new IllegalStateException("Source file is too large to process. Please upload a smaller file.");
         }
-        if (mimeType.startsWith("text/") || "application/pdf".equals(mimeType)) {
+        if (mimeType.startsWith("text/")
+                || "application/pdf".equals(mimeType)
+                || "application/vnd.openxmlformats-officedocument.wordprocessingml.document".equals(mimeType)) {
             return importContentService.extractText(source, encoding, language);
         }
         if (mimeType.startsWith("image/")) {

@@ -567,6 +567,7 @@ APP_ENV=dev
 - [x] P2 slice: Добавить fixture-backed regression tests на реальные import quality кейсы с буквальными и смешанными переводами юридической лексики.
 - [x] P2 slice: Расширить fixture-backed import quality cases дополнительными сбойными юридическими терминами вроде `affidavit` и `discovery (legal process)`, чтобы quality gate ловил не только буквальные переводы, но и грубые смысловые подмены.
 - [x] P2 slice: Для item-based import из `ocr/stt` добавлен source normalization pass до генерации карточек, чтобы strict source coverage работал уже по очищенным терминам, а не по шумному распознаванию.
+- [x] P2 slice: Добавлен parameterized import eval harness для OpenAI-compatible path со сценариями `text/pdf/docx/ocr/stt`, чтобы regression-наборы проверяли не один happy path, а разные extraction modes и local/remote модели.
 - [x] UX slice: В deck AI job result panel показывать `qualityGate`, `sourceCoverage` и `usage` breakdown вместо сырого JSON, чтобы новые этапы и token accounting были видны в UI.
 
 #### Data / Quality
