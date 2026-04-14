@@ -562,7 +562,9 @@ APP_ENV=dev
 - [x] P1 slice: Вынести общий retry/backoff wrapper для text/vision response-вызовов OpenAI-compatible, Claude, Gemini, Grok и Qwen с учетом `Retry-After` и retryable transport failures.
 - [ ] P2: Добавить draft -> audit -> repair контур: отдельная проверка фактической корректности, переводов, доменной терминологии, примеров, медиа-промптов и audio quality перед финальным apply.
 - [x] P2 slice: Для OpenAI-compatible/local `generate_cards` и `import_generate` добавить pre-apply draft quality gate: отдельный audit pass, targeted repair pass по проблемным draft-ам и запись `draftAudit`/`draftRepair` usage в `result_summary`.
+- [x] P2 slice: После repair выполнять final audit pass, считать quality score и отбрасывать явно битые/слишком короткие TTS-файлы до upload.
 - [ ] P2: Ввести eval-наборы на реальные import-кейсы, включая юридическую лексику, языковые пары, PDF/DOCX вырезки, OCR/STT шум и локальные модели.
+- [x] P2 slice: Добавить fixture-backed regression tests на реальные import quality кейсы с буквальными и смешанными переводами юридической лексики.
 
 #### Data / Quality
 - [ ] Больше e2e на критические пользовательские потоки.

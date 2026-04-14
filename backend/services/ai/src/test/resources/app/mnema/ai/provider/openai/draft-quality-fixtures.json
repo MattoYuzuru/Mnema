@@ -1,0 +1,20 @@
+[
+  {
+    "sourceText": "fishing expedition",
+    "badTranslation": "рыбная экспедиция",
+    "goodTranslation": "поиск компромата",
+    "issue": "Literal mistranslation for legal context"
+  },
+  {
+    "sourceText": "general counsel",
+    "badTranslation": "генеральный counsel",
+    "goodTranslation": "главный юрисконсульт",
+    "issue": "Mixed-language legal title"
+  },
+  {
+    "sourceText": "billable hours",
+    "badTranslation": "счетные часы",
+    "goodTranslation": "оплачиваемые клиентом часы",
+    "issue": "Domain-specific translation is wrong"
+  }
+]

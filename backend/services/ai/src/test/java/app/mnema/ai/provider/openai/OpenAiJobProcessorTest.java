@@ -688,6 +688,8 @@ class OpenAiJobProcessorTest {
         assertThat(processingResult.resultSummary().path("usage").path("textGeneration").path("requests").asInt()).isEqualTo(2);
         assertThat(processingResult.resultSummary().path("usage").path("textGeneration").path("inputTokens").asInt()).isEqualTo(200);
         assertThat(processingResult.resultSummary().path("usage").path("draftAudit").path("requests").asInt()).isEqualTo(1);
+        assertThat(processingResult.resultSummary().path("usage").path("draftFinalAudit").path("requests").asInt()).isZero();
+        assertThat(processingResult.resultSummary().path("qualityGate").path("qualityScore").asInt()).isEqualTo(100);
         assertThat(processingResult.resultSummary().path("usage").path("textGeneration").path("calls").get(0).path("cachedInputTokens").asInt()).isEqualTo(10);
         assertThat(processingResult.usageDetails().path("textGeneration").path("calls").get(0).path("reasoningOutputTokens").asInt()).isEqualTo(5);
         verify(coreApiClient, times(1)).addCards(any(), any(), any(), any());
@@ -795,6 +797,7 @@ class OpenAiJobProcessorTest {
         when(coreApiClient.getUserCards(deckId, 1, 200, "token"))
                 .thenReturn(new CoreApiClient.CoreUserCardPage(List.of()));
 
+        AtomicInteger draftAuditCalls = new AtomicInteger();
         when(openAiClient.createResponse(any(), any())).thenAnswer(invocation -> {
             OpenAiResponseRequest request = invocation.getArgument(1);
             String formatName = request.responseFormat().path("name").asText();
@@ -807,12 +810,21 @@ class OpenAiJobProcessorTest {
                         ]}
                         """;
             } else if ("mnema_draft_audit".equals(formatName)) {
-                body = """
-                        {"items":[
-                          {"draftIndex":0,"decision":"repair","summary":"Literal mistranslation","issues":["Translation is too literal for legal context"],"focusFields":["translation"]},
-                          {"draftIndex":1,"decision":"accept","summary":"ok","issues":[],"focusFields":[]}
-                        ]}
-                        """;
+                if (draftAuditCalls.getAndIncrement() > 0) {
+                    body = """
+                            {"items":[
+                              {"draftIndex":0,"decision":"accept","summary":"fixed","issues":[],"focusFields":[]},
+                              {"draftIndex":1,"decision":"accept","summary":"ok","issues":[],"focusFields":[]}
+                            ]}
+                            """;
+                } else {
+                    body = """
+                            {"items":[
+                              {"draftIndex":0,"decision":"repair","summary":"Literal mistranslation","issues":["Translation is too literal for legal context"],"focusFields":["translation"]},
+                              {"draftIndex":1,"decision":"accept","summary":"ok","issues":[],"focusFields":[]}
+                            ]}
+                            """;
+                }
             } else if ("mnema_draft_repair".equals(formatName)) {
                 body = """
                         {"repairs":[
@@ -854,7 +866,45 @@ class OpenAiJobProcessorTest {
         assertThat(capturedRequests.getFirst().content().path("translation").asText()).isEqualTo("поиск компромата");
         assertThat(result.resultSummary().path("qualityGate").path("repairRequested").asInt()).isEqualTo(1);
         assertThat(result.resultSummary().path("qualityGate").path("repairedDrafts").asInt()).isEqualTo(1);
+        assertThat(result.resultSummary().path("qualityGate").path("finalFlaggedDrafts").asInt()).isZero();
+        assertThat(result.resultSummary().path("qualityGate").path("qualityScore").asInt()).isGreaterThanOrEqualTo(90);
         assertThat(result.resultSummary().path("usage").path("draftRepair").path("requests").asInt()).isEqualTo(1);
+        assertThat(result.resultSummary().path("usage").path("draftFinalAudit").path("requests").asInt()).isEqualTo(1);
+    }
+
+    @Test
+    void detectAudioQualityIssueRejectsBrokenHeadersAndAcceptsValidWav() throws Exception {
+        OpenAiJobProcessor processor = createProcessor();
+        Method detectAudioQualityIssue = OpenAiJobProcessor.class.getDeclaredMethod(
+                "detectAudioQualityIssue",
+                byte[].class,
+                String.class,
+                String.class
+        );
+        detectAudioQualityIssue.setAccessible(true);
+
+        byte[] invalidMp3 = new byte[200];
+        for (int i = 0; i < invalidMp3.length; i++) {
+            invalidMp3[i] = (byte) (i % 17);
+        }
+        byte[] wav = new byte[256];
+        wav[0] = 'R';
+        wav[1] = 'I';
+        wav[2] = 'F';
+        wav[3] = 'F';
+        wav[8] = 'W';
+        wav[9] = 'A';
+        wav[10] = 'V';
+        wav[11] = 'E';
+        for (int i = 12; i < wav.length; i++) {
+            wav[i] = (byte) (i % 23);
+        }
+
+        String invalidIssue = (String) detectAudioQualityIssue.invoke(processor, invalidMp3, "audio/mpeg", "Long enough text for validation");
+        String validIssue = (String) detectAudioQualityIssue.invoke(processor, wav, "audio/wav", "Long enough text for validation");
+
+        assertThat(invalidIssue).isEqualTo("mp3 header is invalid");
+        assertThat(validIssue).isNull();
     }
 
     private static OpenAiJobProcessor createProcessor() {

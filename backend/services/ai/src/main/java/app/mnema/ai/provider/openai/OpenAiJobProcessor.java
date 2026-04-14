@@ -1927,14 +1927,23 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                     GenerationContext context,
                                                     GeneratedDraftBatch generated) {
         try {
-            DraftQualityAuditResult auditResult = auditDrafts(job, apiKey, params, context, generated);
-            executionService.updateStepProgress(job.getJobId(), STEP_ANALYZE_CONTENT, auditResult.repairIndexes().isEmpty() ? 1.0d : 0.5d);
+            DraftQualityAuditResult auditResult = auditDrafts(job, apiKey, params, context, generated.drafts(), generated.model());
+            executionService.updateStepProgress(job.getJobId(), STEP_ANALYZE_CONTENT, auditResult.repairIndexes().isEmpty() ? 1.0d : 0.45d);
             if (auditResult.repairIndexes().isEmpty()) {
-                return mergeDraftQualityResult(generated, auditResult, null);
+                return mergeDraftQualityResult(generated, auditResult, null, auditResult);
             }
             DraftQualityRepairResult repairResult = repairDrafts(job, apiKey, params, context, generated.drafts(), auditResult);
+            executionService.updateStepProgress(job.getJobId(), STEP_ANALYZE_CONTENT, 0.8d);
+            DraftQualityAuditResult finalAuditResult = auditDrafts(
+                    job,
+                    apiKey,
+                    params,
+                    context,
+                    repairResult.repairedDrafts() == null || repairResult.repairedDrafts().isEmpty() ? generated.drafts() : repairResult.repairedDrafts(),
+                    firstNonBlank(repairResult.model(), auditResult.model(), generated.model())
+            );
             executionService.updateStepProgress(job.getJobId(), STEP_ANALYZE_CONTENT, 1.0d);
-            return mergeDraftQualityResult(generated, auditResult, repairResult);
+            return mergeDraftQualityResult(generated, auditResult, repairResult, finalAuditResult);
         } catch (Exception ex) {
             LOGGER.warn("OpenAI draft quality gate skipped jobId={} deckId={} message={}",
                     job.getJobId(),
@@ -1946,8 +1955,12 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     0,
                     0,
                     0,
+                    0,
+                    100,
                     null,
                     null,
+                    List.of(),
+                    List.of(),
                     List.of(),
                     List.of(),
                     List.of(),
@@ -1971,7 +1984,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private GeneratedDraftBatch mergeDraftQualityResult(GeneratedDraftBatch generated,
                                                         DraftQualityAuditResult auditResult,
-                                                        DraftQualityRepairResult repairResult) {
+                                                        DraftQualityRepairResult repairResult,
+                                                        DraftQualityAuditResult finalAuditResult) {
         Integer inputTokens = generated.inputTokens();
         Integer outputTokens = generated.outputTokens();
         if (auditResult != null) {
@@ -1982,27 +1996,42 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             inputTokens = sumNullable(inputTokens, repairResult.inputTokens());
             outputTokens = sumNullable(outputTokens, repairResult.outputTokens());
         }
+        if (finalAuditResult != null && finalAuditResult != auditResult) {
+            inputTokens = sumNullable(inputTokens, finalAuditResult.inputTokens());
+            outputTokens = sumNullable(outputTokens, finalAuditResult.outputTokens());
+        }
         List<CardDraft> effectiveDrafts = repairResult == null || repairResult.repairedDrafts() == null || repairResult.repairedDrafts().isEmpty()
                 ? generated.drafts()
                 : repairResult.repairedDrafts();
+        DraftQualityAuditResult effectiveFinalAudit = finalAuditResult == null ? auditResult : finalAuditResult;
+        int residualFlagged = effectiveFinalAudit == null ? 0 : effectiveFinalAudit.repairIndexes().size();
+        int qualityScore = computeDraftQualityScore(generated.drafts().size(), residualFlagged, repairResult == null ? 0 : repairResult.repairedCount());
+        String warning = repairResult != null && repairResult.warning() != null
+                ? repairResult.warning()
+                : (effectiveFinalAudit == null ? null : effectiveFinalAudit.warning());
+        if (warning == null && residualFlagged > 0) {
+            warning = "quality gate still sees residual issues after repair";
+        }
         DraftQualityResult quality = new DraftQualityResult(
                 firstNonBlank(
                         repairResult == null ? null : repairResult.model(),
-                        auditResult == null ? null : auditResult.model(),
+                        effectiveFinalAudit == null ? null : effectiveFinalAudit.model(),
                         generated.model()
                 ),
                 generated.drafts().size(),
                 auditResult == null ? 0 : auditResult.repairIndexes().size(),
                 auditResult == null ? 0 : auditResult.repairIndexes().size(),
                 repairResult == null ? 0 : repairResult.repairedCount(),
+                residualFlagged,
+                qualityScore,
                 inputTokens,
                 outputTokens,
                 auditResult == null ? List.of() : auditResult.items(),
                 auditResult == null ? List.of() : auditResult.usageEvents(),
                 repairResult == null ? List.of() : repairResult.usageEvents(),
-                repairResult != null && repairResult.warning() != null
-                        ? repairResult.warning()
-                        : (auditResult == null ? null : auditResult.warning())
+                effectiveFinalAudit == null ? List.of() : effectiveFinalAudit.items(),
+                effectiveFinalAudit == null || effectiveFinalAudit == auditResult ? List.of() : effectiveFinalAudit.usageEvents(),
+                warning
         );
         return new GeneratedDraftBatch(
                 generated.model(),
@@ -2023,19 +2052,20 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                 String apiKey,
                                                 JsonNode params,
                                                 GenerationContext context,
-                                                GeneratedDraftBatch generated) {
-        String model = resolveDraftQualityModel(params, generated.model());
-        Integer maxOutputTokens = resolveDraftQualityMaxOutputTokens(params, generated.drafts().size());
-        String prompt = buildDraftAuditPrompt(params, context, generated.drafts());
+                                                List<CardDraft> drafts,
+                                                String fallbackModel) {
+        String model = resolveDraftQualityModel(params, fallbackModel);
+        Integer maxOutputTokens = resolveDraftQualityMaxOutputTokens(params, drafts.size());
+        String prompt = buildDraftAuditPrompt(params, context, drafts);
         JsonNode responseFormat = buildDraftAuditResponseFormat();
         long startedAtNs = System.nanoTime();
         OpenAiResponseResult response = openAiClient.createResponse(
                 apiKey,
                 new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
         );
-        UsageEvent usageEvent = buildUsageEvent("draft_audit", 0, generated.drafts().size(), generated.drafts().size(), response, elapsedMillis(startedAtNs));
+        UsageEvent usageEvent = buildUsageEvent("draft_audit", 0, drafts.size(), drafts.size(), response, elapsedMillis(startedAtNs));
         JsonNode parsed = parseJsonResponse(response.outputText());
-        List<DraftQualityItem> items = parseDraftQualityItems(parsed, generated.drafts().size(), context.allowedFields());
+        List<DraftQualityItem> items = parseDraftQualityItems(parsed, drafts.size(), context.allowedFields());
         List<Integer> repairIndexes = items.stream()
                 .filter(item -> "repair".equals(item.decision()))
                 .map(DraftQualityItem::draftIndex)
@@ -2249,6 +2279,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     repairNode.put("model", generated.qualityResult().model());
                 }
             }
+            if (generated.qualityResult() != null && !generated.qualityResult().finalAuditUsageEvents().isEmpty()) {
+                ObjectNode finalAuditNode = details.putObject("draftFinalAudit");
+                populateUsageStageNode(finalAuditNode, generated.qualityResult().finalAuditUsageEvents());
+                if (generated.qualityResult().model() != null) {
+                    finalAuditNode.put("model", generated.qualityResult().model());
+                }
+            }
         }
         if (ttsResult != null && ttsResult.generated() > 0) {
             ObjectNode ttsNode = details.putObject("tts");
@@ -2307,6 +2344,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         node.put("flaggedDrafts", quality.flaggedDrafts());
         node.put("repairRequested", quality.repairRequested());
         node.put("repairedDrafts", quality.repairedDrafts());
+        node.put("finalFlaggedDrafts", quality.finalFlaggedDrafts());
+        node.put("qualityScore", quality.qualityScore());
         if (quality.model() != null) {
             node.put("model", quality.model());
         }
@@ -2327,7 +2366,31 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             ArrayNode fieldsNode = itemNode.putArray("focusFields");
             item.focusFields().forEach(fieldsNode::add);
         }
+        if (!quality.finalItems().isEmpty()) {
+            ArrayNode finalItems = node.putArray("finalItems");
+            for (DraftQualityItem item : quality.finalItems()) {
+                if ("accept".equals(item.decision()) && item.issues().isEmpty()) {
+                    continue;
+                }
+                ObjectNode itemNode = finalItems.addObject();
+                itemNode.put("draftIndex", item.draftIndex());
+                itemNode.put("decision", item.decision());
+                itemNode.put("summary", item.summary());
+                ArrayNode issuesNode = itemNode.putArray("issues");
+                item.issues().forEach(issuesNode::add);
+                ArrayNode fieldsNode = itemNode.putArray("focusFields");
+                item.focusFields().forEach(fieldsNode::add);
+            }
+        }
         return node;
+    }
+
+    private int computeDraftQualityScore(int draftCount, int residualFlagged, int repairedDrafts) {
+        int totalDrafts = Math.max(1, draftCount);
+        double score = 100.0d;
+        score -= residualFlagged * (70.0d / totalDrafts);
+        score -= Math.max(0, repairedDrafts - residualFlagged) * (15.0d / totalDrafts);
+        return Math.max(0, Math.min(100, (int) Math.round(score)));
     }
 
     private ObjectNode buildUsageEventNode(UsageEvent event) {
@@ -2405,12 +2468,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             format = "mp3";
         }
 
-        byte[] audio = createSpeechWithRetry(
+        byte[] audio = createValidatedSpeech(
                 job,
                 apiKey,
                 new OpenAiSpeechRequest(model, text, voice, format),
                 null,
-                null
+                null,
+                text
         );
 
         String contentType = resolveAudioContentType(format);
@@ -4085,11 +4149,15 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                       int flaggedDrafts,
                                       int repairRequested,
                                       int repairedDrafts,
+                                      int finalFlaggedDrafts,
+                                      int qualityScore,
                                       Integer inputTokens,
                                       Integer outputTokens,
                                       List<DraftQualityItem> items,
                                       List<UsageEvent> auditUsageEvents,
                                       List<UsageEvent> repairUsageEvents,
+                                      List<DraftQualityItem> finalItems,
+                                      List<UsageEvent> finalAuditUsageEvents,
                                       String warning) {
     }
 
@@ -4723,12 +4791,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 }
                 byte[] audio;
                 try {
-                    audio = createSpeechWithRetry(
+                    audio = createValidatedSpeech(
                             job,
                             apiKey,
                             new OpenAiSpeechRequest(model, text, voice, format),
                             card.userCardId(),
-                            mapping.targetField()
+                            mapping.targetField(),
+                            text
                     );
                 } catch (Exception ex) {
                     appendCardError(cardErrors, card.userCardId(), mapping.targetField(), summarizeError(ex));
@@ -4855,12 +4924,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 }
                 byte[] audio;
                 try {
-                    audio = createSpeechWithRetry(
+                    audio = createValidatedSpeech(
                             job,
                             apiKey,
                             new OpenAiSpeechRequest(model, text, voice, format),
                             card.userCardId(),
-                            mapping.targetField()
+                            mapping.targetField(),
+                            text
                     );
                 } catch (Exception ex) {
                     appendCardError(cardErrors, card.userCardId(), mapping.targetField(), summarizeError(ex));
@@ -5034,12 +5104,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             }
             byte[] audio;
             try {
-                audio = createSpeechWithRetry(
+                audio = createValidatedSpeech(
                         job,
                         apiKey,
                         new OpenAiSpeechRequest(model, text, voice, format),
                         cardId,
-                        mapping.targetField()
+                        mapping.targetField(),
+                        text
                 );
             } catch (Exception ex) {
                 String normalized = summarizeError(ex);
@@ -5851,6 +5922,81 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 attempts++;
             }
         }
+    }
+
+    private byte[] createValidatedSpeech(AiJobEntity job,
+                                         String apiKey,
+                                         OpenAiSpeechRequest request,
+                                         UUID cardId,
+                                         String targetField,
+                                         String sourceText) {
+        byte[] audio = createSpeechWithRetry(job, apiKey, request, cardId, targetField);
+        String issue = detectAudioQualityIssue(audio, resolveAudioContentType(request.responseFormat()), sourceText);
+        if (issue == null) {
+            return audio;
+        }
+        LOGGER.warn("OpenAI TTS audio sanity check failed jobId={} cardId={} field={} reason={} retrying=true",
+                job.getJobId(),
+                cardId,
+                targetField,
+                issue);
+        byte[] retryAudio = createSpeechWithRetry(job, apiKey, request, cardId, targetField);
+        String retryIssue = detectAudioQualityIssue(retryAudio, resolveAudioContentType(request.responseFormat()), sourceText);
+        if (retryIssue == null) {
+            return retryAudio;
+        }
+        throw new IllegalStateException("Generated audio failed sanity check: " + retryIssue);
+    }
+
+    private String detectAudioQualityIssue(byte[] audio, String contentType, String sourceText) {
+        if (audio == null || audio.length == 0) {
+            return "audio payload is empty";
+        }
+        if (audio.length < 128) {
+            return "audio payload is too small";
+        }
+        int distinctBytes = countDistinctLeadingBytes(audio, Math.min(audio.length, 256));
+        if (distinctBytes <= 2) {
+            return "audio payload looks degenerate";
+        }
+        String normalizedType = contentType == null ? "" : contentType.trim().toLowerCase(Locale.ROOT);
+        if ("audio/wav".equals(normalizedType)) {
+            if (audio.length < 12 || audio[0] != 'R' || audio[1] != 'I' || audio[2] != 'F' || audio[3] != 'F'
+                    || audio[8] != 'W' || audio[9] != 'A' || audio[10] != 'V' || audio[11] != 'E') {
+                return "wav header is invalid";
+            }
+        } else if ("audio/mpeg".equals(normalizedType)) {
+            boolean hasId3 = audio.length >= 3 && audio[0] == 'I' && audio[1] == 'D' && audio[2] == '3';
+            boolean hasFrameSync = audio.length >= 2 && (audio[0] & 0xFF) == 0xFF && (audio[1] & 0xE0) == 0xE0;
+            if (!hasId3 && !hasFrameSync) {
+                return "mp3 header is invalid";
+            }
+        } else if ("audio/ogg".equals(normalizedType)) {
+            if (audio.length < 4 || audio[0] != 'O' || audio[1] != 'g' || audio[2] != 'g' || audio[3] != 'S') {
+                return "ogg header is invalid";
+            }
+        }
+        if (sourceText != null && sourceText.length() >= 24 && audio.length < 256) {
+            return "audio payload is too small for source text length";
+        }
+        return null;
+    }
+
+    private int countDistinctLeadingBytes(byte[] audio, int limit) {
+        if (audio == null || audio.length == 0 || limit <= 0) {
+            return 0;
+        }
+        boolean[] seen = new boolean[256];
+        int distinct = 0;
+        int upperBound = Math.min(audio.length, limit);
+        for (int i = 0; i < upperBound; i++) {
+            int index = audio[i] & 0xFF;
+            if (!seen[index]) {
+                seen[index] = true;
+                distinct++;
+            }
+        }
+        return distinct;
     }
 
     private void throttleTtsRequests(boolean localProvider) {
