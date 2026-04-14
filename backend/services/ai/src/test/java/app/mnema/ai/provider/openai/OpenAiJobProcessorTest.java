@@ -22,6 +22,7 @@ import org.springframework.web.client.ResourceAccessException;
 import java.lang.reflect.Method;
 import java.net.SocketTimeoutException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -426,6 +427,185 @@ class OpenAiJobProcessorTest {
         Object result = handleGenerateCardsMaybeBatched.invoke(processor, job, "", params);
         assertThat(result).isInstanceOf(app.mnema.ai.service.AiJobProcessingResult.class);
 
+        verify(coreApiClient, times(1)).addCards(any(), any(), any(), any());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void handleImportGenerateUsesExactItemBatchCountForLocalOllama() throws Exception {
+        OpenAiClient openAiClient = mock(OpenAiClient.class);
+        CoreApiClient coreApiClient = mock(CoreApiClient.class);
+        AiImportContentService importContentService = mock(AiImportContentService.class);
+        CardNoveltyService noveltyService = new CardNoveltyService(coreApiClient);
+        OpenAiJobProcessor processor = new OpenAiJobProcessor(
+                openAiClient,
+                new OpenAiProps(
+                        "https://api.openai.com/v1",
+                        "",
+                        "qwen3:4b",
+                        "gpt-4o-mini-tts",
+                        "alloy",
+                        "mp3",
+                        "gpt-4o-mini-transcribe",
+                        "gpt-image-1-mini",
+                        "1024x1024",
+                        "low",
+                        "natural",
+                        "png",
+                        "sora-2",
+                        5,
+                        "720p",
+                        60,
+                        12,
+                        5,
+                        2_000L,
+                        30_000L,
+                        10_000L,
+                        600_000L
+                ),
+                mock(SecretVault.class),
+                mock(AiProviderCredentialRepository.class),
+                mock(MediaApiClient.class),
+                importContentService,
+                mock(AudioChunkingService.class),
+                coreApiClient,
+                noveltyService,
+                OBJECT_MAPPER,
+                mock(AiJobExecutionService.class),
+                200_000
+        );
+
+        UUID deckId = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
+        UUID templateId = UUID.randomUUID();
+        UUID sourceMediaId = UUID.randomUUID();
+        ObjectNode params = OBJECT_MAPPER.createObjectNode();
+        params.put("__skipStepTracking", true);
+        params.put("provider", "ollama");
+        params.put("mode", "import_generate");
+        params.put("count", 8);
+        params.put("sourceMediaId", sourceMediaId.toString());
+        params.putObject("tts").put("enabled", false);
+        params.putArray("fields")
+                .add("markdown")
+                .add("markdown_2")
+                .add("markdown_3")
+                .add("markdown_4")
+                .add("field");
+        AiJobEntity job = createJob(params, AiJobType.generic);
+        job.setDeckId(deckId);
+        job.setUserAccessToken("token");
+
+        AiImportContentService.ImportSourcePayload source = new AiImportContentService.ImportSourcePayload(
+                new byte[0],
+                "text/plain",
+                64,
+                false
+        );
+        when(importContentService.loadSource(any(), any())).thenReturn(source);
+        when(importContentService.extractText(any(), any(), any()))
+                .thenReturn(new AiImportContentService.ImportTextPayload(
+                        """
+                        1. subpoena
+                        2. plaintiff
+                        3. bailiff
+                        4. deposition
+                        5. affidavit
+                        6. injunction
+                        7. paralegal
+                        8. pro bono
+                        """,
+                        "text/plain",
+                        64,
+                        false,
+                        96,
+                        "utf-8",
+                        500,
+                        "text",
+                        null,
+                        null,
+                        null,
+                        null
+                ));
+        when(coreApiClient.getUserDeck(deckId, "token"))
+                .thenReturn(new CoreApiClient.CoreUserDeckResponse(deckId, publicDeckId, 1, 1));
+        when(coreApiClient.getPublicDeck(publicDeckId, 1))
+                .thenReturn(new CoreApiClient.CorePublicDeckResponse(
+                        publicDeckId,
+                        1,
+                        UUID.randomUUID(),
+                        "Deck",
+                        "Desc",
+                        "en",
+                        templateId,
+                        1
+                ));
+        when(coreApiClient.getTemplate(templateId, 1, "token"))
+                .thenReturn(new CoreApiClient.CoreTemplateResponse(
+                        templateId,
+                        1,
+                        1,
+                        "Basic",
+                        "",
+                        null,
+                        null,
+                        List.of(
+                                new CoreApiClient.CoreFieldTemplate(UUID.randomUUID(), "markdown", "Markdown", "text", true, true, 0),
+                                new CoreApiClient.CoreFieldTemplate(UUID.randomUUID(), "markdown_2", "Markdown 2", "text", true, false, 1),
+                                new CoreApiClient.CoreFieldTemplate(UUID.randomUUID(), "markdown_3", "Markdown 3", "text", true, false, 2),
+                                new CoreApiClient.CoreFieldTemplate(UUID.randomUUID(), "markdown_4", "Markdown 4", "text", true, false, 3),
+                                new CoreApiClient.CoreFieldTemplate(UUID.randomUUID(), "field", "Field", "text", true, false, 4)
+                        )
+                ));
+        when(coreApiClient.getUserCards(deckId, 1, 200, "token"))
+                .thenReturn(new CoreApiClient.CoreUserCardPage(List.of()));
+
+        List<Integer> schemaCounts = new ArrayList<>();
+        AtomicInteger sequence = new AtomicInteger(1);
+        when(openAiClient.createResponse(any(), any())).thenAnswer(invocation -> {
+            OpenAiResponseRequest request = invocation.getArgument(1);
+            int count = request.responseFormat()
+                    .path("schema")
+                    .path("properties")
+                    .path("cards")
+                    .path("minItems")
+                    .asInt();
+            schemaCounts.add(count);
+            StringBuilder json = new StringBuilder("{\"cards\":[");
+            for (int i = 0; i < count; i++) {
+                if (i > 0) {
+                    json.append(',');
+                }
+                int id = sequence.getAndIncrement();
+                json.append("{\"fields\":{")
+                        .append("\"markdown\":\"term ").append(id).append("\",")
+                        .append("\"markdown_2\":\"translation ").append(id).append("\",")
+                        .append("\"markdown_3\":\"example ").append(id).append("\",")
+                        .append("\"markdown_4\":\"note ").append(id).append("\",")
+                        .append("\"field\":\"audio text ").append(id).append("\"")
+                        .append("}}");
+            }
+            json.append("]}");
+            return new OpenAiResponseResult(json.toString(), "qwen3:4b", 100, 50, OBJECT_MAPPER.createObjectNode());
+        });
+        when(coreApiClient.addCards(any(), any(), any(), any())).thenAnswer(invocation -> {
+            List<CoreApiClient.CreateCardRequestPayload> requests = invocation.getArgument(1);
+            return requests.stream()
+                    .map(request -> new CoreApiClient.CoreUserCardResponse(UUID.randomUUID(), null, true, request.content()))
+                    .toList();
+        });
+
+        Method handleImportGenerate = OpenAiJobProcessor.class.getDeclaredMethod(
+                "handleImportGenerate",
+                AiJobEntity.class,
+                String.class,
+                JsonNode.class
+        );
+        handleImportGenerate.setAccessible(true);
+        Object result = handleImportGenerate.invoke(processor, job, "", params);
+        assertThat(result).isInstanceOf(app.mnema.ai.service.AiJobProcessingResult.class);
+
+        assertThat(schemaCounts).containsExactly(4, 4);
         verify(coreApiClient, times(1)).addCards(any(), any(), any(), any());
     }
 

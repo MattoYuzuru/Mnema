@@ -405,7 +405,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                         sharedContext,
                         offset,
                         items.size()
-                )
+                ),
+                false
         ));
         return applyGeneratedDrafts(job, apiKey, baseParams, context, generated, items.size(), accessToken);
     }
@@ -1560,7 +1561,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 params,
                 context,
                 context.count(),
-                userPrompt
+                userPrompt,
+                true
         ));
         return applyGeneratedDrafts(job, apiKey, params, context, generated, context.count(), accessToken);
     }
@@ -1593,7 +1595,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                JsonNode params,
                                                GenerationContext context,
                                                int requestedCount,
-                                               String userPrompt) {
+                                               String userPrompt,
+                                               boolean expandCandidateCount) {
         String model = textOrDefault(params.path("model"), props.defaultModel());
         Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
                 ? params.path("maxOutputTokens").asInt()
@@ -1610,7 +1613,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
         for (int attempt = 0; attempt < GENERATE_MAX_ATTEMPTS && uniqueDrafts.size() < requestedCount; attempt++) {
             int remaining = requestedCount - uniqueDrafts.size();
-            int candidateCount = resolveCandidateCount(remaining, attempt, localOllamaRequest);
+            int candidateCount = expandCandidateCount
+                    ? resolveCandidateCount(remaining, attempt, localOllamaRequest)
+                    : remaining;
             String prompt = buildCardsPrompt(
                     augmentGeneratePrompt(userPrompt, context.noveltyIndex(), attempt, localOllamaRequest),
                     context.template(),
@@ -1668,6 +1673,17 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                       int totalCount,
                                                       int batchSize,
                                                       BatchPromptFactory promptFactory) {
+        return generateDraftsBatched(job, apiKey, params, context, totalCount, batchSize, promptFactory, true);
+    }
+
+    private GeneratedDraftBatch generateDraftsBatched(AiJobEntity job,
+                                                      String apiKey,
+                                                      JsonNode params,
+                                                      GenerationContext context,
+                                                      int totalCount,
+                                                      int batchSize,
+                                                      BatchPromptFactory promptFactory,
+                                                      boolean expandCandidateCount) {
         int remaining = totalCount;
         int offset = 0;
         List<CardDraft> drafts = new ArrayList<>();
@@ -1687,7 +1703,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     params,
                     context,
                     count,
-                    promptFactory.build(offset, count)
+                    promptFactory.build(offset, count),
+                    expandCandidateCount
             );
             drafts.addAll(batch.drafts());
             droppedEmpty += batch.droppedEmpty();
