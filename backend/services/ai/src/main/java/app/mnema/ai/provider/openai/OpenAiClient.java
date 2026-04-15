@@ -28,6 +28,7 @@ public class OpenAiClient {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(OpenAiClient.class);
     private static final int LOCAL_EMPTY_RESPONSE_MAX_ATTEMPTS = 3;
+    private static final int LOCAL_GATEWAY_RESPONSE_MAX_RETRIES = 0;
 
     private final RestClient restClient;
     private final ObjectMapper objectMapper;
@@ -123,7 +124,7 @@ public class OpenAiClient {
                                              String model,
                                              String compatInput,
                                              Integer maxOutputTokens) {
-        return ProviderRetrySupport.executeTextRequest("OpenAI", LOGGER, () -> {
+        return ProviderRetrySupport.executeTextRequest("OpenAI", LOGGER, resolveResponsesRetryCount(localGatewayBaseUrl), () -> {
             RestClient.RequestBodySpec spec = restClient.post()
                     .uri("/v1/responses")
                     .contentType(MediaType.APPLICATION_JSON);
@@ -141,6 +142,10 @@ public class OpenAiClient {
                 return createChatCompletionCompat(apiKey, model, compatInput, maxOutputTokens);
             }
         });
+    }
+
+    static int resolveResponsesRetryCount(boolean localGatewayBaseUrl) {
+        return localGatewayBaseUrl ? LOCAL_GATEWAY_RESPONSE_MAX_RETRIES : 4;
     }
 
     private OpenAiResponseResult toResponseResult(JsonNode response) {

@@ -409,6 +409,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         String accessToken = job.getUserAccessToken();
         GenerationContext context = runStep(job, baseParams, STEP_PREPARE_CONTEXT, () -> prepareGenerationContext(job, baseParams, accessToken));
         String userPrompt = extractTextParam(baseParams, "input", "prompt", "text");
+        boolean expandCandidateCount = !isLocalOllamaRequest(baseParams);
         GeneratedDraftBatch generated = runStep(job, baseParams, STEP_GENERATE_CONTENT, () -> generateDraftsBatched(
                 job,
                 apiKey,
@@ -417,7 +418,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 totalCount,
                 batchSize,
                 initialBatchSize,
-                (offset, count) -> userPrompt
+                (offset, count) -> userPrompt,
+                expandCandidateCount
         ));
         GeneratedDraftBatch qualityChecked = maybeRunDraftQualityGate(job, apiKey, baseParams, context, generated);
         return applyGeneratedDrafts(job, apiKey, baseParams, context, qualityChecked, totalCount, accessToken);

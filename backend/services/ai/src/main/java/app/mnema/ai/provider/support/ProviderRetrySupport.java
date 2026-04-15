@@ -49,6 +49,22 @@ public final class ProviderRetrySupport {
         );
     }
 
+    public static <T> T executeTextRequest(String provider,
+                                           Logger logger,
+                                           int maxRetries,
+                                           RetriableSupplier<T> supplier) {
+        return executeTextRequest(
+                provider,
+                logger,
+                maxRetries,
+                DEFAULT_TEXT_RETRY_INITIAL_DELAY_MS,
+                DEFAULT_TEXT_RETRY_MAX_DELAY_MS,
+                ProviderRetrySupport::sleepQuietly,
+                () -> ThreadLocalRandom.current().nextDouble(MIN_JITTER_RATIO, MAX_JITTER_RATIO),
+                supplier
+        );
+    }
+
     static <T> T executeTextRequest(String provider,
                                     Logger logger,
                                     int maxRetries,

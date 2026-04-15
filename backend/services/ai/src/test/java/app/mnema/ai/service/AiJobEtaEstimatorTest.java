@@ -243,4 +243,39 @@ class AiJobEtaEstimatorTest {
         assertThat(eta.estimatedSecondsRemaining()).isNotNull().isPositive().isLessThan(30);
         assertThat(eta.queueAhead()).isNull();
     }
+
+    @Test
+    void estimateDoesNotPinLongRunningLocalGenerateContentToStaleProgress() {
+        AiJobEntity job = new AiJobEntity();
+        job.setJobId(UUID.randomUUID());
+        job.setStatus(AiJobStatus.processing);
+        job.setType(AiJobType.enrich);
+        job.setProgress(62);
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", "generate_cards");
+        params.put("count", 10);
+        params.putArray("fields")
+                .add("term")
+                .add("translation")
+                .add("example")
+                .add("note")
+                .add("hint");
+        job.setParamsJson(params);
+
+        Instant now = Instant.now();
+        AiJobEtaEstimator.EtaEstimate eta = estimator.estimate(job, new AiJobExecutionService.ExecutionSnapshot(
+                "generate_content",
+                1,
+                4,
+                List.of(
+                        new AiJobStepResponse("prepare_context", AiJobStepStatus.completed, now.minusSeconds(160), now.minusSeconds(150), null),
+                        new AiJobStepResponse("generate_content", AiJobStepStatus.processing, now.minusSeconds(120), null, null),
+                        new AiJobStepResponse("analyze_content", AiJobStepStatus.queued, null, null, null),
+                        new AiJobStepResponse("apply_changes", AiJobStepStatus.queued, null, null, null)
+                )
+        ), "ollama");
+
+        assertThat(eta.estimatedSecondsRemaining()).isNotNull().isGreaterThan(200);
+        assertThat(eta.queueAhead()).isNull();
+    }
 }

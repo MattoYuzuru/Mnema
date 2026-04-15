@@ -491,7 +491,7 @@ class OpenAiJobProcessorTest {
     }
 
     @Test
-    void handleGenerateCardsMaybeBatchedUsesSmallerFirstLocalBatch() throws Exception {
+    void handleGenerateCardsMaybeBatchedKeepsLocalBatchRequestsExact() throws Exception {
         OpenAiClient openAiClient = mock(OpenAiClient.class);
         CoreApiClient coreApiClient = mock(CoreApiClient.class);
         CardNoveltyService noveltyService = new CardNoveltyService(coreApiClient);
@@ -630,7 +630,7 @@ class OpenAiJobProcessorTest {
 
         assertThat(requestedBatchSizes)
                 .as("requested candidate counts: %s", requestedBatchSizes)
-                .startsWith(6, 8);
+                .containsExactly(4, 6);
     }
 
     @Test

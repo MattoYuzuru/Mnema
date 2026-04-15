@@ -46,6 +46,12 @@ class OpenAiClientTest {
     }
 
     @Test
+    void localGatewayResponsesDoNotUseImmediateTransportRetries() {
+        assertThat(OpenAiClient.resolveResponsesRetryCount(true)).isZero();
+        assertThat(OpenAiClient.resolveResponsesRetryCount(false)).isEqualTo(4);
+    }
+
+    @Test
     void summarizeResponseIncludesStatusModelAndOutputTypes() {
         ObjectNode response = OBJECT_MAPPER.createObjectNode();
         response.put("status", "completed");

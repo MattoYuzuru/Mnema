@@ -96,6 +96,23 @@ class ProviderRetrySupportTest {
     }
 
     @Test
+    void executeTextRequestCanDisableTransportRetries() {
+        AtomicInteger attempts = new AtomicInteger();
+
+        assertThatThrownBy(() -> ProviderRetrySupport.executeTextRequest(
+                "OpenAI",
+                logger,
+                0,
+                () -> {
+                    attempts.incrementAndGet();
+                    throw new ResourceAccessException("Read timed out", new SocketTimeoutException("Read timed out"));
+                }
+        )).isInstanceOf(ResourceAccessException.class);
+
+        assertThat(attempts).hasValue(1);
+    }
+
+    @Test
     void executeTextRequestDoesNotRetryOnNonRetryableClientErrors() {
         AtomicInteger attempts = new AtomicInteger();
 
