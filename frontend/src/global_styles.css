@@ -1,6 +1,7 @@
 :root {
     --font-display: "Space Grotesk", "Sora", sans-serif;
     --font-body: "Manrope", "Sora", sans-serif;
+    --font-code: "JetBrains Mono", "SFMono-Regular", "SF Mono", "Fira Code", monospace;
 
     --color-primary-accent: #0ea5e9;
     --color-secondary-accent: #14b8a6;
@@ -288,6 +289,108 @@ textarea::placeholder {
 .container {
     width: min(1200px, 92vw);
     margin: 0 auto;
+}
+
+.flashcard-view .field-type-markdown h1,
+.flashcard-view .field-type-markdown h2,
+.flashcard-view .field-type-markdown h3 {
+    margin: 0 0 var(--spacing-xs) 0;
+    font-size: 1rem;
+    font-weight: 700;
+}
+
+.flashcard-view .field-type-markdown ul {
+    margin: 0 0 var(--spacing-sm) 0;
+    padding-left: 1.25rem;
+}
+
+.flashcard-view .field-type-markdown li {
+    margin: 0;
+}
+
+.flashcard-view .field-type-markdown .mn-inline-code,
+.flashcard-view .field-type-markdown .mn-code-block {
+    font-family: var(--font-code);
+}
+
+.flashcard-view .field-type-markdown .mn-inline-code {
+    display: inline-block;
+    padding: 0.08rem 0.45rem;
+    border-radius: 0.55rem;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.08), rgba(15, 23, 42, 0.12));
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+    font-size: 0.92em;
+    line-height: 1.35;
+}
+
+.flashcard-view .field-type-markdown .mn-code-block {
+    position: relative;
+    margin: var(--spacing-sm) 0 0 0;
+    padding: calc(var(--spacing-lg) + 0.55rem) var(--spacing-md) var(--spacing-md);
+    overflow-x: auto;
+    border-radius: 1rem;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    background:
+        linear-gradient(180deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.92)),
+        radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 45%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.8),
+        0 12px 28px rgba(15, 23, 42, 0.12);
+    white-space: pre;
+}
+
+.flashcard-view .field-type-markdown .mn-code-block::before {
+    content: attr(data-language);
+    position: absolute;
+    top: 0.7rem;
+    right: 0.85rem;
+    font-family: var(--font-display);
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(51, 65, 85, 0.75);
+}
+
+.flashcard-view .field-type-markdown .mn-code {
+    display: block;
+    color: #0f172a;
+    line-height: 1.65;
+    font-size: 0.92rem;
+}
+
+.flashcard-view .field-type-markdown .mn-code-token--comment {
+    color: #64748b;
+    font-style: italic;
+}
+
+.flashcard-view .field-type-markdown .mn-code-token--keyword,
+.flashcard-view .field-type-markdown .mn-code-token--meta {
+    color: #7c3aed;
+    font-weight: 700;
+}
+
+.flashcard-view .field-type-markdown .mn-code-token--string,
+.flashcard-view .field-type-markdown .mn-code-token--attr-value {
+    color: #047857;
+}
+
+.flashcard-view .field-type-markdown .mn-code-token--number,
+.flashcard-view .field-type-markdown .mn-code-token--boolean {
+    color: #c2410c;
+}
+
+.flashcard-view .field-type-markdown .mn-code-token--type,
+.flashcard-view .field-type-markdown .mn-code-token--tag {
+    color: #0f766e;
+    font-weight: 600;
+}
+
+.flashcard-view .field-type-markdown .mn-code-token--property,
+.flashcard-view .field-type-markdown .mn-code-token--attr-name,
+.flashcard-view .field-type-markdown .mn-code-token--variable {
+    color: #1d4ed8;
 }
 
 @media (max-width: 768px) {
