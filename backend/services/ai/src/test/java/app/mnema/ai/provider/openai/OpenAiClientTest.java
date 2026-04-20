@@ -1,5 +1,7 @@
 package app.mnema.ai.provider.openai;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.web.client.ResourceAccessException;
 
@@ -8,6 +10,7 @@ import java.net.SocketTimeoutException;
 import static org.assertj.core.api.Assertions.assertThat;
 
 class OpenAiClientTest {
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Test
     void fallbackEnabledForMissingResponsesEndpoint() {
@@ -33,5 +36,32 @@ class OpenAiClientTest {
 
         assertThat(OpenAiClient.isRetryableTransportFailure(timeout)).isTrue();
         assertThat(OpenAiClient.isRetryableTransportFailure(new IllegalArgumentException("bad request"))).isFalse();
+    }
+
+    @Test
+    void detectsLocalGatewayBaseUrls() {
+        assertThat(OpenAiClient.isLocalGatewayBaseUrl("http://local-ai-gateway:8089")).isTrue();
+        assertThat(OpenAiClient.isLocalGatewayBaseUrl("http://localhost:8090")).isTrue();
+        assertThat(OpenAiClient.isLocalGatewayBaseUrl("https://api.openai.com/v1")).isFalse();
+    }
+
+    @Test
+    void localGatewayResponsesDoNotUseImmediateTransportRetries() {
+        assertThat(OpenAiClient.resolveResponsesRetryCount(true)).isZero();
+        assertThat(OpenAiClient.resolveResponsesRetryCount(false)).isEqualTo(4);
+    }
+
+    @Test
+    void summarizeResponseIncludesStatusModelAndOutputTypes() {
+        ObjectNode response = OBJECT_MAPPER.createObjectNode();
+        response.put("status", "completed");
+        response.put("model", "qwen3:4b");
+        response.putArray("output")
+                .addObject().put("type", "reasoning");
+
+        assertThat(OpenAiClient.summarizeResponse(response))
+                .contains("status=completed")
+                .contains("model=qwen3:4b")
+                .contains("outputTypes=reasoning");
     }
 }

@@ -201,6 +201,11 @@ public class TemplateService {
         return toCardTemplateDTO(entity, templateVersion, fields);
     }
 
+    @PreAuthorize("hasAuthority('SCOPE_core.internal')")
+    public CardTemplateDTO getCardTemplateByIdInternal(UUID templateId, Integer version) {
+        return getCardTemplateById(templateId, version);
+    }
+
     // GET /api/core/templates/{templateId}/versions - список версий
     @PreAuthorize("hasAuthority('SCOPE_user.read')")
     public List<Integer> getTemplateVersions(UUID templateId) {

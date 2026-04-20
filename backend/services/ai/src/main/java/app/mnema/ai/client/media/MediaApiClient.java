@@ -55,7 +55,10 @@ public class MediaApiClient {
     }
 
     public List<MediaResolved> resolve(List<UUID> mediaIds, String accessToken) {
-        Map<String, Object> payload = Map.of("mediaIds", mediaIds);
+        Map<String, Object> payload = Map.of(
+                "mediaIds", mediaIds,
+                "urlTarget", "INTERNAL"
+        );
         RestClient.RequestBodySpec request = restClient.post()
                 .uri("/resolve")
                 .contentType(MediaType.APPLICATION_JSON)
@@ -73,11 +76,11 @@ public class MediaApiClient {
     }
 
     private String resolveAuthToken(String accessToken) {
-        if (accessToken != null && !accessToken.isBlank()) {
-            return accessToken;
-        }
         if (props.internalToken() != null && !props.internalToken().isBlank()) {
             return props.internalToken();
+        }
+        if (accessToken != null && !accessToken.isBlank()) {
+            return accessToken;
         }
         return null;
     }

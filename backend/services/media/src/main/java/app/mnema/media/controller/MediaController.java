@@ -26,7 +26,7 @@ public class MediaController {
     @PostMapping("/resolve")
     public List<ResolvedMedia> resolve(@AuthenticationPrincipal Jwt jwt,
                                        @Valid @RequestBody ResolveRequest request) {
-        return mediaService.resolve(jwt, request.mediaIds());
+        return mediaService.resolve(jwt, request.mediaIds(), request.urlTarget());
     }
 
     @DeleteMapping("/assets/{mediaId}")

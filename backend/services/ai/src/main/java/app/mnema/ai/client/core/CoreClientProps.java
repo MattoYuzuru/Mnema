@@ -4,6 +4,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 
 @ConfigurationProperties(prefix = "app.core")
 public record CoreClientProps(
-        String baseUrl
+        String baseUrl,
+        String internalToken
 ) {
 }

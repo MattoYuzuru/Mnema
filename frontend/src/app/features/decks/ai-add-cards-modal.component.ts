@@ -113,8 +113,12 @@ type TtsMapping = { sourceField: string; targetField: string };
                     type="text"
                     [ngModel]="ttsModel()"
                     (ngModelChange)="onTtsModelChange($event)"
+                    [attr.list]="ttsModelOptions().length ? 'ai-add-tts-model-options' : null"
                     [placeholder]="ttsModelPlaceholder()"
                   />
+                  <datalist id="ai-add-tts-model-options">
+                    <option *ngFor="let model of ttsModelOptions()" [value]="model"></option>
+                  </datalist>
                 </div>
                 <div class="form-field">
                   <label for="ai-tts-voice">{{ 'aiAdd.voiceLabel' | translate }}</label>
@@ -986,7 +990,7 @@ export class AiAddCardsModalComponent implements OnInit {
     voiceLabel(voice: string): string {
         if (!voice) return '';
         if (voice === 'custom') return this.i18n.translate('aiAdd.customOption');
-        return voice.charAt(0).toUpperCase() + voice.slice(1);
+        return voice;
     }
 
     private resolveModelPlaceholder(provider: string): string {

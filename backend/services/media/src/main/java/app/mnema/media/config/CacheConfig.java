@@ -60,7 +60,8 @@ public class CacheConfig {
 
         return RedisCacheManager.builder(connectionFactory)
                 .cacheDefaults(config)
-                .withCacheConfiguration("media-resolve", resolvedConfig)
+                .withCacheConfiguration("media-resolve-public", resolvedConfig)
+                .withCacheConfiguration("media-resolve-internal", resolvedConfig)
                 .build();
     }
 

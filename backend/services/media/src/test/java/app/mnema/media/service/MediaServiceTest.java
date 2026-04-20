@@ -5,6 +5,7 @@ import app.mnema.media.controller.dto.CompletedPartRequest;
 import app.mnema.media.controller.dto.CreateUploadRequest;
 import app.mnema.media.controller.dto.CreateUploadResponse;
 import app.mnema.media.controller.dto.DirectUploadRequest;
+import app.mnema.media.controller.dto.ResolveUrlTarget;
 import app.mnema.media.controller.dto.ResolvedMedia;
 import app.mnema.media.domain.entity.MediaAssetEntity;
 import app.mnema.media.domain.entity.MediaUploadEntity;
@@ -353,13 +354,13 @@ class MediaServiceTest {
         when(assetRepository.findByMediaIdIn(List.of(privateMediaId))).thenReturn(List.of(privateAsset));
         when(currentUserProvider.getUserId(jwt)).thenReturn(Optional.of(ownerId));
         when(scopeHelper.hasAnyScope(jwt, Set.of("media.internal", "media.read_all"))).thenReturn(false);
-        when(resolveCache.resolve(publicAsset)).thenReturn(new ResolvedMedia(publicMediaId, MediaKind.card_image, "https://cdn/public", "image/png", 10L, null, null, null, Instant.now()));
+        when(resolveCache.resolvePublic(publicAsset)).thenReturn(new ResolvedMedia(publicMediaId, MediaKind.card_image, "https://cdn/public", "image/png", 10L, null, null, null, Instant.now()));
 
-        List<ResolvedMedia> resolved = service.resolve(jwt, List.of(publicMediaId));
+        List<ResolvedMedia> resolved = service.resolve(jwt, List.of(publicMediaId), null);
 
         assertThat(resolved).singleElement().extracting(ResolvedMedia::url).isEqualTo("https://cdn/public");
 
-        assertThatThrownBy(() -> service.resolve(jwt, List.of(privateMediaId)))
+        assertThatThrownBy(() -> service.resolve(jwt, List.of(privateMediaId), null))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
     }
@@ -377,13 +378,47 @@ class MediaServiceTest {
         when(assetRepository.findByMediaIdIn(List.of(missingId))).thenReturn(List.of());
         when(assetRepository.findByMediaIdIn(List.of(pendingId))).thenReturn(List.of(pending));
 
-        assertThatThrownBy(() -> service.resolve(jwt, List.of(missingId)))
+        assertThatThrownBy(() -> service.resolve(jwt, List.of(missingId), null))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND));
 
-        assertThatThrownBy(() -> service.resolve(jwt, List.of(pendingId)))
+        assertThatThrownBy(() -> service.resolve(jwt, List.of(pendingId), null))
                 .isInstanceOf(ResponseStatusException.class)
                 .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode()).isEqualTo(HttpStatus.CONFLICT));
+    }
+
+    @Test
+    void resolve_internalTargetRequiresInternalScopeAndUsesInternalCache() {
+        UUID ownerId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        Jwt jwt = jwt();
+        MediaAssetEntity asset = asset(mediaId, ownerId, MediaKind.import_file, MediaStatus.ready, "media/import_file/" + mediaId, "application/zip");
+        ResolvedMedia internal = new ResolvedMedia(mediaId, MediaKind.import_file, "http://minio:9000/object", "application/zip", 10L, null, null, null, Instant.now());
+
+        when(assetRepository.findByMediaIdIn(List.of(mediaId))).thenReturn(List.of(asset));
+        when(currentUserProvider.getUserId(jwt)).thenReturn(Optional.of(ownerId));
+        when(scopeHelper.hasAnyScope(jwt, Set.of("media.internal", "media.read_all"))).thenReturn(true);
+        when(resolveCache.resolveInternal(asset)).thenReturn(internal);
+
+        List<ResolvedMedia> resolved = service.resolve(jwt, List.of(mediaId), ResolveUrlTarget.INTERNAL);
+
+        assertThat(resolved).containsExactly(internal);
+        verify(resolveCache).resolveInternal(asset);
+    }
+
+    @Test
+    void resolve_internalTargetRejectsExternalCaller() {
+        UUID ownerId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        Jwt jwt = jwt();
+
+        when(assetRepository.findByMediaIdIn(List.of(mediaId))).thenReturn(List.of());
+        when(currentUserProvider.getUserId(jwt)).thenReturn(Optional.of(ownerId));
+        when(scopeHelper.hasAnyScope(jwt, Set.of("media.internal", "media.read_all"))).thenReturn(false);
+
+        assertThatThrownBy(() -> service.resolve(jwt, List.of(mediaId), ResolveUrlTarget.INTERNAL))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(ex -> assertThat(((ResponseStatusException) ex).getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN));
     }
 
     @Test

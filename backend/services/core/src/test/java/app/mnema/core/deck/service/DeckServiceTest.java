@@ -157,6 +157,20 @@ class DeckServiceTest {
     }
 
     @Test
+    void getUserDeckInternal_usesDeckOwnerForLookup() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        UserDeckEntity deck = userDeck(deckId, userId, UUID.randomUUID(), 1, 1, 1, false);
+
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(deck));
+
+        UserDeckDTO result = deckService.getUserDeckInternal(deckId);
+
+        assertThat(result.userDeckId()).isEqualTo(deckId);
+        assertThat(result.userId()).isEqualTo(userId);
+    }
+
+    @Test
     void getPublicDeckSize_usesLatestWhenVersionMissing() {
         UUID deckId = UUID.randomUUID();
         PublicDeckEntity latestDeck = publicDeck(deckId, 3, UUID.randomUUID(), null, 2, true, true);

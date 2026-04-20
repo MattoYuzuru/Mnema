@@ -119,6 +119,45 @@ class AiJobEtaEstimatorTest {
     }
 
     @Test
+    void estimatePlannedUsesSlowerLocalImportContentThroughput() {
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", "import_generate");
+        params.put("count", 40);
+        params.put("sourceMediaId", UUID.randomUUID().toString());
+        params.putArray("fields")
+                .add("term")
+                .add("translation")
+                .add("example")
+                .add("note")
+                .add("audio");
+        when(jobRepository.countRunnableJobs(any(List.class), any(Instant.class))).thenReturn(0L);
+
+        AiJobEtaEstimator.EtaEstimate localEta = estimator.estimatePlanned(AiJobType.generic, params, "ollama");
+        AiJobEtaEstimator.EtaEstimate openAiEta = estimator.estimatePlanned(AiJobType.generic, params, "openai");
+
+        assertThat(localEta.estimatedSecondsRemaining()).isNotNull().isGreaterThan(openAiEta.estimatedSecondsRemaining());
+    }
+
+    @Test
+    void estimatePlannedAccountsForOcrSourceNormalization() {
+        ObjectNode cleanParams = objectMapper.createObjectNode();
+        cleanParams.put("mode", "import_generate");
+        cleanParams.put("count", 12);
+        cleanParams.put("sourceMediaId", UUID.randomUUID().toString());
+        cleanParams.put("sourceExtraction", "pdf");
+        cleanParams.putArray("fields").add("term").add("translation").add("example");
+
+        ObjectNode noisyParams = cleanParams.deepCopy();
+        noisyParams.put("sourceExtraction", "ocr");
+        when(jobRepository.countRunnableJobs(any(List.class), any(Instant.class))).thenReturn(0L);
+
+        AiJobEtaEstimator.EtaEstimate cleanEta = estimator.estimatePlanned(AiJobType.generic, cleanParams, "openai");
+        AiJobEtaEstimator.EtaEstimate noisyEta = estimator.estimatePlanned(AiJobType.generic, noisyParams, "openai");
+
+        assertThat(noisyEta.estimatedSecondsRemaining()).isNotNull().isGreaterThan(cleanEta.estimatedSecondsRemaining());
+    }
+
+    @Test
     void estimateProcessingTracksMixedStepStatuses() {
         AiJobEntity job = new AiJobEntity();
         job.setJobId(UUID.randomUUID());
@@ -174,6 +213,69 @@ class AiJobEtaEstimatorTest {
         ), "local-openai");
 
         assertThat(eta.estimatedSecondsRemaining()).isNotNull().isPositive();
+        assertThat(eta.queueAhead()).isNull();
+    }
+
+    @Test
+    void estimatePrefersProgressAwareEtaForLongRunningProcessingStep() {
+        AiJobEntity job = new AiJobEntity();
+        job.setJobId(UUID.randomUUID());
+        job.setStatus(AiJobStatus.processing);
+        job.setType(AiJobType.enrich);
+        job.setProgress(85);
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", "generate_cards");
+        params.put("count", 12);
+        params.putArray("fields").add("front").add("back");
+        job.setParamsJson(params);
+
+        Instant now = Instant.now();
+        AiJobEtaEstimator.EtaEstimate eta = estimator.estimate(job, new AiJobExecutionService.ExecutionSnapshot(
+                "generate_content",
+                1,
+                2,
+                List.of(
+                        new AiJobStepResponse("prepare_context", AiJobStepStatus.completed, now.minusSeconds(40), now.minusSeconds(35), null),
+                        new AiJobStepResponse("generate_content", AiJobStepStatus.processing, now.minusSeconds(5), null, null)
+                )
+        ), "openai");
+
+        assertThat(eta.estimatedSecondsRemaining()).isNotNull().isPositive().isLessThan(30);
+        assertThat(eta.queueAhead()).isNull();
+    }
+
+    @Test
+    void estimateDoesNotPinLongRunningLocalGenerateContentToStaleProgress() {
+        AiJobEntity job = new AiJobEntity();
+        job.setJobId(UUID.randomUUID());
+        job.setStatus(AiJobStatus.processing);
+        job.setType(AiJobType.enrich);
+        job.setProgress(62);
+        ObjectNode params = objectMapper.createObjectNode();
+        params.put("mode", "generate_cards");
+        params.put("count", 10);
+        params.putArray("fields")
+                .add("term")
+                .add("translation")
+                .add("example")
+                .add("note")
+                .add("hint");
+        job.setParamsJson(params);
+
+        Instant now = Instant.now();
+        AiJobEtaEstimator.EtaEstimate eta = estimator.estimate(job, new AiJobExecutionService.ExecutionSnapshot(
+                "generate_content",
+                1,
+                4,
+                List.of(
+                        new AiJobStepResponse("prepare_context", AiJobStepStatus.completed, now.minusSeconds(160), now.minusSeconds(150), null),
+                        new AiJobStepResponse("generate_content", AiJobStepStatus.processing, now.minusSeconds(120), null, null),
+                        new AiJobStepResponse("analyze_content", AiJobStepStatus.queued, null, null, null),
+                        new AiJobStepResponse("apply_changes", AiJobStepStatus.queued, null, null, null)
+                )
+        ), "ollama");
+
+        assertThat(eta.estimatedSecondsRemaining()).isNotNull().isGreaterThan(200);
         assertThat(eta.queueAhead()).isNull();
     }
 }

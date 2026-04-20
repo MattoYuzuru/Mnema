@@ -13,7 +13,7 @@ Ollama хорошо подходит для text/chat/vision и частично
 
 - Text/chat/vision: `Ollama`
 - STT: `whisper.cpp server` (или иной локальный ASR сервис; сейчас не поднимается дефолтным bootstrap)
-- TTS: `local-audio-gateway` + `Piper`
+- TTS: `local-audio-gateway` + `Piper` / `Qwen3-TTS` / `Kokoro`
 - Image: Ollama OpenAI-compatible image endpoint по умолчанию; `local-image-gateway` + Diffusers как тяжелый fallback
 - Video/gif: `ComfyUI` или отдельный worker
 - orchestration: `local-ai-gateway` (единая OpenAI-compatible точка для Mnema)
@@ -23,7 +23,7 @@ Ollama хорошо подходит для text/chat/vision и частично
 - `OPENAI_BASE_URL` в Mnema -> `local-ai-gateway`
 - `local-ai-gateway` маршрутизирует:
   - `/v1/responses`, `/v1/chat/completions` -> `Ollama`
-  - `/v1/audio/*` -> `LOCAL_AUDIO_BASE_URL` (в дефолтном self-host это `local-audio-gateway` на Piper), иначе fallback в Ollama только при `OLLAMA_AUDIO_EXPERIMENTAL=true` и доступных Ollama `/v1/audio` endpoint-ах
+  - `/v1/audio/*` -> `LOCAL_AUDIO_BASE_URL` (в дефолтном self-host это `local-audio-gateway` с `Piper` / `Qwen3-TTS` / `Kokoro`), иначе fallback в Ollama только при `OLLAMA_AUDIO_EXPERIMENTAL=true` и доступных Ollama `/v1/audio` endpoint-ах
   - `/v1/images/*` -> `LOCAL_IMAGE_BASE_URL` (если задан), иначе fallback в Ollama при `OLLAMA_IMAGE_EXPERIMENTAL=true`
   - `/v1/videos*` -> `LOCAL_VIDEO_BASE_URL` (если задан), иначе fallback
 - при наличии Bearer API key gateway может проксировать `/v1/*` в `REMOTE_OPENAI_BASE_URL` (по умолчанию `https://api.openai.com`)
@@ -64,7 +64,7 @@ Ollama хорошо подходит для text/chat/vision и частично
 
 ## TTS (локально)
 
-- bootstrap default: `Piper` через `local-audio-gateway`
+- bootstrap default: multi-provider `local-audio-gateway` (`Piper`, `Qwen3-TTS`, `Kokoro`)
 - рекомендуемые CPU-friendly voices:
   - `ru_RU-irina-medium`
   - `ru_RU-ruslan-medium`
@@ -111,3 +111,5 @@ Ollama хорошо подходит для text/chat/vision и частично
 - Hugging Face Diffusers text-to-video: https://huggingface.co/docs/diffusers/en/api/pipelines/text_to_video
 - whisper.cpp: https://github.com/ggml-org/whisper.cpp
 - Piper TTS: https://github.com/rhasspy/piper
+- Qwen3-TTS: https://github.com/QwenLM/Qwen3-TTS
+- Kokoro: https://github.com/hexgrad/kokoro

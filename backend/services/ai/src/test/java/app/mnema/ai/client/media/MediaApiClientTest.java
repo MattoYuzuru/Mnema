@@ -14,6 +14,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.content;
+import static org.springframework.test.web.client.match.MockRestRequestMatchers.jsonPath;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -45,13 +46,15 @@ class MediaApiClientTest {
                         """.formatted(mediaId), MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://media.mnema.app/resolve"))
                 .andExpect(method(HttpMethod.POST))
-                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer access-token"))
+                .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer internal-token"))
+                .andExpect(jsonPath("$.urlTarget").value("INTERNAL"))
                 .andRespond(withSuccess("""
                         [{"mediaId":"%s","kind":"ai_import","mimeType":"text/plain","url":"https://cdn/%s.txt","sizeBytes":12}]
                         """.formatted(mediaId, mediaId), MediaType.APPLICATION_JSON));
         server.expect(requestTo("https://media.mnema.app/resolve"))
                 .andExpect(method(HttpMethod.POST))
                 .andExpect(header(HttpHeaders.AUTHORIZATION, "Bearer internal-token"))
+                .andExpect(jsonPath("$.urlTarget").value("INTERNAL"))
                 .andRespond(withSuccess("""
                         [{"mediaId":"%s","kind":"ai_import","mimeType":"text/plain","url":"https://cdn/%s.txt","sizeBytes":12}]
                         """.formatted(mediaId, mediaId), MediaType.APPLICATION_JSON));

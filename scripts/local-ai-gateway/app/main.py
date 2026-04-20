@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from typing import Any, Iterable
@@ -11,8 +12,9 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 
 app = FastAPI(title="Mnema Local AI Gateway", version="1.0.0")
+LOGGER = logging.getLogger("mnema.local_ai_gateway")
 
-TIMEOUT_SECONDS = float(os.getenv("GATEWAY_TIMEOUT_SECONDS", "600"))
+TIMEOUT_SECONDS = float(os.getenv("GATEWAY_TIMEOUT_SECONDS", "570"))
 HTTP_TIMEOUT = httpx.Timeout(connect=10.0, read=TIMEOUT_SECONDS, write=TIMEOUT_SECONDS, pool=TIMEOUT_SECONDS)
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://ollama:11434").rstrip("/")
 REMOTE_OPENAI_BASE_URL = os.getenv("REMOTE_OPENAI_BASE_URL", "https://api.openai.com").strip().rstrip("/")
@@ -166,6 +168,96 @@ def _inject_default_model(path: str, body: bytes) -> bytes:
     return json.dumps(content, ensure_ascii=True).encode("utf-8")
 
 
+def _is_thinking_model(model_name: str) -> bool:
+    normalized = (model_name or "").strip().lower()
+    return normalized.startswith("qwen3") or "deepseek" in normalized or "r1" in normalized or "gpt-oss" in normalized
+
+
+def _has_structured_output(path: str, content: dict[str, Any]) -> bool:
+    if path == "/v1/responses":
+        text_node = content.get("text")
+        if isinstance(text_node, dict):
+            fmt = text_node.get("format")
+            return isinstance(fmt, dict) and str(fmt.get("type", "")).strip().lower() == "json_schema"
+        return False
+    if path == "/v1/chat/completions":
+        response_format = content.get("response_format")
+        if isinstance(response_format, dict):
+            fmt_type = str(response_format.get("type", "")).strip().lower()
+            return fmt_type in {"json_schema", "json_object"}
+    return False
+
+
+def _normalize_local_text_request(path: str, body: bytes, backend_base_url: str) -> bytes:
+    if backend_base_url != OLLAMA_BASE_URL or not body:
+        return body
+    try:
+        content = json.loads(body)
+    except json.JSONDecodeError:
+        return body
+    if not isinstance(content, dict):
+        return body
+
+    content["model"] = str(content.get("model") or "").strip()
+    if _has_structured_output(path, content) and _is_thinking_model(content["model"]):
+        content.setdefault("think", False)
+        content.setdefault("temperature", 0)
+    return json.dumps(content, ensure_ascii=True).encode("utf-8")
+
+
+def _extract_output_text(payload: dict[str, Any]) -> str:
+    output_text = payload.get("output_text")
+    if isinstance(output_text, str) and output_text.strip():
+        return output_text.strip()
+    output = payload.get("output")
+    if isinstance(output, list):
+        parts: list[str] = []
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            content = item.get("content")
+            if not isinstance(content, list):
+                continue
+            for part in content:
+                if not isinstance(part, dict):
+                    continue
+                part_type = str(part.get("type", "")).strip().lower()
+                text = str(part.get("text", "")).strip()
+                if part_type in {"output_text", "text"} and text:
+                    parts.append(text)
+        if parts:
+            return "\n".join(parts)
+    return ""
+
+
+def _log_empty_local_response(path: str, upstream: httpx.Response) -> None:
+    if path != "/v1/responses":
+        return
+    content_type = upstream.headers.get("content-type", "")
+    if "application/json" not in content_type.lower():
+        return
+    try:
+        payload = upstream.json()
+    except Exception:
+        return
+    if not isinstance(payload, dict):
+        return
+    if _extract_output_text(payload):
+        return
+    output = payload.get("output")
+    output_types: list[str] = []
+    if isinstance(output, list):
+        for item in output:
+            if isinstance(item, dict):
+                output_types.append(str(item.get("type", "?")))
+    LOGGER.warning(
+        "Local /v1/responses completed without usable text model=%s status=%s output_types=%s",
+        payload.get("model"),
+        payload.get("status"),
+        ",".join(output_types),
+    )
+
+
 async def _proxy(request: Request, path: str, backend_base_url: str) -> Response:
     if not backend_base_url:
         raise HTTPException(status_code=503, detail=f"Backend is not configured for path {path}")
@@ -177,6 +269,7 @@ async def _proxy(request: Request, path: str, backend_base_url: str) -> Response
 
     if headers.get("content-type", "").startswith("application/json"):
         body = _inject_default_model(path, body)
+        body = _normalize_local_text_request(path, body, backend_base_url)
 
     try:
         async with httpx.AsyncClient(timeout=HTTP_TIMEOUT, follow_redirects=True) as client:
@@ -199,6 +292,7 @@ async def _proxy(request: Request, path: str, backend_base_url: str) -> Response
     content_type = upstream.headers.get("content-type")
     if content_type:
         response_headers["content-type"] = content_type
+    _log_empty_local_response(path, upstream)
 
     return Response(
         content=upstream.content,

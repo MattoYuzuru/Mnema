@@ -1,9 +1,12 @@
 package app.mnema.ai.provider.qwen;
 
+import app.mnema.ai.provider.support.ProviderRetrySupport;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
@@ -13,6 +16,8 @@ import java.util.Base64;
 
 @Component
 public class QwenClient {
+
+    private static final Logger LOGGER = LoggerFactory.getLogger(QwenClient.class);
 
     private final RestClient compatibleClient;
     private final RestClient dashscopeClient;
@@ -53,13 +58,13 @@ public class QwenClient {
             payload.set("response_format", normalizeResponseFormat(responseFormat));
         }
 
-        JsonNode response = compatibleClient.post()
+        JsonNode response = ProviderRetrySupport.executeTextRequest("Qwen", LOGGER, () -> compatibleClient.post()
                 .uri("/chat/completions")
                 .header(HttpHeaders.AUTHORIZATION, bearer(apiKey))
                 .contentType(MediaType.APPLICATION_JSON)
                 .body(payload)
                 .retrieve()
-                .body(JsonNode.class);
+                .body(JsonNode.class));
 
         if (response == null) {
             throw new IllegalStateException("Qwen response is empty");

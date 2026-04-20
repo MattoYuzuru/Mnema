@@ -20,5 +20,7 @@ public interface ObjectStorage {
 
     PresignedUrl presignGet(String key, Duration ttl, String fileName);
 
+    PresignedUrl presignGetInternal(String key, Duration ttl, String fileName);
+
     void deleteObject(String key);
 }

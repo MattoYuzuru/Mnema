@@ -4,6 +4,8 @@ import app.mnema.ai.domain.entity.AiJobEntity;
 import app.mnema.ai.domain.type.AiJobStatus;
 import app.mnema.ai.domain.type.AiJobType;
 import app.mnema.ai.repository.AiJobRepository;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
@@ -21,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -42,9 +45,12 @@ class AiJobWorkerTest {
     @Mock
     private AiJobCostEstimator costEstimator;
 
+    @Mock
+    private AiJobCancellationRegistry cancellationRegistry;
+
     @Test
     void claimNextJobReturnsEmptyWhenNothingClaimedAndEntityWhenFound() {
-        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, costEstimator, "worker-1", 300, 3, 1000, 8000, 1);
+        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, costEstimator, cancellationRegistry, "worker-1", 300, 3, 1000, 8000, 1);
         UUID jobId = UUID.randomUUID();
         AiJobEntity job = queuedJob(jobId);
 
@@ -59,21 +65,25 @@ class AiJobWorkerTest {
 
     @Test
     void markCompletedStoresSummaryAndUsage() {
-        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, costEstimator, "worker-1", 300, 3, 1000, 8000, 1);
+        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, costEstimator, cancellationRegistry, "worker-1", 300, 3, 1000, 8000, 1);
         AiJobEntity job = queuedJob(UUID.randomUUID());
         job.setStatus(AiJobStatus.processing);
         job.setLockedAt(Instant.now());
         job.setLockedBy("worker-1");
         job.setInputHash("hash-1");
+        ObjectMapper objectMapper = new ObjectMapper();
+        ObjectNode usageDetails = objectMapper.createObjectNode().put("requests", 1);
 
         AiJobProcessingResult result = new AiJobProcessingResult(
-                new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode().put("ok", true),
+                objectMapper.createObjectNode().put("ok", true),
                 "openai",
                 "gpt-4o",
                 12,
                 34,
                 BigDecimal.ONE,
-                "prompt-hash"
+                "prompt-hash",
+                AiJobStatus.completed,
+                usageDetails
         );
 
         when(costEstimator.estimateRecordedCost(job, result)).thenReturn(BigDecimal.ONE);
@@ -85,13 +95,13 @@ class AiJobWorkerTest {
         assertThat(job.getLockedAt()).isNull();
         assertThat(job.getLockedBy()).isNull();
         assertThat(job.getCompletedAt()).isNotNull();
-        verify(usageLedgerService).recordUsage(job.getRequestId(), job.getJobId(), job.getUserId(), 12, 34, BigDecimal.ONE, "openai", "gpt-4o", "prompt-hash");
+        verify(usageLedgerService).recordUsage(job.getRequestId(), job.getJobId(), job.getUserId(), 12, 34, BigDecimal.ONE, "openai", "gpt-4o", "prompt-hash", usageDetails);
         verify(jobRepository).save(job);
     }
 
     @Test
     void markFailedRetriesThenFailsPermanently() {
-        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, costEstimator, "worker-1", 300, 2, 1000, 8000, 1);
+        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, costEstimator, cancellationRegistry, "worker-1", 300, 2, 1000, 8000, 1);
         AiJobEntity job = queuedJob(UUID.randomUUID());
         job.setAttempts(0);
 
@@ -106,11 +116,12 @@ class AiJobWorkerTest {
         assertThat(job.getAttempts()).isEqualTo(2);
         assertThat(job.getCompletedAt()).isNotNull();
         assertThat(job.getNextRunAt()).isNull();
+        verify(jdbcTemplate, times(2)).update(any(String.class), any(), any(), any(), any(), any(), any(), any());
     }
 
     @Test
     void markMethodsSkipCanceledJobsAndPrivateTimingHelpersStayBounded() throws Exception {
-        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, costEstimator, "worker-1", 30, 3, 1000, 8000, 1);
+        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, costEstimator, cancellationRegistry, "worker-1", 30, 3, 1000, 8000, 1);
         AiJobEntity canceled = queuedJob(UUID.randomUUID());
         canceled.setStatus(AiJobStatus.canceled);
         when(jdbcTemplate.query(eq("select status from app_ai.ai_jobs where job_id = ?"), any(org.springframework.jdbc.core.ResultSetExtractor.class), eq(canceled.getJobId())))
@@ -120,7 +131,7 @@ class AiJobWorkerTest {
         worker.markFailed(canceled, new IllegalStateException("boom"));
 
         verify(jobRepository, never()).save(any());
-        verify(usageLedgerService, never()).recordUsage(any(), any(), any(), any(), any(), any(), any(), any(), any());
+        verify(usageLedgerService, never()).recordUsage(any(), any(), any(), any(), any(), any(), any(), any(), any(), any());
 
         Method heartbeatMethod = AiJobWorker.class.getDeclaredMethod("resolveHeartbeatIntervalMs");
         heartbeatMethod.setAccessible(true);

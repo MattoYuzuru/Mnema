@@ -1,6 +1,7 @@
 package app.mnema.media.config;
 
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
@@ -33,18 +34,29 @@ public class S3Config {
     }
 
     @Bean
-    public S3Presigner s3Presigner(S3Props p) {
+    @Qualifier("publicS3Presigner")
+    public S3Presigner publicS3Presigner(S3Props p) {
+        var presignEndpoint = (p.publicEndpoint() != null && !p.publicEndpoint().isBlank())
+                ? p.publicEndpoint()
+                : p.endpoint();
+        return buildPresigner(p, presignEndpoint);
+    }
+
+    @Bean
+    @Qualifier("internalS3Presigner")
+    public S3Presigner internalS3Presigner(S3Props p) {
+        return buildPresigner(p, p.endpoint());
+    }
+
+    private S3Presigner buildPresigner(S3Props p, String endpoint) {
         var creds = AwsBasicCredentials.create(p.accessKey(), p.secretKey());
         var s3Config = S3Configuration.builder()
                 .pathStyleAccessEnabled(p.pathStyleAccess())
                 .build();
-        var presignEndpoint = (p.publicEndpoint() != null && !p.publicEndpoint().isBlank())
-                ? p.publicEndpoint()
-                : p.endpoint();
 
         return S3Presigner.builder()
                 .region(Region.of(p.region()))
-                .endpointOverride(URI.create(presignEndpoint))
+                .endpointOverride(URI.create(endpoint))
                 .credentialsProvider(StaticCredentialsProvider.create(creds))
                 .serviceConfiguration(s3Config)
                 .build();

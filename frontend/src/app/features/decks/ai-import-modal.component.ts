@@ -313,8 +313,12 @@ interface EncodingOption {
                       type="text"
                       [ngModel]="ttsModel()"
                       (ngModelChange)="onTtsModelChange($event)"
+                      [attr.list]="ttsModelOptions().length ? 'ai-import-tts-model-options' : null"
                       [placeholder]="ttsModelPlaceholder()"
                     />
+                    <datalist id="ai-import-tts-model-options">
+                      <option *ngFor="let model of ttsModelOptions()" [value]="model"></option>
+                    </datalist>
                   </div>
                   <div class="form-field">
                   <label for="ai-tts-voice">{{ 'aiImport.ttsVoiceLabel' | translate }}</label>

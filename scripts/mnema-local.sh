@@ -391,20 +391,25 @@ write_env_file() {
   local openai_default_model="$7"
   local local_ai_gateway_port="$8"
   local openai_tts_model="$9"
-  local openai_stt_model="${10}"
-  local openai_image_model="${11}"
-  local local_audio_base_url="${12}"
-  local local_image_base_url="${13}"
-  local local_tts_voices="${14}"
-  local ollama_gpu_enabled="${15}"
-  local ollama_visible_gpus="${16}"
-  local remote_openai_base_url="${17}"
-  local ollama_audio_experimental="${18}"
-  local ollama_image_experimental="${19}"
-  local local_audio_models="${20}"
-  local local_image_default_model="${21}"
-  local local_audio_gateway_port="${22}"
-  local local_image_gateway_port="${23}"
+  local openai_tts_voice="${10}"
+  local openai_stt_model="${11}"
+  local openai_image_model="${12}"
+  local local_audio_base_url="${13}"
+  local local_image_base_url="${14}"
+  local local_tts_voices="${15}"
+  local ollama_gpu_enabled="${16}"
+  local ollama_visible_gpus="${17}"
+  local remote_openai_base_url="${18}"
+  local ollama_audio_experimental="${19}"
+  local ollama_image_experimental="${20}"
+  local local_audio_models="${21}"
+  local local_image_default_model="${22}"
+  local local_audio_gateway_port="${23}"
+  local local_image_gateway_port="${24}"
+  local local_audio_default_voice="${25}"
+  local local_audio_piper_voices="${26}"
+  local local_audio_qwen_voices="${27}"
+  local local_audio_kokoro_voices="${28}"
 
   cat > "$ENV_FILE" <<ENV
 POSTGRES_DB=$postgres_db
@@ -429,6 +434,7 @@ TURNSTILE_SITE_KEY=
 TURNSTILE_SECRET_KEY=
 
 MEDIA_INTERNAL_TOKEN=$(rand_hex 24)
+CORE_INTERNAL_TOKEN=$(rand_hex 24)
 
 AWS_REGION=us-east-1
 AWS_BUCKET_NAME=mnema-local
@@ -453,7 +459,7 @@ OLLAMA_BASE_URL=http://ollama:11434
 OPENAI_SYSTEM_API_KEY=
 OPENAI_DEFAULT_MODEL=$openai_default_model
 OPENAI_TTS_MODEL=$openai_tts_model
-OPENAI_TTS_VOICE=
+OPENAI_TTS_VOICE=$openai_tts_voice
 OPENAI_TTS_FORMAT=wav
 OPENAI_STT_MODEL=$openai_stt_model
 OPENAI_IMAGE_MODEL=$openai_image_model
@@ -462,12 +468,15 @@ OPENAI_VIDEO_MODEL=
 LOCAL_AI_GATEWAY_PORT=$local_ai_gateway_port
 LOCAL_AUDIO_GATEWAY_PORT=$local_audio_gateway_port
 LOCAL_IMAGE_GATEWAY_PORT=$local_image_gateway_port
-LOCAL_AI_GATEWAY_TIMEOUT_SECONDS=600
+LOCAL_AI_GATEWAY_TIMEOUT_SECONDS=570
 LOCAL_AUDIO_BASE_URL=$local_audio_base_url
 LOCAL_AUDIO_MODELS=$local_audio_models
 LOCAL_AUDIO_DEFAULT_MODEL=$openai_tts_model
-LOCAL_AUDIO_DEFAULT_VOICE=$openai_tts_model
+LOCAL_AUDIO_DEFAULT_VOICE=$local_audio_default_voice
 LOCAL_AUDIO_PRELOAD=true
+LOCAL_AUDIO_PIPER_VOICES=$local_audio_piper_voices
+LOCAL_AUDIO_QWEN_VOICES=$local_audio_qwen_voices
+LOCAL_AUDIO_KOKORO_VOICES=$local_audio_kokoro_voices
 LOCAL_IMAGE_BASE_URL=$local_image_base_url
 LOCAL_IMAGE_DEFAULT_MODEL=$local_image_default_model
 LOCAL_VIDEO_BASE_URL=
@@ -498,12 +507,15 @@ write_override_file() {
   local image_backend_mode="$4"
   local local_audio_models="$5"
   local openai_tts_model="$6"
-  local local_image_default_model="$7"
-  local docker_gpu_mode="$8"
+  local openai_tts_voice="$7"
+  local local_image_default_model="$8"
+  local docker_gpu_mode="$9"
   local ollama_gpu_block=""
   local local_ai_gateway_extra_depends=""
   local local_audio_gateway_block=""
   local local_image_gateway_block=""
+  local local_audio_gpu_block=""
+  local local_audio_gpu_env=""
   local local_image_gpu_block=""
   local local_image_gpu_env=""
   local extra_volumes=""
@@ -511,17 +523,20 @@ write_override_file() {
   if [[ "$ollama_gpu_enabled" == "true" ]]; then
     if [[ "$docker_gpu_mode" == "cdi" ]]; then
       ollama_gpu_block=$'    devices:\n      - "nvidia.com/gpu=${OLLAMA_VISIBLE_GPUS}"\n    environment:\n      NVIDIA_VISIBLE_DEVICES: "${OLLAMA_VISIBLE_GPUS}"\n      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"'
+      local_audio_gpu_block=$'    devices:\n      - "nvidia.com/gpu=${OLLAMA_VISIBLE_GPUS}"'
       local_image_gpu_block=$'    devices:\n      - "nvidia.com/gpu=${OLLAMA_VISIBLE_GPUS}"'
     else
       ollama_gpu_block=$'    gpus: all\n    environment:\n      NVIDIA_VISIBLE_DEVICES: "${OLLAMA_VISIBLE_GPUS}"\n      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"'
+      local_audio_gpu_block=$'    gpus: all'
       local_image_gpu_block=$'    gpus: all'
     fi
+    local_audio_gpu_env=$'      NVIDIA_VISIBLE_DEVICES: "${OLLAMA_VISIBLE_GPUS}"\n      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"'
     local_image_gpu_env=$'      NVIDIA_VISIBLE_DEVICES: "${OLLAMA_VISIBLE_GPUS}"\n      NVIDIA_DRIVER_CAPABILITIES: "compute,utility"'
   fi
 
-  if [[ "$audio_backend_mode" == "piper" ]]; then
+  if [[ "$audio_backend_mode" == "local" || "$audio_backend_mode" == "piper" ]]; then
     local_ai_gateway_extra_depends=$'      local-audio-gateway:\n        condition: service_healthy'
-    extra_volumes+=$'  mnema_piper_data:\n'
+    extra_volumes+=$'  mnema_audio_data:\n'
     local_audio_gateway_block=$(cat <<YAML
 
   local-audio-gateway:
@@ -529,17 +544,23 @@ write_override_file() {
     build:
       context: ./scripts/local-audio-gateway
       dockerfile: Dockerfile
+${local_audio_gpu_block}
     environment:
+${local_audio_gpu_env}
       LOCAL_AUDIO_MODELS: "${local_audio_models}"
       LOCAL_AUDIO_DEFAULT_MODEL: "${openai_tts_model}"
-      LOCAL_AUDIO_DEFAULT_VOICE: "${openai_tts_model}"
+      LOCAL_AUDIO_DEFAULT_VOICE: "${openai_tts_voice}"
       LOCAL_AUDIO_PRELOAD: "\${LOCAL_AUDIO_PRELOAD}"
-      PIPER_DATA_DIR: "/models/piper"
-      PIPER_DOWNLOAD_DIR: "/models/piper"
+      LOCAL_AUDIO_PIPER_VOICES: "\${LOCAL_AUDIO_PIPER_VOICES}"
+      LOCAL_AUDIO_QWEN_VOICES: "\${LOCAL_AUDIO_QWEN_VOICES}"
+      LOCAL_AUDIO_KOKORO_VOICES: "\${LOCAL_AUDIO_KOKORO_VOICES}"
+      PIPER_DATA_DIR: "/models/audio/piper"
+      PIPER_DOWNLOAD_DIR: "/models/audio/piper"
+      HF_HOME: "/models/audio/hf"
     ports: !override
       - "\${LOCAL_AUDIO_GATEWAY_PORT}:8091"
     volumes:
-      - mnema_piper_data:/models/piper
+      - mnema_audio_data:/models/audio
     healthcheck:
       test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8091/health', timeout=5)" ]
       interval: 10s
@@ -891,9 +912,9 @@ print_ollama_next_commands() {
   echo "[next] Check Gateway models/voices:"
   echo "       curl http://localhost:${LOCAL_AI_GATEWAY_PORT}/v1/models"
   echo "       curl http://localhost:${LOCAL_AI_GATEWAY_PORT}/v1/audio/voices"
-  if [[ "${AUDIO_BACKEND_MODE:-}" == "piper" ]]; then
+  if [[ "${AUDIO_BACKEND_MODE:-}" == "local" || "${AUDIO_BACKEND_MODE:-}" == "piper" ]]; then
     echo "[next] Generate a local TTS sample:"
-    echo "       curl -sS http://localhost:${LOCAL_AI_GATEWAY_PORT}/v1/audio/speech -H 'Content-Type: application/json' -d '{\"model\":\"${OPENAI_TTS_MODEL}\",\"voice\":\"${OPENAI_TTS_MODEL}\",\"input\":\"Mnema local audio is ready.\",\"response_format\":\"wav\"}' --output mnema-tts-sample.wav"
+    echo "       curl -sS http://localhost:${LOCAL_AI_GATEWAY_PORT}/v1/audio/speech -H 'Content-Type: application/json' -d '{\"model\":\"${OPENAI_TTS_MODEL}\",\"voice\":\"${OPENAI_TTS_VOICE}\",\"input\":\"Mnema local audio is ready.\",\"response_format\":\"wav\"}' --output mnema-tts-sample.wav"
   fi
 }
 
@@ -919,7 +940,7 @@ SECONDARY_MODEL_RECOMMENDED="$(recommend_secondary_model)"
 VISION_MODEL_RECOMMENDED="$(recommend_vision_model)"
 
 AUDIO_MODE_OPTIONS=(
-  "piper|Local Piper TTS|Offline CPU-friendly TTS backend"
+  "local|Local multi-TTS|Piper + Qwen3-TTS + Kokoro via local-audio-gateway"
   "ollama|Ollama experimental|STT/TTS via Ollama OpenAI compatibility"
   "custom|Custom audio backend|Use external OpenAI-compatible /v1/audio service"
   "none|No audio backend|Disable STT/TTS defaults"
@@ -993,30 +1014,49 @@ elif [[ "$VISION_MODEL" == "none" ]]; then
 fi
 
 OPENAI_TTS_MODEL=""
+OPENAI_TTS_VOICE=""
 OPENAI_STT_MODEL=""
 LOCAL_TTS_VOICES=""
 LOCAL_AUDIO_BASE_URL=""
 LOCAL_AUDIO_MODELS=""
+LOCAL_AUDIO_DEFAULT_VOICE=""
+LOCAL_AUDIO_PIPER_VOICES=""
+LOCAL_AUDIO_QWEN_VOICES=""
+LOCAL_AUDIO_KOKORO_VOICES=""
 REMOTE_OPENAI_BASE_URL="https://api.openai.com"
 OLLAMA_AUDIO_EXPERIMENTAL="false"
 
-if [[ "$AUDIO_BACKEND_MODE" == "piper" ]]; then
-  TTS_OPTIONS=(
-    "ru_RU-irina-medium|ru_RU-irina-medium|Russian, medium, CPU-friendly"
-    "ru_RU-ruslan-medium|ru_RU-ruslan-medium|Russian male, medium, CPU-friendly"
-    "en_US-lessac-medium|en_US-lessac-medium|English US, medium, CPU-friendly"
-    "en_US-amy-low|en_US-amy-low|English US, light, CPU-friendly"
-    "en_US-ryan-low|en_US-ryan-low|English US male, light, CPU-friendly"
-    "de_DE-thorsten-medium|de_DE-thorsten-medium|German, medium, CPU-friendly"
-    "fr_FR-siwis-medium|fr_FR-siwis-medium|French, medium, CPU-friendly"
-    "es_ES-davefx-medium|es_ES-davefx-medium|Spanish, medium, CPU-friendly"
-    "none|No TTS model|Disable local TTS"
+if [[ "$AUDIO_BACKEND_MODE" == "local" ]]; then
+  echo "[info] Local TTS provider catalogs:"
+  echo "       Piper voices: https://rhasspy.github.io/piper-samples/"
+  echo "       Qwen3-TTS models/speakers: https://github.com/QwenLM/Qwen3-TTS"
+  echo "       Kokoro voices: https://github.com/hexgrad/kokoro"
+  LOCAL_PROVIDER_OPTIONS=(
+    "piper-tts|Piper|Fast offline CPU-friendly voices"
+    "qwen3-tts|Qwen3-TTS|Higher quality multilingual custom-voice model"
+    "kokoro-82m|Kokoro-82M|Light open-weight neural TTS"
   )
-  prompt_multi_select LOCAL_AUDIO_MODELS "Select local Piper TTS voices" "1,3" TTS_OPTIONS
+  prompt_multi_select LOCAL_AUDIO_MODELS "Select local TTS providers to install" "1,2,3" LOCAL_PROVIDER_OPTIONS
   if [[ -n "${LOCAL_AUDIO_MODELS:-}" ]]; then
-    OPENAI_TTS_MODEL="${LOCAL_AUDIO_MODELS%%,*}"
-    LOCAL_TTS_VOICES="$LOCAL_AUDIO_MODELS"
+    LOCAL_AUDIO_PIPER_VOICES="ru_RU-irina-medium,en_US-lessac-medium"
+    LOCAL_AUDIO_QWEN_VOICES="Vivian,Ryan"
+    LOCAL_AUDIO_KOKORO_VOICES="af_heart,af_bella"
+    LOCAL_TTS_VOICES="$LOCAL_AUDIO_PIPER_VOICES,$LOCAL_AUDIO_QWEN_VOICES,$LOCAL_AUDIO_KOKORO_VOICES"
     LOCAL_AUDIO_BASE_URL="http://local-audio-gateway:8091"
+
+    if [[ ",$LOCAL_AUDIO_MODELS," == *",piper-tts,"* ]]; then
+      OPENAI_TTS_MODEL="piper-tts"
+      OPENAI_TTS_VOICE="ru_RU-irina-medium"
+      LOCAL_AUDIO_DEFAULT_VOICE="$OPENAI_TTS_VOICE"
+    elif [[ ",$LOCAL_AUDIO_MODELS," == *",qwen3-tts,"* ]]; then
+      OPENAI_TTS_MODEL="qwen3-tts"
+      OPENAI_TTS_VOICE="Vivian"
+      LOCAL_AUDIO_DEFAULT_VOICE="$OPENAI_TTS_VOICE"
+    else
+      OPENAI_TTS_MODEL="kokoro-82m"
+      OPENAI_TTS_VOICE="af_heart"
+      LOCAL_AUDIO_DEFAULT_VOICE="$OPENAI_TTS_VOICE"
+    fi
   else
     AUDIO_BACKEND_MODE="none"
   fi
@@ -1039,6 +1079,7 @@ elif [[ "$AUDIO_BACKEND_MODE" == "ollama" ]]; then
   elif [[ "$OPENAI_TTS_MODEL" == "none" ]]; then
     OPENAI_TTS_MODEL=""
   fi
+  OPENAI_TTS_VOICE=""
 
   menu_select OPENAI_STT_MODEL "Select optional STT model (Ollama experimental)" 0 STT_OPTIONS
   if [[ "$OPENAI_STT_MODEL" == "custom" ]]; then
@@ -1051,6 +1092,7 @@ elif [[ "$AUDIO_BACKEND_MODE" == "ollama" ]]; then
 elif [[ "$AUDIO_BACKEND_MODE" == "custom" ]]; then
   LOCAL_AUDIO_BASE_URL="$(prompt_default 'Custom audio backend URL (inside Docker network)' 'http://host.docker.internal:8000')"
   OPENAI_TTS_MODEL="$(prompt_default 'Default TTS model (optional)' '')"
+  OPENAI_TTS_VOICE="$(prompt_default 'Default TTS voice (optional)' '')"
   OPENAI_STT_MODEL="$(prompt_default 'Default STT model (optional)' '')"
   LOCAL_TTS_VOICES="$(prompt_default 'Fallback TTS voices (comma-separated, optional)' '')"
 fi
@@ -1176,15 +1218,15 @@ print_port_info "minio-api" "9000" "$MINIO_API_PORT"
 print_port_info "minio-console" "9001" "$MINIO_CONSOLE_PORT"
 print_port_info "ollama" "11434" "$OLLAMA_PORT"
 print_port_info "local-ai-gateway" "8090" "$LOCAL_AI_GATEWAY_PORT"
-if [[ "$AUDIO_BACKEND_MODE" == "piper" ]]; then
+if [[ "$AUDIO_BACKEND_MODE" == "local" || "$AUDIO_BACKEND_MODE" == "piper" ]]; then
   print_port_info "local-audio-gateway" "8091" "$LOCAL_AUDIO_GATEWAY_PORT"
 fi
 if [[ "$IMAGE_BACKEND_MODE" == "diffusers" ]]; then
   print_port_info "local-image-gateway" "8092" "$LOCAL_IMAGE_GATEWAY_PORT"
 fi
 
-write_env_file "$DB_USER" "$DB_PASSWORD" "$DB_NAME" "$POSTGRES_PORT" "$MINIO_USER" "$MINIO_PASSWORD" "$OPENAI_DEFAULT_MODEL" "$LOCAL_AI_GATEWAY_PORT" "$OPENAI_TTS_MODEL" "$OPENAI_STT_MODEL" "$OPENAI_IMAGE_MODEL" "$LOCAL_AUDIO_BASE_URL" "$LOCAL_IMAGE_BASE_URL" "$LOCAL_TTS_VOICES" "$OLLAMA_GPU_ENABLED" "$OLLAMA_VISIBLE_GPUS" "$REMOTE_OPENAI_BASE_URL" "$OLLAMA_AUDIO_EXPERIMENTAL" "$OLLAMA_IMAGE_EXPERIMENTAL" "$LOCAL_AUDIO_MODELS" "$LOCAL_IMAGE_DEFAULT_MODEL" "$LOCAL_AUDIO_GATEWAY_PORT" "$LOCAL_IMAGE_GATEWAY_PORT"
-write_override_file "$OPENAI_DEFAULT_MODEL" "$OLLAMA_GPU_ENABLED" "$AUDIO_BACKEND_MODE" "$IMAGE_BACKEND_MODE" "$LOCAL_AUDIO_MODELS" "$OPENAI_TTS_MODEL" "$LOCAL_IMAGE_DEFAULT_MODEL" "$DOCKER_GPU_MODE"
+write_env_file "$DB_USER" "$DB_PASSWORD" "$DB_NAME" "$POSTGRES_PORT" "$MINIO_USER" "$MINIO_PASSWORD" "$OPENAI_DEFAULT_MODEL" "$LOCAL_AI_GATEWAY_PORT" "$OPENAI_TTS_MODEL" "$OPENAI_TTS_VOICE" "$OPENAI_STT_MODEL" "$OPENAI_IMAGE_MODEL" "$LOCAL_AUDIO_BASE_URL" "$LOCAL_IMAGE_BASE_URL" "$LOCAL_TTS_VOICES" "$OLLAMA_GPU_ENABLED" "$OLLAMA_VISIBLE_GPUS" "$REMOTE_OPENAI_BASE_URL" "$OLLAMA_AUDIO_EXPERIMENTAL" "$OLLAMA_IMAGE_EXPERIMENTAL" "$LOCAL_AUDIO_MODELS" "$LOCAL_IMAGE_DEFAULT_MODEL" "$LOCAL_AUDIO_GATEWAY_PORT" "$LOCAL_IMAGE_GATEWAY_PORT" "$LOCAL_AUDIO_DEFAULT_VOICE" "$LOCAL_AUDIO_PIPER_VOICES" "$LOCAL_AUDIO_QWEN_VOICES" "$LOCAL_AUDIO_KOKORO_VOICES"
+write_override_file "$OPENAI_DEFAULT_MODEL" "$OLLAMA_GPU_ENABLED" "$AUDIO_BACKEND_MODE" "$IMAGE_BACKEND_MODE" "$LOCAL_AUDIO_MODELS" "$OPENAI_TTS_MODEL" "$OPENAI_TTS_VOICE" "$LOCAL_IMAGE_DEFAULT_MODEL" "$DOCKER_GPU_MODE"
 
 echo "[info] Generated: $ENV_FILE"
 echo "[info] Generated: $OVERRIDE_FILE"
@@ -1236,7 +1278,7 @@ echo "[ok] MinIO API: http://localhost:${MINIO_API_PORT}"
 echo "[ok] MinIO Console: http://localhost:${MINIO_CONSOLE_PORT}"
 echo "[ok] Ollama API: http://localhost:${OLLAMA_PORT}"
 echo "[ok] Local AI Gateway: http://localhost:${LOCAL_AI_GATEWAY_PORT}"
-if [[ "$AUDIO_BACKEND_MODE" == "piper" ]]; then
+if [[ "$AUDIO_BACKEND_MODE" == "local" || "$AUDIO_BACKEND_MODE" == "piper" ]]; then
   echo "[ok] Local Audio Gateway: http://localhost:${LOCAL_AUDIO_GATEWAY_PORT}"
 fi
 if [[ "$IMAGE_BACKEND_MODE" == "diffusers" ]]; then
@@ -1261,11 +1303,11 @@ if [[ "$OLLAMA_GPU_ENABLED" == "true" ]]; then
   echo "[info] Ollama visible GPUs: ${OLLAMA_VISIBLE_GPUS}"
 fi
 
-if [[ "$AUDIO_BACKEND_MODE" == "piper" ]]; then
+if [[ "$AUDIO_BACKEND_MODE" == "local" || "$AUDIO_BACKEND_MODE" == "piper" ]]; then
   if compose_cmd exec -T local-ai-gateway python -c 'import os,sys,urllib.request; u=os.getenv("AUDIO_BASE_URL", "").rstrip("/"); sys.exit(0 if urllib.request.urlopen(u + "/v1/models", timeout=10).status < 500 else 1)' >/dev/null 2>&1; then
-    echo "[ok] Local Piper audio backend is reachable from local-ai-gateway."
+    echo "[ok] Local audio backend is reachable from local-ai-gateway."
   else
-    echo "[warn] Local Piper audio backend is not reachable from local-ai-gateway."
+    echo "[warn] Local audio backend is not reachable from local-ai-gateway."
   fi
 elif [[ "$AUDIO_BACKEND_MODE" == "custom" ]]; then
   if compose_cmd exec -T local-ai-gateway python -c 'import os,sys,urllib.request; u=os.getenv("AUDIO_BASE_URL", "").rstrip("/"); sys.exit(0 if (not u) else 0 if urllib.request.urlopen(u + "/v1/models", timeout=5).status < 500 else 1)' >/dev/null 2>&1; then

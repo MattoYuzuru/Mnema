@@ -13,7 +13,8 @@ public record AiJobProcessingResult(
         Integer tokensOut,
         BigDecimal costEstimate,
         String promptHash,
-        AiJobStatus finalStatus
+        AiJobStatus finalStatus,
+        JsonNode usageDetails
 ) {
     public AiJobProcessingResult(
             JsonNode resultSummary,
@@ -24,6 +25,19 @@ public record AiJobProcessingResult(
             BigDecimal costEstimate,
             String promptHash
     ) {
-        this(resultSummary, provider, model, tokensIn, tokensOut, costEstimate, promptHash, AiJobStatus.completed);
+        this(resultSummary, provider, model, tokensIn, tokensOut, costEstimate, promptHash, AiJobStatus.completed, null);
+    }
+
+    public AiJobProcessingResult(
+            JsonNode resultSummary,
+            String provider,
+            String model,
+            Integer tokensIn,
+            Integer tokensOut,
+            BigDecimal costEstimate,
+            String promptHash,
+            AiJobStatus finalStatus
+    ) {
+        this(resultSummary, provider, model, tokensIn, tokensOut, costEstimate, promptHash, finalStatus, null);
     }
 }

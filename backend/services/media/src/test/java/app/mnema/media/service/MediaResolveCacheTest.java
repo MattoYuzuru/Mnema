@@ -51,7 +51,7 @@ class MediaResolveCacheTest {
         when(storage.presignGet(asset.getStorageKey(), policy.presignTtl(), "image.png"))
                 .thenReturn(new PresignedUrl("https://cdn.example/image", Map.of("x", "1")));
 
-        ResolvedMedia resolved = cache.resolve(asset);
+        ResolvedMedia resolved = cache.resolvePublic(asset);
 
         assertThat(resolved.mediaId()).isEqualTo(mediaId);
         assertThat(resolved.url()).isEqualTo("https://cdn.example/image");
@@ -60,5 +60,35 @@ class MediaResolveCacheTest {
         assertThat(resolved.height()).isEqualTo(200);
         assertThat(resolved.expiresAt()).isAfter(Instant.now().minusSeconds(1));
         verify(storage).presignGet(asset.getStorageKey(), policy.presignTtl(), "image.png");
+    }
+
+    @Test
+    void resolveInternal_buildsInternalPresignedResolvedMedia() {
+        MediaResolveCache cache = new MediaResolveCache(storage, policy);
+        UUID mediaId = UUID.randomUUID();
+        MediaAssetEntity asset = new MediaAssetEntity(
+                mediaId,
+                UUID.randomUUID(),
+                MediaKind.import_file,
+                MediaStatus.ready,
+                "media/import_file/" + mediaId,
+                "application/zip",
+                42L,
+                null,
+                null,
+                null,
+                "deck.zip",
+                Instant.parse("2026-04-07T10:00:00Z"),
+                null,
+                null
+        );
+        when(storage.presignGetInternal(asset.getStorageKey(), policy.presignTtl(), "deck.zip"))
+                .thenReturn(new PresignedUrl("http://minio:9000/mnema-bucket/media/import_file/" + mediaId, Map.of()));
+
+        ResolvedMedia resolved = cache.resolveInternal(asset);
+
+        assertThat(resolved.mediaId()).isEqualTo(mediaId);
+        assertThat(resolved.url()).startsWith("http://minio:9000/");
+        verify(storage).presignGetInternal(asset.getStorageKey(), policy.presignTtl(), "deck.zip");
     }
 }

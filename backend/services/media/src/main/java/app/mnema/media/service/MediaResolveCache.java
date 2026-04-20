@@ -1,6 +1,7 @@
 package app.mnema.media.service;
 
 import app.mnema.media.controller.dto.ResolvedMedia;
+import app.mnema.media.controller.dto.ResolveUrlTarget;
 import app.mnema.media.domain.entity.MediaAssetEntity;
 import app.mnema.media.service.policy.MediaPolicy;
 import app.mnema.media.storage.ObjectStorage;
@@ -21,9 +22,20 @@ public class MediaResolveCache {
         this.policy = policy;
     }
 
-    @Cacheable(cacheNames = "media-resolve", key = "#asset.mediaId")
-    public ResolvedMedia resolve(MediaAssetEntity asset) {
-        var presigned = storage.presignGet(asset.getStorageKey(), policy.presignTtl(), asset.getOriginalFileName());
+    @Cacheable(cacheNames = "media-resolve-public", key = "#asset.mediaId")
+    public ResolvedMedia resolvePublic(MediaAssetEntity asset) {
+        return resolve(asset, ResolveUrlTarget.PUBLIC);
+    }
+
+    @Cacheable(cacheNames = "media-resolve-internal", key = "#asset.mediaId")
+    public ResolvedMedia resolveInternal(MediaAssetEntity asset) {
+        return resolve(asset, ResolveUrlTarget.INTERNAL);
+    }
+
+    private ResolvedMedia resolve(MediaAssetEntity asset, ResolveUrlTarget target) {
+        var presigned = target == ResolveUrlTarget.INTERNAL
+                ? storage.presignGetInternal(asset.getStorageKey(), policy.presignTtl(), asset.getOriginalFileName())
+                : storage.presignGet(asset.getStorageKey(), policy.presignTtl(), asset.getOriginalFileName());
         Instant expiresAt = Instant.now().plus(policy.presignTtl());
         return new ResolvedMedia(
                 asset.getMediaId(),
@@ -38,7 +50,7 @@ public class MediaResolveCache {
         );
     }
 
-    @CacheEvict(cacheNames = "media-resolve", key = "#mediaId")
+    @CacheEvict(cacheNames = {"media-resolve-public", "media-resolve-internal"}, key = "#mediaId")
     public void evict(UUID mediaId) {
         // Intentionally empty: annotation handles eviction.
     }

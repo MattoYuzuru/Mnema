@@ -170,8 +170,12 @@ type FieldLimitMap = Record<string, number>;
                     type="text"
                     [ngModel]="ttsModel()"
                     (ngModelChange)="onTtsModelChange($event)"
+                    [attr.list]="ttsModelOptions().length ? 'ai-tts-model-options' : null"
                     [placeholder]="ttsModelPlaceholder()"
                   />
+                  <datalist id="ai-tts-model-options">
+                    <option *ngFor="let model of ttsModelOptions()" [value]="model"></option>
+                  </datalist>
                 </div>
                 <div class="form-field">
                   <label for="ai-tts-voice">Voice</label>
@@ -1522,7 +1526,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     voiceLabel(voice: string): string {
         if (!voice) return '';
         if (voice === 'custom') return 'Custom';
-        return voice.charAt(0).toUpperCase() + voice.slice(1);
+        return voice;
     }
 
     private resolveModelPlaceholder(provider: string): string {

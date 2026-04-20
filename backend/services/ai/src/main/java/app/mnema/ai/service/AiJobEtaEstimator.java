@@ -132,6 +132,13 @@ public class AiJobEtaEstimator {
         if (remaining <= 0) {
             return estimateFromProgress(job, snapshot, provider);
         }
+        int progressBased = estimateFromProgress(job, snapshot, provider);
+        if (progressBased > 0) {
+            if (shouldIgnoreProgressCap(steps, provider, now)) {
+                return remaining;
+            }
+            return Math.min(remaining, progressBased);
+        }
         return remaining;
     }
 
@@ -193,12 +200,16 @@ public class AiJobEtaEstimator {
         boolean imageEnabled = isGenerationEnabled(params.path("image"));
         boolean videoEnabled = isGenerationEnabled(params.path("video"));
         int audioRequests = Math.max(1, targetCount * resolveAudioMappingCount(params));
+        boolean noisySourceNormalization = isNoisySourceNormalizationRequested(mode, params);
 
         return switch (normalizedStep) {
             case "load_source" -> estimateLoadSourceSeconds(params);
-            case "prepare_context" -> 4 + Math.min(targetCount, 20) * ("generate_cards".equals(mode) ? 2 : 1) + Math.max(0, fieldCount - 1);
+            case "prepare_context" -> 4
+                    + Math.min(targetCount, 20) * ("generate_cards".equals(mode) ? 2 : 1)
+                    + Math.max(0, fieldCount - 1)
+                    + (noisySourceNormalization ? 8 + Math.min(targetCount, 20) : 0);
             case "analyze_content" -> 8 + Math.min(targetCount, 20) * 2;
-            case "generate_content" -> estimateGenerateContentSeconds(mode, targetCount, fieldCount);
+            case "generate_content" -> estimateGenerateContentSeconds(mode, targetCount, fieldCount, provider, params);
             case "generate_media" -> estimateGenerateMediaSeconds(params, targetCount, imageEnabled, videoEnabled);
             case "generate_audio" -> estimateGenerateAudioSeconds(provider, audioRequests, ttsRequested);
             case "apply_changes" -> 3 + targetCount * 2;
@@ -221,13 +232,46 @@ public class AiJobEtaEstimator {
         };
     }
 
-    private int estimateGenerateContentSeconds(String mode, int targetCount, int fieldCount) {
+    private boolean isNoisySourceNormalizationRequested(String mode, JsonNode params) {
+        if (!"import_generate".equals(mode) && !"generate_cards".equals(mode)) {
+            return false;
+        }
+        String extraction = normalize(params.path("sourceExtraction").asText(null));
+        return "ocr".equals(extraction) || "stt".equals(extraction);
+    }
+
+    private int estimateGenerateContentSeconds(String mode, int targetCount, int fieldCount, String provider, JsonNode params) {
+        if (isLocalTextProvider(provider) && ("generate_cards".equals(mode) || "import_generate".equals(mode))) {
+            int batchSize = resolveLocalTextBatchSize(mode, params, fieldCount);
+            int batches = (int) Math.ceil(targetCount / (double) Math.max(1, batchSize));
+            int perCardSeconds = "import_generate".equals(mode)
+                    ? Math.max(18, fieldCount * 5)
+                    : Math.max(12, fieldCount * 4);
+            int perBatchSeconds = 25 + fieldCount * 6;
+            return Math.max(30, batches * perBatchSeconds + targetCount * perCardSeconds);
+        }
         return switch (mode) {
             case "generate_cards" -> 12 + targetCount * 8;
+            case "import_generate" -> 16 + targetCount * Math.max(7, fieldCount * 3);
             case "missing_fields", "card_missing_fields" -> 8 + targetCount * Math.max(5, fieldCount * 3);
             case "audit", "card_audit" -> 12 + Math.min(targetCount, 25) * 3;
             default -> 10 + targetCount * 6;
         };
+    }
+
+    private boolean isLocalTextProvider(String provider) {
+        String normalized = normalizeProvider(provider);
+        return "ollama".equals(normalized) || "local-openai".equals(normalized);
+    }
+
+    private int resolveLocalTextBatchSize(String mode, JsonNode params, int fieldCount) {
+        int safeFieldCount = Math.max(1, fieldCount);
+        if ("import_generate".equals(mode)) {
+            int batchSize = 24 / safeFieldCount;
+            return clamp(batchSize, 3, 6);
+        }
+        int batchSize = 30 / safeFieldCount;
+        return clamp(batchSize, 4, 8);
     }
 
     private int estimateGenerateMediaSeconds(JsonNode params,
@@ -402,12 +446,15 @@ public class AiJobEtaEstimator {
         if (hasSource) {
             steps.add("load_source");
         }
-        if (mode.startsWith("import_")) {
+        if ("import_preview".equals(mode)) {
             steps.add("analyze_content");
         } else {
             steps.add("prepare_context");
         }
         steps.add("generate_content");
+        if (isDraftQualityGateEnabled(mode, params)) {
+            steps.add("analyze_content");
+        }
         if (imageEnabled || videoEnabled) {
             steps.add("generate_media");
         }
@@ -452,6 +499,17 @@ public class AiJobEtaEstimator {
         return value != null && !value.isBlank();
     }
 
+    private boolean isDraftQualityGateEnabled(String mode, JsonNode params) {
+        if (!"generate_cards".equals(mode) && !"import_generate".equals(mode)) {
+            return false;
+        }
+        JsonNode qualityGate = params == null ? null : params.path("qualityGate");
+        if (qualityGate != null && qualityGate.isObject() && qualityGate.has("enabled")) {
+            return qualityGate.path("enabled").asBoolean(false);
+        }
+        return true;
+    }
+
     private String normalize(String value) {
         return value == null ? "" : value.trim().toLowerCase(Locale.ROOT);
     }
@@ -462,6 +520,16 @@ public class AiJobEtaEstimator {
             return "ollama";
         }
         return normalized;
+    }
+
+    private boolean shouldIgnoreProgressCap(List<AiJobStepResponse> steps, String provider, Instant now) {
+        if (!isLocalTextProvider(provider) || steps == null || steps.isEmpty() || now == null) {
+            return false;
+        }
+        return steps.stream().anyMatch(step -> step.status() == AiJobStepStatus.processing
+                && "generate_content".equals(normalize(step.stepName()))
+                && step.startedAt() != null
+                && Duration.between(step.startedAt(), now).getSeconds() >= 60);
     }
 
     private int clamp(int value, int min, int max) {

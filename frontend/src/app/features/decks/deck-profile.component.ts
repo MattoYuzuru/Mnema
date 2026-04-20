@@ -16,7 +16,21 @@ import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { ReviewDeckAlgorithmResponse } from '../../core/models/review.models';
 import { ImportJobResponse, ImportSourceType } from '../../core/models/import.models';
-import { AiJobResponse, AiJobResultResponse, AiJobStatus, AiJobStepResponse, AiJobType } from '../../core/models/ai.models';
+import {
+    AiGenerationUsageSummary,
+    AiJobResponse,
+    AiJobResultResponse,
+    AiJobStatus,
+    AiJobStepResponse,
+    AiJobType,
+    AiQualityGateItemSummary,
+    AiQualityGateSummary,
+    AiResultItemSummary,
+    AiSourceCoverageSummary,
+    AiSourceNormalizationSummary,
+    AiStructuredJobResultSummary,
+    AiUsageStageSummary
+} from '../../core/models/ai.models';
 import { DECK_LANGUAGE_OPTIONS } from '../../core/models/language.models';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
 import { ButtonComponent } from '../../shared/components/button.component';
@@ -307,6 +321,134 @@ import { ToastService } from '../../core/services/toast.service';
                       <strong>{{ metric.value }}</strong>
                     </div>
                   </div>
+
+                  <div *ngIf="getAiResultQualityGate(result) as quality" class="ai-job-panel">
+                    <div class="ai-job-items-header">
+                      <div class="ai-job-items-title">Quality gate</div>
+                      <div *ngIf="quality.model" class="ai-job-items-count">{{ quality.model }}</div>
+                    </div>
+                    <div class="ai-job-summary-grid">
+                      <div class="ai-job-metric">
+                        <span>Audited</span>
+                        <strong>{{ quality.auditedDrafts ?? 0 }}</strong>
+                      </div>
+                      <div class="ai-job-metric">
+                        <span>Flagged</span>
+                        <strong>{{ quality.flaggedDrafts ?? 0 }}</strong>
+                      </div>
+                      <div class="ai-job-metric">
+                        <span>Repaired</span>
+                        <strong>{{ quality.repairedDrafts ?? 0 }}</strong>
+                      </div>
+                      <div class="ai-job-metric">
+                        <span>Residual</span>
+                        <strong>{{ quality.finalFlaggedDrafts ?? 0 }}</strong>
+                      </div>
+                      <div class="ai-job-metric">
+                        <span>Score</span>
+                        <strong>{{ quality.qualityScore ?? 0 }}/100</strong>
+                      </div>
+                    </div>
+                    <div *ngIf="quality.warning" class="ai-job-warning">{{ quality.warning }}</div>
+                    <div *ngIf="getAiQualityReviewItems(result).length > 0" class="ai-job-quality-list">
+                      <div *ngFor="let item of getAiQualityReviewItems(result)" class="ai-job-quality-item">
+                        <div class="ai-job-item-main">
+                          <div class="ai-job-item-title">{{ item.summary || ('Draft #' + ((item.draftIndex ?? 0) + 1)) }}</div>
+                          <div class="ai-job-item-meta">
+                            <span class="ai-job-status-pill"
+                                  [class.completed]="item.decision === 'accept'"
+                                  [class.partial]="item.decision === 'repair'"
+                                  [class.failed]="item.decision === 'reject'">
+                              {{ formatAiQualityDecision(item.decision) }}
+                            </span>
+                            <span *ngIf="item.focusFields?.length" class="ai-job-key">{{ item.focusFields?.join(', ') }}</span>
+                          </div>
+                        </div>
+                        <div *ngIf="item.issues?.length" class="ai-job-item-errors">
+                          <div *ngFor="let issue of item.issues">{{ issue }}</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div *ngIf="getAiResultSourceCoverage(result) as coverage" class="ai-job-panel">
+                    <div class="ai-job-items-header">
+                      <div class="ai-job-items-title">Source coverage</div>
+                    </div>
+                    <div class="ai-job-summary-grid">
+                      <div class="ai-job-metric">
+                        <span>Source items</span>
+                        <strong>{{ coverage.sourceItemsTotal ?? 0 }}</strong>
+                      </div>
+                      <div class="ai-job-metric">
+                        <span>Used</span>
+                        <strong>{{ coverage.sourceItemsUsed ?? 0 }}</strong>
+                      </div>
+                      <div class="ai-job-metric">
+                        <span>Altered</span>
+                        <strong>{{ coverage.alteredSourceItems ?? 0 }}</strong>
+                      </div>
+                    </div>
+                    <div *ngIf="(coverage.missingSourceIndexes?.length || 0) > 0" class="ai-job-inline-list">
+                      <span class="ai-job-inline-label">Missing source indexes</span>
+                      <span class="ai-job-stage-chip">{{ coverage.missingSourceIndexes?.join(', ') }}</span>
+                    </div>
+                    <div *ngIf="(coverage.missingNumberedItems?.length || 0) > 0" class="ai-job-inline-list">
+                      <span class="ai-job-inline-label">Missing numbered items</span>
+                      <span class="ai-job-stage-chip">{{ coverage.missingNumberedItems?.join(', ') }}</span>
+                    </div>
+                  </div>
+
+                  <div *ngIf="getAiResultSourceNormalization(result) as normalization" class="ai-job-panel">
+                    <div class="ai-job-items-header">
+                      <div class="ai-job-items-title">Source normalization</div>
+                      <div *ngIf="normalization.model" class="ai-job-items-count">{{ normalization.model }}</div>
+                    </div>
+                    <div class="ai-job-summary-grid">
+                      <div class="ai-job-metric">
+                        <span>Reviewed</span>
+                        <strong>{{ normalization.reviewedItems ?? 0 }}</strong>
+                      </div>
+                      <div class="ai-job-metric">
+                        <span>Normalized</span>
+                        <strong>{{ normalization.normalizedItems ?? 0 }}</strong>
+                      </div>
+                      <div class="ai-job-metric" *ngIf="normalization.extraction">
+                        <span>Extraction</span>
+                        <strong>{{ normalization.extraction }}</strong>
+                      </div>
+                    </div>
+                    <div *ngIf="normalization.warning" class="ai-job-warning">{{ normalization.warning }}</div>
+                  </div>
+
+                  <ng-container *ngIf="getAiResultUsageStages(result) as usageStages">
+                    <div *ngIf="usageStages.length > 0" class="ai-job-panel">
+                      <div class="ai-job-items-header">
+                        <div class="ai-job-items-title">Usage breakdown</div>
+                      </div>
+                      <div class="ai-job-usage-list">
+                        <div *ngFor="let stage of usageStages" class="ai-job-usage-card">
+                          <div class="ai-job-item-main">
+                            <div class="ai-job-item-title">{{ stage.label }}</div>
+                            <div class="ai-job-item-meta">
+                              <span *ngIf="stage.summary.model" class="ai-job-key">{{ stage.summary.model }}</span>
+                              <span *ngIf="stage.summary.requests" class="ai-job-stage-chip">{{ stage.summary.requests }} req</span>
+                            </div>
+                          </div>
+                          <div class="ai-job-usage-stats">
+                            <span *ngIf="hasUsageValue(stage.summary.inputTokens)">In {{ formatCompactNumber(stage.summary.inputTokens || 0) }}</span>
+                            <span *ngIf="hasUsageValue(stage.summary.outputTokens)">Out {{ formatCompactNumber(stage.summary.outputTokens || 0) }}</span>
+                            <span *ngIf="hasUsageValue(resolveUsageCachedTokens(stage.summary))">Cached {{ formatCompactNumber(resolveUsageCachedTokens(stage.summary)) }}</span>
+                            <span *ngIf="hasUsageValue(resolveUsageReasoningTokens(stage.summary))">Reasoning {{ formatCompactNumber(resolveUsageReasoningTokens(stage.summary)) }}</span>
+                            <span *ngIf="hasUsageValue(stage.summary.charsGenerated)">Chars {{ formatCompactNumber(stage.summary.charsGenerated || 0) }}</span>
+                            <span *ngIf="hasUsageValue(stage.summary.imagesGenerated)">Images {{ stage.summary.imagesGenerated }}</span>
+                            <span *ngIf="hasUsageValue(stage.summary.videosGenerated)">Videos {{ stage.summary.videosGenerated }}</span>
+                            <span *ngIf="hasUsageValue(resolveUsageDurationMs(stage.summary))">Time {{ formatUsageDuration(resolveUsageDurationMs(stage.summary)) }}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </ng-container>
 
                   <div *ngIf="getAiResultItems(result).length > 0" class="ai-job-items">
                     <div class="ai-job-items-header">
@@ -976,6 +1118,15 @@ import { ToastService } from '../../core/services/toast.service';
         gap: var(--spacing-md);
       }
 
+      .ai-job-panel {
+        display: grid;
+        gap: var(--spacing-sm);
+        padding: var(--spacing-sm);
+        border-radius: var(--border-radius-md);
+        border: 1px solid var(--glass-border);
+        background: rgba(255, 255, 255, 0.42);
+      }
+
       .ai-job-summary-grid {
         display: grid;
         gap: var(--spacing-sm);
@@ -1002,6 +1153,40 @@ import { ToastService } from '../../core/services/toast.service';
       .ai-job-steps {
         display: grid;
         gap: var(--spacing-sm);
+      }
+
+      .ai-job-quality-list,
+      .ai-job-usage-list {
+        display: grid;
+        gap: var(--spacing-sm);
+      }
+
+      .ai-job-usage-card {
+        display: grid;
+        gap: var(--spacing-xs);
+        padding: var(--spacing-sm);
+        border-radius: var(--border-radius-md);
+        background: rgba(15, 23, 42, 0.03);
+        border: 1px solid rgba(148, 163, 184, 0.2);
+      }
+
+      .ai-job-usage-stats,
+      .ai-job-inline-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: var(--spacing-xs);
+        align-items: center;
+        font-size: 0.8rem;
+        color: var(--color-text-secondary);
+      }
+
+      .ai-job-inline-label {
+        color: var(--color-text-muted);
+      }
+
+      .ai-job-warning {
+        font-size: 0.82rem;
+        color: #b45309;
       }
 
       .ai-job-items-header {
@@ -2068,22 +2253,70 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     }
 
     hasStructuredAiResult(result: unknown): boolean {
-        if (!result || typeof result !== 'object') {
-            return false;
-        }
-        const candidate = result as any;
-        return Array.isArray(candidate.items) || candidate.mode === 'generate_cards' || candidate.mode === 'missing_fields' || candidate.mode === 'missing_audio' || candidate.mode === 'card_missing_fields' || candidate.mode === 'card_missing_audio';
+        return this.getStructuredAiResult(result) !== null;
     }
 
-    getAiResultItems(result: unknown): AiResultItem[] {
+    getStructuredAiResult(result: unknown): AiStructuredJobResultSummary | null {
         if (!result || typeof result !== 'object') {
+            return null;
+        }
+        const candidate = result as AiStructuredJobResultSummary;
+        if (Array.isArray(candidate.items)
+            || candidate.mode === 'generate_cards'
+            || candidate.mode === 'import_generate'
+            || candidate.mode === 'missing_fields'
+            || candidate.mode === 'missing_audio'
+            || candidate.mode === 'card_missing_fields'
+            || candidate.mode === 'card_missing_audio') {
+            return candidate;
+        }
+        return null;
+    }
+
+    getAiResultItems(result: unknown): AiResultItemSummary[] {
+        return this.getStructuredAiResult(result)?.items?.filter(item => !!item && typeof item === 'object') || [];
+    }
+
+    getAiResultSourceCoverage(result: unknown): AiSourceCoverageSummary | null {
+        return this.getStructuredAiResult(result)?.sourceCoverage || null;
+    }
+
+    getAiResultSourceNormalization(result: unknown): AiSourceNormalizationSummary | null {
+        return this.getStructuredAiResult(result)?.sourceNormalization || null;
+    }
+
+    getAiResultQualityGate(result: unknown): AiQualityGateSummary | null {
+        return this.getStructuredAiResult(result)?.qualityGate || null;
+    }
+
+    getAiQualityReviewItems(result: unknown): AiQualityGateItemSummary[] {
+        const quality = this.getAiResultQualityGate(result);
+        if (!quality) {
             return [];
         }
-        const items = (result as any).items;
-        if (!Array.isArray(items)) {
+        const effectiveItems = quality.finalItems?.length ? quality.finalItems : quality.items;
+        return (effectiveItems || []).filter(item => !!item && typeof item === 'object');
+    }
+
+    getAiResultUsageStages(result: unknown): Array<{ key: string; label: string; summary: AiUsageStageSummary }> {
+        const usage = this.getStructuredAiResult(result)?.usage;
+        if (!usage) {
             return [];
         }
-        return items.filter(item => item && typeof item === 'object');
+        const stages: Array<{ key: string; label: string; summary: AiUsageStageSummary }> = [];
+        const stageKeys: Array<keyof AiGenerationUsageSummary> = ['textGeneration', 'sourceNormalization', 'draftAudit', 'draftRepair', 'draftFinalAudit', 'tts', 'media'];
+        for (const key of stageKeys) {
+            const summary = usage[key];
+            if (!summary || typeof summary !== 'object' || !this.hasUsageStageSignal(summary)) {
+                continue;
+            }
+            stages.push({
+                key,
+                label: this.formatAiUsageStageName(key),
+                summary
+            });
+        }
+        return stages;
     }
 
     countRetryableAiItems(result: unknown): number {
@@ -2101,10 +2334,10 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     }
 
     summarizeAiResult(result: unknown): Array<{ label: string; value: string }> {
-        if (!result || typeof result !== 'object') {
+        const candidate = this.getStructuredAiResult(result);
+        if (!candidate) {
             return [];
         }
-        const candidate = result as any;
         const metrics: Array<{ label: string; value: string }> = [];
         this.pushMetric(metrics, 'Created', candidate.createdCards);
         this.pushMetric(metrics, 'Updated', candidate.updatedCards ?? candidate.updated);
@@ -2113,10 +2346,38 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         this.pushMetric(metrics, 'TTS', candidate.ttsGenerated);
         this.pushMetric(metrics, 'Images', candidate.imagesGenerated);
         this.pushMetric(metrics, 'Videos', candidate.videosGenerated);
+        this.pushMetric(metrics, 'Quality', candidate.qualityGate?.qualityScore !== undefined ? `${candidate.qualityGate.qualityScore}/100` : null);
+        if (candidate.sourceCoverage) {
+            this.pushMetric(metrics, 'Source used', `${candidate.sourceCoverage.sourceItemsUsed ?? 0}/${candidate.sourceCoverage.sourceItemsTotal ?? 0}`);
+        }
         if (metrics.length === 0 && Array.isArray(candidate.items)) {
             this.pushMetric(metrics, 'Cards', candidate.items.length);
         }
         return metrics;
+    }
+
+    formatAiQualityDecision(decision?: string | null): string {
+        const normalized = (decision || '').trim().toLowerCase();
+        if (!normalized) {
+            return '';
+        }
+        if (normalized === 'accept') {
+            return this.i18n.currentLanguage === 'ru' ? 'Принято' : 'Accept';
+        }
+        if (normalized === 'repair') {
+            return this.i18n.currentLanguage === 'ru' ? 'Исправить' : 'Repair';
+        }
+        if (normalized === 'reject') {
+            return this.i18n.currentLanguage === 'ru' ? 'Отклонить' : 'Reject';
+        }
+        return this.formatAiStepName(normalized);
+    }
+
+    formatUsageDuration(durationMs?: number | null): string {
+        if (!durationMs || durationMs <= 0) {
+            return '';
+        }
+        return this.formatAiEta(durationMs / 1000);
     }
 
     shortId(value?: string | null): string {
@@ -2261,7 +2522,65 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         target.push({ label, value: String(value) });
     }
 
-    private isRetryableAiItem(item: AiResultItem): boolean {
+    private formatAiUsageStageName(stage: keyof AiGenerationUsageSummary): string {
+        switch (stage) {
+            case 'textGeneration':
+                return 'Text generation';
+            case 'sourceNormalization':
+                return 'Source normalization';
+            case 'draftAudit':
+                return 'Draft audit';
+            case 'draftRepair':
+                return 'Draft repair';
+            case 'draftFinalAudit':
+                return 'Final audit';
+            case 'tts':
+                return 'Text to speech';
+            case 'media':
+                return 'Media';
+            default:
+                return this.formatAiStepName(stage);
+        }
+    }
+
+    private hasUsageStageSignal(summary: AiUsageStageSummary): boolean {
+        return this.hasUsageValue(summary.requests)
+            || this.hasUsageValue(summary.inputTokens)
+            || this.hasUsageValue(summary.outputTokens)
+            || this.hasUsageValue(summary.charsGenerated)
+            || this.hasUsageValue(summary.imagesGenerated)
+            || this.hasUsageValue(summary.videosGenerated)
+            || this.hasUsageValue(this.resolveUsageCachedTokens(summary))
+            || this.hasUsageValue(this.resolveUsageReasoningTokens(summary))
+            || this.hasUsageValue(this.resolveUsageDurationMs(summary));
+    }
+
+    hasUsageValue(value: number | null | undefined): boolean {
+        return value !== null && value !== undefined && value > 0;
+    }
+
+    resolveUsageCachedTokens(summary: AiUsageStageSummary | null | undefined): number {
+        if (!summary?.calls?.length) {
+            return 0;
+        }
+        return summary.calls.reduce((total, call) => total + (call.cachedInputTokens || 0), 0);
+    }
+
+    resolveUsageReasoningTokens(summary: AiUsageStageSummary | null | undefined): number {
+        if (!summary?.calls?.length) {
+            return 0;
+        }
+        return summary.calls.reduce((total, call) => total + (call.reasoningOutputTokens || 0), 0);
+    }
+
+    resolveUsageDurationMs(summary: AiUsageStageSummary | null | undefined): number {
+        if (!summary?.calls?.length) {
+            return 0;
+        }
+        return summary.calls.reduce((total, call) => total + (call.durationMs || 0), 0);
+    }
+
+    private isRetryableAiItem(item: AiResultItemSummary): boolean {
         const status = (item?.status || '').trim().toLowerCase();
         return status === 'failed' || status === 'partial_success' || status === 'skipped';
     }
@@ -2281,7 +2600,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         return many;
     }
 
-    private formatCompactNumber(value: number): string {
+    formatCompactNumber(value: number): string {
         const absolute = Math.abs(value);
         if (absolute >= 1_000_000) {
             return `${(value / 1_000_000).toFixed(1)}M`;
@@ -2774,12 +3093,4 @@ type AiJobEntry = {
     resultSummary: unknown | null;
     resultLoading: boolean;
     resultSteps: AiJobStepResponse[];
-};
-
-type AiResultItem = {
-    cardId?: string;
-    preview?: string;
-    status?: string;
-    completedStages?: string[];
-    errors?: string[];
 };

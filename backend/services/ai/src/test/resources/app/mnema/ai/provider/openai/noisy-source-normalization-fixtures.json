@@ -1,0 +1,37 @@
+[
+  {
+    "sourceText": "genera1 counse1",
+    "expectedTerm": "general counsel",
+    "badTranslation": "генеральный counsel",
+    "goodTranslation": "главный юрисконсульт",
+    "issue": "OCR noise should be normalized before the card is saved"
+  },
+  {
+    "sourceText": "bill a bull ours",
+    "expectedTerm": "billable hours",
+    "badTranslation": "счетные часы",
+    "goodTranslation": "оплачиваемые клиентом часы",
+    "issue": "STT noise should be normalized before the card is saved"
+  },
+  {
+    "sourceText": "affi davit",
+    "expectedTerm": "affidavit",
+    "badTranslation": "заклятие",
+    "goodTranslation": "письменное показание под присягой",
+    "issue": "Split OCR token should be normalized before the card is saved"
+  },
+  {
+    "sourceText": "dis covery legal process",
+    "expectedTerm": "discovery (legal process)",
+    "badTranslation": "открытие",
+    "goodTranslation": "раскрытие доказательств",
+    "issue": "STT spacing noise should be normalized before the card is saved"
+  },
+  {
+    "sourceText": "par a legal",
+    "expectedTerm": "paralegal",
+    "badTranslation": "пара легал",
+    "goodTranslation": "помощник юриста",
+    "issue": "OCR spacing noise should be normalized before the card is saved"
+  }
+]

@@ -27,6 +27,29 @@ class ImportItemExtractorTest {
     }
 
     @Test
+    void extractItemsUsesOnlyNumberedLinesWhenNumberedListHasHeading() {
+        String text = """
+                words from suits
+                1. subpoena
+                2. plaintiff
+                3. bailiff
+                4. deposition
+                6. affidavit
+                """;
+
+        ImportItemExtractor.ItemExtraction extraction = ImportItemExtractor.extract(text);
+
+        assertThat(extraction.items())
+                .extracting(ImportItemExtractor.SourceItem::text)
+                .containsExactly("subpoena", "plaintiff", "bailiff", "deposition", "affidavit");
+        assertThat(extraction.items())
+                .extracting(ImportItemExtractor.SourceItem::sourceIndex)
+                .containsExactly(1, 2, 3, 4, 6);
+        assertThat(extraction.missingNumbers()).containsExactly(5);
+        assertThat(extraction.numbered()).isTrue();
+    }
+
+    @Test
     void extractItemsHandlesShortLinesList() {
         String text = "one\ntwo\nthree\nfour\nfive\nsix";
 

@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.UUID;
 
 public record ResolveRequest(
-        @NotEmpty List<UUID> mediaIds
+        @NotEmpty List<UUID> mediaIds,
+        ResolveUrlTarget urlTarget
 ) {
 }

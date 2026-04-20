@@ -1,0 +1,79 @@
+[
+  {
+    "name": "legal-text-local",
+    "provider": "ollama",
+    "model": "qwen3:4b",
+    "mimeType": "text/plain",
+    "extraction": "text",
+    "sourceKind": "extract_text",
+    "items": [
+      { "sourceText": "fishing expedition", "badTranslation": "рыбная экспедиция", "goodTranslation": "поиск компромата", "issue": "Literal mistranslation for legal context" },
+      { "sourceText": "general counsel", "badTranslation": "генеральный counsel", "goodTranslation": "главный юрисконсульт", "issue": "Mixed-language legal title" },
+      { "sourceText": "billable hours", "badTranslation": "счетные часы", "goodTranslation": "оплачиваемые клиентом часы", "issue": "Domain-specific translation is wrong" },
+      { "sourceText": "affidavit", "badTranslation": "заклятие", "goodTranslation": "письменное показание под присягой", "issue": "Legal filing was hallucinated into an unrelated word" },
+      { "sourceText": "discovery (legal process)", "badTranslation": "открытие", "goodTranslation": "раскрытие доказательств", "issue": "Literal translation misses the legal procedure" }
+    ]
+  },
+  {
+    "name": "legal-docx-remote",
+    "provider": "openai",
+    "model": "gpt-4.1-mini",
+    "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "extraction": "docx",
+    "sourceKind": "extract_text",
+    "items": [
+      { "sourceText": "fishing expedition", "badTranslation": "рыбная экспедиция", "goodTranslation": "поиск компромата", "issue": "Literal mistranslation for legal context" },
+      { "sourceText": "general counsel", "badTranslation": "генеральный counsel", "goodTranslation": "главный юрисконсульт", "issue": "Mixed-language legal title" },
+      { "sourceText": "billable hours", "badTranslation": "счетные часы", "goodTranslation": "оплачиваемые клиентом часы", "issue": "Domain-specific translation is wrong" },
+      { "sourceText": "affidavit", "badTranslation": "заклятие", "goodTranslation": "письменное показание под присягой", "issue": "Legal filing was hallucinated into an unrelated word" },
+      { "sourceText": "discovery (legal process)", "badTranslation": "открытие", "goodTranslation": "раскрытие доказательств", "issue": "Literal translation misses the legal procedure" }
+    ]
+  },
+  {
+    "name": "legal-pdf-remote",
+    "provider": "openai",
+    "model": "gpt-4.1-mini",
+    "mimeType": "application/pdf",
+    "extraction": "pdf",
+    "sourceKind": "extract_text",
+    "items": [
+      { "sourceText": "fishing expedition", "badTranslation": "рыбная экспедиция", "goodTranslation": "поиск компромата", "issue": "Literal mistranslation for legal context" },
+      { "sourceText": "general counsel", "badTranslation": "генеральный counsel", "goodTranslation": "главный юрисконсульт", "issue": "Mixed-language legal title" },
+      { "sourceText": "billable hours", "badTranslation": "счетные часы", "goodTranslation": "оплачиваемые клиентом часы", "issue": "Domain-specific translation is wrong" },
+      { "sourceText": "affidavit", "badTranslation": "заклятие", "goodTranslation": "письменное показание под присягой", "issue": "Legal filing was hallucinated into an unrelated word" },
+      { "sourceText": "discovery (legal process)", "badTranslation": "открытие", "goodTranslation": "раскрытие доказательств", "issue": "Literal translation misses the legal procedure" }
+    ]
+  },
+  {
+    "name": "noisy-ocr-local",
+    "provider": "ollama",
+    "model": "qwen3:4b",
+    "mimeType": "application/pdf",
+    "extraction": "ocr",
+    "sourceKind": "extract_text",
+    "expectSourceNormalization": true,
+    "items": [
+      { "sourceText": "genera1 counse1", "expectedTerm": "general counsel", "badTranslation": "генеральный counsel", "goodTranslation": "главный юрисконсульт", "issue": "OCR noise should be normalized before the card is saved" },
+      { "sourceText": "bill a bull ours", "expectedTerm": "billable hours", "badTranslation": "счетные часы", "goodTranslation": "оплачиваемые клиентом часы", "issue": "STT noise should be normalized before the card is saved" },
+      { "sourceText": "affi davit", "expectedTerm": "affidavit", "badTranslation": "заклятие", "goodTranslation": "письменное показание под присягой", "issue": "Split OCR token should be normalized before the card is saved" },
+      { "sourceText": "dis covery legal process", "expectedTerm": "discovery (legal process)", "badTranslation": "открытие", "goodTranslation": "раскрытие доказательств", "issue": "STT spacing noise should be normalized before the card is saved" },
+      { "sourceText": "par a legal", "expectedTerm": "paralegal", "badTranslation": "пара легал", "goodTranslation": "помощник юриста", "issue": "OCR spacing noise should be normalized before the card is saved" }
+    ]
+  },
+  {
+    "name": "noisy-stt-local",
+    "provider": "ollama",
+    "model": "qwen3:4b",
+    "mimeType": "audio/mpeg",
+    "extraction": "stt",
+    "sourceKind": "audio_stt",
+    "expectSourceNormalization": true,
+    "items": [
+      { "sourceText": "genera1 counse1", "expectedTerm": "general counsel", "badTranslation": "генеральный counsel", "goodTranslation": "главный юрисконсульт", "issue": "OCR noise should be normalized before the card is saved" },
+      { "sourceText": "bill a bull ours", "expectedTerm": "billable hours", "badTranslation": "счетные часы", "goodTranslation": "оплачиваемые клиентом часы", "issue": "STT noise should be normalized before the card is saved" },
+      { "sourceText": "affi davit", "expectedTerm": "affidavit", "badTranslation": "заклятие", "goodTranslation": "письменное показание под присягой", "issue": "Split OCR token should be normalized before the card is saved" },
+      { "sourceText": "dis covery legal process", "expectedTerm": "discovery (legal process)", "badTranslation": "открытие", "goodTranslation": "раскрытие доказательств", "issue": "STT spacing noise should be normalized before the card is saved" },
+      { "sourceText": "par a legal", "expectedTerm": "paralegal", "badTranslation": "пара легал", "goodTranslation": "помощник юриста", "issue": "OCR spacing noise should be normalized before the card is saved" }
+    ]
+  }
+]

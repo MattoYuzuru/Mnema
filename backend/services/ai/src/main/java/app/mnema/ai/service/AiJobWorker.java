@@ -43,12 +43,14 @@ public class AiJobWorker {
     private final Semaphore jobSlots;
     private final ExecutorService executor;
     private final ScheduledExecutorService heartbeatScheduler;
+    private final AiJobCancellationRegistry cancellationRegistry;
 
     public AiJobWorker(JdbcTemplate jdbcTemplate,
                        AiJobRepository jobRepository,
                        AiJobProcessor jobProcessor,
                        AiUsageLedgerService usageLedgerService,
                        AiJobCostEstimator costEstimator,
+                       AiJobCancellationRegistry cancellationRegistry,
                        @Value("${app.ai.jobs.worker-id:}") String workerId,
                        @Value("${app.ai.jobs.lock-ttl-seconds:300}") long lockTtlSeconds,
                        @Value("${app.ai.jobs.max-attempts:3}") int maxAttempts,
@@ -60,6 +62,7 @@ public class AiJobWorker {
         this.jobProcessor = jobProcessor;
         this.usageLedgerService = usageLedgerService;
         this.costEstimator = costEstimator;
+        this.cancellationRegistry = cancellationRegistry;
         this.workerId = (workerId == null || workerId.isBlank()) ? defaultWorkerId() : workerId;
         this.lockTtl = Duration.ofSeconds(lockTtlSeconds);
         this.maxAttempts = Math.max(maxAttempts, 1);
@@ -86,18 +89,20 @@ public class AiJobWorker {
     }
 
     private void handleJob(AiJobEntity job) {
-        if (isCanceled(job.getJobId())) {
-            return;
-        }
-        ScheduledFuture<?> heartbeat = scheduleLockHeartbeat(job.getJobId());
-        try {
-            AiJobProcessingResult result = jobProcessor.process(job);
-            markCompleted(job, result);
-        } catch (Exception ex) {
-            log.warn("AI job failed jobId={} errorType={} message={}", job.getJobId(), ex.getClass().getSimpleName(), safeMessage(ex));
-            markFailed(job, ex);
-        } finally {
-            heartbeat.cancel(false);
+        try (AiJobCancellationRegistry.Registration ignored = cancellationRegistry.register(job.getJobId())) {
+            if (isCanceled(job.getJobId())) {
+                return;
+            }
+            ScheduledFuture<?> heartbeat = scheduleLockHeartbeat(job.getJobId());
+            try {
+                AiJobProcessingResult result = jobProcessor.process(job);
+                markCompleted(job, result);
+            } catch (Exception ex) {
+                log.warn("AI job failed jobId={} errorType={} message={}", job.getJobId(), ex.getClass().getSimpleName(), safeMessage(ex));
+                markFailed(job, ex);
+            } finally {
+                heartbeat.cancel(false);
+            }
         }
     }
 
@@ -218,7 +223,8 @@ public class AiJobWorker {
                     resolvedCost,
                     result.provider(),
                     result.model(),
-                    resolvePromptHash(job, result)
+                    resolvePromptHash(job, result),
+                    result.usageDetails()
             );
         }
         jobRepository.save(job);
@@ -231,22 +237,42 @@ public class AiJobWorker {
         }
         Instant now = Instant.now();
         int attempts = job.getAttempts() == null ? 1 : job.getAttempts() + 1;
+        String errorSummary = ex == null ? "Job failed" : ex.getClass().getSimpleName();
+        AiJobStatus nextStatus = attempts < maxAttempts ? AiJobStatus.queued : AiJobStatus.failed;
+        Instant nextRunAt = nextStatus == AiJobStatus.queued ? now.plusMillis(computeBackoff(attempts)) : null;
+        Instant completedAt = nextStatus == AiJobStatus.failed ? now : null;
+
         job.setAttempts(attempts);
         job.setLockedAt(null);
         job.setLockedBy(null);
         job.setUpdatedAt(now);
-        String errorSummary = ex == null ? "Job failed" : ex.getClass().getSimpleName();
         job.setErrorMessage(errorSummary);
+        job.setStatus(nextStatus);
+        job.setNextRunAt(nextRunAt);
+        job.setCompletedAt(completedAt);
 
-        if (attempts < maxAttempts) {
-            job.setStatus(AiJobStatus.queued);
-            job.setNextRunAt(now.plusMillis(computeBackoff(attempts)));
-        } else {
-            job.setStatus(AiJobStatus.failed);
-            job.setCompletedAt(now);
-            job.setNextRunAt(null);
-        }
-        jobRepository.save(job);
+        jdbcTemplate.update(
+                """
+                update app_ai.ai_jobs
+                set attempts = ?,
+                    status = ?,
+                    next_run_at = ?,
+                    completed_at = ?,
+                    error_message = ?,
+                    locked_at = null,
+                    locked_by = null,
+                    updated_at = ?
+                where job_id = ?
+                  and status <> 'canceled'
+                """,
+                attempts,
+                nextStatus.name(),
+                nextRunAt,
+                completedAt,
+                errorSummary,
+                now,
+                job.getJobId()
+        );
     }
 
     private long computeBackoff(int attempts) {
