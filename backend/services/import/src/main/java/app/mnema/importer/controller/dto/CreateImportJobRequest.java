@@ -21,6 +21,7 @@ public record CreateImportJobRequest(
         String[] tags,
         Boolean isPublic,
         Boolean isListed,
-        Map<String, String> fieldMapping
+        Map<String, String> fieldMapping,
+        Map<String, String> sourceFieldTypes
 ) {
 }

@@ -36,6 +36,7 @@ export interface CreateImportJobRequest {
     isPublic?: boolean | null;
     isListed?: boolean | null;
     fieldMapping?: Record<string, string> | null;
+    sourceFieldTypes?: Record<string, string> | null;
 }
 
 export interface CreateExportJobRequest {

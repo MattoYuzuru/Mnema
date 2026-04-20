@@ -55,7 +55,7 @@ class ImportJobControllerTest {
         ImportPreviewResponse previewResponse = new ImportPreviewResponse(List.of(), List.of(), Map.of(), List.of());
         CreateImportJobRequest importRequest = new CreateImportJobRequest(
                 UUID.randomUUID(), ImportSourceType.csv, "deck.csv", 10L, UUID.randomUUID(), ImportMode.create_new,
-                "Deck", "Deck", "en", new String[]{"tag"}, true, true, Map.of("Front", "Question")
+                "Deck", "Deck", "en", new String[]{"tag"}, true, true, Map.of("Front", "Question"), Map.of("Question", "markdown")
         );
         CreateExportJobRequest exportRequest = new CreateExportJobRequest(UUID.randomUUID(), ImportSourceType.mnpkg);
         ImportJobResponse jobResponse = new ImportJobResponse(

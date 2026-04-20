@@ -9,7 +9,9 @@ import app.mnema.importer.domain.ImportJobType;
 import app.mnema.importer.domain.ImportMode;
 import app.mnema.importer.repository.ImportJobRepository;
 import app.mnema.importer.security.CurrentUserProvider;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.fasterxml.jackson.databind.node.NullNode;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -59,7 +61,8 @@ public class ImportJobService {
         job.setStatus(ImportJobStatus.queued);
         job.setTotalItems(null);
         job.setProcessedItems(0);
-        job.setFieldMapping(toMappingNode(request.fieldMapping()));
+        validateSourceFieldTypes(request.sourceFieldTypes());
+        job.setFieldMapping(toFieldMappingNode(job.getMode(), request.fieldMapping(), request.sourceFieldTypes()));
         job.setDeckName(normalizeOptional(request.deckName()));
         job.setDeckDescription(normalizeOptional(request.deckDescription()));
         job.setLanguageCode(normalizeOptional(request.language()));
@@ -136,11 +139,58 @@ public class ImportJobService {
         return accessToken;
     }
 
-    private com.fasterxml.jackson.databind.JsonNode toMappingNode(Map<String, String> mapping) {
-        if (mapping == null) {
+    private JsonNode toFieldMappingNode(ImportMode mode,
+                                        Map<String, String> mapping,
+                                        Map<String, String> sourceFieldTypes) {
+        if (mapping == null || mapping.isEmpty()) {
             return NullNode.getInstance();
         }
-        return objectMapper.valueToTree(mapping);
+        if (mode != ImportMode.create_new) {
+            return objectMapper.valueToTree(mapping);
+        }
+
+        ObjectNode node = objectMapper.createObjectNode();
+        mapping.forEach((targetField, sourceField) -> {
+            String normalizedTarget = normalizeOptional(targetField);
+            String normalizedSource = normalizeOptional(sourceField);
+            if (normalizedTarget == null || normalizedSource == null) {
+                return;
+            }
+            ObjectNode fieldNode = node.putObject(normalizedTarget);
+            fieldNode.put("source", normalizedSource);
+            String requestedType = resolveRequestedFieldType(sourceFieldTypes, normalizedTarget, normalizedSource);
+            if (requestedType != null) {
+                fieldNode.put("fieldType", requestedType);
+            }
+        });
+        return node.isEmpty() ? NullNode.getInstance() : node;
+    }
+
+    private String resolveRequestedFieldType(Map<String, String> sourceFieldTypes,
+                                             String targetField,
+                                             String sourceField) {
+        if (sourceFieldTypes == null || sourceFieldTypes.isEmpty()) {
+            return null;
+        }
+        String requested = sourceFieldTypes.get(sourceField);
+        if (requested == null) {
+            requested = sourceFieldTypes.get(targetField);
+        }
+        return ImportFieldTypeSupport.normalizeRequestedFieldType(requested);
+    }
+
+    private void validateSourceFieldTypes(Map<String, String> sourceFieldTypes) {
+        if (sourceFieldTypes == null || sourceFieldTypes.isEmpty()) {
+            return;
+        }
+        for (String fieldType : sourceFieldTypes.values()) {
+            if (fieldType == null || fieldType.isBlank()) {
+                continue;
+            }
+            if (ImportFieldTypeSupport.normalizeRequestedFieldType(fieldType) == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Unsupported import field type: " + fieldType);
+            }
+        }
     }
 
     private String[] normalizeTags(String[] tags) {

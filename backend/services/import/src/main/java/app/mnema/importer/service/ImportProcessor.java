@@ -54,6 +54,9 @@ public class ImportProcessor {
     private static final String ANKI_UPDATE_MESSAGE = "please update to the latest anki version";
     private static final List<String> FRONT_FIELD_HINTS = List.of("front", "question", "term", "word", "expression", "original", "prompt");
     private static final List<String> BACK_FIELD_HINTS = List.of("back", "answer", "meaning", "translation", "definition", "example", "comment", "notes", "extra", "hint");
+
+    private record ImportFieldSelection(String sourceField, String fieldType) {
+    }
     private static final Set<String> SUPPORTED_LANGUAGES = Set.of("ru", "en", "jp", "sp", "zh", "hi", "ar", "fr", "bn", "pt", "id");
     private static final Set<String> BUILTIN_FIELDS = Set.of(
             "frontside",
@@ -217,9 +220,10 @@ public class ImportProcessor {
             if (!isPublic) {
                 isListed = false;
             }
+            Map<String, String> fieldTypeOverrides = fieldTypeOverridesFromJob(job);
             List<CoreFieldTemplate> templateFields = stream instanceof TemplateAwareImportStream templateStream
-                    ? filterTemplateFields(normalizeTemplateFields(templateStream.templateFields()), selectedSourceFields, layout)
-                    : buildTemplateFields(selectedSourceFields, layout);
+                    ? filterTemplateFields(normalizeTemplateFields(templateStream.templateFields()), selectedSourceFields, layout, fieldTypeOverrides)
+                    : buildTemplateFields(selectedSourceFields, layout, fieldTypeOverrides);
             if (templateFields.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Selected source fields do not match import template");
             }
@@ -285,15 +289,8 @@ public class ImportProcessor {
         Map<String, String> mapping = new HashMap<>();
         JsonNode node = job.getFieldMapping();
         boolean explicitMapping = node != null && node.isObject();
-        if (node != null && node.isObject()) {
-            node.fields().forEachRemaining(entry -> {
-                String target = entry.getKey();
-                String source = entry.getValue() == null ? null : entry.getValue().asText(null);
-                if (target == null || target.isBlank() || source == null || source.isBlank()) {
-                    return;
-                }
-                mapping.put(target, source);
-            });
+        if (explicitMapping) {
+            readFieldSelections(node).forEach((target, selection) -> mapping.put(target, selection.sourceField()));
         }
 
         if (explicitMapping) {
@@ -321,16 +318,7 @@ public class ImportProcessor {
             return List.copyOf(sourceFields);
         }
         Set<String> selected = new LinkedHashSet<>();
-        node.fields().forEachRemaining(entry -> {
-            String source = entry.getValue() == null ? null : entry.getValue().asText(null);
-            if (source != null && !source.isBlank()) {
-                selected.add(source);
-                return;
-            }
-            if (entry.getKey() != null && !entry.getKey().isBlank()) {
-                selected.add(entry.getKey());
-            }
-        });
+        readFieldSelections(node).values().forEach(selection -> selected.add(selection.sourceField()));
         if (selected.isEmpty()) {
             return List.of();
         }
@@ -339,12 +327,13 @@ public class ImportProcessor {
 
     private List<CoreFieldTemplate> filterTemplateFields(List<CoreFieldTemplate> templateFields,
                                                          List<String> selectedSourceFields,
-                                                         ImportLayout layout) {
+                                                         ImportLayout layout,
+                                                         Map<String, String> fieldTypeOverrides) {
         if (selectedSourceFields == null || selectedSourceFields.isEmpty()) {
             return List.of();
         }
         if (templateFields == null || templateFields.isEmpty()) {
-            return buildTemplateFields(selectedSourceFields, layout);
+            return buildTemplateFields(selectedSourceFields, layout, fieldTypeOverrides);
         }
         Set<String> selected = new LinkedHashSet<>(selectedSourceFields);
         List<CoreFieldTemplate> filtered = templateFields.stream()
@@ -361,7 +350,7 @@ public class ImportProcessor {
                     null,
                     field.name(),
                     field.label(),
-                    field.fieldType(),
+                    resolveTemplateFieldType(field, fieldTypeOverrides),
                     field.isRequired(),
                     field.isOnFront(),
                     index,
@@ -373,7 +362,9 @@ public class ImportProcessor {
         return normalizeTemplateFields(reindexed);
     }
 
-    private List<CoreFieldTemplate> buildTemplateFields(List<String> sourceFields, ImportLayout layout) {
+    private List<CoreFieldTemplate> buildTemplateFields(List<String> sourceFields,
+                                                        ImportLayout layout,
+                                                        Map<String, String> fieldTypeOverrides) {
         List<String> names = sourceFields == null ? List.of() : sourceFields;
         List<String> ordered = new ArrayList<>();
         Set<String> frontNames = new HashSet<>();
@@ -439,7 +430,7 @@ public class ImportProcessor {
 
         int index = 0;
         for (String name : ordered) {
-            String type = inferFieldType(name);
+            String type = ImportFieldTypeSupport.resolveFieldType(name, fieldTypeOverrides.get(name));
             boolean isOnFront = frontFlags.get(index);
             boolean isRequired = index == firstFront || index == firstBack;
             fields.add(new CoreFieldTemplate(
@@ -475,7 +466,7 @@ public class ImportProcessor {
             }
             String label = field.label() == null || field.label().isBlank() ? name : field.label();
             String type = field.fieldType() == null || field.fieldType().isBlank()
-                    ? inferFieldType(name)
+                    ? ImportFieldTypeSupport.inferFieldType(name)
                     : field.fieldType();
             Integer orderIndex = field.orderIndex() == null ? index : field.orderIndex();
             normalized.add(new CoreFieldTemplate(
@@ -650,7 +641,7 @@ public class ImportProcessor {
             }
 
             String fieldType = targetField.fieldType();
-            if (isMediaField(fieldType)) {
+            if (ImportFieldTypeSupport.isMediaField(fieldType)) {
                 JsonNode mediaNode = buildMediaValue(raw, fieldType, stream, userId);
                 if (mediaNode != null) {
                     content.set(targetName, mediaNode);
@@ -682,7 +673,7 @@ public class ImportProcessor {
                 continue;
             }
             String fieldType = targetField.fieldType();
-            if (isMediaField(fieldType)) {
+            if (ImportFieldTypeSupport.isMediaField(fieldType)) {
                 JsonNode mediaNode = buildMediaValue(raw, fieldType, mediaStream, userId);
                 if (mediaNode != null) {
                     content.set(targetName, mediaNode);
@@ -1320,28 +1311,6 @@ public class ImportProcessor {
         };
     }
 
-    private boolean isMediaField(String fieldType) {
-        if (fieldType == null) {
-            return false;
-        }
-        String normalized = fieldType.toLowerCase(Locale.ROOT);
-        return normalized.equals("image") || normalized.equals("audio") || normalized.equals("video");
-    }
-
-    private String inferFieldType(String name) {
-        String lowered = normalize(name);
-        if (lowered.contains("image") || lowered.contains("img") || lowered.contains("picture") || lowered.contains("photo") || lowered.contains("pic")) {
-            return "image";
-        }
-        if (lowered.contains("audio") || lowered.contains("sound")) {
-            return "audio";
-        }
-        if (lowered.contains("video")) {
-            return "video";
-        }
-        return "text";
-    }
-
     private String cleanText(String raw) {
         if (raw == null) {
             return "";
@@ -1360,6 +1329,74 @@ public class ImportProcessor {
         }
         return value.toLowerCase(Locale.ROOT)
                 .replaceAll("[^a-z0-9]", "");
+    }
+
+    private Map<String, ImportFieldSelection> readFieldSelections(JsonNode node) {
+        if (node == null || !node.isObject() || node.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, ImportFieldSelection> selections = new LinkedHashMap<>();
+        node.fields().forEachRemaining(entry -> {
+            String target = trimToNull(entry.getKey());
+            if (target == null) {
+                return;
+            }
+            JsonNode value = entry.getValue();
+            if (value == null || value.isNull()) {
+                return;
+            }
+            if (value.isTextual()) {
+                String source = trimToNull(value.asText(null));
+                if (source != null) {
+                    selections.put(target, new ImportFieldSelection(source, null));
+                }
+                return;
+            }
+            if (!value.isObject()) {
+                return;
+            }
+            String source = trimToNull(value.path("source").asText(null));
+            if (source == null) {
+                source = target;
+            }
+            String fieldType = ImportFieldTypeSupport.normalizeRequestedFieldType(value.path("fieldType").asText(null));
+            selections.put(target, new ImportFieldSelection(source, fieldType));
+        });
+        return selections;
+    }
+
+    private Map<String, String> fieldTypeOverridesFromJob(ImportJobEntity job) {
+        Map<String, ImportFieldSelection> selections = readFieldSelections(job.getFieldMapping());
+        if (selections.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> overrides = new HashMap<>();
+        selections.forEach((target, selection) -> {
+            if (selection.fieldType() != null) {
+                overrides.put(target, selection.fieldType());
+            }
+        });
+        return overrides;
+    }
+
+    private String resolveTemplateFieldType(CoreFieldTemplate field, Map<String, String> fieldTypeOverrides) {
+        String override = fieldTypeOverrides == null ? null : fieldTypeOverrides.get(field.name());
+        String normalizedOverride = ImportFieldTypeSupport.normalizeRequestedFieldType(override);
+        if (normalizedOverride != null) {
+            return normalizedOverride;
+        }
+        if (field.fieldType() != null && !field.fieldType().isBlank()) {
+            return field.fieldType();
+        }
+        return ImportFieldTypeSupport.inferFieldType(field.name());
+    }
+
+    private String trimToNull(String value) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        return trimmed.isEmpty() ? null : trimmed;
     }
 
     private boolean isPlaceholderRecord(ImportRecord record) {

@@ -63,7 +63,7 @@ public class ImportPreviewService {
         ImportPreview preview = readPreview(resolved.url(), sourceType, sampleSize);
 
         List<ImportFieldInfo> sourceFields = preview.fields().stream()
-                .map(name -> new ImportFieldInfo(name, null))
+                .map(name -> new ImportFieldInfo(name, ImportFieldTypeSupport.inferFieldType(name)))
                 .toList();
 
         List<ImportFieldInfo> targetFields = List.of();

@@ -108,8 +108,8 @@ class ImportPreviewServiceTest {
         ImportPreviewResponse response = service.preview("access-token", new ImportPreviewRequest(mediaId, ImportSourceType.csv, userDeckId, 0));
 
         assertThat(response.sourceFields()).containsExactly(
-                new ImportFieldInfo("Front text", null),
-                new ImportFieldInfo("Back", null)
+                new ImportFieldInfo("Front text", "text"),
+                new ImportFieldInfo("Back", "text")
         );
         assertThat(response.targetFields()).containsExactly(
                 new ImportFieldInfo("FrontText", "text"),
@@ -118,6 +118,36 @@ class ImportPreviewServiceTest {
         assertThat(response.suggestedMapping()).containsEntry("FrontText", "Front text").containsEntry("Back", "Back");
         assertThat(response.sample()).containsExactly(Map.of("Front text", "Q", "Back", "A"));
         verify(parser).preview(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(3));
+    }
+
+    @Test
+    void previewInfersSourceFieldTypes() throws Exception {
+        UUID mediaId = UUID.randomUUID();
+        when(mediaApiClient.resolve(List.of(mediaId))).thenReturn(List.of(new MediaResolved(
+                mediaId,
+                "import_file",
+                "https://cdn.example/source.csv",
+                "text/csv",
+                20L,
+                null,
+                null,
+                null,
+                null
+        )));
+        when(parserFactory.create(ImportSourceType.csv)).thenReturn(parser);
+        when(downloadService.openStream("https://cdn.example/source.csv")).thenReturn(new ByteArrayInputStream("csv".getBytes()));
+        when(parser.preview(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.eq(2))).thenReturn(new ImportPreview(
+                List.of("Question", "Answer markdown", "Image"),
+                List.of()
+        ));
+
+        ImportPreviewResponse response = service.preview("token", new ImportPreviewRequest(mediaId, ImportSourceType.csv, null, 2));
+
+        assertThat(response.sourceFields()).containsExactly(
+                new ImportFieldInfo("Question", "text"),
+                new ImportFieldInfo("Answer markdown", "text"),
+                new ImportFieldInfo("Image", "image")
+        );
     }
 
     @Test

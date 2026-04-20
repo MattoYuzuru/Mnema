@@ -72,7 +72,8 @@ class ImportJobServiceTest {
                 new String[]{"tag-1"},
                 true,
                 false,
-                Map.of("Front", "Question")
+                Map.of("Front", "Question"),
+                Map.of("Question", "markdown")
         );
 
         ImportJobResponse response = service.createImportJob(jwt, "access-token", request);
@@ -88,7 +89,8 @@ class ImportJobServiceTest {
         assertThat(job.getDeckName()).isEqualTo("My deck");
         assertThat(job.getDeckDescription()).isNull();
         assertThat(job.getLanguageCode()).isEqualTo("en");
-        assertThat(job.getFieldMapping().get("Front").asText()).isEqualTo("Question");
+        assertThat(job.getFieldMapping().path("Front").path("source").asText()).isEqualTo("Question");
+        assertThat(job.getFieldMapping().path("Front").path("fieldType").asText()).isEqualTo("markdown");
         assertThat(job.getUserAccessToken()).isEqualTo("access-token");
         assertThat(job.getCreatedAt()).isNotNull();
         assertThat(job.getUpdatedAt()).isEqualTo(job.getCreatedAt());
@@ -113,6 +115,7 @@ class ImportJobServiceTest {
                 new String[]{"one", "two", "three", "four", "five", "six"},
                 true,
                 true,
+                null,
                 null
         );
 
@@ -140,6 +143,7 @@ class ImportJobServiceTest {
                 null,
                 null,
                 null,
+                null,
                 null
         );
 
@@ -157,6 +161,7 @@ class ImportJobServiceTest {
         CreateImportJobRequest request = new CreateImportJobRequest(
                 UUID.randomUUID(),
                 ImportSourceType.csv,
+                null,
                 null,
                 null,
                 null,
@@ -201,6 +206,34 @@ class ImportJobServiceTest {
         assertThat(job.getMode()).isEqualTo(ImportMode.create_new);
         assertThat(job.getStatus()).isEqualTo(ImportJobStatus.queued);
         assertThat(response.jobType()).isEqualTo(ImportJobType.export_job);
+    }
+
+    @Test
+    void createImportJobRejectsUnsupportedSourceFieldType() {
+        when(currentUserProvider.requireUserId(jwt)).thenReturn(UUID.randomUUID());
+
+        CreateImportJobRequest request = new CreateImportJobRequest(
+                UUID.randomUUID(),
+                ImportSourceType.csv,
+                "deck.csv",
+                1L,
+                null,
+                ImportMode.create_new,
+                "Deck",
+                "Description",
+                "en",
+                null,
+                false,
+                false,
+                Map.of("Front", "Front"),
+                Map.of("Front", "bool")
+        );
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> service.createImportJob(jwt, "access-token", request));
+
+        assertThat(ex.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(ex.getReason()).isEqualTo("Unsupported import field type: bool");
     }
 
     @Test

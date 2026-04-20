@@ -213,6 +213,77 @@ class ImportProcessorTest {
     }
 
     @Test
+    void createNewImportAppliesConfiguredSourceFieldTypes() throws Exception {
+        TestFixture fixture = new TestFixture();
+        ImportJobEntity job = fixture.createNewJob();
+        job.setSourceName("imported.csv");
+        ObjectNode fieldMapping = objectMapper.createObjectNode();
+        fieldMapping.putObject("Prompt")
+                .put("source", "Prompt")
+                .put("fieldType", "markdown");
+        fieldMapping.putObject("Answer")
+                .put("source", "Answer")
+                .put("fieldType", "text");
+        job.setFieldMapping(fieldMapping);
+
+        fixture.stubSource(job);
+        when(fixture.stream.fields()).thenReturn(List.of("Prompt", "Answer"));
+        when(fixture.stream.layout()).thenReturn(new ImportLayout(List.of("Prompt"), List.of("Answer")));
+        when(fixture.stream.isAnki()).thenReturn(false);
+        when(fixture.stream.totalItems()).thenReturn(1);
+        when(fixture.stream.hasNext()).thenReturn(true, false);
+        when(fixture.stream.next()).thenReturn(new ImportRecord(
+                Map.of("Prompt", "# Markdown", "Answer", "Plain answer"),
+                null,
+                null,
+                0
+        ));
+
+        UUID templateId = UUID.randomUUID();
+        UUID createdDeckId = UUID.randomUUID();
+        when(fixture.coreApiClient.createTemplate(anyString(), any())).thenReturn(new CoreCardTemplateResponse(
+                templateId,
+                job.getUserId(),
+                "Template",
+                "Template",
+                false,
+                Instant.now(),
+                Instant.now(),
+                objectMapper.createObjectNode(),
+                null,
+                null,
+                List.of(
+                        new CoreFieldTemplate(UUID.randomUUID(), templateId, "Prompt", "Prompt", "markdown", true, true, 0, null, null),
+                        new CoreFieldTemplate(UUID.randomUUID(), templateId, "Answer", "Answer", "text", true, false, 1, null, null)
+                )
+        ));
+        when(fixture.coreApiClient.createDeck(anyString(), any())).thenReturn(new CoreUserDeckResponse(
+                createdDeckId,
+                job.getUserId(),
+                UUID.randomUUID(),
+                1,
+                1,
+                false,
+                "fsrs",
+                null,
+                "imported.csv",
+                "Imported from csv",
+                Instant.now(),
+                null,
+                false
+        ));
+        when(fixture.coreApiClient.addCardsBatch(anyString(), eq(createdDeckId), any(), eq(job.getJobId())))
+                .thenReturn(List.of(new CoreUserCardResponse(UUID.randomUUID(), null, true, false, null, objectMapper.createObjectNode())));
+
+        fixture.processor.process(job);
+
+        ArgumentCaptor<CoreCardTemplateRequest> templateCaptor = ArgumentCaptor.forClass(CoreCardTemplateRequest.class);
+        verify(fixture.coreApiClient).createTemplate(anyString(), templateCaptor.capture());
+        assertEquals("markdown", templateCaptor.getValue().fields().getFirst().fieldType());
+        assertEquals("text", templateCaptor.getValue().fields().getLast().fieldType());
+    }
+
+    @Test
     void createNewAnkiImportRendersAndUploadsMedia() throws Exception {
         TestFixture fixture = new TestFixture();
         ImportJobEntity job = fixture.createNewJob();

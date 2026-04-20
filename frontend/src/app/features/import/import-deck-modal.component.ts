@@ -17,6 +17,7 @@ import { TextareaComponent } from '../../shared/components/textarea.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 type ImportModeUI = 'create' | 'merge';
+type ImportFieldTypeOption = { value: string; labelKey: string };
 
 @Component({
     selector: 'app-import-deck-modal',
@@ -131,17 +132,35 @@ type ImportModeUI = 'create' | 'merge';
           <section *ngIf="preview" class="preview-block">
             <h3>{{ 'import.previewTitle' | translate }}</h3>
             <p class="mapping-subtitle">{{ 'import.fieldsToggleHint' | translate }}</p>
-            <div class="field-list">
-              <button
+            <div class="field-config-list">
+              <div
                 *ngFor="let field of preview.sourceFields"
-                type="button"
-                class="field-chip field-chip-toggle"
+                class="field-config-row"
                 [class.inactive]="!isSourceFieldActive(field.name)"
-                (click)="toggleSourceField(field.name)"
               >
-                <span>{{ field.name }}</span>
-                <span class="chip-toggle">×</span>
-              </button>
+                <button
+                  type="button"
+                  class="field-chip field-chip-toggle"
+                  [class.inactive]="!isSourceFieldActive(field.name)"
+                  (click)="toggleSourceField(field.name)"
+                >
+                  <span>{{ field.name }}</span>
+                  <span class="chip-toggle">×</span>
+                </button>
+                <div *ngIf="mode === 'create'" class="field-type-picker">
+                  <label class="field-type-label">{{ 'templateProfile.fieldType' | translate }}</label>
+                  <select
+                    class="mapping-select field-type-select"
+                    [ngModel]="sourceFieldTypes[field.name] || field.fieldType || 'text'"
+                    (ngModelChange)="onSourceFieldTypeChange(field.name, $event)"
+                    [disabled]="!isSourceFieldActive(field.name)"
+                  >
+                    <option *ngFor="let option of createFieldTypeOptions" [value]="option.value">
+                      {{ option.labelKey | translate }}
+                    </option>
+                  </select>
+                </div>
+              </div>
             </div>
 
             <div class="sample-card" *ngIf="sampleEntries.length > 0">
@@ -241,11 +260,17 @@ type ImportModeUI = 'create' | 'merge';
       .status-line { font-size: 0.9rem; color: var(--color-text-secondary); }
       .preview-block { display: flex; flex-direction: column; gap: var(--spacing-md); }
       .field-list { display: flex; flex-wrap: wrap; gap: var(--spacing-xs); }
+      .field-config-list { display: grid; gap: var(--spacing-sm); }
+      .field-config-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--spacing-md); align-items: center; padding: var(--spacing-sm) var(--spacing-md); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); background: var(--color-card-background); }
+      .field-config-row.inactive { opacity: 0.55; }
       .field-chip { padding: 0.3rem 0.6rem; background: rgba(148, 163, 184, 0.2); border-radius: 999px; font-size: 0.8rem; }
       .field-chip-toggle { display: inline-flex; align-items: center; gap: 0.45rem; border: 1px solid transparent; cursor: pointer; color: var(--color-text-primary); }
       .field-chip-toggle:hover { border-color: var(--border-color); }
       .field-chip-toggle.inactive { opacity: 0.45; }
       .chip-toggle { font-size: 0.95rem; line-height: 1; font-weight: 700; }
+      .field-type-picker { display: grid; gap: 0.35rem; min-width: 170px; }
+      .field-type-label { font-size: 0.78rem; font-weight: 600; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
+      .field-type-select { min-width: 170px; }
       .sample-card { background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); padding: var(--spacing-md); }
       .sample-row { display: grid; grid-template-columns: 140px 1fr; gap: var(--spacing-sm); padding: var(--spacing-xs) 0; border-bottom: 1px dashed var(--border-color); }
       .sample-row:last-child { border-bottom: none; }
@@ -282,6 +307,8 @@ type ImportModeUI = 'create' | 'merge';
       @media (max-width: 720px) {
         .mapping-row { grid-template-columns: 1fr; }
         .sample-row { grid-template-columns: 1fr; }
+        .field-config-row { grid-template-columns: 1fr; }
+        .field-type-picker, .field-type-select { min-width: 0; width: 100%; }
       }
     `]
 })
@@ -290,6 +317,14 @@ export class ImportDeckModalComponent implements OnDestroy {
     private static readonly MAX_DECK_DESCRIPTION = 200;
     private static readonly MAX_TAGS = 5;
     private static readonly MAX_TAG_LENGTH = 25;
+    private static readonly CREATE_FIELD_TYPE_OPTIONS: ImportFieldTypeOption[] = [
+        { value: 'text', labelKey: 'visualBuilder.fieldTypeText' },
+        { value: 'rich_text', labelKey: 'visualBuilder.fieldTypeLongText' },
+        { value: 'markdown', labelKey: 'visualBuilder.fieldTypeMarkdown' },
+        { value: 'image', labelKey: 'visualBuilder.fieldTypeImage' },
+        { value: 'audio', labelKey: 'visualBuilder.fieldTypeAudio' },
+        { value: 'video', labelKey: 'visualBuilder.fieldTypeVideo' }
+    ];
     @Input() mode: ImportModeUI = 'create';
     @Input() targetDeckId: string | null = null;
     @Input() showProfileAction = false;
@@ -315,11 +350,13 @@ export class ImportDeckModalComponent implements OnDestroy {
     tagError = '';
     mapping: Record<string, string> = {};
     sourceFieldActive: Record<string, boolean> = {};
+    sourceFieldTypes: Record<string, string> = {};
     job: ImportJobResponse | null = null;
     errorMessage = '';
     readonly maxDeckName = ImportDeckModalComponent.MAX_DECK_NAME;
     readonly maxDeckDescription = ImportDeckModalComponent.MAX_DECK_DESCRIPTION;
     readonly maxTagLength = ImportDeckModalComponent.MAX_TAG_LENGTH;
+    readonly createFieldTypeOptions = ImportDeckModalComponent.CREATE_FIELD_TYPE_OPTIONS;
 
     private pollHandle: ReturnType<typeof setInterval> | null = null;
     private timeZoneApplied = false;
@@ -421,6 +458,7 @@ export class ImportDeckModalComponent implements OnDestroy {
         const safeIsPublic = this.mode === 'create' ? this.isPublic : false;
         const safeIsListed = safeIsPublic ? this.isListed : false;
         const fieldMapping = this.mode === 'merge' ? this.cleanedMapping() : this.createFieldSelectionMapping();
+        const sourceFieldTypes = this.mode === 'create' ? this.activeSourceFieldTypes() : null;
         const request = {
             sourceMediaId: this.fileInfo.mediaId,
             sourceType: this.fileInfo.sourceType,
@@ -434,7 +472,8 @@ export class ImportDeckModalComponent implements OnDestroy {
             tags: this.mode === 'create' ? this.tags : null,
             isPublic: safeIsPublic,
             isListed: safeIsListed,
-            fieldMapping
+            fieldMapping,
+            sourceFieldTypes
         };
 
         this.importApi.createImportJob(request).subscribe({
@@ -470,6 +509,7 @@ export class ImportDeckModalComponent implements OnDestroy {
         this.tagInput = '';
         this.tagError = '';
         this.sourceFieldActive = {};
+        this.sourceFieldTypes = {};
         this.isPublic = false;
         this.isListed = false;
         const sourceType = await this.detectSourceType(file);
@@ -503,8 +543,10 @@ export class ImportDeckModalComponent implements OnDestroy {
                 this.preview = preview;
                 this.previewing = false;
                 this.sourceFieldActive = {};
+                this.sourceFieldTypes = {};
                 preview.sourceFields.forEach(field => {
                     this.sourceFieldActive[field.name] = true;
+                    this.sourceFieldTypes[field.name] = this.normalizeSourceFieldType(field.fieldType);
                 });
                 this.mapping = { ...preview.suggestedMapping };
                 this.pruneMappingsByActiveFields();
@@ -545,6 +587,21 @@ export class ImportDeckModalComponent implements OnDestroy {
         return mapping;
     }
 
+    private activeSourceFieldTypes(): Record<string, string> {
+        const fieldTypes: Record<string, string> = {};
+        this.activeSourceFieldsList.forEach(field => {
+            fieldTypes[field] = this.normalizeSourceFieldType(this.sourceFieldTypes[field]);
+        });
+        return fieldTypes;
+    }
+
+    onSourceFieldTypeChange(fieldName: string, fieldType: string): void {
+        if (!fieldName) {
+            return;
+        }
+        this.sourceFieldTypes[fieldName] = this.normalizeSourceFieldType(fieldType);
+    }
+
     isSourceFieldActive(fieldName: string): boolean {
         if (!fieldName) {
             return false;
@@ -567,6 +624,11 @@ export class ImportDeckModalComponent implements OnDestroy {
                 delete this.mapping[target];
             }
         });
+    }
+
+    private normalizeSourceFieldType(fieldType: string | null | undefined): string {
+        const normalized = (fieldType || '').trim().toLowerCase();
+        return this.createFieldTypeOptions.some(option => option.value === normalized) ? normalized : 'text';
     }
 
     private async detectSourceType(file: File): Promise<ImportSourceType | null> {
