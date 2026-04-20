@@ -2600,7 +2600,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         return many;
     }
 
-    private formatCompactNumber(value: number): string {
+    formatCompactNumber(value: number): string {
         const absolute = Math.abs(value);
         if (absolute >= 1_000_000) {
             return `${(value / 1_000_000).toFixed(1)}M`;
