@@ -3,12 +3,15 @@ package app.mnema.ai.service;
 import app.mnema.ai.controller.dto.AiJobResponse;
 import app.mnema.ai.controller.dto.AiJobPreflightResponse;
 import app.mnema.ai.controller.dto.CreateAiJobRequest;
+import app.mnema.ai.domain.composite.AiJobStepId;
 import app.mnema.ai.domain.entity.AiJobEntity;
 import app.mnema.ai.domain.entity.AiQuotaEntity;
 import app.mnema.ai.domain.entity.AiProviderCredentialEntity;
 import app.mnema.ai.domain.type.AiJobStatus;
+import app.mnema.ai.domain.type.AiJobStepStatus;
 import app.mnema.ai.domain.type.AiJobType;
 import app.mnema.ai.repository.AiJobRepository;
+import app.mnema.ai.repository.AiJobStepRepository;
 import app.mnema.ai.repository.AiProviderCredentialRepository;
 import app.mnema.ai.repository.AiQuotaRepository;
 import app.mnema.ai.support.PostgresIntegrationTest;
@@ -24,6 +27,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
@@ -37,6 +41,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 @ActiveProfiles("test")
 class AiJobServiceTest extends PostgresIntegrationTest {
 
+    @MockitoBean
+    private AiJobWorker aiJobWorker;
+
     @Autowired
     private AiJobService jobService;
 
@@ -45,6 +52,9 @@ class AiJobServiceTest extends PostgresIntegrationTest {
 
     @Autowired
     private AiJobRepository jobRepository;
+
+    @Autowired
+    private AiJobStepRepository stepRepository;
 
     @Autowired
     private AiProviderCredentialRepository credentialRepository;
@@ -273,13 +283,16 @@ class AiJobServiceTest extends PostgresIntegrationTest {
         assertThat(processing.estimatedCompletionAt()).isNotNull().isAfter(Instant.now().minusSeconds(1));
         assertThat(processing.queueAhead()).isNull();
 
-        executionService.markCompleted(created.jobId(), "prepare_context");
+        var completedStep = stepRepository.findById(new AiJobStepId(created.jobId(), "prepare_context")).orElseThrow();
+        completedStep.setStatus(AiJobStepStatus.completed);
+        completedStep.setEndedAt(Instant.now());
+        stepRepository.save(completedStep);
 
         var result = jobService.getJobResult(jwtFor(userId), created.jobId());
         assertThat(result.steps()).hasSize(2);
         assertThat(result.steps()).anySatisfy(step -> {
             assertThat(step.stepName()).isEqualTo("prepare_context");
-            assertThat(step.status()).isEqualTo(app.mnema.ai.domain.type.AiJobStepStatus.completed);
+            assertThat(step.status()).isEqualTo(AiJobStepStatus.completed);
         });
     }
 
