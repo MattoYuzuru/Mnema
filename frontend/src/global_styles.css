@@ -48,6 +48,9 @@
     --border-color: rgba(148, 163, 184, 0.35);
     --border-color-hover: rgba(148, 163, 184, 0.6);
     --focus-ring: 0 0 0 3px rgba(14, 165, 233, 0.25);
+    --mn-scrollbar-size: 8px;
+    --mn-scrollbar-thumb: color-mix(in srgb, var(--glass-border-strong) 82%, var(--border-color));
+    --mn-scrollbar-thumb-hover: color-mix(in srgb, var(--border-color-hover) 76%, var(--glass-border-strong));
 }
 
 * {
@@ -219,6 +222,31 @@ textarea::placeholder {
     background: rgba(14, 165, 233, 0.25);
 }
 
+.mn-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: var(--mn-scrollbar-thumb) transparent;
+}
+
+.mn-scrollbar::-webkit-scrollbar {
+    width: var(--mn-scrollbar-size);
+    height: var(--mn-scrollbar-size);
+}
+
+.mn-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.mn-scrollbar::-webkit-scrollbar-thumb {
+    background: var(--mn-scrollbar-thumb);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+.mn-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: var(--mn-scrollbar-thumb-hover);
+}
+
 :focus-visible {
     outline: none;
     box-shadow: var(--focus-ring);
@@ -308,6 +336,31 @@ textarea::placeholder {
     margin: 0;
 }
 
+.flashcard-view .field-type-markdown {
+    --mn-code-inline-bg: color-mix(in srgb, var(--glass-surface-strong) 82%, var(--color-card-background));
+    --mn-code-inline-border: color-mix(in srgb, var(--glass-border-strong) 72%, var(--border-color));
+    --mn-code-inline-shadow: inset 0 1px 0 color-mix(in srgb, white 28%, transparent);
+    --mn-code-block-surface: linear-gradient(
+        160deg,
+        color-mix(in srgb, var(--color-surface-solid) 82%, var(--glass-surface-strong)),
+        color-mix(in srgb, var(--color-card-background) 88%, var(--glass-surface))
+    );
+    --mn-code-block-border: color-mix(in srgb, var(--glass-border-strong) 76%, var(--border-color));
+    --mn-code-block-glow-a: color-mix(in srgb, var(--color-primary-accent) 12%, transparent);
+    --mn-code-block-glow-b: color-mix(in srgb, var(--color-secondary-accent) 14%, transparent);
+    --mn-code-block-shadow:
+        inset 0 1px 0 color-mix(in srgb, white 22%, transparent),
+        0 16px 32px color-mix(in srgb, var(--shadow-color) 52%, transparent);
+    --mn-code-label: color-mix(in srgb, var(--color-text-muted) 78%, var(--color-text-secondary));
+    --mn-code-text: color-mix(in srgb, var(--color-text-primary) 90%, var(--color-text-secondary));
+    --mn-code-comment: color-mix(in srgb, var(--color-text-muted) 92%, transparent);
+    --mn-code-keyword: color-mix(in srgb, var(--color-primary-accent) 76%, var(--color-text-primary));
+    --mn-code-string: color-mix(in srgb, var(--color-secondary-accent) 68%, var(--color-text-primary));
+    --mn-code-number: color-mix(in srgb, var(--color-primary-accent) 50%, var(--color-secondary-accent));
+    --mn-code-type: color-mix(in srgb, var(--color-secondary-accent) 54%, var(--color-text-primary));
+    --mn-code-property: color-mix(in srgb, var(--color-primary-accent) 46%, var(--color-text-primary));
+}
+
 .flashcard-view .field-type-markdown .mn-inline-code,
 .flashcard-view .field-type-markdown .mn-code-block {
     font-family: var(--font-code);
@@ -317,11 +370,12 @@ textarea::placeholder {
     display: inline-block;
     padding: 0.08rem 0.45rem;
     border-radius: 0.55rem;
-    background: linear-gradient(180deg, rgba(15, 23, 42, 0.08), rgba(15, 23, 42, 0.12));
-    border: 1px solid rgba(148, 163, 184, 0.2);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+    background: var(--mn-code-inline-bg);
+    border: 1px solid var(--mn-code-inline-border);
+    box-shadow: var(--mn-code-inline-shadow);
     font-size: 0.92em;
     line-height: 1.35;
+    color: var(--mn-code-text);
 }
 
 .flashcard-view .field-type-markdown .mn-code-block {
@@ -330,14 +384,36 @@ textarea::placeholder {
     padding: calc(var(--spacing-lg) + 0.55rem) var(--spacing-md) var(--spacing-md);
     overflow-x: auto;
     border-radius: 1rem;
-    border: 1px solid rgba(148, 163, 184, 0.22);
+    border: 1px solid var(--mn-code-block-border);
     background:
-        linear-gradient(180deg, rgba(248, 250, 252, 0.95), rgba(226, 232, 240, 0.92)),
-        radial-gradient(circle at top right, rgba(14, 165, 233, 0.12), transparent 45%);
-    box-shadow:
-        inset 0 1px 0 rgba(255, 255, 255, 0.8),
-        0 12px 28px rgba(15, 23, 42, 0.12);
+        radial-gradient(circle at top right, var(--mn-code-block-glow-a), transparent 44%),
+        radial-gradient(circle at bottom left, var(--mn-code-block-glow-b), transparent 48%),
+        var(--mn-code-block-surface);
+    box-shadow: var(--mn-code-block-shadow);
     white-space: pre;
+    scrollbar-width: thin;
+    scrollbar-color: var(--mn-scrollbar-thumb) transparent;
+    scrollbar-gutter: stable both-edges;
+}
+
+.flashcard-view .field-type-markdown .mn-code-block::-webkit-scrollbar {
+    width: var(--mn-scrollbar-size);
+    height: var(--mn-scrollbar-size);
+}
+
+.flashcard-view .field-type-markdown .mn-code-block::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.flashcard-view .field-type-markdown .mn-code-block::-webkit-scrollbar-thumb {
+    background: var(--mn-scrollbar-thumb);
+    border-radius: 999px;
+    border: 2px solid transparent;
+    background-clip: padding-box;
+}
+
+.flashcard-view .field-type-markdown .mn-code-block::-webkit-scrollbar-thumb:hover {
+    background: var(--mn-scrollbar-thumb-hover);
 }
 
 .flashcard-view .field-type-markdown .mn-code-block::before {
@@ -350,47 +426,47 @@ textarea::placeholder {
     font-weight: 700;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: rgba(51, 65, 85, 0.75);
+    color: var(--mn-code-label);
 }
 
 .flashcard-view .field-type-markdown .mn-code {
     display: block;
-    color: #0f172a;
+    color: var(--mn-code-text);
     line-height: 1.65;
     font-size: 0.92rem;
 }
 
 .flashcard-view .field-type-markdown .mn-code-token--comment {
-    color: #64748b;
+    color: var(--mn-code-comment);
     font-style: italic;
 }
 
 .flashcard-view .field-type-markdown .mn-code-token--keyword,
 .flashcard-view .field-type-markdown .mn-code-token--meta {
-    color: #7c3aed;
+    color: var(--mn-code-keyword);
     font-weight: 700;
 }
 
 .flashcard-view .field-type-markdown .mn-code-token--string,
 .flashcard-view .field-type-markdown .mn-code-token--attr-value {
-    color: #047857;
+    color: var(--mn-code-string);
 }
 
 .flashcard-view .field-type-markdown .mn-code-token--number,
 .flashcard-view .field-type-markdown .mn-code-token--boolean {
-    color: #c2410c;
+    color: var(--mn-code-number);
 }
 
 .flashcard-view .field-type-markdown .mn-code-token--type,
 .flashcard-view .field-type-markdown .mn-code-token--tag {
-    color: #0f766e;
+    color: var(--mn-code-type);
     font-weight: 600;
 }
 
 .flashcard-view .field-type-markdown .mn-code-token--property,
 .flashcard-view .field-type-markdown .mn-code-token--attr-name,
 .flashcard-view .field-type-markdown .mn-code-token--variable {
-    color: #1d4ed8;
+    color: var(--mn-code-property);
 }
 
 @media (max-width: 768px) {

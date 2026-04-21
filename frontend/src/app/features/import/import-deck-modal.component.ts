@@ -39,7 +39,7 @@ type ImportFieldTypeOption = { value: string; labelKey: string };
           <button class="close-btn" (click)="close()">&times;</button>
         </div>
 
-        <div class="modal-body">
+        <div class="modal-body mn-scrollbar">
           <section class="info-block">
             <h3>{{ 'import.howItWorksTitle' | translate }}</h3>
             <ul>

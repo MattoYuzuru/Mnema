@@ -24,6 +24,7 @@ import { NgIf, NgClass } from '@angular/common';
         [attr.maxlength]="maxLength || null"
         [ngClass]="{
           'textarea': true,
+          'mn-scrollbar': true,
           'textarea-error': hasError
         }"
         [value]="value"

@@ -232,7 +232,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           <h2>{{ 'cardBrowser.editCard' | translate }}</h2>
           <button class="close-btn" (click)="closeEditModal()">&times;</button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body mn-scrollbar">
           <form [formGroup]="editForm" class="edit-form">
             <div *ngFor="let field of template.fields" class="field-group">
               <app-media-upload
@@ -322,7 +322,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
           <h2>{{ 'cardBrowser.deleteScopeTitle' | translate }}</h2>
           <button class="close-btn" (click)="closeScopePrompt()">&times;</button>
         </div>
-        <div class="modal-body">
+        <div class="modal-body mn-scrollbar">
           <p>{{ 'cardBrowser.deleteScopeMessage' | translate }}</p>
           <div class="scope-buttons">
             <app-button variant="secondary" (click)="confirmDelete('local')" [disabled]="deleting">

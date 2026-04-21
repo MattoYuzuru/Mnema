@@ -27,7 +27,7 @@ interface ReasonOption {
             <button class="close-btn" type="button" (click)="dismiss()" [attr.aria-label]="'reports.cancel' | translate">×</button>
           </div>
 
-          <div class="modal-body">
+          <div class="modal-body mn-scrollbar">
             <p class="modal-hint">{{ 'reports.modalHint' | translate }}</p>
 
             <div class="reason-grid">
@@ -49,6 +49,7 @@ interface ReasonOption {
             <label class="details-block" *ngIf="selectedReason === 'OTHER' || details">
               <span>{{ 'reports.detailsLabel' | translate }}</span>
               <textarea
+                class="mn-scrollbar"
                 [(ngModel)]="details"
                 rows="4"
                 [placeholder]="'reports.detailsPlaceholder' | translate"
