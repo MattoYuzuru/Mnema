@@ -118,8 +118,11 @@ public class AiJobEtaEstimator {
             }
             if (step.status() == AiJobStepStatus.processing) {
                 long elapsed = step.startedAt() == null ? 0L : Math.max(0L, Duration.between(step.startedAt(), now).getSeconds());
-                int floor = Math.max(3, estimatedStepSeconds / 5);
-                remaining += Math.max(floor, estimatedStepSeconds - (int) elapsed);
+                int floor = Math.max(5, Math.min(45, estimatedStepSeconds / 5));
+                int baseRemaining = Math.max(0, estimatedStepSeconds - (int) elapsed);
+                int overtime = Math.max(0, (int) elapsed - estimatedStepSeconds);
+                int overtimeAdjustedFloor = Math.max(5, floor - Math.max(0, overtime / 5));
+                remaining += Math.max(baseRemaining, overtimeAdjustedFloor);
                 continue;
             }
             if (step.status() == AiJobStepStatus.failed) {
@@ -134,9 +137,6 @@ public class AiJobEtaEstimator {
         }
         int progressBased = estimateFromProgress(job, snapshot, provider);
         if (progressBased > 0) {
-            if (shouldIgnoreProgressCap(steps, provider, now)) {
-                return remaining;
-            }
             return Math.min(remaining, progressBased);
         }
         return remaining;
@@ -270,8 +270,8 @@ public class AiJobEtaEstimator {
             int batchSize = 24 / safeFieldCount;
             return clamp(batchSize, 3, 6);
         }
-        int batchSize = 30 / safeFieldCount;
-        return clamp(batchSize, 4, 8);
+        int batchSize = 25 / safeFieldCount;
+        return clamp(batchSize, 4, 6);
     }
 
     private int estimateGenerateMediaSeconds(JsonNode params,
@@ -520,16 +520,6 @@ public class AiJobEtaEstimator {
             return "ollama";
         }
         return normalized;
-    }
-
-    private boolean shouldIgnoreProgressCap(List<AiJobStepResponse> steps, String provider, Instant now) {
-        if (!isLocalTextProvider(provider) || steps == null || steps.isEmpty() || now == null) {
-            return false;
-        }
-        return steps.stream().anyMatch(step -> step.status() == AiJobStepStatus.processing
-                && "generate_content".equals(normalize(step.stepName()))
-                && step.startedAt() != null
-                && Duration.between(step.startedAt(), now).getSeconds() >= 60);
     }
 
     private int clamp(int value, int min, int max) {

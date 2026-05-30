@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 
 import java.lang.reflect.Method;
 import java.math.BigDecimal;
+import java.sql.Timestamp;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
@@ -22,6 +23,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -116,7 +118,12 @@ class AiJobWorkerTest {
         assertThat(job.getAttempts()).isEqualTo(2);
         assertThat(job.getCompletedAt()).isNotNull();
         assertThat(job.getNextRunAt()).isNull();
-        verify(jdbcTemplate, times(2)).update(any(String.class), any(), any(), any(), any(), any(), any(), any());
+        ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
+        verify(jdbcTemplate).update(any(String.class), eq(1), eq("queued"), any(Timestamp.class), isNull(), eq("IllegalStateException"), any(Timestamp.class), eq(job.getJobId()));
+        verify(jdbcTemplate).update(any(String.class), eq(2), eq("failed"), isNull(), any(Timestamp.class), eq("IllegalArgumentException"), any(Timestamp.class), eq(job.getJobId()));
+        verify(jdbcTemplate, times(2)).update(sqlCaptor.capture(), any(), any(), any(), any(), any(), any(), any());
+        assertThat(sqlCaptor.getAllValues())
+                .allSatisfy(sql -> assertThat(sql).contains("status = cast(? as app_ai.ai_job_status)"));
     }
 
     @Test

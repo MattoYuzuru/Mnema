@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import jakarta.annotation.PreDestroy;
+import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Optional;
@@ -255,7 +256,7 @@ public class AiJobWorker {
                 """
                 update app_ai.ai_jobs
                 set attempts = ?,
-                    status = ?,
+                    status = cast(? as app_ai.ai_job_status),
                     next_run_at = ?,
                     completed_at = ?,
                     error_message = ?,
@@ -263,16 +264,20 @@ public class AiJobWorker {
                     locked_by = null,
                     updated_at = ?
                 where job_id = ?
-                  and status <> 'canceled'
+                  and status <> 'canceled'::app_ai.ai_job_status
                 """,
                 attempts,
                 nextStatus.name(),
-                nextRunAt,
-                completedAt,
+                toSqlTimestamp(nextRunAt),
+                toSqlTimestamp(completedAt),
                 errorSummary,
-                now,
+                toSqlTimestamp(now),
                 job.getJobId()
         );
+    }
+
+    private Timestamp toSqlTimestamp(Instant value) {
+        return value == null ? null : Timestamp.from(value);
     }
 
     private long computeBackoff(int attempts) {

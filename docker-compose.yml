@@ -7,6 +7,8 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     ports: [ "${POSTGRES_PORT}:5432" ]
+    volumes:
+      - mnema_postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
       interval: 5s
@@ -198,3 +200,6 @@ networks:
     ipam:
       config:
         - subnet: 10.222.0.0/16
+
+volumes:
+  mnema_postgres_data:

@@ -30,6 +30,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -190,7 +193,7 @@ class OpenAiJobProcessorTest {
         resolveLocalGenerateBatchSize.setAccessible(true);
         int batchSize = (int) resolveLocalGenerateBatchSize.invoke(processor, params);
 
-        assertThat(batchSize).isEqualTo(5);
+        assertThat(batchSize).isEqualTo(4);
     }
 
     @Test
@@ -234,7 +237,7 @@ class OpenAiJobProcessorTest {
         resolveLocalGenerateInitialBatchSize.setAccessible(true);
         int initialBatchSize = (int) resolveLocalGenerateInitialBatchSize.invoke(processor, params, batchSize);
 
-        assertThat(batchSize).isEqualTo(6);
+        assertThat(batchSize).isEqualTo(5);
         assertThat(initialBatchSize).isEqualTo(4);
     }
 
@@ -249,6 +252,26 @@ class OpenAiJobProcessorTest {
 
         assertThat(localCandidates).isEqualTo(7);
         assertThat(remoteCandidates).isEqualTo(15);
+    }
+
+    @Test
+    void resolveGenerateMaxOutputTokensCapsLocalStructuredResponses() throws Exception {
+        OpenAiJobProcessor processor = createProcessor();
+        ObjectNode params = OBJECT_MAPPER.createObjectNode();
+
+        Method resolveGenerateMaxOutputTokens = OpenAiJobProcessor.class.getDeclaredMethod(
+                "resolveGenerateMaxOutputTokens",
+                JsonNode.class,
+                int.class,
+                int.class,
+                boolean.class
+        );
+        resolveGenerateMaxOutputTokens.setAccessible(true);
+        Integer localTokens = (Integer) resolveGenerateMaxOutputTokens.invoke(processor, params, 5, 4, true);
+        Integer remoteTokens = (Integer) resolveGenerateMaxOutputTokens.invoke(processor, params, 5, 4, false);
+
+        assertThat(localTokens).isEqualTo(3400);
+        assertThat(remoteTokens).isNull();
     }
 
     @Test
@@ -630,7 +653,137 @@ class OpenAiJobProcessorTest {
 
         assertThat(requestedBatchSizes)
                 .as("requested candidate counts: %s", requestedBatchSizes)
-                .containsExactly(4, 6);
+                .containsExactly(4, 5, 1);
+    }
+
+    @Test
+    void handleGenerateCardsReportsInterimProgressDuringLocalRetries() throws Exception {
+        OpenAiClient openAiClient = mock(OpenAiClient.class);
+        CoreApiClient coreApiClient = mock(CoreApiClient.class);
+        AiJobExecutionService executionService = mock(AiJobExecutionService.class);
+        CardNoveltyService noveltyService = new CardNoveltyService(coreApiClient);
+        OpenAiJobProcessor processor = new OpenAiJobProcessor(
+                openAiClient,
+                new OpenAiProps(
+                        "https://api.openai.com/v1",
+                        "",
+                        "qwen3:4b",
+                        "gpt-4o-mini-tts",
+                        "alloy",
+                        "mp3",
+                        "gpt-4o-mini-transcribe",
+                        "gpt-image-1-mini",
+                        "1024x1024",
+                        "low",
+                        "natural",
+                        "png",
+                        "sora-2",
+                        5,
+                        "720p",
+                        60,
+                        12,
+                        5,
+                        2_000L,
+                        30_000L,
+                        10_000L,
+                        600_000L
+                ),
+                mock(SecretVault.class),
+                mock(AiProviderCredentialRepository.class),
+                mock(MediaApiClient.class),
+                mock(AiImportContentService.class),
+                mock(AudioChunkingService.class),
+                coreApiClient,
+                noveltyService,
+                OBJECT_MAPPER,
+                executionService,
+                200_000
+        );
+
+        UUID deckId = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
+        UUID templateId = UUID.randomUUID();
+        ObjectNode params = OBJECT_MAPPER.createObjectNode();
+        params.put("__skipStepTracking", true);
+        params.put("provider", "ollama");
+        params.put("mode", "generate_cards");
+        params.put("count", 3);
+        params.putArray("fields").add("markdown").add("field");
+        params.put("input", "Generate legal terms");
+        AiJobEntity job = createJob(params, AiJobType.generic);
+        job.setDeckId(deckId);
+        job.setUserAccessToken("token");
+
+        when(coreApiClient.getUserDeck(deckId, "token"))
+                .thenReturn(new CoreApiClient.CoreUserDeckResponse(deckId, publicDeckId, 1, 1));
+        when(coreApiClient.getPublicDeck(publicDeckId, 1))
+                .thenReturn(new CoreApiClient.CorePublicDeckResponse(
+                        publicDeckId,
+                        1,
+                        UUID.randomUUID(),
+                        "Deck",
+                        "Desc",
+                        "en",
+                        templateId,
+                        1
+                ));
+        when(coreApiClient.getTemplate(templateId, 1, "token"))
+                .thenReturn(new CoreApiClient.CoreTemplateResponse(
+                        templateId,
+                        1,
+                        1,
+                        "Basic",
+                        "",
+                        null,
+                        null,
+                        List.of(
+                                new CoreApiClient.CoreFieldTemplate(UUID.randomUUID(), "markdown", "Front", "text", true, true, 0),
+                                new CoreApiClient.CoreFieldTemplate(UUID.randomUUID(), "field", "Back", "text", true, false, 1)
+                        )
+                ));
+        when(coreApiClient.getUserCards(deckId, 1, 3, "token"))
+                .thenReturn(new CoreApiClient.CoreUserCardPage(List.of()));
+        when(coreApiClient.getUserCards(deckId, 1, 200, "token"))
+                .thenReturn(new CoreApiClient.CoreUserCardPage(List.of()));
+        when(coreApiClient.addCards(any(), any(), any(), any())).thenReturn(List.of());
+
+        AtomicInteger callIndex = new AtomicInteger();
+        when(openAiClient.createResponse(any(), any())).thenAnswer(invocation -> {
+            int index = callIndex.getAndIncrement();
+            ObjectNode raw = OBJECT_MAPPER.createObjectNode();
+            raw.putObject("usage").put("input_tokens", 10).put("output_tokens", 5);
+            if (index == 0) {
+                return new OpenAiResponseResult(
+                        "{\"cards\":[{\"fields\":{\"markdown\":\"Q1\",\"field\":\"A1\"}}]}",
+                        "qwen3:4b",
+                        10,
+                        5,
+                        raw
+                );
+            }
+            return new OpenAiResponseResult(
+                    "{\"cards\":["
+                            + "{\"fields\":{\"markdown\":\"Q2\",\"field\":\"A2\"}},"
+                            + "{\"fields\":{\"markdown\":\"Q3\",\"field\":\"A3\"}}"
+                            + "]}",
+                    "qwen3:4b",
+                    10,
+                    5,
+                    raw
+            );
+        });
+
+        Method handleGenerateCardsMaybeBatched = OpenAiJobProcessor.class.getDeclaredMethod(
+                "handleGenerateCardsMaybeBatched",
+                AiJobEntity.class,
+                String.class,
+                JsonNode.class
+        );
+        handleGenerateCardsMaybeBatched.setAccessible(true);
+        handleGenerateCardsMaybeBatched.invoke(processor, job, "", params);
+
+        verify(executionService, atLeast(2))
+                .updateStepProgress(eq(job.getJobId()), eq("generate_content"), anyDouble());
     }
 
     @Test
