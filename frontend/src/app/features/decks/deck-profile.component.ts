@@ -65,56 +65,69 @@ import { ToastService } from '../../core/services/toast.service';
       </header>
 
       <div class="deck-meta">
-        <div class="meta-item">
-          <span class="meta-label">{{ 'deckProfile.algorithm' | translate }}:</span>
+        <div class="meta-item meta-item-primary">
+          <span class="meta-icon" aria-hidden="true">⚙️</span>
+          <span class="meta-label">{{ 'deckProfile.algorithm' | translate }}</span>
           <span class="meta-value">{{ formatAlgorithmId(deck.algorithmId) }}</span>
         </div>
-        <div class="meta-item">
-          <span class="meta-label">{{ 'deckProfile.autoUpdate' | translate }}:</span>
+        <div class="meta-item" [class.meta-item-on]="deck.autoUpdate">
+          <span class="meta-icon" aria-hidden="true">↻</span>
+          <span class="meta-label">{{ 'deckProfile.autoUpdate' | translate }}</span>
           <span class="meta-value">{{ deck.autoUpdate ? ('deckProfile.yes' | translate) : ('deckProfile.no' | translate) }}</span>
         </div>
         <div class="meta-item" *ngIf="deck.publicDeckId">
-          <span class="meta-label">{{ 'deckProfile.version' | translate }}:</span>
+          <span class="meta-icon" aria-hidden="true">#</span>
+          <span class="meta-label">{{ 'deckProfile.version' | translate }}</span>
           <span class="meta-value">{{ deck.currentVersion }}<span *ngIf="latestPublicVersion !== null"> / {{ latestPublicVersion }}</span></span>
         </div>
         <div class="meta-item" *ngIf="deck.templateVersion !== null && deck.templateVersion !== undefined">
-          <span class="meta-label">{{ 'deckProfile.templateVersion' | translate }}:</span>
+          <span class="meta-icon" aria-hidden="true">▣</span>
+          <span class="meta-label">{{ 'deckProfile.templateVersion' | translate }}</span>
           <span class="meta-value">{{ deck.templateVersion }}<span *ngIf="latestTemplateVersion !== null"> / {{ latestTemplateVersion }}</span></span>
         </div>
         <div class="meta-item" *ngIf="!deck.publicDeckId">
-          <span class="meta-label">{{ 'deckProfile.version' | translate }}:</span>
+          <span class="meta-icon" aria-hidden="true">#</span>
+          <span class="meta-label">{{ 'deckProfile.version' | translate }}</span>
           <span class="meta-value">{{ deck.currentVersion }}</span>
         </div>
         <div class="meta-item">
-          <span class="meta-label">{{ 'deckProfile.createdAt' | translate }}:</span>
+          <span class="meta-icon" aria-hidden="true">＋</span>
+          <span class="meta-label">{{ 'deckProfile.createdAt' | translate }}</span>
           <span class="meta-value">{{ formatMetaDate(deck.createdAt) }}</span>
         </div>
         <div class="meta-item" *ngIf="deck.lastSyncedAt">
-          <span class="meta-label">{{ 'deckProfile.lastSyncedAt' | translate }}:</span>
+          <span class="meta-icon" aria-hidden="true">✓</span>
+          <span class="meta-label">{{ 'deckProfile.lastSyncedAt' | translate }}</span>
           <span class="meta-value">{{ formatMetaDate(deck.lastSyncedAt) }}</span>
         </div>
         <div class="meta-item" *ngIf="publicDeck?.language">
-          <span class="meta-label">{{ 'deckProfile.language' | translate }}:</span>
+          <span class="meta-icon" aria-hidden="true">A</span>
+          <span class="meta-label">{{ 'deckProfile.language' | translate }}</span>
           <span class="meta-value">{{ formatLanguageCode(publicDeck?.language) }}</span>
         </div>
         <div class="meta-item" *ngIf="publicDeck">
-          <span class="meta-label">{{ 'deckProfile.isPublic' | translate }}:</span>
+          <span class="meta-icon" aria-hidden="true">◉</span>
+          <span class="meta-label">{{ 'deckProfile.isPublic' | translate }}</span>
           <span class="meta-value">{{ publicDeck.isPublic ? ('deckProfile.yes' | translate) : ('deckProfile.no' | translate) }}</span>
         </div>
         <div class="meta-item" *ngIf="publicDeck">
-          <span class="meta-label">{{ 'deckProfile.isListed' | translate }}:</span>
+          <span class="meta-icon" aria-hidden="true">☰</span>
+          <span class="meta-label">{{ 'deckProfile.isListed' | translate }}</span>
           <span class="meta-value">{{ publicDeck.isListed ? ('deckProfile.yes' | translate) : ('deckProfile.no' | translate) }}</span>
         </div>
         <div class="meta-item" *ngIf="publicDeck?.publishedAt">
-          <span class="meta-label">{{ 'deckProfile.publishedAt' | translate }}:</span>
+          <span class="meta-icon" aria-hidden="true">↑</span>
+          <span class="meta-label">{{ 'deckProfile.publishedAt' | translate }}</span>
           <span class="meta-value">{{ formatMetaDate(publicDeck?.publishedAt) }}</span>
         </div>
         <div class="meta-item" *ngIf="publicDeck?.updatedAt">
-          <span class="meta-label">{{ 'deckProfile.updatedAt' | translate }}:</span>
+          <span class="meta-icon" aria-hidden="true">✎</span>
+          <span class="meta-label">{{ 'deckProfile.updatedAt' | translate }}</span>
           <span class="meta-value">{{ formatMetaDate(publicDeck?.updatedAt) }}</span>
         </div>
         <div class="meta-item" *ngIf="publicDeck?.forkedFromDeck">
-          <span class="meta-label">{{ 'deckProfile.forkedFrom' | translate }}:</span>
+          <span class="meta-icon" aria-hidden="true">⎇</span>
+          <span class="meta-label">{{ 'deckProfile.forkedFrom' | translate }}</span>
           <span class="meta-value">{{ publicDeck?.forkedFromDeck }}</span>
         </div>
       </div>
@@ -845,14 +858,16 @@ import { ToastService } from '../../core/services/toast.service';
       }
 
       .deck-meta {
-        display: flex;
-        flex-direction: column;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
         gap: var(--spacing-sm);
         padding: var(--spacing-lg);
-        background: var(--color-card-background);
-        border: 1px solid var(--border-color);
+        background: linear-gradient(135deg, var(--glass-surface-strong), var(--glass-surface));
+        border: 1px solid var(--glass-border);
         border-radius: var(--border-radius-lg);
         margin-bottom: var(--spacing-xl);
+        box-shadow: var(--shadow-sm), inset 0 1px 0 rgba(255, 255, 255, 0.45);
+        backdrop-filter: blur(var(--glass-blur));
       }
 
       .deck-stats-block {
@@ -862,12 +877,55 @@ import { ToastService } from '../../core/services/toast.service';
 
       .meta-item {
         display: flex;
-        gap: var(--spacing-md);
+        align-items: center;
+        gap: var(--spacing-sm);
+        min-width: 0;
+        padding: 0.8rem 0.9rem;
+        border: 1px solid var(--glass-border);
+        border-radius: var(--border-radius-md);
+        background: color-mix(in srgb, var(--color-surface-solid) 72%, transparent);
+      }
+
+      .meta-item-primary {
+        border-color: color-mix(in srgb, var(--color-primary-accent) 42%, var(--glass-border));
+        background: color-mix(in srgb, var(--color-primary-accent) 12%, var(--color-surface-solid));
+      }
+
+      .meta-item-on {
+        border-color: color-mix(in srgb, #16a34a 38%, var(--glass-border));
+      }
+
+      .meta-icon {
+        flex: 0 0 2rem;
+        width: 2rem;
+        height: 2rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--border-radius-sm);
+        color: var(--color-primary-accent);
+        background: var(--glass-surface-strong);
+        border: 1px solid var(--glass-border);
+        font-size: 0.9rem;
       }
 
       .meta-label {
+        flex: 1 1 auto;
+        min-width: 0;
         font-weight: 600;
-        min-width: 8rem;
+        font-size: 0.78rem;
+        line-height: 1.2;
+        color: var(--color-text-muted);
+        text-transform: uppercase;
+      }
+
+      .meta-value {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: var(--color-text-primary);
+        font-weight: 600;
+        text-align: right;
       }
 
       .deck-actions {

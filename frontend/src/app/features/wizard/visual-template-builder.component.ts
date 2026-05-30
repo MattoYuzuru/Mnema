@@ -134,6 +134,7 @@ interface BuilderState {
               [style.height]="getCardHeight()"
               cdkDropList
               id="cardDropZone"
+              [cdkDropListAutoScrollDisabled]="true"
               [cdkDropListData]="currentFields"
               [cdkDropListConnectedTo]="[]"
               (cdkDropListEntered)="onCardDropEntered($event)"
@@ -582,7 +583,8 @@ interface BuilderState {
         gap: var(--spacing-sm);
         transition: height 0.2s ease;
         position: relative;
-        overflow: hidden;
+        overflow: clip;
+        overscroll-behavior: none;
       }
 
       .card-empty {
@@ -607,6 +609,12 @@ interface BuilderState {
         cursor: pointer;
         transition: all 0.15s;
         min-height: 50px;
+        overflow: hidden;
+        scrollbar-width: none;
+      }
+
+      .field-row::-webkit-scrollbar {
+        display: none;
       }
 
       .field-row:hover {
@@ -746,6 +754,12 @@ interface BuilderState {
         box-sizing: border-box;
         border-radius: var(--border-radius-md);
         box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        overflow: hidden;
+        scrollbar-width: none;
+      }
+
+      .cdk-drag-preview::-webkit-scrollbar {
+        display: none;
       }
 
       .cdk-drag-placeholder {
@@ -937,17 +951,11 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
             const paletteField = event.item.data as PaletteField;
 
             if (this.isPaletteDragData(paletteField) && !paletteField.inDev) {
-                const existingNames = [
-                    ...this.frontFields.map(f => f.name),
-                    ...this.backFields.map(f => f.name)
-                ];
-                const fieldName = this.generateFieldName(paletteField.label, existingNames);
-
                 const newField: BuilderField = {
                     tempId: `field-${Date.now()}-${this.tempIdCounter++}`,
-                    name: fieldName,
+                    name: '',
                     type: paletteField.type,
-                    label: '',
+                    label: paletteField.label,
                     helpText: '',
                     required: false
                 };
@@ -1062,10 +1070,13 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
 
         this.saving = true;
 
+        const namedFrontFields = this.buildNamedFields(this.frontFields);
+        const namedBackFields = this.buildNamedFields(this.backFields, namedFrontFields.map(field => field.name));
+
         const fields: CreateFieldTemplateRequest[] = [
-            ...this.frontFields.map((field, index) => ({
+            ...namedFrontFields.map((field, index) => ({
                 name: field.name,
-                label: field.label.trim() || this.getFieldDisplayLabel(field),
+                label: field.label,
                 fieldType: field.type,
                 isRequired: field.required,
                 isOnFront: true,
@@ -1073,9 +1084,9 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
                 helpText: field.helpText || null,
                 defaultValue: null
             })),
-            ...this.backFields.map((field, index) => ({
+            ...namedBackFields.map((field, index) => ({
                 name: field.name,
-                label: field.label.trim() || this.getFieldDisplayLabel(field),
+                label: field.label,
                 fieldType: field.type,
                 isRequired: field.required,
                 isOnFront: false,
@@ -1090,8 +1101,8 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
             description: this.templateDescription.trim(),
             isPublic: this.makePublic,
             layout: {
-                front: this.frontFields.map(f => f.name),
-                back: this.backFields.map(f => f.name)
+                front: namedFrontFields.map(f => f.name),
+                back: namedBackFields.map(f => f.name)
             },
             fields
         };
@@ -1144,6 +1155,30 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
 
     private clearDraft(): void {
         localStorage.removeItem(this.STORAGE_KEY);
+    }
+
+    private buildNamedFields(fields: BuilderField[], initialNames: string[] = []): Array<BuilderField & { name: string; label: string }> {
+        const existingNames = [...initialNames];
+
+        return fields.map(field => {
+            const label = this.resolveFieldLabel(field);
+            const name = this.generateFieldName(label, existingNames);
+            existingNames.push(name);
+
+            return {
+                ...field,
+                name,
+                label
+            };
+        });
+    }
+
+    private resolveFieldLabel(field: BuilderField): string {
+        return field.label.trim() || this.getPaletteLabel(field.type);
+    }
+
+    private getPaletteLabel(type: FieldType): string {
+        return this.paletteFields.find(field => field.type === type)?.label || type;
     }
 
     private isPaletteDragData(data: unknown): data is PaletteField {
