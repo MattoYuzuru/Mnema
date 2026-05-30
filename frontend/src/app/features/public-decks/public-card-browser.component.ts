@@ -739,10 +739,11 @@ import { ToastService } from '../../core/services/toast.service';
       .modal-overlay {
         position: fixed;
         inset: 0;
-        background: rgba(15, 23, 42, 0.45);
-        backdrop-filter: blur(10px);
-        display: grid;
-        place-items: center;
+        background: rgba(8, 12, 22, 0.55);
+        backdrop-filter: blur(12px) saturate(140%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
         padding: var(--spacing-md);
         z-index: 1000;
       }
@@ -750,10 +751,12 @@ import { ToastService } from '../../core/services/toast.service';
       .modal-content {
         width: min(720px, 100%);
         max-height: 90vh;
-        overflow: auto;
-        border-radius: var(--border-radius-xl);
-        background: var(--color-card-background);
-        border: 1px solid var(--border-color);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+        border-radius: var(--border-radius-lg);
+        background: var(--color-surface-solid);
+        border: 1px solid var(--glass-border);
         box-shadow: var(--shadow-lg);
       }
 
@@ -766,7 +769,8 @@ import { ToastService } from '../../core/services/toast.service';
       }
 
       .modal-header {
-        border-bottom: 1px solid var(--border-color);
+        border-bottom: 1px solid var(--glass-border);
+        flex-shrink: 0;
       }
 
       .modal-header h2 {
@@ -778,6 +782,7 @@ import { ToastService } from '../../core/services/toast.service';
         display: flex;
         flex-direction: column;
         gap: var(--spacing-md);
+        overflow-y: auto;
       }
 
       .modal-body label {
@@ -802,7 +807,8 @@ import { ToastService } from '../../core/services/toast.service';
 
       .modal-actions {
         justify-content: flex-end;
-        border-top: 1px solid var(--border-color);
+        border-top: 1px solid var(--glass-border);
+        flex-shrink: 0;
       }
 
       .modal-error {
