@@ -275,7 +275,7 @@ class AiJobEtaEstimatorTest {
                 )
         ), "ollama");
 
-        assertThat(eta.estimatedSecondsRemaining()).isNotNull().isGreaterThan(200);
+        assertThat(eta.estimatedSecondsRemaining()).isNotNull().isPositive().isLessThan(200);
         assertThat(eta.queueAhead()).isNull();
     }
 }

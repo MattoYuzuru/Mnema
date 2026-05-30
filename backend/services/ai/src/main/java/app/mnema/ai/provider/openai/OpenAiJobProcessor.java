@@ -1871,10 +1871,19 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                int requestedCount,
                                                String userPrompt,
                                                boolean expandCandidateCount) {
+        return generateDrafts(job, apiKey, params, context, requestedCount, userPrompt, expandCandidateCount, 0, requestedCount);
+    }
+
+    private GeneratedDraftBatch generateDrafts(AiJobEntity job,
+                                               String apiKey,
+                                               JsonNode params,
+                                               GenerationContext context,
+                                               int requestedCount,
+                                               String userPrompt,
+                                               boolean expandCandidateCount,
+                                               int completedCount,
+                                               int totalCount) {
         String model = textOrDefault(params.path("model"), props.defaultModel());
-        Integer maxOutputTokens = params.path("maxOutputTokens").isInt()
-                ? params.path("maxOutputTokens").asInt()
-                : null;
         boolean localOllamaRequest = isLocalOllamaRequest(params);
         List<CardDraft> uniqueDrafts = new ArrayList<>();
         int droppedEmpty = 0;
@@ -1901,6 +1910,12 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     localOllamaRequest
             );
             JsonNode responseFormat = buildCardsSchema(context.allowedFields(), candidateCount);
+            Integer maxOutputTokens = resolveGenerateMaxOutputTokens(
+                    params,
+                    context.allowedFields().size(),
+                    candidateCount,
+                    localOllamaRequest
+            );
             long startedAtNs = System.nanoTime();
             OpenAiResponseResult response = openAiClient.createResponse(
                     apiKey,
@@ -1933,6 +1948,14 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             droppedExact += filtered.droppedExact();
             droppedPrimary += filtered.droppedPrimary();
             droppedSemantic += filtered.droppedSemantic();
+            updateGenerateContentAttemptProgress(
+                    job,
+                    completedCount,
+                    totalCount,
+                    requestedCount,
+                    uniqueDrafts.size(),
+                    attempt
+            );
         }
 
         if (uniqueDrafts.size() < requestedCount) {
@@ -2019,7 +2042,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     context,
                     count,
                     promptFactory.build(offset, count),
-                    expandCandidateCount
+                    expandCandidateCount,
+                    offset,
+                    totalCount
             );
             drafts.addAll(batch.drafts());
             droppedEmpty += batch.droppedEmpty();
@@ -3112,8 +3137,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private int resolveLocalGenerateBatchSize(JsonNode params) {
         int fields = params != null && params.path("fields").isArray() ? params.path("fields").size() : 0;
-        int batchSize = fields > 0 ? 30 / fields : 6;
-        return Math.max(4, Math.min(batchSize, 8));
+        int batchSize = fields > 0 ? 25 / fields : 5;
+        return Math.max(4, Math.min(batchSize, 6));
     }
 
     private int resolveLocalGenerateInitialBatchSize(JsonNode params, int batchSize) {
@@ -3122,6 +3147,42 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         int initialBatchSize = fields > 0 ? 20 / fields : 4;
         initialBatchSize = Math.max(3, Math.min(initialBatchSize, 4));
         return Math.min(initialBatchSize, safeBatchSize);
+    }
+
+    private Integer resolveGenerateMaxOutputTokens(JsonNode params,
+                                                   int fieldCount,
+                                                   int candidateCount,
+                                                   boolean localOllamaRequest) {
+        Integer configured = params != null && params.path("maxOutputTokens").isInt()
+                ? params.path("maxOutputTokens").asInt()
+                : null;
+        if (configured != null && configured > 0) {
+            return configured;
+        }
+        if (!localOllamaRequest) {
+            return null;
+        }
+        int safeFieldCount = Math.max(1, fieldCount);
+        int safeCandidateCount = Math.max(1, candidateCount);
+        int estimatedTokens = 600 + safeCandidateCount * safeFieldCount * 140;
+        return Math.max(1400, Math.min(estimatedTokens, 3600));
+    }
+
+    private void updateGenerateContentAttemptProgress(AiJobEntity job,
+                                                      int completedCount,
+                                                      int totalCount,
+                                                      int requestedCount,
+                                                      int generatedCount,
+                                                      int attempt) {
+        if (job == null || job.getJobId() == null || totalCount <= 0 || requestedCount <= 0) {
+            return;
+        }
+        double completedFraction = Math.max(0.0d, Math.min(1.0d, completedCount / (double) totalCount));
+        double generatedFraction = Math.max(0.0d, Math.min(1.0d, generatedCount / (double) requestedCount));
+        double attemptFraction = Math.max(0.0d, Math.min(0.95d, ((attempt + 1) / (double) GENERATE_MAX_ATTEMPTS) * 0.85d));
+        double currentBatchFraction = Math.max(generatedFraction, attemptFraction);
+        double overallFraction = Math.min(0.99d, completedFraction + (requestedCount / (double) totalCount) * currentBatchFraction);
+        executionService.updateStepProgress(job.getJobId(), STEP_GENERATE_CONTENT, overallFraction);
     }
 
     private int resolveLimit(JsonNode node) {
