@@ -502,6 +502,42 @@ class CardServiceTest {
     }
 
     @Test
+    void addNewCardsToDeckBatch_rejectsExactDuplicateWithinLocalBatch() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(userDeck(deckId, userId, null)));
+        when(userCardRepository.findByUserDeckId(deckId)).thenReturn(List.of());
+
+        assertThatThrownBy(() -> cardService.addNewCardsToDeckBatch(
+                userId,
+                deckId,
+                List.of(
+                        new CreateCardRequest(textContent("front", "Q"), 1, null, null, null, null),
+                        new CreateCardRequest(textContent("front", "Q"), 2, null, null, null, null)
+                ),
+                null
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Duplicate card content in request batch");
+    }
+
+    @Test
+    void addNewCardsToDeckBatch_rejectsExactDuplicateAlreadyInLocalDeck() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        UserCardEntity existing = userCard(userId, deckId, null, true, false, null, null, textContent("front", "Q"));
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(userDeck(deckId, userId, null)));
+        when(userCardRepository.findByUserDeckId(deckId)).thenReturn(List.of(existing));
+
+        assertThatThrownBy(() -> cardService.addNewCardsToDeckBatch(
+                userId,
+                deckId,
+                List.of(new CreateCardRequest(textContent("front", "Q"), 1, null, null, null, null)),
+                null
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Duplicate card content already exists in deck");
+    }
+
+    @Test
     void addNewCardsToDeckBatch_forSubscriberCreatesCustomCardsOnly() {
         UUID userId = UUID.randomUUID();
         UUID deckId = UUID.randomUUID();
@@ -557,6 +593,28 @@ class CardServiceTest {
         });
         assertThat(deck.getCurrentVersion()).isEqualTo(2);
         verify(publicCardRepository, times(2)).saveAll(anyList());
+    }
+
+    @Test
+    void addNewCardsToDeckBatch_rejectsExactDuplicateAlreadyInPublicDeck() {
+        UUID userId = UUID.randomUUID();
+        UUID deckId = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
+        UserDeckEntity deck = userDeck(deckId, userId, publicDeckId);
+        PublicDeckEntity latestDeck = publicDeck(publicDeckId, 1, userId, UUID.randomUUID(), 1, true);
+        PublicCardEntity existingPublicCard = publicCard(publicDeckId, 1, UUID.randomUUID(), textContent("front", "Q"), null, true, null);
+
+        when(userDeckRepository.findById(deckId)).thenReturn(Optional.of(deck));
+        when(publicDeckRepository.findLatestByDeckId(publicDeckId)).thenReturn(Optional.of(latestDeck));
+        when(publicCardRepository.findByDeckIdAndDeckVersion(publicDeckId, 1)).thenReturn(List.of(existingPublicCard));
+
+        assertThatThrownBy(() -> cardService.addNewCardsToDeckBatch(
+                userId,
+                deckId,
+                List.of(new CreateCardRequest(textContent("front", "Q"), 1, null, null, null, null)),
+                null
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("Duplicate card content already exists in deck");
     }
 
     @Test
