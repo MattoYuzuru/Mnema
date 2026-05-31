@@ -2096,6 +2096,8 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         int remaining = items.size();
         int offset = 0;
         List<CardDraft> drafts = new ArrayList<>();
+        List<Integer> missingSourceIndexes = new ArrayList<>();
+        int alteredSourceItems = 0;
         Integer totalTokensIn = null;
         Integer totalTokensOut = null;
         String model = null;
@@ -2104,22 +2106,25 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         while (remaining > 0) {
             int count = Math.min(batchSize, remaining);
             List<ImportItemExtractor.SourceItem> batchItems = items.subList(offset, offset + count);
-            GeneratedDraftBatch batch = generateDraftsForItems(
+            GeneratedDraftBatch batch = generateDraftsForItemsResilient(
                     job,
                     apiKey,
                     params,
                     context,
                     batchItems,
-                    buildImportGenerateItemsPrompt(
-                            batchItems,
-                            originalParams,
-                            truncated,
-                            sharedContext,
-                            offset,
-                            items.size()
-                    )
+                    originalParams,
+                    truncated,
+                    sharedContext,
+                    offset,
+                    items.size()
             );
             drafts.addAll(batch.drafts());
+            if (batch.sourceCoverage() != null) {
+                if (batch.sourceCoverage().missingSourceIndexes() != null) {
+                    missingSourceIndexes.addAll(batch.sourceCoverage().missingSourceIndexes());
+                }
+                alteredSourceItems += batch.sourceCoverage().alteredSourceItems();
+            }
             totalTokensIn = sumNullable(totalTokensIn, batch.inputTokens());
             totalTokensOut = sumNullable(totalTokensOut, batch.outputTokens());
             usageEvents.addAll(batch.usageEvents());
@@ -2144,7 +2149,179 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 0,
                 0,
                 0,
-                new SourceCoverage(items.size(), drafts.size(), List.of(), 0, missingNumbers == null ? List.of() : List.copyOf(missingNumbers)),
+                new SourceCoverage(items.size(), drafts.size(), List.copyOf(missingSourceIndexes), alteredSourceItems, missingNumbers == null ? List.of() : List.copyOf(missingNumbers)),
+                List.copyOf(usageEvents),
+                null,
+                null
+        );
+    }
+
+    private GeneratedDraftBatch generateDraftsForItemsResilient(AiJobEntity job,
+                                                                String apiKey,
+                                                                JsonNode params,
+                                                                GenerationContext context,
+                                                                List<ImportItemExtractor.SourceItem> sourceItems,
+                                                                JsonNode originalParams,
+                                                                boolean truncated,
+                                                                String sharedContext,
+                                                                int offset,
+                                                                int totalItems) {
+        String prompt = buildImportGenerateItemsPrompt(
+                sourceItems,
+                originalParams,
+                truncated,
+                sharedContext,
+                offset,
+                totalItems
+        );
+        try {
+            return generateDraftsForItems(job, apiKey, params, context, sourceItems, prompt);
+        } catch (ImportBatchGenerationException ex) {
+            return recoverImportGenerationBatch(job, apiKey, params, context, sourceItems, originalParams, truncated, sharedContext, offset, totalItems, ex);
+        } catch (RuntimeException ex) {
+            return recoverImportGenerationBatch(job, apiKey, params, context, sourceItems, originalParams, truncated, sharedContext, offset, totalItems,
+                    ImportBatchGenerationException.withoutUsage("Import source batch failed: " + summarizeError(ex), ex));
+        }
+    }
+
+    private GeneratedDraftBatch recoverImportGenerationBatch(AiJobEntity job,
+                                                             String apiKey,
+                                                             JsonNode params,
+                                                             GenerationContext context,
+                                                             List<ImportItemExtractor.SourceItem> sourceItems,
+                                                             JsonNode originalParams,
+                                                             boolean truncated,
+                                                             String sharedContext,
+                                                             int offset,
+                                                             int totalItems,
+                                                             ImportBatchGenerationException failure) {
+        List<UsageEvent> failedUsageEvents = failure == null ? List.of() : failure.usageEvents();
+        Integer failedInputTokens = failure == null ? null : failure.inputTokens();
+        Integer failedOutputTokens = failure == null ? null : failure.outputTokens();
+        String failedModel = failure == null ? null : failure.model();
+        if (sourceItems == null || sourceItems.isEmpty()) {
+            return emptyImportBatch(failedModel, failedInputTokens, failedOutputTokens, failedUsageEvents, List.of(), 0);
+        }
+        if (sourceItems.size() == 1) {
+            ImportItemExtractor.SourceItem item = sourceItems.getFirst();
+            LOGGER.warn("OpenAI import source item skipped jobId={} deckId={} sourceIndex={} reason={}",
+                    job.getJobId(),
+                    job.getDeckId(),
+                    item.sourceIndex(),
+                    failure == null ? "" : summarizeError(failure));
+            return emptyImportBatch(
+                    failedModel,
+                    failedInputTokens,
+                    failedOutputTokens,
+                    failedUsageEvents,
+                    List.of(item.sourceIndex()),
+                    failure == null || failure.lastValidation() == null ? 0 : failure.lastValidation().alteredSourceTexts().size()
+            );
+        }
+
+        int split = Math.max(1, sourceItems.size() / 2);
+        LOGGER.warn("OpenAI import source batch failed; splitting jobId={} deckId={} offset={} count={} reason={}",
+                job.getJobId(),
+                job.getDeckId(),
+                offset,
+                sourceItems.size(),
+                failure == null ? "" : summarizeError(failure));
+        GeneratedDraftBatch left = generateDraftsForItemsResilient(
+                job,
+                apiKey,
+                params,
+                context,
+                sourceItems.subList(0, split),
+                originalParams,
+                truncated,
+                sharedContext,
+                offset,
+                totalItems
+        );
+        GeneratedDraftBatch right = generateDraftsForItemsResilient(
+                job,
+                apiKey,
+                params,
+                context,
+                sourceItems.subList(split, sourceItems.size()),
+                originalParams,
+                truncated,
+                sharedContext,
+                offset + split,
+                totalItems
+        );
+        return mergeImportBatches(
+                emptyImportBatch(failedModel, failedInputTokens, failedOutputTokens, failedUsageEvents, List.of(), 0),
+                mergeImportBatches(left, right)
+        );
+    }
+
+    private GeneratedDraftBatch emptyImportBatch(String model,
+                                                 Integer inputTokens,
+                                                 Integer outputTokens,
+                                                 List<UsageEvent> usageEvents,
+                                                 List<Integer> missingSourceIndexes,
+                                                 int alteredSourceItems) {
+        return new GeneratedDraftBatch(
+                model,
+                inputTokens,
+                outputTokens,
+                List.of(),
+                0,
+                0,
+                0,
+                0,
+                new SourceCoverage(
+                        missingSourceIndexes == null ? 0 : missingSourceIndexes.size(),
+                        0,
+                        missingSourceIndexes == null ? List.of() : List.copyOf(missingSourceIndexes),
+                        Math.max(0, alteredSourceItems),
+                        List.of()
+                ),
+                usageEvents == null ? List.of() : List.copyOf(usageEvents),
+                null,
+                null
+        );
+    }
+
+    private GeneratedDraftBatch mergeImportBatches(GeneratedDraftBatch left, GeneratedDraftBatch right) {
+        if (left == null) {
+            return right;
+        }
+        if (right == null) {
+            return left;
+        }
+        List<CardDraft> drafts = new ArrayList<>(left.drafts());
+        drafts.addAll(right.drafts());
+        List<UsageEvent> usageEvents = new ArrayList<>(left.usageEvents());
+        usageEvents.addAll(right.usageEvents());
+        List<Integer> missingSourceIndexes = new ArrayList<>();
+        int alteredSourceItems = 0;
+        int sourceItemsTotal = 0;
+        if (left.sourceCoverage() != null) {
+            sourceItemsTotal += left.sourceCoverage().sourceItemsTotal();
+            alteredSourceItems += left.sourceCoverage().alteredSourceItems();
+            if (left.sourceCoverage().missingSourceIndexes() != null) {
+                missingSourceIndexes.addAll(left.sourceCoverage().missingSourceIndexes());
+            }
+        }
+        if (right.sourceCoverage() != null) {
+            sourceItemsTotal += right.sourceCoverage().sourceItemsTotal();
+            alteredSourceItems += right.sourceCoverage().alteredSourceItems();
+            if (right.sourceCoverage().missingSourceIndexes() != null) {
+                missingSourceIndexes.addAll(right.sourceCoverage().missingSourceIndexes());
+            }
+        }
+        return new GeneratedDraftBatch(
+                firstNonBlank(left.model(), right.model()),
+                sumNullable(left.inputTokens(), right.inputTokens()),
+                sumNullable(left.outputTokens(), right.outputTokens()),
+                List.copyOf(drafts),
+                left.droppedEmpty() + right.droppedEmpty(),
+                left.droppedExact() + right.droppedExact(),
+                left.droppedPrimary() + right.droppedPrimary(),
+                left.droppedSemantic() + right.droppedSemantic(),
+                new SourceCoverage(sourceItemsTotal, drafts.size(), List.copyOf(missingSourceIndexes), alteredSourceItems, List.of()),
                 List.copyOf(usageEvents),
                 null,
                 null
@@ -2167,59 +2344,74 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         String responseModel = null;
         SourceDraftValidation lastValidation = null;
         List<UsageEvent> usageEvents = new ArrayList<>();
+        RuntimeException lastFailure = null;
 
         for (int attempt = 0; attempt < GENERATE_MAX_ATTEMPTS; attempt++) {
-            String prompt = buildCardsPrompt(
-                    appendSourceValidationHint(userPrompt, lastValidation),
-                    context.template(),
-                    context.publicDeck(),
-                    context.allowedFields(),
-                    sourceItems.size(),
-                    context.fewShotExamples(),
-                    localOllamaRequest
-            );
-            JsonNode responseFormat = buildCardsSchema(context.allowedFields(), sourceItems.size(), true);
-            long startedAtNs = System.nanoTime();
-            OpenAiResponseResult response = openAiClient.createResponse(
-                    apiKey,
-                    new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
-            );
-            long durationMs = elapsedMillis(startedAtNs);
-            responseModel = response.model();
-            totalTokensIn = sumNullable(totalTokensIn, response.inputTokens());
-            totalTokensOut = sumNullable(totalTokensOut, response.outputTokens());
-            usageEvents.add(buildUsageEvent(
-                    STEP_GENERATE_CONTENT,
-                    attempt,
-                    sourceItems.size(),
-                    sourceItems.size(),
-                    response,
-                    durationMs
-            ));
-
-            JsonNode parsed = parseJsonResponse(response.outputText());
-            List<CardDraft> drafts = buildCardDrafts(parsed, context.allowedFields(), context.template(), context.fieldTypes(), true);
-            SourceDraftValidation validation = validateSourceDrafts(drafts, sourceItems, context.allowedFields());
-            if (validation.valid()) {
-                return new GeneratedDraftBatch(
-                        responseModel,
-                        totalTokensIn,
-                        totalTokensOut,
-                        validation.orderedDrafts(),
-                        0,
-                        0,
-                        0,
-                        0,
-                        new SourceCoverage(sourceItems.size(), validation.orderedDrafts().size(), List.of(), 0, List.of()),
-                        List.copyOf(usageEvents),
-                        null,
-                        null
+            try {
+                String prompt = buildCardsPrompt(
+                        appendSourceFailureHint(appendSourceValidationHint(userPrompt, lastValidation), lastFailure),
+                        context.template(),
+                        context.publicDeck(),
+                        context.allowedFields(),
+                        sourceItems.size(),
+                        context.fewShotExamples(),
+                        localOllamaRequest
                 );
+                JsonNode responseFormat = buildCardsSchema(context.allowedFields(), sourceItems.size(), true);
+                long startedAtNs = System.nanoTime();
+                OpenAiResponseResult response = openAiClient.createResponse(
+                        apiKey,
+                        new OpenAiResponseRequest(model, prompt, maxOutputTokens, responseFormat)
+                );
+                long durationMs = elapsedMillis(startedAtNs);
+                responseModel = response.model();
+                totalTokensIn = sumNullable(totalTokensIn, response.inputTokens());
+                totalTokensOut = sumNullable(totalTokensOut, response.outputTokens());
+                usageEvents.add(buildUsageEvent(
+                        STEP_GENERATE_CONTENT,
+                        attempt,
+                        sourceItems.size(),
+                        sourceItems.size(),
+                        response,
+                        durationMs
+                ));
+
+                JsonNode parsed = parseJsonResponse(response.outputText());
+                List<CardDraft> drafts = buildCardDrafts(parsed, context.allowedFields(), context.template(), context.fieldTypes(), true);
+                SourceDraftValidation validation = validateSourceDrafts(drafts, sourceItems, context.allowedFields());
+                if (validation.valid()) {
+                    return new GeneratedDraftBatch(
+                            responseModel,
+                            totalTokensIn,
+                            totalTokensOut,
+                            validation.orderedDrafts(),
+                            0,
+                            0,
+                            0,
+                            0,
+                            new SourceCoverage(sourceItems.size(), validation.orderedDrafts().size(), List.of(), 0, List.of()),
+                            List.copyOf(usageEvents),
+                            null,
+                            null
+                    );
+                }
+                lastValidation = validation;
+                lastFailure = null;
+            } catch (RuntimeException ex) {
+                lastFailure = ex;
+                LOGGER.warn("OpenAI import source batch attempt failed jobId={} deckId={} attempt={} count={} reason={}",
+                        job.getJobId(),
+                        job.getDeckId(),
+                        attempt + 1,
+                        sourceItems.size(),
+                        summarizeError(ex));
             }
-            lastValidation = validation;
         }
 
-        throw new IllegalStateException("AI response failed source coverage validation: " + summarizeSourceValidation(lastValidation));
+        String message = lastValidation == null
+                ? "AI response failed for import source batch: " + summarizeError(lastFailure)
+                : "AI response failed source coverage validation: " + summarizeSourceValidation(lastValidation);
+        throw new ImportBatchGenerationException(message, lastFailure, responseModel, totalTokensIn, totalTokensOut, List.copyOf(usageEvents), lastValidation);
     }
 
     private GeneratedDraftBatch maybeRunDraftQualityGate(AiJobEntity job,
@@ -2461,6 +2653,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                        GeneratedDraftBatch generated,
                                                        int requestedCount,
                                                        String accessToken) {
+        if (generated == null || generated.drafts() == null || generated.drafts().isEmpty()) {
+            throw new IllegalStateException("AI did not generate any valid cards");
+        }
         ImageConfig imageConfig = resolveImageConfig(params, true);
         VideoConfig videoConfig = resolveVideoConfig(params, true);
         List<CreateCardRequestPayload> requests = generated.drafts().stream()
@@ -2543,9 +2738,17 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 job.getInputHash(),
                 resolveFinalStatus(ttsResult.error() != null
                         || !ttsResult.cardErrors().isEmpty()
-                        || !mediaResult.cardErrors().isEmpty()),
+                        || !mediaResult.cardErrors().isEmpty()
+                        || hasIncompleteSourceCoverage(generated.sourceCoverage())),
                 usageDetails.isEmpty() ? null : usageDetails
         );
+    }
+
+    private boolean hasIncompleteSourceCoverage(SourceCoverage coverage) {
+        return coverage != null
+                && (coverage.sourceItemsUsed() < coverage.sourceItemsTotal()
+                || (coverage.missingSourceIndexes() != null && !coverage.missingSourceIndexes().isEmpty())
+                || coverage.alteredSourceItems() > 0);
     }
 
     private Integer sumNullable(Integer left, Integer right) {
@@ -4741,6 +4944,53 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                          int unexpectedSourceIndexes) {
     }
 
+    private static final class ImportBatchGenerationException extends RuntimeException {
+        private final String model;
+        private final Integer inputTokens;
+        private final Integer outputTokens;
+        private final List<UsageEvent> usageEvents;
+        private final SourceDraftValidation lastValidation;
+
+        private ImportBatchGenerationException(String message,
+                                               RuntimeException cause,
+                                               String model,
+                                               Integer inputTokens,
+                                               Integer outputTokens,
+                                               List<UsageEvent> usageEvents,
+                                               SourceDraftValidation lastValidation) {
+            super(message, cause);
+            this.model = model;
+            this.inputTokens = inputTokens;
+            this.outputTokens = outputTokens;
+            this.usageEvents = usageEvents == null ? List.of() : List.copyOf(usageEvents);
+            this.lastValidation = lastValidation;
+        }
+
+        private static ImportBatchGenerationException withoutUsage(String message, RuntimeException cause) {
+            return new ImportBatchGenerationException(message, cause, null, null, null, List.of(), null);
+        }
+
+        private String model() {
+            return model;
+        }
+
+        private Integer inputTokens() {
+            return inputTokens;
+        }
+
+        private Integer outputTokens() {
+            return outputTokens;
+        }
+
+        private List<UsageEvent> usageEvents() {
+            return usageEvents;
+        }
+
+        private SourceDraftValidation lastValidation() {
+            return lastValidation;
+        }
+    }
+
     private record DraftQualityItem(int draftIndex,
                                     String decision,
                                     String summary,
@@ -5102,6 +5352,19 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 + "Regenerate every requested item exactly once, preserve sourceIndex/sourceText exactly, "
                 + "and put sourceText verbatim in a text field. "
                 + summarizeSourceValidation(validation);
+        if (userPrompt == null || userPrompt.isBlank()) {
+            return hint;
+        }
+        return userPrompt.trim() + "\n\n" + hint;
+    }
+
+    private String appendSourceFailureHint(String userPrompt, RuntimeException failure) {
+        if (failure == null) {
+            return userPrompt;
+        }
+        String hint = "Previous response for this exact source batch failed before it could be accepted. "
+                + "Return strict JSON matching the schema, include every requested sourceIndex exactly once, "
+                + "and preserve sourceText verbatim.";
         if (userPrompt == null || userPrompt.isBlank()) {
             return hint;
         }
