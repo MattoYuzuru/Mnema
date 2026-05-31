@@ -10,6 +10,8 @@ import app.mnema.importer.service.parser.*;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -29,6 +31,8 @@ import java.util.regex.Pattern;
 
 @Service
 public class ImportProcessor {
+
+    private static final Logger log = LoggerFactory.getLogger(ImportProcessor.class);
 
     private static final Pattern IMAGE_PATTERN = Pattern.compile("<img[^>]+src=[\"']([^\"']+)[\"'][^>]*>", Pattern.CASE_INSENSITIVE);
     private static final Pattern SOUND_PATTERN = Pattern.compile("\\[sound:([^\\]]+)]", Pattern.CASE_INSENSITIVE);
@@ -1299,6 +1303,14 @@ public class ImportProcessor {
                     mediaInput
             );
         } catch (IOException ex) {
+            log.warn("Failed to read import media attachment mediaName={} kind={} error={}", mediaName, kind, ex.getMessage());
+            return null;
+        } catch (RuntimeException ex) {
+            log.warn("Failed to upload import media attachment mediaName={} kind={} sizeBytes={} error={}",
+                    mediaName,
+                    kind,
+                    media.size(),
+                    ex.getMessage());
             return null;
         }
     }

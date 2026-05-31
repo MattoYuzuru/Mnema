@@ -384,6 +384,89 @@ class ImportProcessorTest {
     }
 
     @Test
+    void createNewAnkiImportSkipsMediaAttachmentsRejectedByMediaService() throws Exception {
+        TestFixture fixture = new TestFixture();
+        ImportJobEntity job = fixture.createNewJob();
+        job.setSourceType(ImportSourceType.apkg);
+        fixture.stubSource(job);
+        when(fixture.stream.fields()).thenReturn(List.of("Front", "Back"));
+        when(fixture.stream.layout()).thenReturn(new ImportLayout(List.of("Front"), List.of("Back")));
+        when(fixture.stream.isAnki()).thenReturn(true);
+        ImportAnkiTemplate template = new ImportAnkiTemplate(
+                "model-id",
+                "Basic",
+                "Card 1",
+                "<div>{{Front}}</div><img src=\"huge.bmp\">[sound:voice.mp3]",
+                "{{Back}}",
+                ""
+        );
+        when(fixture.stream.ankiTemplate()).thenReturn(template);
+        when(fixture.stream.hasNext()).thenReturn(true, false);
+        when(fixture.stream.next()).thenReturn(new ImportRecord(
+                Map.of("Front", "Question", "Back", "Answer"),
+                null,
+                template,
+                0
+        ));
+        when(((MediaImportStream) fixture.stream).openMedia("huge.bmp"))
+                .thenReturn(new ImportMedia(new ByteArrayInputStream(new byte[]{1, 2, 3}), 3));
+        when(((MediaImportStream) fixture.stream).openMedia("voice.mp3"))
+                .thenReturn(new ImportMedia(new ByteArrayInputStream(new byte[]{4, 5, 6}), 3));
+
+        UUID templateId = UUID.randomUUID();
+        UUID userDeckId = UUID.randomUUID();
+        UUID audioMediaId = UUID.randomUUID();
+        when(fixture.coreApiClient.createTemplate(anyString(), any())).thenReturn(new CoreCardTemplateResponse(
+                templateId,
+                job.getUserId(),
+                "Template",
+                "Template",
+                false,
+                Instant.now(),
+                Instant.now(),
+                objectMapper.createObjectNode(),
+                null,
+                null,
+                List.of(
+                        new CoreFieldTemplate(UUID.randomUUID(), templateId, "Front", "Front", "text", true, true, 0, null, null),
+                        new CoreFieldTemplate(UUID.randomUUID(), templateId, "Back", "Back", "text", true, false, 1, null, null)
+                )
+        ));
+        when(fixture.coreApiClient.createDeck(anyString(), any())).thenReturn(new CoreUserDeckResponse(
+                userDeckId,
+                job.getUserId(),
+                UUID.randomUUID(),
+                1,
+                1,
+                false,
+                "fsrs",
+                null,
+                "Imported deck",
+                "Imported from apkg",
+                Instant.now(),
+                null,
+                false
+        ));
+        when(fixture.mediaApiClient.directUpload(eq(job.getUserId()), eq("card_image"), anyString(), eq("huge.bmp"), eq(3L), any()))
+                .thenThrow(new RuntimeException("400 Bad Request"));
+        when(fixture.mediaApiClient.directUpload(eq(job.getUserId()), eq("card_audio"), anyString(), eq("voice.mp3"), eq(3L), any()))
+                .thenReturn(audioMediaId);
+        when(fixture.coreApiClient.addCardsBatch(anyString(), eq(userDeckId), any(), eq(job.getJobId())))
+                .thenReturn(List.of(new CoreUserCardResponse(UUID.randomUUID(), null, true, false, null, objectMapper.createObjectNode())));
+
+        fixture.processor.process(job);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<CoreCreateCardRequest>> requestsCaptor =
+                (ArgumentCaptor<List<CoreCreateCardRequest>>) (ArgumentCaptor<?>) ArgumentCaptor.forClass(List.class);
+        verify(fixture.coreApiClient).addCardsBatch(anyString(), eq(userDeckId), requestsCaptor.capture(), eq(job.getJobId()));
+        ObjectNode content = (ObjectNode) requestsCaptor.getValue().getFirst().content();
+        String frontHtml = content.path("_anki").path("front").asText();
+        assertTrue(frontHtml.contains("src=\"huge.bmp\""));
+        assertTrue(frontHtml.contains("mnema-media://" + audioMediaId));
+    }
+
+    @Test
     void createNewImportRejectsTemplateMismatch() throws Exception {
         TestFixture fixture = new TestFixture();
         ImportJobEntity job = fixture.createNewJob();
