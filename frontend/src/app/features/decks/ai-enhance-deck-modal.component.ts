@@ -647,7 +647,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     ttsVoicePreset = signal('alloy');
     ttsVoiceCustom = signal('');
     ttsFormat = signal('mp3');
-    ttsMaxChars = signal(300);
+    ttsMaxChars = signal(4096);
     ttsMappings = signal<TtsMapping[]>([]);
     imageModel = signal('');
     imageModelCustom = signal('');
@@ -1273,7 +1273,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     }
 
     onTtsMaxCharsChange(value: number): void {
-        this.ttsMaxChars.set(value);
+        this.ttsMaxChars.set(this.clampTtsMaxChars(value));
         this.persistDraft();
     }
 
@@ -1843,7 +1843,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             }
             if (payload.ttsModel) this.ttsModel.set(payload.ttsModel);
             if (payload.ttsFormat) this.ttsFormat.set(payload.ttsFormat);
-            if (payload.ttsMaxChars) this.ttsMaxChars.set(payload.ttsMaxChars);
+            if (payload.ttsMaxChars) this.ttsMaxChars.set(this.clampTtsMaxChars(payload.ttsMaxChars));
             if (payload.ttsVoice) {
                 const isPreset = this.openAiVoices.includes(payload.ttsVoice)
                     || this.geminiVoices.includes(payload.ttsVoice)
@@ -1889,6 +1889,12 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         const tasks = actions.join(', ');
         const notes = this.notes().trim();
         return `${deckLabel} Improve the deck. Actions: ${tasks}.${notes ? ' Notes: ' + notes : ''}`.trim();
+    }
+
+    private clampTtsMaxChars(value: number): number {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return 4096;
+        return Math.max(1, Math.min(4096, Math.trunc(numeric)));
     }
 
     private generateRequestId(): string {
