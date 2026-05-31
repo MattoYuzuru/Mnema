@@ -599,7 +599,21 @@ type FieldLimitMap = Record<string, number>;
         color: var(--color-text-primary);
         font-weight: 600;
       }
-      .scope-prompt { max-width: 560px; width: min(92%, 560px); }
+      .scope-prompt {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        z-index: 1001;
+        max-width: 560px;
+        width: min(92vw, 560px);
+        max-height: min(82vh, 520px);
+        transform: translate(-50%, -50%);
+        background:
+          linear-gradient(180deg, color-mix(in srgb, var(--glass-surface-strong) 86%, transparent), color-mix(in srgb, var(--glass-surface) 78%, transparent)),
+          var(--color-surface-solid);
+        border-color: var(--glass-border-strong);
+        backdrop-filter: blur(calc(var(--glass-blur) + 8px)) saturate(170%);
+      }
       .scope-buttons { display: flex; gap: var(--spacing-sm); justify-content: flex-end; margin-top: var(--spacing-md); }
       .error-state { margin-top: var(--spacing-md); color: var(--color-error); }
       .success-state { margin-top: var(--spacing-md); color: var(--color-success); }

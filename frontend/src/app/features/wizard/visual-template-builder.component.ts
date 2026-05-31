@@ -488,24 +488,36 @@ interface BuilderState {
         position: relative;
         width: 44px;
         height: 24px;
-        background: var(--glass-border);
+        background:
+          linear-gradient(180deg, color-mix(in srgb, var(--glass-surface-strong) 80%, transparent), color-mix(in srgb, var(--glass-surface) 70%, transparent)),
+          color-mix(in srgb, var(--color-card-background) 82%, var(--color-background));
+        border: 1px solid color-mix(in srgb, var(--glass-border-strong) 68%, var(--border-color-hover));
         border-radius: 12px;
+        box-shadow:
+          inset 0 1px 2px color-mix(in srgb, var(--shadow-color) 22%, transparent),
+          0 4px 12px color-mix(in srgb, var(--shadow-color) 12%, transparent);
         cursor: pointer;
-        transition: background 0.3s;
+        backdrop-filter: blur(calc(var(--glass-blur) * 0.35)) saturate(150%);
+        transition: background 0.3s, border-color 0.2s ease, box-shadow 0.2s ease;
       }
 
       .toggle-switch.active {
         background: var(--color-primary-accent);
+        border-color: color-mix(in srgb, var(--color-primary-accent) 82%, var(--color-secondary-accent));
+        box-shadow: 0 6px 16px -10px color-mix(in srgb, var(--color-primary-accent) 72%, transparent);
       }
 
       .toggle-slider {
         position: absolute;
-        top: 2px;
-        left: 2px;
+        top: 1px;
+        left: 1px;
         width: 20px;
         height: 20px;
-        background: white;
+        background:
+          linear-gradient(180deg, color-mix(in srgb, white 92%, var(--glass-surface-strong)), color-mix(in srgb, white 74%, var(--color-card-background)));
+        border: 1px solid color-mix(in srgb, var(--glass-border-strong) 58%, white);
         border-radius: 50%;
+        box-shadow: 0 2px 8px color-mix(in srgb, var(--shadow-color) 18%, transparent);
         transition: transform 0.3s;
       }
 

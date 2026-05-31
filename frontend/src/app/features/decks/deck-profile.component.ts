@@ -1108,15 +1108,15 @@ import { ToastService } from '../../core/services/toast.service';
       .ai-job-cost-pill {
         padding: 0.18rem 0.6rem;
         border-radius: 999px;
-        border: 1px solid var(--glass-border);
-        background: rgba(255, 255, 255, 0.45);
+        border: 1px solid color-mix(in srgb, var(--glass-border-strong) 76%, var(--border-color));
+        background: color-mix(in srgb, var(--glass-surface) 76%, var(--color-card-background));
         color: var(--color-text-secondary);
         font-size: 0.78rem;
       }
 
       .ai-job-eta-pill {
-        background: rgba(14, 116, 144, 0.08);
-        color: #0f766e;
+        background: color-mix(in srgb, var(--color-primary-accent) 12%, var(--glass-surface));
+        color: color-mix(in srgb, var(--color-primary-accent) 72%, var(--color-text-primary));
       }
 
       .ai-job-queue-hint {
@@ -1125,7 +1125,7 @@ import { ToastService } from '../../core/services/toast.service';
       }
 
       .ai-job-cost-pill {
-        background: rgba(15, 23, 42, 0.04);
+        background: color-mix(in srgb, var(--glass-surface-strong) 72%, var(--color-card-background));
       }
 
       .ai-job-result {
@@ -1135,7 +1135,8 @@ import { ToastService } from '../../core/services/toast.service';
       .ai-job-result-json {
         margin: 0;
         padding: var(--spacing-sm);
-        background: rgba(15, 23, 42, 0.04);
+        background: color-mix(in srgb, var(--color-background) 74%, var(--glass-surface));
+        border: 1px solid color-mix(in srgb, var(--glass-border) 80%, transparent);
         border-radius: var(--border-radius-md);
         font-size: 0.8rem;
         overflow: auto;
@@ -1155,8 +1156,11 @@ import { ToastService } from '../../core/services/toast.service';
         gap: var(--spacing-sm);
         padding: var(--spacing-sm);
         border-radius: var(--border-radius-md);
-        border: 1px solid var(--glass-border);
-        background: rgba(255, 255, 255, 0.42);
+        border: 1px solid color-mix(in srgb, var(--glass-border-strong) 78%, var(--border-color));
+        background:
+          linear-gradient(180deg, color-mix(in srgb, var(--glass-surface-strong) 72%, transparent), color-mix(in srgb, var(--glass-surface) 64%, transparent)),
+          color-mix(in srgb, var(--color-card-background) 82%, transparent);
+        backdrop-filter: blur(calc(var(--glass-blur) * 0.45)) saturate(145%);
       }
 
       .ai-job-summary-grid {
@@ -1170,8 +1174,8 @@ import { ToastService } from '../../core/services/toast.service';
         gap: 0.2rem;
         padding: var(--spacing-sm);
         border-radius: var(--border-radius-md);
-        border: 1px solid var(--glass-border);
-        background: rgba(255, 255, 255, 0.48);
+        border: 1px solid color-mix(in srgb, var(--glass-border) 82%, var(--border-color));
+        background: color-mix(in srgb, var(--glass-surface) 68%, var(--color-card-background));
         font-size: 0.82rem;
         color: var(--color-text-secondary);
       }
@@ -1198,8 +1202,8 @@ import { ToastService } from '../../core/services/toast.service';
         gap: var(--spacing-xs);
         padding: var(--spacing-sm);
         border-radius: var(--border-radius-md);
-        background: rgba(15, 23, 42, 0.03);
-        border: 1px solid rgba(148, 163, 184, 0.2);
+        background: color-mix(in srgb, var(--color-background) 58%, var(--glass-surface));
+        border: 1px solid color-mix(in srgb, var(--glass-border) 72%, var(--border-color));
       }
 
       .ai-job-usage-stats,
@@ -1250,8 +1254,8 @@ import { ToastService } from '../../core/services/toast.service';
         gap: var(--spacing-xs);
         padding: var(--spacing-sm);
         border-radius: var(--border-radius-md);
-        border: 1px solid var(--glass-border);
-        background: rgba(255, 255, 255, 0.56);
+        border: 1px solid color-mix(in srgb, var(--glass-border-strong) 72%, var(--border-color));
+        background: color-mix(in srgb, var(--glass-surface-strong) 64%, var(--color-card-background));
       }
 
       .ai-job-item-main {
