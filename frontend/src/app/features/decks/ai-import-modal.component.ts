@@ -950,7 +950,7 @@ export class AiImportModalComponent implements OnInit {
     ttsVoicePreset = signal('alloy');
     ttsVoiceCustom = signal('');
     ttsFormat = signal('mp3');
-    ttsMaxChars = signal(300);
+    ttsMaxChars = signal(4096);
     ttsMappings = signal<TtsMapping[]>([]);
 
     imageModel = signal('gpt-image-1');
@@ -1743,7 +1743,7 @@ export class AiImportModalComponent implements OnInit {
 
     onTtsMaxCharsChange(value: number): void {
         const numeric = Number(value);
-        this.ttsMaxChars.set(Number.isNaN(numeric) ? 300 : numeric);
+        this.ttsMaxChars.set(this.clampTtsMaxChars(numeric));
     }
 
     addTtsMapping(): void {
@@ -2249,7 +2249,7 @@ export class AiImportModalComponent implements OnInit {
                 this.ttsFormat.set(draft.ttsFormat);
             }
             if (Number.isFinite(draft.ttsMaxChars)) {
-                this.ttsMaxChars.set(Number(draft.ttsMaxChars));
+                this.ttsMaxChars.set(this.clampTtsMaxChars(Number(draft.ttsMaxChars)));
             }
             if (draft.ttsMappings?.length) {
                 this.ttsMappings.set(draft.ttsMappings.filter(mapping => !!mapping.sourceField && !!mapping.targetField));
@@ -2316,6 +2316,12 @@ export class AiImportModalComponent implements OnInit {
             this.clearDraft();
         }
         this.closed.emit();
+    }
+
+    private clampTtsMaxChars(value: number): number {
+        const numeric = Number(value);
+        if (!Number.isFinite(numeric)) return 4096;
+        return Math.max(1, Math.min(4096, Math.trunc(numeric)));
     }
 
     private generateRequestId(): string {

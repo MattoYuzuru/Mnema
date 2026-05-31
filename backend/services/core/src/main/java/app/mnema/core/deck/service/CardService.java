@@ -930,6 +930,7 @@ public class CardService {
             if (!userDeck.getUserId().equals(currentUserId)) {
                 throw new SecurityException("Access denied to deck " + userDeckId);
             }
+            validateNoExactDuplicateCustomCards(currentUserId, userDeckId, requests);
             long offsetNanos = 0L;
             for (CreateCardRequest request : requests) {
                 validateTags(request.tags());
@@ -971,6 +972,7 @@ public class CardService {
 
         // 2) Не автор: добавляем только кастомные карты
         if (!canManageAsAuthor) {
+            validateNoExactDuplicateCustomCards(currentUserId, userDeckId, requests);
             long offsetNanos = 0L;
             for (CreateCardRequest request : requests) {
                 validateTags(request.tags());
@@ -1006,6 +1008,8 @@ public class CardService {
       - checksum обязателен для корректного sync и вычисляется на сервере по content.
       - order_index для добавляемых карт выставляется в конец, чтобы не плодить коллизии 1/2, 1/2 и т.п.
      */
+
+        validateNoExactDuplicatePublicCards(publicDeckId, latestDeck.getVersion(), requests);
 
         PublicDeckEntity targetDeck;
         int maxOrderIndex;
@@ -1196,6 +1200,73 @@ public class CardService {
     }
 
     private record NewDeckVersion(PublicDeckEntity deck, int maxOrderIndex) {
+    }
+
+    private void validateNoExactDuplicateCustomCards(UUID currentUserId,
+                                                     UUID userDeckId,
+                                                     List<CreateCardRequest> requests) {
+        Set<String> existingChecksums = new HashSet<>();
+        List<UserCardEntity> existingCards = userCardRepository.findByUserDeckId(userDeckId);
+        if (existingCards == null) {
+            existingCards = List.of();
+        }
+        for (UserCardEntity card : existingCards) {
+            if (card == null || card.isDeleted() || !currentUserId.equals(card.getUserId())) {
+                continue;
+            }
+            String checksum = computeChecksum(toUserCardDTO(card).effectiveContent());
+            if (checksum != null) {
+                existingChecksums.add(checksum);
+            }
+        }
+        validateNoExactDuplicateRequests(requests, false, existingChecksums);
+    }
+
+    private void validateNoExactDuplicatePublicCards(UUID publicDeckId,
+                                                     Integer deckVersion,
+                                                     List<CreateCardRequest> requests) {
+        Set<String> existingChecksums = new HashSet<>();
+        List<PublicCardEntity> existingCards = publicCardRepository.findByDeckIdAndDeckVersion(publicDeckId, deckVersion);
+        if (existingCards == null) {
+            existingCards = List.of();
+        }
+        for (PublicCardEntity card : existingCards) {
+            if (card == null || !card.isActive()) {
+                continue;
+            }
+            String checksum = normalizeChecksum(card.getChecksum());
+            if (checksum == null) {
+                checksum = computeChecksum(card.getContent());
+            }
+            if (checksum != null) {
+                existingChecksums.add(checksum);
+            }
+        }
+        validateNoExactDuplicateRequests(requests, true, existingChecksums);
+    }
+
+    private void validateNoExactDuplicateRequests(List<CreateCardRequest> requests,
+                                                  boolean publicContent,
+                                                  Set<String> existingChecksums) {
+        Set<String> batchChecksums = new HashSet<>();
+        for (CreateCardRequest request : requests) {
+            JsonNode content = publicContent
+                    ? request.content()
+                    : (request.contentOverride() != null ? request.contentOverride() : request.content());
+            if (content == null || content.isNull()) {
+                continue;
+            }
+            String checksum = computeChecksum(content);
+            if (checksum == null) {
+                continue;
+            }
+            if (!batchChecksums.add(checksum)) {
+                throw new IllegalArgumentException("Duplicate card content in request batch");
+            }
+            if (existingChecksums != null && existingChecksums.contains(checksum)) {
+                throw new IllegalArgumentException("Duplicate card content already exists in deck");
+            }
+        }
     }
 
     private void validateTags(String[] tags) {
