@@ -1521,6 +1521,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                         Map<String, String> fieldTypes,
                                         List<String> promptFields,
                                         List<String> targetAudioFields,
+                                        List<String> targetMediaFields,
                                         CoreApiClient.CoreUserCardDetail card) {}
         CardMissingFieldsContext context = runStep(job, params, STEP_PREPARE_CONTEXT, () -> {
             CoreUserDeckResponse deck = coreApiClient.getUserDeck(job.getDeckId(), accessToken);
@@ -1535,22 +1536,27 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             CoreTemplateResponse template = coreApiClient.getTemplate(publicDeck.templateId(), templateVersion, accessToken);
             String updateScope = resolveUpdateScope(job, deck, publicDeck, params);
             Map<String, String> fieldTypes = resolveFieldTypes(template);
-            List<String> promptFields = resolveAllowedFields(params, template);
+            Set<String> mappedMediaTargets = resolveMappedMediaTargetFields(params, template);
+            List<String> promptFields = resolveAllowedFields(params, template).stream()
+                    .filter(field -> !mappedMediaTargets.contains(field))
+                    .toList();
             List<String> audioFields = resolveAudioFields(template);
             List<String> targetAudioFields = resolveAudioTargetFields(params, audioFields);
-            if (promptFields.isEmpty() && targetAudioFields.isEmpty()) {
+            if (promptFields.isEmpty() && targetAudioFields.isEmpty() && mappedMediaTargets.isEmpty()) {
                 throw new IllegalStateException("No supported fields to generate");
             }
             CoreApiClient.CoreUserCardDetail card = coreApiClient.getUserCard(job.getDeckId(), cardId, accessToken);
             if (card.effectiveContent() == null || !card.effectiveContent().isObject()) {
                 throw new IllegalStateException("Card content is empty");
             }
-            return new CardMissingFieldsContext(publicDeck, template, updateScope, fieldTypes, promptFields, targetAudioFields, card);
+            return new CardMissingFieldsContext(publicDeck, template, updateScope, fieldTypes, promptFields, targetAudioFields, List.copyOf(mappedMediaTargets), card);
         });
 
         OpenAiResponseResult response = null;
         MediaApplyResult mediaResult = new MediaApplyResult(0, 0, 0);
         TtsApplyResult ttsResult = new TtsApplyResult(0, 0, null, null);
+        ImageConfig imageConfig = resolveImageConfig(params, !context.promptFields().isEmpty() || !context.targetMediaFields().isEmpty());
+        VideoConfig videoConfig = resolveVideoConfig(params, !context.promptFields().isEmpty() || !context.targetMediaFields().isEmpty());
         if (!context.promptFields().isEmpty()) {
             response = runStep(job, params, STEP_GENERATE_CONTENT, () -> {
                 String prompt = buildCardMissingFieldsPrompt(context.publicDeck(), context.template(), context.card(), context.promptFields());
@@ -1566,8 +1572,6 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             });
 
             JsonNode parsed = parseJsonResponse(response.outputText());
-            ImageConfig imageConfig = resolveImageConfig(params, true);
-            VideoConfig videoConfig = resolveVideoConfig(params, true);
             AtomicApplyResult applyResult = runStep(job, params, STEP_APPLY_CHANGES, () -> applyCardMissingFieldUpdateAtomically(
                     job,
                     apiKey,
@@ -1585,6 +1589,19 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             ));
             mediaResult = applyResult.mediaResult();
             ttsResult = applyResult.ttsResult();
+        } else if (!context.targetMediaFields().isEmpty()) {
+            mediaResult = runStep(job, params, STEP_GENERATE_MEDIA, () -> applyMappedMediaToCardAtomically(
+                    job,
+                    apiKey,
+                    accessToken,
+                    params,
+                    context.template(),
+                    context.card(),
+                    context.fieldTypes(),
+                    imageConfig,
+                    videoConfig,
+                    context.updateScope()
+            ));
         }
 
         String ttsError = ttsResult.error();
@@ -1641,6 +1658,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         LinkedHashSet<String> allFields = new LinkedHashSet<>();
         allFields.addAll(context.promptFields());
         allFields.addAll(context.targetAudioFields());
+        allFields.addAll(context.targetMediaFields());
         allFields.forEach(fieldsNode::add);
         CoreUserCardResponse cardResponse = new CoreUserCardResponse(
                 context.card().userCardId(),
@@ -3648,6 +3666,63 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 .toList();
     }
 
+    private Set<String> resolveMappedMediaTargetFields(JsonNode params, CoreTemplateResponse template) {
+        List<String> textFields = resolveTextFields(template);
+        List<String> requestedFields = extractRequestedFields(params);
+        LinkedHashSet<String> targets = new LinkedHashSet<>();
+        resolveMediaMappings(
+                params.path("image"),
+                textFields,
+                resolveMediaTargetFields(template, "image", requestedFields)
+        ).stream().map(MediaMapping::targetField).forEach(targets::add);
+        resolveMediaMappings(
+                params.path("video"),
+                textFields,
+                resolveMediaTargetFields(template, "video", requestedFields)
+        ).stream().map(MediaMapping::targetField).forEach(targets::add);
+        return targets;
+    }
+
+    private List<String> resolveMediaTargetFields(CoreTemplateResponse template, String fieldType, List<String> requestedFields) {
+        if (template == null || template.fields() == null || fieldType == null) {
+            return List.of();
+        }
+        List<String> mediaFields = template.fields().stream()
+                .filter(field -> field != null && fieldType.equals(field.fieldType()))
+                .map(CoreFieldTemplate::name)
+                .filter(name -> name != null && !name.isBlank())
+                .distinct()
+                .toList();
+        if (requestedFields == null || requestedFields.isEmpty()) {
+            return mediaFields;
+        }
+        return requestedFields.stream()
+                .filter(mediaFields::contains)
+                .distinct()
+                .toList();
+    }
+
+    private List<MediaMapping> resolveMediaMappings(JsonNode mediaNode,
+                                                    List<String> textFields,
+                                                    List<String> targetFields) {
+        if (mediaNode == null || textFields == null || textFields.isEmpty() || targetFields == null || targetFields.isEmpty()) {
+            return List.of();
+        }
+        JsonNode mappingNode = mediaNode.path("mappings");
+        if (!mappingNode.isArray()) {
+            return List.of();
+        }
+        LinkedHashSet<MediaMapping> mappings = new LinkedHashSet<>();
+        for (JsonNode node : mappingNode) {
+            String source = node.path("sourceField").asText(null);
+            String target = node.path("targetField").asText(null);
+            if (source != null && target != null && textFields.contains(source) && targetFields.contains(target)) {
+                mappings.add(new MediaMapping(source, target));
+            }
+        }
+        return List.copyOf(mappings);
+    }
+
     private List<String> extractRequestedFields(JsonNode params) {
         List<String> requested = extractStringArray(params.path("fields"));
         if (!requested.isEmpty()) {
@@ -4423,6 +4498,18 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 videoConfig,
                 card.userCardId().toString()
         );
+        ContentMutationResult mappedMediaResult = applyMappedMediaToContent(
+                job,
+                apiKey,
+                params,
+                updatedContent,
+                template,
+                fieldTypes,
+                imageConfig,
+                videoConfig,
+                card.userCardId(),
+                card.userCardId().toString()
+        );
         TtsContentApplyResult ttsContentResult = applyTtsToContent(
                 job,
                 apiKey,
@@ -4435,9 +4522,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         );
         Map<UUID, List<String>> mediaErrors = new LinkedHashMap<>();
         appendErrors(mediaErrors, card.userCardId(), contentResult.errors());
+        appendErrors(mediaErrors, card.userCardId(), mappedMediaResult.errors());
         Map<UUID, List<String>> ttsErrors = new LinkedHashMap<>();
         appendErrors(ttsErrors, card.userCardId(), ttsContentResult.errors());
-        if (contentResult.changed() || ttsContentResult.updated()) {
+        if (contentResult.changed() || mappedMediaResult.changed() || ttsContentResult.updated()) {
             ankiSupport.applyIfPresent(updatedContent, template);
             UpdateUserCardRequest updateRequest = new UpdateUserCardRequest(
                     card.userCardId(),
@@ -4451,12 +4539,13 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             UUID operationId = resolveUpdateOperationId(cardScope, job);
             coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope, operationId);
         }
+        boolean mediaChanged = contentResult.changed() || mappedMediaResult.changed();
         return new AtomicApplyResult(
                 new MediaApplyResult(
-                        contentResult.changed() ? 1 : 0,
-                        contentResult.imagesGenerated(),
-                        contentResult.videosGenerated(),
-                        contentResult.changed() ? Set.of(card.userCardId()) : Set.of(),
+                        mediaChanged ? 1 : 0,
+                        contentResult.imagesGenerated() + mappedMediaResult.imagesGenerated(),
+                        contentResult.videosGenerated() + mappedMediaResult.videosGenerated(),
+                        mediaChanged ? Set.of(card.userCardId()) : Set.of(),
                         mediaErrors
                 ),
                 new TtsApplyResult(
@@ -4469,6 +4558,145 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                         ttsErrors
                 )
         );
+    }
+
+    private MediaApplyResult applyMappedMediaToCardAtomically(AiJobEntity job,
+                                                              String apiKey,
+                                                              String accessToken,
+                                                              JsonNode params,
+                                                              CoreTemplateResponse template,
+                                                              CoreApiClient.CoreUserCardDetail card,
+                                                              Map<String, String> fieldTypes,
+                                                              ImageConfig imageConfig,
+                                                              VideoConfig videoConfig,
+                                                              String updateScope) {
+        if (card == null || card.effectiveContent() == null || !card.effectiveContent().isObject()) {
+            return new MediaApplyResult(0, 0, 0);
+        }
+        ObjectNode updatedContent = loadLatestContent(job.getJobId(), job.getDeckId(), card.userCardId(), accessToken, card.effectiveContent().deepCopy());
+        ContentMutationResult result = applyMappedMediaToContent(
+                job,
+                apiKey,
+                params,
+                updatedContent,
+                template,
+                fieldTypes,
+                imageConfig,
+                videoConfig,
+                card.userCardId(),
+                card.userCardId().toString()
+        );
+        Map<UUID, List<String>> cardErrors = new LinkedHashMap<>();
+        appendErrors(cardErrors, card.userCardId(), result.errors());
+        if (!result.changed()) {
+            return new MediaApplyResult(0, result.imagesGenerated(), result.videosGenerated(), Set.of(), cardErrors);
+        }
+        ankiSupport.applyIfPresent(updatedContent, template);
+        UpdateUserCardRequest updateRequest = new UpdateUserCardRequest(
+                card.userCardId(),
+                null,
+                false,
+                false,
+                card.personalNote(),
+                updatedContent
+        );
+        String cardScope = resolveCardUpdateScope(updateScope, card);
+        UUID operationId = resolveUpdateOperationId(cardScope, job);
+        coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), updateRequest, accessToken, cardScope, operationId);
+        return new MediaApplyResult(1, result.imagesGenerated(), result.videosGenerated(), Set.of(card.userCardId()), cardErrors);
+    }
+
+    private ContentMutationResult applyMappedMediaToContent(AiJobEntity job,
+                                                            String apiKey,
+                                                            JsonNode params,
+                                                            ObjectNode updatedContent,
+                                                            CoreTemplateResponse template,
+                                                            Map<String, String> fieldTypes,
+                                                            ImageConfig imageConfig,
+                                                            VideoConfig videoConfig,
+                                                            UUID cardId,
+                                                            String contentToken) {
+        if (updatedContent == null || params == null || template == null) {
+            return new ContentMutationResult(false, 0, 0, List.of());
+        }
+        List<String> textFields = resolveTextFields(template);
+        List<String> requestedFields = extractRequestedFields(params);
+        List<MediaMapping> imageMappings = resolveMediaMappings(
+                params.path("image"),
+                textFields,
+                resolveMediaTargetFields(template, "image", requestedFields)
+        );
+        List<MediaMapping> videoMappings = resolveMediaMappings(
+                params.path("video"),
+                textFields,
+                resolveMediaTargetFields(template, "video", requestedFields)
+        );
+        if (imageMappings.isEmpty() && videoMappings.isEmpty()) {
+            return new ContentMutationResult(false, 0, 0, List.of());
+        }
+        boolean changed = false;
+        int imagesGenerated = 0;
+        int videosGenerated = 0;
+        List<String> errors = new ArrayList<>();
+        if (imageConfig.enabled()) {
+            for (MediaMapping mapping : imageMappings) {
+                if (!isMissingMedia(updatedContent.get(mapping.targetField()))) {
+                    continue;
+                }
+                String prompt = extractMediaPrompt(updatedContent, mapping.sourceField());
+                if (prompt == null || prompt.isBlank()) {
+                    errors.add(formatFieldError(mapping.targetField(), "source field is empty"));
+                    continue;
+                }
+                try {
+                    MediaUpload upload = generateImage(job, apiKey, imageConfig, prompt);
+                    updatedContent.set(mapping.targetField(), buildMediaNode(upload.mediaId(), "image"));
+                    changed = true;
+                    imagesGenerated++;
+                } catch (Exception ex) {
+                    errors.add(formatFieldError(mapping.targetField(), summarizeError(ex)));
+                    LOGGER.warn("OpenAI mapped image generation failed jobId={} cardId={} content={} sourceField={} targetField={} model={} promptLength={}",
+                            job.getJobId(),
+                            cardId,
+                            contentToken,
+                            mapping.sourceField(),
+                            mapping.targetField(),
+                            imageConfig.model(),
+                            prompt.length(),
+                            ex);
+                }
+            }
+        }
+        if (videoConfig.enabled()) {
+            for (MediaMapping mapping : videoMappings) {
+                if (!isMissingMedia(updatedContent.get(mapping.targetField()))) {
+                    continue;
+                }
+                String prompt = extractMediaPrompt(updatedContent, mapping.sourceField());
+                if (prompt == null || prompt.isBlank()) {
+                    errors.add(formatFieldError(mapping.targetField(), "source field is empty"));
+                    continue;
+                }
+                try {
+                    MediaUpload upload = generateVideo(job, apiKey, videoConfig, prompt);
+                    updatedContent.set(mapping.targetField(), buildMediaNode(upload.mediaId(), "video"));
+                    changed = true;
+                    videosGenerated++;
+                } catch (Exception ex) {
+                    errors.add(formatFieldError(mapping.targetField(), summarizeError(ex)));
+                    LOGGER.warn("OpenAI mapped video generation failed jobId={} cardId={} content={} sourceField={} targetField={} model={} promptLength={}",
+                            job.getJobId(),
+                            cardId,
+                            contentToken,
+                            mapping.sourceField(),
+                            mapping.targetField(),
+                            videoConfig.model(),
+                            prompt.length(),
+                            ex);
+                }
+            }
+        }
+        return new ContentMutationResult(changed, imagesGenerated, videosGenerated, errors);
     }
 
     private List<MissingFieldUpdate> parseMissingFieldUpdates(JsonNode response, List<String> allowedFields) {
@@ -6632,6 +6860,19 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         return null;
     }
 
+    private String extractMediaPrompt(JsonNode content, String field) {
+        String text = extractTextValue(content, field);
+        if (text == null) {
+            return null;
+        }
+        String sanitized = text;
+        sanitized = sanitized.replaceAll("!\\[([^\\]]*)]\\([^)]*\\)", "$1");
+        sanitized = sanitized.replaceAll("\\[([^\\]]+)]\\([^)]*\\)", "$1");
+        sanitized = sanitized.replaceAll("<[^>]+>", " ");
+        sanitized = sanitized.replaceAll("`{1,3}", "");
+        return MULTI_SPACE_PATTERN.matcher(sanitized).replaceAll(" ").trim();
+    }
+
     private String sanitizeTtsText(String text) {
         if (text == null) {
             return null;
@@ -7151,6 +7392,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     }
 
     private record TtsMapping(String sourceField, String targetField) {
+    }
+
+    private record MediaMapping(String sourceField, String targetField) {
     }
 
     private UUID parseUuid(String raw) {

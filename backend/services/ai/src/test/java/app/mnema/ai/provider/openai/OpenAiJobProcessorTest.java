@@ -18,6 +18,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.ResourceAccessException;
 
@@ -125,6 +126,112 @@ class OpenAiJobProcessorTest {
                 "generate_content",
                 "apply_changes"
         );
+    }
+
+    @Test
+    void handleCardMissingFieldsUsesMappedSourceForImageWithoutContentGeneration() throws Exception {
+        OpenAiClient openAiClient = mock(OpenAiClient.class);
+        CoreApiClient coreApiClient = mock(CoreApiClient.class);
+        MediaApiClient mediaApiClient = mock(MediaApiClient.class);
+        OpenAiJobProcessor processor = createProcessor(
+                openAiClient,
+                coreApiClient,
+                mediaApiClient,
+                mock(AiJobExecutionService.class),
+                mock(CardNoveltyService.class)
+        );
+
+        UUID deckId = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
+        UUID templateId = UUID.randomUUID();
+        UUID cardId = UUID.randomUUID();
+        UUID mediaId = UUID.randomUUID();
+        ObjectNode params = OBJECT_MAPPER.readValue("""
+                {
+                  "__skipStepTracking": true,
+                  "mode": "card_missing_fields",
+                  "cardId": "%s",
+                  "fields": ["image"],
+                  "updateScope": "local",
+                  "image": {
+                    "enabled": true,
+                    "model": "gpt-image-1-mini",
+                    "mappings": [
+                      { "sourceField": "front", "targetField": "image" }
+                    ]
+                  }
+                }
+                """.formatted(cardId), ObjectNode.class);
+        AiJobEntity job = createJob(params, AiJobType.generic);
+        job.setDeckId(deckId);
+        job.setUserAccessToken("token");
+        ObjectNode content = OBJECT_MAPPER.createObjectNode();
+        content.put("front", "sharp courtroom vocabulary visual");
+        content.putNull("image");
+
+        when(coreApiClient.getUserDeck(deckId, "token"))
+                .thenReturn(new CoreApiClient.CoreUserDeckResponse(deckId, publicDeckId, 1, 1));
+        when(coreApiClient.getPublicDeck(publicDeckId, 1))
+                .thenReturn(new CoreApiClient.CorePublicDeckResponse(
+                        publicDeckId,
+                        1,
+                        UUID.randomUUID(),
+                        "Suits TV series Vocab",
+                        "Legal drama vocabulary",
+                        "en",
+                        templateId,
+                        1
+                ));
+        when(coreApiClient.getTemplate(templateId, 1, "token"))
+                .thenReturn(new CoreApiClient.CoreTemplateResponse(
+                        templateId,
+                        1,
+                        1,
+                        "Vocab",
+                        "",
+                        null,
+                        null,
+                        List.of(
+                                new CoreApiClient.CoreFieldTemplate(UUID.randomUUID(), "front", "Front", "text", true, true, 0),
+                                new CoreApiClient.CoreFieldTemplate(UUID.randomUUID(), "image", "Image", "image", false, false, 1)
+                        )
+                ));
+        when(coreApiClient.getUserCard(deckId, cardId, "token"))
+                .thenReturn(new CoreApiClient.CoreUserCardDetail(
+                        cardId,
+                        UUID.randomUUID(),
+                        true,
+                        false,
+                        null,
+                        new String[0],
+                        content
+                ));
+        when(openAiClient.createImage(any(), any()))
+                .thenReturn(new OpenAiImageResult(new byte[] { 1, 2, 3, 4 }, "image/png", null, "gpt-image-1-mini"));
+        when(mediaApiClient.directUpload(any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyLong(), any()))
+                .thenReturn(mediaId);
+        when(coreApiClient.updateUserCard(any(), any(), any(), any(), any(), any()))
+                .thenReturn(new CoreApiClient.CoreUserCardResponse(cardId, null, true, content));
+
+        Method handleCardMissingFields = OpenAiJobProcessor.class.getDeclaredMethod(
+                "handleCardMissingFields",
+                AiJobEntity.class,
+                String.class,
+                JsonNode.class
+        );
+        handleCardMissingFields.setAccessible(true);
+        handleCardMissingFields.invoke(processor, job, "sk-test", params);
+
+        ArgumentCaptor<OpenAiImageRequest> imageRequestCaptor = ArgumentCaptor.forClass(OpenAiImageRequest.class);
+        verify(openAiClient).createImage(eq("sk-test"), imageRequestCaptor.capture());
+        assertThat(imageRequestCaptor.getValue().prompt()).isEqualTo("sharp courtroom vocabulary visual");
+        verify(openAiClient, never()).createResponse(any(), any());
+
+        ArgumentCaptor<CoreApiClient.UpdateUserCardRequest> updateCaptor =
+                ArgumentCaptor.forClass(CoreApiClient.UpdateUserCardRequest.class);
+        verify(coreApiClient).updateUserCard(eq(deckId), eq(cardId), updateCaptor.capture(), eq("token"), eq("local"), any());
+        assertThat(updateCaptor.getValue().effectiveContent().path("image").path("mediaId").asText()).isEqualTo(mediaId.toString());
+        assertThat(updateCaptor.getValue().effectiveContent().path("image").path("kind").asText()).isEqualTo("image");
     }
 
     @Test

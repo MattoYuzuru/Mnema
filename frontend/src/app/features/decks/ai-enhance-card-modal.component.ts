@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, OnInit, Output, Injector, computed, effect, inject, signal } from '@angular/core';
+import { Component, EventEmitter, Input, OnInit, Output, Injector, WritableSignal, computed, effect, inject, signal } from '@angular/core';
 import { NgFor, NgIf } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { AiApiService } from '../../core/services/ai-api.service';
@@ -22,6 +22,8 @@ interface CardAuditSummary {
     items?: CardAuditItem[];
 }
 
+type FieldMapping = { sourceField: string; targetField: string };
+
 @Component({
     selector: 'app-ai-enhance-card-modal',
     standalone: true,
@@ -34,7 +36,7 @@ interface CardAuditSummary {
           <button class="close-btn" (click)="close()">&times;</button>
         </div>
 
-        <div class="modal-body">
+        <div class="modal-body mn-scrollbar">
           <p class="modal-hint">{{ 'cardEnhance.subtitle' | translate }}</p>
 
           <div class="form-grid">
@@ -61,7 +63,7 @@ interface CardAuditSummary {
           <div class="missing-panel" *ngIf="missingFields().length > 0">
             <label class="grid-label">{{ 'cardEnhance.missingFields' | translate }}</label>
             <div class="missing-toggles">
-              <label class="toggle">
+              <label class="checkbox-label glass-checkbox">
                 <input
                   type="checkbox"
                   [checked]="ttsEnabled()"
@@ -70,7 +72,7 @@ interface CardAuditSummary {
                 />
                 <span>Generate audio</span>
               </label>
-              <label class="toggle">
+              <label class="checkbox-label glass-checkbox">
                 <input
                   type="checkbox"
                   [checked]="imageEnabled()"
@@ -79,7 +81,7 @@ interface CardAuditSummary {
                 />
                 <span>Generate images</span>
               </label>
-              <label class="toggle">
+              <label class="checkbox-label glass-checkbox">
                 <input
                   type="checkbox"
                   [checked]="videoEnabled()"
@@ -92,14 +94,14 @@ interface CardAuditSummary {
             <div *ngIf="missingAudioFields().length > 0 && !ttsSupported()" class="field-hint">
               {{ 'cardEnhance.audioUnavailable' | translate }}
             </div>
-            <div class="missing-list">
+            <div class="missing-list mn-scrollbar">
               <div class="missing-row" *ngFor="let field of missingFields(); trackBy: trackField">
                 <span class="missing-label">{{ field.label || field.name }}</span>
                 <span class="missing-type">{{ fieldTypeLabel(field.fieldType) }}</span>
               </div>
             </div>
             <div class="scope-toggle">
-              <label class="toggle">
+              <label class="checkbox-label glass-checkbox">
                 <input
                   type="checkbox"
                   [checked]="updateScope() === 'global'"
@@ -147,6 +149,34 @@ interface CardAuditSummary {
                   placeholder="voice-name"
                 />
               </div>
+              <div class="mapping-panel">
+                <label>Audio source mapping</label>
+                <div class="mapping-list">
+                  <div *ngFor="let mapping of ttsMappings(); let i = index" class="mapping-row">
+                    <select
+                      class="glass-select"
+                      [ngModel]="mapping.sourceField"
+                      (ngModelChange)="onTtsSourceChange(i, $event)"
+                    >
+                      <option *ngFor="let field of textFields(); trackBy: trackField" [ngValue]="field.name">
+                        {{ field.label || field.name }}
+                      </option>
+                    </select>
+                    <span class="mapping-arrow">→</span>
+                    <select
+                      class="glass-select"
+                      [ngModel]="mapping.targetField"
+                      (ngModelChange)="onTtsTargetChange(i, $event)"
+                    >
+                      <option *ngFor="let field of missingAudioFields(); trackBy: trackField" [ngValue]="field.name">
+                        {{ field.label || field.name }}
+                      </option>
+                    </select>
+                    <button type="button" class="remove-mapping" (click)="removeTtsMapping(i)" aria-label="Remove audio mapping">×</button>
+                  </div>
+                </div>
+                <button type="button" class="add-mapping" (click)="addTtsMapping()">Add audio mapping</button>
+              </div>
             </div>
             <div *ngIf="missingImageFields().length > 0 && imageEnabled() && imageSupported()" class="form-grid tts-form">
               <div class="form-field">
@@ -179,6 +209,34 @@ interface CardAuditSummary {
                   placeholder="1024x1024"
                 />
               </div>
+              <div class="mapping-panel">
+                <label>Image source mapping</label>
+                <div class="mapping-list">
+                  <div *ngFor="let mapping of imageMappings(); let i = index" class="mapping-row">
+                    <select
+                      class="glass-select"
+                      [ngModel]="mapping.sourceField"
+                      (ngModelChange)="onImageSourceChange(i, $event)"
+                    >
+                      <option *ngFor="let field of textFields(); trackBy: trackField" [ngValue]="field.name">
+                        {{ field.label || field.name }}
+                      </option>
+                    </select>
+                    <span class="mapping-arrow">→</span>
+                    <select
+                      class="glass-select"
+                      [ngModel]="mapping.targetField"
+                      (ngModelChange)="onImageTargetChange(i, $event)"
+                    >
+                      <option *ngFor="let field of missingImageFields(); trackBy: trackField" [ngValue]="field.name">
+                        {{ field.label || field.name }}
+                      </option>
+                    </select>
+                    <button type="button" class="remove-mapping" (click)="removeImageMapping(i)" aria-label="Remove image mapping">×</button>
+                  </div>
+                </div>
+                <button type="button" class="add-mapping" (click)="addImageMapping()">Add image mapping</button>
+              </div>
             </div>
             <div *ngIf="missingVideoFields().length > 0 && videoEnabled() && videoSupported()" class="form-grid tts-form">
               <div class="form-field">
@@ -200,6 +258,34 @@ interface CardAuditSummary {
                   (ngModelChange)="onVideoModelCustomChange($event)"
                   placeholder="custom-video-model"
                 />
+              </div>
+              <div class="mapping-panel">
+                <label>Video source mapping</label>
+                <div class="mapping-list">
+                  <div *ngFor="let mapping of videoMappings(); let i = index" class="mapping-row">
+                    <select
+                      class="glass-select"
+                      [ngModel]="mapping.sourceField"
+                      (ngModelChange)="onVideoSourceChange(i, $event)"
+                    >
+                      <option *ngFor="let field of textFields(); trackBy: trackField" [ngValue]="field.name">
+                        {{ field.label || field.name }}
+                      </option>
+                    </select>
+                    <span class="mapping-arrow">→</span>
+                    <select
+                      class="glass-select"
+                      [ngModel]="mapping.targetField"
+                      (ngModelChange)="onVideoTargetChange(i, $event)"
+                    >
+                      <option *ngFor="let field of missingVideoFields(); trackBy: trackField" [ngValue]="field.name">
+                        {{ field.label || field.name }}
+                      </option>
+                    </select>
+                    <button type="button" class="remove-mapping" (click)="removeVideoMapping(i)" aria-label="Remove video mapping">×</button>
+                  </div>
+                </div>
+                <button type="button" class="add-mapping" (click)="addVideoMapping()">Add video mapping</button>
               </div>
             </div>
             <app-button
@@ -272,9 +358,11 @@ interface CardAuditSummary {
       }
 
       .modal-content {
-        width: min(720px, 96vw);
-        max-height: 92vh;
-        overflow: auto;
+        width: min(760px, calc(100vw - var(--spacing-lg) * 2));
+        max-height: min(92vh, 820px);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
         background: var(--color-card-background);
         border-radius: var(--border-radius-lg);
         border: 1px solid var(--glass-border);
@@ -297,6 +385,8 @@ interface CardAuditSummary {
         padding: var(--spacing-lg);
         display: grid;
         gap: var(--spacing-lg);
+        overflow-y: auto;
+        min-height: 0;
       }
 
       .modal-footer {
@@ -355,6 +445,9 @@ interface CardAuditSummary {
       .missing-list {
         display: grid;
         gap: var(--spacing-xs);
+        max-height: 9.5rem;
+        overflow-y: auto;
+        padding-right: var(--spacing-xs);
       }
 
       .missing-toggles {
@@ -368,11 +461,13 @@ interface CardAuditSummary {
         gap: var(--spacing-xs);
       }
 
-      .toggle {
-        display: inline-flex;
-        align-items: center;
-        gap: var(--spacing-xs);
+      .checkbox-label {
         font-weight: 600;
+      }
+
+      .checkbox-label:has(input:disabled) {
+        cursor: not-allowed;
+        color: var(--color-text-muted);
       }
 
       .missing-row {
@@ -406,6 +501,57 @@ interface CardAuditSummary {
         gap: var(--spacing-sm);
       }
 
+      .mapping-panel {
+        display: grid;
+        gap: var(--spacing-sm);
+        grid-column: 1 / -1;
+      }
+
+      .mapping-panel > label {
+        font-weight: 600;
+      }
+
+      .mapping-list {
+        display: grid;
+        gap: var(--spacing-sm);
+      }
+
+      .mapping-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: var(--spacing-sm);
+      }
+
+      .mapping-arrow {
+        color: var(--color-text-secondary);
+        font-weight: 700;
+      }
+
+      .remove-mapping,
+      .add-mapping {
+        border: 1px solid var(--glass-border);
+        background: var(--glass-surface);
+        color: var(--color-text-primary);
+        border-radius: var(--border-radius-md);
+        cursor: pointer;
+      }
+
+      .remove-mapping {
+        width: 2rem;
+        height: 2rem;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.1rem;
+      }
+
+      .add-mapping {
+        justify-self: start;
+        padding: var(--spacing-xs) var(--spacing-sm);
+        font-weight: 600;
+      }
+
       .audit-summary {
         margin: 0;
         font-weight: 600;
@@ -434,6 +580,32 @@ interface CardAuditSummary {
 
       .error-state {
         color: #dc2626;
+      }
+
+      @media (max-width: 640px) {
+        .modal-overlay {
+          align-items: stretch;
+          padding: var(--spacing-sm);
+        }
+
+        .modal-content {
+          width: 100%;
+          max-height: calc(100vh - var(--spacing-sm) * 2);
+        }
+
+        .modal-header,
+        .modal-body,
+        .modal-footer {
+          padding: var(--spacing-md);
+        }
+
+        .mapping-row {
+          grid-template-columns: minmax(0, 1fr) auto;
+        }
+
+        .mapping-arrow {
+          display: none;
+        }
       }
     `]
 })
@@ -468,11 +640,14 @@ export class AiEnhanceCardModalComponent implements OnInit {
     private readonly injector = inject(Injector);
 
     ttsEnabled = signal(true);
+    ttsMappings = signal<FieldMapping[]>([]);
     ttsModel = signal('');
     ttsVoicePreset = signal('alloy');
     ttsVoiceCustom = signal('');
     imageEnabled = signal(true);
+    imageMappings = signal<FieldMapping[]>([]);
     videoEnabled = signal(false);
+    videoMappings = signal<FieldMapping[]>([]);
     imageModel = signal('');
     imageModelCustom = signal('');
     imageSize = signal('1024x1024');
@@ -634,6 +809,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
         this.restoreAudit();
         this.loadRuntimeCapabilities();
         this.loadProviders();
+        this.reconcileAllMappings();
         effect(() => {
             const signature = this.auditPreflightSignature();
             const lastSignature = this.lastAuditPreflightSignature();
@@ -688,6 +864,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
         if (!this.videoSupported()) {
             this.videoEnabled.set(false);
         }
+        this.reconcileAllMappings();
     }
 
     onTtsVoicePresetChange(value: string): void {
@@ -707,14 +884,17 @@ export class AiEnhanceCardModalComponent implements OnInit {
 
     onTtsEnabledChange(enabled: boolean): void {
         this.ttsEnabled.set(enabled);
+        this.reconcileTtsMappings();
     }
 
     onImageEnabledChange(enabled: boolean): void {
         this.imageEnabled.set(enabled);
+        this.reconcileImageMappings();
     }
 
     onVideoEnabledChange(enabled: boolean): void {
         this.videoEnabled.set(enabled);
+        this.reconcileVideoMappings();
     }
 
     onUpdateScopeChange(global: boolean): void {
@@ -745,6 +925,54 @@ export class AiEnhanceCardModalComponent implements OnInit {
 
     onVideoModelCustomChange(value: string): void {
         this.videoModelCustom.set(value);
+    }
+
+    addTtsMapping(): void {
+        this.addMapping(this.ttsMappings, this.missingAudioFields());
+    }
+
+    removeTtsMapping(index: number): void {
+        this.removeMapping(this.ttsMappings, index);
+    }
+
+    onTtsSourceChange(index: number, value: string): void {
+        this.updateMappingSource(this.ttsMappings, index, value);
+    }
+
+    onTtsTargetChange(index: number, value: string): void {
+        this.updateMappingTarget(this.ttsMappings, index, value);
+    }
+
+    addImageMapping(): void {
+        this.addMapping(this.imageMappings, this.missingImageFields());
+    }
+
+    removeImageMapping(index: number): void {
+        this.removeMapping(this.imageMappings, index);
+    }
+
+    onImageSourceChange(index: number, value: string): void {
+        this.updateMappingSource(this.imageMappings, index, value);
+    }
+
+    onImageTargetChange(index: number, value: string): void {
+        this.updateMappingTarget(this.imageMappings, index, value);
+    }
+
+    addVideoMapping(): void {
+        this.addMapping(this.videoMappings, this.missingVideoFields());
+    }
+
+    removeVideoMapping(index: number): void {
+        this.removeMapping(this.videoMappings, index);
+    }
+
+    onVideoSourceChange(index: number, value: string): void {
+        this.updateMappingSource(this.videoMappings, index, value);
+    }
+
+    onVideoTargetChange(index: number, value: string): void {
+        this.updateMappingTarget(this.videoMappings, index, value);
     }
 
     runAudit(): void {
@@ -1023,6 +1251,11 @@ export class AiEnhanceCardModalComponent implements OnInit {
         );
     }
 
+    textFields(): FieldTemplateDTO[] {
+        if (!this.template) return [];
+        return (this.template.fields || []).filter(field => this.isTextField(field.fieldType));
+    }
+
     fieldTypeLabel(fieldType: string): string {
         switch (fieldType) {
             case 'audio':
@@ -1208,13 +1441,13 @@ export class AiEnhanceCardModalComponent implements OnInit {
 
     private isFieldSelectedForFill(field: FieldTemplateDTO): boolean {
         if (field.fieldType === 'audio') {
-            return this.ttsEnabled() && this.ttsSupported();
+            return this.ttsEnabled() && this.ttsSupported() && this.mappedTargets(this.ttsMappings()).has(field.name);
         }
         if (field.fieldType === 'image') {
-            return this.imageEnabled() && this.imageSupported();
+            return this.imageEnabled() && this.imageSupported() && this.mappedTargets(this.imageMappings()).has(field.name);
         }
         if (field.fieldType === 'video') {
-            return this.videoEnabled() && this.videoSupported();
+            return this.videoEnabled() && this.videoSupported() && this.mappedTargets(this.videoMappings()).has(field.name);
         }
         return true;
     }
@@ -1234,11 +1467,17 @@ export class AiEnhanceCardModalComponent implements OnInit {
         if (!audioFields.some(field => missingFields.includes(field))) {
             return null;
         }
+        const mappings = this.validMappings(this.ttsMappings(), this.missingAudioFields())
+            .filter(mapping => missingFields.includes(mapping.targetField));
+        if (mappings.length === 0) {
+            return null;
+        }
         return {
             enabled: true,
             ...(model ? { model } : {}),
             voice: this.resolveVoice() || undefined,
-            format: this.resolveAudioFormat()
+            format: this.resolveAudioFormat(),
+            mappings
         };
     }
 
@@ -1276,6 +1515,11 @@ export class AiEnhanceCardModalComponent implements OnInit {
         if (!imageFields.some(field => missingFields.includes(field))) {
             return null;
         }
+        const mappings = this.validMappings(this.imageMappings(), this.missingImageFields())
+            .filter(mapping => missingFields.includes(mapping.targetField));
+        if (mappings.length === 0) {
+            return null;
+        }
         const selectedModel = this.imageModel() === 'custom'
             ? this.imageModelCustom().trim()
             : this.imageModel().trim();
@@ -1283,7 +1527,8 @@ export class AiEnhanceCardModalComponent implements OnInit {
             enabled: true,
             model: selectedModel || undefined,
             size: this.imageSize().trim() || undefined,
-            format: this.imageFormat()
+            format: this.imageFormat(),
+            mappings
         };
     }
 
@@ -1295,6 +1540,11 @@ export class AiEnhanceCardModalComponent implements OnInit {
         if (!videoFields.some(field => missingFields.includes(field))) {
             return null;
         }
+        const mappings = this.validMappings(this.videoMappings(), this.missingVideoFields())
+            .filter(mapping => missingFields.includes(mapping.targetField));
+        if (mappings.length === 0) {
+            return null;
+        }
         const selectedModel = this.videoModel() === 'custom'
             ? this.videoModelCustom().trim()
             : this.videoModel().trim();
@@ -1303,8 +1553,93 @@ export class AiEnhanceCardModalComponent implements OnInit {
             model: selectedModel || undefined,
             durationSeconds: this.videoDurationSeconds(),
             resolution: this.videoResolution().trim() || undefined,
-            format: this.videoFormat()
+            format: this.videoFormat(),
+            mappings
         };
+    }
+
+    private reconcileAllMappings(): void {
+        this.reconcileTtsMappings();
+        this.reconcileImageMappings();
+        this.reconcileVideoMappings();
+    }
+
+    private reconcileTtsMappings(): void {
+        this.reconcileMappings(this.ttsMappings, this.missingAudioFields());
+    }
+
+    private reconcileImageMappings(): void {
+        this.reconcileMappings(this.imageMappings, this.missingImageFields());
+    }
+
+    private reconcileVideoMappings(): void {
+        this.reconcileMappings(this.videoMappings, this.missingVideoFields());
+    }
+
+    private reconcileMappings(mappingSignal: WritableSignal<FieldMapping[]>, targetFields: FieldTemplateDTO[]): void {
+        const textNames = new Set(this.textFields().map(field => field.name));
+        const targetNames = new Set(targetFields.map(field => field.name));
+        const filtered = mappingSignal().filter(mapping =>
+            textNames.has(mapping.sourceField) && targetNames.has(mapping.targetField)
+        );
+        mappingSignal.set(filtered);
+        if (targetFields.length === 0 || mappingSignal().length > 0) {
+            return;
+        }
+        const sourceField = this.resolveDefaultSourceField();
+        const targetField = targetFields[0]?.name || '';
+        if (sourceField && targetField) {
+            mappingSignal.set([{ sourceField, targetField }]);
+        }
+    }
+
+    private addMapping(mappingSignal: WritableSignal<FieldMapping[]>, targetFields: FieldTemplateDTO[]): void {
+        const sourceField = this.resolveDefaultSourceField();
+        const targetField = targetFields[0]?.name || '';
+        if (!sourceField || !targetField) {
+            return;
+        }
+        mappingSignal.update(list => [...list, { sourceField, targetField }]);
+    }
+
+    private removeMapping(mappingSignal: WritableSignal<FieldMapping[]>, index: number): void {
+        mappingSignal.update(list => list.filter((_, i) => i !== index));
+    }
+
+    private updateMappingSource(mappingSignal: WritableSignal<FieldMapping[]>, index: number, value: string): void {
+        mappingSignal.update(list => list.map((item, i) => i === index ? { ...item, sourceField: value } : item));
+    }
+
+    private updateMappingTarget(mappingSignal: WritableSignal<FieldMapping[]>, index: number, value: string): void {
+        mappingSignal.update(list => list.map((item, i) => i === index ? { ...item, targetField: value } : item));
+    }
+
+    private validMappings(mappings: FieldMapping[], targetFields: FieldTemplateDTO[]): FieldMapping[] {
+        const textNames = new Set(this.textFields().map(field => field.name));
+        const targetNames = new Set(targetFields.map(field => field.name));
+        return mappings.filter(mapping =>
+            textNames.has(mapping.sourceField) && targetNames.has(mapping.targetField)
+        );
+    }
+
+    private mappedTargets(mappings: FieldMapping[]): Set<string> {
+        return new Set(mappings.map(mapping => mapping.targetField).filter(Boolean));
+    }
+
+    private resolveDefaultSourceField(): string {
+        const fields = this.textFields();
+        if (fields.length === 0) {
+            return '';
+        }
+        const sorted = [...fields].sort((a, b) => {
+            if (a.isOnFront !== b.isOnFront) {
+                return a.isOnFront ? -1 : 1;
+            }
+            const aOrder = a.orderIndex ?? Number.MAX_SAFE_INTEGER;
+            const bOrder = b.orderIndex ?? Number.MAX_SAFE_INTEGER;
+            return aOrder - bOrder;
+        });
+        return sorted[0]?.name || '';
     }
 
     private refreshCard(): void {
@@ -1312,6 +1647,7 @@ export class AiEnhanceCardModalComponent implements OnInit {
         this.cardApi.getUserCard(this.userDeckId, this.card.userCardId).subscribe({
             next: updated => {
                 this.card = updated;
+                this.reconcileAllMappings();
                 this.cardUpdated.emit(updated);
             },
             error: () => {
