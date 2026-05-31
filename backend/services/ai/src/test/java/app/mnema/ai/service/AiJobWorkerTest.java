@@ -118,10 +118,11 @@ class AiJobWorkerTest {
         assertThat(job.getAttempts()).isEqualTo(2);
         assertThat(job.getCompletedAt()).isNotNull();
         assertThat(job.getNextRunAt()).isNull();
+        assertThat(job.getUserAccessToken()).isNull();
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jdbcTemplate).update(any(String.class), eq(1), eq("queued"), any(Timestamp.class), isNull(), eq("IllegalStateException"), any(Timestamp.class), eq(job.getJobId()));
-        verify(jdbcTemplate).update(any(String.class), eq(2), eq("failed"), isNull(), any(Timestamp.class), eq("IllegalArgumentException"), any(Timestamp.class), eq(job.getJobId()));
-        verify(jdbcTemplate, times(2)).update(sqlCaptor.capture(), any(), any(), any(), any(), any(), any(), any());
+        verify(jdbcTemplate).update(any(String.class), eq(1), eq("queued"), any(Timestamp.class), isNull(), eq("IllegalStateException"), eq("queued"), any(Timestamp.class), eq(job.getJobId()));
+        verify(jdbcTemplate).update(any(String.class), eq(2), eq("failed"), isNull(), any(Timestamp.class), eq("IllegalArgumentException"), eq("failed"), any(Timestamp.class), eq(job.getJobId()));
+        verify(jdbcTemplate, times(2)).update(sqlCaptor.capture(), any(), any(), any(), any(), any(), any(), any(), any());
         assertThat(sqlCaptor.getAllValues())
                 .allSatisfy(sql -> assertThat(sql).contains("status = cast(? as app_ai.ai_job_status)"));
     }

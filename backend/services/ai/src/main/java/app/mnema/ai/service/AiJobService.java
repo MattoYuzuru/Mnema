@@ -219,6 +219,7 @@ public class AiJobService {
         job.setStatus(AiJobStatus.canceled);
         job.setUpdatedAt(Instant.now());
         job.setCompletedAt(Instant.now());
+        job.setUserAccessToken(null);
         AiJobEntity saved = jobRepository.save(job);
         cancellationRegistry.cancel(jobId);
         return toResponse(saved);

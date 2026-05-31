@@ -335,17 +335,20 @@ public class OpenAiClient {
         if (request.format() != null && !request.format().isBlank()) {
             payload.put("output_format", request.format());
         }
-        // Ollama OpenAI compatibility expects b64_json for image payloads.
-        payload.put("response_format", "b64_json");
-        RestClient.RequestBodySpec spec = restClient.post()
-                .uri("/v1/images/generations")
-                .contentType(MediaType.APPLICATION_JSON);
-        if (hasApiKey(apiKey)) {
-            spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+        if (shouldSendImageResponseFormat(request.model())) {
+            payload.put("response_format", "b64_json");
         }
-        JsonNode response = spec.body(payload)
-                .retrieve()
-                .body(JsonNode.class);
+        JsonNode response = ProviderRetrySupport.executeTextRequest("OpenAI image", LOGGER, () -> {
+            RestClient.RequestBodySpec spec = restClient.post()
+                    .uri("/v1/images/generations")
+                    .contentType(MediaType.APPLICATION_JSON);
+            if (hasApiKey(apiKey)) {
+                spec = spec.header(HttpHeaders.AUTHORIZATION, bearer(apiKey));
+            }
+            return spec.body(payload)
+                    .retrieve()
+                    .body(JsonNode.class);
+        });
 
         if (response == null) {
             throw new IllegalStateException("OpenAI image response is empty");
@@ -371,6 +374,14 @@ public class OpenAiClient {
         String outputFormat = response.path("output_format").asText(null);
         String mimeType = resolveImageMimeType(outputFormat, request.format());
         return new OpenAiImageResult(bytes, mimeType, revisedPrompt, model);
+    }
+
+    private boolean shouldSendImageResponseFormat(String model) {
+        if (localGatewayBaseUrl) {
+            return true;
+        }
+        String normalized = model == null ? "" : model.trim().toLowerCase(Locale.ROOT);
+        return normalized.startsWith("dall-e-");
     }
 
     public OpenAiVideoJob createVideoJob(String apiKey, OpenAiVideoRequest request) {

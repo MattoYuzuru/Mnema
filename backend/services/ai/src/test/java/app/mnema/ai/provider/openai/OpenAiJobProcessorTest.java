@@ -2,6 +2,7 @@ package app.mnema.ai.provider.openai;
 
 import app.mnema.ai.client.core.CoreApiClient;
 import app.mnema.ai.client.media.MediaApiClient;
+import app.mnema.ai.client.media.MediaClientProps;
 import app.mnema.ai.domain.entity.AiJobEntity;
 import app.mnema.ai.domain.entity.AiProviderCredentialEntity;
 import app.mnema.ai.domain.type.AiJobStatus;
@@ -17,6 +18,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
+import org.springframework.web.client.RestClient;
 import org.springframework.web.client.ResourceAccessException;
 
 import java.lang.reflect.Method;
@@ -29,11 +31,13 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.fail;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -100,9 +104,9 @@ class OpenAiJobProcessorTest {
                 "prepare_context",
                 "generate_content",
                 "analyze_content",
+                "apply_changes",
                 "generate_media",
-                "generate_audio",
-                "apply_changes"
+                "generate_audio"
         );
     }
 
@@ -121,6 +125,128 @@ class OpenAiJobProcessorTest {
                 "generate_content",
                 "apply_changes"
         );
+    }
+
+    @Test
+    void handleGenerateCardsDoesNotGenerateMediaOrTtsBeforeCoreApplySucceeds() throws Exception {
+        OpenAiClient openAiClient = mock(OpenAiClient.class);
+        CoreApiClient coreApiClient = mock(CoreApiClient.class);
+        MediaApiClient mediaApiClient = mock(MediaApiClient.class);
+        OpenAiJobProcessor processor = createProcessor(
+                openAiClient,
+                coreApiClient,
+                mediaApiClient,
+                mock(AiJobExecutionService.class),
+                new CardNoveltyService(coreApiClient)
+        );
+        UUID deckId = UUID.randomUUID();
+        UUID publicDeckId = UUID.randomUUID();
+        UUID templateId = UUID.randomUUID();
+        ObjectNode params = OBJECT_MAPPER.createObjectNode();
+        params.put("__skipStepTracking", true);
+        params.put("mode", "generate_cards");
+        params.put("count", 1);
+        params.put("input", "one illustrated card");
+        params.putArray("fields").add("front").add("image").add("audio");
+        params.putObject("tts")
+                .put("enabled", true)
+                .put("model", "gpt-4o-mini-tts")
+                .put("maxChars", 4096);
+        AiJobEntity job = createJob(params, AiJobType.generic);
+        job.setDeckId(deckId);
+        job.setUserAccessToken("token");
+
+        when(coreApiClient.getUserDeck(deckId, "token"))
+                .thenReturn(new CoreApiClient.CoreUserDeckResponse(deckId, publicDeckId, 1, 1));
+        when(coreApiClient.getPublicDeck(publicDeckId, 1))
+                .thenReturn(new CoreApiClient.CorePublicDeckResponse(publicDeckId, 1, UUID.randomUUID(), "Deck", "Context", "en", templateId, 1));
+        when(coreApiClient.getTemplate(templateId, 1, "token"))
+                .thenReturn(new CoreApiClient.CoreTemplateResponse(
+                        templateId,
+                        1,
+                        1,
+                        "Basic",
+                        "",
+                        null,
+                        null,
+                        List.of(
+                                new CoreApiClient.CoreFieldTemplate(UUID.randomUUID(), "front", "Front", "text", true, true, 0),
+                                new CoreApiClient.CoreFieldTemplate(UUID.randomUUID(), "image", "Image", "image", false, false, 1),
+                                new CoreApiClient.CoreFieldTemplate(UUID.randomUUID(), "audio", "Audio", "audio", false, false, 2)
+                        )
+                ));
+        when(coreApiClient.getUserCards(deckId, 1, 3, "token")).thenReturn(new CoreApiClient.CoreUserCardPage(List.of()));
+        when(coreApiClient.getUserCards(deckId, 1, 200, "token")).thenReturn(new CoreApiClient.CoreUserCardPage(List.of()));
+        ObjectNode raw = OBJECT_MAPPER.createObjectNode();
+        raw.putObject("usage").put("input_tokens", 12).put("output_tokens", 6);
+        when(openAiClient.createResponse(any(), any())).thenReturn(new OpenAiResponseResult(
+                "{\"cards\":[{\"fields\":{\"front\":\"Q\",\"image\":\"clean diagram\",\"audio\":\"\"}}]}",
+                "gpt-4.1-mini",
+                12,
+                6,
+                raw
+        ));
+        when(coreApiClient.addCards(any(), any(), any(), any())).thenThrow(new IllegalStateException("core rejected batch"));
+
+        Method handleGenerateCards = OpenAiJobProcessor.class.getDeclaredMethod(
+                "handleGenerateCards",
+                AiJobEntity.class,
+                String.class,
+                JsonNode.class
+        );
+        handleGenerateCards.setAccessible(true);
+        try {
+            handleGenerateCards.invoke(processor, job, "sk-test", params);
+            fail("Expected core apply failure");
+        } catch (ReflectiveOperationException ex) {
+            assertThat(ex.getCause()).isInstanceOf(IllegalStateException.class);
+        }
+
+        verify(openAiClient, never()).createImage(any(), any());
+        verify(openAiClient, never()).createSpeech(any(), any());
+        verify(mediaApiClient, never()).directUpload(any(), any(), any(), any(), org.mockito.ArgumentMatchers.anyLong(), any());
+    }
+
+    @Test
+    void handleTtsRecordsGeneratedCountAndCharactersForCostAccounting() throws Exception {
+        OpenAiClient openAiClient = mock(OpenAiClient.class);
+        UUID mediaId = UUID.randomUUID();
+        MediaApiClient mediaApiClient = new MediaApiClient(RestClient.builder(), new MediaClientProps("http://localhost", "internal")) {
+            @Override
+            public UUID directUpload(UUID ownerUserId, String kind, String contentType, String fileName, long contentLength, java.io.InputStream inputStream) {
+                return mediaId;
+            }
+        };
+        OpenAiJobProcessor processor = createProcessor(
+                openAiClient,
+                mock(CoreApiClient.class),
+                mediaApiClient,
+                mock(AiJobExecutionService.class),
+                mock(CardNoveltyService.class)
+        );
+        byte[] mp3 = new byte[256];
+        mp3[0] = 'I';
+        mp3[1] = 'D';
+        mp3[2] = '3';
+        for (int i = 3; i < mp3.length; i++) {
+            mp3[i] = (byte) (i % 37);
+        }
+        when(openAiClient.createSpeech(any(), any())).thenReturn(mp3);
+        ObjectNode params = OBJECT_MAPPER.createObjectNode();
+        params.put("text", "Hello world");
+        params.put("model", "gpt-4o-mini-tts");
+        params.put("format", "mp3");
+        AiJobEntity job = createJob(params, AiJobType.tts);
+
+        Method handleTts = OpenAiJobProcessor.class.getDeclaredMethod("handleTts", AiJobEntity.class, String.class);
+        handleTts.setAccessible(true);
+        app.mnema.ai.service.AiJobProcessingResult result = (app.mnema.ai.service.AiJobProcessingResult) handleTts.invoke(processor, job, "sk-test");
+
+        assertThat(result.resultSummary().path("mediaId").asText()).isEqualTo(mediaId.toString());
+        assertThat(result.resultSummary().path("ttsGenerated").asInt()).isEqualTo(1);
+        assertThat(result.resultSummary().path("ttsCharsGenerated").asInt()).isEqualTo("Hello world".length());
+        assertThat(result.usageDetails().path("tts").path("generated").asInt()).isEqualTo(1);
+        assertThat(result.usageDetails().path("tts").path("charsGenerated").asInt()).isEqualTo("Hello world".length());
     }
 
     @Test
@@ -1235,6 +1361,20 @@ class OpenAiJobProcessorTest {
     }
 
     private static OpenAiJobProcessor createProcessor(OpenAiClient openAiClient) {
+        return createProcessor(
+                openAiClient,
+                mock(CoreApiClient.class),
+                mock(MediaApiClient.class),
+                mock(AiJobExecutionService.class),
+                mock(CardNoveltyService.class)
+        );
+    }
+
+    private static OpenAiJobProcessor createProcessor(OpenAiClient openAiClient,
+                                                      CoreApiClient coreApiClient,
+                                                      MediaApiClient mediaApiClient,
+                                                      AiJobExecutionService executionService,
+                                                      CardNoveltyService noveltyService) {
         return new OpenAiJobProcessor(
                 openAiClient,
                 new OpenAiProps(
@@ -1263,13 +1403,13 @@ class OpenAiJobProcessorTest {
                 ),
                 mock(SecretVault.class),
                 mock(AiProviderCredentialRepository.class),
-                mock(MediaApiClient.class),
+                mediaApiClient,
                 mock(AiImportContentService.class),
                 mock(AudioChunkingService.class),
-                mock(CoreApiClient.class),
-                mock(CardNoveltyService.class),
+                coreApiClient,
+                noveltyService,
                 OBJECT_MAPPER,
-                mock(AiJobExecutionService.class),
+                executionService,
                 200_000
         );
     }

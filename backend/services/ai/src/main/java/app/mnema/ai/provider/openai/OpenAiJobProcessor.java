@@ -99,6 +99,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
     private static final int DEFAULT_TTS_MAX_RETRIES = 5;
     private static final long DEFAULT_TTS_RETRY_INITIAL_DELAY_MS = 2000L;
     private static final long DEFAULT_TTS_RETRY_MAX_DELAY_MS = 30000L;
+    private static final int OPENAI_TTS_MAX_INPUT_CHARS = 4096;
     private static final int DEFAULT_VISION_MAX_OUTPUT_TOKENS = 800;
     private static final int DEFAULT_SOURCE_NORMALIZATION_MAX_OUTPUT_TOKENS = 1500;
     private static final String STEP_LOAD_SOURCE = "load_source";
@@ -238,9 +239,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
         if (MODE_IMPORT_GENERATE.equalsIgnoreCase(mode)) {
             if (isDraftQualityGateEnabled(params)) {
-                return List.of(STEP_LOAD_SOURCE, STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_ANALYZE_CONTENT, STEP_GENERATE_MEDIA, STEP_GENERATE_AUDIO, STEP_APPLY_CHANGES);
+                return List.of(STEP_LOAD_SOURCE, STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_ANALYZE_CONTENT, STEP_APPLY_CHANGES, STEP_GENERATE_MEDIA, STEP_GENERATE_AUDIO);
             }
-            return List.of(STEP_LOAD_SOURCE, STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_GENERATE_MEDIA, STEP_GENERATE_AUDIO, STEP_APPLY_CHANGES);
+            return List.of(STEP_LOAD_SOURCE, STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_APPLY_CHANGES, STEP_GENERATE_MEDIA, STEP_GENERATE_AUDIO);
         }
         if (MODE_AUDIT.equalsIgnoreCase(mode) || MODE_CARD_AUDIT.equalsIgnoreCase(mode)) {
             return List.of(STEP_PREPARE_CONTEXT, STEP_ANALYZE_CONTENT);
@@ -253,9 +254,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
         if (MODE_GENERATE_CARDS.equalsIgnoreCase(mode)) {
             if (isDraftQualityGateEnabled(params)) {
-                return List.of(STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_ANALYZE_CONTENT, STEP_GENERATE_MEDIA, STEP_GENERATE_AUDIO, STEP_APPLY_CHANGES);
+                return List.of(STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_ANALYZE_CONTENT, STEP_APPLY_CHANGES, STEP_GENERATE_MEDIA, STEP_GENERATE_AUDIO);
             }
-            return List.of(STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_GENERATE_MEDIA, STEP_GENERATE_AUDIO, STEP_APPLY_CHANGES);
+            return List.of(STEP_PREPARE_CONTEXT, STEP_GENERATE_CONTENT, STEP_APPLY_CHANGES, STEP_GENERATE_MEDIA, STEP_GENERATE_AUDIO);
         }
         return List.of(STEP_GENERATE_CONTENT);
     }
@@ -2462,22 +2463,6 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                                        String accessToken) {
         ImageConfig imageConfig = resolveImageConfig(params, true);
         VideoConfig videoConfig = resolveVideoConfig(params, true);
-        DraftMediaPreparationResult draftMediaResult = runStep(job, params, STEP_GENERATE_MEDIA, () -> prepareDraftMedia(
-                job,
-                apiKey,
-                context.template(),
-                generated.drafts(),
-                context.fieldTypes(),
-                imageConfig,
-                videoConfig
-        ));
-        DraftTtsPreparationResult draftTtsResult = runStep(job, params, STEP_GENERATE_AUDIO, () -> applyTtsToDrafts(
-                job,
-                apiKey,
-                params,
-                generated.drafts(),
-                context.template()
-        ));
         List<CreateCardRequestPayload> requests = generated.drafts().stream()
                 .map(draft -> new CreateCardRequestPayload(draft.content(), null, null, null, null, null))
                 .toList();
@@ -2487,8 +2472,19 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 accessToken,
                 job.getJobId()
         ));
-        MediaApplyResult mediaResult = materializeDraftMediaResult(createdCards, draftMediaResult);
-        TtsApplyResult ttsResult = materializeDraftTtsResult(createdCards, draftTtsResult);
+        AtomicApplyResult generatedMediaResult = applyGeneratedCardMediaAndTts(
+                job,
+                apiKey,
+                params,
+                context,
+                generated.drafts(),
+                createdCards,
+                accessToken,
+                imageConfig,
+                videoConfig
+        );
+        MediaApplyResult mediaResult = generatedMediaResult.mediaResult();
+        TtsApplyResult ttsResult = generatedMediaResult.ttsResult();
 
         ObjectNode summary = objectMapper.createObjectNode();
         summary.put("mode", MODE_GENERATE_CARDS);
@@ -2496,6 +2492,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         summary.put("templateId", context.publicDeck().templateId().toString());
         summary.put("requestedCards", requestedCount);
         summary.put("createdCards", requests.size());
+        summary.put("mediaAppliedAfterCreate", true);
         summary.put("duplicatesSkippedExact", generated.droppedExact());
         summary.put("duplicatesSkippedPrimary", generated.droppedPrimary());
         summary.put("duplicatesSkippedSemantic", generated.droppedSemantic());
@@ -2559,6 +2556,203 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             return left;
         }
         return left + right;
+    }
+
+    private AtomicApplyResult applyGeneratedCardMediaAndTts(AiJobEntity job,
+                                                            String apiKey,
+                                                            JsonNode params,
+                                                            GenerationContext context,
+                                                            List<CardDraft> drafts,
+                                                            List<CoreUserCardResponse> createdCards,
+                                                            String accessToken,
+                                                            ImageConfig imageConfig,
+                                                            VideoConfig videoConfig) {
+        if (createdCards == null || createdCards.isEmpty() || drafts == null || drafts.isEmpty()) {
+            return new AtomicApplyResult(new MediaApplyResult(0, 0, 0), new TtsApplyResult(0, 0, 0, null, null));
+        }
+        List<GeneratedCardMutation> mutations = new ArrayList<>();
+        int limit = Math.min(createdCards.size(), drafts.size());
+        for (int i = 0; i < limit; i++) {
+            CoreUserCardResponse card = createdCards.get(i);
+            CardDraft draft = drafts.get(i);
+            if (card != null && card.userCardId() != null && draft != null && draft.content() != null) {
+                mutations.add(new GeneratedCardMutation(i, card, draft));
+            }
+        }
+        if (mutations.isEmpty()) {
+            return new AtomicApplyResult(new MediaApplyResult(0, 0, 0), new TtsApplyResult(0, 0, 0, null, null));
+        }
+
+        MediaApplyResult mediaResult = runStep(job, params, STEP_GENERATE_MEDIA, () -> applyGeneratedCardMedia(
+                job,
+                apiKey,
+                context,
+                mutations,
+                accessToken,
+                imageConfig,
+                videoConfig
+        ));
+        TtsApplyResult ttsResult = runStep(job, params, STEP_GENERATE_AUDIO, () -> applyGeneratedCardTts(
+                job,
+                apiKey,
+                params,
+                context,
+                mutations,
+                accessToken
+        ));
+        return new AtomicApplyResult(mediaResult, ttsResult);
+    }
+
+    private MediaApplyResult applyGeneratedCardMedia(AiJobEntity job,
+                                                     String apiKey,
+                                                     GenerationContext context,
+                                                     List<GeneratedCardMutation> mutations,
+                                                     String accessToken,
+                                                     ImageConfig imageConfig,
+                                                     VideoConfig videoConfig) {
+        int updatedCards = 0;
+        int imagesGenerated = 0;
+        int videosGenerated = 0;
+        Set<UUID> updatedCardIds = new LinkedHashSet<>();
+        Map<UUID, List<String>> cardErrors = new LinkedHashMap<>();
+        for (GeneratedCardMutation mutation : mutations) {
+            CoreUserCardResponse card = mutation.card();
+            CardDraft draft = mutation.draft();
+            if (draft.mediaPrompts() == null || draft.mediaPrompts().isEmpty()) {
+                executionService.updateStepProgress(job.getJobId(), STEP_GENERATE_MEDIA, (mutation.index() + 1) / (double) Math.max(1, mutations.size()));
+                continue;
+            }
+            ObjectNode updatedContent = loadLatestContent(
+                    job.getJobId(),
+                    job.getDeckId(),
+                    card.userCardId(),
+                    accessToken,
+                    baseGeneratedContent(card, draft)
+            );
+            ContentMutationResult contentResult = applyDraftMediaToContent(
+                    job,
+                    apiKey,
+                    updatedContent,
+                    draft.mediaPrompts(),
+                    context.fieldTypes(),
+                    imageConfig,
+                    videoConfig,
+                    card.userCardId().toString()
+            );
+            appendErrors(cardErrors, card.userCardId(), contentResult.errors());
+            imagesGenerated += contentResult.imagesGenerated();
+            videosGenerated += contentResult.videosGenerated();
+            if (contentResult.changed()) {
+                ankiSupport.applyIfPresent(updatedContent, context.template());
+                UpdateUserCardRequest update = new UpdateUserCardRequest(
+                        card.userCardId(),
+                        null,
+                        false,
+                        false,
+                        null,
+                        updatedContent
+                );
+                String cardScope = resolveCardUpdateScope(context.updateScope(), card);
+                UUID operationId = resolveUpdateOperationId(cardScope, job);
+                try {
+                    coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken, cardScope, operationId);
+                    updatedCards++;
+                    updatedCardIds.add(card.userCardId());
+                } catch (Exception ex) {
+                    appendCardError(cardErrors, card.userCardId(), "media", "failed to apply generated media: " + summarizeError(ex));
+                    LOGGER.warn("OpenAI generated media apply failed jobId={} cardId={} error={}",
+                            job.getJobId(),
+                            card.userCardId(),
+                            summarizeError(ex));
+                }
+            }
+            executionService.updateStepProgress(job.getJobId(), STEP_GENERATE_MEDIA, (mutation.index() + 1) / (double) Math.max(1, mutations.size()));
+        }
+        return new MediaApplyResult(updatedCards, imagesGenerated, videosGenerated, updatedCardIds, cardErrors);
+    }
+
+    private TtsApplyResult applyGeneratedCardTts(AiJobEntity job,
+                                                 String apiKey,
+                                                 JsonNode params,
+                                                 GenerationContext context,
+                                                 List<GeneratedCardMutation> mutations,
+                                                 String accessToken) {
+        int generated = 0;
+        int charsGenerated = 0;
+        int updatedCards = 0;
+        String model = null;
+        String error = null;
+        Set<UUID> updatedCardIds = new LinkedHashSet<>();
+        Map<UUID, List<String>> cardErrors = new LinkedHashMap<>();
+        for (GeneratedCardMutation mutation : mutations) {
+            CoreUserCardResponse card = mutation.card();
+            ObjectNode updatedContent = loadLatestContent(
+                    job.getJobId(),
+                    job.getDeckId(),
+                    card.userCardId(),
+                    accessToken,
+                    baseGeneratedContent(card, mutation.draft())
+            );
+            TtsContentApplyResult result = applyTtsToContent(
+                    job,
+                    apiKey,
+                    params.path("tts"),
+                    updatedContent,
+                    context.template(),
+                    null,
+                    card.userCardId(),
+                    card.userCardId().toString()
+            );
+            appendErrors(cardErrors, card.userCardId(), result.errors());
+            generated += result.generated();
+            charsGenerated += result.charsGenerated();
+            if (model == null) {
+                model = result.model();
+            }
+            if (error == null && !result.errors().isEmpty()) {
+                error = result.errors().getFirst();
+            }
+            if (result.updated()) {
+                ankiSupport.applyIfPresent(updatedContent, context.template());
+                UpdateUserCardRequest update = new UpdateUserCardRequest(
+                        card.userCardId(),
+                        null,
+                        false,
+                        false,
+                        null,
+                        updatedContent
+                );
+                String cardScope = resolveCardUpdateScope(context.updateScope(), card);
+                UUID operationId = resolveUpdateOperationId(cardScope, job);
+                try {
+                    coreApiClient.updateUserCard(job.getDeckId(), card.userCardId(), update, accessToken, cardScope, operationId);
+                    updatedCards++;
+                    updatedCardIds.add(card.userCardId());
+                } catch (Exception ex) {
+                    appendCardError(cardErrors, card.userCardId(), "tts", "failed to apply generated audio: " + summarizeError(ex));
+                    if (error == null) {
+                        error = summarizeError(ex);
+                    }
+                    LOGGER.warn("OpenAI generated audio apply failed jobId={} cardId={} error={}",
+                            job.getJobId(),
+                            card.userCardId(),
+                            summarizeError(ex));
+                }
+            }
+            executionService.updateStepProgress(job.getJobId(), STEP_GENERATE_AUDIO, (mutation.index() + 1) / (double) Math.max(1, mutations.size()));
+        }
+        return new TtsApplyResult(generated, updatedCards, charsGenerated, model, error, updatedCardIds, cardErrors);
+    }
+
+    private ObjectNode baseGeneratedContent(CoreUserCardResponse card, CardDraft draft) {
+        JsonNode content = card == null ? null : card.effectiveContent();
+        if (content != null && content.isObject()) {
+            return content.deepCopy();
+        }
+        if (draft != null && draft.content() != null) {
+            return draft.content().deepCopy();
+        }
+        return objectMapper.createObjectNode();
     }
 
     private ObjectNode buildSourceCoverageNode(SourceCoverage coverage) {
@@ -2818,6 +3012,10 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (text == null || text.isBlank()) {
             throw new IllegalStateException("TTS text is required");
         }
+        int maxChars = resolveStandaloneTtsMaxChars(params);
+        if (text.length() > maxChars) {
+            throw new IllegalStateException("TTS text exceeds max input length " + maxChars);
+        }
         String model = textOrDefault(params.path("model"), props.defaultTtsModel());
         if (model == null || model.isBlank()) {
             throw new IllegalStateException("TTS model is required");
@@ -2856,9 +3054,16 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         summary.put("contentType", contentType);
         summary.put("fileName", fileName);
         summary.put("model", model);
+        summary.put("ttsGenerated", 1);
+        summary.put("ttsCharsGenerated", text.length());
         if (voice != null && !voice.isBlank()) {
             summary.put("voice", voice);
         }
+        ObjectNode usageDetails = objectMapper.createObjectNode();
+        ObjectNode ttsDetails = usageDetails.putObject("tts");
+        ttsDetails.put("generated", 1);
+        ttsDetails.put("charsGenerated", text.length());
+        ttsDetails.put("model", model);
 
         return new AiJobProcessingResult(
                 summary,
@@ -2867,7 +3072,9 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 null,
                 null,
                 BigDecimal.ZERO,
-                job.getInputHash()
+                job.getInputHash(),
+                AiJobStatus.completed,
+                usageDetails
         );
     }
 
@@ -4422,6 +4629,11 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                              String sourceText) {
     }
 
+    private record GeneratedCardMutation(int index,
+                                         CoreUserCardResponse card,
+                                         CardDraft draft) {
+    }
+
     private record ContentMutationResult(boolean changed,
                                          int imagesGenerated,
                                          int videosGenerated,
@@ -4459,20 +4671,6 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                                          int charsGenerated,
                                          String model,
                                          List<String> errors) {
-    }
-
-    private record DraftMediaPreparationResult(int imagesGenerated,
-                                               int videosGenerated,
-                                               Set<Integer> updatedDraftIndexes,
-                                               Map<Integer, List<String>> draftErrors) {
-    }
-
-    private record DraftTtsPreparationResult(int generated,
-                                             int charsGenerated,
-                                             String model,
-                                             String error,
-                                             Set<Integer> updatedDraftIndexes,
-                                             Map<Integer, List<String>> draftErrors) {
     }
 
     private record AtomicApplyResult(MediaApplyResult mediaResult,
@@ -5194,10 +5392,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (format == null || format.isBlank()) {
             format = "mp3";
         }
-        int maxChars = ttsNode.path("maxChars").isInt() ? ttsNode.path("maxChars").asInt() : 300;
-        if (maxChars < 1) {
-            maxChars = 1;
-        }
+        int maxChars = resolveTtsMaxChars(ttsNode);
 
         int generated = 0;
         int charsGenerated = 0;
@@ -5217,6 +5412,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     continue;
                 }
                 if (text.length() > maxChars) {
+                    appendCardError(cardErrors, card.userCardId(), mapping.targetField(), "text exceeds TTS max input length " + maxChars);
                     continue;
                 }
                 byte[] audio;
@@ -5324,10 +5520,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (format == null || format.isBlank()) {
             format = "mp3";
         }
-        int maxChars = ttsNode.path("maxChars").isInt() ? ttsNode.path("maxChars").asInt() : 300;
-        if (maxChars < 1) {
-            maxChars = 1;
-        }
+        int maxChars = resolveTtsMaxChars(ttsNode);
 
         int generated = 0;
         int charsGenerated = 0;
@@ -5350,6 +5543,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                     continue;
                 }
                 if (text.length() > maxChars) {
+                    appendCardError(cardErrors, card.userCardId(), mapping.targetField(), "text exceeds TTS max input length " + maxChars);
                     continue;
                 }
                 byte[] audio;
@@ -5412,63 +5606,6 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         return new TtsApplyResult(generated, updatedCards, charsGenerated, model, ttsError, updatedCardIds, cardErrors);
     }
 
-    private DraftTtsPreparationResult applyTtsToDrafts(AiJobEntity job,
-                                                       String apiKey,
-                                                       JsonNode params,
-                                                       List<CardDraft> drafts,
-                                                       CoreTemplateResponse template) {
-        JsonNode ttsNode = params.path("tts");
-        if (!ttsNode.path("enabled").asBoolean(false)) {
-            return new DraftTtsPreparationResult(0, 0, null, null, Set.of(), Map.of());
-        }
-        if (drafts == null || drafts.isEmpty()) {
-            return new DraftTtsPreparationResult(0, 0, null, null, Set.of(), Map.of());
-        }
-        int generated = 0;
-        int charsGenerated = 0;
-        String model = null;
-        String error = null;
-        Set<Integer> updatedDraftIndexes = new LinkedHashSet<>();
-        Map<Integer, List<String>> draftErrors = new LinkedHashMap<>();
-        for (int i = 0; i < drafts.size(); i++) {
-            CardDraft draft = drafts.get(i);
-            if (draft == null || draft.content() == null) {
-                continue;
-            }
-            TtsContentApplyResult result = applyTtsToContent(
-                    job,
-                    apiKey,
-                    ttsNode,
-                    draft.content(),
-                    template,
-                    null,
-                    null,
-                    "draft-" + i
-            );
-            generated += result.generated();
-            charsGenerated += result.charsGenerated();
-            if (model == null) {
-                model = result.model();
-            }
-            if (error == null && !result.errors().isEmpty()) {
-                error = result.errors().getFirst();
-            }
-            if (result.updated()) {
-                ankiSupport.applyIfPresent(draft.content(), template);
-                updatedDraftIndexes.add(i);
-            }
-            if (!result.errors().isEmpty()) {
-                draftErrors.put(i, new ArrayList<>(result.errors()));
-            }
-            executionService.updateStepProgress(
-                    job.getJobId(),
-                    STEP_GENERATE_AUDIO,
-                    (i + 1) / (double) Math.max(1, drafts.size())
-            );
-        }
-        return new DraftTtsPreparationResult(generated, charsGenerated, model, error, updatedDraftIndexes, draftErrors);
-    }
-
     private TtsContentApplyResult applyTtsToContent(AiJobEntity job,
                                                     String apiKey,
                                                     JsonNode ttsNode,
@@ -5515,10 +5652,7 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         if (format == null || format.isBlank()) {
             format = "mp3";
         }
-        int maxChars = ttsNode.path("maxChars").isInt() ? ttsNode.path("maxChars").asInt() : 300;
-        if (maxChars < 1) {
-            maxChars = 1;
-        }
+        int maxChars = resolveTtsMaxChars(ttsNode);
 
         boolean updated = false;
         int generated = 0;
@@ -5529,7 +5663,11 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 continue;
             }
             String text = sanitizeTtsText(extractTextValue(updatedContent, mapping.sourceField()));
-            if (text == null || text.isBlank() || text.length() > maxChars) {
+            if (text == null || text.isBlank()) {
+                continue;
+            }
+            if (text.length() > maxChars) {
+                errors.add(formatFieldError(mapping.targetField(), "text exceeds TTS max input length " + maxChars));
                 continue;
             }
             byte[] audio;
@@ -5934,53 +6072,6 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
             updatedCardIds.add(card.userCardId());
         }
         return new MediaApplyResult(updated, imagesGenerated, videosGenerated, updatedCardIds, cardErrors);
-    }
-
-    private DraftMediaPreparationResult prepareDraftMedia(AiJobEntity job,
-                                                          String apiKey,
-                                                          CoreTemplateResponse template,
-                                                          List<CardDraft> drafts,
-                                                          Map<String, String> fieldTypes,
-                                                          ImageConfig imageConfig,
-                                                          VideoConfig videoConfig) {
-        if (drafts == null || drafts.isEmpty()) {
-            return new DraftMediaPreparationResult(0, 0, Set.of(), Map.of());
-        }
-        int imagesGenerated = 0;
-        int videosGenerated = 0;
-        Set<Integer> updatedDraftIndexes = new LinkedHashSet<>();
-        Map<Integer, List<String>> draftErrors = new LinkedHashMap<>();
-        for (int i = 0; i < drafts.size(); i++) {
-            CardDraft draft = drafts.get(i);
-            if (draft == null || draft.content() == null) {
-                continue;
-            }
-            ContentMutationResult result = applyDraftMediaToContent(
-                    job,
-                    apiKey,
-                    draft.content(),
-                    draft.mediaPrompts(),
-                    fieldTypes,
-                    imageConfig,
-                    videoConfig,
-                    "draft-" + i
-            );
-            if (result.changed()) {
-                ankiSupport.applyIfPresent(draft.content(), template);
-                updatedDraftIndexes.add(i);
-            }
-            imagesGenerated += result.imagesGenerated();
-            videosGenerated += result.videosGenerated();
-            if (!result.errors().isEmpty()) {
-                draftErrors.put(i, new ArrayList<>(result.errors()));
-            }
-            executionService.updateStepProgress(
-                    job.getJobId(),
-                    STEP_GENERATE_MEDIA,
-                    (i + 1) / (double) Math.max(1, drafts.size())
-            );
-        }
-        return new DraftMediaPreparationResult(imagesGenerated, videosGenerated, updatedDraftIndexes, draftErrors);
     }
 
     private ContentMutationResult applyDraftMediaToContent(AiJobEntity job,
@@ -6466,6 +6557,23 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         return Math.max(retries, 0);
     }
 
+    private int resolveTtsMaxChars(JsonNode ttsNode) {
+        int requested = ttsNode != null && ttsNode.path("maxChars").isInt()
+                ? ttsNode.path("maxChars").asInt()
+                : OPENAI_TTS_MAX_INPUT_CHARS;
+        if (requested < 1) {
+            return 1;
+        }
+        return Math.min(requested, OPENAI_TTS_MAX_INPUT_CHARS);
+    }
+
+    private int resolveStandaloneTtsMaxChars(JsonNode params) {
+        if (params != null && params.path("maxChars").isInt()) {
+            return Math.max(1, Math.min(params.path("maxChars").asInt(), OPENAI_TTS_MAX_INPUT_CHARS));
+        }
+        return resolveTtsMaxChars(params == null ? null : params.path("tts"));
+    }
+
     private long resolveTtsRetryInitialDelayMs() {
         Long delay = props.ttsRetryInitialDelayMs();
         if (delay == null || delay < 0) {
@@ -6586,76 +6694,6 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
 
     private AiJobStatus resolveFinalStatus(boolean hasPartialFailures) {
         return hasPartialFailures ? AiJobStatus.partial_success : AiJobStatus.completed;
-    }
-
-    private MediaApplyResult materializeDraftMediaResult(List<CoreUserCardResponse> createdCards,
-                                                         DraftMediaPreparationResult draftResult) {
-        if (draftResult == null) {
-            return new MediaApplyResult(0, 0, 0);
-        }
-        Set<UUID> updatedCardIds = mapDraftIndexesToCardIds(createdCards, draftResult.updatedDraftIndexes());
-        return new MediaApplyResult(
-                updatedCardIds.size(),
-                draftResult.imagesGenerated(),
-                draftResult.videosGenerated(),
-                updatedCardIds,
-                mapDraftErrorsToCardIds(createdCards, draftResult.draftErrors())
-        );
-    }
-
-    private TtsApplyResult materializeDraftTtsResult(List<CoreUserCardResponse> createdCards,
-                                                     DraftTtsPreparationResult draftResult) {
-        if (draftResult == null) {
-            return new TtsApplyResult(0, 0, null, null);
-        }
-        Set<UUID> updatedCardIds = mapDraftIndexesToCardIds(createdCards, draftResult.updatedDraftIndexes());
-        return new TtsApplyResult(
-                draftResult.generated(),
-                updatedCardIds.size(),
-                draftResult.charsGenerated(),
-                draftResult.model(),
-                draftResult.error(),
-                updatedCardIds,
-                mapDraftErrorsToCardIds(createdCards, draftResult.draftErrors())
-        );
-    }
-
-    private Set<UUID> mapDraftIndexesToCardIds(List<CoreUserCardResponse> createdCards,
-                                               Set<Integer> indexes) {
-        if (createdCards == null || createdCards.isEmpty() || indexes == null || indexes.isEmpty()) {
-            return Set.of();
-        }
-        Set<UUID> cardIds = new LinkedHashSet<>();
-        for (Integer index : indexes) {
-            if (index == null || index < 0 || index >= createdCards.size()) {
-                continue;
-            }
-            CoreUserCardResponse card = createdCards.get(index);
-            if (card != null && card.userCardId() != null) {
-                cardIds.add(card.userCardId());
-            }
-        }
-        return cardIds;
-    }
-
-    private Map<UUID, List<String>> mapDraftErrorsToCardIds(List<CoreUserCardResponse> createdCards,
-                                                            Map<Integer, List<String>> draftErrors) {
-        if (createdCards == null || createdCards.isEmpty() || draftErrors == null || draftErrors.isEmpty()) {
-            return Map.of();
-        }
-        Map<UUID, List<String>> cardErrors = new LinkedHashMap<>();
-        for (Map.Entry<Integer, List<String>> entry : draftErrors.entrySet()) {
-            Integer index = entry.getKey();
-            if (index == null || index < 0 || index >= createdCards.size()) {
-                continue;
-            }
-            CoreUserCardResponse card = createdCards.get(index);
-            if (card == null || card.userCardId() == null || entry.getValue() == null || entry.getValue().isEmpty()) {
-                continue;
-            }
-            cardErrors.computeIfAbsent(card.userCardId(), ignored -> new ArrayList<>()).addAll(entry.getValue());
-        }
-        return cardErrors;
     }
 
     private TtsApplyResult mergeTtsResults(TtsApplyResult left, TtsApplyResult right) {

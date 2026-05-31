@@ -213,6 +213,7 @@ public class AiJobWorker {
         job.setLockedBy(null);
         job.setNextRunAt(null);
         job.setErrorMessage(null);
+        job.setUserAccessToken(null);
         if (result != null) {
             java.math.BigDecimal resolvedCost = costEstimator.estimateRecordedCost(job, result);
             usageLedgerService.recordUsage(
@@ -251,6 +252,9 @@ public class AiJobWorker {
         job.setStatus(nextStatus);
         job.setNextRunAt(nextRunAt);
         job.setCompletedAt(completedAt);
+        if (nextStatus == AiJobStatus.failed) {
+            job.setUserAccessToken(null);
+        }
 
         jdbcTemplate.update(
                 """
@@ -260,6 +264,7 @@ public class AiJobWorker {
                     next_run_at = ?,
                     completed_at = ?,
                     error_message = ?,
+                    user_access_token = case when cast(? as app_ai.ai_job_status) = 'failed'::app_ai.ai_job_status then null else user_access_token end,
                     locked_at = null,
                     locked_by = null,
                     updated_at = ?
@@ -271,6 +276,7 @@ public class AiJobWorker {
                 toSqlTimestamp(nextRunAt),
                 toSqlTimestamp(completedAt),
                 errorSummary,
+                nextStatus.name(),
                 toSqlTimestamp(now),
                 job.getJobId()
         );
