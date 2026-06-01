@@ -3,6 +3,7 @@ import { NgFor, NgIf, NgClass } from '@angular/common';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
 import { CardContentValue } from '../../core/models/user-card.models';
 import { MediaApiService } from '../../core/services/media-api.service';
+import { scopeAnkiCss } from '../utils/anki-css.util';
 import { markdownToHtml } from '../utils/markdown.util';
 
 interface RenderedField {
@@ -24,7 +25,7 @@ interface AnkiPayload {
     template: `
     <div class="flashcard-view">
       <ng-container *ngIf="ankiMode; else fieldView">
-        <div class="anki-card card1" (click)="handleAnkiClick($event)">
+        <div class="anki-card card card1" [ngClass]="ankiScopeClass" (click)="handleAnkiClick($event)">
           <div class="anki-html" [innerHTML]="side === 'front' ? ankiFrontHtml : ankiBackHtml"></div>
         </div>
       </ng-container>
@@ -150,6 +151,8 @@ interface AnkiPayload {
     ]
 })
 export class FlashcardViewComponent implements OnChanges, OnDestroy {
+    private static nextAnkiScopeId = 0;
+
     @Input() template!: CardTemplateDTO;
     @Input() content: Record<string, unknown> = {};
     @Input() side: 'front' | 'back' = 'front';
@@ -163,6 +166,7 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
     ankiFrontHtml = '';
     ankiBackHtml = '';
     ankiCss = '';
+    readonly ankiScopeClass = `mn-anki-scope-${++FlashcardViewComponent.nextAnkiScopeId}`;
     private resolvedUrls: Record<string, string> = {};
     private ankiStyleElement: HTMLStyleElement | null = null;
     private autoPlayDelayHandle: ReturnType<typeof setTimeout> | null = null;
@@ -455,22 +459,23 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
         if (!css) {
             return '';
         }
+        const scopeSelector = `.anki-card.${this.ankiScopeClass}`;
         const fixes: string[] = [
-            '.anki-card { width: 100% !important; max-width: 100% !important; overflow-x: clip; }',
-            '.anki-card .anki-html { width: 100% !important; max-width: 100% !important; overflow-wrap: anywhere; word-break: break-word; }',
-            '.anki-card img, .anki-card video, .anki-card iframe, .anki-card object, .anki-card embed { max-width: 100% !important; height: auto !important; }',
-            '.anki-card audio { max-width: 100% !important; }',
-            '.anki-card table { display: block; width: 100% !important; max-width: 100% !important; overflow-x: auto; }'
+            `${scopeSelector} { width: 100% !important; max-width: 100% !important; overflow-x: clip; }`,
+            `${scopeSelector} .anki-html { width: 100% !important; max-width: 100% !important; overflow-wrap: anywhere; word-break: break-word; }`,
+            `${scopeSelector} img, ${scopeSelector} video, ${scopeSelector} iframe, ${scopeSelector} object, ${scopeSelector} embed { max-width: 100% !important; height: auto !important; }`,
+            `${scopeSelector} audio { max-width: 100% !important; }`,
+            `${scopeSelector} table { display: block; width: 100% !important; max-width: 100% !important; overflow-x: auto; }`
         ];
         if (css.includes('wrapped-japanese')) {
-            fixes.push('.anki-card .wrapped-japanese { visibility: visible !important; }');
+            fixes.push(`${scopeSelector} .wrapped-japanese { visibility: visible !important; }`);
         }
         if (css.includes('migaku-card')) {
-            fixes.push('.anki-card .migaku-card { width: 100% !important; max-width: 100% !important; margin-left: auto !important; margin-right: auto !important; }');
-            fixes.push('.anki-card .migaku-card-image img { width: 100% !important; max-width: 100% !important; }');
-            fixes.push('.anki-card .migaku-card-content { width: 100% !important; max-width: 100% !important; overflow-wrap: anywhere; }');
+            fixes.push(`${scopeSelector} .migaku-card { width: 100% !important; max-width: 100% !important; margin-left: auto !important; margin-right: auto !important; }`);
+            fixes.push(`${scopeSelector} .migaku-card-image img { width: 100% !important; max-width: 100% !important; }`);
+            fixes.push(`${scopeSelector} .migaku-card-content { width: 100% !important; max-width: 100% !important; overflow-wrap: anywhere; }`);
         }
-        return `${css}\n\n/* Mnema compatibility fixes */\n${fixes.join('\n')}\n`;
+        return `${scopeAnkiCss(css, scopeSelector)}\n\n/* Mnema compatibility fixes */\n${fixes.join('\n')}\n`;
     }
 
     handleAnkiClick(event: Event): void {
