@@ -1264,9 +1264,6 @@ export class AiAddCardsModalComponent implements OnInit {
             return null;
         }
         const model = this.resolveTtsModel();
-        if (!model && this.selectedProvider() !== 'ollama') {
-            return null;
-        }
         const mappings = this.ttsMappings()
             .filter(mapping => mapping.sourceField && mapping.targetField);
         if (mappings.length === 0) {

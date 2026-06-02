@@ -2813,14 +2813,16 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
                 imageConfig,
                 videoConfig
         ));
-        TtsApplyResult ttsResult = runStep(job, params, STEP_GENERATE_AUDIO, () -> applyGeneratedCardTts(
-                job,
-                apiKey,
-                params,
-                context,
-                mutations,
-                accessToken
-        ));
+        TtsApplyResult ttsResult = params.path("tts").path("enabled").asBoolean(false)
+                ? runStep(job, params, STEP_GENERATE_AUDIO, () -> applyGeneratedCardTts(
+                        job,
+                        apiKey,
+                        params,
+                        context,
+                        mutations,
+                        accessToken
+                ))
+                : new TtsApplyResult(0, 0, 0, null, null);
         return new AtomicApplyResult(mediaResult, ttsResult);
     }
 

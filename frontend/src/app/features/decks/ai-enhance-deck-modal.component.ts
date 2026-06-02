@@ -93,35 +93,6 @@ type FieldLimitMap = Record<string, number>;
               {{ missingError() }}
             </div>
             <div *ngIf="!missingLoading() && !missingError()" class="missing-list">
-              <div class="media-toggles">
-                <label class="toggle">
-                  <input
-                    type="checkbox"
-                    [checked]="ttsEnabled()"
-                    (change)="onTtsEnabledChange($any($event.target).checked)"
-                    [disabled]="!ttsSupported() || !hasAudioFields()"
-                  />
-                  <span>Generate audio</span>
-                </label>
-                <label class="toggle">
-                  <input
-                    type="checkbox"
-                    [checked]="imageEnabled()"
-                    (change)="onImageEnabledChange($any($event.target).checked)"
-                    [disabled]="!imageSupported() || !hasImageFields()"
-                  />
-                  <span>Generate images</span>
-                </label>
-                <label class="toggle">
-                  <input
-                    type="checkbox"
-                    [checked]="videoEnabled()"
-                    (change)="onVideoEnabledChange($any($event.target).checked)"
-                    [disabled]="!videoSupported() || !hasVideoFields()"
-                  />
-                  <span>Generate video / GIF</span>
-                </label>
-              </div>
               <div *ngIf="hasAudioFields() && !ttsSupported()" class="field-hint">TTS is supported for OpenAI, Gemini, and Qwen providers.</div>
               <div *ngIf="hasImageFields() && !imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, Grok, and Ollama providers.</div>
               <div *ngIf="hasVideoFields() && !videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, Grok, and Ollama providers.</div>
@@ -158,7 +129,7 @@ type FieldLimitMap = Record<string, number>;
             </div>
           </div>
 
-          <div *ngIf="hasMissingFields() && ttsEnabled() && hasAudioFields()" class="tts-section">
+          <div *ngIf="hasMissingFields() && selectedAudioFields().length > 0" class="tts-section">
             <label class="grid-label">Audio generation</label>
             <div *ngIf="!ttsSupported()" class="field-hint">TTS is supported for OpenAI, Gemini, and Qwen providers.</div>
             <div *ngIf="ttsSupported()" class="tts-panel">
@@ -256,7 +227,7 @@ type FieldLimitMap = Record<string, number>;
             </div>
           </div>
 
-          <div *ngIf="hasMissingFields() && imageEnabled() && hasImageFields()" class="tts-section">
+          <div *ngIf="hasMissingFields() && selectedImageFields().length > 0" class="tts-section">
             <label class="grid-label">Image generation</label>
             <div *ngIf="!imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, Grok, and Ollama providers.</div>
             <div *ngIf="imageSupported()" class="tts-panel">
@@ -308,7 +279,7 @@ type FieldLimitMap = Record<string, number>;
             </div>
           </div>
 
-          <div *ngIf="hasMissingFields() && videoEnabled() && hasVideoFields()" class="tts-section">
+          <div *ngIf="hasMissingFields() && selectedVideoFields().length > 0" class="tts-section">
             <label class="grid-label">Video generation</label>
             <div *ngIf="!videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, Grok, and Ollama providers.</div>
             <div *ngIf="videoSupported()" class="tts-panel">
@@ -436,10 +407,10 @@ type FieldLimitMap = Record<string, number>;
           </p>
           <div class="scope-buttons">
             <app-button variant="secondary" (click)="confirmScopeAndStart('local')" [disabled]="creating()">
-              {{ 'deckEnhance.scopeLocal' | translate }}
+              {{ scopeButtonLabel('local') | translate }}
             </app-button>
             <app-button variant="primary" (click)="confirmScopeAndStart('global')" [disabled]="creating()">
-              {{ 'deckEnhance.scopeGlobal' | translate }}
+              {{ scopeButtonLabel('global') | translate }}
             </app-button>
           </div>
         </div>
@@ -484,8 +455,6 @@ type FieldLimitMap = Record<string, number>;
       .missing-tail { display: grid; gap: 0.25rem; justify-items: end; }
       .missing-count { font-size: 0.85rem; color: var(--color-text-secondary); }
       .missing-limit-input { width: 88px; padding: 0.35rem 0.4rem; border-radius: var(--border-radius-md); border: 1px solid var(--border-color); background: var(--color-background); color: var(--color-text-primary); }
-      .media-toggles { display: flex; flex-wrap: wrap; gap: var(--spacing-md); align-items: center; }
-      .toggle { display: inline-flex; gap: var(--spacing-xs); align-items: center; font-weight: 500; }
       .tts-section { margin-bottom: var(--spacing-lg); }
       .tts-panel { margin-top: var(--spacing-md); padding: var(--spacing-md); border-radius: var(--border-radius-md); border: 1px solid var(--border-color); background: var(--color-background); }
       .tts-mapping { margin-top: var(--spacing-md); }
@@ -642,6 +611,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     createSuccess = signal('');
     preflightError = signal('');
     preflight = signal<AiJobPreflightResponse | null>(null);
+    preflightScope = signal<'local' | 'global' | null>(null);
     selectedScope = signal<'local' | 'global'>('local');
     pendingRequestId = signal(this.generateRequestId());
     private lastPreflightSignature = signal('');
@@ -834,6 +804,9 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     readonly hasAudioFields = computed(() => this.audioFields().length > 0);
     readonly hasImageFields = computed(() => this.imageFields().length > 0);
     readonly hasVideoFields = computed(() => this.videoFields().length > 0);
+    readonly selectedAudioFields = computed(() => this.audioFields().filter(field => this.selectedMissingFields().has(field.name)));
+    readonly selectedImageFields = computed(() => this.imageFields().filter(field => this.selectedMissingFields().has(field.name)));
+    readonly selectedVideoFields = computed(() => this.videoFields().filter(field => this.selectedMissingFields().has(field.name)));
     readonly ttsTargetFields = computed(() => {
         const selected = this.selectedMissingFields();
         const audioFields = this.audioFields();
@@ -864,6 +837,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                 return;
             }
             this.preflight.set(null);
+            this.preflightScope.set(null);
             this.preflightError.set('');
             this.pendingRequestId.set(this.generateRequestId());
         }, { injector: this.injector });
@@ -1015,6 +989,10 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             this.runPreflight(scope);
             return;
         }
+        if (this.preflightScope() !== scope) {
+            this.runPreflight(scope);
+            return;
+        }
         this.creating.set(true);
         this.createError.set('');
         this.createSuccess.set('');
@@ -1047,6 +1025,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             next: job => {
                 this.creating.set(false);
                 this.preflight.set(null);
+                this.preflightScope.set(null);
                 this.preflightError.set('');
                 this.lastPreflightSignature.set('');
                 this.pendingRequestId.set(this.generateRequestId());
@@ -1071,6 +1050,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             next: preflight => {
                 this.preflighting.set(false);
                 this.preflight.set(preflight);
+                this.preflightScope.set(scope);
                 this.lastPreflightSignature.set(this.preflightSignature());
                 this.pendingRequestId.set(request.requestId);
             },
@@ -1086,9 +1066,9 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         const actions = Array.from(selected).filter(action => action === 'audit' || action === 'missing_fields');
         const input = this.buildPrompt(actions);
         const missingSelected = actions.includes('missing_fields');
-        const tts = this.ttsEnabled() ? this.buildTtsParams() : null;
-        const image = this.imageEnabled() ? this.buildImageParams() : null;
-        const video = this.videoEnabled() ? this.buildVideoParams() : null;
+        const tts = this.buildTtsParams();
+        const image = this.buildImageParams();
+        const video = this.buildVideoParams();
         const fieldLimits = missingSelected ? this.buildFieldLimitsPayload() : [];
         return {
             requestId: this.pendingRequestId(),
@@ -1153,6 +1133,13 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
     trackMissingField(_: number, row: MissingFieldRow): string {
         return row.field;
+    }
+
+    scopeButtonLabel(scope: 'local' | 'global'): string {
+        if (this.preflight() && this.preflightScope() === scope) {
+            return scope === 'global' ? 'deckEnhance.scopeGlobal' : 'deckEnhance.scopeLocal';
+        }
+        return scope === 'global' ? 'deckEnhance.scopeGlobalAnalyze' : 'deckEnhance.scopeLocalAnalyze';
     }
 
     toggleMissingField(field: string): void {
@@ -1399,7 +1386,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     }
 
     private buildImageParams(): Record<string, unknown> | null {
-        if (!this.imageSupported() || !this.imageEnabled()) {
+        if (!this.imageSupported() || this.selectedImageFields().length === 0) {
             return null;
         }
         const selectedModel = this.imageModel() === 'custom'
@@ -1414,7 +1401,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     }
 
     private buildVideoParams(): Record<string, unknown> | null {
-        if (!this.videoSupported() || !this.videoEnabled()) {
+        if (!this.videoSupported() || this.selectedVideoFields().length === 0) {
             return null;
         }
         const selectedModel = this.videoModel() === 'custom'
@@ -1438,14 +1425,14 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         const imageSelected = this.imageFields().some(field => selected.has(field.name));
         const videoSelected = this.videoFields().some(field => selected.has(field.name));
         if (audioSelected) {
-            if (!this.ttsEnabled() || !this.ttsSupported()) {
+            if (!this.ttsSupported()) {
                 return false;
             }
         }
-        if (imageSelected && (!this.imageEnabled() || !this.imageSupported())) {
+        if (imageSelected && !this.imageSupported()) {
             return false;
         }
-        if (videoSelected && (!this.videoEnabled() || !this.videoSupported())) {
+        if (videoSelected && !this.videoSupported()) {
             return false;
         }
         return this.buildFieldLimitsPayload().length > 0;
@@ -1458,13 +1445,13 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             return true;
         }
         if (field.fieldType === 'audio') {
-            return this.ttsEnabled() && this.ttsSupported();
+            return this.ttsSupported();
         }
         if (field.fieldType === 'image') {
-            return this.imageEnabled() && this.imageSupported();
+            return this.imageSupported();
         }
         if (field.fieldType === 'video') {
-            return this.videoEnabled() && this.videoSupported();
+            return this.videoSupported();
         }
         return true;
     }
@@ -1747,16 +1734,10 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     }
 
     private buildTtsParams(): Record<string, unknown> | null {
-        if (!this.ttsEnabled()) {
-            return null;
-        }
-        if (!this.hasAudioFields() || !this.ttsSupported()) {
+        if (this.selectedAudioFields().length === 0 || !this.ttsSupported()) {
             return null;
         }
         const model = this.resolveTtsModel();
-        if (!model && this.selectedProvider() !== 'ollama') {
-            return null;
-        }
         const targets = new Set(this.ttsTargetFields().map(field => field.name));
         if (targets.size === 0) {
             return null;

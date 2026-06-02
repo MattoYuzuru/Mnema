@@ -976,7 +976,9 @@ public class GeminiJobProcessor implements AiProviderProcessor {
                 .toList();
         ImageConfig imageConfig = resolveImageConfig(params, true);
         MediaApplyResult mediaResult = runStep(job, STEP_GENERATE_MEDIA, () -> prepareDraftMedia(job, apiKey, context.template(), limitedDrafts, context.fieldTypes(), imageConfig));
-        TtsApplyResult ttsResult = runStep(job, STEP_GENERATE_AUDIO, () -> applyTtsToDrafts(job, apiKey, params, limitedDrafts, context.template()));
+        TtsApplyResult ttsResult = params.path("tts").path("enabled").asBoolean(false)
+                ? runStep(job, STEP_GENERATE_AUDIO, () -> applyTtsToDrafts(job, apiKey, params, limitedDrafts, context.template()))
+                : new TtsApplyResult(0, 0, 0, null, null);
         List<CreateCardRequestPayload> limitedRequests = limitedDrafts.stream()
                 .map(draft -> new CreateCardRequestPayload(draft.content(), null, null, null, null, null))
                 .toList();
