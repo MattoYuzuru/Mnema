@@ -1650,7 +1650,14 @@ public class QwenJobProcessor implements AiProviderProcessor {
         }
 
         if (uniqueDrafts.size() < context.count()) {
-            throw new IllegalStateException("Failed to generate enough unique cards. Try a more specific prompt.");
+            throw new IllegalStateException(CardNoveltyService.insufficientUniqueCardsMessage(
+                    uniqueDrafts.size(),
+                    context.count(),
+                    droppedEmpty,
+                    droppedExact,
+                    droppedPrimary,
+                    droppedSemantic
+            ));
         }
 
         List<CardDraft> limitedDrafts = uniqueDrafts.stream()

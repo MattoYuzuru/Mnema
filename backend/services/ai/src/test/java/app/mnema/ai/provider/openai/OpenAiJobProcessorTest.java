@@ -288,7 +288,7 @@ class OpenAiJobProcessorTest {
         raw.putObject("usage").put("input_tokens", 12).put("output_tokens", 6);
         when(openAiClient.createResponse(any(), any())).thenReturn(new OpenAiResponseResult(
                 "{\"cards\":[{\"fields\":{\"front\":\"Q\",\"image\":\"clean diagram\",\"audio\":\"\"}}]}",
-                "gpt-4.1-mini",
+                "gpt-5-mini",
                 12,
                 6,
                 raw
@@ -545,7 +545,7 @@ class OpenAiJobProcessorTest {
                 new OpenAiProps(
                         "https://api.openai.com/v1",
                         "system-key",
-                        "gpt-4.1-mini",
+                        "gpt-5-mini",
                         "gpt-4o-mini-tts",
                         "alloy",
                         "mp3",
@@ -1676,7 +1676,7 @@ class OpenAiJobProcessorTest {
                 new OpenAiProps(
                         "https://api.openai.com/v1",
                         "",
-                        "gpt-4.1-mini",
+                        "gpt-5-mini",
                         "gpt-4o-mini-tts",
                         "alloy",
                         "mp3",

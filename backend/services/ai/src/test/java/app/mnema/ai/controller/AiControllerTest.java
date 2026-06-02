@@ -67,7 +67,7 @@ class AiControllerTest {
                 null,
                 "openai",
                 null,
-                "gpt-4.1-mini",
+                "gpt-5-mini",
                 "generate_cards",
                 objectMapper.createObjectNode().put("mode", "generate_cards"),
                 "Create 10 new cards.",

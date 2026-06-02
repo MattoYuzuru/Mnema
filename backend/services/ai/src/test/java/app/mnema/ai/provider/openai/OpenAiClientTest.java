@@ -90,7 +90,7 @@ class OpenAiClientTest {
         return new OpenAiProps(
                 baseUrl,
                 "",
-                "gpt-4.1-mini",
+                "gpt-5-mini",
                 "gpt-4o-mini-tts",
                 "alloy",
                 "mp3",

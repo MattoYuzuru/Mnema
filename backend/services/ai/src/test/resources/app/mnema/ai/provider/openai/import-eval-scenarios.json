@@ -17,7 +17,7 @@
   {
     "name": "legal-docx-remote",
     "provider": "openai",
-    "model": "gpt-4.1-mini",
+    "model": "gpt-5-mini",
     "mimeType": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     "extraction": "docx",
     "sourceKind": "extract_text",
@@ -32,7 +32,7 @@
   {
     "name": "legal-pdf-remote",
     "provider": "openai",
-    "model": "gpt-4.1-mini",
+    "model": "gpt-5-mini",
     "mimeType": "application/pdf",
     "extraction": "pdf",
     "sourceKind": "extract_text",

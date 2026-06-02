@@ -111,7 +111,7 @@ class AiJobWorkerTest {
         assertThat(job.getStatus()).isEqualTo(AiJobStatus.queued);
         assertThat(job.getAttempts()).isEqualTo(1);
         assertThat(job.getNextRunAt()).isNotNull();
-        assertThat(job.getErrorMessage()).isEqualTo("IllegalStateException");
+        assertThat(job.getErrorMessage()).isEqualTo("boom");
 
         worker.markFailed(job, new IllegalArgumentException("still boom"));
         assertThat(job.getStatus()).isEqualTo(AiJobStatus.failed);
@@ -120,11 +120,22 @@ class AiJobWorkerTest {
         assertThat(job.getNextRunAt()).isNull();
         assertThat(job.getUserAccessToken()).isNull();
         ArgumentCaptor<String> sqlCaptor = ArgumentCaptor.forClass(String.class);
-        verify(jdbcTemplate).update(any(String.class), eq(1), eq("queued"), any(Timestamp.class), isNull(), eq("IllegalStateException"), eq("queued"), any(Timestamp.class), eq(job.getJobId()));
-        verify(jdbcTemplate).update(any(String.class), eq(2), eq("failed"), isNull(), any(Timestamp.class), eq("IllegalArgumentException"), eq("failed"), any(Timestamp.class), eq(job.getJobId()));
+        verify(jdbcTemplate).update(any(String.class), eq(1), eq("queued"), any(Timestamp.class), isNull(), eq("boom"), eq("queued"), any(Timestamp.class), eq(job.getJobId()));
+        verify(jdbcTemplate).update(any(String.class), eq(2), eq("failed"), isNull(), any(Timestamp.class), eq("still boom"), eq("failed"), any(Timestamp.class), eq(job.getJobId()));
         verify(jdbcTemplate, times(2)).update(sqlCaptor.capture(), any(), any(), any(), any(), any(), any(), any(), any());
         assertThat(sqlCaptor.getAllValues())
                 .allSatisfy(sql -> assertThat(sql).contains("status = cast(? as app_ai.ai_job_status)"));
+    }
+
+    @Test
+    void markFailedFallsBackToExceptionTypeWhenMessageIsMissing() {
+        AiJobWorker worker = new AiJobWorker(jdbcTemplate, jobRepository, jobProcessor, usageLedgerService, costEstimator, cancellationRegistry, "worker-1", 300, 2, 1000, 8000, 1);
+        AiJobEntity job = queuedJob(UUID.randomUUID());
+
+        worker.markFailed(job, new IllegalStateException());
+
+        assertThat(job.getErrorMessage()).isEqualTo("IllegalStateException");
+        verify(jdbcTemplate).update(any(String.class), eq(1), eq("queued"), any(Timestamp.class), isNull(), eq("IllegalStateException"), eq("queued"), any(Timestamp.class), eq(job.getJobId()));
     }
 
     @Test

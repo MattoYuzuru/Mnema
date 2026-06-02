@@ -188,11 +188,11 @@ class GeminiJobProcessorTest {
                 mock(GeminiClient.class),
                 new GeminiProps(
                         "https://generativelanguage.googleapis.com",
-                        "gemini-2.0-flash",
+                        "gemini-2.5-flash",
                         "gemini-2.5-flash-preview-tts",
                         "Kore",
                         "audio/wav",
-                        "gemini-2.0-flash",
+                        "gemini-2.5-flash",
                         "gemini-2.5-flash-image",
                         10,
                         5,

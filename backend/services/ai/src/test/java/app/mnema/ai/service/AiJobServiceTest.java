@@ -259,7 +259,7 @@ class AiJobServiceTest extends PostgresIntegrationTest {
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 AiJobType.generic,
-                objectMapper.createObjectNode().put("mode", "generate_cards").put("provider", "openai").put("model", "gpt-4.1-mini"),
+                objectMapper.createObjectNode().put("mode", "generate_cards").put("provider", "openai").put("model", "gpt-5-mini"),
                 null,
                 10,
                 null
@@ -458,7 +458,7 @@ class AiJobServiceTest extends PostgresIntegrationTest {
         params.put("mode", " generate_cards ");
         params.put("providerCredentialId", credentialId.toString());
         params.put("provider", " openai ");
-        params.put("model", " gpt-4.1-mini ");
+        params.put("model", " gpt-5-mini ");
         params.put("input", "  Generate fruits  ");
         params.put("count", 4);
         ArrayNode fields = params.putArray("fields");
@@ -483,7 +483,7 @@ class AiJobServiceTest extends PostgresIntegrationTest {
         assertThat(preflight.providerCredentialId()).isEqualTo(credentialId);
         assertThat(preflight.providerAlias()).isEqualTo("Primary");
         assertThat(preflight.provider()).isEqualTo("openai");
-        assertThat(preflight.model()).isEqualTo("gpt-4.1-mini");
+        assertThat(preflight.model()).isEqualTo("gpt-5-mini");
         assertThat(preflight.mode()).isEqualTo("generate_cards");
         assertThat(preflight.normalizedParams().path("input").asText()).isEqualTo("Generate fruits");
         assertThat(preflight.normalizedParams().path("fields")).extracting(JsonNode::asText).containsExactly("Front", "Back", "Front");

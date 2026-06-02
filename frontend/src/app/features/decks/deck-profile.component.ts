@@ -248,6 +248,7 @@ import { ToastService } from '../../core/services/toast.service';
 
             <div *ngIf="entry.job.status === 'failed'" class="ai-job-error" role="alert">
               {{ 'deckProfile.aiJobsFailed' | translate }}
+              <span *ngIf="entry.job.errorMessage"> {{ entry.job.errorMessage }}</span>
             </div>
 
             <div class="ai-job-result">
@@ -487,8 +488,14 @@ import { ToastService } from '../../core/services/toast.service';
                       <div class="ai-job-items-title">Execution steps</div>
                     </div>
                     <div class="ai-job-stage-list">
-                      <span *ngFor="let step of entry.resultSteps" class="ai-job-stage-chip">
+                      <span
+                        *ngFor="let step of entry.resultSteps"
+                        class="ai-job-stage-chip"
+                        [class.failed]="step.status === 'failed'"
+                        [attr.title]="step.errorSummary || null"
+                      >
                         {{ formatAiStepName(step.stepName) }} · {{ formatAiJobStatus(step.status) }}
+                        <span *ngIf="step.errorSummary"> · {{ step.errorSummary }}</span>
                       </span>
                     </div>
                   </div>
@@ -1112,6 +1119,14 @@ import { ToastService } from '../../core/services/toast.service';
         background: color-mix(in srgb, var(--glass-surface) 76%, var(--color-card-background));
         color: var(--color-text-secondary);
         font-size: 0.78rem;
+      }
+
+      .ai-job-stage-chip.failed {
+        border-color: color-mix(in srgb, var(--color-error) 42%, var(--glass-border-strong));
+        background: color-mix(in srgb, var(--color-error) 10%, var(--glass-surface));
+        color: var(--color-error);
+        white-space: normal;
+        line-height: 1.35;
       }
 
       .ai-job-eta-pill {

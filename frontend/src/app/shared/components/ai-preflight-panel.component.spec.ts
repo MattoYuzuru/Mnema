@@ -24,7 +24,7 @@ describe('AiPreflightPanelComponent', () => {
             type: 'generic',
             provider: 'openai',
             providerAlias: 'Primary',
-            model: 'gpt-4.1-mini'
-        })).toBe('Primary · gpt-4.1-mini');
+            model: 'gpt-5-mini'
+        })).toBe('Primary · gpt-5-mini');
     });
 });

@@ -239,7 +239,7 @@ public class AiJobWorker {
         }
         Instant now = Instant.now();
         int attempts = job.getAttempts() == null ? 1 : job.getAttempts() + 1;
-        String errorSummary = ex == null ? "Job failed" : ex.getClass().getSimpleName();
+        String errorSummary = safeMessage(ex);
         AiJobStatus nextStatus = attempts < maxAttempts ? AiJobStatus.queued : AiJobStatus.failed;
         Instant nextRunAt = nextStatus == AiJobStatus.queued ? now.plusMillis(computeBackoff(attempts)) : null;
         Instant completedAt = nextStatus == AiJobStatus.failed ? now : null;
@@ -318,13 +318,16 @@ public class AiJobWorker {
 
     private String safeMessage(Exception ex) {
         if (ex == null) {
-            return "";
+            return "Job failed";
         }
         String message = ex.getMessage();
         if (message == null) {
-            return "";
+            return ex.getClass().getSimpleName();
         }
         String trimmed = message.replaceAll("[\\r\\n]+", " ").trim();
+        if (trimmed.isEmpty()) {
+            return ex.getClass().getSimpleName();
+        }
         int max = 200;
         return trimmed.length() <= max ? trimmed : trimmed.substring(0, max) + "...";
     }

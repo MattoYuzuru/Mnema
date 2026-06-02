@@ -271,7 +271,14 @@ public class ClaudeJobProcessor implements AiProviderProcessor {
             }
 
             if (uniqueRequests.size() < context.count()) {
-                throw new IllegalStateException("Failed to generate enough unique cards. Try a more specific prompt.");
+                throw new IllegalStateException(CardNoveltyService.insufficientUniqueCardsMessage(
+                        uniqueRequests.size(),
+                        context.count(),
+                        droppedEmpty,
+                        droppedExact,
+                        droppedPrimary,
+                        droppedSemantic
+                ));
             }
 
             return new GeneratedCards(

@@ -18,6 +18,19 @@ import { AiPreflightPanelComponent } from '../../shared/components/ai-preflight-
 import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
+import {
+    AI_CUSTOM_MODEL_OPTION,
+    AI_DEFAULT_MODEL_OPTION,
+    AiModelKind,
+    AiModelOption,
+    defaultModel,
+    isCustomModelChoice,
+    modelHelpText,
+    modelOptions,
+    modelSelectOptions,
+    normalizeAiProvider,
+    resolveModelChoice
+} from '../../shared/utils/ai-model-catalog';
 
 type ImportSourceKind = 'text' | 'pdf' | 'docx' | 'image' | 'audio' | 'unknown';
 
@@ -137,13 +150,24 @@ interface EncodingOption {
               </div>
               <div class="form-field">
                 <label for="ai-import-model">{{ 'aiImport.modelLabel' | translate }}</label>
-                <input
+                <select
                   id="ai-import-model"
+                  class="glass-select"
+                  [ngModel]="modelChoice('text', modelName())"
+                  (ngModelChange)="onModelChoiceChange('text', $event)"
+                >
+                  <option *ngFor="let model of textModelOptions()" [ngValue]="model.value">
+                    {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
+                  </option>
+                </select>
+                <input
+                  *ngIf="isCustomModel('text', modelName())"
                   type="text"
                   [ngModel]="modelName()"
                   (ngModelChange)="onModelChange($event)"
                   [placeholder]="modelPlaceholder()"
                 />
+                <p class="field-hint">{{ modelHint('text', modelName()) }}</p>
               </div>
             </div>
           </section>
@@ -207,13 +231,24 @@ interface EncodingOption {
               <div class="form-grid">
                 <div class="form-field">
                   <label for="ai-stt-model">{{ 'aiImport.sttModelLabel' | translate }}</label>
-                  <input
+                  <select
                     id="ai-stt-model"
+                    class="glass-select"
+                    [ngModel]="modelChoice('stt', sttModel())"
+                    (ngModelChange)="onModelChoiceChange('stt', $event)"
+                  >
+                    <option *ngFor="let model of sttModelOptions()" [ngValue]="model.value">
+                      {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
+                    </option>
+                  </select>
+                  <input
+                    *ngIf="isCustomModel('stt', sttModel())"
                     type="text"
                     [ngModel]="sttModel()"
                     (ngModelChange)="onSttModelChange($event)"
                     [placeholder]="sttModelPlaceholder()"
                   />
+                  <p class="field-hint">{{ modelHint('stt', sttModel()) }}</p>
                 </div>
               </div>
             </div>
@@ -308,17 +343,24 @@ interface EncodingOption {
                 <div class="form-grid">
                   <div class="form-field">
                     <label for="ai-tts-model">{{ 'aiImport.ttsModelLabel' | translate }}</label>
-                    <input
+                    <select
                       id="ai-tts-model"
+                      class="glass-select"
+                      [ngModel]="modelChoice('tts', ttsModel())"
+                      (ngModelChange)="onModelChoiceChange('tts', $event)"
+                    >
+                      <option *ngFor="let model of ttsModelOptions()" [ngValue]="model.value">
+                        {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
+                      </option>
+                    </select>
+                    <input
+                      *ngIf="isCustomModel('tts', ttsModel())"
                       type="text"
                       [ngModel]="ttsModel()"
                       (ngModelChange)="onTtsModelChange($event)"
-                      [attr.list]="ttsModelOptions().length ? 'ai-import-tts-model-options' : null"
                       [placeholder]="ttsModelPlaceholder()"
                     />
-                    <datalist id="ai-import-tts-model-options">
-                      <option *ngFor="let model of ttsModelOptions()" [value]="model"></option>
-                    </datalist>
+                    <p class="field-hint">{{ modelHint('tts', ttsModel()) }}</p>
                   </div>
                   <div class="form-field">
                   <label for="ai-tts-voice">{{ 'aiImport.ttsVoiceLabel' | translate }}</label>
@@ -943,28 +985,31 @@ export class AiImportModalComponent implements OnInit {
 
     encoding = signal('auto');
     modelName = signal('');
+    modelCustom = signal(false);
     notes = signal('');
 
     ttsEnabled = signal(false);
     ttsModel = signal('');
+    ttsModelCustom = signal(false);
     ttsVoicePreset = signal('alloy');
     ttsVoiceCustom = signal('');
     ttsFormat = signal('mp3');
     ttsMaxChars = signal(4096);
     ttsMappings = signal<TtsMapping[]>([]);
 
-    imageModel = signal('gpt-image-1');
+    imageModel = signal('');
     imageModelCustom = signal('');
     imageSize = signal('1024x1024');
     imageFormat = signal('png');
 
-    videoModel = signal('gpt-video-mini');
+    videoModel = signal('');
     videoModelCustom = signal('');
     videoDurationSeconds = signal(4);
     videoResolution = signal('720p');
     videoFormat = signal('mp4');
 
     sttModel = signal('');
+    sttModelCustom = signal(false);
     recording = signal(false);
     recordingSeconds = signal(0);
     recordingError = signal('');
@@ -984,8 +1029,8 @@ export class AiImportModalComponent implements OnInit {
     readonly formatOptions = ['mp3', 'ogg', 'wav'];
     readonly ttsFormatOptions = computed(() => ['gemini', 'qwen'].includes(this.selectedProvider()) ? ['wav'] : this.formatOptions);
     readonly ttsSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'tts', ['openai', 'gemini', 'qwen']));
-    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'ollama']));
-    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'ollama']));
+    readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'grok', 'ollama']));
+    readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'grok', 'ollama']));
     readonly hasAudioFields = computed(() => this.audioFields().length > 0);
     readonly selectedProvider = computed(() => {
         const selectedId = this.selectedCredentialId();
@@ -994,9 +1039,11 @@ export class AiImportModalComponent implements OnInit {
         return this.normalizeProvider(provider);
     });
     readonly importSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'text', ['openai', 'gemini', 'qwen', 'ollama']));
+    readonly textModelOptions = computed(() => this.resolveModelSelectOptions('text'));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
-    readonly ttsModelOptions = computed(() => this.runtimeTtsModelOptions());
+    readonly ttsModelOptions = computed(() => this.resolveModelSelectOptions('tts'));
     readonly sttModelPlaceholder = computed(() => this.resolveSttModelPlaceholder(this.selectedProvider()));
+    readonly sttModelOptions = computed(() => this.resolveModelSelectOptions('stt'));
     readonly preflightSignature = computed(() => JSON.stringify(this.buildCreateJobRequest().params ?? {}));
     readonly submitLabel = computed(() => {
         if (this.creating()) {
@@ -1813,9 +1860,6 @@ export class AiImportModalComponent implements OnInit {
             return null;
         }
         const model = this.resolveTtsModel();
-        if (!model && this.selectedProvider() !== 'ollama') {
-            return null;
-        }
         const mappings = this.ttsMappings()
             .filter(mapping => !!mapping.sourceField && !!mapping.targetField);
         if (mappings.length === 0) {
@@ -1906,11 +1950,11 @@ export class AiImportModalComponent implements OnInit {
     private ensureDefaultMediaModels(): void {
         if (!this.imageModel() || this.imageModel() === 'custom') {
             const options = this.imageModelOptions();
-            this.imageModel.set(options[0] || 'gpt-image-1');
+            this.imageModel.set(options[0] || 'custom');
         }
         if (!this.videoModel() || this.videoModel() === 'custom') {
             const options = this.videoModelOptions();
-            this.videoModel.set(options[0] || 'gpt-video-mini');
+            this.videoModel.set(options[0] || 'custom');
         }
         const allowedFormats = this.ttsFormatOptions();
         if (!allowedFormats.includes(this.ttsFormat())) {
@@ -1955,16 +1999,79 @@ export class AiImportModalComponent implements OnInit {
         return unique.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     }
 
-    private runtimeTtsModelOptions(): string[] {
-        if (this.selectedProvider() !== 'ollama') {
-            return [];
+    private resolveModelSelectOptions(kind: AiModelKind): AiModelOption[] {
+        return modelSelectOptions(this.selectedProvider(), kind, this.runtimeCapabilities());
+    }
+
+    modelChoice(kind: AiModelKind, value: string): string {
+        if (this.isCustomMode(kind)) {
+            return AI_CUSTOM_MODEL_OPTION;
         }
-        const runtime = this.runtimeCapabilities()?.ollama?.models || [];
-        const models = runtime
-            .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('tts'))
-            .map(model => model.name)
-            .filter(name => !!name && name.trim().length > 0);
-        return Array.from(new Set(models)).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        return resolveModelChoice(value, this.resolveModelSelectOptions(kind));
+    }
+
+    isCustomModel(kind: AiModelKind, value: string): boolean {
+        return this.isCustomMode(kind) || isCustomModelChoice(value, this.resolveModelSelectOptions(kind));
+    }
+
+    modelHint(kind: AiModelKind, value: string): string {
+        return modelHelpText(this.selectedProvider(), kind, value, this.runtimeCapabilities());
+    }
+
+    onModelChoiceChange(kind: AiModelKind, value: string): void {
+        if (value === AI_DEFAULT_MODEL_OPTION) {
+            this.setCustomMode(kind, false);
+            this.setModelValue(kind, '');
+            return;
+        }
+        if (value === AI_CUSTOM_MODEL_OPTION) {
+            this.setCustomMode(kind, true);
+            this.setModelValue(kind, '');
+            return;
+        }
+        this.setCustomMode(kind, false);
+        this.setModelValue(kind, value);
+    }
+
+    private isCustomMode(kind: AiModelKind): boolean {
+        if (kind === 'text') {
+            return this.modelCustom();
+        }
+        if (kind === 'tts') {
+            return this.ttsModelCustom();
+        }
+        if (kind === 'stt') {
+            return this.sttModelCustom();
+        }
+        return false;
+    }
+
+    private setCustomMode(kind: AiModelKind, custom: boolean): void {
+        if (kind === 'text') {
+            this.modelCustom.set(custom);
+            return;
+        }
+        if (kind === 'tts') {
+            this.ttsModelCustom.set(custom);
+            return;
+        }
+        if (kind === 'stt') {
+            this.sttModelCustom.set(custom);
+        }
+    }
+
+    private setModelValue(kind: AiModelKind, value: string): void {
+        if (kind === 'text') {
+            this.onModelChange(value);
+            return;
+        }
+        if (kind === 'tts') {
+            this.onTtsModelChange(value);
+            return;
+        }
+        if (kind === 'stt') {
+            this.onSttModelChange(value);
+        }
     }
 
     private resolveTtsModel(): string {
@@ -1991,13 +2098,16 @@ export class AiImportModalComponent implements OnInit {
             return imageModels.length > 0 ? [...imageModels, 'custom'] : ['custom'];
         }
         if (provider === 'openai') {
-            return ['gpt-image-1', 'custom'];
+            return [...modelOptions(provider, 'image', this.runtimeCapabilities()).map(option => option.value), 'custom'];
         }
         if (provider === 'gemini') {
-            return ['gemini-2.5-flash-image', 'custom'];
+            return [...modelOptions(provider, 'image', this.runtimeCapabilities()).map(option => option.value), 'custom'];
         }
         if (provider === 'qwen') {
-            return ['qwen-image-plus', 'qwen-image', 'qwen-image-max', 'custom'];
+            return [...modelOptions(provider, 'image', this.runtimeCapabilities()).map(option => option.value), 'custom'];
+        }
+        if (provider === 'grok') {
+            return [...modelOptions(provider, 'image', this.runtimeCapabilities()).map(option => option.value), 'custom'];
         }
         return ['custom'];
     }
@@ -2013,77 +2123,31 @@ export class AiImportModalComponent implements OnInit {
             return videoModels.length > 0 ? [...videoModels, 'custom'] : ['custom'];
         }
         if (provider === 'openai') {
-            return ['gpt-video-mini', 'custom'];
+            return [...modelOptions(provider, 'video', this.runtimeCapabilities()).map(option => option.value), 'custom'];
         }
         if (provider === 'qwen') {
-            return ['wan2.2-t2v-plus', 'wan2.5-t2v-preview', 'wan2.6-t2v', 'custom'];
+            return [...modelOptions(provider, 'video', this.runtimeCapabilities()).map(option => option.value), 'custom'];
+        }
+        if (provider === 'grok') {
+            return [...modelOptions(provider, 'video', this.runtimeCapabilities()).map(option => option.value), 'custom'];
         }
         return ['custom'];
     }
 
     private resolveModelPlaceholder(provider: string): string {
-        switch (provider) {
-            case 'ollama':
-                return 'qwen3:8b';
-            case 'openai':
-                return 'gpt-4.1-mini';
-            case 'gemini':
-                return 'gemini-2.0-flash';
-            case 'anthropic':
-                return 'claude-3-5-sonnet-20241022';
-            case 'qwen':
-                return 'qwen2.5-3b-instruct';
-            case 'grok':
-                return 'grok-4-fast-non-reasoning';
-            case 'deepseek':
-                return 'deepseek-chat';
-            case 'gigachat':
-                return 'giga-chat';
-            default:
-                return 'model-name';
-        }
+        return defaultModel(provider, 'text', this.runtimeCapabilities()) || 'model-name';
     }
 
     private resolveTtsModelPlaceholder(provider: string): string {
-        if (provider === 'ollama') {
-            return this.ttsModelOptions()[0] || 'ollama-tts-model';
-        }
-        if (provider === 'openai') {
-            return 'gpt-4o-mini-tts';
-        }
-        if (provider === 'gemini') {
-            return 'gemini-2.5-flash-preview-tts';
-        }
-        if (provider === 'qwen') {
-            return 'qwen3-tts-flash';
-        }
-        return 'tts-model';
+        return defaultModel(provider, 'tts', this.runtimeCapabilities()) || 'tts-model';
     }
 
     private resolveSttModelPlaceholder(provider: string): string {
-        if (provider === 'ollama') {
-            return 'ollama-stt-model';
-        }
-        if (provider === 'openai') {
-            return 'gpt-4o-mini-transcribe';
-        }
-        if (provider === 'gemini') {
-            return 'gemini-2.0-flash';
-        }
-        if (provider === 'qwen') {
-            return 'qwen3-asr-flash';
-        }
-        return 'stt-model';
+        return defaultModel(provider, 'stt', this.runtimeCapabilities()) || 'stt-model';
     }
 
     private normalizeProvider(provider?: string | null): string {
-        if (!provider) return '';
-        const normalized = provider.trim().toLowerCase();
-        if (normalized === 'claude') return 'anthropic';
-        if (normalized === 'google' || normalized === 'google-gemini') return 'gemini';
-        if (normalized === 'xai' || normalized === 'x.ai') return 'grok';
-        if (normalized === 'dashscope' || normalized === 'aliyun' || normalized === 'alibaba') return 'qwen';
-        return normalized;
+        return normalizeAiProvider(provider);
     }
 
     private supportsCapability(provider: string,

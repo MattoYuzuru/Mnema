@@ -21,10 +21,10 @@ class AiJobCostEstimatorTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final AiJobCostEstimator estimator = new AiJobCostEstimator(
-            new OpenAiProps("https://api.openai.com", "", "gpt-4.1-mini", "gpt-4o-mini-tts", "alloy", "mp3", "", "", "1024x1024", "standard", "natural", "png", "", 8, "1280x720", 60, 12, 5, 2000L, 30000L, 10000L, 600000L),
-            new GeminiProps("https://generativelanguage.googleapis.com", "gemini-2.0-flash", "gemini-2.5-flash-preview-tts", "Kore", "audio/wav", "gemini-2.0-flash", "gemini-2.5-flash-image", 10, 5, 2000L, 30000L),
-            new QwenProps("https://dashscope.aliyuncs.com/compatible-mode/v1", "https://dashscope.aliyuncs.com", "qwen2.5-3b-instruct", "qwen3-vl-flash", "qwen3-tts-flash", "Cherry", "wav", "qwen3-asr-flash", "qwen-image-plus", "1024x1024", null, null, "png", "wan2.2-t2v-plus", 10, "1280x720", 60, 5, 2000L, 30000L),
-            new GrokProps("https://api.x.ai", "grok-4-fast-non-reasoning", "grok-voice-mini", "sage", "mp3", "", "grok-imagine-image", "1024x1024", null, null, "jpg", "grok-imagine-video", 8, "1280x720", 60, 5, 2000L, 30000L)
+            new OpenAiProps("https://api.openai.com", "", "gpt-5-mini", "gpt-4o-mini-tts", "alloy", "mp3", "gpt-4o-mini-transcribe", "gpt-image-1-mini", "1024x1024", "standard", "natural", "png", "sora-2", 5, "1280x720", 60, 12, 5, 2000L, 30000L, 10000L, 600000L),
+            new GeminiProps("https://generativelanguage.googleapis.com", "gemini-2.5-flash", "gemini-2.5-flash-preview-tts", "Kore", "audio/wav", "gemini-2.5-flash", "gemini-2.5-flash-image", 10, 5, 2000L, 30000L),
+            new QwenProps("https://dashscope.aliyuncs.com/compatible-mode/v1", "https://dashscope.aliyuncs.com", "qwen-plus-latest", "qwen3-vl-flash", "qwen3-tts-flash", "Cherry", "wav", "qwen3-asr-flash", "qwen-image", "1024x1024", null, null, "png", "wan2.2-t2v-plus", 10, "1280x720", 60, 5, 2000L, 30000L),
+            new GrokProps("https://api.x.ai", "grok-4-1-fast-non-reasoning", "grok-voice-mini", "sage", "mp3", "", "grok-imagine-image", "1024x1024", null, null, "jpg", "grok-imagine-video", 8, "1280x720", 60, 5, 2000L, 30000L)
     );
 
     @Test
@@ -35,7 +35,7 @@ class AiJobCostEstimatorTest {
         params.put("input", "Generate travel vocabulary");
         params.putArray("fields").add("front").add("back");
 
-        AiJobCostEstimator.PlannedCost planned = estimator.estimatePlanned(AiJobType.enrich, params, "openai", "gpt-4.1-mini");
+        AiJobCostEstimator.PlannedCost planned = estimator.estimatePlanned(AiJobType.enrich, params, "openai", "gpt-5-mini");
 
         assertThat(planned.inputTokens()).isPositive();
         assertThat(planned.outputTokens()).isPositive();
@@ -66,7 +66,7 @@ class AiJobCostEstimatorTest {
         usage.setTokensOut(48);
         usage.setCostEstimate(new BigDecimal("0.041233"));
 
-        var snapshot = estimator.buildSnapshot(job, "qwen", "qwen2.5-3b-instruct", usage);
+        var snapshot = estimator.buildSnapshot(job, "qwen", "qwen-plus-latest", usage);
 
         assertThat(snapshot).isNotNull();
         assertThat(snapshot.estimatedInputTokens()).isPositive();
@@ -101,7 +101,7 @@ class AiJobCostEstimatorTest {
         usage.setTokensIn(0);
         usage.setTokensOut(0);
 
-        var snapshot = estimator.buildSnapshot(job, "qwen", "qwen2.5-3b-instruct", usage);
+        var snapshot = estimator.buildSnapshot(job, "qwen", "qwen-plus-latest", usage);
 
         assertThat(snapshot).isNotNull();
         assertThat(snapshot.actualCost()).isEqualByComparingTo("0.008807");
@@ -131,7 +131,7 @@ class AiJobCostEstimatorTest {
         usage.setTokensIn(0);
         usage.setTokensOut(0);
 
-        var snapshot = estimator.buildSnapshot(job, "openai", "gpt-4.1-mini", usage);
+        var snapshot = estimator.buildSnapshot(job, "openai", "gpt-5-mini", usage);
 
         assertThat(snapshot).isNotNull();
         assertThat(snapshot.actualCost()).isEqualByComparingTo("0.000990");
@@ -161,7 +161,7 @@ class AiJobCostEstimatorTest {
         usage.setTokensIn(0);
         usage.setTokensOut(0);
 
-        var snapshot = estimator.buildSnapshot(job, "gemini", "gemini-2.0-flash", usage);
+        var snapshot = estimator.buildSnapshot(job, "gemini", "gemini-2.5-flash", usage);
 
         assertThat(snapshot).isNotNull();
         assertThat(snapshot.actualCost()).isEqualByComparingTo("0.000825");
@@ -187,7 +187,7 @@ class AiJobCostEstimatorTest {
         AiJobProcessingResult result = new AiJobProcessingResult(
                 summary,
                 "grok",
-                "grok-4-fast-non-reasoning",
+                "grok-4-1-fast-non-reasoning",
                 200,
                 90,
                 BigDecimal.ZERO,
@@ -220,7 +220,7 @@ class AiJobCostEstimatorTest {
         AiJobProcessingResult result = new AiJobProcessingResult(
                 summary,
                 "grok",
-                "grok-4-fast-non-reasoning",
+                "grok-4-1-fast-non-reasoning",
                 0,
                 0,
                 BigDecimal.ZERO,
@@ -254,7 +254,7 @@ class AiJobCostEstimatorTest {
         usage.setTokensIn(0);
         usage.setTokensOut(0);
 
-        var snapshot = estimator.buildSnapshot(job, "qwen", "qwen2.5-3b-instruct", usage);
+        var snapshot = estimator.buildSnapshot(job, "qwen", "qwen-plus-latest", usage);
 
         assertThat(snapshot).isNotNull();
         assertThat(snapshot.actualCost()).isEqualByComparingTo("0.044035");
@@ -285,12 +285,12 @@ class AiJobCostEstimatorTest {
         params.put("mode", "generate_cards");
         params.put("count", 2);
         params.put("provider", "gemini");
-        params.put("model", "gemini-2.0-flash");
+        params.put("model", "gemini-2.5-flash");
         params.putArray("fields").add("front").add("back");
         params.putObject("image").put("enabled", true).put("model", "gemini-2.5-flash-image");
         params.putObject("tts").put("enabled", true).put("model", "gemini-2.5-flash-preview-tts").put("maxChars", 200);
 
-        AiJobCostEstimator.PlannedCost planned = estimator.estimatePlanned(AiJobType.enrich, params, "gemini", "gemini-2.0-flash");
+        AiJobCostEstimator.PlannedCost planned = estimator.estimatePlanned(AiJobType.enrich, params, "gemini", "gemini-2.5-flash");
 
         assertThat(planned.cost()).isPositive();
         assertThat(planned.currency()).isEqualTo("USD");
@@ -302,10 +302,10 @@ class AiJobCostEstimatorTest {
         params.put("mode", "generate_cards");
         params.put("count", 1);
         params.put("provider", "qwen");
-        params.put("model", "qwen2.5-3b-instruct");
+        params.put("model", "qwen-plus-latest");
         params.putObject("video").put("enabled", true).put("model", "wan2.2-t2v-plus").put("durationSeconds", 10);
 
-        AiJobCostEstimator.PlannedCost planned = estimator.estimatePlanned(AiJobType.enrich, params, "qwen", "qwen2.5-3b-instruct");
+        AiJobCostEstimator.PlannedCost planned = estimator.estimatePlanned(AiJobType.enrich, params, "qwen", "qwen-plus-latest");
 
         assertThat(planned.cost()).isPositive();
         assertThat(planned.currency()).isEqualTo("CNY");
@@ -320,7 +320,7 @@ class AiJobCostEstimatorTest {
         AiJobProcessingResult result = new AiJobProcessingResult(
                 job.getResultSummary(),
                 "openai",
-                "gpt-4.1-mini",
+                "gpt-5-mini",
                 150,
                 80,
                 new BigDecimal("1.230000"),
@@ -355,7 +355,7 @@ class AiJobCostEstimatorTest {
         params.put("sourceMediaId", UUID.randomUUID().toString());
         params.putArray("fields").add("front").add("back");
 
-        var snapshot = estimator.buildPlannedSnapshot(AiJobType.generic, params, "openai", "gpt-4.1-mini");
+        var snapshot = estimator.buildPlannedSnapshot(AiJobType.generic, params, "openai", "gpt-5-mini");
 
         assertThat(snapshot).isNotNull();
         assertThat(snapshot.estimatedInputTokens()).isPositive();

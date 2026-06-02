@@ -268,8 +268,32 @@ public class AiJobCostEstimator {
         if ("gemini".equals(resolvedProvider) && resolvedModel.contains("flash-image")) {
             return new BigDecimal("0.039").multiply(BigDecimal.valueOf(imageCount));
         }
+        if ("gemini".equals(resolvedProvider) && resolvedModel.contains("imagen-4.0-fast")) {
+            return new BigDecimal("0.02").multiply(BigDecimal.valueOf(imageCount));
+        }
+        if ("openai".equals(resolvedProvider) && resolvedModel.contains("gpt-image-1-mini")) {
+            return new BigDecimal("0.01").multiply(BigDecimal.valueOf(imageCount));
+        }
+        if ("openai".equals(resolvedProvider) && resolvedModel.contains("gpt-image-1")) {
+            return new BigDecimal("0.04").multiply(BigDecimal.valueOf(imageCount));
+        }
+        if ("grok".equals(resolvedProvider) && resolvedModel.contains("grok-imagine-image-pro")) {
+            return new BigDecimal("0.14").multiply(BigDecimal.valueOf(imageCount));
+        }
+        if ("grok".equals(resolvedProvider) && resolvedModel.contains("grok-imagine-image-quality")) {
+            return new BigDecimal("0.07").multiply(BigDecimal.valueOf(imageCount));
+        }
+        if ("grok".equals(resolvedProvider) && resolvedModel.contains("grok-imagine-image")) {
+            return new BigDecimal("0.04").multiply(BigDecimal.valueOf(imageCount));
+        }
+        if ("qwen".equals(resolvedProvider) && resolvedModel.contains("qwen-image-max")) {
+            return new BigDecimal("0.28").multiply(BigDecimal.valueOf(imageCount));
+        }
         if ("qwen".equals(resolvedProvider) && resolvedModel.contains("qwen-image-plus")) {
             return new BigDecimal("0.20").multiply(BigDecimal.valueOf(imageCount));
+        }
+        if ("qwen".equals(resolvedProvider) && resolvedModel.contains("qwen-image")) {
+            return new BigDecimal("0.14").multiply(BigDecimal.valueOf(imageCount));
         }
         return ZERO;
     }
@@ -290,6 +314,21 @@ public class AiJobCostEstimator {
                     .multiply(BigDecimal.valueOf(durationSeconds))
                     .multiply(BigDecimal.valueOf(videoCount));
         }
+        if ("openai".equals(resolvedProvider) && resolvedModel.contains("sora-2-pro")) {
+            return new BigDecimal("0.30")
+                    .multiply(BigDecimal.valueOf(durationSeconds))
+                    .multiply(BigDecimal.valueOf(videoCount));
+        }
+        if ("openai".equals(resolvedProvider) && resolvedModel.contains("sora-2")) {
+            return new BigDecimal("0.10")
+                    .multiply(BigDecimal.valueOf(durationSeconds))
+                    .multiply(BigDecimal.valueOf(videoCount));
+        }
+        if ("grok".equals(resolvedProvider) && resolvedModel.contains("grok-imagine-video")) {
+            return new BigDecimal("0.20")
+                    .multiply(BigDecimal.valueOf(durationSeconds))
+                    .multiply(BigDecimal.valueOf(videoCount));
+        }
         return ZERO;
     }
 
@@ -299,6 +338,15 @@ public class AiJobCostEstimator {
         return switch (resolvedProvider) {
             case "ollama" -> new Pricing(null, BigDecimal.ZERO, BigDecimal.ZERO);
             case "openai" -> {
+                if (resolvedModel.contains("gpt-5-nano")) {
+                    yield new Pricing("USD", new BigDecimal("0.05"), new BigDecimal("0.40"));
+                }
+                if (resolvedModel.contains("gpt-5-mini")) {
+                    yield new Pricing("USD", new BigDecimal("0.25"), new BigDecimal("2.00"));
+                }
+                if (resolvedModel.contains("gpt-5.1")) {
+                    yield new Pricing("USD", new BigDecimal("1.25"), new BigDecimal("10.00"));
+                }
                 if (resolvedModel.contains("gpt-4.1-mini")) {
                     yield new Pricing("USD", new BigDecimal("0.40"), new BigDecimal("1.60"));
                 }
@@ -308,25 +356,47 @@ public class AiJobCostEstimator {
                 yield new Pricing("USD", new BigDecimal("0.40"), new BigDecimal("1.60"));
             }
             case "gemini" -> {
+                if (resolvedModel.contains("gemini-2.5-flash-lite")) {
+                    yield new Pricing("USD", new BigDecimal("0.10"), new BigDecimal("0.40"));
+                }
                 if (resolvedModel.contains("gemini-2.5-flash")) {
                     yield new Pricing("USD", new BigDecimal("0.30"), new BigDecimal("2.50"));
                 }
-                if (resolvedModel.contains("gemini-2.0-flash")) {
-                    yield new Pricing("USD", new BigDecimal("0.10"), new BigDecimal("0.40"));
+                if (resolvedModel.contains("gemini-3-pro")) {
+                    yield new Pricing("USD", new BigDecimal("2.00"), new BigDecimal("12.00"));
+                }
+                if (resolvedModel.contains("gemini-3-flash")) {
+                    yield new Pricing("USD", new BigDecimal("0.50"), new BigDecimal("3.00"));
                 }
                 yield new Pricing("USD", new BigDecimal("0.10"), new BigDecimal("0.40"));
             }
-            case "anthropic", "claude" -> new Pricing("USD", new BigDecimal("3.00"), new BigDecimal("15.00"));
+            case "anthropic", "claude" -> {
+                if (resolvedModel.contains("haiku")) {
+                    yield new Pricing("USD", new BigDecimal("1.00"), new BigDecimal("5.00"));
+                }
+                if (resolvedModel.contains("opus")) {
+                    yield new Pricing("USD", new BigDecimal("15.00"), new BigDecimal("75.00"));
+                }
+                yield new Pricing("USD", new BigDecimal("3.00"), new BigDecimal("15.00"));
+            }
             case "qwen" -> {
-                if (resolvedModel.contains("qwen2.5-3b")) {
+                if (resolvedModel.contains("qwen-turbo")) {
                     yield new Pricing("CNY", new BigDecimal("0.30"), new BigDecimal("0.90"));
                 }
-                if (resolvedModel.contains("qwen2.5-7b")) {
-                    yield new Pricing("CNY", new BigDecimal("0.50"), new BigDecimal("1.00"));
+                if (resolvedModel.contains("qwen-plus")) {
+                    yield new Pricing("CNY", new BigDecimal("0.80"), new BigDecimal("2.00"));
                 }
-                yield new Pricing("CNY", new BigDecimal("0.30"), new BigDecimal("0.90"));
+                if (resolvedModel.contains("qwen3-omni")) {
+                    yield new Pricing("CNY", new BigDecimal("0.60"), new BigDecimal("1.80"));
+                }
+                yield new Pricing("CNY", new BigDecimal("0.80"), new BigDecimal("2.00"));
             }
-            case "grok" -> new Pricing("USD", new BigDecimal("0.20"), new BigDecimal("0.50"));
+            case "grok" -> {
+                if (resolvedModel.contains("grok-4.3")) {
+                    yield new Pricing("USD", new BigDecimal("3.00"), new BigDecimal("15.00"));
+                }
+                yield new Pricing("USD", new BigDecimal("0.20"), new BigDecimal("0.50"));
+            }
             default -> new Pricing(null, BigDecimal.ZERO, BigDecimal.ZERO);
         };
     }
@@ -371,8 +441,8 @@ public class AiJobCostEstimator {
             return explicit;
         }
         return switch (normalizeProvider(provider)) {
-            case "ollama" -> openAiProps.defaultImageModel();
-            case "gemini" -> null;
+            case "openai", "ollama" -> openAiProps.defaultImageModel();
+            case "gemini" -> geminiProps.defaultImageModel();
             case "qwen" -> qwenProps.defaultImageModel();
             case "grok" -> grokProps.defaultImageModel();
             default -> null;
@@ -386,7 +456,7 @@ public class AiJobCostEstimator {
             return explicit;
         }
         return switch (normalizeProvider(provider)) {
-            case "ollama" -> openAiProps.defaultVideoModel();
+            case "openai", "ollama" -> openAiProps.defaultVideoModel();
             case "qwen" -> qwenProps.defaultVideoModel();
             case "grok" -> grokProps.defaultVideoModel();
             default -> null;

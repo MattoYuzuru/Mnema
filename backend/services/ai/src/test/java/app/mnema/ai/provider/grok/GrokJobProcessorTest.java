@@ -105,7 +105,7 @@ class GrokJobProcessorTest {
                 mock(GrokClient.class),
                 new GrokProps(
                         "https://api.x.ai/v1",
-                        "grok-4-fast-non-reasoning",
+                        "grok-4-1-fast-non-reasoning",
                         "grok-voice-mini",
                         "alloy",
                         "mp3",

@@ -87,6 +87,16 @@ class CardNoveltyServiceTest {
         assertEquals(0, filtered.droppedEmpty());
     }
 
+    @Test
+    void insufficientUniqueCardsMessageIncludesDuplicateBreakdown() {
+        String message = CardNoveltyService.insufficientUniqueCardsMessage(7, 10, 1, 2, 3, 4);
+
+        assertEquals(
+                "generated 7/10 unique cards; rejected duplicates=9 (exact=2, primary=3, semantic=4), empty=1. Try a more specific prompt or request fewer cards.",
+                message
+        );
+    }
+
     private static ObjectNode card(String front, String back) {
         ObjectNode node = OBJECT_MAPPER.createObjectNode();
         node.put("front", front);

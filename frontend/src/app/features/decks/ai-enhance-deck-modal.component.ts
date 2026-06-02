@@ -11,6 +11,19 @@ import { MissingFieldStat } from '../../core/models/user-card.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { AiPreflightPanelComponent } from '../../shared/components/ai-preflight-panel.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
+import {
+    AI_CUSTOM_MODEL_OPTION,
+    AI_DEFAULT_MODEL_OPTION,
+    AiModelKind,
+    AiModelOption,
+    defaultModel,
+    isCustomModelChoice,
+    modelHelpText,
+    modelOptions,
+    modelSelectOptions,
+    normalizeAiProvider,
+    resolveModelChoice
+} from '../../shared/utils/ai-model-catalog';
 
 type EnhanceOption = { key: string; label: string; description: string; enabled: boolean };
 type TtsMapping = { sourceField: string; targetField: string };
@@ -25,18 +38,18 @@ type FieldLimitMap = Record<string, number>;
     <div class="modal-overlay" (click)="close()">
       <div class="modal-content ai-modal" (click)="$event.stopPropagation()">
         <div class="modal-header">
-          <h2>Deck enhancement</h2>
+          <h2>{{ 'deckEnhance.title' | translate }}</h2>
           <button class="close-btn" (click)="close()">&times;</button>
         </div>
 
         <div class="modal-body">
           <p class="modal-hint">
-            Choose the improvements you want. We will analyze the deck and prepare suggestions.
+            {{ 'deckEnhance.hint' | translate }}
           </p>
 
           <div class="form-grid">
             <div class="form-field">
-              <label for="ai-enhance-provider">Provider key</label>
+              <label for="ai-enhance-provider">{{ 'deckEnhance.providerLabel' | translate }}</label>
               <select
                 id="ai-enhance-provider"
                 class="glass-select"
@@ -44,30 +57,41 @@ type FieldLimitMap = Record<string, number>;
                 (ngModelChange)="onProviderChange($event)"
                 [disabled]="loadingProviders() || providerKeys().length === 0"
               >
-                <option [ngValue]="''">Select a key</option>
+                <option [ngValue]="''">{{ 'deckEnhance.selectKey' | translate }}</option>
                 <option *ngFor="let key of providerKeys(); trackBy: trackProvider" [ngValue]="key.id">
                   {{ key.provider }}{{ key.alias ? ' · ' + key.alias : '' }}
                 </option>
               </select>
               <p *ngIf="!loadingProviders() && providerKeys().length === 0" class="field-hint">
-                Add a provider key in Settings first.
+                {{ 'deckEnhance.noKeys' | translate }}
               </p>
             </div>
 
             <div class="form-field">
-              <label for="ai-enhance-model">Model (optional)</label>
-              <input
+              <label for="ai-enhance-model">{{ 'deckEnhance.modelLabel' | translate }}</label>
+              <select
                 id="ai-enhance-model"
+                class="glass-select"
+                [ngModel]="modelChoice('text', modelName())"
+                (ngModelChange)="onModelChoiceChange('text', $event)"
+              >
+                <option *ngFor="let model of textModelOptions()" [ngValue]="model.value">
+                  {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
+                </option>
+              </select>
+              <input
+                *ngIf="isCustomModel('text', modelName())"
                 type="text"
                 [ngModel]="modelName()"
                 (ngModelChange)="onModelChange($event)"
                 [placeholder]="modelPlaceholder()"
               />
+              <p class="field-hint">{{ modelHint('text', modelName()) }}</p>
             </div>
           </div>
 
           <div class="enhance-grid">
-            <label class="grid-label">Enhancement options</label>
+            <label class="grid-label">{{ 'deckEnhance.optionsLabel' | translate }}</label>
             <div class="enhance-list">
               <label *ngFor="let option of options(); trackBy: trackOption" class="field-option" [class.disabled]="!option.enabled">
                 <input
@@ -78,24 +102,24 @@ type FieldLimitMap = Record<string, number>;
                   [disabled]="!option.enabled"
                 />
                 <div class="field-copy">
-                  <div class="field-label">{{ option.label }}</div>
-                  <div class="field-meta">{{ option.description }}</div>
+                  <div class="field-label">{{ option.label | translate }}</div>
+                  <div class="field-meta">{{ option.description | translate }}</div>
                 </div>
-                <span *ngIf="!option.enabled" class="field-required">Unavailable</span>
+                <span *ngIf="!option.enabled" class="field-required">{{ 'deckEnhance.unavailable' | translate }}</span>
               </label>
             </div>
           </div>
 
           <div *ngIf="hasMissingFields()" class="missing-panel">
-            <label class="grid-label">Fields to fill</label>
-            <div *ngIf="missingLoading()" class="field-hint">Loading missing fields…</div>
+            <label class="grid-label">{{ 'deckEnhance.fieldsToFill' | translate }}</label>
+            <div *ngIf="missingLoading()" class="field-hint">{{ 'deckEnhance.missingLoading' | translate }}</div>
             <div *ngIf="!missingLoading() && missingError()" class="error-state" role="alert">
               {{ missingError() }}
             </div>
             <div *ngIf="!missingLoading() && !missingError()" class="missing-list">
-              <div *ngIf="hasAudioFields() && !ttsSupported()" class="field-hint">TTS is supported for OpenAI, Gemini, and Qwen providers.</div>
-              <div *ngIf="hasImageFields() && !imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, Grok, and Ollama providers.</div>
-              <div *ngIf="hasVideoFields() && !videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, Grok, and Ollama providers.</div>
+              <div *ngIf="hasAudioFields() && !ttsSupported()" class="field-hint">{{ 'deckEnhance.ttsUnavailable' | translate }}</div>
+              <div *ngIf="hasImageFields() && !imageSupported()" class="field-hint">{{ 'deckEnhance.imageUnavailable' | translate }}</div>
+              <div *ngIf="hasVideoFields() && !videoSupported()" class="field-hint">{{ 'deckEnhance.videoUnavailable' | translate }}</div>
               <label
                 *ngFor="let stat of missingRows(); trackBy: trackMissingField"
                 class="field-option missing-option"
@@ -122,34 +146,41 @@ type FieldLimitMap = Record<string, number>;
                     (ngModelChange)="onFieldLimitChange(stat.field, $event)"
                     [disabled]="!selectedMissingFields().has(stat.field)"
                   />
-                  <span class="missing-count">{{ stat.missingCount }} missing</span>
+                  <span class="missing-count">{{ 'deckEnhance.missingCount' | translate:{ count: stat.missingCount } }}</span>
                 </div>
               </label>
-              <div *ngIf="missingRows().length === 0" class="field-hint">No missing fields detected.</div>
+              <div *ngIf="missingRows().length === 0" class="field-hint">{{ 'deckEnhance.noMissing' | translate }}</div>
             </div>
           </div>
 
           <div *ngIf="hasMissingFields() && selectedAudioFields().length > 0" class="tts-section">
-            <label class="grid-label">Audio generation</label>
-            <div *ngIf="!ttsSupported()" class="field-hint">TTS is supported for OpenAI, Gemini, and Qwen providers.</div>
+            <label class="grid-label">{{ 'deckEnhance.audioGeneration' | translate }}</label>
+            <div *ngIf="!ttsSupported()" class="field-hint">{{ 'deckEnhance.ttsUnavailable' | translate }}</div>
             <div *ngIf="ttsSupported()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
-                  <label for="ai-tts-model">TTS model</label>
-                  <input
+                  <label for="ai-tts-model">{{ 'deckEnhance.ttsModelLabel' | translate }}</label>
+                  <select
                     id="ai-tts-model"
+                    class="glass-select"
+                    [ngModel]="modelChoice('tts', ttsModel())"
+                    (ngModelChange)="onModelChoiceChange('tts', $event)"
+                  >
+                    <option *ngFor="let model of ttsModelOptions()" [ngValue]="model.value">
+                      {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
+                    </option>
+                  </select>
+                  <input
+                    *ngIf="isCustomModel('tts', ttsModel())"
                     type="text"
                     [ngModel]="ttsModel()"
                     (ngModelChange)="onTtsModelChange($event)"
-                    [attr.list]="ttsModelOptions().length ? 'ai-tts-model-options' : null"
                     [placeholder]="ttsModelPlaceholder()"
                   />
-                  <datalist id="ai-tts-model-options">
-                    <option *ngFor="let model of ttsModelOptions()" [value]="model"></option>
-                  </datalist>
+                  <p class="field-hint">{{ modelHint('tts', ttsModel()) }}</p>
                 </div>
                 <div class="form-field">
-                  <label for="ai-tts-voice">Voice</label>
+                  <label for="ai-tts-voice">{{ 'deckEnhance.voiceLabel' | translate }}</label>
                   <select
                     id="ai-tts-voice"
                     class="glass-select"
@@ -165,11 +196,11 @@ type FieldLimitMap = Record<string, number>;
                     type="text"
                     [ngModel]="ttsVoiceCustom()"
                     (ngModelChange)="onTtsVoiceCustomChange($event)"
-                    placeholder="Custom voice"
+                    [placeholder]="'deckEnhance.customVoicePlaceholder' | translate"
                   />
                 </div>
                 <div class="form-field">
-                  <label for="ai-tts-format">Format</label>
+                  <label for="ai-tts-format">{{ 'deckEnhance.formatLabel' | translate }}</label>
                   <select
                     id="ai-tts-format"
                     class="glass-select"
@@ -182,7 +213,7 @@ type FieldLimitMap = Record<string, number>;
                   </select>
                 </div>
                 <div class="form-field">
-                  <label for="ai-tts-max-chars">Max chars</label>
+                  <label for="ai-tts-max-chars">{{ 'deckEnhance.maxCharsLabel' | translate }}</label>
                   <input
                     id="ai-tts-max-chars"
                     type="number"
@@ -195,7 +226,7 @@ type FieldLimitMap = Record<string, number>;
               </div>
 
               <div class="tts-mapping">
-                <label>Audio field mapping</label>
+                <label>{{ 'deckEnhance.audioMappingLabel' | translate }}</label>
                 <div class="mapping-list">
                   <div *ngFor="let mapping of ttsMappings(); let i = index" class="mapping-row">
                     <select
@@ -222,18 +253,18 @@ type FieldLimitMap = Record<string, number>;
                     </button>
                   </div>
                 </div>
-                <button type="button" class="add-mapping" (click)="addTtsMapping()">Add mapping</button>
+                <button type="button" class="add-mapping" (click)="addTtsMapping()">{{ 'deckEnhance.addMapping' | translate }}</button>
               </div>
             </div>
           </div>
 
           <div *ngIf="hasMissingFields() && selectedImageFields().length > 0" class="tts-section">
-            <label class="grid-label">Image generation</label>
-            <div *ngIf="!imageSupported()" class="field-hint">Image generation is supported for OpenAI, Gemini, Qwen, Grok, and Ollama providers.</div>
+            <label class="grid-label">{{ 'deckEnhance.imageGeneration' | translate }}</label>
+            <div *ngIf="!imageSupported()" class="field-hint">{{ 'deckEnhance.imageUnavailable' | translate }}</div>
             <div *ngIf="imageSupported()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
-                  <label for="ai-image-model">Image model</label>
+                  <label for="ai-image-model">{{ 'deckEnhance.imageModelLabel' | translate }}</label>
                   <select
                     id="ai-image-model"
                     class="glass-select"
@@ -249,11 +280,11 @@ type FieldLimitMap = Record<string, number>;
                     type="text"
                     [ngModel]="imageModelCustom()"
                     (ngModelChange)="onImageModelCustomChange($event)"
-                    placeholder="custom-image-model"
+                    [placeholder]="'deckEnhance.customImageModelPlaceholder' | translate"
                   />
                 </div>
                 <div class="form-field">
-                  <label for="ai-image-size">Size</label>
+                  <label for="ai-image-size">{{ 'deckEnhance.sizeLabel' | translate }}</label>
                   <input
                     id="ai-image-size"
                     type="text"
@@ -263,7 +294,7 @@ type FieldLimitMap = Record<string, number>;
                   />
                 </div>
                 <div class="form-field">
-                  <label for="ai-image-format">Format</label>
+                  <label for="ai-image-format">{{ 'deckEnhance.formatLabel' | translate }}</label>
                   <select
                     id="ai-image-format"
                     class="glass-select"
@@ -280,12 +311,12 @@ type FieldLimitMap = Record<string, number>;
           </div>
 
           <div *ngIf="hasMissingFields() && selectedVideoFields().length > 0" class="tts-section">
-            <label class="grid-label">Video generation</label>
-            <div *ngIf="!videoSupported()" class="field-hint">Video generation is supported for OpenAI, Qwen, Grok, and Ollama providers.</div>
+            <label class="grid-label">{{ 'deckEnhance.videoGeneration' | translate }}</label>
+            <div *ngIf="!videoSupported()" class="field-hint">{{ 'deckEnhance.videoUnavailable' | translate }}</div>
             <div *ngIf="videoSupported()" class="tts-panel">
               <div class="form-grid">
                 <div class="form-field">
-                  <label for="ai-video-model">Video model</label>
+                  <label for="ai-video-model">{{ 'deckEnhance.videoModelLabel' | translate }}</label>
                   <select
                     id="ai-video-model"
                     class="glass-select"
@@ -301,11 +332,11 @@ type FieldLimitMap = Record<string, number>;
                     type="text"
                     [ngModel]="videoModelCustom()"
                     (ngModelChange)="onVideoModelCustomChange($event)"
-                    placeholder="custom-video-model"
+                    [placeholder]="'deckEnhance.customVideoModelPlaceholder' | translate"
                   />
                 </div>
                 <div class="form-field">
-                  <label for="ai-video-duration">Duration (s)</label>
+                  <label for="ai-video-duration">{{ 'deckEnhance.durationLabel' | translate }}</label>
                   <input
                     id="ai-video-duration"
                     type="number"
@@ -316,7 +347,7 @@ type FieldLimitMap = Record<string, number>;
                   />
                 </div>
                 <div class="form-field">
-                  <label for="ai-video-resolution">Resolution</label>
+                  <label for="ai-video-resolution">{{ 'deckEnhance.resolutionLabel' | translate }}</label>
                   <input
                     id="ai-video-resolution"
                     type="text"
@@ -326,7 +357,7 @@ type FieldLimitMap = Record<string, number>;
                   />
                 </div>
                 <div class="form-field">
-                  <label for="ai-video-format">Format</label>
+                  <label for="ai-video-format">{{ 'deckEnhance.formatLabel' | translate }}</label>
                   <select
                     id="ai-video-format"
                     class="glass-select"
@@ -357,13 +388,13 @@ type FieldLimitMap = Record<string, number>;
           </div>
 
           <div class="form-field">
-            <label for="ai-enhance-notes">Notes (optional)</label>
+            <label for="ai-enhance-notes">{{ 'deckEnhance.notesLabel' | translate }}</label>
             <textarea
               id="ai-enhance-notes"
               rows="3"
               [ngModel]="notes()"
               (ngModelChange)="onNotesChange($event)"
-              placeholder="Any preferences for the improvement..."
+              [placeholder]="'deckEnhance.notesPlaceholder' | translate"
             ></textarea>
           </div>
 
@@ -379,7 +410,7 @@ type FieldLimitMap = Record<string, number>;
           <app-ai-preflight-panel
             *ngIf="preflight()"
             [preflight]="preflight()"
-            title="Review enhancement plan"
+            [title]="'deckEnhance.reviewPlan' | translate"
           />
         </div>
 
@@ -613,6 +644,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     loadingProviders = signal(false);
     selectedCredentialId = signal('');
     modelName = signal('');
+    modelCustom = signal(false);
     notes = signal('');
     creating = signal(false);
     preflighting = signal(false);
@@ -636,6 +668,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     imageEnabled = signal(true);
     videoEnabled = signal(false);
     ttsModel = signal('');
+    ttsModelCustom = signal(false);
     ttsVoicePreset = signal('alloy');
     ttsVoiceCustom = signal('');
     ttsFormat = signal('mp3');
@@ -657,9 +690,10 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         const provider = this.providerKeys().find(item => item.id === selectedId)?.provider;
         return this.normalizeProvider(provider);
     });
+    readonly textModelOptions = computed(() => this.resolveModelSelectOptions('text'));
     readonly modelPlaceholder = computed(() => this.resolveModelPlaceholder(this.selectedProvider()));
     readonly ttsModelPlaceholder = computed(() => this.resolveTtsModelPlaceholder(this.selectedProvider()));
-    readonly ttsModelOptions = computed(() => this.runtimeTtsModelOptions());
+    readonly ttsModelOptions = computed(() => this.resolveModelSelectOptions('tts'));
     readonly ttsSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'tts', ['openai', 'gemini', 'qwen']));
     readonly imageSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'image', ['openai', 'gemini', 'qwen', 'grok', 'ollama']));
     readonly videoSupported = computed(() => this.supportsCapability(this.selectedProvider(), 'video', ['openai', 'qwen', 'grok', 'ollama']));
@@ -696,9 +730,9 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     });
 
     private readonly optionDescriptions: Record<string, string> = {
-        ['audit']: 'Find inconsistencies and weak cards.',
-        ['missing_fields']: 'Fill empty text, audio, image, and video fields.',
-        ['auto_resolve_duplicates']: 'Automatically hide obvious duplicates before AI improvements.'
+        ['audit']: 'deckEnhance.optionAuditDesc',
+        ['missing_fields']: 'deckEnhance.optionMissingDesc',
+        ['auto_resolve_duplicates']: 'deckEnhance.optionDuplicatesDesc'
     };
 
     private readonly openAiVoices = ['alloy', 'ash', 'coral', 'echo', 'fable', 'onyx', 'nova', 'sage', 'shimmer'];
@@ -787,9 +821,9 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     ];
 
     options = signal<EnhanceOption[]>([
-        { key: 'audit', label: 'Deck audit', description: this.optionDescriptions['audit'], enabled: true },
-        { key: 'missing_fields', label: 'Fill missing fields', description: this.optionDescriptions['missing_fields'], enabled: true },
-        { key: 'auto_resolve_duplicates', label: 'Auto-resolve duplicates', description: this.optionDescriptions['auto_resolve_duplicates'], enabled: true }
+        { key: 'audit', label: 'deckEnhance.optionAudit', description: this.optionDescriptions['audit'], enabled: true },
+        { key: 'missing_fields', label: 'deckEnhance.optionMissing', description: this.optionDescriptions['missing_fields'], enabled: true },
+        { key: 'auto_resolve_duplicates', label: 'deckEnhance.optionDuplicates', description: this.optionDescriptions['auto_resolve_duplicates'], enabled: true }
     ]);
     selectedOptions = signal<Set<string>>(new Set(['audit']));
     readonly hasMissingFields = computed(() => this.selectedOptions().has('missing_fields'));
@@ -1464,14 +1498,7 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     }
 
     private normalizeProvider(provider?: string | null): string {
-        if (!provider) return '';
-        const normalized = provider.trim().toLowerCase();
-        if (normalized === 'claude' || normalized.includes('anthropic')) return 'anthropic';
-        if (normalized.includes('openai')) return 'openai';
-        if (normalized.includes('gemini') || normalized.includes('google')) return 'gemini';
-        if (normalized === 'xai' || normalized === 'x.ai') return 'grok';
-        if (normalized === 'dashscope' || normalized === 'aliyun' || normalized === 'alibaba') return 'qwen';
-        return normalized;
+        return normalizeAiProvider(provider);
     }
 
     private supportsCapability(provider: string,
@@ -1500,41 +1527,11 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     }
 
     private resolveModelPlaceholder(provider: string): string {
-        switch (provider) {
-            case 'ollama':
-                return 'qwen3:8b';
-            case 'openai':
-                return 'gpt-4.1-mini';
-            case 'gemini':
-                return 'gemini-2.0-flash';
-            case 'anthropic':
-                return 'claude-3-5-sonnet-20241022';
-            case 'qwen':
-                return 'qwen2.5-3b-instruct';
-            case 'grok':
-                return 'grok-4-fast-non-reasoning';
-            case 'deepseek':
-                return 'deepseek-chat';
-            case 'gigachat':
-                return 'giga-chat';
-            default:
-                return 'model-name';
-        }
+        return defaultModel(provider, 'text', this.runtimeCapabilities()) || 'model-name';
     }
 
     private resolveTtsModelPlaceholder(provider: string): string {
-        switch (provider) {
-            case 'ollama':
-                return this.ttsModelOptions()[0] || 'ollama-tts-model';
-            case 'openai':
-                return 'gpt-4o-mini-tts';
-            case 'gemini':
-                return 'gemini-2.5-flash-preview-tts';
-            case 'qwen':
-                return 'qwen3-tts-flash';
-            default:
-                return 'tts-model';
-        }
+        return defaultModel(provider, 'tts', this.runtimeCapabilities()) || 'tts-model';
     }
 
     onProviderChange(value: string): void {
@@ -1581,16 +1578,16 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             return imageModels.length > 0 ? [...imageModels, 'custom'] : ['custom'];
         }
         if (provider === 'openai') {
-            return ['gpt-image-1-mini', 'gpt-image-1', 'custom'];
+            return [...modelOptions(provider, 'image', this.runtimeCapabilities()).map(option => option.value), 'custom'];
         }
         if (provider === 'gemini') {
-            return ['gemini-2.5-flash-image', 'gemini-3-pro-image-preview', 'custom'];
+            return [...modelOptions(provider, 'image', this.runtimeCapabilities()).map(option => option.value), 'custom'];
         }
         if (provider === 'qwen') {
-            return ['qwen-image-plus', 'qwen-image', 'qwen-image-max', 'custom'];
+            return [...modelOptions(provider, 'image', this.runtimeCapabilities()).map(option => option.value), 'custom'];
         }
         if (provider === 'grok') {
-            return ['grok-imagine-image', 'grok-imagine-image-pro', 'grok-2-image-latest', 'custom'];
+            return [...modelOptions(provider, 'image', this.runtimeCapabilities()).map(option => option.value), 'custom'];
         }
         return ['custom'];
     }
@@ -1606,13 +1603,13 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             return videoModels.length > 0 ? [...videoModels, 'custom'] : ['custom'];
         }
         if (provider === 'openai') {
-            return ['sora-2', 'custom'];
+            return [...modelOptions(provider, 'video', this.runtimeCapabilities()).map(option => option.value), 'custom'];
         }
         if (provider === 'qwen') {
-            return ['wan2.2-t2v-plus', 'wan2.5-t2v-preview', 'wan2.6-t2v', 'custom'];
+            return [...modelOptions(provider, 'video', this.runtimeCapabilities()).map(option => option.value), 'custom'];
         }
         if (provider === 'grok') {
-            return ['grok-imagine-video', 'custom'];
+            return [...modelOptions(provider, 'video', this.runtimeCapabilities()).map(option => option.value), 'custom'];
         }
         return ['custom'];
     }
@@ -1634,16 +1631,68 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         return unique.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
     }
 
-    private runtimeTtsModelOptions(): string[] {
-        if (this.selectedProvider() !== 'ollama') {
-            return [];
+    private resolveModelSelectOptions(kind: AiModelKind): AiModelOption[] {
+        return modelSelectOptions(this.selectedProvider(), kind, this.runtimeCapabilities());
+    }
+
+    modelChoice(kind: AiModelKind, value: string): string {
+        if (this.isCustomMode(kind)) {
+            return AI_CUSTOM_MODEL_OPTION;
         }
-        const runtime = this.runtimeCapabilities()?.ollama?.models || [];
-        const models = runtime
-            .filter(model => Array.isArray(model.capabilities) && model.capabilities.includes('tts'))
-            .map(model => model.name)
-            .filter(name => !!name && name.trim().length > 0);
-        return Array.from(new Set(models)).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+        return resolveModelChoice(value, this.resolveModelSelectOptions(kind));
+    }
+
+    isCustomModel(kind: AiModelKind, value: string): boolean {
+        return this.isCustomMode(kind) || isCustomModelChoice(value, this.resolveModelSelectOptions(kind));
+    }
+
+    modelHint(kind: AiModelKind, value: string): string {
+        return modelHelpText(this.selectedProvider(), kind, value, this.runtimeCapabilities());
+    }
+
+    onModelChoiceChange(kind: AiModelKind, value: string): void {
+        if (value === AI_DEFAULT_MODEL_OPTION) {
+            this.setCustomMode(kind, false);
+            this.setModelValue(kind, '');
+            return;
+        }
+        if (value === AI_CUSTOM_MODEL_OPTION) {
+            this.setCustomMode(kind, true);
+            this.setModelValue(kind, '');
+            return;
+        }
+        this.setCustomMode(kind, false);
+        this.setModelValue(kind, value);
+    }
+
+    private isCustomMode(kind: AiModelKind): boolean {
+        if (kind === 'text') {
+            return this.modelCustom();
+        }
+        if (kind === 'tts') {
+            return this.ttsModelCustom();
+        }
+        return false;
+    }
+
+    private setCustomMode(kind: AiModelKind, custom: boolean): void {
+        if (kind === 'text') {
+            this.modelCustom.set(custom);
+            return;
+        }
+        if (kind === 'tts') {
+            this.ttsModelCustom.set(custom);
+        }
+    }
+
+    private setModelValue(kind: AiModelKind, value: string): void {
+        if (kind === 'text') {
+            this.onModelChange(value);
+            return;
+        }
+        if (kind === 'tts') {
+            this.onTtsModelChange(value);
+        }
     }
 
     private resolveTtsModel(): string {

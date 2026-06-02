@@ -822,7 +822,7 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         if (props.defaultSttModel() != null && !props.defaultSttModel().isBlank()) {
             return props.defaultSttModel();
         }
-        return "gemini-2.0-flash";
+        return "gemini-2.5-flash";
     }
 
     private String resolveSttLanguage(JsonNode params, String fallback) {
@@ -968,7 +968,14 @@ public class GeminiJobProcessor implements AiProviderProcessor {
         }
 
         if (uniqueDrafts.size() < context.count()) {
-            throw new IllegalStateException("Failed to generate enough unique cards. Try a more specific prompt.");
+            throw new IllegalStateException(CardNoveltyService.insufficientUniqueCardsMessage(
+                    uniqueDrafts.size(),
+                    context.count(),
+                    droppedEmpty,
+                    droppedExact,
+                    droppedPrimary,
+                    droppedSemantic
+            ));
         }
 
         List<CardDraft> limitedDrafts = uniqueDrafts.stream()

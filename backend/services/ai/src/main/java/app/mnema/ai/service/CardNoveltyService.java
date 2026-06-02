@@ -123,6 +123,25 @@ public class CardNoveltyService {
         return index.examples(limit);
     }
 
+    public static String insufficientUniqueCardsMessage(int generated,
+                                                        int requested,
+                                                        int droppedEmpty,
+                                                        int droppedExact,
+                                                        int droppedPrimary,
+                                                        int droppedSemantic) {
+        int rejectedDuplicates = Math.max(0, droppedExact) + Math.max(0, droppedPrimary) + Math.max(0, droppedSemantic);
+        return "generated %d/%d unique cards; rejected duplicates=%d (exact=%d, primary=%d, semantic=%d), empty=%d. Try a more specific prompt or request fewer cards."
+                .formatted(
+                        Math.max(0, generated),
+                        Math.max(0, requested),
+                        rejectedDuplicates,
+                        Math.max(0, droppedExact),
+                        Math.max(0, droppedPrimary),
+                        Math.max(0, droppedSemantic),
+                        Math.max(0, droppedEmpty)
+                );
+    }
+
     private Fingerprint fingerprint(JsonNode content, List<String> fields) {
         if (content == null || !content.isObject() || fields == null || fields.isEmpty()) {
             return null;

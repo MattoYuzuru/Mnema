@@ -1978,7 +1978,14 @@ public class OpenAiJobProcessor implements AiProviderProcessor {
         }
 
         if (uniqueDrafts.size() < requestedCount) {
-            throw new IllegalStateException("Failed to generate enough unique cards. Try a more specific prompt.");
+            throw new IllegalStateException(CardNoveltyService.insufficientUniqueCardsMessage(
+                    uniqueDrafts.size(),
+                    requestedCount,
+                    droppedEmpty,
+                    droppedExact,
+                    droppedPrimary,
+                    droppedSemantic
+            ));
         }
 
         return new GeneratedDraftBatch(
