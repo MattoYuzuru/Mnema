@@ -384,13 +384,13 @@ type FieldLimitMap = Record<string, number>;
         </div>
 
         <div class="modal-footer">
-          <app-button variant="ghost" (click)="close()">Cancel</app-button>
+          <app-button variant="ghost" (click)="close()">{{ 'deckEnhance.cancel' | translate }}</app-button>
           <app-button
             variant="primary"
             (click)="submit()"
             [disabled]="!canSubmit()"
           >
-            {{ submitLabel() }}
+            {{ submitLabelKey() | translate }}
           </app-button>
         </div>
       </div>
@@ -406,11 +406,11 @@ type FieldLimitMap = Record<string, number>;
             {{ 'deckEnhance.scopeAutoResolveHint' | translate }}
           </p>
           <div class="scope-buttons">
-            <app-button variant="secondary" (click)="confirmScopeAndStart('local')" [disabled]="creating()">
-              {{ scopeButtonLabel('local') | translate }}
+            <app-button variant="secondary" [fullWidth]="true" (click)="confirmScopeAndStart('local')" [disabled]="creating()">
+              {{ 'deckEnhance.scopeLocal' | translate }}
             </app-button>
-            <app-button variant="primary" (click)="confirmScopeAndStart('global')" [disabled]="creating()">
-              {{ scopeButtonLabel('global') | translate }}
+            <app-button variant="primary" [fullWidth]="true" (click)="confirmScopeAndStart('global')" [disabled]="creating()">
+              {{ 'deckEnhance.scopeGlobal' | translate }}
             </app-button>
           </div>
         </div>
@@ -583,10 +583,19 @@ type FieldLimitMap = Record<string, number>;
         border-color: var(--glass-border-strong);
         backdrop-filter: blur(calc(var(--glass-blur) + 8px)) saturate(170%);
       }
-      .scope-buttons { display: flex; gap: var(--spacing-sm); justify-content: flex-end; margin-top: var(--spacing-md); }
+      .scope-buttons {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--spacing-sm);
+        margin-top: var(--spacing-md);
+      }
+      .scope-buttons app-button { min-width: 0; }
       .error-state { margin-top: var(--spacing-md); color: var(--color-error); }
       .success-state { margin-top: var(--spacing-md); color: var(--color-success); }
       .modal-footer { display: flex; justify-content: flex-end; gap: var(--spacing-md); padding: var(--spacing-lg); border-top: 1px solid var(--glass-border); }
+      @media (max-width: 520px) {
+        .scope-buttons { grid-template-columns: 1fr; }
+      }
     `]
 })
 export class AiEnhanceDeckModalComponent implements OnInit {
@@ -611,7 +620,6 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     createSuccess = signal('');
     preflightError = signal('');
     preflight = signal<AiJobPreflightResponse | null>(null);
-    preflightScope = signal<'local' | 'global' | null>(null);
     selectedScope = signal<'local' | 'global'>('local');
     pendingRequestId = signal(this.generateRequestId());
     private lastPreflightSignature = signal('');
@@ -677,14 +685,14 @@ export class AiEnhanceDeckModalComponent implements OnInit {
     readonly formatOptions = ['mp3', 'ogg', 'wav'];
     readonly ttsFormatOptions = computed(() => ['gemini', 'qwen'].includes(this.selectedProvider()) ? ['wav'] : this.formatOptions);
     readonly preflightSignature = computed(() => JSON.stringify(this.buildCreateJobRequest(this.selectedScope()).params ?? {}));
-    readonly submitLabel = computed(() => {
+    readonly submitLabelKey = computed(() => {
         if (this.creating()) {
-            return 'Queueing...';
+            return 'deckEnhance.queueing';
         }
         if (this.preflighting()) {
-            return 'Analyzing...';
+            return 'deckEnhance.analyzing';
         }
-        return this.preflight() ? 'Confirm and start' : 'Analyze plan';
+        return this.canApplyGlobal ? 'deckEnhance.chooseScope' : 'deckEnhance.start';
     });
 
     private readonly optionDescriptions: Record<string, string> = {
@@ -837,7 +845,6 @@ export class AiEnhanceDeckModalComponent implements OnInit {
                 return;
             }
             this.preflight.set(null);
-            this.preflightScope.set(null);
             this.preflightError.set('');
             this.pendingRequestId.set(this.generateRequestId());
         }, { injector: this.injector });
@@ -985,22 +992,13 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         if (!this.canSubmit()) {
             return;
         }
-        if (!this.preflight()) {
-            this.runPreflight(scope);
-            return;
-        }
-        if (this.preflightScope() !== scope) {
-            this.runPreflight(scope);
-            return;
-        }
         this.creating.set(true);
         this.createError.set('');
         this.createSuccess.set('');
 
         const selected = this.selectedOptions();
-        const aiActions = Array.from(selected).filter(action => action === 'audit' || action === 'missing_fields');
         const shouldAutoResolve = selected.has('auto_resolve_duplicates');
-        const continueWithJob = () => this.queueEnhancementJob(scope, aiActions);
+        const continueWithJob = () => this.queueEnhancementJob(scope);
 
         if (!shouldAutoResolve) {
             continueWithJob();
@@ -1015,17 +1013,16 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             });
     }
 
-    private queueEnhancementJob(scope: 'local' | 'global', actions: string[]): void {
+    private queueEnhancementJob(scope: 'local' | 'global'): void {
         this.aiApi.createJob({
             requestId: this.pendingRequestId(),
             deckId: this.userDeckId,
             type: 'generic',
-            params: this.preflight()?.normalizedParams || this.buildCreateJobRequest(scope).params
+            params: this.buildCreateJobRequest(scope).params
         }).subscribe({
             next: job => {
                 this.creating.set(false);
                 this.preflight.set(null);
-                this.preflightScope.set(null);
                 this.preflightError.set('');
                 this.lastPreflightSignature.set('');
                 this.pendingRequestId.set(this.generateRequestId());
@@ -1036,27 +1033,6 @@ export class AiEnhanceDeckModalComponent implements OnInit {
             error: err => {
                 this.creating.set(false);
                 this.createError.set(err?.error?.message || 'Failed to create AI job');
-            }
-        });
-    }
-
-    private runPreflight(scope: 'local' | 'global'): void {
-        this.preflighting.set(true);
-        this.preflightError.set('');
-        this.createError.set('');
-        this.createSuccess.set('');
-        const request = this.buildCreateJobRequest(scope);
-        this.aiApi.preflightJob(request).subscribe({
-            next: preflight => {
-                this.preflighting.set(false);
-                this.preflight.set(preflight);
-                this.preflightScope.set(scope);
-                this.lastPreflightSignature.set(this.preflightSignature());
-                this.pendingRequestId.set(request.requestId);
-            },
-            error: err => {
-                this.preflighting.set(false);
-                this.preflightError.set(err?.error?.message || 'Failed to analyze deck enhancement');
             }
         });
     }
@@ -1133,13 +1109,6 @@ export class AiEnhanceDeckModalComponent implements OnInit {
 
     trackMissingField(_: number, row: MissingFieldRow): string {
         return row.field;
-    }
-
-    scopeButtonLabel(scope: 'local' | 'global'): string {
-        if (this.preflight() && this.preflightScope() === scope) {
-            return scope === 'global' ? 'deckEnhance.scopeGlobal' : 'deckEnhance.scopeLocal';
-        }
-        return scope === 'global' ? 'deckEnhance.scopeGlobalAnalyze' : 'deckEnhance.scopeLocalAnalyze';
     }
 
     toggleMissingField(field: string): void {

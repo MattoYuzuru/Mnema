@@ -51,6 +51,15 @@ describe('AiEnhanceDeckModalComponent', () => {
             status: 'active',
             createdAt: ''
         }]));
+        aiApi.createJob.and.returnValue(of({
+            jobId: 'job-1',
+            requestId: 'request-1',
+            deckId: 'deck-1',
+            type: 'generic',
+            status: 'queued',
+            progress: 0,
+            createdAt: ''
+        }));
         templateApi.getTemplate.and.returnValue(of({
             templateId: 'template-1',
             ownerId: 'owner-1',
@@ -135,5 +144,22 @@ describe('AiEnhanceDeckModalComponent', () => {
         expect(params['fieldLimits']).toEqual([{ field: 'audio', limit: 2 }]);
         expect(params['tts']).toEqual(jasmine.objectContaining({ enabled: true }));
         expect(params['image']).toBeUndefined();
+    });
+
+    it('queues a global job immediately after scope selection', () => {
+        component.canApplyGlobal = true;
+        component.selectedOptions.set(new Set(['missing_fields']));
+        component.selectedMissingFields.set(new Set(['audio']));
+        component.fieldLimits.set({ audio: 2 });
+        component.ttsMappings.set([{ sourceField: 'word', targetField: 'audio' }]);
+
+        component.confirmScopeAndStart('global');
+
+        expect(aiApi.preflightJob).not.toHaveBeenCalled();
+        expect(aiApi.createJob).toHaveBeenCalled();
+        const request = aiApi.createJob.calls.mostRecent().args[0];
+        const params = request.params as Record<string, unknown>;
+        expect(params['updateScope']).toBe('global');
+        expect(params['tts']).toEqual(jasmine.objectContaining({ enabled: true }));
     });
 });
