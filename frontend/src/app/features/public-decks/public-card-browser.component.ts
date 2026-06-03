@@ -1025,7 +1025,7 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
             next: ({ deck, cardsPage, size }) => {
                 this.deck = deck;
                 this.cards = cardsPage.content;
-                this.buildTemplateFromFields(cardsPage.fields);
+                this.template = cardsPage.template || this.buildTemplateFromFields(cardsPage.fields);
                 this.currentPage = cardsPage.number + 1;
                 this.hasMoreCards = !cardsPage.last;
                 this.totalCards = size.cardsQty;
@@ -1133,11 +1133,11 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         return this.canReportDeck;
     }
 
-    private buildTemplateFromFields(fields: FieldTemplateDTO[]): void {
+    private buildTemplateFromFields(fields: FieldTemplateDTO[]): CardTemplateDTO {
         const frontFields = fields.filter(f => f.isOnFront).sort((a, b) => a.orderIndex - b.orderIndex);
         const backFields = fields.filter(f => !f.isOnFront).sort((a, b) => a.orderIndex - b.orderIndex);
 
-        this.template = {
+        return {
             templateId: fields[0]?.templateId || '',
             ownerId: '',
             name: 'Public Template',

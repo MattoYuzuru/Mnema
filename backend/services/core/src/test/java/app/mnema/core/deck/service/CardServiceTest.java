@@ -2,10 +2,13 @@ package app.mnema.core.deck.service;
 
 import app.mnema.core.deck.domain.dto.DuplicateGroupDTO;
 import app.mnema.core.deck.domain.dto.DuplicateResolveResultDTO;
+import app.mnema.core.deck.domain.dto.CardTemplateDTO;
 import app.mnema.core.deck.domain.dto.FieldTemplateDTO;
 import app.mnema.core.deck.domain.dto.MissingFieldSummaryDTO;
 import app.mnema.core.deck.domain.dto.PublicCardDTO;
 import app.mnema.core.deck.domain.dto.UserCardDTO;
+import app.mnema.core.deck.domain.entity.CardTemplateEntity;
+import app.mnema.core.deck.domain.entity.CardTemplateVersionEntity;
 import app.mnema.core.deck.domain.entity.DeckUpdateSessionEntity;
 import app.mnema.core.deck.domain.entity.FieldTemplateEntity;
 import app.mnema.core.deck.domain.entity.PublicCardEntity;
@@ -20,6 +23,8 @@ import app.mnema.core.deck.domain.request.MissingFieldSummaryRequest;
 import app.mnema.core.deck.domain.type.CardFieldType;
 import app.mnema.core.deck.domain.type.LanguageTag;
 import app.mnema.core.deck.domain.type.SrAlgorithm;
+import app.mnema.core.deck.repository.CardTemplateRepository;
+import app.mnema.core.deck.repository.CardTemplateVersionRepository;
 import app.mnema.core.deck.repository.DeckUpdateSessionRepository;
 import app.mnema.core.deck.repository.FieldTemplateRepository;
 import app.mnema.core.deck.repository.PublicCardRepository;
@@ -77,6 +82,12 @@ class CardServiceTest {
 
     @Mock
     DeckUpdateSessionRepository deckUpdateSessionRepository;
+
+    @Mock
+    CardTemplateRepository cardTemplateRepository;
+
+    @Mock
+    CardTemplateVersionRepository cardTemplateVersionRepository;
 
     @Mock
     FieldTemplateRepository fieldTemplateRepository;
@@ -966,6 +977,54 @@ class CardServiceTest {
 
         assertThat(result).isEmpty();
         verifyNoInteractions(fieldTemplateRepository);
+    }
+
+    @Test
+    void getTemplateForPublicDeck_returnsVersionedAnkiLayoutAndFields() {
+        UUID deckId = UUID.randomUUID();
+        UUID templateId = UUID.randomUUID();
+        UUID ownerId = UUID.randomUUID();
+        PublicDeckEntity publicDeck = publicDeck(deckId, 2, ownerId, templateId, 3, true);
+        CardTemplateEntity template = new CardTemplateEntity(
+                templateId,
+                ownerId,
+                "Topik I",
+                "Imported",
+                false,
+                Instant.parse("2026-04-07T12:00:00Z"),
+                null,
+                null,
+                null,
+                null,
+                3
+        );
+        CardTemplateVersionEntity version = new CardTemplateVersionEntity(
+                templateId,
+                3,
+                json("{\"front\":[\"Word\"],\"back\":[\"Meaning\",\"Audio\"],\"renderMode\":\"anki\",\"anki\":{\"css\":\".card{}\"}}"),
+                null,
+                null,
+                Instant.parse("2026-04-07T12:00:00Z"),
+                ownerId
+        );
+        List<FieldTemplateEntity> fields = List.of(
+                fieldTemplate(templateId, 3, "Word", CardFieldType.text, true),
+                fieldTemplate(templateId, 3, "Meaning", CardFieldType.text, false),
+                fieldTemplate(templateId, 3, "Audio", CardFieldType.audio, false)
+        );
+
+        when(publicDeckRepository.findLatestByDeckId(deckId)).thenReturn(Optional.of(publicDeck));
+        when(cardTemplateRepository.findById(templateId)).thenReturn(Optional.of(template));
+        when(cardTemplateVersionRepository.findByTemplateIdAndVersion(templateId, 3)).thenReturn(Optional.of(version));
+        when(fieldTemplateRepository.findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, 3)).thenReturn(fields);
+
+        CardTemplateDTO result = cardService.getTemplateForPublicDeck(deckId, null);
+
+        assertThat(result).isNotNull();
+        assertThat(result.name()).isEqualTo("Topik I");
+        assertThat(result.layout().path("renderMode").asText()).isEqualTo("anki");
+        assertThat(result.layout().path("anki").path("css").asText()).isEqualTo(".card{}");
+        assertThat(result.fields()).extracting(FieldTemplateDTO::name).containsExactly("Word", "Meaning", "Audio");
     }
 
     @Test

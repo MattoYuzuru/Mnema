@@ -63,11 +63,13 @@ public class PublicDeckController {
     ) {
         Page<PublicCardDTO> cardsPage = cardService.getPublicCards(deckId, version, page, limit);
         List<FieldTemplateDTO> fields = cardService.getFieldTemplatesForPublicDeck(deckId, version);
+        CardTemplateDTO template = cardService.getTemplateForPublicDeck(deckId, version);
 
         Map<String, Object> response = new LinkedHashMap<>();
 
         response.put("content", cardsPage.getContent());
         response.put("fields", fields);
+        response.put("template", template);
 
         response.put("pageable", cardsPage.getPageable());
         response.put("last", cardsPage.isLast());

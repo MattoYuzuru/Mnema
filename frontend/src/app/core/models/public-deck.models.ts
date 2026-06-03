@@ -1,3 +1,4 @@
+import { CardTemplateDTO, FieldTemplateDTO } from './template.models';
 import { CardContentValue } from './user-card.models';
 
 export interface PublicDeckDTO {
@@ -35,7 +36,8 @@ export interface PublicCardDTO {
 
 export interface PublicDeckCardsPage {
     content: PublicCardDTO[];
-    fields: import('./template.models').FieldTemplateDTO[];
+    fields: FieldTemplateDTO[];
+    template?: CardTemplateDTO | null;
     pageable: {
         pageNumber: number;
         pageSize: number;

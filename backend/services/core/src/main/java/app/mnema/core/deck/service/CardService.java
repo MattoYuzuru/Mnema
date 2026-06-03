@@ -1,5 +1,6 @@
 package app.mnema.core.deck.service;
 
+import app.mnema.core.deck.domain.dto.CardTemplateDTO;
 import app.mnema.core.deck.domain.dto.FieldTemplateDTO;
 import app.mnema.core.deck.domain.dto.MissingFieldSummaryDTO;
 import app.mnema.core.deck.domain.dto.MissingFieldStatDTO;
@@ -60,6 +61,8 @@ public class CardService {
     private final PublicCardRepository publicCardRepository;
     private final PublicDeckRepository publicDeckRepository;
     private final DeckUpdateSessionRepository deckUpdateSessionRepository;
+    private final CardTemplateRepository cardTemplateRepository;
+    private final CardTemplateVersionRepository cardTemplateVersionRepository;
     private final FieldTemplateRepository fieldTemplateRepository;
     private final ObjectMapper objectMapper;
     private final ContentAdminAccessService contentAdminAccessService;
@@ -69,6 +72,8 @@ public class CardService {
                        PublicCardRepository publicCardRepository,
                        PublicDeckRepository publicDeckRepository,
                        DeckUpdateSessionRepository deckUpdateSessionRepository,
+                       CardTemplateRepository cardTemplateRepository,
+                       CardTemplateVersionRepository cardTemplateVersionRepository,
                        FieldTemplateRepository fieldTemplateRepository,
                        ObjectMapper objectMapper,
                        ContentAdminAccessService contentAdminAccessService) {
@@ -77,6 +82,8 @@ public class CardService {
         this.publicCardRepository = publicCardRepository;
         this.publicDeckRepository = publicDeckRepository;
         this.deckUpdateSessionRepository = deckUpdateSessionRepository;
+        this.cardTemplateRepository = cardTemplateRepository;
+        this.cardTemplateVersionRepository = cardTemplateVersionRepository;
         this.fieldTemplateRepository = fieldTemplateRepository;
         this.objectMapper = objectMapper;
         this.contentAdminAccessService = contentAdminAccessService;
@@ -832,6 +839,50 @@ public class CardService {
                 .stream()
                 .map(this::toFieldTemplateDTO)
                 .toList();
+    }
+
+    @Transactional(readOnly = true)
+    public CardTemplateDTO getTemplateForPublicDeck(UUID deckId, Integer deckVersion) {
+        PublicDeckEntity deck = resolvePublicDeck(deckId, deckVersion);
+
+        if (!deck.isPublicFlag()) {
+            throw new SecurityException("Deck is not public: " + deckId);
+        }
+
+        UUID templateId = deck.getTemplateId();
+        Integer templateVersion = deck.getTemplateVersion();
+        if (templateId == null || templateVersion == null) {
+            return null;
+        }
+
+        CardTemplateEntity template = cardTemplateRepository.findById(templateId)
+                .orElseThrow(() -> new IllegalStateException("Template not found for public deck: " + templateId));
+        CardTemplateVersionEntity version = cardTemplateVersionRepository
+                .findByTemplateIdAndVersion(templateId, templateVersion)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Template version not found for public deck: templateId=" + templateId + ", version=" + templateVersion
+                ));
+        List<FieldTemplateDTO> fields = fieldTemplateRepository
+                .findByTemplateIdAndTemplateVersionOrderByOrderIndexAsc(templateId, templateVersion)
+                .stream()
+                .map(this::toFieldTemplateDTO)
+                .toList();
+
+        return new CardTemplateDTO(
+                template.getTemplateId(),
+                version.getVersion(),
+                template.getLatestVersion(),
+                template.getOwnerId(),
+                template.getName(),
+                template.getDescription(),
+                template.isPublic(),
+                template.getCreatedAt(),
+                template.getUpdatedAt(),
+                version.getLayout(),
+                version.getAiProfile(),
+                version.getIconUrl(),
+                fields
+        );
     }
 
     @Transactional

@@ -2,6 +2,7 @@ package app.mnema.core.deck.controller;
 
 import app.mnema.core.deck.domain.dto.PublicCardDTO;
 import app.mnema.core.deck.domain.dto.PublicDeckDTO;
+import app.mnema.core.deck.domain.dto.CardTemplateDTO;
 import app.mnema.core.deck.domain.dto.UserDeckDTO;
 import app.mnema.core.deck.domain.dto.DeckSizeDTO;
 import app.mnema.core.deck.domain.type.LanguageTag;
@@ -123,6 +124,21 @@ class PublicDeckControllerWebMvcTest {
         );
 
         when(cardService.getPublicCards(deckId, 2, 1, 50)).thenReturn(page);
+        when(cardService.getTemplateForPublicDeck(deckId, 2)).thenReturn(new CardTemplateDTO(
+                UUID.randomUUID(),
+                3,
+                3,
+                UUID.randomUUID(),
+                "Topik I",
+                "Imported",
+                false,
+                Instant.now(),
+                Instant.now(),
+                objectMapper.readTree("{\"front\":[\"front\"],\"back\":[\"back\"],\"renderMode\":\"anki\",\"anki\":{\"css\":\".card{}\"}}"),
+                null,
+                null,
+                List.of()
+        ));
 
         mockMvc.perform(get("/decks/public/{deckId}/cards", deckId)
                         .with(jwt().jwt(j -> j.claim("sub", "user-123"))
@@ -133,7 +149,9 @@ class PublicDeckControllerWebMvcTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(1))
                 .andExpect(jsonPath("$.content[0].deckId").value(deckId.toString()))
-                .andExpect(jsonPath("$.content[0].deckVersion").value(2));
+                .andExpect(jsonPath("$.content[0].deckVersion").value(2))
+                .andExpect(jsonPath("$.template.layout.renderMode").value("anki"))
+                .andExpect(jsonPath("$.template.layout.anki.css").value(".card{}"));
     }
 
     @Test
