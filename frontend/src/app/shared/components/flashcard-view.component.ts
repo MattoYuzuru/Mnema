@@ -277,12 +277,11 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
     private getAnkiPayload(): AnkiPayload | null {
         const raw = (this.content as any)?._anki;
         if (raw && typeof raw === 'object') {
-            const templateFieldNames = this.collectTemplateFieldNames();
             const stored = {
                 front: typeof raw.front === 'string' ? raw.front : '',
                 back: typeof raw.back === 'string' ? raw.back : '',
                 css: typeof raw.css === 'string' ? raw.css : '',
-                renderedFieldNames: templateFieldNames.size > 0 ? templateFieldNames : this.collectNonMediaFieldNames(),
+                renderedFieldNames: this.collectStoredAnkiRenderedFieldNames(),
                 mediaIds: new Set<string>()
             };
             stored.mediaIds = new Set(this.collectAnkiMediaIds(stored));
@@ -432,11 +431,29 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
     private collectNonMediaFieldNames(): Set<string> {
         const names = new Set<string>();
         for (const field of this.template?.fields || []) {
-            if (!['image', 'audio', 'video'].includes(field.fieldType)) {
+            if (!this.isMediaField(field)) {
                 names.add(this.normalizeFieldName(field.name));
             }
         }
         return names;
+    }
+
+    private collectStoredAnkiRenderedFieldNames(): Set<string> {
+        const names = this.collectTemplateFieldNames();
+        if (names.size === 0) {
+            return this.collectNonMediaFieldNames();
+        }
+
+        for (const field of this.template?.fields || []) {
+            if (this.isMediaField(field)) {
+                names.delete(this.normalizeFieldName(field.name));
+            }
+        }
+        return names;
+    }
+
+    private isMediaField(field: FieldTemplateDTO): boolean {
+        return ['image', 'audio', 'video'].includes(field.fieldType);
     }
 
     private renderAnkiSupplementalFields(side: 'front' | 'back', anki: AnkiPayload): string {

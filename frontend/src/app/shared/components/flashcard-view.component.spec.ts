@@ -11,10 +11,14 @@ describe('FlashcardViewComponent', () => {
 
     const audioMediaId = '11111111-1111-1111-1111-111111111111';
     const audioUrl = 'https://cdn.mnema.test/audio.mp3';
+    const imageMediaId = '22222222-2222-2222-2222-222222222222';
+    const imageUrl = 'https://cdn.mnema.test/image.png';
 
     beforeEach(async () => {
         mediaApi = jasmine.createSpyObj<MediaApiService>('MediaApiService', ['resolve', 'toUrlMap']);
-        mediaApi.resolve.and.returnValue(of([resolvedAudio()]));
+        mediaApi.resolve.and.callFake((mediaIds: string[]) =>
+            of(mediaIds.map(resolvedMedia).filter((item): item is ResolvedMedia => item !== null))
+        );
         mediaApi.toUrlMap.and.callFake((items: ResolvedMedia[]) =>
             Object.fromEntries(items.map(item => [item.mediaId, item.url]))
         );
@@ -68,6 +72,33 @@ describe('FlashcardViewComponent', () => {
         expect(audio?.getAttribute('src')).toBe(audioUrl);
     });
 
+    it('shows media fields when stored Anki html has blank media template slots', async () => {
+        component.template = templateWithMediaSlots();
+        component.content = {
+            Word: '교통사고',
+            Meaning: 'traffic accident',
+            Audio: { mediaId: audioMediaId, kind: 'audio' },
+            Image: { mediaId: imageMediaId, kind: 'image' },
+            _anki: {
+                front: '<div class="term">교통사고</div>',
+                back: '<div class="meaning">traffic accident</div><div class="image"></div>',
+                css: '.card { color: black; }'
+            }
+        };
+        component.side = 'back';
+
+        await (component as any).refreshView();
+        fixture.detectChanges();
+
+        const host = fixture.nativeElement as HTMLElement;
+        const audio = host.querySelector('.mn-anki-extra-field-audio audio') as HTMLAudioElement | null;
+        const image = host.querySelector('.mn-anki-extra-field-image img') as HTMLImageElement | null;
+        expect(audio).not.toBeNull();
+        expect(audio?.getAttribute('src')).toBe(audioUrl);
+        expect(image).not.toBeNull();
+        expect(image?.getAttribute('src')).toBe(imageUrl);
+    });
+
     function template(): CardTemplateDTO {
         return {
             templateId: 'template-1',
@@ -95,6 +126,28 @@ describe('FlashcardViewComponent', () => {
         };
     }
 
+    function templateWithMediaSlots(): CardTemplateDTO {
+        return {
+            ...template(),
+            layout: {
+                front: ['Word', 'Audio'],
+                back: ['Meaning', 'Image', 'Audio'],
+                renderMode: 'anki',
+                anki: {
+                    frontTemplate: '<div class="term">{{Word}}</div>{{Audio}}',
+                    backTemplate: '{{FrontSide}}<div class="meaning">{{Meaning}}</div><div class="image">{{Image}}</div>{{Audio}}',
+                    css: '.card { color: black; } .term { font-size: 2rem; }'
+                }
+            },
+            fields: [
+                field('Word', 'Word', 'text', true, 0),
+                field('Meaning', 'Meaning', 'text', false, 1),
+                field('Audio', 'Audio', 'audio', true, 2),
+                field('Image', 'Image', 'image', false, 3)
+            ]
+        };
+    }
+
     function field(name: string, label: string, fieldType: string, isOnFront: boolean, orderIndex: number) {
         return {
             fieldId: `field-${name}`,
@@ -108,14 +161,27 @@ describe('FlashcardViewComponent', () => {
         };
     }
 
-    function resolvedAudio(): ResolvedMedia {
-        return {
-            mediaId: audioMediaId,
-            kind: 'card_audio',
-            url: audioUrl,
-            mimeType: 'audio/mpeg',
-            sizeBytes: 1000,
-            expiresAt: '2026-06-03T01:00:00Z'
-        };
+    function resolvedMedia(mediaId: string): ResolvedMedia | null {
+        if (mediaId === audioMediaId) {
+            return {
+                mediaId: audioMediaId,
+                kind: 'card_audio',
+                url: audioUrl,
+                mimeType: 'audio/mpeg',
+                sizeBytes: 1000,
+                expiresAt: '2026-06-03T01:00:00Z'
+            };
+        }
+        if (mediaId === imageMediaId) {
+            return {
+                mediaId: imageMediaId,
+                kind: 'card_image',
+                url: imageUrl,
+                mimeType: 'image/png',
+                sizeBytes: 1000,
+                expiresAt: '2026-06-03T01:00:00Z'
+            };
+        }
+        return null;
     }
 });
