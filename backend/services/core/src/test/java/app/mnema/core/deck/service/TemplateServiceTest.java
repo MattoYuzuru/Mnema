@@ -327,7 +327,7 @@ class TemplateServiceTest {
 
         assertThat(result.version()).isEqualTo(2);
         assertThat(result.latestVersion()).isEqualTo(2);
-        assertThat(result.layout()).isEqualTo(json("{\"layout\":\"v2\"}"));
+        assertThat(result.layout()).isEqualTo(json("{\"layout\":\"v2\",\"front\":[\"front\"],\"back\":[\"back\"]}"));
         assertThat(result.aiProfile()).isEqualTo(json("{\"ai\":\"v2\"}"));
         assertThat(result.iconUrl()).isEqualTo("v2.png");
 
@@ -359,8 +359,9 @@ class TemplateServiceTest {
     void addFieldToTemplate_usesFallbackLatestVersionAndReturnsAddedField() {
         UUID ownerId = UUID.randomUUID();
         UUID templateId = UUID.randomUUID();
-        CardTemplateEntity template = template(templateId, null, json("{\"layout\":\"v3\"}"), json("{\"ai\":\"v3\"}"), "v3.png");
-        CardTemplateVersionEntity latestVersion = version(templateId, 3, json("{\"layout\":\"v3\"}"), json("{\"ai\":\"v3\"}"), "v3.png");
+        JsonNode layout = json("{\"front\":[\"front\"],\"back\":[\"back\"],\"renderMode\":\"anki\",\"anki\":{\"css\":\".card{}\"}}");
+        CardTemplateEntity template = template(templateId, null, layout, json("{\"ai\":\"v3\"}"), "v3.png");
+        CardTemplateVersionEntity latestVersion = version(templateId, 3, layout, json("{\"ai\":\"v3\"}"), "v3.png");
         List<FieldTemplateEntity> existingFields = List.of(
                 fieldEntity(UUID.randomUUID(), templateId, 3, "front", "Front", true, true, 0),
                 fieldEntity(UUID.randomUUID(), templateId, 3, "back", "Back", true, false, 1)
@@ -394,6 +395,14 @@ class TemplateServiceTest {
         assertThat(result.name()).isEqualTo("hint");
         assertThat(result.label()).isEqualTo("Hint");
         assertThat(template.getLatestVersion()).isEqualTo(4);
+
+        ArgumentCaptor<CardTemplateVersionEntity> versionCaptor = ArgumentCaptor.forClass(CardTemplateVersionEntity.class);
+        verify(cardTemplateVersionRepository).save(versionCaptor.capture());
+        JsonNode savedLayout = versionCaptor.getValue().getLayout();
+        assertThat(savedLayout.path("front")).extracting(JsonNode::asText).containsExactly("front");
+        assertThat(savedLayout.path("back")).extracting(JsonNode::asText).containsExactly("back", "hint");
+        assertThat(savedLayout.path("renderMode").asText()).isEqualTo("anki");
+        assertThat(savedLayout.path("anki").path("css").asText()).isEqualTo(".card{}");
     }
 
     @Test

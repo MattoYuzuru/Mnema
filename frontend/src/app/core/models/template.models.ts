@@ -12,6 +12,14 @@ export interface CardTemplateDTO {
         front: string[];
         back: string[];
         renderMode?: string;
+        anki?: {
+            frontTemplate?: string;
+            backTemplate?: string;
+            css?: string;
+            modelId?: string;
+            modelName?: string;
+            templateName?: string;
+        };
     };
     aiProfile?: {
         prompt: string;
@@ -53,6 +61,14 @@ export interface CreateTemplateRequest {
         front: string[];
         back: string[];
         renderMode?: string;
+        anki?: {
+            frontTemplate?: string;
+            backTemplate?: string;
+            css?: string;
+            modelId?: string;
+            modelName?: string;
+            templateName?: string;
+        };
     };
     aiProfile?: {
         prompt: string;

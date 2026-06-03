@@ -9,6 +9,10 @@ import app.mnema.core.deck.repository.CardTemplateRepository;
 import app.mnema.core.deck.repository.CardTemplateVersionRepository;
 import app.mnema.core.deck.repository.FieldTemplateRepository;
 import app.mnema.core.security.ContentAdminAccessService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.JsonNodeFactory;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
@@ -20,9 +24,12 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.Instant;
+import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -530,24 +537,13 @@ public class TemplateService {
 
     private CardTemplateVersionEntity createNewVersion(CardTemplateEntity template,
                                                        CardTemplateVersionEntity latestVersion,
-                                                       com.fasterxml.jackson.databind.JsonNode layout,
+                                                       JsonNode layout,
                                                        com.fasterxml.jackson.databind.JsonNode aiProfile,
                                                        String iconUrl,
                                                        UUID createdBy,
                                                        List<FieldTemplateDTO> overrideFields) {
         int newVersionNumber = latestVersion.getVersion() + 1;
         Instant now = Instant.now();
-
-        CardTemplateVersionEntity newVersion = new CardTemplateVersionEntity(
-                template.getTemplateId(),
-                newVersionNumber,
-                layout,
-                aiProfile,
-                iconUrl,
-                now,
-                createdBy
-        );
-        cardTemplateVersionRepository.save(newVersion);
 
         List<FieldTemplateDTO> fieldsForVersion;
         if (overrideFields != null) {
@@ -562,6 +558,19 @@ public class TemplateService {
                     .map(this::toFieldTemplateDTO)
                     .toList();
         }
+
+        JsonNode reconciledLayout = reconcileLayoutWithFields(layout, fieldsForVersion);
+
+        CardTemplateVersionEntity newVersion = new CardTemplateVersionEntity(
+                template.getTemplateId(),
+                newVersionNumber,
+                reconciledLayout,
+                aiProfile,
+                iconUrl,
+                now,
+                createdBy
+        );
+        cardTemplateVersionRepository.save(newVersion);
 
         List<FieldTemplateEntity> clonedFields = fieldsForVersion.stream()
                 .map(field -> new FieldTemplateEntity(
@@ -585,12 +594,60 @@ public class TemplateService {
 
         template.setLatestVersion(newVersionNumber);
         template.setUpdatedAt(now);
-        template.setLayout(layout);
+        template.setLayout(reconciledLayout);
         template.setAiProfile(aiProfile);
         template.setIconUrl(iconUrl);
         cardTemplateRepository.save(template);
 
         return newVersion;
+    }
+
+    private JsonNode reconcileLayoutWithFields(JsonNode layout, List<FieldTemplateDTO> fields) {
+        if (fields == null || fields.isEmpty()) {
+            return layout;
+        }
+        ObjectNode reconciled = layout != null && layout.isObject()
+                ? layout.deepCopy()
+                : JsonNodeFactory.instance.objectNode();
+
+        List<FieldTemplateDTO> orderedFields = fields.stream()
+                .filter(field -> field.name() != null && !field.name().isBlank())
+                .sorted(Comparator.comparingInt(field -> field.orderIndex() == null ? Integer.MAX_VALUE : field.orderIndex()))
+                .toList();
+        Map<String, FieldTemplateDTO> fieldsByName = orderedFields.stream()
+                .collect(Collectors.toMap(FieldTemplateDTO::name, field -> field, (left, right) -> left, java.util.LinkedHashMap::new));
+
+        Set<String> front = reconcileLayoutSide(reconciled.path("front"), fieldsByName, true);
+        Set<String> back = reconcileLayoutSide(reconciled.path("back"), fieldsByName, false);
+        for (FieldTemplateDTO field : orderedFields) {
+            Set<String> target = field.isOnFront() ? front : back;
+            if (!front.contains(field.name()) && !back.contains(field.name())) {
+                target.add(field.name());
+            }
+        }
+
+        ArrayNode frontNode = reconciled.putArray("front");
+        front.forEach(frontNode::add);
+        ArrayNode backNode = reconciled.putArray("back");
+        back.forEach(backNode::add);
+        return reconciled;
+    }
+
+    private Set<String> reconcileLayoutSide(JsonNode sideNode,
+                                            Map<String, FieldTemplateDTO> fieldsByName,
+                                            boolean frontSide) {
+        Set<String> names = new LinkedHashSet<>();
+        if (sideNode == null || !sideNode.isArray()) {
+            return names;
+        }
+        for (JsonNode item : sideNode) {
+            String name = item.asText(null);
+            FieldTemplateDTO field = name == null ? null : fieldsByName.get(name);
+            if (field != null && field.isOnFront() == frontSide) {
+                names.add(field.name());
+            }
+        }
+        return names;
     }
 
     private CardTemplateDTO toCardTemplateDTO(CardTemplateEntity entity,

@@ -16,6 +16,8 @@ interface AnkiPayload {
     front: string;
     back: string;
     css: string;
+    renderedFieldNames: Set<string>;
+    mediaIds: Set<string>;
 }
 
 @Component({
@@ -269,19 +271,24 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
 
     private isAnkiTemplate(): boolean {
         const anki = this.getAnkiPayload();
-        return !!anki && (!!anki.front || !!anki.back);
+        return !!anki && (!!anki.front || !!anki.back || !!anki.css);
     }
 
     private getAnkiPayload(): AnkiPayload | null {
         const raw = (this.content as any)?._anki;
-        if (!raw || typeof raw !== 'object') {
-            return null;
+        if (raw && typeof raw === 'object') {
+            const templateFieldNames = this.collectTemplateFieldNames();
+            const stored = {
+                front: typeof raw.front === 'string' ? raw.front : '',
+                back: typeof raw.back === 'string' ? raw.back : '',
+                css: typeof raw.css === 'string' ? raw.css : '',
+                renderedFieldNames: templateFieldNames.size > 0 ? templateFieldNames : this.collectNonMediaFieldNames(),
+                mediaIds: new Set<string>()
+            };
+            stored.mediaIds = new Set(this.collectAnkiMediaIds(stored));
+            return stored;
         }
-        return {
-            front: typeof raw.front === 'string' ? raw.front : '',
-            back: typeof raw.back === 'string' ? raw.back : '',
-            css: typeof raw.css === 'string' ? raw.css : ''
-        };
+        return this.buildTemplateAnkiPayload();
     }
 
     private async buildAnkiView(): Promise<void> {
@@ -295,7 +302,10 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
             return;
         }
         this.ankiMode = true;
-        const mediaIds = this.collectAnkiMediaIds(anki);
+        const mediaIds = this.uniqueStrings([
+            ...this.collectAnkiMediaIds(anki),
+            ...this.collectContentMediaIds()
+        ]);
         if (mediaIds.length > 0) {
             try {
                 const resolved = await this.mediaApi.resolve(mediaIds).toPromise();
@@ -304,8 +314,8 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
                 console.error('Failed to resolve Anki media URLs:', err);
             }
         }
-        this.ankiFrontHtml = this.replaceAnkiMediaTokens(anki.front);
-        this.ankiBackHtml = this.replaceAnkiMediaTokens(anki.back);
+        this.ankiFrontHtml = this.replaceAnkiMediaTokens(anki.front) + this.renderAnkiSupplementalFields('front', anki);
+        this.ankiBackHtml = this.replaceAnkiMediaTokens(anki.back) + this.renderAnkiSupplementalFields('back', anki);
         this.ankiCss = this.replaceAnkiMediaTokens(anki.css);
         this.updateAnkiStyle();
         this.frontFields = [];
@@ -326,6 +336,19 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
         return Array.from(ids);
     }
 
+    private collectContentMediaIds(): string[] {
+        const ids = new Set<string>();
+        for (const value of Object.values(this.content || {})) {
+            if (value && typeof value === 'object' && 'mediaId' in value) {
+                const mediaId = (value as any).mediaId;
+                if (typeof mediaId === 'string' && mediaId.trim()) {
+                    ids.add(mediaId.trim());
+                }
+            }
+        }
+        return Array.from(ids);
+    }
+
     private replaceAnkiMediaTokens(value: string): string {
         if (!value) {
             return '';
@@ -334,6 +357,170 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
             const id = match.substring('mnema-media://'.length);
             return this.resolvedUrls[id] || match;
         });
+    }
+
+    private buildTemplateAnkiPayload(): AnkiPayload | null {
+        const layoutAnki = this.template?.layout?.anki;
+        if (this.template?.layout?.renderMode !== 'anki' || !layoutAnki) {
+            return null;
+        }
+        const renderedFieldNames = this.collectTemplateFieldNames();
+        const front = this.renderAnkiTemplate(layoutAnki.frontTemplate || '', '');
+        const back = this.renderAnkiTemplate(layoutAnki.backTemplate || '', front);
+        const payload = {
+            front,
+            back,
+            css: layoutAnki.css || '',
+            renderedFieldNames,
+            mediaIds: new Set<string>()
+        };
+        payload.mediaIds = new Set(this.collectAnkiMediaIds(payload));
+        return payload;
+    }
+
+    private renderAnkiTemplate(template: string, frontHtml: string): string {
+        if (!template) {
+            return '';
+        }
+        return template.replace(/\{\{([^}]+)}}/g, (_match: string, token: string) => this.renderAnkiToken(token, frontHtml));
+    }
+
+    private renderAnkiToken(token: string, frontHtml: string): string {
+        const cleaned = this.cleanAnkiToken(token);
+        if (!cleaned) {
+            return '';
+        }
+        if (cleaned.toLowerCase() === 'frontside') {
+            return frontHtml || '';
+        }
+        const field = this.findField(cleaned);
+        if (!field) {
+            return '';
+        }
+        return this.renderAnkiFieldValue(field);
+    }
+
+    private cleanAnkiToken(token: string): string {
+        let cleaned = (token || '').trim();
+        while (cleaned.startsWith('#') || cleaned.startsWith('^') || cleaned.startsWith('/')) {
+            cleaned = cleaned.substring(1).trim();
+        }
+        const colon = cleaned.lastIndexOf(':');
+        if (colon >= 0 && colon < cleaned.length - 1) {
+            cleaned = cleaned.substring(colon + 1).trim();
+        }
+        return cleaned;
+    }
+
+    private collectTemplateFieldNames(): Set<string> {
+        const names = new Set<string>();
+        const layoutAnki = this.template?.layout?.anki;
+        for (const source of [layoutAnki?.frontTemplate, layoutAnki?.backTemplate]) {
+            if (!source) continue;
+            const matcher = /\{\{([^}]+)}}/g;
+            let match: RegExpExecArray | null;
+            while ((match = matcher.exec(source)) !== null) {
+                const name = this.cleanAnkiToken(match[1]);
+                if (name && name.toLowerCase() !== 'frontside') {
+                    names.add(this.normalizeFieldName(name));
+                }
+            }
+        }
+        return names;
+    }
+
+    private collectNonMediaFieldNames(): Set<string> {
+        const names = new Set<string>();
+        for (const field of this.template?.fields || []) {
+            if (!['image', 'audio', 'video'].includes(field.fieldType)) {
+                names.add(this.normalizeFieldName(field.name));
+            }
+        }
+        return names;
+    }
+
+    private renderAnkiSupplementalFields(side: 'front' | 'back', anki: AnkiPayload): string {
+        const fields = this.fieldsForSide(side)
+            .filter(field => !anki.renderedFieldNames.has(this.normalizeFieldName(field.name)))
+            .filter(field => this.hasRenderableValue(field))
+            .filter(field => !this.isMediaAlreadyRendered(field, anki));
+        if (fields.length === 0) {
+            return '';
+        }
+        const rendered = fields
+            .map(field => {
+                const value = this.renderAnkiFieldValue(field);
+                if (!value) {
+                    return '';
+                }
+                return `<div class="mn-anki-extra-field mn-anki-extra-field-${field.fieldType}">${value}</div>`;
+            })
+            .filter(Boolean)
+            .join('');
+        return rendered ? `<div class="mn-anki-extra-fields">${rendered}</div>` : '';
+    }
+
+    private fieldsForSide(side: 'front' | 'back'): FieldTemplateDTO[] {
+        const fields = [...(this.template?.fields || [])].sort((a, b) => a.orderIndex - b.orderIndex);
+        const fieldsByName = new Map<string, FieldTemplateDTO>();
+        fields.forEach(field => fieldsByName.set(field.name, field));
+        const layoutNames = side === 'front' ? this.template?.layout?.front || [] : this.template?.layout?.back || [];
+        const used = new Set<string>();
+        const ordered: FieldTemplateDTO[] = [];
+        for (const name of layoutNames) {
+            const field = fieldsByName.get(name);
+            if (field) {
+                ordered.push(field);
+                used.add(field.name);
+            }
+        }
+        for (const field of fields) {
+            if (!used.has(field.name) && field.isOnFront === (side === 'front')) {
+                ordered.push(field);
+            }
+        }
+        return ordered;
+    }
+
+    private findField(name: string): FieldTemplateDTO | null {
+        const normalized = this.normalizeFieldName(name);
+        return (this.template?.fields || []).find(field => this.normalizeFieldName(field.name) === normalized) || null;
+    }
+
+    private hasRenderableValue(field: FieldTemplateDTO): boolean {
+        const raw = this.content[field.name] as CardContentValue;
+        if (raw === null || raw === undefined) {
+            return false;
+        }
+        if (typeof raw === 'string') {
+            return raw.trim().length > 0;
+        }
+        return !!raw.mediaId || !!raw.url;
+    }
+
+    private isMediaAlreadyRendered(field: FieldTemplateDTO, anki: AnkiPayload): boolean {
+        const raw = this.content[field.name] as CardContentValue;
+        return !!raw && typeof raw === 'object' && !!raw.mediaId && anki.mediaIds.has(raw.mediaId);
+    }
+
+    private renderAnkiFieldValue(field: FieldTemplateDTO): string {
+        const raw = this.content[field.name] as CardContentValue;
+        const value = this.extractStringValue(raw);
+        if (!value) {
+            return '';
+        }
+        switch (field.fieldType) {
+            case 'image':
+                return `<img src="${this.escapeHtmlAttribute(value)}" alt="${this.escapeHtmlAttribute(field.label || field.name)}">`;
+            case 'audio':
+                return `<audio controls src="${this.escapeHtmlAttribute(value)}"></audio>`;
+            case 'video':
+                return `<video controls src="${this.escapeHtmlAttribute(value)}"></video>`;
+            case 'markdown':
+                return markdownToHtml(value);
+            default:
+                return this.escapeHtml(value).replace(/\n/g, '<br>');
+        }
     }
 
     private updateAnkiStyle(): void {
@@ -465,7 +652,9 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
             `${scopeSelector} .anki-html { width: 100% !important; max-width: 100% !important; overflow-wrap: anywhere; word-break: break-word; }`,
             `${scopeSelector} img, ${scopeSelector} video, ${scopeSelector} iframe, ${scopeSelector} object, ${scopeSelector} embed { max-width: 100% !important; height: auto !important; }`,
             `${scopeSelector} audio { max-width: 100% !important; }`,
-            `${scopeSelector} table { display: block; width: 100% !important; max-width: 100% !important; overflow-x: auto; }`
+            `${scopeSelector} table { display: block; width: 100% !important; max-width: 100% !important; overflow-x: auto; }`,
+            `${scopeSelector} .mn-anki-extra-fields { margin-top: 1rem; display: grid; gap: 0.75rem; }`,
+            `${scopeSelector} .mn-anki-extra-field audio, ${scopeSelector} .mn-anki-extra-field video { width: 100% !important; }`
         ];
         if (css.includes('wrapped-japanese')) {
             fixes.push(`${scopeSelector} .wrapped-japanese { visibility: visible !important; }`);
@@ -519,6 +708,27 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
             return markdownToHtml(value);
         }
         return value.replace(/\n/g, '<br>');
+    }
+
+    private normalizeFieldName(value: string): string {
+        return (value || '').trim().toLowerCase();
+    }
+
+    private uniqueStrings(values: string[]): string[] {
+        return Array.from(new Set(values.filter(value => !!value && value.trim().length > 0)));
+    }
+
+    private escapeHtml(value: string): string {
+        return value
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
+    private escapeHtmlAttribute(value: string): string {
+        return this.escapeHtml(value);
     }
 
     private isSpaceKey(event: KeyboardEvent): boolean {
