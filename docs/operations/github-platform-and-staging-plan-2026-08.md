@@ -39,7 +39,7 @@ artifact:
 | Security | secret scanning и push protection включены | хороший baseline, но этого недостаточно |
 | Dependency/security automation | Dependabot security updates/config, dependency review и CodeQL отсутствуют | добавить поэтапно, без блокировки на legacy-noise |
 | Локальный frontend audit | `npm audit` сообщает 82 findings: 3 critical, 44 high, 26 moderate, 9 low | сначала triage и supported Angular/toolchain migration, затем blocking gate |
-| Project #4 | после materialization: 44 issues + 32 PR, `DraftIssue` нет; 62 Done, 2 Ready, 12 Backlog | текущая приватная доска сохранена; новую taxonomy не вводить |
+| Project #4 | после materialization: 44 issues + 32 PR, `DraftIssue` нет; 62 Done, 2 Ready, 11 Backlog, 1 In progress | текущая приватная доска сохранена; новую taxonomy не вводить |
 | Milestones | отсутствуют | создать только для датированных outcomes, не дублировать iterations |
 | Labels | стандартный набор GitHub | заменить на `type:*`, `area:*`, `blocked:*` после preview mapping |
 | Wiki | четыре коротких страницы; часть описывает BYOK/self-host v1 | не копировать туда engineering docs; пометить legacy или переписать как русскую user-facing справку |

@@ -19,7 +19,7 @@ GitHub Projects достаточно для Mnema; отдельная Jira се�
 
 ## Фактическое состояние Project #4
 
-Project `Mnema Kanban` приватный и открыт. После materialization 2026-08-15 он содержит 76 linked items: 44 issues и 32 pull requests; 62 `Done`, 2 `Ready`, 12 `Backlog`. `DraftIssue` отсутствуют и в рабочие отчёты не включаются. Поэтому новую доску создавать не нужно: Project #4 уже является execution surface.
+Project `Mnema Kanban` приватный и открыт. После materialization 2026-08-15 он содержит 76 linked items: 44 issues и 32 pull requests; 62 `Done`, 2 `Ready`, 11 `Backlog`, 1 `In progress`. `DraftIssue` отсутствуют и в рабочие отчёты не включаются. Поэтому новую доску создавать не нужно: Project #4 уже является execution surface.
 
 На 2026-08-15 в `MattoYuzuru/Mnema` открыты:
 
@@ -153,7 +153,7 @@ Materialization выполняется поэтапно:
 
 1. ✅ Прочитаны существующие views, fields и linked items; `DraftIssue` нет.
 2. ✅ Сохранена существующая taxonomy.
-3. ✅ Созданы #70–#80 и добавлены в Project: #70–#79 `Backlog/P0`, #80 `Backlog/P1`.
+3. ✅ Созданы #70–#80 и добавлены в Project: #70 и #72–#79 `Backlog/P0`, #71 `In progress/P0`, #80 `Backlog/P1`.
 4. Следующим пакетом связать #58/#45/#35 с подходящими parents и переписать устаревшие acceptance criteria.
 5. Создавать только Ready P0/P1 sub-issues из утверждённого delivery plan.
 6. Даты назначать лишь committed задачам с выполненным Definition of Ready.
