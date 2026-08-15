@@ -1,3 +1,8 @@
+# Legacy core entity map (v1)
+
+**Status: legacy / approximate.** This diagram explains the original v1 model; it is not the schema source of truth. In particular, scheduling fields were moved out of `USER_CARDS` by `V6__move_scheduling_fields_to_sr_card_states.sql`, and later migrations changed templates, identity and moderation. Use ordered migrations under `backend/services/core/src/main/resources/db/migration` for current behavior. The proposed replacement is [Content and study platform v2](./architecture/content-platform-v2.md).
+
+```mermaid
 ---
 config:
   layout: dagre
@@ -61,10 +66,6 @@ erDiagram
         jsonb content_override
         timestamptz created_at
         timestamptz updated_at
-        timestamptz last_review_at
-        timestamptz next_review_at
-        int review_count
-        boolean is_suspended
     }
 
     CARD_TEMPLATES {
@@ -134,3 +135,4 @@ erDiagram
     SR_ALGORITHMS ||--o{ SR_REVIEW_LOGS : "logged with"
     USER_CARDS ||--|| SR_CARD_STATES : "has SRS state"
     USER_CARDS ||--o{ SR_REVIEW_LOGS : "has reviews"
+```

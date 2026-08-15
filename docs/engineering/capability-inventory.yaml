@@ -1,0 +1,81 @@
+schema_version: 1
+generated_at: "2026-08-15"
+evidence_revision: "8e0c83d"
+scope: repository
+
+capabilities:
+  - id: backend-quality
+    kind: command
+    location: backend/build.gradle.kts
+    invoke: "cd backend && ./gradlew quality"
+    effects: [compile, test, coverage-report, coverage-baseline-check]
+    status: configured
+    environment_notes:
+      - "Docker Engine 29 with Testcontainers 1.21.3 required API/socket overrides on the audited Colima workstation."
+      - "A user-level image mirror also required an environment-specific prefix override."
+
+  - id: frontend-quality
+    kind: command-set
+    location: frontend/package.json
+    invoke: "cd frontend && npm ci && npm run lint && npm run test && npm run build"
+    effects: [dependency-install, lint, unit-test, production-build]
+    status: configured
+    gaps: [no_e2e_suite, no_coverage_threshold, no_visual_or_a11y_gate]
+
+  - id: pull-request-quality
+    kind: github-actions-workflow
+    location: .github/workflows/pull-request.yaml
+    trigger: pull_request_to_main
+    effects: [backend-quality, frontend-quality]
+    status: configured
+
+  - id: production-delivery
+    kind: github-actions-workflow
+    location: .github/workflows/deploy.yaml
+    trigger: push_to_main
+    effects: [quality, image-push, kubernetes-mutation]
+    status: unsafe_for_unattended_release
+    gaps: [cancellable_partial_release, no_release_manifest, no_postdeploy_smoke, no_verified_rollback]
+
+  - id: local-stack
+    kind: compose-and-launchers
+    location: docker-compose.yml
+    entrypoints: [scripts/mnema-local.sh, scripts/mnema-local.ps1, scripts/mnema-public.sh, scripts/mnema-public.ps1]
+    effects: [local_container_mutation]
+    status: configured
+
+  - id: local-ai-gateways
+    kind: runtime-helper
+    locations:
+      - scripts/local-ai-gateway
+      - scripts/local-audio-gateway
+      - scripts/local-image-gateway
+    effects: [container_build, local_network_service]
+    status: configured
+
+  - id: kubernetes-observability
+    kind: manifests
+    location: k8s/observability
+    effects: [cluster_mutation]
+    status: configured_unverified
+
+repository_agent_assets:
+  skills: []
+  plugins: []
+  hooks: []
+  mcp_servers: []
+  deterministic_fixture_generators: []
+  end_to_end_harnesses: []
+
+recommended_next_capabilities:
+  - deterministic-v2-fixtures
+  - account-export-import-reconciliation
+  - postgres18-minio-e2e
+  - release-smoke
+  - bounded-load-profile
+  - docs-link-check
+
+credential_notes:
+  - "Credential values were not inventoried or printed."
+  - "GitHub Actions references repository/environment secrets, but existence and rotation were not verified."
+  - "Production Kubernetes access was not available in the inspected local context."

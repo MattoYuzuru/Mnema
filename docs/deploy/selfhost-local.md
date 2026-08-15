@@ -1,5 +1,7 @@
 # Self-Hosted Local Deployment
 
+> **V1 / maintenance status:** this runbook remains valid for the current checkout. Self-host compatibility is not a hosted-v2 launch requirement and may be frozen while the new content model is built. See [owner decisions](../decisions/owner-decisions-2026-08.md) before treating this topology as a v2 contract.
+
 Этот режим предназначен для запуска Mnema на одной машине без внешних облачных сервисов.
 
 ## Что поднимается
