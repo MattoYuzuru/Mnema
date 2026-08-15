@@ -1,27 +1,52 @@
-## Описание
-Кратко опишите, что было сделано в этом PR и зачем.
+## Результат и решение
 
-## Тип изменений
-Отметьте нужное:
-- [ ] 🆕 Новая функциональность
-- [ ] 🐞 Исправление ошибки
-- [ ] 🧹 Рефакторинг / улучшения кода
-- [ ] 📖 Документация
-- [ ] ⚙️ Настройка CI/CD / инфраструктуры
+Какой outcome получен, зачем он нужен и почему выбран этот подход?
 
-## Связанные задачи
-Укажите связанные issues (чтобы PR автоматически их закрыл при мерже):
-- Closes #номер  
-или  
-- Related to #номер
+## Связанные задачи и решения
 
-## Проверка
-Опишите, как можно протестировать изменения:
-1. ...
-2. ...
+- Closes #...
+- Parent epic: #...
+- Docs/ADR: ...
 
-## Скриншоты (если есть)
-Добавьте при необходимости.
+## Что изменилось
 
-## Примечания
-Любая дополнительная информация для ревьюера.
+- Поведение/API/data/UI:
+- Что намеренно не входит:
+
+## Evidence
+
+- [ ] Backend quality/static analysis/tests
+- [ ] Frontend lint/tests/build
+- [ ] Integration/E2E/contract tests, где применимо
+- [ ] Desktop/mobile screenshots и keyboard/a11y, если изменён UI
+- [ ] Security/performance evidence, если затронут соответствующий boundary
+
+Команды и существенный результат:
+
+```text
+command → result
+```
+
+## Migration, deployment и rollback
+
+- Data/config/environment changes:
+- Compatibility/point of no return:
+- Rollout и rollback/roll-forward:
+- Post-deploy smoke/monitoring:
+
+## Security и privacy
+
+- Trust boundary/permissions/input-output changes:
+- Подтверждение, что secrets/PII не попали в diff и логи:
+
+## Residual risks и follow-up
+
+- Известные ограничения с issue/owner, либо `нет`.
+
+## Checklist автора
+
+- [ ] PR решает acceptance criteria связанной задачи.
+- [ ] Diff ограничен одним reviewable outcome.
+- [ ] Docs обновлены вместе с contract.
+- [ ] Quality gates запущены на точном commit перед push.
+- [ ] Нет скрытого dependency, destructive или external change.

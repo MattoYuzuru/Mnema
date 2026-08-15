@@ -170,3 +170,12 @@ When implementing:
 3) mention tests added/updated
 4) call out any important UX/design adjustments (Liquid Glass + usability)
 5) list follow-ups as actionable TODOs only when truly needed
+
+---
+
+## 10) GitHub Work Items & Pull Requests
+- Before creating or updating an Issue or pull request, follow `docs/engineering/work-item-standard.md`.
+- Write for a human with little project context and for an implementation agent: state the outcome, scope, acceptance evidence, risks, and rollback boundary.
+- Link to canonical `docs/` sources instead of copying architecture or product decisions into platform-specific instructions.
+- Do not move a task to `Ready` while a product/architecture choice is unresolved or the work cannot fit into a reviewable 1–3 day change.
+- Generated code, commits, and green unit tests are evidence, not the outcome. `Done` requires merged/applied behavior and proportional verification.
