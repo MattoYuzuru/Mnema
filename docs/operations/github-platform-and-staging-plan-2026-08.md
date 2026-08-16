@@ -41,7 +41,7 @@ artifact:
 | Локальный frontend audit | `npm audit` сообщает 82 findings: 3 critical, 44 high, 26 moderate, 9 low | сначала triage и supported Angular/toolchain migration, затем blocking gate |
 | Project #4 | после materialization: 44 issues + 32 PR, `DraftIssue` нет; 62 Done, 2 Ready, 11 Backlog, 1 In progress | текущая приватная доска сохранена; новую taxonomy не вводить |
 | Milestones | отсутствуют | создать только для датированных outcomes, не дублировать iterations |
-| Labels | стандартный набор GitHub | заменить на `type:*`, `area:*`, `blocked:*` после preview mapping |
+| Labels | стандартный набор GitHub | оставить без изменений: владелец подтвердил, что новую taxonomy не вводим; вид работы описывается в title/body по [work item standard](../engineering/work-item-standard.md) |
 | Wiki | четыре коротких страницы; часть описывает BYOK/self-host v1 | не копировать туда engineering docs; пометить legacy или переписать как русскую user-facing справку |
 | Community profile | около 71%; нет CONTRIBUTING и Code of Conduct | добавить короткие policy/docs, если public collaboration остаётся целью |
 | Security reporting | `SECURITY.md` отправляет исследователя в public Issue | включить private vulnerability reporting и убрать публичное раскрытие |
