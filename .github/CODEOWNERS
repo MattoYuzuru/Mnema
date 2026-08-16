@@ -1,0 +1,9 @@
+# Default owner until Mnema has additional maintainers.
+* @MattoYuzuru
+
+# Keep governance, delivery, security and schema changes explicitly owned.
+/.github/ @MattoYuzuru
+/k8s/ @MattoYuzuru
+/backend/services/*/src/main/resources/db/migration/ @MattoYuzuru
+/SECURITY.md @MattoYuzuru
+/AGENTS.md @MattoYuzuru

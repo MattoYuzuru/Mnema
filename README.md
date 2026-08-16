@@ -51,6 +51,8 @@
 
 **Mnema** — веб-платформа для интервального запоминания с упором на инженерную архитектуру и реальный production-пайплайн.
 
+> **V2 redesign:** текущий checkout описывает работающий v1. Принятые owner inputs и предлагаемая новая модель — structured learning items, отдельные exercises, shared revisions, hosted managed AI и account-only reset — собраны в [Mnema Docs](docs/README.md). Текущие self-host scripts остаются v1/legacy и не блокируют hosted v2.
+
 Проект включает:
 - модульный backend на Spring Boot;
 - frontend на Angular;
@@ -320,16 +322,16 @@ AI_VAULT_MASTER_KEY=
 AI_VAULT_KEY_ID=
 
 OPENAI_BASE_URL=https://api.openai.com
-OPENAI_DEFAULT_MODEL=gpt-4.1-mini
+OPENAI_DEFAULT_MODEL=gpt-5-mini
 OPENAI_TTS_MODEL=gpt-4o-mini-tts
 OPENAI_STT_MODEL=gpt-4o-mini-transcribe
 
 GEMINI_BASE_URL=https://generativelanguage.googleapis.com
-GEMINI_DEFAULT_MODEL=gemini-2.0-flash
+GEMINI_DEFAULT_MODEL=gemini-2.5-flash
 
 ANTHROPIC_BASE_URL=https://api.anthropic.com
 ANTHROPIC_API_VERSION=2023-06-01
-ANTHROPIC_DEFAULT_MODEL=claude-3-5-sonnet-20241022
+ANTHROPIC_DEFAULT_MODEL=claude-haiku-4-5
 
 QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
 QWEN_DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com
@@ -369,10 +371,13 @@ APP_ENV=dev
 
 Текущий pipeline (`.github/workflows/deploy.yaml`):
 
-1. `test-backend`: `./gradlew test` по backend.
-2. `build-and-push`: сборка образов `frontend/auth/user/core/media/import/ai` и пуш в GHCR.
-3. `apply-main-manifests`: деплой основной части в main cluster (`prod`).
-4. `apply-ai-manifests`: отдельный деплой AI части/моста (по текущей схеме инфраструктуры).
+1. `backend-quality`: `./gradlew quality` (компиляция, тесты и coverage baseline).
+2. `frontend-quality`: `npm ci`, lint, unit tests и production build.
+3. `build-and-push`: сборка образов `frontend/auth/user/core/media/import/ai` и пуш SHA/`latest` тегов в GHCR.
+4. `apply-main-manifests` / `apply-ai-manifests`: применение инфраструктурных manifests в двух кластерах.
+5. `deploy-main` / `deploy-ai`: выбор SHA-tagged images и ожидание rollout.
+
+Известные риски release atomicity, rollback/restore и post-deploy smoke зафиксированы в [delivery audit](docs/operations/delivery-audit-2026-08.md).
 
 В k8s используются:
 - namespace `prod` + `observability`;
@@ -414,6 +419,8 @@ APP_ENV=dev
 ---
 
 ## Дорожная карта
+
+Актуальное предлагаемое направление, приоритеты и вопросы решения находятся в [project review 2026-08](docs/reviews/project-review-2026-08.md) и [product direction v2](docs/product/product-direction-v2.md). Раздел ниже — исторический журнал и прежний backlog; он не является принятой v2 roadmap.
 
 ### Исторический путь (выполнено)
 
@@ -513,14 +520,14 @@ APP_ENV=dev
 - Ingress/TLS/bridge стабилизация.
 - Улучшение rollout устойчивости.
 
-### Текущий фокус (in progress)
+### Прежний текущий фокус (historical)
 
 - Стабильность импортов для “грязных” файлов и edge-case форматов.
 - Полировка стилей импортированных колод (Anki шаблоны + media html/css).
 - Дальнейшая стабилизация AI batch/retry flows.
 - Улучшение UX аналитики и мобильного review.
 
-### Расширенный forward roadmap (план)
+### Прежний forward backlog (historical, не принят как v2 plan)
 
 #### Near-term (1-2 релизных цикла)
 - [ ] Улучшить стили импортированных колод (HTML/CSS compatibility слой + fallback renderer).
