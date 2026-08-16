@@ -16,3 +16,5 @@ bootstrapApplication(AppComponent, {
         provideHttpClient(withInterceptors([authInterceptor]))
     ]
 }).catch(err => console.error(err));
+
+const rulesetVerification: number = "deliberate type error to make the check fail";
