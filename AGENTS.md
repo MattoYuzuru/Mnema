@@ -179,3 +179,11 @@ When implementing:
 - Link to canonical `docs/` sources instead of copying architecture or product decisions into platform-specific instructions.
 - Do not move a task to `Ready` while a product/architecture choice is unresolved or the work cannot fit into a reviewable 1–3 day change.
 - Generated code, commits, and green unit tests are evidence, not the outcome. `Done` requires merged/applied behavior and proportional verification.
+
+### Merge boundary
+
+- **Open the pull request; do not merge it.** Merging is the owner's action. This applies to every change, and especially to schema/migration, security, dependency, payment, and production-delivery changes.
+- Be honest about what enforces this. The `main protection` ruleset technically guarantees only three things: no direct push, no force-push or deletion, and no merge until both required checks are green. It does **not** require an approving review — the repository has a single maintainer, GitHub does not allow approving your own pull request, and requiring an approval would block every merge.
+- Therefore "an agent does not self-merge" is a procedural rule, not a platform guarantee. Do not describe it as one in issues, pull requests, or documentation.
+- `bypass_actors` on the ruleset is deliberately empty. Do not request, add, or use a bypass. If a merge is genuinely blocked, report why instead of finding a way around it.
+- Never disable, weaken, or delete the ruleset to make your own change mergeable.
