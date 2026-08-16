@@ -3,11 +3,11 @@ artifact:
   id: github-platform-and-staging-plan-2026-08
   type: operations-plan
   title: "GitHub platform, CI/CD and staging plan"
-  status: proposed
+  status: current
   created_at: "2026-08-15"
-  updated_at: "2026-08-15"
+  updated_at: "2026-08-17"
   owners: ["project-owner"]
-  evidence_date: "2026-08-15"
+  evidence_date: "2026-08-17"
 ---
 
 # GitHub, CI/CD и staging Mnema v2
@@ -18,38 +18,40 @@ artifact:
 
 Период 17–31 августа полностью остаётся staging-итерацией. Billing/quota начинается 1 сентября, T‑Bank/legal sandbox — не раньше 8 сентября. Existing v1-код, который будет удалён, не получает искусственное покрытие: новые quality gates сначала защищают account/auth, delivery и protocol boundaries, затем каждый новый v2 vertical slice.
 
-Аудит был read-only. GitHub settings, Project #4, Wiki и серверы не изменялись.
+Первичный аудит 15 августа был read-only. Часть описанных ниже изменений применена 16–17 августа в рамках [#71](https://github.com/MattoYuzuru/Mnema/issues/71); что именно применено, видно в колонке «Факт» и в разделе [External-change status](#external-change-status-и-следующий-gate).
 
 ## Фактическое состояние GitHub
 
-На 15 августа 2026 года:
+Аудит 15 августа, состояние обновлено 17 августа после применения governance-пакета:
 
 | Поверхность | Факт | Вывод |
 |---|---|---|
 | Repository | public `MattoYuzuru/Mnema`, default branch `main` | публичные Actions minutes не являются главным ограничением |
-| Branch/rulesets | branch protection и repository rulesets отсутствуют | прямой push в `main` может запустить production deploy |
-| История интеграции | последние 11 commits попали напрямую в `main`; у последних 25 merged PR нет review | текущий процесс не обеспечивает независимое подтверждение |
+| Branch/rulesets | **применено 2026-08-16:** ruleset `main protection` (id 20917643), `enforcement: active`, `bypass_actors` пуст; правила `pull_request`, `required_status_checks`, `deletion`, `non_fast_forward`, `required_linear_history` | прямой push в `main` отклоняется; required checks `backend-quality` и `frontend-quality` привязаны к integration id 15368 |
+| История интеграции | до 2026-08-16 последние 11 commits попали напрямую в `main`, у последних 25 merged PR нет review; PR #59 смержен при красном чеке, PR #69 — через ~8 секунд после создания | обход технически закрыт; независимого review по-прежнему нет — в репозитории один maintainer, требование апрува заблокировало бы любой merge |
 | Actions token | default workflow permission — write | перейти к repository read + явным job-level permissions |
 | Actions policy | разрешены все Actions; full-SHA pinning не требуется | supply-chain policy слишком широкая |
 | Workflows | `pull-request.yaml` и `deploy.yaml` | база есть, но CI и production mutation сцеплены небезопасно |
 | Environment `prod` | существует, protection rules нет | deployment jobs должны ссылаться на environment; нужны owner-approved gates |
 | Secrets | 27 production secrets находятся на repository level; environment secrets/variables пусты | build/PR boundary должен быть отделён от staging/prod credentials |
-| Merge settings | merge/rebase/squash разрешены; auto-merge и delete branch выключены | оставить squash/default policy, включить delete branch; auto-merge только после required gates |
+| Merge settings | **применено 2026-08-16:** только squash; `delete_branch_on_merge` включён; auto-merge выключен | merge commit и rebase запрещены и на уровне ruleset (`allowed_merge_methods: [squash]`) |
 | Releases/tags | отсутствуют | нужен release record с полным набором image digests |
 | Security | secret scanning и push protection включены | хороший baseline, но этого недостаточно |
 | Dependency/security automation | Dependabot security updates/config, dependency review и CodeQL отсутствуют | добавить поэтапно, без блокировки на legacy-noise |
 | Локальный frontend audit | `npm audit` сообщает 82 findings: 3 critical, 44 high, 26 moderate, 9 low | сначала triage и supported Angular/toolchain migration, затем blocking gate |
-| Project #4 | после materialization: 44 issues + 32 PR, `DraftIssue` нет; 62 Done, 2 Ready, 11 Backlog, 1 In progress | текущая приватная доска сохранена; новую taxonomy не вводить |
-| Milestones | отсутствуют | создать только для датированных outcomes, не дублировать iterations |
+| Project #4 | 2026-08-17: у всех 11 эпиков заполнены `Size`/`Estimate`; даты только у committed-работы (#71 и sub-issues #81–#84); `DraftIssue` нет | labels 9, полей 18, views 6 — не изменились; группировка board и date-поля roadmap через API недоступны и настраиваются в UI |
+| Milestones | **создано 2026-08-16:** `Staging v2 — 2026-08-31`, `Billing core — 2026-09-07`, `Bank/legal sandbox — 2026-09-14` | #80 намеренно без milestone: срок зависит от прохождения P0-гейтов |
 | Labels | стандартный набор GitHub | оставить без изменений: владелец подтвердил, что новую taxonomy не вводим; вид работы описывается в title/body по [work item standard](../engineering/work-item-standard.md) |
 | Wiki | четыре коротких страницы; часть описывает BYOK/self-host v1 | не копировать туда engineering docs; пометить legacy или переписать как русскую user-facing справку |
-| Community profile | около 71%; нет CONTRIBUTING и Code of Conduct | добавить короткие policy/docs, если public collaboration остаётся целью |
+| Community profile | `CONTRIBUTING.md`, `CODEOWNERS`, Issue/PR templates опубликованы 2026-08-16 (PR #85); Code of Conduct по-прежнему нет | добавить Code of Conduct, если public collaboration остаётся целью |
 | Security reporting | `SECURITY.md` отправляет исследователя в public Issue | включить private vulnerability reporting и убрать публичное раскрытие |
 | Insights | за 14 дней 0 views, 39 clones/35 uniques | clone spike не считать пользовательским traction |
 
 Главная подтверждённая проблема: `deploy.yaml` использует `cancel-in-progress: true`, а main и AI меняются независимо. Уже был run, отменённый после успешного AI deploy и во время main deploy. Это допускает production из компонентов разных commits.
 
-Ruleset gap тоже уже проявился: PR #59 был merged при красном `backend-quality`, а PR #69 — примерно через восемь секунд после создания, до завершения checks. Required checks/review нужны как техническое ограничение, а не как договорённость с самим собой.
+16 августа проблема подтвердилась второй раз и другим механизмом. Merge PR #85 запустил первый deploy с 3 июня: `apply-main-manifests` и `deploy-main` прошли успешно, `apply-ai-manifests` упал с `dial tcp <ai-cluster>:6443: i/o timeout`, `deploy-ai` пропущен. Production остался в состоянии частичного release — main-кластер на новых образах, AI-кластер на июньских. Функциональной разницы в этом случае нет, потому что PR менял только документацию, но падение одного leg не откатило другой. Evidence: [#70](https://github.com/MattoYuzuru/Mnema/issues/70). Отдельный открытый вопрос — почему kube API малого AI-сервера перестал отвечать с GitHub runner между 3 июня и 16 августа.
+
+Ruleset gap тоже уже проявился: PR #59 был merged при красном `backend-quality`, а PR #69 — примерно через восемь секунд после создания, до завершения checks. Это закрыто 16 августа: required checks и запрет прямого push проверены на поведении, а не на ответе API (см. [#82](https://github.com/MattoYuzuru/Mnema/issues/82)).
 
 Дополнительная ошибка GitHub Deployments: `environment: prod` назначен build-matrix, из-за чего одна release может создавать семь deployment records, тогда как job, который реально меняет cluster, environment не объявляет. Environment history и protection должны охватывать именно mutation.
 
@@ -74,7 +76,7 @@ Parent/sub-issue model, поля, views и первый backlog находятс
 3. Агент не пушит красный quality gate и не self-merges security, schema, dependency или production-delivery change.
 4. PR связывает issue, перечисляет decision links, verification output, migration/rollback и residual risks.
 5. UI PR содержит desktop/mobile evidence, keyboard/a11y и reduced-motion check.
-6. Review-bot/Copilot может предложить изменения, но required human approval остаётся у migration, billing, security и production.
+6. Merge выполняет владелец, а не агент. Технического апрув-гейта нет и быть не может: в репозитории один maintainer, GitHub не разрешает апрувить собственный PR, а требование апрува заблокировало бы любой merge. Ruleset обеспечивает обязательный PR и зелёные checks; независимость review для migration, billing, security и production остаётся процедурным правилом, а не гарантией платформы. Review-bot/Copilot может предложить изменения, но не заменяет это решение.
 7. Project item становится `Done` после merge и verification, а не после генерации кода.
 
 `AGENTS.md` остаётся короткой operational инструкцией. Длинные архитектурные знания живут в `/docs`, чтобы разные агенты читали один и тот же источник истины.
@@ -204,13 +206,16 @@ Production reset, payment integration и CodeQL-wide legacy cleanup в эту it
 Выполнено после owner confirmation:
 
 - созданы parent epics #70–#80 и добавлены в Project #4;
-- использованы только существующие `Status`/`Priority`; labels, fields, views и milestones не менялись;
-- создана локальная branch `chore/github-foundation-2026-08` со стандартом work items, templates, CODEOWNERS и Copilot adapter.
+- **#81, 2026-08-16:** documentation/harness foundation опубликован в `main` через PR #85; это первый PR проекта, оформленный по новому стандарту;
+- **#82, 2026-08-16:** применён ruleset `main protection` и squash-only merge policy; правила проверены на поведении;
+- **#83, 2026-08-17:** созданы три milestone, заполнены `Size`/`Estimate` у всех эпиков, сняты просроченные даты, переписаны и связаны с эпиками #58/#45/#35;
+- taxonomy не расширена: labels 9, полей Project 18, views 6 — без изменений.
 
 Следующие внешние пакеты:
 
-1. **Repository push/PR:** отправить branch с documentation/harness foundation и открыть PR, связанный с #71.
-2. **GitHub settings:** после зелёного PR отдельно применить main ruleset, permissions, environments/security settings.
-3. **Backlog refinement:** обновить #35/#45/#58 и создать только Ready sub-issues; без новой taxonomy.
+1. **GitHub settings, остаток:** least-privilege Actions token, environment protection и security automation — эпики #72 и #70, не #71.
+2. **Delivery:** восстановить доступ к AI-кластеру или перенести AI-контур, разделить cancellable CI и non-cancellable deployment — эпик #70.
+3. **Backlog refinement:** создавать Ready sub-issues следующих эпиков по мере снятия зависимостей; без новой taxonomy.
+4. **Ручная настройка UI:** группировка board `Backlog` по `Status` и выбор date-полей для `Roadmap` — недоступны через API.
 
 Перед каждым пакетом нужен exact preview: создаваемые/изменяемые объекты, destructive effects, branch, validation и rollback. Сам факт доступа к приватному Project или SSH не является разрешением на mutation.

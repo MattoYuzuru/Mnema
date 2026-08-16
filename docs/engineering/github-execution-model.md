@@ -19,7 +19,9 @@ GitHub Projects достаточно для Mnema; отдельная Jira се�
 
 ## Фактическое состояние Project #4
 
-Project `Mnema Kanban` приватный и открыт. После materialization 2026-08-15 он содержит 76 linked items: 44 issues и 32 pull requests; 62 `Done`, 2 `Ready`, 11 `Backlog`, 1 `In progress`. `DraftIssue` отсутствуют и в рабочие отчёты не включаются. Поэтому новую доску создавать не нужно: Project #4 уже является execution surface.
+Project `Mnema Kanban` приватный и открыт. После materialization 2026-08-15 он содержал 76 linked items: 44 issues и 32 pull requests. `DraftIssue` отсутствуют и в рабочие отчёты не включаются. Новую доску создавать не нужно: Project #4 уже является execution surface.
+
+Состояние на 2026-08-17: у всех 11 эпиков заполнены `Size` и `Estimate` в ideal agent-days. Даты стоят только у committed-работы — эпика #71 и его sub-issues #81–#84; у #45 и #58 просроченные даты из старого планирования сняты, потому что создавали ложное впечатление запланированной работы. Taxonomy не расширялась: labels 9, полей 18, views 6.
 
 На 2026-08-15 в `MattoYuzuru/Mnema` открыты:
 
@@ -29,7 +31,7 @@ Project `Mnema Kanban` приватный и открыт. После materializ
 | #45 `Интегрировать платежный модуль` | устаревший Prodamus/self-employed flow | переписать под ИП, T‑Bank recurrent, offer/consent/receipts; не закрывать как выполненную |
 | #35 `Создать рекомендательную систему` | streak, author profiles, fork metrics, recommendations | разделить: profiles/usage metrics в P1; recommendations отложить до достаточного usage signal |
 
-У repository нет milestones, а labels пока только стандартные GitHub. Доступ к приватному Project #4 подтверждён через GitHub CLI со scopes `read:project`/`project`. Issues #70–#80 созданы, добавлены в Project и получили существующие `Status`/`Priority`; других Project settings не меняли.
+Labels остаются только стандартные GitHub. Milestones созданы 2026-08-16 под датированные outcomes: `Staging v2 — 2026-08-31`, `Billing core — 2026-09-07`, `Bank/legal sandbox — 2026-09-14`; #80 намеренно оставлен без milestone, потому что его срок зависит от прохождения P0-гейтов, а не от календаря. Доступ к приватному Project #4 подтверждён через GitHub CLI со scopes `read:project`/`project`.
 
 ## Поля Project #4
 
@@ -109,11 +111,11 @@ Parent epics уже materialized. Таблица ниже — ещё не соз
 
 Сумма staging iteration превышает безопасную capacity и описывает целевой envelope. После CI/CD и editor/AST spikes Project оставляет в committed `Ready` только поднабор, который помещается в capacity; остальное переносится без скрытого сокращения тестов.
 
-Существующие issues:
+Существующие issues разобраны 2026-08-17 в рамках #83:
 
-- #58 становится sub-issue/последующим refinement внутри Study parent, но не блокирует базовый session shell;
-- #45 переименовывается и получает новые T‑Bank/legal acceptance criteria вместо создания дубля;
-- #35 остаётся P2: profile/subscriber metrics отделяются позже, recommendation algorithm не входит в MVP.
+- #58 переформулирован как бюджет сессии внутри deck-scoped Study и связан с #75; замысел владельца сохранён, но это параметр отбора и остановки, а не второй scheduler. Базовый session shell не блокирует;
+- #45 переписан под hosted T‑Bank checkout, рекуррентные списания, чеки и сверку вместо Prodamus, связан с #79; часть про сервисный аккаунт AI-провайдера вынесена в #77. Как выполненный не закрыт;
+- #35 разделён: ранние profile/usage-метрики отделены от рекомендательного алгоритма, добавлено явное условие разблокировки отложенной части, `Priority` P2, связан с #80.
 
 ## Definition of Ready для sub-issue
 
@@ -154,9 +156,10 @@ Materialization выполняется поэтапно:
 1. ✅ Прочитаны существующие views, fields и linked items; `DraftIssue` нет.
 2. ✅ Сохранена существующая taxonomy.
 3. ✅ Созданы #70–#80 и добавлены в Project: #70 и #72–#79 `Backlog/P0`, #71 `In progress/P0`, #80 `Backlog/P1`.
-4. Следующим пакетом связать #58/#45/#35 с подходящими parents и переписать устаревшие acceptance criteria.
-5. Создавать только Ready P0/P1 sub-issues из утверждённого delivery plan.
-6. Даты назначать лишь committed задачам с выполненным Definition of Ready.
-7. Post-MVP идеи держать в Backlog без фиктивных дат.
+4. ✅ #58/#45/#35 связаны с подходящими parents, устаревшие acceptance criteria переписаны (2026-08-17).
+5. ✅ Первый пакет sub-issues создан только для #71: #81–#84, из них в `Ready` переводился по одному.
+6. Создавать Ready P0/P1 sub-issues следующих эпиков по мере снятия зависимостей.
+7. Даты назначать лишь committed задачам с выполненным Definition of Ready.
+8. Post-MVP идеи держать в Backlog без фиктивных дат.
 
 Создание десятков задач до согласования contracts создаст ложную точность. Сначала принимаются content format, progress-on-edit, license/repository boundary и двухнедельный scope; затем Project становится исполнимым источником истины.
