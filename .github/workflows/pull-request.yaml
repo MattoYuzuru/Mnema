@@ -82,3 +82,12 @@ jobs:
 
       - name: Run release automation unit tests
         run: python3 -m unittest discover -s scripts/smoke/tests -v
+
+      - name: Verify database backup and recovery contract
+        run: ./scripts/test-backup-contract.sh
+
+      - name: Run database recovery unit tests
+        run: PYTHONPATH=scripts/backup python3 -m unittest discover -s scripts/backup/tests -v
+
+      - name: Run PostgreSQL 16 to 18 recovery integration test
+        run: ./scripts/test-backup-integration.sh

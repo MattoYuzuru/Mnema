@@ -1,0 +1,257 @@
+name: Database Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Safe database recovery operation
+        required: true
+        type: choice
+        options:
+          - pre-migration-backup
+          - restore-drill
+      backup_id:
+        description: Restore exact UTC backup ID or latest (restore drill only)
+        required: true
+        default: latest
+        type: string
+      confirmation:
+        description: Type the operation-specific confirmation shown in the runbook
+        required: true
+        type: string
+
+permissions: {}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  KUBECONFIG: ${{ github.workspace }}/kubeconfig-main
+  RESTORE_NAMESPACE: mnema-restore-drill
+  EVIDENCE_DIR: ${{ github.workspace }}/.recovery-evidence
+  RECOVERY_RUN_KEY: ${{ github.run_id }}-${{ github.run_attempt }}
+
+concurrency:
+  group: database-recovery-production
+  cancel-in-progress: false
+
+jobs:
+  database-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: read
+    environment:
+      name: prod
+      url: https://mnema.app
+    steps:
+      - name: Checkout exact main revision
+        uses: actions/checkout@v6
+
+      - name: Reject non-main or stale workflow revisions
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Database recovery operations run only from main"
+            exit 1
+          fi
+          current_main=$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')
+          if [ "$GITHUB_SHA" != "$current_main" ]; then
+            echo "::error::Refusing stale recovery workflow ${GITHUB_SHA}; current main is ${current_main}"
+            exit 1
+          fi
+
+      - name: Validate operation confirmation
+        env:
+          OPERATION: ${{ inputs.operation }}
+          BACKUP_ID: ${{ inputs.backup_id }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          case "$OPERATION:$CONFIRMATION" in
+            pre-migration-backup:BACKUP_PRODUCTION_DATABASE) ;;
+            restore-drill:RESTORE_IN_ISOLATED_NAMESPACE) ;;
+            *)
+              echo "::error::Operation confirmation does not match the runbook"
+              exit 1
+              ;;
+          esac
+          if [ "$OPERATION" = restore-drill ] && [ "$BACKUP_ID" != latest ] && ! [[ "$BACKUP_ID" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+            echo "::error::backup_id must be latest or an exact UTC backup ID"
+            exit 1
+          fi
+
+      - name: Validate required recovery secrets
+        env:
+          KUBECONFIG_B64: ${{ secrets.PROD_KUBECONFIG_B64 }}
+          AWS_ENDPOINT_URL: ${{ secrets.PROD_BACKUP_S3_ENDPOINT }}
+          AWS_REGION: ${{ secrets.PROD_BACKUP_S3_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_BACKUP_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_BACKUP_S3_SECRET_ACCESS_KEY }}
+          S3_BUCKET: ${{ secrets.PROD_BACKUP_S3_BUCKET }}
+          S3_PREFIX: ${{ secrets.PROD_BACKUP_S3_PREFIX }}
+          RETENTION_POLICY_ID: ${{ secrets.PROD_BACKUP_RETENTION_POLICY_ID }}
+          KMS_KEY_ID: ${{ secrets.PROD_BACKUP_KMS_KEY_ID }}
+        run: |
+          required_names="KUBECONFIG_B64 AWS_ENDPOINT_URL AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY S3_BUCKET S3_PREFIX RETENTION_POLICY_ID KMS_KEY_ID"
+          for name in $required_names; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required recovery secret ${name} is missing or empty"
+              exit 1
+            fi
+          done
+          case "$AWS_ENDPOINT_URL" in https://*) ;; *) echo "::error::Backup endpoint must use HTTPS"; exit 1 ;; esac
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Write kubeconfig and verify the production target
+        env:
+          KUBECONFIG_B64: ${{ secrets.PROD_KUBECONFIG_B64 }}
+        run: |
+          printf '%s' "$KUBECONFIG_B64" | base64 -d > "$KUBECONFIG"
+          chmod 600 "$KUBECONFIG"
+          kubectl get namespace prod >/dev/null
+          kubectl -n prod get statefulset postgres >/dev/null
+          mkdir -p "$EVIDENCE_DIR"
+
+      - name: Refuse an overlapping active backup
+        if: ${{ inputs.operation == 'pre-migration-backup' }}
+        run: |
+          active_jobs=$(kubectl -n prod get jobs \
+            -l app.kubernetes.io/name=mnema-postgres-backup \
+            -o jsonpath='{range .items[?(@.status.active>0)]}{.metadata.name}{" "}{end}')
+          if [ -n "$active_jobs" ]; then
+            echo "::error::A backup is already active; wait for it before creating pre-migration evidence"
+            exit 1
+          fi
+
+      - name: Create one pre-migration backup
+        if: ${{ inputs.operation == 'pre-migration-backup' }}
+        env:
+          JOB_NAME: mnema-postgres-backup-manual-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          kubectl -n prod create job \
+            --from=cronjob/mnema-postgres-backup \
+            "$JOB_NAME" \
+            --dry-run=client -o json |
+            python3 -c '
+          import json, sys
+          document = json.load(sys.stdin)
+          uploader = next(container for container in document["spec"]["template"]["spec"]["containers"] if container["name"] == "uploader")
+          pointer = next(variable for variable in uploader["env"] if variable["name"] == "UPDATE_LATEST_POINTER")
+          pointer.clear()
+          pointer.update({"name": "UPDATE_LATEST_POINTER", "value": "false"})
+          json.dump(document, sys.stdout)
+          ' | kubectl apply -f -
+          if ! kubectl -n prod wait --for=condition=complete "job/$JOB_NAME" --timeout=60m; then
+            safe_error=$(kubectl -n prod logs "job/$JOB_NAME" --container=uploader --tail=200 2>/dev/null | grep -E '^upload_error=[a-z0-9_]+$' | tail -1 || true)
+            echo "::error::${safe_error:-backup_job_failed}"
+            exit 1
+          fi
+          kubectl -n prod logs "job/$JOB_NAME" --container=uploader > "$EVIDENCE_DIR/pre-migration-backup.json"
+          python3 scripts/backup/validate_report.py \
+            --kind backup \
+            --report "$EVIDENCE_DIR/pre-migration-backup.json"
+          python3 -c '
+          import json, sys
+          report = json.load(open(sys.argv[1], encoding="utf-8"))
+          if report["latestPointerUpdated"] is not False:
+              raise SystemExit("manual backup unexpectedly changed the latest pointer")
+          ' "$EVIDENCE_DIR/pre-migration-backup.json"
+
+      - name: Upload pre-migration backup evidence
+        if: ${{ inputs.operation == 'pre-migration-backup' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: pre-migration-backup-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_DIR }}/pre-migration-backup.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Refuse a pre-existing restore namespace
+        if: ${{ inputs.operation == 'restore-drill' }}
+        run: |
+          if kubectl get namespace "$RESTORE_NAMESPACE" >/dev/null 2>&1; then
+            echo "::error::Restore namespace already exists; inspect and remove it deliberately before retrying"
+            exit 1
+          fi
+
+      - name: Create isolated restore drill resources
+        if: ${{ inputs.operation == 'restore-drill' }}
+        env:
+          BACKUP_ID: ${{ inputs.backup_id }}
+          AWS_ENDPOINT_URL: ${{ secrets.PROD_BACKUP_S3_ENDPOINT }}
+          AWS_REGION: ${{ secrets.PROD_BACKUP_S3_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_BACKUP_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_BACKUP_S3_SECRET_ACCESS_KEY }}
+          S3_BUCKET: ${{ secrets.PROD_BACKUP_S3_BUCKET }}
+          S3_PREFIX: ${{ secrets.PROD_BACKUP_S3_PREFIX }}
+          KMS_KEY_ID: ${{ secrets.PROD_BACKUP_KMS_KEY_ID }}
+        run: |
+          drill_started_epoch=$(date -u +%s)
+          kubectl create namespace "$RESTORE_NAMESPACE"
+          kubectl label namespace "$RESTORE_NAMESPACE" \
+            mnema.app/purpose=restore-drill \
+            "mnema.app/recovery-run-id=$RECOVERY_RUN_KEY"
+
+          db_password=$(openssl rand -hex 32)
+          kubectl -n "$RESTORE_NAMESPACE" create secret generic mnema-restore-db-secrets \
+            --from-literal=POSTGRES_DB=mnema_restore \
+            --from-literal=POSTGRES_USER=mnema_restore \
+            --from-literal=POSTGRES_PASSWORD="$db_password"
+
+          {
+            printf '%s\n' \
+              'apiVersion: v1' \
+              'kind: Secret' \
+              'metadata:' \
+              '  name: mnema-restore-backup-secrets' \
+              "  namespace: ${RESTORE_NAMESPACE}" \
+              'type: Opaque' \
+              'data:'
+            for name in AWS_ENDPOINT_URL AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY S3_BUCKET S3_PREFIX KMS_KEY_ID; do
+              value=${!name}
+              encoded=$(printf '%s' "$value" | base64 | tr -d '\n')
+              printf '  %s: "%s"\n' "$name" "$encoded"
+            done
+          } | kubectl apply -f -
+
+          kubectl -n "$RESTORE_NAMESPACE" create configmap mnema-backup-scripts \
+            --from-file=scripts/backup
+          kubectl -n "$RESTORE_NAMESPACE" create configmap mnema-restore-config \
+            --from-literal=BACKUP_ID="$BACKUP_ID" \
+            --from-literal=DRILL_STARTED_EPOCH="$drill_started_epoch"
+          kubectl apply -f k8s/backup/restore-drill.yaml
+
+      - name: Wait for restore and validate reconciliation evidence
+        if: ${{ inputs.operation == 'restore-drill' }}
+        run: |
+          kubectl -n "$RESTORE_NAMESPACE" rollout status statefulset/postgres --timeout=10m
+          if ! kubectl -n "$RESTORE_NAMESPACE" wait --for=condition=complete job/mnema-postgres-restore --timeout=120m; then
+            safe_error=$(kubectl -n "$RESTORE_NAMESPACE" logs job/mnema-postgres-restore --container=restore --tail=200 2>/dev/null | grep -E '^restore_error=[a-z0-9_]+$' | tail -1 || true)
+            echo "::error::${safe_error:-restore_job_failed}"
+            exit 1
+          fi
+          kubectl -n "$RESTORE_NAMESPACE" logs job/mnema-postgres-restore --container=restore > "$EVIDENCE_DIR/restore-drill.json"
+          python3 scripts/backup/validate_report.py \
+            --kind restore-drill \
+            --report "$EVIDENCE_DIR/restore-drill.json"
+
+      - name: Upload restore drill evidence
+        if: ${{ inputs.operation == 'restore-drill' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: restore-drill-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_DIR }}/restore-drill.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove only this run's isolated restore namespace
+        if: ${{ always() && inputs.operation == 'restore-drill' }}
+        run: |
+          if ! kubectl get namespace "$RESTORE_NAMESPACE" >/dev/null 2>&1; then
+            exit 0
+          fi
+          recovery_run_id=$(kubectl get namespace "$RESTORE_NAMESPACE" -o jsonpath='{.metadata.labels.mnema\.app/recovery-run-id}')
+          if [ "$recovery_run_id" != "$RECOVERY_RUN_KEY" ]; then
+            echo "::error::Restore namespace ownership does not match this workflow run; refusing cleanup"
+            exit 1
+          fi
+          kubectl delete namespace "$RESTORE_NAMESPACE" --wait=true --timeout=15m

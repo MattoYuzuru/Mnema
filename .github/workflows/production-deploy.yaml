@@ -90,8 +90,16 @@ jobs:
           SMOKE_LOGIN: ${{ secrets.PROD_SMOKE_LOGIN }}
           SMOKE_PASSWORD: ${{ secrets.PROD_SMOKE_PASSWORD }}
           SMOKE_TURNSTILE_BYPASS_KEY: ${{ secrets.PROD_SMOKE_TURNSTILE_BYPASS_KEY }}
+          BACKUP_AWS_ENDPOINT_URL: ${{ secrets.PROD_BACKUP_S3_ENDPOINT }}
+          BACKUP_AWS_REGION: ${{ secrets.PROD_BACKUP_S3_REGION }}
+          BACKUP_AWS_ACCESS_KEY_ID: ${{ secrets.PROD_BACKUP_S3_ACCESS_KEY_ID }}
+          BACKUP_AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_BACKUP_S3_SECRET_ACCESS_KEY }}
+          BACKUP_S3_BUCKET: ${{ secrets.PROD_BACKUP_S3_BUCKET }}
+          BACKUP_S3_PREFIX: ${{ secrets.PROD_BACKUP_S3_PREFIX }}
+          BACKUP_RETENTION_POLICY_ID: ${{ secrets.PROD_BACKUP_RETENTION_POLICY_ID }}
+          BACKUP_KMS_KEY_ID: ${{ secrets.PROD_BACKUP_KMS_KEY_ID }}
         run: |
-          required_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD SMOKE_LOGIN SMOKE_PASSWORD SMOKE_TURNSTILE_BYPASS_KEY"
+          required_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD SMOKE_LOGIN SMOKE_PASSWORD SMOKE_TURNSTILE_BYPASS_KEY BACKUP_AWS_ENDPOINT_URL BACKUP_AWS_REGION BACKUP_AWS_ACCESS_KEY_ID BACKUP_AWS_SECRET_ACCESS_KEY BACKUP_S3_BUCKET BACKUP_S3_PREFIX BACKUP_RETENTION_POLICY_ID BACKUP_KMS_KEY_ID"
           for name in $required_names; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Required production secret ${name} is missing or empty"
@@ -117,6 +125,13 @@ jobs:
             echo "::error::PROD_SMOKE_TURNSTILE_BYPASS_KEY must contain at least 32 characters"
             exit 1
           fi
+          case "$BACKUP_AWS_ENDPOINT_URL" in
+            https://*) ;;
+            *)
+              echo "::error::PROD_BACKUP_S3_ENDPOINT must use HTTPS"
+              exit 1
+              ;;
+          esac
 
       - name: Write kubeconfig (main cluster)
         env:
@@ -199,6 +214,39 @@ jobs:
           GF_SECURITY_ADMIN_USER: ${{ secrets.PROD_GF_SECURITY_ADMIN_USER }}
           GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.PROD_GF_SECURITY_ADMIN_PASSWORD }}
 
+      - name: Create/Update secret (mnema-backup-secrets)
+        run: |
+          {
+            printf '%s\n' \
+              'apiVersion: v1' \
+              'kind: Secret' \
+              'metadata:' \
+              '  name: mnema-backup-secrets' \
+              "  namespace: ${NS}" \
+              'type: Opaque' \
+              'data:'
+            for name in AWS_ENDPOINT_URL AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY S3_BUCKET S3_PREFIX RETENTION_POLICY_ID KMS_KEY_ID; do
+              value=${!name}
+              encoded=$(printf '%s' "$value" | base64 | tr -d '\n')
+              printf '  %s: "%s"\n' "$name" "$encoded"
+            done
+          } | kubectl apply -f -
+        env:
+          AWS_ENDPOINT_URL: ${{ secrets.PROD_BACKUP_S3_ENDPOINT }}
+          AWS_REGION: ${{ secrets.PROD_BACKUP_S3_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_BACKUP_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_BACKUP_S3_SECRET_ACCESS_KEY }}
+          S3_BUCKET: ${{ secrets.PROD_BACKUP_S3_BUCKET }}
+          S3_PREFIX: ${{ secrets.PROD_BACKUP_S3_PREFIX }}
+          RETENTION_POLICY_ID: ${{ secrets.PROD_BACKUP_RETENTION_POLICY_ID }}
+          KMS_KEY_ID: ${{ secrets.PROD_BACKUP_KMS_KEY_ID }}
+
+      - name: Create/Update backup scripts ConfigMap
+        run: |
+          kubectl -n "$NS" create configmap mnema-backup-scripts \
+            --from-file=scripts/backup \
+            --dry-run=client -o yaml | kubectl apply -f -
+
       - name: Create/Update Grafana dashboards ConfigMap
         run: |
           kubectl -n observability create configmap grafana-dashboards \
@@ -214,12 +262,15 @@ jobs:
           kubectl -n "$NS" delete endpointslice \
             -l kubernetes.io/service-name=mnema-ai-bridge \
             --ignore-not-found=true
+          kubectl apply -f k8s/backup/cronjob.yaml
           kubectl apply -f k8s/observability/
 
       - name: Restart observability pods (config reload)
         run: |
           kubectl -n observability rollout restart daemonset/alloy
           kubectl -n observability rollout restart deployment/grafana
+          kubectl -n observability rollout restart statefulset/prometheus
+          kubectl -n observability rollout status statefulset/prometheus --timeout=5m
 
       - name: Build candidate production release record
         run: |

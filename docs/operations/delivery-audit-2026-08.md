@@ -75,6 +75,8 @@ Before a schema replacement or public launch, require:
 
 The exact backup implementation depends on the actual cluster/storage provider and cannot be selected from this repository alone.
 
+Implementation update (2026-08-19, [#93](https://github.com/MattoYuzuru/Mnema/issues/93)): storage inventory selected a logical PostgreSQL backup to a dedicated Yandex Object Storage bucket. The repository now defines an hourly non-overlapping backup, KMS/lifecycle fail-closed checks, same-snapshot reconciliation and a fixed isolated PostgreSQL 18 restore drill in the [database recovery runbook](./database-recovery-runbook.md). This closes the implementation ambiguity, not the operational evidence gate: the finding remains open until the schedule is applied, an off-host object set exists, the restore drill passes and measured RPO/RTO are recorded.
+
 ### P0 — frontend releases can remain stale for a year
 
 Angular production output does not enable filename hashing ([angular.json](../../frontend/angular.json#L22)), while nginx marks all JS/CSS/images immutable for one year ([nginx.conf](../../frontend/nginx.conf#L50)). The live site returned files named `main.js`, `runtime.js` and `styles.css` with that cache policy.
