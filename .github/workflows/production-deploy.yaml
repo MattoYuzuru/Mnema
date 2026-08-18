@@ -151,6 +151,7 @@ jobs:
       KUBECONFIG: ${{ github.workspace }}/kubeconfig-main
       RELEASE_MANIFEST: ${{ github.workspace }}/production-release.yaml
       RELEASE_DIFF: ${{ github.workspace }}/production-release.diff
+      APPROVED_PREVIEW_DIR: ${{ github.workspace }}/approved-production-preview
       RELEASE_SHA: ${{ inputs.release_sha }}
     steps:
       - name: Checkout release revision
@@ -169,9 +170,63 @@ jobs:
           name: production-release-manifest
           path: ${{ github.workspace }}
 
+      - name: Validate approved preview artifact reference
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_ARTIFACT_ID: ${{ needs.preview-production.outputs.preview_artifact_id }}
+          PREVIEW_ARTIFACT_DIGEST: ${{ needs.preview-production.outputs.preview_artifact_digest }}
+        run: |
+          case "$PREVIEW_ARTIFACT_ID" in
+            ''|*[!0-9]*)
+              echo "::error::Approved preview artifact ID is missing or invalid"
+              exit 1
+              ;;
+          esac
+          case "$PREVIEW_ARTIFACT_DIGEST" in
+            sha256:*) expected_digest="$PREVIEW_ARTIFACT_DIGEST" ;;
+            *) expected_digest="sha256:${PREVIEW_ARTIFACT_DIGEST}" ;;
+          esac
+
+          artifact=$(gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/artifacts/${PREVIEW_ARTIFACT_ID}")
+          server_id=$(printf '%s' "$artifact" | jq -r '.id')
+          server_name=$(printf '%s' "$artifact" | jq -r '.name')
+          server_digest=$(printf '%s' "$artifact" | jq -r '.digest')
+          server_expired=$(printf '%s' "$artifact" | jq -r '.expired')
+          server_run_id=$(printf '%s' "$artifact" | jq -r '.workflow_run.id')
+
+          if [ "$server_id" != "$PREVIEW_ARTIFACT_ID" ] || \
+             [ "$server_name" != "production-release-preview-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ] || \
+             [ "$server_digest" != "$expected_digest" ] || \
+             [ "$server_expired" != false ] || \
+             [ "$server_run_id" != "$GITHUB_RUN_ID" ]; then
+            echo "::error::Approved preview artifact identity, digest, run or lifetime changed"
+            exit 1
+          fi
+
+      - name: Download approved production preview by immutable ID
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.preview-production.outputs.preview_artifact_id }}
+          path: ${{ env.APPROVED_PREVIEW_DIR }}
+          digest-mismatch: error
+
       - name: Verify release artifact integrity
         working-directory: ${{ github.workspace }}
         run: sha256sum --check production-release.yaml.sha256
+
+      - name: Verify approved production preview contents
+        run: |
+          ./scripts/verify-release-preview.sh \
+            "$APPROVED_PREVIEW_DIR/production-release-preview.txt" \
+            "$APPROVED_PREVIEW_DIR/production-release.diff" \
+            production-release.yaml.sha256 \
+            "$RELEASE_SHA" \
+            '${{ needs.preview-production.outputs.release_diff_sha256 }}' \
+            v1.36.0 \
+            "$GITHUB_RUN_ID" \
+            "$GITHUB_RUN_ATTEMPT" \
+            true
 
       - name: Reject a stale release
         run: |

@@ -9,6 +9,7 @@ fi
 release_manifest=$1
 diff_output=$2
 expected_diff_sha256=${3-}
+script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 verify_expected=false
 if [ "$#" -eq 3 ]; then
   verify_expected=true
@@ -17,7 +18,7 @@ fi
 kubectl apply --dry-run=server -f "$release_manifest" >/dev/null
 
 set +e
-KUBECTL_EXTERNAL_DIFF='diff -u -N --label LIVE --label DESIRED' \
+KUBECTL_EXTERNAL_DIFF="$script_dir/canonical-kubectl-diff.sh" \
   kubectl diff --show-secrets=false -f "$release_manifest" >"$diff_output"
 diff_status=$?
 set -e

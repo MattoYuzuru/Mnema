@@ -16,6 +16,11 @@ grep -Fq "if: needs.preview-production.outputs.has_release_changes == 'true'" "$
 grep -Fq 'production-release-preview-${{ github.run_id }}-${{ github.run_attempt }}' "$DEPLOY"
 grep -Fq 'approved_diff_sha256=' "$DEPLOY"
 grep -Fq 'needs.preview-production.outputs.release_diff_sha256' "$DEPLOY"
+grep -Fq 'canonical-kubectl-diff.sh' "$REPO_ROOT/scripts/capture-release-diff.sh"
+# shellcheck disable=SC2016 # GitHub expressions are literal contract markers.
+grep -Fq 'artifact-ids: ${{ needs.preview-production.outputs.preview_artifact_id }}' "$DEPLOY"
+grep -Fq 'digest-mismatch: error' "$DEPLOY"
+grep -Fq './scripts/verify-release-preview.sh' "$DEPLOY"
 # shellcheck disable=SC2016 # GitHub expressions are literal contract markers.
 grep -Fq 'PROD_KUBECONFIG_B64: ${{ secrets.PROD_KUBECONFIG_B64 }}' "$DEPLOY"
 
@@ -71,5 +76,19 @@ if [ -z "$drift_guard_line" ] || [ -z "$first_mutation_line" ] || \
   echo 'The approved diff must be revalidated before any production mutation' >&2
   exit 1
 fi
+
+preview_reference_line=$(grep -n 'name: Validate approved preview artifact reference' "$DEPLOY" | cut -d: -f1)
+preview_download_line=$(grep -n 'name: Download approved production preview by immutable ID' "$DEPLOY" | cut -d: -f1)
+preview_verify_line=$(grep -n 'name: Verify approved production preview contents' "$DEPLOY" | cut -d: -f1)
+kubeconfig_step_line=$(grep -n 'name: Write kubeconfig (main cluster)' "$DEPLOY" | tail -n 1 | cut -d: -f1)
+if [ "$preview_reference_line" -ge "$kubeconfig_step_line" ] || \
+   [ "$preview_download_line" -ge "$kubeconfig_step_line" ] || \
+   [ "$preview_verify_line" -ge "$kubeconfig_step_line" ]; then
+  echo 'Approved preview identity, availability and contents must be verified before prod credentials' >&2
+  exit 1
+fi
+
+grep -Fq 'run: ./scripts/test-capture-release-diff.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
+grep -Fq 'run: ./scripts/test-capture-release-diff.sh' "$CALLER"
 
 printf 'production_deploy_safety=ok\n'
