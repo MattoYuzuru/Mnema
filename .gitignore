@@ -39,6 +39,8 @@ frontend/node_modules
 !/scripts/mnema-public.sh
 !/scripts/mnema-public.ps1
 !/scripts/render-release-manifest.sh
+!/scripts/capture-release-diff.sh
+!/scripts/test-capture-release-diff.sh
 !/scripts/test-frontend-release-contract.sh
 !/scripts/test-render-release-manifest.sh
 !/scripts/test-production-deploy-safety.sh
