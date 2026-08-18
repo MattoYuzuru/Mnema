@@ -70,3 +70,9 @@ jobs:
       - name: Run frontend build
         working-directory: frontend
         run: npm run build
+
+      - name: Verify frontend release contract
+        run: ./scripts/test-frontend-release-contract.sh
+
+      - name: Verify release manifest renderer
+        run: ./scripts/test-render-release-manifest.sh

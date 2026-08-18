@@ -1,4 +1,4 @@
-# frontend-deploy.yaml
+# Release template: render with scripts/render-release-manifest.sh; do not apply directly.
 
 apiVersion: apps/v1
 kind: Deployment
@@ -18,8 +18,10 @@ spec:
     spec:
       containers:
         - name: frontend
-          image: ghcr.io/mattoyuzuru/mnema/frontend:sha-PLACEHOLDER # CI заменит
+          image: ghcr.io/mattoyuzuru/mnema/frontend:release-placeholder
           env:
+            - name: MNEMA_BUILD_ID
+              value: "release-placeholder"
             - name: MNEMA_FEATURE_AI_ENABLED
               value: "false"
           ports: [ { containerPort: 80 } ]

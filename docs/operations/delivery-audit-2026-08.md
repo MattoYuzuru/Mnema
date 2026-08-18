@@ -81,17 +81,23 @@ Angular production output does not enable filename hashing ([angular.json](../..
 
 Enable content hashing and keep HTML/runtime configuration revalidated. Until hashed assets ship, remove `immutable` from unhashed JS/CSS. Add a deploy smoke check that fetches the public HTML, resolves its script names and verifies that they correspond to the released image.
 
+Resolution update (2026-08-18, [#90](https://github.com/MattoYuzuru/Mnema/issues/90)): Angular production builds now hash all emitted filenames. Nginx retains long-lived `immutable` caching only for those content-addressed assets; `/index.html` remains revalidated and `/app-config.js` remains `no-store`. The frontend image now resolves dependencies with the committed lockfile and invokes the repository-local build script. Previously cached unhashed bundles cannot be recalled, so production verification still records the transition as a residual risk.
+
 ### P1 — manifests are applied before the release images are selected
 
 `apply-main-manifests` applies deployments first ([deploy.yaml](../../.github/workflows/deploy.yaml#L278)); a later job uses `kubectl set image` to select SHA-tagged images ([deploy.yaml](../../.github/workflows/deploy.yaml#L388)). The checked-in manifests contain mutable `latest` tags or a frontend placeholder. A manifest edit can therefore start an unintended transient rollout before the desired image is set.
 
 Render one release artifact with exact digests, inspect its diff, then apply it once. Keep `latest` only as a convenience tag, never as deployed state. Kubernetes recommends meaningful tags or digests and notes that tags can move in [Images](https://kubernetes.io/docs/concepts/containers/images/).
 
+Resolution update (2026-08-18, [#90](https://github.com/MattoYuzuru/Mnema/issues/90)): each successful six-image build publishes its exact digest, then a deterministic renderer produces one checksummed application manifest containing the release ConfigMap, six Deployments/Services and both ingresses. The protected deployment job verifies the artifact checksum and current `main`, performs a server-side dry run plus `kubectl diff`, and applies that complete application manifest once. Checked-in application manifests are explicitly non-applicable templates; every image in the rendered artifact is digest-pinned, and all Mnema workloads share the same full commit build identifier. Broader supply-chain provenance and automated digest maintenance remain scope under #72.
+
 ### P1 — the container build is not the build that CI tested
 
 The frontend quality job correctly uses `npm ci`, but the image copies only `package.json`, runs `npm install`, and downloads a CLI with `npx -y` ([Dockerfile](../../frontend/Dockerfile#L5)). Dependency resolution can therefore differ between quality and release.
 
 The image should copy `package.json` and `package-lock.json`, run `npm ci`, and use the repository-local build script. This requires no new dependency.
+
+Resolution update (2026-08-18, [#90](https://github.com/MattoYuzuru/Mnema/issues/90)): the frontend Docker build now copies both package files, runs `npm ci`, and uses `npm run build`; it no longer resolves a separate CLI through `npx -y`.
 
 The backend build matrix invokes the same multi-target Dockerfile six times. Each build target currently compiles all six boot JARs ([backend/Dockerfile](../../backend/Dockerfile#L25)). Shared cache reduces network cost, but the structure still repeats orchestration and makes provenance harder to understand. Prefer one tested backend build artifact or a single multi-output build before optimizing further.
 

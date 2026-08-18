@@ -172,7 +172,7 @@ For the local stack, follow [Self-hosted local deployment](../deploy/selfhost-lo
 - Subscription eagerly creates per-card user rows.
 - Review idempotency and first-state concurrency are incomplete.
 - AI/import jobs have partial-commit and recovery gaps.
-- Frontend bundles are currently unhashed but cached as immutable in production.
+- Clients that previously cached the old unhashed frontend bundles may retain them until the already-issued cache lifetime expires; current production builds use content-hashed asset names.
 - Large inline Angular components mix view, state, HTTP orchestration and persistence.
 - Production backup/restore and release atomicity are not demonstrated.
 

@@ -17,6 +17,7 @@ jobs:
   deploy-production:
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
     environment:
       name: prod
@@ -24,6 +25,7 @@ jobs:
     env:
       NS: prod
       KUBECONFIG: ${{ github.workspace }}/kubeconfig-main
+      RELEASE_MANIFEST: ${{ github.workspace }}/production-release.yaml
       RELEASE_SHA: ${{ inputs.release_sha }}
     steps:
       - name: Checkout release revision
@@ -33,6 +35,16 @@ jobs:
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
+
+      - name: Download complete release manifest
+        uses: actions/download-artifact@v8
+        with:
+          name: production-release-manifest
+          path: ${{ github.workspace }}
+
+      - name: Verify release artifact integrity
+        working-directory: ${{ github.workspace }}
+        run: sha256sum --check production-release.yaml.sha256
 
       - name: Reject a stale release
         run: |
@@ -46,12 +58,6 @@ jobs:
         run: echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
         env:
           KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
-
-      - name: Resolve release metadata
-        id: release
-        run: |
-          echo "REPO=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
-          echo "TAG=sha-${RELEASE_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Ensure namespace exists
         run: |
@@ -156,14 +162,6 @@ jobs:
           kubectl -n "$NS" delete endpointslice \
             -l kubernetes.io/service-name=mnema-ai-bridge \
             --ignore-not-found=true
-          kubectl -n "$NS" apply -f k8s/frontend-deploy.yaml
-          kubectl -n "$NS" apply -f k8s/auth-deploy.yaml
-          kubectl -n "$NS" apply -f k8s/user-deploy.yaml
-          kubectl -n "$NS" apply -f k8s/core-deploy.yaml
-          kubectl -n "$NS" apply -f k8s/media-deploy.yaml
-          kubectl -n "$NS" apply -f k8s/import-deploy.yaml
-          kubectl -n "$NS" apply -f k8s/ingress.yaml
-          kubectl -n "$NS" apply -f k8s/auth-ingress.yaml
           kubectl apply -f k8s/observability/
 
       - name: Restart observability pods (config reload)
@@ -171,10 +169,24 @@ jobs:
           kubectl -n observability rollout restart daemonset/alloy
           kubectl -n observability rollout restart deployment/grafana
 
-      - name: Deploy services (sequential)
-        env:
-          IMAGE_BASE: ghcr.io/${{ steps.release.outputs.REPO }}
-          IMAGE_TAG: ${{ steps.release.outputs.TAG }}
+      - name: Preview complete application release
+        run: |
+          kubectl apply --dry-run=server -f "$RELEASE_MANIFEST" >/dev/null
+
+          set +e
+          kubectl diff -f "$RELEASE_MANIFEST"
+          diff_status=$?
+          set -e
+
+          if [ "$diff_status" -gt 1 ]; then
+            echo "::error::Unable to preview the complete release manifest"
+            exit "$diff_status"
+          fi
+
+      - name: Apply complete application release once
+        run: kubectl apply -f "$RELEASE_MANIFEST"
+
+      - name: Verify service rollouts (sequential)
         run: |
           set -euo pipefail
 
@@ -196,19 +208,9 @@ jobs:
             return 1
           }
 
-          deploy() {
-            local deploy_name="$1"
-            local container_name="$2"
-            local image="$3"
-            local timeout="$4"
-
-            kubectl -n "$NS" set image "deploy/${deploy_name}" "${container_name}=${image}"
-            wait_rollout "$deploy_name" "$timeout"
-          }
-
-          deploy mnema-frontend frontend "${IMAGE_BASE}/frontend:${IMAGE_TAG}" 600s
-          deploy mnema-auth     auth     "${IMAGE_BASE}/auth:${IMAGE_TAG}"     1200s
-          deploy mnema-user     user     "${IMAGE_BASE}/user:${IMAGE_TAG}"     1200s
-          deploy mnema-core     core     "${IMAGE_BASE}/core:${IMAGE_TAG}"     1200s
-          deploy mnema-media    media    "${IMAGE_BASE}/media:${IMAGE_TAG}"    1800s
-          deploy mnema-import   import   "${IMAGE_BASE}/import:${IMAGE_TAG}"   1800s
+          wait_rollout mnema-frontend 600s
+          wait_rollout mnema-auth     1200s
+          wait_rollout mnema-user     1200s
+          wait_rollout mnema-core     1200s
+          wait_rollout mnema-media    1800s
+          wait_rollout mnema-import   1800s

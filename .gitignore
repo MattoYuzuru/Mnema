@@ -38,6 +38,9 @@ frontend/node_modules
 !/scripts/mnema-local.ps1
 !/scripts/mnema-public.sh
 !/scripts/mnema-public.ps1
+!/scripts/render-release-manifest.sh
+!/scripts/test-frontend-release-contract.sh
+!/scripts/test-render-release-manifest.sh
 !/scripts/local-ai-gateway/
 !/scripts/local-ai-gateway/**
 !/scripts/local-audio-gateway/

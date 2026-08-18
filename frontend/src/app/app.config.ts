@@ -6,6 +6,7 @@ export interface AppConfig {
     importApiBaseUrl: string;
     aiApiBaseUrl: string;
     clientId: string;
+    buildId: string;
     features: AppFeatures;
 }
 
@@ -52,6 +53,7 @@ const defaultConfig: AppConfig = {
         ? '/api/ai'
         : (isLocalHost ? 'http://localhost:8088/api/ai' : '/api/ai'),
     clientId: 'mnema-web',
+    buildId: 'dev',
     features: {
         federatedAuthEnabled: !isLocalSelfHost,
         showEmailVerificationWarning: !isLocalSelfHost,

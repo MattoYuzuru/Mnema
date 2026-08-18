@@ -2,15 +2,15 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 
-# Берём только package.json, NPM сам создаст lock внутри образа
-COPY package.json ./
-RUN npm install --no-audit --fund=false
+# Dependency resolution must match the tested lockfile exactly.
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --fund=false
 
 # Теперь исходники
 COPY . .
 
-# Сборка Angular (без кастомного output-path)
-RUN npx -y -p @angular/cli@18 ng build --configuration production
+# Use the repository-local Angular CLI selected by package-lock.json.
+RUN npm run build
 
 # --- serve stage ---
 FROM nginx:alpine

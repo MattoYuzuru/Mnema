@@ -1,6 +1,9 @@
 package app.mnema.user
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.actuate.info.InfoEndpoint
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
@@ -10,8 +13,11 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.utility.DockerImageName
 
 @Testcontainers(disabledWithoutDocker = true)
-@SpringBootTest
+@SpringBootTest(properties = ["MNEMA_BUILD_ID=test-release"])
 class UserApplicationTests {
+
+    @Autowired
+    private lateinit var infoEndpoint: InfoEndpoint
 
     companion object {
         @Container
@@ -36,5 +42,12 @@ class UserApplicationTests {
 
     @Test
     fun contextLoads() {
+    }
+
+    @Test
+    fun `exposes the deployed build identity`() {
+        val build = infoEndpoint.info()["build"] as Map<*, *>
+
+        assertEquals("test-release", build["id"])
     }
 }

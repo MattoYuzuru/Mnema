@@ -72,6 +72,12 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Verify frontend release contract
+        run: ./scripts/test-frontend-release-contract.sh
+
+      - name: Verify release manifest renderer
+        run: ./scripts/test-render-release-manifest.sh
+
   build-and-push:
     needs:
       - backend-quality
@@ -145,6 +151,7 @@ jobs:
 
       - name: Build & push frontend
         if: ${{ matrix.kind == 'frontend' }}
+        id: frontend-image
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
@@ -158,6 +165,7 @@ jobs:
 
       - name: Build & push backend ${{ matrix.name }}
         if: ${{ matrix.kind == 'backend' }}
+        id: backend-image
         uses: docker/build-push-action@v6
         with:
           context: ${{ matrix.context }}
@@ -170,12 +178,89 @@ jobs:
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
 
-  deploy-production:
+      - name: Record immutable image digest
+        env:
+          FRONTEND_DIGEST: ${{ steps.frontend-image.outputs.digest }}
+          BACKEND_DIGEST: ${{ steps.backend-image.outputs.digest }}
+          IMAGE_NAME: ${{ matrix.name }}
+        run: |
+          digest="${FRONTEND_DIGEST:-$BACKEND_DIGEST}"
+          case "$digest" in
+            sha256:*) digest_hex=${digest#sha256:} ;;
+            *)
+              echo "::error::Missing or invalid digest for ${IMAGE_NAME}: ${digest}"
+              exit 1
+              ;;
+          esac
+          case "$digest_hex" in
+            *[!0-9a-f]*)
+              echo "::error::Invalid digest for ${IMAGE_NAME}: ${digest}"
+              exit 1
+              ;;
+          esac
+          if [ "${#digest_hex}" -ne 64 ]; then
+            echo "::error::Unexpected digest length for ${IMAGE_NAME}"
+            exit 1
+          fi
+          mkdir -p "${RUNNER_TEMP}/release-digests"
+          printf '%s\n' "$digest" > "${RUNNER_TEMP}/release-digests/${IMAGE_NAME}.digest"
+
+      - name: Upload immutable image digest
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-image-${{ matrix.name }}
+          path: ${{ runner.temp }}/release-digests/${{ matrix.name }}.digest
+          if-no-files-found: error
+          retention-days: 30
+
+  render-release:
     needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout release revision
+        uses: actions/checkout@v6
+
+      - name: Download image digests
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-image-*
+          path: ${{ runner.temp }}/release-digests
+          merge-multiple: true
+
+      - name: Render immutable production release
+        env:
+          DIGEST_DIR: ${{ runner.temp }}/release-digests
+          IMAGE_BASE: ghcr.io/${{ github.repository }}
+          OUTPUT: ${{ runner.temp }}/production-release.yaml
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          IMAGE_BASE=$(printf '%s' "$IMAGE_BASE" | tr '[:upper:]' '[:lower:]')
+          export IMAGE_BASE
+          ./scripts/render-release-manifest.sh
+          output_dir=$(dirname -- "$OUTPUT")
+          output_name=$(basename -- "$OUTPUT")
+          (cd "$output_dir" && sha256sum "$output_name" > "${output_name}.sha256")
+
+      - name: Upload complete release manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-release-manifest
+          path: |
+            ${{ runner.temp }}/production-release.yaml
+            ${{ runner.temp }}/production-release.yaml.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  deploy-production:
+    needs: render-release
     concurrency:
       group: production-deploy
       cancel-in-progress: false
     permissions:
+      actions: read
       contents: read
     uses: ./.github/workflows/production-deploy.yaml
     with:
