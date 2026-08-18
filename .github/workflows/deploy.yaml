@@ -72,6 +72,9 @@ jobs:
         working-directory: frontend
         run: npm run build
 
+      - name: Verify production deployment safety contract
+        run: ./scripts/test-production-deploy-safety.sh
+
   build-and-push:
     needs:
       - backend-quality

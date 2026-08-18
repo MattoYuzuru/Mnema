@@ -70,3 +70,6 @@ jobs:
       - name: Run frontend build
         working-directory: frontend
         run: npm run build
+
+      - name: Verify production deployment safety contract
+        run: ./scripts/test-production-deploy-safety.sh

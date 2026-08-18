@@ -43,9 +43,15 @@ jobs:
           fi
 
       - name: Write kubeconfig (main cluster)
-        run: echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
         env:
-          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+          PROD_KUBECONFIG_B64: ${{ secrets.PROD_KUBECONFIG_B64 }}
+        run: |
+          if [ -z "$PROD_KUBECONFIG_B64" ]; then
+            echo "::error::PROD_KUBECONFIG_B64 is required in the prod environment"
+            exit 1
+          fi
+          printf '%s' "$PROD_KUBECONFIG_B64" | base64 -d > "$KUBECONFIG"
+          chmod 600 "$KUBECONFIG"
 
       - name: Resolve release metadata
         id: release
