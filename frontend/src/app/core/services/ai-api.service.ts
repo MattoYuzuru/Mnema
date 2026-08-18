@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable, catchError, map, of } from 'rxjs';
+import { Observable, catchError, map, of, throwError } from 'rxjs';
 import { appConfig } from '../../app.config';
 import {
     AiProviderCredential,
@@ -22,6 +22,9 @@ export class AiApiService {
     constructor(private http: HttpClient) {}
 
     listProviders(): Observable<AiProviderCredential[]> {
+        if (!appConfig.features.aiEnabled) {
+            return of([]);
+        }
         return this.http.get<AiProviderCredential[]>(`${this.baseUrl}/providers`).pipe(
             map(list => {
                 if (!appConfig.features.aiSystemProviderEnabled) {
@@ -63,56 +66,73 @@ export class AiApiService {
     }
 
     getRuntimeCapabilities(): Observable<AiRuntimeCapabilities> {
-        return this.http.get<AiRuntimeCapabilities>(`${this.baseUrl}/runtime/capabilities`);
+        return this.whenEnabled(() => this.http.get<AiRuntimeCapabilities>(`${this.baseUrl}/runtime/capabilities`));
     }
 
     createProvider(request: CreateAiProviderRequest): Observable<AiProviderCredential> {
-        return this.http.post<AiProviderCredential>(`${this.baseUrl}/providers`, request);
+        return this.whenEnabled(() => this.http.post<AiProviderCredential>(`${this.baseUrl}/providers`, request));
     }
 
     deleteProvider(id: string): Observable<void> {
-        return this.http.delete<void>(`${this.baseUrl}/providers/${id}`);
+        return this.whenEnabled(() => this.http.delete<void>(`${this.baseUrl}/providers/${id}`));
     }
 
     createJob(request: CreateAiJobRequest): Observable<AiJobResponse> {
-        return this.http.post<AiJobResponse>(`${this.baseUrl}/jobs`, this.normalizeSystemProviderJobRequest(request));
+        return this.whenEnabled(() =>
+            this.http.post<AiJobResponse>(`${this.baseUrl}/jobs`, this.normalizeSystemProviderJobRequest(request))
+        );
     }
 
     preflightJob(request: CreateAiJobRequest): Observable<AiJobPreflightResponse> {
-        return this.http.post<AiJobPreflightResponse>(`${this.baseUrl}/jobs/preflight`, this.normalizeSystemProviderJobRequest(request));
+        return this.whenEnabled(() =>
+            this.http.post<AiJobPreflightResponse>(`${this.baseUrl}/jobs/preflight`, this.normalizeSystemProviderJobRequest(request))
+        );
     }
 
     getJob(jobId: string): Observable<AiJobResponse> {
-        return this.http.get<AiJobResponse>(`${this.baseUrl}/jobs/${jobId}`);
+        return this.whenEnabled(() => this.http.get<AiJobResponse>(`${this.baseUrl}/jobs/${jobId}`));
     }
 
     getJobResult(jobId: string): Observable<AiJobResultResponse> {
-        return this.http.get<AiJobResultResponse>(`${this.baseUrl}/jobs/${jobId}/results`);
+        return this.whenEnabled(() => this.http.get<AiJobResultResponse>(`${this.baseUrl}/jobs/${jobId}/results`));
     }
 
     listJobs(deckId: string, limit: number = 20): Observable<AiJobResponse[]> {
-        return this.http.get<AiJobResponse[]>(`${this.baseUrl}/jobs`, {
-            params: {
-                deckId,
-                limit
-            }
-        });
+        return this.whenEnabled(() =>
+            this.http.get<AiJobResponse[]>(`${this.baseUrl}/jobs`, {
+                params: {
+                    deckId,
+                    limit
+                }
+            })
+        );
     }
 
     cancelJob(jobId: string): Observable<AiJobResponse> {
-        return this.http.post<AiJobResponse>(`${this.baseUrl}/jobs/${jobId}/cancel`, {});
+        return this.whenEnabled(() => this.http.post<AiJobResponse>(`${this.baseUrl}/jobs/${jobId}/cancel`, {}));
     }
 
     retryFailedJob(jobId: string): Observable<AiJobResponse> {
-        return this.http.post<AiJobResponse>(`${this.baseUrl}/jobs/${jobId}/retry-failed`, {});
+        return this.whenEnabled(() => this.http.post<AiJobResponse>(`${this.baseUrl}/jobs/${jobId}/retry-failed`, {}));
     }
 
     createImportPreview(request: AiImportPreviewRequest): Observable<AiJobResponse> {
-        return this.http.post<AiJobResponse>(`${this.baseUrl}/imports/preview`, this.normalizeSystemProviderImportRequest(request));
+        return this.whenEnabled(() =>
+            this.http.post<AiJobResponse>(`${this.baseUrl}/imports/preview`, this.normalizeSystemProviderImportRequest(request))
+        );
     }
 
     createImportGenerate(request: AiImportGenerateRequest): Observable<AiJobResponse> {
-        return this.http.post<AiJobResponse>(`${this.baseUrl}/imports/generate`, this.normalizeSystemProviderImportRequest(request));
+        return this.whenEnabled(() =>
+            this.http.post<AiJobResponse>(`${this.baseUrl}/imports/generate`, this.normalizeSystemProviderImportRequest(request))
+        );
+    }
+
+    private whenEnabled<T>(request: () => Observable<T>): Observable<T> {
+        if (!appConfig.features.aiEnabled) {
+            return throwError(() => new AiTemporarilyUnavailableError());
+        }
+        return request();
     }
 
     private normalizeSystemProviderImportRequest<T extends { providerCredentialId?: string | null }>(request: T): T {
@@ -135,5 +155,14 @@ export class AiApiService {
             ...request,
             params
         };
+    }
+}
+
+export class AiTemporarilyUnavailableError extends Error {
+    readonly code = 'AI_TEMPORARILY_UNAVAILABLE';
+
+    constructor() {
+        super('AI is temporarily unavailable');
+        this.name = 'AiTemporarilyUnavailableError';
     }
 }

@@ -12,6 +12,7 @@ export interface AppConfig {
 export interface AppFeatures {
     federatedAuthEnabled: boolean;
     showEmailVerificationWarning: boolean;
+    aiEnabled: boolean;
     aiSystemProviderEnabled: boolean;
     aiSystemProviderName: string;
 }
@@ -54,6 +55,7 @@ const defaultConfig: AppConfig = {
     features: {
         federatedAuthEnabled: !isLocalSelfHost,
         showEmailVerificationWarning: !isLocalSelfHost,
+        aiEnabled: isLocalSelfHost,
         aiSystemProviderEnabled: isLocalSelfHost,
         aiSystemProviderName: 'ollama'
     }

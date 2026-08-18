@@ -14,6 +14,7 @@ import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loa
 import { ReportContentModalComponent } from '../../shared/components/report-content-modal.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 import { I18nService } from '../../core/services/i18n.service';
+import { appConfig } from '../../app.config';
 
 interface EditableField {
     fieldId?: string;
@@ -109,7 +110,7 @@ type FieldSide = 'front' | 'back';
       <p *ngIf="!isLatestVersion" class="safe-note">{{ 'templateProfile.versionViewOnly' | translate }}</p>
       <p *ngIf="editing" class="safe-note">{{ 'templateProfile.safeChanges' | translate }}</p>
 
-      <section class="ai-profile-section">
+      <section *ngIf="aiEnabled" class="ai-profile-section">
         <div class="section-header">
           <h2>{{ 'templateProfile.aiProfileTitle' | translate }}</h2>
         </div>
@@ -626,6 +627,7 @@ export class TemplateProfileComponent implements OnInit {
     readonly maxTemplateDescription = TemplateProfileComponent.MAX_TEMPLATE_DESCRIPTION;
     readonly maxFieldLabel = TemplateProfileComponent.MAX_FIELD_LABEL;
     readonly maxFieldHelpText = TemplateProfileComponent.MAX_FIELD_HELP_TEXT;
+    readonly aiEnabled = appConfig.features.aiEnabled;
     loading = true;
     saving = false;
     template: CardTemplateDTO | null = null;

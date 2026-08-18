@@ -47,6 +47,7 @@ import { ReviewStatsPanelComponent } from '../../shared/components/review-stats-
 import { markdownToHtml } from '../../shared/utils/markdown.util';
 import { I18nService } from '../../core/services/i18n.service';
 import { ToastService } from '../../core/services/toast.service';
+import { appConfig } from '../../app.config';
 
 @Component({
     selector: 'app-deck-profile',
@@ -129,7 +130,7 @@ import { ToastService } from '../../core/services/toast.service';
         <app-button variant="secondary" (click)="openAddCardsChoice()">
           {{ 'deckProfile.addCards' | translate }}
         </app-button>
-        <app-button variant="secondary" (click)="openAiEnhanceModal()">
+        <app-button *ngIf="aiEnabled" variant="secondary" (click)="openAiEnhanceModal()">
           ✨ {{ 'deckProfile.aiEnhanceButton' | translate }}
         </app-button>
         <app-button variant="secondary" (click)="openExportConfirm()" [disabled]="exporting">
@@ -155,7 +156,7 @@ import { ToastService } from '../../core/services/toast.service';
 
       <p *ngIf="exportStatusKey" class="export-status">{{ exportStatusKey | translate }}</p>
 
-      <section class="ai-jobs-section">
+      <section *ngIf="aiEnabled" class="ai-jobs-section">
         <div class="ai-jobs-header">
           <div>
             <h2>{{ 'deckProfile.aiJobsTitle' | translate }}</h2>
@@ -529,12 +530,12 @@ import { ToastService } from '../../core/services/toast.service';
               <h3>{{ 'deckProfile.addCardsImport' | translate }}</h3>
               <p>{{ 'deckProfile.addCardsImportDesc' | translate }}</p>
             </div>
-            <div class="choice-card ai-choice" (click)="startAiAdd()">
+            <div *ngIf="aiEnabled" class="choice-card ai-choice" (click)="startAiAdd()">
               <div class="choice-icon">✨</div>
               <h3>{{ 'deckProfile.aiAddCardsTitle' | translate }}</h3>
               <p>{{ 'deckProfile.aiAddCardsDescription' | translate }}</p>
             </div>
-            <div class="choice-card ai-choice" (click)="startAiImport()">
+            <div *ngIf="aiEnabled" class="choice-card ai-choice" (click)="startAiImport()">
               <div class="choice-icon">📂</div>
               <h3>{{ 'deckProfile.aiImportTitle' | translate }}</h3>
               <p>{{ 'deckProfile.aiImportDescription' | translate }}</p>
@@ -561,7 +562,7 @@ import { ToastService } from '../../core/services/toast.service';
     ></app-import-deck-modal>
 
     <app-ai-add-cards-modal
-      *ngIf="showAiAddModal && deck"
+      *ngIf="aiEnabled && showAiAddModal && deck"
       [userDeckId]="deck.userDeckId"
       [deckName]="deck.displayName"
       [templateId]="publicDeck?.templateId || ''"
@@ -571,7 +572,7 @@ import { ToastService } from '../../core/services/toast.service';
     ></app-ai-add-cards-modal>
 
     <app-ai-enhance-deck-modal
-      *ngIf="showAiEnhanceModal && deck"
+      *ngIf="aiEnabled && showAiEnhanceModal && deck"
       [userDeckId]="deck.userDeckId"
       [deckName]="deck.displayName"
       [templateId]="publicDeck?.templateId || ''"
@@ -582,7 +583,7 @@ import { ToastService } from '../../core/services/toast.service';
     ></app-ai-enhance-deck-modal>
 
     <app-ai-import-modal
-      *ngIf="showAiImportModal && deck"
+      *ngIf="aiEnabled && showAiImportModal && deck"
       [userDeckId]="deck.userDeckId"
       [deckName]="deck.displayName"
       [templateId]="publicDeck?.templateId || ''"
@@ -1813,6 +1814,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     readonly maxDeckDescription = DeckProfileComponent.MAX_DECK_DESCRIPTION;
     readonly maxTagLength = DeckProfileComponent.MAX_TAG_LENGTH;
     readonly codeMarker = '`';
+    readonly aiEnabled = appConfig.features.aiEnabled;
     loading = true;
     deck: UserDeckDTO | null = null;
     publicDeck: PublicDeckDTO | null = null;
@@ -1922,7 +1924,9 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
         this.userDeckId = this.route.snapshot.paramMap.get('userDeckId') || '';
         if (this.userDeckId) {
             this.loadDeck();
-            this.loadAiJobs();
+            if (this.aiEnabled) {
+                this.loadAiJobs();
+            }
         }
     }
 
@@ -2004,11 +2008,17 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     }
 
     startAiAdd(): void {
+        if (!this.aiEnabled) {
+            return;
+        }
         this.showAddCardsChoice = false;
         this.showAiAddModal = true;
     }
 
     startAiImport(): void {
+        if (!this.aiEnabled) {
+            return;
+        }
         this.showAddCardsChoice = false;
         this.showAiImportModal = true;
     }
@@ -2018,6 +2028,9 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     }
 
     openAiAddModal(): void {
+        if (!this.aiEnabled) {
+            return;
+        }
         this.showAiAddModal = true;
     }
 
@@ -2026,6 +2039,9 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     }
 
     openAiEnhanceModal(): void {
+        if (!this.aiEnabled) {
+            return;
+        }
         this.showAiEnhanceModal = true;
     }
 
@@ -2034,6 +2050,9 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     }
 
     openAiImportModal(): void {
+        if (!this.aiEnabled) {
+            return;
+        }
         this.showAiImportModal = true;
     }
 
@@ -2440,7 +2459,7 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     }
 
     private loadAiJobs(): void {
-        if (!this.userDeckId) {
+        if (!this.aiEnabled || !this.userDeckId) {
             return;
         }
         this.aiJobsLoading = true;

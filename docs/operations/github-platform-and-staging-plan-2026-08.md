@@ -49,7 +49,9 @@ artifact:
 
 Главная подтверждённая проблема: `deploy.yaml` использует `cancel-in-progress: true`, а main и AI меняются независимо. Уже был run, отменённый после успешного AI deploy и во время main deploy. Это допускает production из компонентов разных commits.
 
-16 августа проблема подтвердилась второй раз и другим механизмом. Merge PR #85 запустил первый deploy с 3 июня: `apply-main-manifests` и `deploy-main` прошли успешно, `apply-ai-manifests` упал с `dial tcp <ai-cluster>:6443: i/o timeout`, `deploy-ai` пропущен. Production остался в состоянии частичного release — main-кластер на новых образах, AI-кластер на июньских. Функциональной разницы в этом случае нет, потому что PR менял только документацию, но падение одного leg не откатило другой. Evidence: [#70](https://github.com/MattoYuzuru/Mnema/issues/70). Отдельный открытый вопрос — почему kube API малого AI-сервера перестал отвечать с GitHub runner между 3 июня и 16 августа.
+16 августа проблема подтвердилась второй раз и другим механизмом. Merge PR #85 запустил первый deploy с 3 июня: `apply-main-manifests` и `deploy-main` прошли успешно, `apply-ai-manifests` упал с `dial tcp <ai-cluster>:6443: i/o timeout`, `deploy-ai` пропущен. Production остался в состоянии частичного release — main-кластер на новых образах, AI-кластер на июньских. Функциональной разницы в этом случае нет, потому что PR менял только документацию, но падение одного leg не откатило другой. Evidence: [#70](https://github.com/MattoYuzuru/Mnema/issues/70).
+
+Read-only диагностика 18 августа закрыла вопрос о причине: host firewall блокирует вход GitHub-hosted runner на `6443`, а AI Service ранее был переведён из `NodePort` в `ClusterIP`, поэтому source-owned bridge больше не соответствует runtime. Владелец выбрал вариант A в [#88](https://github.com/MattoYuzuru/Mnema/issues/88): Mnema AI выводится из release path, hosted AI временно скрывается и fail-fast отвечает unavailable; workloads, PostgreSQL, PVC и данные на малом сервере не меняются. Provider migration остаётся в #77/#73.
 
 Ruleset gap тоже уже проявился: PR #59 был merged при красном `backend-quality`, а PR #69 — примерно через восемь секунд после создания, до завершения checks. Это закрыто 16 августа: required checks и запрет прямого push проверены на поведении, а не на ответе API (см. [#82](https://github.com/MattoYuzuru/Mnema/issues/82)).
 
@@ -144,7 +146,7 @@ pull request
 | Контур | Ресурсы/нагрузка на снимке | Решение |
 |---|---|---|
 | основной общий сервер | 6 vCPU, 29 GiB RAM; после удаления Minecraft около 22 GiB available, диск 194 GiB/около 113 GiB free; Docker и k3s; несколько других workloads | staging допустим при строгих requests/limits; это shared failure domain, не dedicated capacity |
-| малый k3s/AI сервер | 4 vCPU, 3,8 GiB RAM, около 72% Kubernetes memory usage и 31% CPU на снимке; production Mnema AI/DB и другие workloads | не размещать новый staging; оставить узкоспециализированным до capacity change |
+| малый k3s/AI сервер | 4 vCPU, 3,8 GiB RAM, около 72% Kubernetes memory usage и 31% CPU на снимке; legacy Mnema AI/DB и другие workloads | не размещать новый staging и не использовать в Mnema release path; существующие workloads/data не менять до отдельного v2 cutover |
 
 На основном сервере текущий пользователь имеет Docker-доступ, но kubeconfig k3s доступен только root; `kubectl` context отсутствует. Это блокирует безопасный CD identity, но не требует выдавать агенту root/sudo.
 
@@ -214,7 +216,7 @@ Production reset, payment integration и CodeQL-wide legacy cleanup в эту it
 Следующие внешние пакеты:
 
 1. **GitHub settings, остаток:** least-privilege Actions token, environment protection и security automation — эпики #72 и #70, не #71.
-2. **Delivery:** восстановить доступ к AI-кластеру или перенести AI-контур, разделить cancellable CI и non-cancellable deployment — эпик #70.
+2. **Delivery:** выполнить выбранное в #88 отключение AI release leg, затем разделить cancellable CI и non-cancellable deployment — эпик #70.
 3. **Backlog refinement:** создавать Ready sub-issues следующих эпиков по мере снятия зависимостей; без новой taxonomy.
 4. **Ручная настройка UI:** группировка board `Backlog` по `Status` и выбор date-полей для `Roadmap` — недоступны через API.
 
