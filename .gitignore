@@ -75,6 +75,8 @@ frontend/node_modules
 !/scripts/test-production-telemetry-boundary.sh
 !/scripts/reconcile-kubernetes-secret-consumers.sh
 !/scripts/test-kubernetes-secret-consumer-reconciliation.sh
+!/scripts/smoke/
+!/scripts/smoke/**
 !/scripts/local-ai-gateway/
 !/scripts/local-ai-gateway/**
 !/scripts/local-audio-gateway/
@@ -89,3 +91,4 @@ build
 
 .env.local
 .mnema
+.release-state/

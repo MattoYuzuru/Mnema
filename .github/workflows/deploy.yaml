@@ -123,6 +123,9 @@ jobs:
       - name: Verify fail-closed staging bootstrap helper
         run: ./scripts/test-apply-staging-bootstrap.sh
 
+      - name: Run release automation unit tests
+        run: python3 -m unittest discover -s scripts/smoke/tests -v
+
   build-and-push:
     needs:
       - backend-quality

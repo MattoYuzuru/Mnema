@@ -1,0 +1,194 @@
+name: Staging Rollback Drill
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type RUN_STAGING_ROLLBACK_DRILL to apply a deliberately broken staging release
+        required: true
+        type: string
+
+permissions: {}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  rollback-drill:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    environment:
+      name: staging
+      url: https://staging.mnema.app
+    env:
+      NS: mnema-staging
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig-staging-drill
+      ROLLBACK_MANIFEST: ${{ github.workspace }}/.release-state/drill-rollback-release.yaml
+      ROLLBACK_RECORD: ${{ github.workspace }}/.release-state/drill-rollback-record.json
+      BROKEN_MANIFEST: ${{ github.workspace }}/.release-state/drill-broken-release.yaml
+      BROKEN_SMOKE_REPORT: ${{ github.workspace }}/.release-state/drill-broken-smoke-report.json
+      ROLLBACK_SMOKE_REPORT: ${{ github.workspace }}/.release-state/drill-rollback-smoke-report.json
+      DIAGNOSTICS_DIR: ${{ github.workspace }}/.release-state/drill-diagnostics
+    steps:
+      - name: Validate explicit staging-only confirmation
+        env:
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo '::error::The rollback drill may run only from main.'
+            exit 1
+          fi
+          if [ "$CONFIRMATION" != RUN_STAGING_ROLLBACK_DRILL ]; then
+            echo '::error::Exact rollback-drill confirmation is required.'
+            exit 1
+          fi
+
+      - name: Checkout exact main revision
+        uses: actions/checkout@v6
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.0
+
+      - name: Write namespace-scoped staging kubeconfig
+        env:
+          STAGING_KUBECONFIG_B64: ${{ secrets.STAGING_KUBECONFIG_B64 }}
+        run: |
+          if [ -z "$STAGING_KUBECONFIG_B64" ]; then
+            echo '::error::STAGING_KUBECONFIG_B64 is required.'
+            exit 1
+          fi
+          printf '%s' "$STAGING_KUBECONFIG_B64" | base64 -d > "$KUBECONFIG"
+          chmod 600 "$KUBECONFIG"
+          test "$(kubectl auth can-i create deployments.apps -n "$NS")" = yes
+          test "$(kubectl auth can-i get secrets -n prod)" = no
+
+      - name: Snapshot the current complete staging release
+        id: snapshot
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/smoke/release_state.py snapshot \
+            --namespace "$NS" \
+            --environment staging \
+            --artifact-name staging-release-manifest \
+            --artifact-filename staging-release.yaml \
+            --rollback-manifest "$ROLLBACK_MANIFEST" \
+            --rollback-record "$ROLLBACK_RECORD"
+
+      - name: Build a deliberately broken staging manifest
+        id: broken
+        run: |
+          python3 scripts/smoke/release_state.py create-broken-staging \
+            --source-manifest "$ROLLBACK_MANIFEST" \
+            --output-manifest "$BROKEN_MANIFEST"
+          kubectl apply --dry-run=server -f "$BROKEN_MANIFEST" >/dev/null
+
+      - name: Apply the deliberately broken staging release
+        id: apply
+        run: |
+          echo 'attempted=true' >> "$GITHUB_OUTPUT"
+          kubectl apply -f "$BROKEN_MANIFEST"
+          echo 'applied=true' >> "$GITHUB_OUTPUT"
+
+      - name: Observe the expected broken frontend rollout
+        id: broken_rollout
+        continue-on-error: true
+        run: kubectl -n "$NS" rollout status deployment/mnema-frontend --timeout=180s
+
+      - name: Observe the expected release smoke failure
+        id: broken_smoke
+        if: ${{ always() && steps.apply.outputs.attempted == 'true' }}
+        continue-on-error: true
+        run: |
+          python3 scripts/smoke/release_smoke.py \
+            --environment staging-broken-drill \
+            --public-url https://staging.mnema.app \
+            --auth-url https://auth.staging.mnema.app \
+            --expected-release-sha "${{ steps.broken.outputs.release_id }}" \
+            --timeout-seconds 120 \
+            --identity-only \
+            --report "$BROKEN_SMOKE_REPORT"
+
+      - name: Collect sanitized broken-release diagnostics
+        if: ${{ always() && steps.apply.outputs.attempted == 'true' }}
+        continue-on-error: true
+        run: |
+          python3 scripts/smoke/collect_diagnostics.py \
+            --namespace "$NS" \
+            --output "$DIAGNOSTICS_DIR" \
+            --failed-service frontend \
+            --smoke-report "$BROKEN_SMOKE_REPORT"
+
+      - name: Apply the saved complete release
+        id: rollback
+        if: ${{ always() && steps.apply.outputs.attempted == 'true' }}
+        run: |
+          python3 scripts/smoke/release_state.py rollback \
+            --namespace "$NS" \
+            --rollback-manifest "$ROLLBACK_MANIFEST" \
+            --rollback-record "$ROLLBACK_RECORD"
+
+      - name: Verify all rollback rollouts
+        id: rollback_rollout
+        if: ${{ always() && steps.rollback.outcome == 'success' }}
+        run: |
+          kubectl -n "$NS" rollout status deployment/mnema-frontend --timeout=600s
+          kubectl -n "$NS" rollout status deployment/mnema-auth --timeout=1200s
+          kubectl -n "$NS" rollout status deployment/mnema-user --timeout=1200s
+          kubectl -n "$NS" rollout status deployment/mnema-core --timeout=1200s
+          kubectl -n "$NS" rollout status deployment/mnema-media --timeout=1800s
+          kubectl -n "$NS" rollout status deployment/mnema-import --timeout=1800s
+
+      - name: Verify rollback release identity
+        id: rollback_smoke
+        if: ${{ always() && steps.rollback_rollout.outcome == 'success' }}
+        run: |
+          python3 scripts/smoke/release_smoke.py \
+            --environment staging-rollback-drill \
+            --public-url https://staging.mnema.app \
+            --auth-url https://auth.staging.mnema.app \
+            --expected-release-sha "${{ steps.snapshot.outputs.release_id }}" \
+            --timeout-seconds 300 \
+            --identity-only \
+            --report "$ROLLBACK_SMOKE_REPORT"
+
+      - name: Upload complete rollback drill evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: staging-rollback-drill-${{ github.run_id }}
+          path: |
+            ${{ env.DIAGNOSTICS_DIR }}
+            ${{ env.BROKEN_MANIFEST }}
+            ${{ env.BROKEN_SMOKE_REPORT }}
+            ${{ env.ROLLBACK_RECORD }}
+            ${{ env.ROLLBACK_SMOKE_REPORT }}
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Assert the failure and recovery sequence
+        if: ${{ always() }}
+        env:
+          BROKEN_ROLLOUT_OUTCOME: ${{ steps.broken_rollout.outcome }}
+          BROKEN_SMOKE_OUTCOME: ${{ steps.broken_smoke.outcome }}
+          ROLLBACK_OUTCOME: ${{ steps.rollback.outcome }}
+          ROLLBACK_ROLLOUT_OUTCOME: ${{ steps.rollback_rollout.outcome }}
+          ROLLBACK_SMOKE_OUTCOME: ${{ steps.rollback_smoke.outcome }}
+        run: |
+          if [ "$BROKEN_ROLLOUT_OUTCOME" != failure ] || [ "$BROKEN_SMOKE_OUTCOME" != failure ]; then
+            echo '::error::The deliberately broken release did not fail both rollout and smoke as expected.'
+            exit 1
+          fi
+          if [ "$ROLLBACK_OUTCOME" != success ] || [ "$ROLLBACK_ROLLOUT_OUTCOME" != success ] || [ "$ROLLBACK_SMOKE_OUTCOME" != success ]; then
+            echo '::error::Rollback was not fully applied and independently verified.'
+            exit 1
+          fi
+          echo 'rollback_drill=passed'

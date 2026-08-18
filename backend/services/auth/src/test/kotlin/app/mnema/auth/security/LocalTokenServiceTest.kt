@@ -56,5 +56,6 @@ class LocalTokenServiceTest {
         assertEquals("user@example.com", claims.claims["email"])
         assertEquals(userId.toString(), claims.claims["user_id"])
         assertEquals("mnema-user", claims.claims["username"])
+        UUID.fromString(claims.id)
     }
 }

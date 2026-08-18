@@ -73,6 +73,10 @@ spec:
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: TURNSTILE_SITE_KEY } }
             - name: TURNSTILE_SECRET_KEY
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: TURNSTILE_SECRET_KEY } }
+            - name: SMOKE_LOGIN
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: SMOKE_LOGIN } }
+            - name: SMOKE_TURNSTILE_BYPASS_KEY
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: SMOKE_TURNSTILE_BYPASS_KEY } }
             - name: APP_ENV
               value: "release-app-env-placeholder"
             - name: SPRING_PROFILES_ACTIVE

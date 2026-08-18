@@ -5,6 +5,7 @@ SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 PRODUCTION_WORKFLOW="$REPO_ROOT/.github/workflows/production-deploy.yaml"
 STAGING_WORKFLOW="$REPO_ROOT/.github/workflows/staging-deploy.yaml"
+ROLLBACK_DRILL_WORKFLOW="$REPO_ROOT/.github/workflows/staging-rollback-drill.yaml"
 BOOTSTRAP="$REPO_ROOT/k8s/staging/bootstrap.yaml"
 ADMISSION="$REPO_ROOT/k8s/staging/admission.yaml"
 STAGING_DATA="$REPO_ROOT/k8s/staging/data.yaml"
@@ -51,6 +52,7 @@ assert_secret_prefix() {
 
 assert_secret_prefix "$PRODUCTION_WORKFLOW" PROD_
 assert_secret_prefix "$STAGING_WORKFLOW" STAGING_
+assert_secret_prefix "$ROLLBACK_DRILL_WORKFLOW" STAGING_
 
 if grep -Fq 'secrets: inherit' "$REPO_ROOT/.github/workflows/deploy.yaml"; then
   echo "Deployment callers must not inherit repository secrets" >&2
@@ -68,6 +70,36 @@ for token in MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN; do
     exit 1
   }
 done
+
+for workflow in "$PRODUCTION_WORKFLOW" "$STAGING_WORKFLOW"; do
+  grep -Fq 'scripts/smoke/release_smoke.py' "$workflow"
+  grep -Fq 'scripts/smoke/release_state.py snapshot' "$workflow"
+  grep -Fq 'scripts/smoke/release_state.py rollback' "$workflow"
+  grep -Fq "steps.mutation-start.outputs.attempted == 'true'" "$workflow"
+  grep -Fq 'id: mutation-start' "$workflow"
+  grep -Fq "AUTO_ROLLBACK_ENABLED:" "$workflow"
+  grep -Fq 'release-record-${{ github.run_id }}' "$workflow"
+  if grep -E 'secret_names=.*SMOKE_PASSWORD' "$workflow" >/dev/null; then
+    echo "Smoke account passwords must never be persisted in Kubernetes application secrets" >&2
+    exit 1
+  fi
+done
+
+for key in SMOKE_LOGIN SMOKE_TURNSTILE_BYPASS_KEY; do
+  grep -Fq "key: $key" "$REPO_ROOT/k8s/auth-deploy.yaml" || {
+    echo "Auth deployment is missing mandatory $key injection" >&2
+    exit 1
+  }
+done
+
+grep -Fq 'RUN_STAGING_ROLLBACK_DRILL' "$ROLLBACK_DRILL_WORKFLOW"
+grep -Fq 'name: staging' "$ROLLBACK_DRILL_WORKFLOW"
+grep -Fq 'version: v1.36.0' "$ROLLBACK_DRILL_WORKFLOW"
+if grep -Eq 'PROD_|namespace:[[:space:]]+prod|NS:[[:space:]]+prod' "$ROLLBACK_DRILL_WORKFLOW"; then
+  echo "The destructive rollback drill must remain staging-only" >&2
+  exit 1
+fi
+
 grep -Fq 'kind: ResourceQuota' "$BOOTSTRAP"
 grep -Fq 'kind: LimitRange' "$BOOTSTRAP"
 grep -Fq 'kind: Role' "$BOOTSTRAP"
