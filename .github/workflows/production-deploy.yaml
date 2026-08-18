@@ -1,0 +1,214 @@
+name: Production Deploy
+
+on:
+  workflow_call:
+    inputs:
+      release_sha:
+        description: Exact tested and built main revision to deploy
+        required: true
+        type: string
+
+permissions: {}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  deploy-production:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment:
+      name: prod
+      url: https://mnema.app
+    env:
+      NS: prod
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig-main
+      RELEASE_SHA: ${{ inputs.release_sha }}
+    steps:
+      - name: Checkout release revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Reject a stale release
+        run: |
+          current_main=$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')
+          if [ "$RELEASE_SHA" != "$current_main" ]; then
+            echo "::error::Refusing stale release ${RELEASE_SHA}; current main is ${current_main}"
+            exit 1
+          fi
+
+      - name: Write kubeconfig (main cluster)
+        run: echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+
+      - name: Resolve release metadata
+        id: release
+        run: |
+          echo "REPO=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+          echo "TAG=sha-${RELEASE_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Ensure namespace exists
+        run: |
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/observability/00-namespace.yaml
+
+      - name: Create/Update secret (mnema-secrets)
+        run: |
+          AUTH_JWT_PUBLIC_KEY_B64=$(printf '%s' "$AUTH_JWT_PUBLIC_KEY" | base64 | tr -d '\n')
+          AUTH_JWT_PRIVATE_KEY_B64=$(printf '%s' "$AUTH_JWT_PRIVATE_KEY" | base64 | tr -d '\n')
+          CURRENT_USER_INTERNAL_TOKEN_B64=$(kubectl -n "$NS" get secret mnema-secrets -o jsonpath='{.data.USER_INTERNAL_TOKEN}' 2>/dev/null || true)
+          if [ -n "${USER_INTERNAL_TOKEN:-}" ]; then
+            USER_INTERNAL_TOKEN_VALUE="$USER_INTERNAL_TOKEN"
+          elif [ -n "$CURRENT_USER_INTERNAL_TOKEN_B64" ]; then
+            USER_INTERNAL_TOKEN_VALUE=$(printf '%s' "$CURRENT_USER_INTERNAL_TOKEN_B64" | base64 -d)
+          else
+            USER_INTERNAL_TOKEN_VALUE=$(openssl rand -hex 24)
+          fi
+          cat <<YAML | kubectl apply -f -
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: mnema-secrets
+            namespace: ${NS}
+          type: Opaque
+          data:
+            AUTH_JWT_PUBLIC_KEY: "${AUTH_JWT_PUBLIC_KEY_B64}"
+            AUTH_JWT_PRIVATE_KEY: "${AUTH_JWT_PRIVATE_KEY_B64}"
+          stringData:
+            AUTH_ISSUER: "${AUTH_ISSUER}"
+            AUTH_ISSUER_URI: "${AUTH_ISSUER_URI}"
+            TURNSTILE_SITE_KEY: "${TURNSTILE_SITE_KEY}"
+            TURNSTILE_SECRET_KEY: "${TURNSTILE_SECRET_KEY}"
+            GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
+            GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
+            GITHUB_CLIENT_ID: "${GITHUB_CLIENT_ID}"
+            GITHUB_CLIENT_SECRET: "${GITHUB_CLIENT_SECRET}"
+            YANDEX_CLIENT_ID: "${YANDEX_CLIENT_ID}"
+            YANDEX_CLIENT_SECRET: "${YANDEX_CLIENT_SECRET}"
+            POSTGRES_DB: "${POSTGRES_DB}"
+            POSTGRES_USER: "${POSTGRES_USER}"
+            POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
+            AWS_REGION: "${AWS_REGION}"
+            AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
+            AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
+            AWS_BUCKET_NAME: "${AWS_BUCKET_NAME}"
+            MEDIA_INTERNAL_TOKEN: "${MEDIA_INTERNAL_TOKEN}"
+            USER_INTERNAL_TOKEN: "${USER_INTERNAL_TOKEN_VALUE}"
+          YAML
+        env:
+          AUTH_ISSUER: ${{ secrets.AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.MEDIA_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.USER_INTERNAL_TOKEN }}
+
+      - name: Create/Update secret (grafana-secrets)
+        run: |
+          cat <<YAML | kubectl apply -f -
+          apiVersion: v1
+          kind: Secret
+          metadata:
+            name: grafana-secrets
+            namespace: observability
+          type: Opaque
+          stringData:
+            GF_SECURITY_ADMIN_USER: "${GF_SECURITY_ADMIN_USER}"
+            GF_SECURITY_ADMIN_PASSWORD: "${GF_SECURITY_ADMIN_PASSWORD}"
+          YAML
+        env:
+          GF_SECURITY_ADMIN_USER: ${{ secrets.GF_SECURITY_ADMIN_USER }}
+          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.GF_SECURITY_ADMIN_PASSWORD }}
+
+      - name: Create/Update Grafana dashboards ConfigMap
+        run: |
+          kubectl -n observability create configmap grafana-dashboards \
+            --from-file=k8s/observability/dashboards \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Apply manifests (main cluster)
+        run: |
+          kubectl apply -f k8s/cluster-issuers.yaml
+          kubectl -n "$NS" apply -f k8s/postgres.yaml
+          kubectl -n "$NS" apply -f k8s/redis.yaml
+          kubectl -n "$NS" delete service mnema-ai-bridge --ignore-not-found=true
+          kubectl -n "$NS" delete endpointslice \
+            -l kubernetes.io/service-name=mnema-ai-bridge \
+            --ignore-not-found=true
+          kubectl -n "$NS" apply -f k8s/frontend-deploy.yaml
+          kubectl -n "$NS" apply -f k8s/auth-deploy.yaml
+          kubectl -n "$NS" apply -f k8s/user-deploy.yaml
+          kubectl -n "$NS" apply -f k8s/core-deploy.yaml
+          kubectl -n "$NS" apply -f k8s/media-deploy.yaml
+          kubectl -n "$NS" apply -f k8s/import-deploy.yaml
+          kubectl -n "$NS" apply -f k8s/ingress.yaml
+          kubectl -n "$NS" apply -f k8s/auth-ingress.yaml
+          kubectl apply -f k8s/observability/
+
+      - name: Restart observability pods (config reload)
+        run: |
+          kubectl -n observability rollout restart daemonset/alloy
+          kubectl -n observability rollout restart deployment/grafana
+
+      - name: Deploy services (sequential)
+        env:
+          IMAGE_BASE: ghcr.io/${{ steps.release.outputs.REPO }}
+          IMAGE_TAG: ${{ steps.release.outputs.TAG }}
+        run: |
+          set -euo pipefail
+
+          wait_rollout() {
+            local deploy_name="$1"
+            local timeout="$2"
+            local attempts=3
+
+            for attempt in $(seq 1 "$attempts"); do
+              if kubectl -n "$NS" rollout status "deploy/${deploy_name}" --timeout="${timeout}"; then
+                return 0
+              fi
+              if [[ "$attempt" -lt "$attempts" ]]; then
+                echo "rollout status failed for ${deploy_name}, retrying (${attempt}/${attempts})..."
+                sleep 10
+              fi
+            done
+
+            return 1
+          }
+
+          deploy() {
+            local deploy_name="$1"
+            local container_name="$2"
+            local image="$3"
+            local timeout="$4"
+
+            kubectl -n "$NS" set image "deploy/${deploy_name}" "${container_name}=${image}"
+            wait_rollout "$deploy_name" "$timeout"
+          }
+
+          deploy mnema-frontend frontend "${IMAGE_BASE}/frontend:${IMAGE_TAG}" 600s
+          deploy mnema-auth     auth     "${IMAGE_BASE}/auth:${IMAGE_TAG}"     1200s
+          deploy mnema-user     user     "${IMAGE_BASE}/user:${IMAGE_TAG}"     1200s
+          deploy mnema-core     core     "${IMAGE_BASE}/core:${IMAGE_TAG}"     1200s
+          deploy mnema-media    media    "${IMAGE_BASE}/media:${IMAGE_TAG}"    1800s
+          deploy mnema-import   import   "${IMAGE_BASE}/import:${IMAGE_TAG}"   1800s

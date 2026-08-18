@@ -58,6 +58,8 @@ Target behavior:
 
 Use a separate non-cancelling deployment concurrency group or a reusable deployment workflow triggered after CI. Assign `environment: prod` to deployment jobs themselves so protection rules, approvals and history cover the mutation, not only image builds. GitHub documents environment protection and concurrency semantics in [Deployments and environments](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments) and [Control deployments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments).
 
+Resolution update (2026-08-18, [#89](https://github.com/MattoYuzuru/Mnema/issues/89)): cancellable quality/build jobs now live in `Main CI`, while a reusable `Production Deploy` workflow is called only after every tested image has been built. The caller owns an independent `production-deploy` concurrency group with `cancel-in-progress: false`, so a newer CI run can cancel superseded build work but cannot cancel an active mutation. The single cluster-mutating job owns the `prod` environment record; build jobs no longer impersonate deployments. The reusable boundary receives the exact tested SHA from its same-commit caller and rejects that SHA if it is no longer current `main` before reading the kubeconfig or touching the cluster.
+
 ### P0 — recovery of the only production database is unproven
 
 The main PostgreSQL instance is a single StatefulSet with a 15 GiB claim ([postgres.yaml](../../k8s/postgres.yaml#L1)); the application services mostly have one replica, and the manifests do not define a backup schedule, off-host retention or restore verification. A PersistentVolume is not a backup.
