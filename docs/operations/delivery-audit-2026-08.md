@@ -5,7 +5,7 @@ artifact:
   title: "Mnema delivery and production readiness audit"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-08-15"
+  updated_at: "2026-08-18"
   owners: ["project-owner"]
   evidence_revision: "8e0c83d"
   assumptions:
@@ -119,7 +119,9 @@ There are two independently managed clusters and secret-creation blocks. `CORE_I
 
 Define a checked, non-secret environment contract per service: required key names, owning system, rotation behavior and startup validation. Never print values. Generate a shared internal token once from an explicit secret source; do not let clusters independently invent a missing value.
 
-The main cluster reaches AI through a public bridge with a hard-coded IPv4 endpoint ([ai-bridge.yaml](../../k8s/ai-bridge.yaml#L1)). Document why the split cluster exists, authenticate both directions, restrict network exposure, monitor reachability and move the address to environment-owned configuration. Do not bury an infrastructure endpoint in a source manifest.
+At the audited revision, the main cluster reached AI through a public bridge with a hard-coded IPv4 endpoint in `k8s/ai-bridge.yaml`. Document why the split cluster exists, authenticate both directions, restrict network exposure, monitor reachability and move the address to environment-owned configuration. Do not bury an infrastructure endpoint in a source manifest.
+
+Resolution update (2026-08-18, [#88](https://github.com/MattoYuzuru/Mnema/issues/88)): the hosted release path no longer builds or deploys the AI service, and the public bridge manifest and ingress route were removed. Hosted AI entry points are feature-gated off and `/api/ai` fails closed at the frontend proxy. Local self-hosting keeps AI enabled. The keykomi workloads, volumes, databases and host data were deliberately left untouched for the later DeepSeek redesign.
 
 ### P1 — platform versions are inconsistent or unsupported
 

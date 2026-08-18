@@ -170,7 +170,7 @@ import { appConfig } from '../../app.config';
         </div>
       </section>
 
-      <section class="settings-section ai-settings">
+      <section *ngIf="aiEnabled" class="settings-section ai-settings">
         <div class="section-heading-with-help">
           <h2>{{ 'settings.aiProviderKeysTitle' | translate }}</h2>
           <a
@@ -942,6 +942,7 @@ export class SettingsComponent implements OnInit {
         { label: 'GigaChat', value: 'gigachat' },
         { label: 'Custom', value: 'custom' }
     ];
+    readonly aiEnabled = appConfig.features.aiEnabled;
     readonly aiSystemProviderEnabled = appConfig.features.aiSystemProviderEnabled;
     readonly aiSystemProviderName = appConfig.features.aiSystemProviderName;
 
@@ -959,7 +960,9 @@ export class SettingsComponent implements OnInit {
 
     ngOnInit(): void {
         this.loadArchivedDecks();
-        this.loadProviders();
+        if (this.aiEnabled) {
+            this.loadProviders();
+        }
         this.providerName.set(this.providerPreset());
         this.userApi.getMe().subscribe({
             next: profile => {

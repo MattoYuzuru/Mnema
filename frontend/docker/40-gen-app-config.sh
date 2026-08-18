@@ -1,7 +1,9 @@
 #!/bin/sh
 set -eu
 
-OUT="/usr/share/nginx/html/app-config.js"
+OUT="${MNEMA_APP_CONFIG_OUT:-/usr/share/nginx/html/app-config.js}"
+AI_ROUTE="${MNEMA_AI_ROUTE_OUT:-/etc/nginx/conf.d/ai-route.inc}"
+AI_ENABLED="${MNEMA_FEATURE_AI_ENABLED:-false}"
 
 js_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
@@ -43,4 +45,17 @@ append_string_override "clientId" "${MNEMA_CLIENT_ID:-}"
 append_string_override "features.aiSystemProviderName" "${MNEMA_FEATURE_AI_SYSTEM_PROVIDER_NAME:-}"
 append_bool_override "federatedAuthEnabled" "${MNEMA_FEATURE_FEDERATED_AUTH_ENABLED:-}"
 append_bool_override "showEmailVerificationWarning" "${MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING:-}"
+append_bool_override "aiEnabled" "$AI_ENABLED"
 append_bool_override "aiSystemProviderEnabled" "${MNEMA_FEATURE_AI_SYSTEM_PROVIDER_ENABLED:-}"
+
+if [ "$AI_ENABLED" = "true" ]; then
+  : > "$AI_ROUTE"
+else
+  printf '%s\n' \
+    'location ^~ /api/ai {' \
+    '  default_type application/problem+json;' \
+    '  add_header Cache-Control "no-store" always;' \
+    '  add_header Retry-After "86400" always;' \
+    '  return 503 '\''{"type":"about:blank","title":"AI temporarily unavailable","status":503,"code":"AI_TEMPORARILY_UNAVAILABLE"}'\'';' \
+    '}' > "$AI_ROUTE"
+fi

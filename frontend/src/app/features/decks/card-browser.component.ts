@@ -26,6 +26,7 @@ import { MediaUploadComponent } from '../../shared/components/media-upload.compo
 import { ConfirmationDialogComponent } from '../../shared/components/confirmation-dialog.component';
 import { TagChipComponent } from '../../shared/components/tag-chip.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
+import { appConfig } from '../../app.config';
 
 @Component({
     selector: 'app-card-browser',
@@ -195,7 +196,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               variant="ghost"
               size="sm"
               (click)="openAiEnhanceModal(currentCard!)"
-              *ngIf="currentCard && deck && publicDeck"
+              *ngIf="aiEnabled && currentCard && deck && publicDeck"
             >
               ✨ {{ 'cardBrowser.enhanceCard' | translate }}
             </app-button>
@@ -337,7 +338,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
     </div>
 
     <app-ai-enhance-card-modal
-      *ngIf="showAiEnhanceModal && enhanceCardTarget && template"
+      *ngIf="aiEnabled && showAiEnhanceModal && enhanceCardTarget && template"
       [userDeckId]="userDeckId"
       [deckName]="deck?.displayName || ''"
       [deckDescription]="deck?.displayDescription || ''"
@@ -944,6 +945,7 @@ export class CardBrowserComponent implements OnInit {
     tags: string[] = [];
     tagErrorKey = '';
     readonly maxTagLength = CardBrowserComponent.MAX_TAG_LENGTH;
+    readonly aiEnabled = appConfig.features.aiEnabled;
     saving = false;
     deleting = false;
     deleteTarget: UserCardDTO | null = null;
@@ -1454,6 +1456,9 @@ export class CardBrowserComponent implements OnInit {
     }
 
     openAiEnhanceModal(card: UserCardDTO): void {
+        if (!this.aiEnabled) {
+            return;
+        }
         this.enhanceCardTarget = card;
         this.showAiEnhanceModal = true;
     }

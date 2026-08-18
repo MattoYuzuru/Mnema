@@ -684,6 +684,7 @@ services:
       MNEMA_AI_API_BASE_URL: "http://localhost:${AI_PORT}/api/ai"
       MNEMA_FEATURE_FEDERATED_AUTH_ENABLED: "false"
       MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING: "false"
+      MNEMA_FEATURE_AI_ENABLED: "true"
       MNEMA_FEATURE_AI_SYSTEM_PROVIDER_ENABLED: "true"
       MNEMA_FEATURE_AI_SYSTEM_PROVIDER_NAME: "ollama"
     ports: !override

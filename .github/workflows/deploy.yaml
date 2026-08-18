@@ -109,12 +109,6 @@ jobs:
             dockerfile: ./backend/Dockerfile
             target: import-runtime
 
-          - name: ai
-            kind: backend
-            context: ./backend
-            dockerfile: ./backend/Dockerfile
-            target: ai-runtime
-
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -131,11 +125,11 @@ jobs:
 
       - name: Repo slug (lowercase)
         id: repo
-        run: echo "REPO=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
+        run: echo "REPO=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
       - name: Compute image tag
         id: meta
-        run: echo "TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+        run: echo "TAG=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Build & push frontend
         if: ${{ matrix.kind == 'frontend' }}
@@ -278,11 +272,10 @@ jobs:
           kubectl apply -f k8s/cluster-issuers.yaml
           kubectl -n "$NS" apply -f k8s/postgres.yaml
           kubectl -n "$NS" apply -f k8s/redis.yaml
-          kubectl -n "$NS" delete endpoints mnema-ai-bridge --ignore-not-found=true
+          kubectl -n "$NS" delete service mnema-ai-bridge --ignore-not-found=true
           kubectl -n "$NS" delete endpointslice \
-            -l kubernetes.io/service-name=mnema-ai-bridge,endpointslice.kubernetes.io/managed-by=endpointslicemirroring-controller.k8s.io \
+            -l kubernetes.io/service-name=mnema-ai-bridge \
             --ignore-not-found=true
-          kubectl -n "$NS" apply -f k8s/ai-bridge.yaml
           kubectl -n "$NS" apply -f k8s/frontend-deploy.yaml
           kubectl -n "$NS" apply -f k8s/auth-deploy.yaml
           kubectl -n "$NS" apply -f k8s/user-deploy.yaml
@@ -291,78 +284,12 @@ jobs:
           kubectl -n "$NS" apply -f k8s/import-deploy.yaml
           kubectl -n "$NS" apply -f k8s/ingress.yaml
           kubectl -n "$NS" apply -f k8s/auth-ingress.yaml
-          kubectl -n "$NS" delete deployment/mnema-ai service/mnema-ai --ignore-not-found=true
           kubectl apply -f k8s/observability/
 
       - name: Restart observability pods (config reload)
         run: |
           kubectl -n observability rollout restart daemonset/alloy
           kubectl -n observability rollout restart deployment/grafana
-
-  apply-ai-manifests:
-    needs: build-and-push
-    runs-on: ubuntu-latest
-    env:
-      NS: prod
-      KUBECONFIG: ${{ github.workspace }}/kubeconfig-ai
-    steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-kubectl@v4
-
-      - name: Write kubeconfig (ai cluster)
-        run: echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
-        env:
-          KUBECONFIG_B64: ${{ secrets.AI_KUBECONFIG_B64 }}
-
-      - name: Ensure namespace exists
-        run: kubectl apply -f k8s/namespace.yaml
-
-      - name: Create/Update secret (mnema-secrets)
-        run: |
-          CURRENT_USER_INTERNAL_TOKEN_B64=$(kubectl -n "$NS" get secret mnema-secrets -o jsonpath='{.data.USER_INTERNAL_TOKEN}' 2>/dev/null || true)
-          if [ -n "${USER_INTERNAL_TOKEN:-}" ]; then
-            USER_INTERNAL_TOKEN_VALUE="$USER_INTERNAL_TOKEN"
-          elif [ -n "$CURRENT_USER_INTERNAL_TOKEN_B64" ]; then
-            USER_INTERNAL_TOKEN_VALUE=$(printf '%s' "$CURRENT_USER_INTERNAL_TOKEN_B64" | base64 -d)
-          else
-            USER_INTERNAL_TOKEN_VALUE=$(openssl rand -hex 24)
-          fi
-          cat <<YAML | kubectl apply -f -
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: mnema-secrets
-            namespace: ${NS}
-          type: Opaque
-          stringData:
-            AUTH_ISSUER_URI: "${AUTH_ISSUER_URI}"
-            POSTGRES_USER: "${POSTGRES_USER}"
-            POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
-            MEDIA_INTERNAL_TOKEN: "${MEDIA_INTERNAL_TOKEN}"
-            USER_INTERNAL_TOKEN: "${USER_INTERNAL_TOKEN_VALUE}"
-            AI_VAULT_MASTER_KEY: "${AI_VAULT_MASTER_KEY}"
-            AI_VAULT_KEY_ID: "${AI_VAULT_KEY_ID}"
-            AI_PROVIDER: "${AI_PROVIDER}"
-          YAML
-        env:
-          AUTH_ISSUER_URI: ${{ secrets.AUTH_ISSUER_URI }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          MEDIA_INTERNAL_TOKEN: ${{ secrets.MEDIA_INTERNAL_TOKEN }}
-          USER_INTERNAL_TOKEN: ${{ secrets.USER_INTERNAL_TOKEN }}
-          AI_VAULT_MASTER_KEY: ${{ secrets.AI_VAULT_MASTER_KEY }}
-          AI_VAULT_KEY_ID: ${{ secrets.AI_VAULT_KEY_ID }}
-          AI_PROVIDER: ${{ secrets.AI_PROVIDER }}
-
-      - name: Apply manifests (ai cluster)
-        run: |
-          kubectl apply -f k8s/cluster-issuers.yaml
-
-          # DB for ai cluster (fully inside NL cluster)
-          kubectl -n "$NS" apply -f k8s/ai/postgres.yaml
-          kubectl -n "$NS" rollout status statefulset/postgres --timeout=600s
-
-          kubectl -n "$NS" apply -f k8s/ai/ai-deploy.yaml
 
   deploy-main:
     needs: apply-main-manifests
@@ -381,11 +308,11 @@ jobs:
 
       - name: Repo slug (lowercase)
         id: repo
-        run: echo "REPO=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
+        run: echo "REPO=${GITHUB_REPOSITORY,,}" >> "$GITHUB_OUTPUT"
 
       - name: Compute image tag
         id: meta
-        run: echo "TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+        run: echo "TAG=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Deploy services (sequential)
         run: |
@@ -428,69 +355,3 @@ jobs:
           deploy mnema-core     core     "${image_base}/core:${tag}"     1200s
           deploy mnema-media    media    "${image_base}/media:${tag}"    1800s
           deploy mnema-import   import   "${image_base}/import:${tag}"   1800s
-
-  deploy-ai:
-    needs: apply-ai-manifests
-    runs-on: ubuntu-latest
-    env:
-      NS: prod
-      KUBECONFIG: ${{ github.workspace }}/kubeconfig-ai
-    steps:
-      - uses: actions/checkout@v4
-      - uses: azure/setup-kubectl@v4
-
-      - name: Write kubeconfig (ai cluster)
-        run: echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
-        env:
-          KUBECONFIG_B64: ${{ secrets.AI_KUBECONFIG_B64 }}
-
-      - name: Repo slug (lowercase)
-        id: repo
-        run: echo "REPO=${GITHUB_REPOSITORY,,}" >> $GITHUB_OUTPUT
-
-      - name: Compute image tag
-        id: meta
-        run: echo "TAG=sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
-
-      - name: Deploy ai service
-        run: |
-          set -euo pipefail
-          image="ghcr.io/${{ steps.repo.outputs.REPO }}/ai:${{ steps.meta.outputs.TAG }}"
-
-          kubectl -n "$NS" set image deploy/mnema-ai "ai=${image}"
-
-          rollout_with_recovery() {
-            local attempts=3
-
-            for attempt in $(seq 1 "$attempts"); do
-              if kubectl -n "$NS" rollout status deploy/mnema-ai --timeout=600s; then
-                return 0
-              fi
-
-              echo "mnema-ai rollout failed (attempt ${attempt}/${attempts}), collecting diagnostics..."
-              kubectl -n "$NS" get deploy mnema-ai -o wide || true
-              kubectl -n "$NS" get rs -l app=mnema-ai -o wide || true
-              kubectl -n "$NS" get pods -l app=mnema-ai -o wide || true
-              kubectl -n "$NS" get events --sort-by=.lastTimestamp | tail -n 40 || true
-
-              mapfile -t terminating_pods < <(
-                kubectl -n "$NS" get pods -l app=mnema-ai \
-                  -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.metadata.deletionTimestamp}{"\n"}{end}' \
-                  | awk -F'|' '$2 != "" {print $1}'
-              )
-
-              if [ "${#terminating_pods[@]}" -gt 0 ]; then
-                echo "Force deleting terminating pods:"
-                printf '%s\n' "${terminating_pods[@]}"
-                for pod in "${terminating_pods[@]}"; do
-                  kubectl -n "$NS" delete pod "$pod" --grace-period=0 --force || true
-                done
-              fi
-
-              sleep 10
-            done
-
-            return 1
-          }
-
-          rollout_with_recovery
