@@ -54,10 +54,59 @@ jobs:
             exit 1
           fi
 
-      - name: Write kubeconfig (main cluster)
-        run: echo "${KUBECONFIG_B64}" | base64 -d > "$KUBECONFIG"
+      - name: Validate required production secrets
         env:
-          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+          AUTH_ISSUER: ${{ secrets.PROD_AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.PROD_AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.PROD_AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.PROD_AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.PROD_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.PROD_TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.PROD_GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.PROD_GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.PROD_YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.PROD_YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.PROD_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.PROD_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.PROD_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.PROD_AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.PROD_MEDIA_INTERNAL_TOKEN }}
+          CORE_INTERNAL_TOKEN: ${{ secrets.PROD_CORE_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.PROD_USER_INTERNAL_TOKEN }}
+          GF_SECURITY_ADMIN_USER: ${{ secrets.PROD_GF_SECURITY_ADMIN_USER }}
+          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.PROD_GF_SECURITY_ADMIN_PASSWORD }}
+        run: |
+          required_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD"
+          for name in $required_names; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required production secret ${name} is missing or empty"
+              exit 1
+            fi
+          done
+          if [ "$AUTH_ISSUER" != "https://auth.mnema.app" ] || [ "$AUTH_ISSUER_URI" != "$AUTH_ISSUER" ]; then
+            echo "::error::Production issuer secrets must identify auth.mnema.app"
+            exit 1
+          fi
+          if [ "$POSTGRES_DB" != mnema ]; then
+            echo "::error::PROD_POSTGRES_DB must match the release database contract"
+            exit 1
+          fi
+
+      - name: Write kubeconfig (main cluster)
+        env:
+          KUBECONFIG_B64: ${{ secrets.PROD_KUBECONFIG_B64 }}
+        run: |
+          if [ -z "$KUBECONFIG_B64" ]; then
+            echo "::error::PROD_KUBECONFIG_B64 is required"
+            exit 1
+          fi
+          printf '%s' "$KUBECONFIG_B64" | base64 -d > "$KUBECONFIG"
+          chmod 600 "$KUBECONFIG"
 
       - name: Ensure namespace exists
         run: |
@@ -66,86 +115,66 @@ jobs:
 
       - name: Create/Update secret (mnema-secrets)
         run: |
-          AUTH_JWT_PUBLIC_KEY_B64=$(printf '%s' "$AUTH_JWT_PUBLIC_KEY" | base64 | tr -d '\n')
-          AUTH_JWT_PRIVATE_KEY_B64=$(printf '%s' "$AUTH_JWT_PRIVATE_KEY" | base64 | tr -d '\n')
-          CURRENT_USER_INTERNAL_TOKEN_B64=$(kubectl -n "$NS" get secret mnema-secrets -o jsonpath='{.data.USER_INTERNAL_TOKEN}' 2>/dev/null || true)
-          if [ -n "${USER_INTERNAL_TOKEN:-}" ]; then
-            USER_INTERNAL_TOKEN_VALUE="$USER_INTERNAL_TOKEN"
-          elif [ -n "$CURRENT_USER_INTERNAL_TOKEN_B64" ]; then
-            USER_INTERNAL_TOKEN_VALUE=$(printf '%s' "$CURRENT_USER_INTERNAL_TOKEN_B64" | base64 -d)
-          else
-            USER_INTERNAL_TOKEN_VALUE=$(openssl rand -hex 24)
-          fi
-          cat <<YAML | kubectl apply -f -
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: mnema-secrets
-            namespace: ${NS}
-          type: Opaque
-          data:
-            AUTH_JWT_PUBLIC_KEY: "${AUTH_JWT_PUBLIC_KEY_B64}"
-            AUTH_JWT_PRIVATE_KEY: "${AUTH_JWT_PRIVATE_KEY_B64}"
-          stringData:
-            AUTH_ISSUER: "${AUTH_ISSUER}"
-            AUTH_ISSUER_URI: "${AUTH_ISSUER_URI}"
-            TURNSTILE_SITE_KEY: "${TURNSTILE_SITE_KEY}"
-            TURNSTILE_SECRET_KEY: "${TURNSTILE_SECRET_KEY}"
-            GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
-            GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
-            GITHUB_CLIENT_ID: "${GITHUB_CLIENT_ID}"
-            GITHUB_CLIENT_SECRET: "${GITHUB_CLIENT_SECRET}"
-            YANDEX_CLIENT_ID: "${YANDEX_CLIENT_ID}"
-            YANDEX_CLIENT_SECRET: "${YANDEX_CLIENT_SECRET}"
-            POSTGRES_DB: "${POSTGRES_DB}"
-            POSTGRES_USER: "${POSTGRES_USER}"
-            POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
-            AWS_REGION: "${AWS_REGION}"
-            AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
-            AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
-            AWS_BUCKET_NAME: "${AWS_BUCKET_NAME}"
-            MEDIA_INTERNAL_TOKEN: "${MEDIA_INTERNAL_TOKEN}"
-            USER_INTERNAL_TOKEN: "${USER_INTERNAL_TOKEN_VALUE}"
-          YAML
+          secret_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN"
+          {
+            printf '%s\n' \
+              'apiVersion: v1' \
+              'kind: Secret' \
+              'metadata:' \
+              '  name: mnema-secrets' \
+              "  namespace: ${NS}" \
+              'type: Opaque' \
+              'data:'
+            for name in $secret_names; do
+              value=${!name}
+              encoded=$(printf '%s' "$value" | base64 | tr -d '\n')
+              printf '  %s: "%s"\n' "$name" "$encoded"
+            done
+          } | kubectl apply -f -
         env:
-          AUTH_ISSUER: ${{ secrets.AUTH_ISSUER }}
-          AUTH_ISSUER_URI: ${{ secrets.AUTH_ISSUER_URI }}
-          AUTH_JWT_PUBLIC_KEY: ${{ secrets.AUTH_JWT_PUBLIC_KEY }}
-          AUTH_JWT_PRIVATE_KEY: ${{ secrets.AUTH_JWT_PRIVATE_KEY }}
-          TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
-          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GITHUB_CLIENT_ID: ${{ secrets.GH_CLIENT_ID }}
-          GITHUB_CLIENT_SECRET: ${{ secrets.GH_CLIENT_SECRET }}
-          YANDEX_CLIENT_ID: ${{ secrets.YANDEX_CLIENT_ID }}
-          YANDEX_CLIENT_SECRET: ${{ secrets.YANDEX_CLIENT_SECRET }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
-          MEDIA_INTERNAL_TOKEN: ${{ secrets.MEDIA_INTERNAL_TOKEN }}
-          USER_INTERNAL_TOKEN: ${{ secrets.USER_INTERNAL_TOKEN }}
+          AUTH_ISSUER: ${{ secrets.PROD_AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.PROD_AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.PROD_AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.PROD_AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.PROD_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.PROD_TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.PROD_GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.PROD_GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.PROD_YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.PROD_YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.PROD_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.PROD_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.PROD_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.PROD_AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.PROD_MEDIA_INTERNAL_TOKEN }}
+          CORE_INTERNAL_TOKEN: ${{ secrets.PROD_CORE_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.PROD_USER_INTERNAL_TOKEN }}
 
       - name: Create/Update secret (grafana-secrets)
         run: |
-          cat <<YAML | kubectl apply -f -
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: grafana-secrets
-            namespace: observability
-          type: Opaque
-          stringData:
-            GF_SECURITY_ADMIN_USER: "${GF_SECURITY_ADMIN_USER}"
-            GF_SECURITY_ADMIN_PASSWORD: "${GF_SECURITY_ADMIN_PASSWORD}"
-          YAML
+          {
+            printf '%s\n' \
+              'apiVersion: v1' \
+              'kind: Secret' \
+              'metadata:' \
+              '  name: grafana-secrets' \
+              '  namespace: observability' \
+              'type: Opaque' \
+              'data:'
+            for name in GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD; do
+              value=${!name}
+              encoded=$(printf '%s' "$value" | base64 | tr -d '\n')
+              printf '  %s: "%s"\n' "$name" "$encoded"
+            done
+          } | kubectl apply -f -
         env:
-          GF_SECURITY_ADMIN_USER: ${{ secrets.GF_SECURITY_ADMIN_USER }}
-          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.GF_SECURITY_ADMIN_PASSWORD }}
+          GF_SECURITY_ADMIN_USER: ${{ secrets.PROD_GF_SECURITY_ADMIN_USER }}
+          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.PROD_GF_SECURITY_ADMIN_PASSWORD }}
 
       - name: Create/Update Grafana dashboards ConfigMap
         run: |

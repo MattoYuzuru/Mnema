@@ -25,6 +25,7 @@
 - **Proposed:** [Frontend / UX audit](./frontend/experience-audit-2026-08.md) — performance, a11y, Liquid Glass и exercise shell.
 - **Proposed:** [Delivery audit](./operations/delivery-audit-2026-08.md) — CI/CD, Kubernetes, recovery и безопасный rollout.
 - **Proposed:** [GitHub platform and staging plan](./operations/github-platform-and-staging-plan-2026-08.md) — фактические settings, GitHub Pro/Copilot, test layers, два сервера и P0 delivery epic.
+- **Current:** [Staging bootstrap and secret contract](./operations/staging-runbook.md) — namespace/RBAC bootstrap, prefixed GitHub Environment keys, promotion and rollback boundary.
 - **Proposed:** [V2 reset, capacity and offline plan](./operations/v2-reset-capacity-and-offline-plan.md) — account-only cutover, 1k/10k/100k capacity, scale triggers, offline and MinIO harness.
 - **Legacy:** [Схема core-сущностей v1](./core-entities-schema.md) — обзор старой модели; миграции остаются источником истины.
 

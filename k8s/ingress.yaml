@@ -4,17 +4,17 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: mnema
-  namespace: prod
+  namespace: release-namespace-placeholder
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   ingressClassName: traefik
   tls:
     - hosts:
-        - mnema.app
+        - release-public-host-placeholder
       secretName: mnema-app-tls
   rules:
-    - host: mnema.app
+    - host: release-public-host-placeholder
       http:
         paths:
           - path: /

@@ -179,6 +179,8 @@ pull request
 
 Остальные workflow-only names включают два kubeconfig, Grafana credentials и автоматически выдаваемый `GITHUB_TOKEN`; они не обязаны находиться в local `.env`. Сам keys-only audit не доказывает, что GitHub values актуальны, имеют правильный scope или успешно доходят до Pods — это проверяется staging smoke и secret contract test.
 
+Resolution update (2026-08-19, [#92](https://github.com/MattoYuzuru/Mnema/issues/92)): repository contract подготовлен для `mnema-staging` на основном shared host: namespace-scoped Role/ServiceAccount, ResourceQuota/LimitRange, отдельные PostgreSQL 18/Redis/MinIO PVC и три staging TLS host. Один build рендерит staging и production manifests из одинаковых image digests; staging rollout предшествует production approval. GitHub Environment keys разделены префиксами `STAGING_`/`PROD_`, internal tokens обязательны на workflow и Spring Boot binding boundaries. Owner bootstrap, DNS/TLS и фактический первый rollout остаются acceptance evidence, а не считаются выполненными по наличию YAML; порядок и exact names находятся в [staging runbook](./staging-runbook.md).
+
 ## Порядок работ 17–31 августа
 
 ### 17–20 августа — delivery foundation
