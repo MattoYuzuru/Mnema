@@ -43,6 +43,8 @@ frontend/node_modules
 !/scripts/test-deployment-contract.sh
 !/scripts/test-frontend-release-contract.sh
 !/scripts/test-render-release-manifest.sh
+!/scripts/smoke/
+!/scripts/smoke/**
 !/scripts/local-ai-gateway/
 !/scripts/local-ai-gateway/**
 !/scripts/local-audio-gateway/
@@ -57,3 +59,4 @@ build
 
 .env.local
 .mnema
+.release-state/

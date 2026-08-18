@@ -2,6 +2,7 @@ package app.mnema.auth.local
 
 import app.mnema.auth.config.AuthFeaturesProps
 import app.mnema.auth.config.LocalAuthProps
+import app.mnema.auth.config.SmokeAuthProps
 import app.mnema.auth.identity.FederatedIdentityRepository
 import app.mnema.auth.security.LocalTokenService
 import app.mnema.auth.security.RateLimiter
@@ -303,6 +304,58 @@ class LocalAuthServiceTest {
     }
 
     @Test
+    fun `dedicated smoke account can bypass only turnstile with a strong matching key`() {
+        val smokeKey = "release-smoke-key-that-is-longer-than-32-characters"
+        val service = service(smokeAuthProps = SmokeAuthProps("mnema-smoke", smokeKey))
+        val user = AuthUser(
+            id = UUID.randomUUID(),
+            email = "smoke@example.invalid",
+            username = "mnema-smoke",
+            passwordHash = "encoded"
+        )
+
+        stubToken()
+        `when`(userRepository.findByUsernameIgnoreCase("MNEMA-SMOKE")).thenReturn(Optional.of(user))
+        `when`(passwordEncoder.matches("secret-password", "encoded")).thenReturn(true)
+        `when`(userRepository.save(user)).thenReturn(user)
+
+        val response = service.login(
+            LocalAuthController.LoginRequest(" MNEMA-SMOKE ", "secret-password"),
+            "127.0.0.1",
+            smokeKey
+        )
+
+        assertEquals("token", response.accessToken)
+        verify(turnstileService, never()).verify(any(), any())
+        verify(passwordEncoder).matches("secret-password", "encoded")
+    }
+
+    @Test
+    fun `smoke bypass does not apply to another login or a wrong key`() {
+        val smokeKey = "release-smoke-key-that-is-longer-than-32-characters"
+        val service = service(smokeAuthProps = SmokeAuthProps("mnema-smoke", smokeKey))
+        `when`(turnstileService.verify(null, "127.0.0.1")).thenReturn(false)
+
+        val wrongLogin = assertThrows<ResponseStatusException> {
+            service.login(
+                LocalAuthController.LoginRequest("another-user", "secret-password"),
+                "127.0.0.1",
+                smokeKey
+            )
+        }
+        val wrongKey = assertThrows<ResponseStatusException> {
+            service.login(
+                LocalAuthController.LoginRequest("mnema-smoke", "secret-password"),
+                "127.0.0.1",
+                "wrong-key"
+            )
+        }
+
+        assertEquals("Captcha verification failed", wrongLogin.reason)
+        assertEquals("Captcha verification failed", wrongKey.reason)
+    }
+
+    @Test
     fun `login rejects rate limit malformed email and locked account`() {
         val limited = service(localAuthProps = props.copy(loginLimit = 0))
         val rateLimitEx = assertThrows<ResponseStatusException> {
@@ -502,7 +555,8 @@ class LocalAuthServiceTest {
 
     private fun service(
         featureProps: AuthFeaturesProps = AuthFeaturesProps(),
-        localAuthProps: LocalAuthProps = props
+        localAuthProps: LocalAuthProps = props,
+        smokeAuthProps: SmokeAuthProps = SmokeAuthProps()
     ): LocalAuthService =
         LocalAuthService(
             userRepository,
@@ -512,6 +566,7 @@ class LocalAuthServiceTest {
             featureProps,
             RateLimiter(),
             turnstileService,
+            smokeAuthProps,
             identityRepository,
             loginModerationService
         )

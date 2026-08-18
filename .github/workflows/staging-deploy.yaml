@@ -26,7 +26,14 @@ jobs:
       KUBECONFIG: ${{ github.workspace }}/kubeconfig-staging
       NS: mnema-staging
       RELEASE_MANIFEST: ${{ github.workspace }}/staging-release.yaml
+      RELEASE_RECORD: ${{ github.workspace }}/.release-state/staging-release-record.json
       RELEASE_SHA: ${{ inputs.release_sha }}
+      ROLLBACK_MANIFEST: ${{ github.workspace }}/.release-state/staging-rollback-release.yaml
+      ROLLBACK_RECORD: ${{ github.workspace }}/.release-state/staging-rollback-record.json
+      ROLLBACK_SMOKE_REPORT: ${{ github.workspace }}/.release-state/staging-rollback-smoke-report.json
+      SMOKE_REPORT: ${{ github.workspace }}/.release-state/staging-smoke-report.json
+      DIAGNOSTICS_DIR: ${{ github.workspace }}/.release-state/staging-release-diagnostics
+      AUTO_ROLLBACK_ENABLED: ${{ vars.AUTO_ROLLBACK_ENABLED || 'true' }}
     steps:
       - name: Checkout release revision
         uses: actions/checkout@v6
@@ -97,8 +104,11 @@ jobs:
           MEDIA_INTERNAL_TOKEN: ${{ secrets.STAGING_MEDIA_INTERNAL_TOKEN }}
           CORE_INTERNAL_TOKEN: ${{ secrets.STAGING_CORE_INTERNAL_TOKEN }}
           USER_INTERNAL_TOKEN: ${{ secrets.STAGING_USER_INTERNAL_TOKEN }}
+          SMOKE_LOGIN: ${{ secrets.STAGING_SMOKE_LOGIN }}
+          SMOKE_PASSWORD: ${{ secrets.STAGING_SMOKE_PASSWORD }}
+          SMOKE_TURNSTILE_BYPASS_KEY: ${{ secrets.STAGING_SMOKE_TURNSTILE_BYPASS_KEY }}
         run: |
-          required_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN"
+          required_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN SMOKE_LOGIN SMOKE_PASSWORD SMOKE_TURNSTILE_BYPASS_KEY"
           for name in $required_names; do
             if [ -z "${!name:-}" ]; then
               echo "::error::Required staging secret ${name} is missing or empty"
@@ -111,6 +121,17 @@ jobs:
           fi
           if [ "$POSTGRES_DB" != mnema ]; then
             echo "::error::STAGING_POSTGRES_DB must match the release database contract"
+            exit 1
+          fi
+          case "$AUTO_ROLLBACK_ENABLED" in
+            true | false) ;;
+            *)
+              echo "::error::AUTO_ROLLBACK_ENABLED must be true or false"
+              exit 1
+              ;;
+          esac
+          if [ "${#SMOKE_TURNSTILE_BYPASS_KEY}" -lt 32 ]; then
+            echo "::error::STAGING_SMOKE_TURNSTILE_BYPASS_KEY must contain at least 32 characters"
             exit 1
           fi
 
@@ -138,8 +159,10 @@ jobs:
           MEDIA_INTERNAL_TOKEN: ${{ secrets.STAGING_MEDIA_INTERNAL_TOKEN }}
           CORE_INTERNAL_TOKEN: ${{ secrets.STAGING_CORE_INTERNAL_TOKEN }}
           USER_INTERNAL_TOKEN: ${{ secrets.STAGING_USER_INTERNAL_TOKEN }}
+          SMOKE_LOGIN: ${{ secrets.STAGING_SMOKE_LOGIN }}
+          SMOKE_TURNSTILE_BYPASS_KEY: ${{ secrets.STAGING_SMOKE_TURNSTILE_BYPASS_KEY }}
         run: |
-          secret_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN"
+          secret_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN SMOKE_LOGIN SMOKE_TURNSTILE_BYPASS_KEY"
           {
             printf '%s\n' \
               'apiVersion: v1' \
@@ -171,6 +194,25 @@ jobs:
           kubectl apply -f k8s/staging/minio-bucket-job.yaml
           kubectl -n "$NS" wait --for=condition=complete job/minio-bucket-bootstrap --timeout=300s
 
+      - name: Build candidate staging release record
+        run: |
+          python3 scripts/smoke/release_state.py build-record \
+            --environment staging \
+            --manifest "$RELEASE_MANIFEST" \
+            --record "$RELEASE_RECORD"
+
+      - name: Snapshot the current complete staging release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/smoke/release_state.py snapshot \
+            --namespace "$NS" \
+            --environment staging \
+            --artifact-name staging-release-manifest \
+            --artifact-filename staging-release.yaml \
+            --rollback-manifest "$ROLLBACK_MANIFEST" \
+            --rollback-record "$ROLLBACK_RECORD"
+
       - name: Preview complete staging application release
         run: |
           kubectl apply --dry-run=server -f "$RELEASE_MANIFEST" >/dev/null
@@ -184,9 +226,15 @@ jobs:
           fi
 
       - name: Apply complete staging application release once
-        run: kubectl apply -f "$RELEASE_MANIFEST"
+        id: apply
+        run: |
+          echo 'attempted=true' >> "$GITHUB_OUTPUT"
+          kubectl apply -f "$RELEASE_MANIFEST"
+          echo 'applied=true' >> "$GITHUB_OUTPUT"
 
       - name: Verify staging service rollouts
+        id: rollout
+        continue-on-error: true
         run: |
           kubectl -n "$NS" rollout status deployment/mnema-frontend --timeout=600s
           kubectl -n "$NS" rollout status deployment/mnema-auth --timeout=1200s
@@ -194,3 +242,98 @@ jobs:
           kubectl -n "$NS" rollout status deployment/mnema-core --timeout=1200s
           kubectl -n "$NS" rollout status deployment/mnema-media --timeout=1800s
           kubectl -n "$NS" rollout status deployment/mnema-import --timeout=1800s
+
+      - name: Run staging black-box release smoke
+        id: smoke
+        if: ${{ steps.rollout.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          SMOKE_LOGIN: ${{ secrets.STAGING_SMOKE_LOGIN }}
+          SMOKE_PASSWORD: ${{ secrets.STAGING_SMOKE_PASSWORD }}
+          SMOKE_TURNSTILE_BYPASS_KEY: ${{ secrets.STAGING_SMOKE_TURNSTILE_BYPASS_KEY }}
+        run: |
+          python3 scripts/smoke/release_smoke.py \
+            --environment staging \
+            --public-url https://staging.mnema.app \
+            --auth-url https://auth.staging.mnema.app \
+            --expected-release-sha "$RELEASE_SHA" \
+            --timeout-seconds 300 \
+            --report "$SMOKE_REPORT"
+
+      - name: Record successful complete staging release
+        id: record
+        if: ${{ steps.rollout.outcome == 'success' && steps.smoke.outcome == 'success' }}
+        continue-on-error: true
+        run: |
+          python3 scripts/smoke/release_state.py record \
+            --namespace "$NS" \
+            --manifest "$RELEASE_MANIFEST" \
+            --record "$RELEASE_RECORD"
+
+      - name: Upload verified staging release record
+        if: ${{ steps.record.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: staging-release-record-${{ github.run_id }}
+          path: ${{ env.RELEASE_RECORD }}
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Collect sanitized staging diagnostics
+        if: ${{ always() && (failure() || steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') }}
+        continue-on-error: true
+        run: |
+          python3 scripts/smoke/collect_diagnostics.py \
+            --namespace "$NS" \
+            --output "$DIAGNOSTICS_DIR" \
+            --smoke-report "$SMOKE_REPORT"
+
+      - name: Roll back failed staging candidate
+        id: rollback
+        if: ${{ always() && steps.apply.outputs.attempted == 'true' && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') && env.AUTO_ROLLBACK_ENABLED == 'true' }}
+        run: |
+          python3 scripts/smoke/release_state.py rollback \
+            --namespace "$NS" \
+            --rollback-manifest "$ROLLBACK_MANIFEST" \
+            --rollback-record "$ROLLBACK_RECORD"
+
+      - name: Verify staging rollback rollouts
+        if: ${{ always() && steps.rollback.outcome == 'success' }}
+        run: |
+          kubectl -n "$NS" rollout status deployment/mnema-frontend --timeout=600s
+          kubectl -n "$NS" rollout status deployment/mnema-auth --timeout=1200s
+          kubectl -n "$NS" rollout status deployment/mnema-user --timeout=1200s
+          kubectl -n "$NS" rollout status deployment/mnema-core --timeout=1200s
+          kubectl -n "$NS" rollout status deployment/mnema-media --timeout=1800s
+          kubectl -n "$NS" rollout status deployment/mnema-import --timeout=1800s
+
+      - name: Verify staging rollback identity
+        if: ${{ always() && steps.rollback.outcome == 'success' }}
+        run: |
+          python3 scripts/smoke/release_smoke.py \
+            --environment staging-rollback \
+            --public-url https://staging.mnema.app \
+            --auth-url https://auth.staging.mnema.app \
+            --expected-release-sha "${{ steps.rollback.outputs.release_id }}" \
+            --timeout-seconds 300 \
+            --identity-only \
+            --report "$ROLLBACK_SMOKE_REPORT"
+
+      - name: Upload staging failure evidence
+        if: ${{ always() && (failure() || steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: staging-release-diagnostics-${{ github.run_id }}
+          path: |
+            ${{ env.DIAGNOSTICS_DIR }}
+            ${{ env.SMOKE_REPORT }}
+            ${{ env.ROLLBACK_SMOKE_REPORT }}
+            ${{ env.ROLLBACK_RECORD }}
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail rejected staging candidate
+        if: ${{ always() && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') }}
+        run: |
+          echo '::error::Staging candidate failed release verification; rollback evidence is attached when enabled.'
+          exit 1

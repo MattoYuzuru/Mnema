@@ -3,6 +3,7 @@ package app.mnema.auth.security
 import app.mnema.auth.user.AuthUser
 import java.time.Duration
 import java.time.Instant
+import java.util.UUID
 import org.springframework.beans.factory.annotation.Value
 import org.springframework.security.oauth2.jwt.JwtClaimsSet
 import org.springframework.security.oauth2.jwt.JwtEncoder
@@ -41,6 +42,7 @@ class LocalTokenService(
             .issuer(issuer)
             .issuedAt(issuedAt)
             .expiresAt(expiresAt)
+            .id(UUID.randomUUID().toString())
             .subject(user.id?.toString() ?: user.email)
             .claim("email", user.email)
             .claim("email_verified", user.emailVerified)

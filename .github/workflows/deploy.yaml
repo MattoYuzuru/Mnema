@@ -81,6 +81,9 @@ jobs:
       - name: Verify environment isolation contract
         run: ./scripts/test-deployment-contract.sh
 
+      - name: Run release automation unit tests
+        run: python3 -m unittest discover -s scripts/smoke/tests -v
+
   build-and-push:
     needs:
       - backend-quality
