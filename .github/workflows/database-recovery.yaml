@@ -1,0 +1,202 @@
+name: Database Recovery
+
+on:
+  workflow_dispatch:
+    inputs:
+      backup_id:
+        description: Restore exact UTC backup ID or latest
+        required: true
+        default: latest
+        type: string
+      confirmation:
+        description: Type RESTORE_IN_ISOLATED_NAMESPACE
+        required: true
+        type: string
+
+permissions: {}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  KUBECONFIG: ${{ github.workspace }}/kubeconfig-recovery
+  RESTORE_NAMESPACE: mnema-restore-drill
+  EVIDENCE_DIR: ${{ github.workspace }}/.recovery-evidence
+
+concurrency:
+  group: database-recovery-production
+  cancel-in-progress: false
+
+jobs:
+  database-recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: read
+    environment:
+      name: prod
+      url: https://mnema.app
+    steps:
+      - name: Checkout exact main revision
+        uses: actions/checkout@v6
+
+      - name: Reject non-main or stale workflow revisions
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo "::error::Database recovery operations run only from main"
+            exit 1
+          fi
+          current_main=$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')
+          if [ "$GITHUB_SHA" != "$current_main" ]; then
+            echo "::error::Refusing stale recovery workflow ${GITHUB_SHA}; current main is ${current_main}"
+            exit 1
+          fi
+
+      - name: Validate operation confirmation
+        env:
+          BACKUP_ID: ${{ inputs.backup_id }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          if [ "$CONFIRMATION" != RESTORE_IN_ISOLATED_NAMESPACE ]; then
+            echo "::error::Exact isolated-restore confirmation is required"
+            exit 1
+          fi
+          if [ "$BACKUP_ID" != latest ] && ! [[ "$BACKUP_ID" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$ ]]; then
+            echo "::error::backup_id must be latest or an exact UTC backup ID"
+            exit 1
+          fi
+
+      - name: Validate required recovery secrets
+        env:
+          KUBECONFIG_B64: ${{ secrets.PROD_RECOVERY_KUBECONFIG_B64 }}
+          AWS_ENDPOINT_URL: ${{ secrets.PROD_BACKUP_S3_ENDPOINT }}
+          AWS_REGION: ${{ secrets.PROD_BACKUP_S3_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_BACKUP_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_BACKUP_S3_SECRET_ACCESS_KEY }}
+          S3_BUCKET: ${{ secrets.PROD_BACKUP_S3_BUCKET }}
+          S3_PREFIX: ${{ secrets.PROD_BACKUP_S3_PREFIX }}
+          KMS_KEY_ID: ${{ secrets.PROD_BACKUP_KMS_KEY_ID }}
+        run: |
+          required_names="KUBECONFIG_B64 AWS_ENDPOINT_URL AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY S3_BUCKET S3_PREFIX KMS_KEY_ID"
+          for name in $required_names; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required recovery secret ${name} is missing or empty"
+              exit 1
+            fi
+          done
+          case "$AWS_ENDPOINT_URL" in https://*) ;; *) echo "::error::Backup endpoint must use HTTPS"; exit 1 ;; esac
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.0
+
+      - name: Write kubeconfig and verify the isolated recovery boundary
+        env:
+          KUBECONFIG_B64: ${{ secrets.PROD_RECOVERY_KUBECONFIG_B64 }}
+        run: |
+          printf '%s' "$KUBECONFIG_B64" | base64 -d > "$KUBECONFIG"
+          chmod 600 "$KUBECONFIG"
+          test "$(kubectl -n "$RESTORE_NAMESPACE" get configmap mnema-restore-boundary -o jsonpath='{.data.contractVersion}')" = 1
+          test "$(kubectl -n "$RESTORE_NAMESPACE" get configmap mnema-restore-boundary -o jsonpath='{.data.targetNamespace}')" = "$RESTORE_NAMESPACE"
+          test "$(kubectl auth can-i get secrets -n "$RESTORE_NAMESPACE")" = no
+          test "$(kubectl auth can-i create jobs.batch -n prod)" = no
+          test "$(kubectl auth can-i delete namespaces)" = no
+          mkdir -p "$EVIDENCE_DIR"
+
+      - name: Refuse a busy restore boundary
+        run: |
+          busy_resources=$(kubectl -n "$RESTORE_NAMESPACE" get \
+            pods,jobs.batch,statefulsets.apps,persistentvolumeclaims,services \
+            -o name)
+          mutable_configmaps=$(kubectl -n "$RESTORE_NAMESPACE" get configmaps -o name | \
+            grep -v '^configmap/mnema-restore-boundary$' || true)
+          if [ -n "$busy_resources" ] || [ -n "$mutable_configmaps" ]; then
+            echo "::error::Restore boundary is not empty; inspect it before retrying"
+            exit 1
+          fi
+          kubectl -n "$RESTORE_NAMESPACE" delete secret \
+            mnema-restore-db-secrets mnema-restore-backup-secrets \
+            --ignore-not-found=true
+
+      - name: Create isolated restore drill resources
+        env:
+          BACKUP_ID: ${{ inputs.backup_id }}
+          AWS_ENDPOINT_URL: ${{ secrets.PROD_BACKUP_S3_ENDPOINT }}
+          AWS_REGION: ${{ secrets.PROD_BACKUP_S3_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_BACKUP_S3_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_BACKUP_S3_SECRET_ACCESS_KEY }}
+          S3_BUCKET: ${{ secrets.PROD_BACKUP_S3_BUCKET }}
+          S3_PREFIX: ${{ secrets.PROD_BACKUP_S3_PREFIX }}
+          KMS_KEY_ID: ${{ secrets.PROD_BACKUP_KMS_KEY_ID }}
+        run: |
+          drill_started_epoch=$(date -u +%s)
+          db_password=$(openssl rand -hex 32)
+          kubectl -n "$RESTORE_NAMESPACE" create secret generic mnema-restore-db-secrets \
+            --from-literal=POSTGRES_DB=mnema_restore \
+            --from-literal=POSTGRES_USER=mnema_restore \
+            --from-literal=POSTGRES_PASSWORD="$db_password"
+
+          {
+            printf '%s\n' \
+              'apiVersion: v1' \
+              'kind: Secret' \
+              'metadata:' \
+              '  name: mnema-restore-backup-secrets' \
+              "  namespace: ${RESTORE_NAMESPACE}" \
+              'type: Opaque' \
+              'data:'
+            for name in AWS_ENDPOINT_URL AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY S3_BUCKET S3_PREFIX KMS_KEY_ID; do
+              value=${!name}
+              encoded=$(printf '%s' "$value" | base64 | tr -d '\n')
+              printf '  %s: "%s"\n' "$name" "$encoded"
+            done
+          } | kubectl create -f -
+
+          kubectl -n "$RESTORE_NAMESPACE" create configmap mnema-backup-scripts \
+            --from-file=scripts/backup
+          kubectl -n "$RESTORE_NAMESPACE" create configmap mnema-restore-config \
+            --from-literal=BACKUP_ID="$BACKUP_ID" \
+            --from-literal=DRILL_STARTED_EPOCH="$drill_started_epoch"
+          kubectl create -f k8s/backup/restore-drill.yaml
+
+      - name: Wait for restore and validate reconciliation evidence
+        run: |
+          kubectl -n "$RESTORE_NAMESPACE" rollout status statefulset/postgres --timeout=10m
+          if ! kubectl -n "$RESTORE_NAMESPACE" wait --for=condition=complete job/mnema-postgres-restore --timeout=120m; then
+            safe_error=$(kubectl -n "$RESTORE_NAMESPACE" logs job/mnema-postgres-restore --container=restore --tail=200 2>/dev/null | grep -E '^restore_error=[a-z0-9_]+$' | tail -1 || true)
+            echo "::error::${safe_error:-restore_job_failed}"
+            exit 1
+          fi
+          kubectl -n "$RESTORE_NAMESPACE" logs job/mnema-postgres-restore --container=restore > "$EVIDENCE_DIR/restore-drill.json"
+          python3 scripts/backup/validate_report.py \
+            --kind restore-drill \
+            --report "$EVIDENCE_DIR/restore-drill.json"
+
+      - name: Upload restore drill evidence
+        uses: actions/upload-artifact@v7
+        with:
+          name: restore-drill-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.EVIDENCE_DIR }}/restore-drill.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Remove only fixed restore drill resources
+        if: ${{ always() }}
+        run: |
+          if [ ! -s "$KUBECONFIG" ]; then
+            exit 0
+          fi
+          contract_version=$(kubectl -n "$RESTORE_NAMESPACE" get configmap mnema-restore-boundary \
+            -o jsonpath='{.data.contractVersion}' 2>/dev/null || true)
+          if [ "$contract_version" != 1 ]; then
+            echo "::error::Restore boundary marker is missing or changed; refusing cleanup"
+            exit 1
+          fi
+          kubectl delete -f k8s/backup/restore-drill.yaml \
+            --ignore-not-found=true --wait=true --timeout=15m
+          kubectl -n "$RESTORE_NAMESPACE" delete persistentvolumeclaim data-postgres-0 \
+            --ignore-not-found=true --wait=true --timeout=15m
+          kubectl -n "$RESTORE_NAMESPACE" delete configmap \
+            mnema-backup-scripts mnema-restore-config --ignore-not-found=true
+          kubectl -n "$RESTORE_NAMESPACE" delete secret \
+            mnema-restore-db-secrets mnema-restore-backup-secrets \
+            --ignore-not-found=true

@@ -1,0 +1,237 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: mnema-restore-drill
+  labels:
+    mnema.app/purpose: restore-drill
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/enforce-version: v1.34
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/audit-version: v1.34
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/warn-version: v1.34
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: restore-drill-quota
+  namespace: mnema-restore-drill
+spec:
+  hard:
+    requests.cpu: "3"
+    requests.memory: 4Gi
+    limits.cpu: "5"
+    limits.memory: 6Gi
+    requests.storage: 25Gi
+    persistentvolumeclaims: "1"
+    pods: "8"
+    services: "2"
+    secrets: "4"
+    configmaps: "4"
+    count/jobs.batch: "2"
+    count/statefulsets.apps: "1"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: restore-drill-limits
+  namespace: mnema-restore-drill
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: 50m
+        memory: 128Mi
+      default:
+        cpu: 500m
+        memory: 512Mi
+      max:
+        cpu: "2"
+        memory: 2Gi
+        ephemeral-storage: 20Gi
+    - type: PersistentVolumeClaim
+      max:
+        storage: 20Gi
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mnema-restore-boundary
+  namespace: mnema-restore-drill
+  labels:
+    app.kubernetes.io/name: mnema-restore-boundary
+    app.kubernetes.io/part-of: mnema
+data:
+  contractVersion: "1"
+  targetNamespace: mnema-restore-drill
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: mnema-recovery
+  namespace: mnema-restore-drill
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mnema-recovery
+  namespace: mnema-restore-drill
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+  - apiGroups: [""]
+    resources: ["services", "configmaps"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["services"]
+    resourceNames: ["postgres"]
+    verbs: ["delete"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    resourceNames: ["mnema-backup-scripts", "mnema-restore-config"]
+    verbs: ["delete"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["create"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["mnema-restore-db-secrets", "mnema-restore-backup-secrets"]
+    verbs: ["delete"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    resourceNames: ["data-postgres-0"]
+    verbs: ["delete"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: ["apps"]
+    resources: ["statefulsets"]
+    resourceNames: ["postgres"]
+    verbs: ["delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    resourceNames: ["mnema-postgres-restore"]
+    verbs: ["delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mnema-recovery
+  namespace: mnema-restore-drill
+subjects:
+  - kind: ServiceAccount
+    name: mnema-recovery
+    namespace: mnema-restore-drill
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mnema-recovery
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: mnema-restore-drill
+spec:
+  podSelector: {}
+  policyTypes: ["Ingress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-egress
+  namespace: mnema-restore-drill
+spec:
+  podSelector: {}
+  policyTypes: ["Egress"]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-restore-to-postgres
+  namespace: mnema-restore-drill
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mnema-restore-postgres
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mnema-postgres-restore
+      ports:
+        - protocol: TCP
+          port: 5432
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-restore-egress
+  namespace: mnema-restore-drill
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: mnema-postgres-restore
+  policyTypes: ["Egress"]
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: mnema-restore-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.0.0.0/24
+              - 192.0.2.0/24
+              - 192.168.0.0/16
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+        - ipBlock:
+            cidr: ::/0
+            except:
+              - ::/128
+              - ::1/128
+              - 100::/64
+              - 2001:db8::/32
+              - fc00::/7
+              - fe80::/10
+      ports:
+        - protocol: TCP
+          port: 443

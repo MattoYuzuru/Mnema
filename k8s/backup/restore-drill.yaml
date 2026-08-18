@@ -1,0 +1,179 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: mnema-restore-drill
+spec:
+  selector:
+    app.kubernetes.io/name: mnema-restore-postgres
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: mnema-restore-drill
+  labels:
+    app.kubernetes.io/name: mnema-restore-postgres
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mnema-restore-postgres
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mnema-restore-postgres
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: postgres
+          image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+          env:
+            - name: POSTGRES_DB
+              valueFrom: { secretKeyRef: { name: mnema-restore-db-secrets, key: POSTGRES_DB } }
+            - name: POSTGRES_USER
+              valueFrom: { secretKeyRef: { name: mnema-restore-db-secrets, key: POSTGRES_USER } }
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: mnema-restore-db-secrets, key: POSTGRES_PASSWORD } }
+          ports:
+            - name: postgres
+              containerPort: 5432
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "pg_isready --quiet --username=\"$POSTGRES_USER\" --dbname=\"$POSTGRES_DB\""]
+            periodSeconds: 5
+            timeoutSeconds: 5
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 20Gi
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mnema-postgres-restore
+  namespace: mnema-restore-drill
+  labels:
+    app.kubernetes.io/name: mnema-postgres-restore
+spec:
+  activeDeadlineSeconds: 7200
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mnema-postgres-restore
+    spec:
+      automountServiceAccountToken: false
+      restartPolicy: Never
+      securityContext:
+        fsGroup: 999
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      initContainers:
+        - name: download
+          image: public.ecr.aws/aws-cli/aws-cli:2.36.25@sha256:d5b61bcb558149739b6d17410bdff21ec66518f3c921f0b8fc8ffa725f3f1b00
+          command: ["/bin/sh", "/scripts/download.sh"]
+          env:
+            - name: AWS_ENDPOINT_URL
+              valueFrom: { secretKeyRef: { name: mnema-restore-backup-secrets, key: AWS_ENDPOINT_URL } }
+            - name: AWS_REGION
+              valueFrom: { secretKeyRef: { name: mnema-restore-backup-secrets, key: AWS_REGION } }
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom: { secretKeyRef: { name: mnema-restore-backup-secrets, key: AWS_ACCESS_KEY_ID } }
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: mnema-restore-backup-secrets, key: AWS_SECRET_ACCESS_KEY } }
+            - name: S3_BUCKET
+              valueFrom: { secretKeyRef: { name: mnema-restore-backup-secrets, key: S3_BUCKET } }
+            - name: S3_PREFIX
+              valueFrom: { secretKeyRef: { name: mnema-restore-backup-secrets, key: S3_PREFIX } }
+            - name: KMS_KEY_ID
+              valueFrom: { secretKeyRef: { name: mnema-restore-backup-secrets, key: KMS_KEY_ID } }
+            - name: BACKUP_ID
+              valueFrom: { configMapKeyRef: { name: mnema-restore-config, key: BACKUP_ID } }
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { cpu: 500m, memory: 512Mi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 999
+          volumeMounts:
+            - { name: restore, mountPath: /restore }
+            - { name: scripts, mountPath: /scripts, readOnly: true }
+            - { name: temp, mountPath: /tmp }
+      containers:
+        - name: restore
+          image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+          command: ["/bin/sh", "/scripts/restore.sh"]
+          env:
+            - name: TARGET_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: DRILL_STARTED_EPOCH
+              valueFrom: { configMapKeyRef: { name: mnema-restore-config, key: DRILL_STARTED_EPOCH } }
+            - name: PGHOST
+              value: postgres.mnema-restore-drill.svc.cluster.local
+            - name: PGPORT
+              value: "5432"
+            - name: PGDATABASE
+              valueFrom: { secretKeyRef: { name: mnema-restore-db-secrets, key: POSTGRES_DB } }
+            - name: PGUSER
+              valueFrom: { secretKeyRef: { name: mnema-restore-db-secrets, key: POSTGRES_USER } }
+            - name: PGPASSWORD
+              valueFrom: { secretKeyRef: { name: mnema-restore-db-secrets, key: POSTGRES_PASSWORD } }
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits: { cpu: "2", memory: 2Gi }
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: { drop: ["ALL"] }
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 999
+            runAsGroup: 999
+          volumeMounts:
+            - { name: restore, mountPath: /restore }
+            - { name: scripts, mountPath: /scripts, readOnly: true }
+            - { name: temp, mountPath: /tmp }
+      volumes:
+        - name: restore
+          emptyDir:
+            sizeLimit: 20Gi
+        - name: scripts
+          configMap:
+            name: mnema-backup-scripts
+            defaultMode: 0555
+        - name: temp
+          emptyDir:
+            sizeLimit: 256Mi
