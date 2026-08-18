@@ -436,6 +436,7 @@ TURNSTILE_SECRET_KEY=
 
 MEDIA_INTERNAL_TOKEN=$(New-HexSecret -ByteCount 24)
 CORE_INTERNAL_TOKEN=$(New-HexSecret -ByteCount 24)
+USER_INTERNAL_TOKEN=$(New-HexSecret -ByteCount 24)
 
 AWS_REGION=us-east-1
 AWS_BUCKET_NAME=mnema-local

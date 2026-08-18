@@ -81,6 +81,9 @@ jobs:
       - name: Verify production deployment safety contract
         run: ./scripts/test-production-deploy-safety.sh
 
+      - name: Verify environment isolation contract
+        run: ./scripts/test-deployment-contract.sh
+
   build-and-push:
     needs:
       - backend-quality
@@ -247,6 +250,28 @@ jobs:
           output_name=$(basename -- "$OUTPUT")
           (cd "$output_dir" && sha256sum "$output_name" > "${output_name}.sha256")
 
+      - name: Render immutable staging release from the same digests
+        env:
+          APP_ENV: staging
+          AUTH_HOST: auth.staging.mnema.app
+          DIGEST_DIR: ${{ runner.temp }}/release-digests
+          IMAGE_BASE: ghcr.io/${{ github.repository }}
+          OUTPUT: ${{ runner.temp }}/staging-release.yaml
+          PUBLIC_HOST: staging.mnema.app
+          RELEASE_NAMESPACE: mnema-staging
+          RELEASE_SHA: ${{ github.sha }}
+          S3_ENDPOINT: http://minio:9000
+          S3_PATH_STYLE_ACCESS: "true"
+          S3_PUBLIC_ENDPOINT: https://storage.staging.mnema.app
+          SPRING_PROFILES: prod
+        run: |
+          IMAGE_BASE=$(printf '%s' "$IMAGE_BASE" | tr '[:upper:]' '[:lower:]')
+          export IMAGE_BASE
+          ./scripts/render-release-manifest.sh
+          output_dir=$(dirname -- "$OUTPUT")
+          output_name=$(basename -- "$OUTPUT")
+          (cd "$output_dir" && sha256sum "$output_name" > "${output_name}.sha256")
+
       - name: Upload complete release manifest
         uses: actions/upload-artifact@v7
         with:
@@ -257,8 +282,30 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  deploy-production:
+      - name: Upload staging release manifest
+        uses: actions/upload-artifact@v7
+        with:
+          name: staging-release-manifest
+          path: |
+            ${{ runner.temp }}/staging-release.yaml
+            ${{ runner.temp }}/staging-release.yaml.sha256
+          if-no-files-found: error
+          retention-days: 30
+
+  deploy-staging:
     needs: render-release
+    concurrency:
+      group: staging-deploy
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: read
+    uses: ./.github/workflows/staging-deploy.yaml
+    with:
+      release_sha: ${{ github.sha }}
+
+  deploy-production:
+    needs: deploy-staging
     concurrency:
       group: production-deploy
       cancel-in-progress: false
@@ -268,4 +315,3 @@ jobs:
     uses: ./.github/workflows/production-deploy.yaml
     with:
       release_sha: ${{ github.sha }}
-    secrets: inherit

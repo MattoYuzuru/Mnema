@@ -16,7 +16,10 @@ import java.util.Map;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @Testcontainers(disabledWithoutDocker = true)
-@SpringBootTest(properties = "MNEMA_BUILD_ID=test-release")
+@SpringBootTest(properties = {
+        "MNEMA_BUILD_ID=test-release",
+        "MEDIA_INTERNAL_TOKEN=test-media-token"
+})
 class MediaApplicationTests {
 
     @Autowired

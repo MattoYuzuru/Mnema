@@ -1,0 +1,196 @@
+name: Staging Deploy
+
+on:
+  workflow_call:
+    inputs:
+      release_sha:
+        description: Exact tested and built main revision to deploy
+        required: true
+        type: string
+
+permissions: {}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    environment:
+      name: staging
+      url: https://staging.mnema.app
+    env:
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig-staging
+      NS: mnema-staging
+      RELEASE_MANIFEST: ${{ github.workspace }}/staging-release.yaml
+      RELEASE_SHA: ${{ inputs.release_sha }}
+    steps:
+      - name: Checkout release revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+
+      - name: Download staging release manifest
+        uses: actions/download-artifact@v8
+        with:
+          name: staging-release-manifest
+          path: ${{ github.workspace }}
+
+      - name: Verify release artifact integrity
+        run: sha256sum --check staging-release.yaml.sha256
+
+      - name: Reject a stale release
+        run: |
+          current_main=$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')
+          if [ "$RELEASE_SHA" != "$current_main" ]; then
+            echo "::error::Refusing stale staging release ${RELEASE_SHA}; current main is ${current_main}"
+            exit 1
+          fi
+
+      - name: Write namespace-scoped kubeconfig
+        env:
+          STAGING_KUBECONFIG_B64: ${{ secrets.STAGING_KUBECONFIG_B64 }}
+        run: |
+          if [ -z "$STAGING_KUBECONFIG_B64" ]; then
+            echo "::error::STAGING_KUBECONFIG_B64 is required"
+            exit 1
+          fi
+          printf '%s' "$STAGING_KUBECONFIG_B64" | base64 -d > "$KUBECONFIG"
+          chmod 600 "$KUBECONFIG"
+
+      - name: Verify namespace-scoped deployment identity
+        run: |
+          test "$(kubectl auth can-i create deployments.apps -n "$NS")" = yes
+          test "$(kubectl auth can-i create secrets -n "$NS")" = yes
+          test "$(kubectl auth can-i get secrets -n prod)" = no
+          test "$(kubectl auth can-i create namespaces)" = no
+          kubectl -n "$NS" get resourcequota mnema-staging-quota >/dev/null
+          kubectl -n "$NS" get limitrange mnema-staging-limits >/dev/null
+
+      - name: Validate required staging secrets
+        env:
+          AUTH_ISSUER: ${{ secrets.STAGING_AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.STAGING_AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.STAGING_AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.STAGING_AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.STAGING_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.STAGING_TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.STAGING_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.STAGING_GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.STAGING_GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.STAGING_GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.STAGING_YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.STAGING_YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.STAGING_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.STAGING_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.STAGING_POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.STAGING_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.STAGING_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.STAGING_AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.STAGING_AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.STAGING_MEDIA_INTERNAL_TOKEN }}
+          CORE_INTERNAL_TOKEN: ${{ secrets.STAGING_CORE_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.STAGING_USER_INTERNAL_TOKEN }}
+        run: |
+          required_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN"
+          for name in $required_names; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required staging secret ${name} is missing or empty"
+              exit 1
+            fi
+          done
+          if [ "$AUTH_ISSUER" != "https://auth.staging.mnema.app" ] || [ "$AUTH_ISSUER_URI" != "$AUTH_ISSUER" ]; then
+            echo "::error::Staging issuer secrets must identify auth.staging.mnema.app"
+            exit 1
+          fi
+          if [ "$POSTGRES_DB" != mnema ]; then
+            echo "::error::STAGING_POSTGRES_DB must match the release database contract"
+            exit 1
+          fi
+
+      - name: Create or update staging application secret
+        env:
+          AUTH_ISSUER: ${{ secrets.STAGING_AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.STAGING_AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.STAGING_AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.STAGING_AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.STAGING_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.STAGING_TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.STAGING_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.STAGING_GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.STAGING_GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.STAGING_GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.STAGING_YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.STAGING_YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.STAGING_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.STAGING_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.STAGING_POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.STAGING_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.STAGING_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.STAGING_AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.STAGING_AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.STAGING_MEDIA_INTERNAL_TOKEN }}
+          CORE_INTERNAL_TOKEN: ${{ secrets.STAGING_CORE_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.STAGING_USER_INTERNAL_TOKEN }}
+        run: |
+          secret_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN"
+          {
+            printf '%s\n' \
+              'apiVersion: v1' \
+              'kind: Secret' \
+              'metadata:' \
+              '  name: mnema-secrets' \
+              "  namespace: ${NS}" \
+              'type: Opaque' \
+              'data:'
+            for name in $secret_names; do
+              value=${!name}
+              encoded=$(printf '%s' "$value" | base64 | tr -d '\n')
+              printf '  %s: "%s"\n' "$name" "$encoded"
+            done
+          } | kubectl apply -f -
+
+      - name: Apply isolated staging data services
+        run: kubectl apply -f k8s/staging/data.yaml
+
+      - name: Wait for staging data services
+        run: |
+          kubectl -n "$NS" rollout status statefulset/postgres --timeout=600s
+          kubectl -n "$NS" rollout status statefulset/redis --timeout=300s
+          kubectl -n "$NS" rollout status statefulset/minio --timeout=600s
+
+      - name: Create staging object bucket idempotently
+        run: |
+          kubectl -n "$NS" delete job minio-bucket-bootstrap --ignore-not-found=true --wait=true
+          kubectl apply -f k8s/staging/minio-bucket-job.yaml
+          kubectl -n "$NS" wait --for=condition=complete job/minio-bucket-bootstrap --timeout=300s
+
+      - name: Preview complete staging application release
+        run: |
+          kubectl apply --dry-run=server -f "$RELEASE_MANIFEST" >/dev/null
+          set +e
+          kubectl diff -f "$RELEASE_MANIFEST"
+          diff_status=$?
+          set -e
+          if [ "$diff_status" -gt 1 ]; then
+            echo "::error::Unable to preview the complete staging release"
+            exit "$diff_status"
+          fi
+
+      - name: Apply complete staging application release once
+        run: kubectl apply -f "$RELEASE_MANIFEST"
+
+      - name: Verify staging service rollouts
+        run: |
+          kubectl -n "$NS" rollout status deployment/mnema-frontend --timeout=600s
+          kubectl -n "$NS" rollout status deployment/mnema-auth --timeout=1200s
+          kubectl -n "$NS" rollout status deployment/mnema-user --timeout=1200s
+          kubectl -n "$NS" rollout status deployment/mnema-core --timeout=1200s
+          kubectl -n "$NS" rollout status deployment/mnema-media --timeout=1800s
+          kubectl -n "$NS" rollout status deployment/mnema-import --timeout=1800s
