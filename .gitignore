@@ -41,6 +41,7 @@ frontend/node_modules
 !/scripts/render-release-manifest.sh
 !/scripts/test-frontend-release-contract.sh
 !/scripts/test-render-release-manifest.sh
+!/scripts/test-production-deploy-safety.sh
 !/scripts/local-ai-gateway/
 !/scripts/local-ai-gateway/**
 !/scripts/local-audio-gateway/

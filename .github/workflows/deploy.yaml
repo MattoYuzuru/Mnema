@@ -78,6 +78,9 @@ jobs:
       - name: Verify release manifest renderer
         run: ./scripts/test-render-release-manifest.sh
 
+      - name: Verify production deployment safety contract
+        run: ./scripts/test-production-deploy-safety.sh
+
   build-and-push:
     needs:
       - backend-quality
