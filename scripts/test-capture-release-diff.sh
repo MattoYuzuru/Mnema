@@ -87,6 +87,22 @@ if grep -Fq "$TEST_ROOT" "$TEST_ROOT/first.diff"; then
   exit 1
 fi
 
+mkdir -p "$TEST_ROOT/unreadable-live/blocked" "$TEST_ROOT/unreadable-desired"
+printf '%s\n' 'must-not-be-skipped' >"$TEST_ROOT/unreadable-live/blocked/object.yaml"
+chmod 000 "$TEST_ROOT/unreadable-live/blocked"
+set +e
+PATH="$TEST_ROOT/bin:$PATH" \
+  FAKE_LIVE_PATH="$TEST_ROOT/unreadable-live" \
+  FAKE_DESIRED_PATH="$TEST_ROOT/unreadable-desired" \
+  "$CAPTURE" "$manifest" "$TEST_ROOT/unreadable.diff" >/dev/null 2>&1
+unreadable_status=$?
+set -e
+chmod 700 "$TEST_ROOT/unreadable-live/blocked"
+if [ "$unreadable_status" -le 1 ]; then
+  echo 'resource traversal failures must stop capture as operational errors' >&2
+  exit 1
+fi
+
 printf '%s  %s\n' \
   'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc' \
   'production-release.yaml' >"$TEST_ROOT/production-release.yaml.sha256"

@@ -188,6 +188,7 @@ jobs:
           esac
 
           artifact=$(gh api \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
             "repos/${GITHUB_REPOSITORY}/actions/artifacts/${PREVIEW_ARTIFACT_ID}")
           server_id=$(printf '%s' "$artifact" | jq -r '.id')
           server_name=$(printf '%s' "$artifact" | jq -r '.name')

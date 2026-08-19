@@ -18,11 +18,21 @@ fi
 work_dir=$(mktemp -d "${TMPDIR:-/tmp}/mnema-canonical-diff.XXXXXX")
 trap 'rm -rf "$work_dir"' EXIT HUP INT TERM
 relative_paths="$work_dir/relative-paths"
+live_paths="$work_dir/live-paths"
+desired_paths="$work_dir/desired-paths"
 
-{
-  (cd "$live_path" && find . -type f -print)
-  (cd "$desired_path" && find . -type f -print)
-} | sort -u >"$relative_paths"
+if ! (cd "$live_path" && find . -type f -print) >"$live_paths"; then
+  echo "Unable to enumerate live kubectl diff files" >&2
+  exit 2
+fi
+if ! (cd "$desired_path" && find . -type f -print) >"$desired_paths"; then
+  echo "Unable to enumerate desired kubectl diff files" >&2
+  exit 2
+fi
+if ! sort -u "$live_paths" "$desired_paths" >"$relative_paths"; then
+  echo "Unable to order kubectl diff files" >&2
+  exit 2
+fi
 
 diff_status=0
 while IFS= read -r relative_path; do
