@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-if [ "$#" -ne 10 ]; then
-  echo "usage: $0 METADATA DIFF MANIFEST_CHECKSUM RELEASE_SHA DIFF_SHA256 KUBECTL_VERSION RUN_ID RUN_ATTEMPT SECRET_DRIFT HAS_CHANGES" >&2
+if [ "$#" -ne 11 ]; then
+  echo "usage: $0 METADATA DIFF MANIFEST_CHECKSUM RELEASE_SHA DIFF_SHA256 KUBECTL_VERSION RUN_ID RUN_ATTEMPT SECRET_DRIFT SECRET_SNAPSHOT_HMAC HAS_CHANGES" >&2
   exit 64
 fi
 
@@ -15,7 +15,19 @@ expected_kubectl_version=$6
 expected_run_id=$7
 expected_run_attempt=$8
 expected_secret_drift=$9
-expected_has_changes=${10}
+expected_secret_snapshot_hmac=${10}
+expected_has_changes=${11}
+
+if [ "${#expected_secret_snapshot_hmac}" -ne 64 ]; then
+  echo "Approved Secret snapshot binding must be exactly 64 lowercase hexadecimal characters" >&2
+  exit 1
+fi
+case "$expected_secret_snapshot_hmac" in
+  *[!0-9a-f]*)
+    echo "Approved Secret snapshot binding must be exactly 64 lowercase hexadecimal characters" >&2
+    exit 1
+    ;;
+esac
 
 for required_file in "$metadata_file" "$diff_file" "$manifest_checksum_file"; do
   if [ ! -f "$required_file" ]; then
@@ -61,6 +73,7 @@ require_metadata release_manifest_sha256 "$manifest_sha256"
 require_metadata release_diff_sha256 "$expected_diff_sha256"
 require_metadata release_diff_sha256 "$diff_sha256"
 require_metadata secret_drift "$expected_secret_drift"
+require_metadata secret_snapshot_hmac "$expected_secret_snapshot_hmac"
 require_metadata has_release_changes "$expected_has_changes"
 require_metadata kubectl_version "$expected_kubectl_version"
 require_metadata run_id "$expected_run_id"

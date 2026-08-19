@@ -16,7 +16,9 @@ spec:
     pods: "30"
     services: "20"
     count/configmaps: "12"
-    count/secrets: "2"
+    # mnema-secrets + three TLS Secrets + three cert-manager next-key Secrets,
+    # with bounded headroom for renewal overlap and one recovery operation.
+    count/secrets: "12"
     count/deployments.apps: "8"
     count/replicasets.apps: "30"
     count/statefulsets.apps: "4"

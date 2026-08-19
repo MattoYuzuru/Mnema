@@ -112,6 +112,7 @@ release_manifest_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 release_diff_sha256=${first_tree_hash}
 application_release_changes=true
 secret_drift=false
+secret_snapshot_hmac=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 has_release_changes=true
 kubectl_version=v1.36.0
 run_id=12345
@@ -128,6 +129,7 @@ EOF
   12345 \
   2 \
   false \
+  eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee \
   true >/dev/null
 
 printf '%s\n' 'tampered-after-preview' >>"$TEST_ROOT/first.diff"
@@ -141,6 +143,7 @@ if "$VERIFY" \
   12345 \
   2 \
   false \
+  eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee \
   true >/dev/null 2>&1; then
   echo 'tampered approved preview contents must fail verification' >&2
   exit 1

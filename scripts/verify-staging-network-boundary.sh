@@ -1,12 +1,26 @@
 #!/bin/sh
 set -eu
 
+KUBE_API_SERVER=${KUBE_API_SERVER:?KUBE_API_SERVER is required}
 NAMESPACE=mnema-staging
 CLIENT_POD=mnema-staging-network-probe-client
 SERVER_POD=mnema-staging-network-probe-server
 REDIS_IMAGE='redis:7-alpine@sha256:e7723ff73d963f5cc6d9c4643ea3d989527a402a319239054e9472a7fb9219a2'
 client_created=false
 server_created=false
+
+api_endpoint=$(python3 - "$KUBE_API_SERVER" <<'PY'
+import sys
+from urllib.parse import urlsplit
+
+endpoint = urlsplit(sys.argv[1])
+if endpoint.scheme != "https" or not endpoint.hostname:
+    raise SystemExit(1)
+print(f"{endpoint.hostname}|{endpoint.port or 443}")
+PY
+)
+api_host=${api_endpoint%%|*}
+api_port=${api_endpoint#*|}
 
 cleanup() {
   if [ "$client_created" = true ]; then
@@ -86,20 +100,45 @@ kubectl -n "$NAMESPACE" exec "$CLIENT_POD" -- \
 kubectl -n "$NAMESPACE" exec "$CLIENT_POD" -- \
   nc -z -w 5 github.com 443
 
-if kubectl -n "$NAMESPACE" exec "$CLIENT_POD" -- \
-  nc -z -w 3 kubernetes.default.svc.cluster.local 443; then
-  echo "Staging can reach a cross-namespace private Service" >&2
+assert_unreachable() {
+  target=$1
+  port=$2
+  label=$3
+  if kubectl -n "$NAMESPACE" exec "$CLIENT_POD" -- \
+    nc -z -w 3 "$target" "$port"; then
+    echo "Staging can reach forbidden $label at $target:$port" >&2
+    exit 1
+  fi
+}
+
+assert_unreachable kubernetes.default.svc.cluster.local 443 \
+  'cross-namespace Kubernetes Service'
+assert_unreachable redis.prod.svc.cluster.local 6379 'production Redis Service'
+assert_unreachable 169.254.169.254 80 'link-local metadata endpoint'
+assert_unreachable "$api_host" "$api_port" 'externally advertised Kubernetes API'
+
+node_addresses=$(kubectl get nodes -o json | python3 -c '
+import json
+import sys
+
+nodes = json.load(sys.stdin)
+addresses = {
+    address.get("address", "")
+    for node in nodes.get("items", [])
+    for address in node.get("status", {}).get("addresses", [])
+    if address.get("type") in {"InternalIP", "ExternalIP"}
+}
+for address in sorted(value for value in addresses if value):
+    print(address)
+')
+if [ -z "$node_addresses" ]; then
+  echo "Unable to discover resident node InternalIP/ExternalIP addresses" >&2
   exit 1
 fi
-if kubectl -n "$NAMESPACE" exec "$CLIENT_POD" -- \
-  nc -z -w 3 redis.prod.svc.cluster.local 6379; then
-  echo "Staging can reach the production Redis Service" >&2
-  exit 1
-fi
-if kubectl -n "$NAMESPACE" exec "$CLIENT_POD" -- \
-  nc -z -w 3 169.254.169.254 80; then
-  echo "Staging can reach the link-local metadata endpoint" >&2
-  exit 1
-fi
+for node_address in $node_addresses; do
+  for sensitive_port in 2379 2380 6443 10250; do
+    assert_unreachable "$node_address" "$sensitive_port" 'resident node listener'
+  done
+done
 
 printf 'staging_network_boundary=ok\n'

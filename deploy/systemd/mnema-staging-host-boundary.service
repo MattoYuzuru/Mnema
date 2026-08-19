@@ -1,0 +1,14 @@
+[Unit]
+Description=Mnema cluster-Pod to host network boundary
+After=network-online.target k3s.service
+Wants=network-online.target
+Requires=k3s.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/mnema/staging-host-boundary.env
+Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
+ExecStart=/usr/local/libexec/mnema/reconcile-staging-host-firewall.sh
+
+[Install]
+WantedBy=multi-user.target

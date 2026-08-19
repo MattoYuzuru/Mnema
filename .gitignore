@@ -54,6 +54,17 @@ frontend/node_modules
 !/scripts/verify-environment-secret-separation.py
 !/scripts/test-environment-secret-separation.sh
 !/scripts/verify-staging-network-boundary.sh
+!/scripts/create-secret-snapshot-binding.py
+!/scripts/test-secret-snapshot-binding.sh
+!/scripts/verify-kubernetes-bootstrap-secret-values.py
+!/scripts/test-kubernetes-bootstrap-secret-values.sh
+!/scripts/reconcile-staging-host-firewall.sh
+!/scripts/test-staging-host-firewall.sh
+!/scripts/verify-staging-tls-boundary.sh
+!/scripts/test-staging-tls-boundary.sh
+!/scripts/apply-staging-bootstrap.sh
+!/scripts/test-apply-staging-bootstrap.sh
+!/scripts/install-staging-host-firewall.sh
 !/scripts/local-ai-gateway/
 !/scripts/local-ai-gateway/**
 !/scripts/local-audio-gateway/

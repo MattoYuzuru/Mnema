@@ -13,7 +13,7 @@ spec:
     solvers:
       - http01:
           ingress:
-            class: traefik
+            ingressClassName: traefik
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -26,6 +26,13 @@ spec:
     privateKeySecretRef:
       name: letsencrypt-prod-key
     solvers:
+      - selector:
+          dnsZones:
+            - staging.mnema.app
+        http01:
+          ingress:
+            ingressClassName: traefik
+            serviceType: ClusterIP
       - http01:
           ingress:
-            class: traefik
+            ingressClassName: traefik

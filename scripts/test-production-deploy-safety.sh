@@ -24,11 +24,18 @@ grep -Fq './scripts/verify-release-preview.sh' "$DEPLOY"
 test "$(grep -c './scripts/detect-kubernetes-secret-drift.py' "$DEPLOY")" -eq 4
 # shellcheck disable=SC2016 # GitHub/shell expressions are literal contract markers.
 grep -Fq 'secret_drift: ${{ steps.secret-preview.outputs.secret_drift }}' "$DEPLOY"
+# shellcheck disable=SC2016 # GitHub expression is a literal contract marker.
+grep -Fq 'secret_snapshot_hmac: ${{ steps.secret-preview.outputs.secret_snapshot_hmac }}' "$DEPLOY"
 # shellcheck disable=SC2016 # Workflow variables are literal contract markers.
 grep -Fq 'if [ "$application_release_changes" = true ] || [ "$SECRET_DRIFT" = true ]; then' "$DEPLOY"
 # shellcheck disable=SC2016 # Workflow variables are literal contract markers.
 grep -Fq 'secret_drift=${SECRET_DRIFT}' "$DEPLOY"
 grep -Fq 'Production Secret drift state changed after approval' "$DEPLOY"
+grep -Fq 'Desired production Secret snapshot changed after approval' "$DEPLOY"
+grep -Fq 'run: ./scripts/test-secret-snapshot-binding.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
+grep -Fq 'run: ./scripts/test-secret-snapshot-binding.sh' "$CALLER"
+grep -Fq 'run: ./scripts/test-kubernetes-bootstrap-secret-values.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
+grep -Fq 'run: ./scripts/test-kubernetes-bootstrap-secret-values.sh' "$CALLER"
 grep -Fq 'run: ./scripts/test-detect-kubernetes-secret-drift.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
 grep -Fq 'run: ./scripts/test-detect-kubernetes-secret-drift.sh' "$CALLER"
 # shellcheck disable=SC2016 # GitHub expressions are literal contract markers.
@@ -73,7 +80,7 @@ awk '
   exit 1
 }
 
-production_secret_names='AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD'
+production_secret_names='AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD RELEASE_BINDING_KEY'
 validation_count=$(grep -c 'name: Validate required production secrets' "$DEPLOY")
 required_list_count=$(grep -F -c "required_names=\"$production_secret_names\"" "$DEPLOY")
 issuer_check_count=$(grep -F -c 'Production issuer secrets must identify auth.mnema.app' "$DEPLOY")
@@ -122,6 +129,33 @@ if [ "$preview_reference_line" -ge "$kubeconfig_step_line" ] || \
    [ "$preview_download_line" -ge "$kubeconfig_step_line" ] || \
    [ "$preview_verify_line" -ge "$kubeconfig_step_line" ]; then
   echo 'Approved preview identity, availability and contents must be verified before prod credentials' >&2
+  exit 1
+fi
+
+snapshot_guard_line=$(grep -n 'name: Verify approved desired Secret snapshot before cluster access' "$DEPLOY" | cut -d: -f1)
+if [ -z "$snapshot_guard_line" ] || [ "$snapshot_guard_line" -ge "$kubeconfig_step_line" ] || \
+   [ "$snapshot_guard_line" -ge "$first_mutation_line" ]; then
+  echo 'The exact desired Secret snapshot must remain bound to the approval before cluster access' >&2
+  exit 1
+fi
+test "$(grep -c './scripts/create-secret-snapshot-binding.py' "$DEPLOY")" -eq 2
+test "$(grep -c './scripts/verify-kubernetes-bootstrap-secret-values.py' "$DEPLOY")" -eq 2
+
+apply_release_line=$(grep -n 'name: Apply complete application release once' "$DEPLOY" | cut -d: -f1)
+restart_consumers_line=$(grep -n 'name: Restart application Secret consumers' "$DEPLOY" | cut -d: -f1)
+verify_rollouts_line=$(grep -n 'name: Verify service rollouts' "$DEPLOY" | cut -d: -f1)
+if [ "$apply_release_line" -ge "$restart_consumers_line" ] || \
+   [ "$restart_consumers_line" -ge "$verify_rollouts_line" ]; then
+  echo 'Secret consumers must restart after manifest apply and before rollout verification' >&2
+  exit 1
+fi
+restart_step=$(sed -n '/name: Restart application Secret consumers/,/name: Verify service rollouts/p' "$DEPLOY")
+printf '%s\n' "$restart_step" | grep -Fq "if: steps.drift-guard.outputs.app_secret_drift == 'true'"
+for consumer in mnema-auth mnema-user mnema-core mnema-media mnema-import; do
+  printf '%s\n' "$restart_step" | grep -Fq "deployment/$consumer"
+done
+if printf '%s\n' "$restart_step" | grep -Fq 'deployment/mnema-frontend'; then
+  echo 'Frontend must not restart for a Secret it does not consume' >&2
   exit 1
 fi
 

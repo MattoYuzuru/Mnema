@@ -140,7 +140,14 @@ do
   kubectl get validatingadmissionpolicybinding "$policy_name" >/dev/null
 done
 
-"$SCRIPT_DIR/verify-staging-network-boundary.sh" >/dev/null
+KUBE_API_SERVER="$KUBE_API_SERVER" MODE=check \
+  "$SCRIPT_DIR/reconcile-staging-host-firewall.sh" >/dev/null
+systemctl is-enabled --quiet mnema-staging-host-boundary.service
+systemctl is-enabled --quiet mnema-staging-host-boundary.timer
+systemctl is-active --quiet mnema-staging-host-boundary.timer
+KUBE_API_SERVER="$KUBE_API_SERVER" \
+  "$SCRIPT_DIR/verify-staging-network-boundary.sh" >/dev/null
+"$SCRIPT_DIR/verify-staging-tls-boundary.sh" >/dev/null
 
 ca_data=$(kubectl config view --raw --minify -o jsonpath='{.clusters[0].cluster.certificate-authority-data}')
 token_response=$(kubectl -n "$NAMESPACE" create token "$SERVICE_ACCOUNT" \

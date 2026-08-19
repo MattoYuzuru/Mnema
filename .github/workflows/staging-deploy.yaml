@@ -120,6 +120,49 @@ jobs:
             exit 1
           fi
 
+      - name: Validate bootstrap values and detect staging Secret drift
+        id: secret-preview
+        env:
+          AUTH_ISSUER: ${{ secrets.STAGING_AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.STAGING_AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.STAGING_AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.STAGING_AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.STAGING_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.STAGING_TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.STAGING_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.STAGING_GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.STAGING_GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.STAGING_GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.STAGING_YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.STAGING_YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.STAGING_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.STAGING_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.STAGING_POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.STAGING_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.STAGING_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.STAGING_AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.STAGING_AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.STAGING_MEDIA_INTERNAL_TOKEN }}
+          CORE_INTERNAL_TOKEN: ${{ secrets.STAGING_CORE_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.STAGING_USER_INTERNAL_TOKEN }}
+        run: |
+          ./scripts/verify-kubernetes-bootstrap-secret-values.py \
+            "$NS" mnema-secrets \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME >/dev/null
+          app_secret_drift=$(./scripts/detect-kubernetes-secret-drift.py \
+            "$NS" mnema-secrets \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY \
+            GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+            GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
+            YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN)
+          printf 'app_secret_drift=%s\n' "$app_secret_drift" >> "$GITHUB_OUTPUT"
+          printf 'Staging application Secret drift: %s\n' "$app_secret_drift"
+
       - name: Create or update staging application secret
         env:
           AUTH_ISSUER: ${{ secrets.STAGING_AUTH_ISSUER }}
@@ -191,6 +234,16 @@ jobs:
 
       - name: Apply complete staging application release once
         run: kubectl apply -f "$RELEASE_MANIFEST"
+
+      - name: Restart staging application Secret consumers
+        if: steps.secret-preview.outputs.app_secret_drift == 'true'
+        run: |
+          kubectl -n "$NS" rollout restart \
+            deployment/mnema-auth \
+            deployment/mnema-user \
+            deployment/mnema-core \
+            deployment/mnema-media \
+            deployment/mnema-import
 
       - name: Verify staging service rollouts
         run: |

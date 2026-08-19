@@ -16,6 +16,14 @@ grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$REPO_ROOT/.github/
 grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
 grep -Fq 'run: ./scripts/test-environment-secret-separation.sh' "$REPO_ROOT/.github/workflows/deploy.yaml"
 grep -Fq 'run: ./scripts/test-environment-secret-separation.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
+for contract_test in \
+  test-staging-host-firewall.sh \
+  test-staging-tls-boundary.sh \
+  test-apply-staging-bootstrap.sh
+do
+  grep -Fq "run: ./scripts/$contract_test" "$REPO_ROOT/.github/workflows/deploy.yaml"
+  grep -Fq "run: ./scripts/$contract_test" "$REPO_ROOT/.github/workflows/pull-request.yaml"
+done
 grep -Fq 'After revocation, never blindly revert' "$REPO_ROOT/docs/operations/staging-runbook.md"
 grep -Fq './scripts/verify-environment-secret-separation.py --desired' "$REPO_ROOT/docs/operations/staging-runbook.md"
 
@@ -107,6 +115,24 @@ do
   grep -Fq "$quota_key:" "$BOOTSTRAP"
 done
 grep -Fq 'verify-staging-network-boundary.sh' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
+grep -Fq 'reconcile-staging-host-firewall.sh' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
+grep -Fq 'verify-staging-tls-boundary.sh' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
+grep -Fq 'mnema-staging-host-boundary.service' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
+grep -Fq 'mnema-staging-host-boundary.timer' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
+grep -Fq 'OnUnitActiveSec=1min' "$REPO_ROOT/deploy/systemd/mnema-staging-host-boundary.timer"
+grep -Fq 'serviceType: ClusterIP' "$REPO_ROOT/k8s/cluster-issuers.yaml"
+grep -Fq 'staging.mnema.app' "$REPO_ROOT/k8s/cluster-issuers.yaml"
+grep -Fq 'count/secrets: "12"' "$BOOTSTRAP"
+grep -Fq './scripts/verify-kubernetes-bootstrap-secret-values.py' "$STAGING_WORKFLOW"
+staging_restart_step=$(sed -n '/name: Restart staging application Secret consumers/,/name: Verify staging service rollouts/p' "$STAGING_WORKFLOW")
+printf '%s\n' "$staging_restart_step" | grep -Fq "if: steps.secret-preview.outputs.app_secret_drift == 'true'"
+for consumer in mnema-auth mnema-user mnema-core mnema-media mnema-import; do
+  printf '%s\n' "$staging_restart_step" | grep -Fq "deployment/$consumer"
+done
+if printf '%s\n' "$staging_restart_step" | grep -Fq 'deployment/mnema-frontend'; then
+  echo 'Staging frontend must not restart for a Secret it does not consume' >&2
+  exit 1
+fi
 if grep -Fq 'ingresses' "$BOOTSTRAP"; then
   echo "Scoped staging CI must not be able to replace shared-ingress host routing" >&2
   exit 1

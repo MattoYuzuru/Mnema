@@ -15,6 +15,19 @@ if [ "${1:-}" = version ]; then
   printf '%s\n' '{"clientVersion":{"gitVersion":"v1.36.0"},"serverVersion":{"gitVersion":"v1.36.2+k3s1"}}'
   exit 0
 fi
+if [ "${1:-}" = get ] && [ "${2:-}" = nodes ] && \
+   [ "${3:-}" = -o ] && [ "${4:-}" = json ]; then
+  printf '%s\n' '{"items":[{"spec":{"podCIDR":"10.42.0.0/24"},"status":{"addresses":[{"type":"InternalIP","address":"10.0.0.10"},{"type":"ExternalIP","address":"198.51.100.10"}]}}]}'
+  exit 0
+fi
+if [ "$*" = '-n default get service kubernetes -o json' ]; then
+  printf '%s\n' '{"spec":{"clusterIPs":["10.43.0.1"]}}'
+  exit 0
+fi
+if [ "$*" = '-n kube-system get pods -l k8s-app=metrics-server -o json' ]; then
+  printf '%s\n' '{"items":[{"status":{"podIP":"10.42.0.5"}}]}'
+  exit 0
+fi
 if [ "${1:-}" = label ] && [ "${2:-}" = namespace ] && \
    [ "${3:-}" = mnema-staging ]; then
   printf '%s\n' pod-security-label >>"$FAKE_KUBECTL_LOG"
@@ -39,6 +52,24 @@ if [ "${1:-}" = get ] && { [ "${2:-}" = validatingadmissionpolicy ] || \
    [ "${2:-}" = validatingadmissionpolicybinding ]; }; then
   exit 0
 fi
+if [ "$*" = 'get clusterissuer letsencrypt-prod -o json' ]; then
+  printf '%s\n' '{"spec":{"acme":{"solvers":[{"selector":{"dnsZones":["staging.mnema.app"]},"http01":{"ingress":{"ingressClassName":"traefik","serviceType":"ClusterIP"}}}]}},"status":{"conditions":[{"type":"Ready","status":"True"}]}}'
+  exit 0
+fi
+if [ "$*" = '-n mnema-staging get resourcequota mnema-staging-quota -o jsonpath={.spec.hard.count\/secrets}' ]; then
+  printf '%s' 12
+  exit 0
+fi
+case "$*" in
+  '-n mnema-staging get certificate '*'-tls -o json')
+    printf '%s\n' '{"spec":{"issuerRef":{"kind":"ClusterIssuer","name":"letsencrypt-prod"}},"status":{"renewalTime":"2026-10-01T00:00:00Z"}}'
+    exit 0
+    ;;
+  '-n mnema-staging get secret '*'-tls -o json')
+    printf '%s\n' '{"type":"kubernetes.io/tls","data":{"tls.crt":"Y3J0","tls.key":"a2V5"}}'
+    exit 0
+    ;;
+esac
 if [ "${1:-}" = -n ] && [ "${2:-}" = mnema-staging ] && \
    [ "${3:-}" = get ] && [ "${4:-}" = networkpolicy ]; then
   exit 0
@@ -82,6 +113,16 @@ if [ "${1:-}" = -n ] && [ "${2:-}" = mnema-staging ] && \
       ;;
     *'nc -z -w 3 169.254.169.254 80'*)
       if [ "${FAKE_NETWORK_BREACH:-}" = metadata ]; then exit 0; fi
+      exit 1
+      ;;
+    *'nc -z -w 3 kubernetes.main.example 6443'*)
+      printf '%s\n' network-api >>"$FAKE_KUBECTL_LOG"
+      if [ "${FAKE_NETWORK_BREACH:-}" = api ]; then exit 0; fi
+      exit 1
+      ;;
+    *'nc -z -w 3 10.0.0.10 '*|*'nc -z -w 3 198.51.100.10 '*)
+      printf '%s\n' network-node >>"$FAKE_KUBECTL_LOG"
+      if [ "${FAKE_NETWORK_BREACH:-}" = node ]; then exit 0; fi
       exit 1
       ;;
     *) exit 67 ;;
@@ -176,7 +217,23 @@ fi
 
 exit 64
 EOF
-chmod +x "$TEST_ROOT/bin/kubectl"
+cat >"$TEST_ROOT/bin/iptables" <<'EOF'
+#!/bin/sh
+set -eu
+exit 0
+EOF
+cat >"$TEST_ROOT/bin/systemctl" <<'EOF'
+#!/bin/sh
+set -eu
+case "$*" in
+  'is-enabled --quiet mnema-staging-host-boundary.service' | \
+  'is-enabled --quiet mnema-staging-host-boundary.timer' | \
+  'is-active --quiet mnema-staging-host-boundary.timer') exit 0 ;;
+esac
+exit 64
+EOF
+chmod +x "$TEST_ROOT/bin/kubectl" "$TEST_ROOT/bin/iptables" "$TEST_ROOT/bin/systemctl"
+export KUBE_API_ADDRESSES=198.51.100.10
 
 output="$TEST_ROOT/credentials/staging.kubeconfig"
 fake_log="$TEST_ROOT/kubectl.log"
@@ -198,6 +255,8 @@ test "$(grep -c '^token-automount$' "$fake_log")" -eq 1
 test "$(grep -c '^excessive-ephemeral-storage$' "$fake_log")" -eq 1
 test "$(grep -c '^secret-token-patch$' "$fake_log")" -eq 1
 test "$(grep -c '^network-probe-create$' "$fake_log")" -eq 2
+test "$(grep -c '^network-api$' "$fake_log")" -eq 1
+test "$(grep -c '^network-node$' "$fake_log")" -eq 8
 
 if stat -f '%Lp' "$output" >/dev/null 2>&1; then
   mode=$(stat -f '%Lp' "$output")
@@ -273,14 +332,16 @@ if PATH="$TEST_ROOT/bin:$PATH" FAKE_KUBECTL_LOG="$fake_log" \
 fi
 test ! -e "$TEST_ROOT/missing-vap-api.kubeconfig"
 
-if PATH="$TEST_ROOT/bin:$PATH" FAKE_KUBECTL_LOG="$fake_log" \
-  FAKE_NETWORK_BREACH=prod-redis \
-  OUTPUT="$TEST_ROOT/network-breach.kubeconfig" \
-  KUBE_API_SERVER=https://kubernetes.main.example:6443 \
-  "$CREATE_KUBECONFIG" >/dev/null 2>&1; then
-  echo 'live staging-to-production connectivity must block credential creation' >&2
-  exit 1
-fi
-test ! -e "$TEST_ROOT/network-breach.kubeconfig"
+for breach in prod-redis api node; do
+  if PATH="$TEST_ROOT/bin:$PATH" FAKE_KUBECTL_LOG="$fake_log" \
+    FAKE_NETWORK_BREACH=$breach \
+    OUTPUT="$TEST_ROOT/network-breach-${breach}.kubeconfig" \
+    KUBE_API_SERVER=https://kubernetes.main.example:6443 \
+    "$CREATE_KUBECONFIG" >/dev/null 2>&1; then
+    echo "live forbidden connectivity must block credential creation: $breach" >&2
+    exit 1
+  fi
+  test ! -e "$TEST_ROOT/network-breach-${breach}.kubeconfig"
+done
 
 printf 'staging_kubeconfig_contract=ok\n'
