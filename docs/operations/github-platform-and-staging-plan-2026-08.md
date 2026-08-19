@@ -217,11 +217,12 @@ Production reset, payment integration и CodeQL-wide legacy cleanup в эту it
 - **#81, 2026-08-16:** documentation/harness foundation опубликован в `main` через PR #85; это первый PR проекта, оформленный по новому стандарту;
 - **#82, 2026-08-16:** применён ruleset `main protection` и squash-only merge policy; правила проверены на поведении;
 - **#83, 2026-08-17:** созданы три milestone, заполнены `Size`/`Estimate` у всех эпиков, сняты просроченные даты, переписаны и связаны с эпиками #58/#45/#35;
+- **#90, 2026-08-19:** на Environment `prod` включён required reviewer `MattoYuzuru`, `prevent_self_review: false`; это позволяет единственному maintainer отдельно разрешить review-only preview и затем принять точный diff перед единственным mutating deployment job;
 - taxonomy не расширена: labels 9, полей Project 18, views 6 — без изменений.
 
 Следующие внешние пакеты:
 
-1. **GitHub settings, остаток:** least-privilege Actions token, environment protection и security automation — эпики #72 и #70, не #71.
+1. **GitHub settings, остаток:** least-privilege Actions token и security automation — эпики #72 и #70, не #71; required reviewer для `prod` уже включён, environment-only credentials всё ещё проходят cutover #89.
 2. **Delivery:** выполнить выбранное в #88 отключение AI release leg, затем разделить cancellable CI и non-cancellable deployment — эпик #70.
 3. **Backlog refinement:** создавать Ready sub-issues следующих эпиков по мере снятия зависимостей; без новой taxonomy.
 4. **Ручная настройка UI:** группировка board `Backlog` по `Status` и выбор date-полей для `Roadmap` — недоступны через API.

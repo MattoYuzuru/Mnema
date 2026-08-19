@@ -14,18 +14,25 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  deploy-production:
+  preview-production:
     runs-on: ubuntu-latest
     permissions:
       actions: read
       contents: read
     environment:
       name: prod
-      url: https://mnema.app
+      deployment: false
+    outputs:
+      release_diff_sha256: ${{ steps.preview.outputs.release_diff_sha256 }}
+      has_release_changes: ${{ steps.preview.outputs.has_release_changes }}
+      preview_artifact_id: ${{ steps.upload-preview.outputs.artifact-id }}
+      preview_artifact_digest: ${{ steps.upload-preview.outputs.artifact-digest }}
     env:
       NS: prod
       KUBECONFIG: ${{ github.workspace }}/kubeconfig-main
       RELEASE_MANIFEST: ${{ github.workspace }}/production-release.yaml
+      RELEASE_DIFF: ${{ github.workspace }}/production-release.diff
+      RELEASE_PREVIEW_METADATA: ${{ github.workspace }}/production-release-preview.txt
       RELEASE_SHA: ${{ inputs.release_sha }}
     steps:
       - name: Checkout release revision
@@ -35,6 +42,8 @@ jobs:
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.0
 
       - name: Download complete release manifest
         uses: actions/download-artifact@v8
@@ -107,6 +116,186 @@ jobs:
           fi
           printf '%s' "$PROD_KUBECONFIG_B64" | base64 -d > "$KUBECONFIG"
           chmod 600 "$KUBECONFIG"
+
+      - name: Capture complete application release preview
+        id: preview
+        run: |
+          release_diff_sha256=$(./scripts/capture-release-diff.sh \
+            "$RELEASE_MANIFEST" "$RELEASE_DIFF")
+          release_manifest_sha256=$(awk '{print $1}' production-release.yaml.sha256)
+          kubectl_version=$(kubectl version --client -o json | \
+            jq -r '.clientVersion.gitVersion')
+          if grep -Fxq 'No application release changes.' "$RELEASE_DIFF"; then
+            has_release_changes=false
+          else
+            has_release_changes=true
+          fi
+
+          cat > "$RELEASE_PREVIEW_METADATA" <<EOF
+          release_sha=${RELEASE_SHA}
+          release_manifest_sha256=${release_manifest_sha256}
+          release_diff_sha256=${release_diff_sha256}
+          has_release_changes=${has_release_changes}
+          kubectl_version=${kubectl_version}
+          run_id=${GITHUB_RUN_ID}
+          run_attempt=${GITHUB_RUN_ATTEMPT}
+          EOF
+
+          printf 'release_diff_sha256=%s\n' "$release_diff_sha256" >> "$GITHUB_OUTPUT"
+          printf 'has_release_changes=%s\n' "$has_release_changes" >> "$GITHUB_OUTPUT"
+          printf 'Release %s has reviewable diff %s\n' \
+            "$RELEASE_SHA" "$release_diff_sha256"
+
+      - name: Upload sanitized production release preview
+        id: upload-preview
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-release-preview-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.RELEASE_DIFF }}
+            ${{ env.RELEASE_PREVIEW_METADATA }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish production review instructions
+        env:
+          PREVIEW_ARTIFACT_ID: ${{ steps.upload-preview.outputs.artifact-id }}
+          PREVIEW_ARTIFACT_DIGEST: ${{ steps.upload-preview.outputs.artifact-digest }}
+          HAS_RELEASE_CHANGES: ${{ steps.preview.outputs.has_release_changes }}
+          RELEASE_DIFF_SHA256: ${{ steps.preview.outputs.release_diff_sha256 }}
+        run: |
+          {
+            printf '## Production release preview\n\n'
+            printf -- '- Release: %s\n' "$RELEASE_SHA"
+            printf -- '- Diff SHA-256: %s\n' "$RELEASE_DIFF_SHA256"
+            printf -- '- Artifact ID: %s\n' "$PREVIEW_ARTIFACT_ID"
+            printf -- '- Artifact digest: %s\n' "$PREVIEW_ARTIFACT_DIGEST"
+            printf -- '- Changes: %s\n\n' "$HAS_RELEASE_CHANGES"
+            if [ "$HAS_RELEASE_CHANGES" = true ]; then
+              printf 'Inspect the preview artifact. Reject the next prod approval if any change is unexpected.\n'
+            else
+              printf 'The mutating job will be skipped because the release is already applied.\n'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  deploy-production:
+    needs: preview-production
+    if: needs.preview-production.outputs.has_release_changes == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    environment:
+      name: prod
+      url: https://mnema.app
+      deployment: true
+    env:
+      NS: prod
+      KUBECONFIG: ${{ github.workspace }}/kubeconfig-main
+      RELEASE_MANIFEST: ${{ github.workspace }}/production-release.yaml
+      RELEASE_DIFF: ${{ github.workspace }}/production-release.diff
+      APPROVED_PREVIEW_DIR: ${{ github.workspace }}/approved-production-preview
+      RELEASE_SHA: ${{ inputs.release_sha }}
+    steps:
+      - name: Checkout release revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.0
+
+      - name: Download complete release manifest
+        uses: actions/download-artifact@v8
+        with:
+          name: production-release-manifest
+          path: ${{ github.workspace }}
+
+      - name: Validate approved preview artifact reference
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PREVIEW_ARTIFACT_ID: ${{ needs.preview-production.outputs.preview_artifact_id }}
+          PREVIEW_ARTIFACT_DIGEST: ${{ needs.preview-production.outputs.preview_artifact_digest }}
+        run: |
+          case "$PREVIEW_ARTIFACT_ID" in
+            ''|*[!0-9]*)
+              echo "::error::Approved preview artifact ID is missing or invalid"
+              exit 1
+              ;;
+          esac
+          case "$PREVIEW_ARTIFACT_DIGEST" in
+            sha256:*) expected_digest="$PREVIEW_ARTIFACT_DIGEST" ;;
+            *) expected_digest="sha256:${PREVIEW_ARTIFACT_DIGEST}" ;;
+          esac
+
+          artifact=$(gh api \
+            -H 'X-GitHub-Api-Version: 2026-03-10' \
+            "repos/${GITHUB_REPOSITORY}/actions/artifacts/${PREVIEW_ARTIFACT_ID}")
+          server_id=$(printf '%s' "$artifact" | jq -r '.id')
+          server_name=$(printf '%s' "$artifact" | jq -r '.name')
+          server_digest=$(printf '%s' "$artifact" | jq -r '.digest')
+          server_expired=$(printf '%s' "$artifact" | jq -r '.expired')
+          server_run_id=$(printf '%s' "$artifact" | jq -r '.workflow_run.id')
+
+          if [ "$server_id" != "$PREVIEW_ARTIFACT_ID" ] || \
+             [ "$server_name" != "production-release-preview-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" ] || \
+             [ "$server_digest" != "$expected_digest" ] || \
+             [ "$server_expired" != false ] || \
+             [ "$server_run_id" != "$GITHUB_RUN_ID" ]; then
+            echo "::error::Approved preview artifact identity, digest, run or lifetime changed"
+            exit 1
+          fi
+
+      - name: Download approved production preview by immutable ID
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.preview-production.outputs.preview_artifact_id }}
+          path: ${{ env.APPROVED_PREVIEW_DIR }}
+          digest-mismatch: error
+
+      - name: Verify release artifact integrity
+        working-directory: ${{ github.workspace }}
+        run: sha256sum --check production-release.yaml.sha256
+
+      - name: Verify approved production preview contents
+        run: |
+          ./scripts/verify-release-preview.sh \
+            "$APPROVED_PREVIEW_DIR/production-release-preview.txt" \
+            "$APPROVED_PREVIEW_DIR/production-release.diff" \
+            production-release.yaml.sha256 \
+            "$RELEASE_SHA" \
+            '${{ needs.preview-production.outputs.release_diff_sha256 }}' \
+            v1.36.0 \
+            "$GITHUB_RUN_ID" \
+            "$GITHUB_RUN_ATTEMPT" \
+            true
+
+      - name: Reject a stale release
+        run: |
+          current_main=$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')
+          if [ "$RELEASE_SHA" != "$current_main" ]; then
+            echo "::error::Refusing stale release ${RELEASE_SHA}; current main is ${current_main}"
+            exit 1
+          fi
+
+      - name: Write kubeconfig (main cluster)
+        env:
+          PROD_KUBECONFIG_B64: ${{ secrets.PROD_KUBECONFIG_B64 }}
+        run: |
+          if [ -z "$PROD_KUBECONFIG_B64" ]; then
+            echo "::error::PROD_KUBECONFIG_B64 is required in the prod environment"
+            exit 1
+          fi
+          printf '%s' "$PROD_KUBECONFIG_B64" | base64 -d > "$KUBECONFIG"
+          chmod 600 "$KUBECONFIG"
+
+      - name: Reject release or cluster drift after approval
+        run: |
+          approved_diff_sha256='${{ needs.preview-production.outputs.release_diff_sha256 }}'
+          ./scripts/capture-release-diff.sh \
+            "$RELEASE_MANIFEST" "$RELEASE_DIFF" "$approved_diff_sha256"
 
       - name: Ensure namespace exists
         run: |
@@ -197,20 +386,6 @@ jobs:
         run: |
           kubectl -n observability rollout restart daemonset/alloy
           kubectl -n observability rollout restart deployment/grafana
-
-      - name: Preview complete application release
-        run: |
-          kubectl apply --dry-run=server -f "$RELEASE_MANIFEST" >/dev/null
-
-          set +e
-          kubectl diff -f "$RELEASE_MANIFEST"
-          diff_status=$?
-          set -e
-
-          if [ "$diff_status" -gt 1 ]; then
-            echo "::error::Unable to preview the complete release manifest"
-            exit "$diff_status"
-          fi
 
       - name: Apply complete application release once
         run: kubectl apply -f "$RELEASE_MANIFEST"

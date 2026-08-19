@@ -77,6 +77,9 @@ jobs:
       - name: Verify release manifest renderer
         run: ./scripts/test-render-release-manifest.sh
 
+      - name: Verify canonical production release diff
+        run: ./scripts/test-capture-release-diff.sh
+
       - name: Verify production deployment safety contract
         run: ./scripts/test-production-deploy-safety.sh
 

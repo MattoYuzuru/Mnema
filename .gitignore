@@ -41,6 +41,10 @@ frontend/node_modules
 !/scripts/create-staging-kubeconfig.sh
 !/scripts/render-release-manifest.sh
 !/scripts/test-deployment-contract.sh
+!/scripts/canonical-kubectl-diff.sh
+!/scripts/capture-release-diff.sh
+!/scripts/verify-release-preview.sh
+!/scripts/test-capture-release-diff.sh
 !/scripts/test-frontend-release-contract.sh
 !/scripts/test-render-release-manifest.sh
 !/scripts/test-production-deploy-safety.sh
