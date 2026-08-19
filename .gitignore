@@ -65,6 +65,14 @@ frontend/node_modules
 !/scripts/apply-staging-bootstrap.sh
 !/scripts/test-apply-staging-bootstrap.sh
 !/scripts/install-staging-host-firewall.sh
+!/scripts/create-kubernetes-live-release-binding.py
+!/scripts/replace-kubernetes-secret-if-current.py
+!/scripts/detect-kubernetes-reconciliation-drift.py
+!/scripts/preview-staging-plan.sh
+!/scripts/verify-production-telemetry-boundary.py
+!/scripts/test-kubernetes-live-release-binding.sh
+!/scripts/test-staging-plan-preview.sh
+!/scripts/test-production-telemetry-boundary.sh
 !/scripts/local-ai-gateway/
 !/scripts/local-ai-gateway/**
 !/scripts/local-audio-gateway/

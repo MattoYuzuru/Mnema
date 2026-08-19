@@ -131,6 +131,8 @@ kind: Secret
 metadata:
   name: mnema-secrets
   namespace: mnema-staging
+  annotations:
+    mnema.app/bootstrap-state: uninitialized
 type: Opaque
 ---
 apiVersion: rbac.authorization.k8s.io/v1

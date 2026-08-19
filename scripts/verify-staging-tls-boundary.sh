@@ -25,16 +25,35 @@ if not ready or not staging_solver:
     raise SystemExit(1)
 '
 
-secret_quota=$(kubectl -n "$NAMESPACE" get resourcequota mnema-staging-quota \
-  -o jsonpath='{.spec.hard.count\/secrets}')
+secret_quota_state=$(kubectl -n "$NAMESPACE" get resourcequota mnema-staging-quota \
+  -o jsonpath='{.spec.hard.count\/secrets}{"|"}{.status.used.count\/secrets}')
+IFS='|' read -r secret_quota secret_quota_used <<EOF
+$secret_quota_state
+EOF
 case "$secret_quota" in
   '' | *[!0-9]*)
     echo "Staging Secret quota is missing or invalid" >&2
     exit 1
     ;;
 esac
-if [ "$secret_quota" -lt 10 ]; then
-  echo "Staging Secret quota cannot hold application, TLS and renewal Secrets with headroom" >&2
+case "$secret_quota_used" in
+  '' | *[!0-9]*)
+    echo "Staging Secret quota is missing or invalid" >&2
+    exit 1
+    ;;
+esac
+actual_secret_count=$(kubectl -n "$NAMESPACE" get secrets -o json | python3 -c '
+import json
+import sys
+print(len(json.load(sys.stdin).get("items", [])))
+')
+if [ "$actual_secret_count" -gt "$secret_quota_used" ]; then
+  secret_quota_used=$actual_secret_count
+fi
+# Three simultaneous next-private-key Secrets plus two recovery slots must fit.
+required_free_slots=5
+if [ $((secret_quota - secret_quota_used)) -lt "$required_free_slots" ]; then
+  echo "Staging Secret quota lacks five free renewal and recovery slots" >&2
   exit 1
 fi
 

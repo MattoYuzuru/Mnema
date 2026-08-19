@@ -26,18 +26,24 @@ test "$(grep -c './scripts/detect-kubernetes-secret-drift.py' "$DEPLOY")" -eq 4
 grep -Fq 'secret_drift: ${{ steps.secret-preview.outputs.secret_drift }}' "$DEPLOY"
 # shellcheck disable=SC2016 # GitHub expression is a literal contract marker.
 grep -Fq 'secret_snapshot_hmac: ${{ steps.secret-preview.outputs.secret_snapshot_hmac }}' "$DEPLOY"
+grep -Fq 'live_secret_snapshot_hmac: ${{ steps.secret-preview.outputs.live_secret_snapshot_hmac }}' "$DEPLOY"
+grep -Fq 'app_secret_generation: ${{ steps.secret-preview.outputs.app_secret_generation }}' "$DEPLOY"
+grep -Fq 'grafana_secret_generation: ${{ steps.secret-preview.outputs.grafana_secret_generation }}' "$DEPLOY"
 # shellcheck disable=SC2016 # Workflow variables are literal contract markers.
 grep -Fq 'if [ "$application_release_changes" = true ] || [ "$SECRET_DRIFT" = true ]; then' "$DEPLOY"
 # shellcheck disable=SC2016 # Workflow variables are literal contract markers.
 grep -Fq 'secret_drift=${SECRET_DRIFT}' "$DEPLOY"
 grep -Fq 'Production Secret drift state changed after approval' "$DEPLOY"
 grep -Fq 'Desired production Secret snapshot changed after approval' "$DEPLOY"
+grep -Fq 'Live production Secret or reconciliation state changed after approval' "$DEPLOY"
 grep -Fq 'run: ./scripts/test-secret-snapshot-binding.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
 grep -Fq 'run: ./scripts/test-secret-snapshot-binding.sh' "$CALLER"
 grep -Fq 'run: ./scripts/test-kubernetes-bootstrap-secret-values.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
 grep -Fq 'run: ./scripts/test-kubernetes-bootstrap-secret-values.sh' "$CALLER"
 grep -Fq 'run: ./scripts/test-detect-kubernetes-secret-drift.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
 grep -Fq 'run: ./scripts/test-detect-kubernetes-secret-drift.sh' "$CALLER"
+grep -Fq 'run: ./scripts/test-kubernetes-live-release-binding.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
+grep -Fq 'run: ./scripts/test-kubernetes-live-release-binding.sh' "$CALLER"
 # shellcheck disable=SC2016 # GitHub expressions are literal contract markers.
 grep -Fq 'PROD_KUBECONFIG_B64: ${{ secrets.PROD_KUBECONFIG_B64 }}' "$DEPLOY"
 
@@ -138,24 +144,38 @@ if [ -z "$snapshot_guard_line" ] || [ "$snapshot_guard_line" -ge "$kubeconfig_st
   echo 'The exact desired Secret snapshot must remain bound to the approval before cluster access' >&2
   exit 1
 fi
-test "$(grep -c './scripts/create-secret-snapshot-binding.py' "$DEPLOY")" -eq 2
-test "$(grep -c './scripts/verify-kubernetes-bootstrap-secret-values.py' "$DEPLOY")" -eq 2
+test "$(grep -c './scripts/create-secret-snapshot-binding.py' "$DEPLOY")" -eq 6
+test "$(grep -c './scripts/create-kubernetes-live-release-binding.py' "$DEPLOY")" -eq 2
+test "$(grep -c './scripts/detect-kubernetes-reconciliation-drift.py' "$DEPLOY")" -eq 4
+test "$(grep -c './scripts/replace-kubernetes-secret-if-current.py' "$DEPLOY")" -eq 1
+test "$(grep -c './scripts/verify-kubernetes-bootstrap-secret-values.py' "$DEPLOY")" -eq 4
+test "$(grep -c 'MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN >/dev/null' "$DEPLOY")" -eq 2
 
 apply_release_line=$(grep -n 'name: Apply complete application release once' "$DEPLOY" | cut -d: -f1)
-restart_consumers_line=$(grep -n 'name: Restart application Secret consumers' "$DEPLOY" | cut -d: -f1)
+restart_consumers_line=$(grep -n 'name: Reconcile application Secret consumers' "$DEPLOY" | cut -d: -f1)
 verify_rollouts_line=$(grep -n 'name: Verify service rollouts' "$DEPLOY" | cut -d: -f1)
+verify_observability_line=$(grep -n 'name: Verify observability rollouts' "$DEPLOY" | cut -d: -f1)
+record_reconciliation_line=$(grep -n 'name: Record successful Secret reconciliation generations' "$DEPLOY" | cut -d: -f1)
 if [ "$apply_release_line" -ge "$restart_consumers_line" ] || \
-   [ "$restart_consumers_line" -ge "$verify_rollouts_line" ]; then
-  echo 'Secret consumers must restart after manifest apply and before rollout verification' >&2
+   [ "$restart_consumers_line" -ge "$verify_rollouts_line" ] || \
+   [ "$verify_rollouts_line" -ge "$verify_observability_line" ] || \
+   [ "$verify_observability_line" -ge "$record_reconciliation_line" ]; then
+  echo 'Secret reconciliation must be recorded only after every consumer rollout succeeds' >&2
   exit 1
 fi
-restart_step=$(sed -n '/name: Restart application Secret consumers/,/name: Verify service rollouts/p' "$DEPLOY")
-printf '%s\n' "$restart_step" | grep -Fq "if: steps.drift-guard.outputs.app_secret_drift == 'true'"
+restart_step=$(sed -n '/name: Reconcile application Secret consumers/,/name: Verify service rollouts/p' "$DEPLOY")
+printf '%s\n' "$restart_step" | grep -Fq "if: steps.drift-guard.outputs.app_reconciliation_drift == 'true'"
 for consumer in mnema-auth mnema-user mnema-core mnema-media mnema-import; do
-  printf '%s\n' "$restart_step" | grep -Fq "deployment/$consumer"
+  printf '%s\n' "$restart_step" | grep -Fq "$consumer"
 done
 if printf '%s\n' "$restart_step" | grep -Fq 'deployment/mnema-frontend'; then
   echo 'Frontend must not restart for a Secret it does not consume' >&2
+  exit 1
+fi
+grep -Fq 'resourceVersion: \"${RECONCILIATION_RESOURCE_VERSION}\"' "$DEPLOY"
+grep -Fq 'steps.drift-guard.outputs.app_secret_resource_version' "$DEPLOY"
+if grep -Fq 'steps.drift-guard.outputs.grafana_secret_resource_version' "$DEPLOY"; then
+  echo 'Generic deploy must not pretend that a Grafana bootstrap password is rotatable' >&2
   exit 1
 fi
 

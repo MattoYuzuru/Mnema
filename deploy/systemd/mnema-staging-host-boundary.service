@@ -9,6 +9,7 @@ Type=oneshot
 EnvironmentFile=/etc/mnema/staging-host-boundary.env
 Environment=KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 ExecStart=/usr/local/libexec/mnema/reconcile-staging-host-firewall.sh
+ExecStartPost=/usr/local/libexec/mnema/verify-production-telemetry-boundary.py
 
 [Install]
 WantedBy=multi-user.target

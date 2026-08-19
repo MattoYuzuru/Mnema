@@ -142,6 +142,7 @@ done
 
 KUBE_API_SERVER="$KUBE_API_SERVER" MODE=check \
   "$SCRIPT_DIR/reconcile-staging-host-firewall.sh" >/dev/null
+"$SCRIPT_DIR/verify-production-telemetry-boundary.py" >/dev/null
 systemctl is-enabled --quiet mnema-staging-host-boundary.service
 systemctl is-enabled --quiet mnema-staging-host-boundary.timer
 systemctl is-active --quiet mnema-staging-host-boundary.timer

@@ -19,7 +19,9 @@ grep -Fq 'run: ./scripts/test-environment-secret-separation.sh' "$REPO_ROOT/.git
 for contract_test in \
   test-staging-host-firewall.sh \
   test-staging-tls-boundary.sh \
-  test-apply-staging-bootstrap.sh
+  test-apply-staging-bootstrap.sh \
+  test-staging-plan-preview.sh \
+  test-production-telemetry-boundary.sh
 do
   grep -Fq "run: ./scripts/$contract_test" "$REPO_ROOT/.github/workflows/deploy.yaml"
   grep -Fq "run: ./scripts/$contract_test" "$REPO_ROOT/.github/workflows/pull-request.yaml"
@@ -90,6 +92,9 @@ grep -Fq "serviceAccountName != 'mnema-deployer'" "$ADMISSION"
 grep -Fq 'automountServiceAccountToken == false' "$ADMISSION"
 grep -Fq "object.type == 'Opaque'" "$ADMISSION"
 grep -Fq 'kubernetes.io/service-account.name' "$ADMISSION"
+grep -Fq "mnema.app/bootstrap-state: uninitialized" "$BOOTSTRAP"
+grep -Fq "mnema.app/bootstrap-state: initialized" "$STAGING_WORKFLOW"
+grep -Fq "oldObject.metadata.annotations['mnema.app/bootstrap-state']" "$ADMISSION"
 grep -Fq 'resourceNames: ["mnema-secrets"]' "$BOOTSTRAP"
 if grep -Fq 'resources: ["configmaps", "secrets", "services"]' "$BOOTSTRAP"; then
   echo 'Scoped staging CI must not have unrestricted Secret CRUD' >&2
@@ -117,6 +122,9 @@ done
 grep -Fq 'verify-staging-network-boundary.sh' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
 grep -Fq 'reconcile-staging-host-firewall.sh' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
 grep -Fq 'verify-staging-tls-boundary.sh' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
+grep -Fq 'verify-production-telemetry-boundary.py' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
+grep -Fq 'ExecStartPost=/usr/local/libexec/mnema/verify-production-telemetry-boundary.py' \
+  "$REPO_ROOT/deploy/systemd/mnema-staging-host-boundary.service"
 grep -Fq 'mnema-staging-host-boundary.service' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
 grep -Fq 'mnema-staging-host-boundary.timer' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
 grep -Fq 'OnUnitActiveSec=1min' "$REPO_ROOT/deploy/systemd/mnema-staging-host-boundary.timer"
@@ -124,6 +132,22 @@ grep -Fq 'serviceType: ClusterIP' "$REPO_ROOT/k8s/cluster-issuers.yaml"
 grep -Fq 'staging.mnema.app' "$REPO_ROOT/k8s/cluster-issuers.yaml"
 grep -Fq 'count/secrets: "12"' "$BOOTSTRAP"
 grep -Fq './scripts/verify-kubernetes-bootstrap-secret-values.py' "$STAGING_WORKFLOW"
+grep -Fq 'MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN >/dev/null' "$STAGING_WORKFLOW"
+preview_plan_line=$(grep -n 'name: Preview complete staging plan before mutation' "$STAGING_WORKFLOW" | cut -d: -f1)
+final_stale_line=$(grep -n 'name: Reject a stale release immediately before staging mutation' "$STAGING_WORKFLOW" | cut -d: -f1)
+first_staging_mutation_line=$(grep -n 'name: Apply staged application Secret' "$STAGING_WORKFLOW" | cut -d: -f1)
+if [ -z "$preview_plan_line" ] || [ -z "$final_stale_line" ] || \
+   [ -z "$first_staging_mutation_line" ] || \
+   [ "$preview_plan_line" -ge "$final_stale_line" ] || \
+   [ "$final_stale_line" -ge "$first_staging_mutation_line" ]; then
+  echo 'The complete staging plan and final stale guard must precede every mutation' >&2
+  exit 1
+fi
+staging_prefix=$(sed -n "1,${first_staging_mutation_line}p" "$STAGING_WORKFLOW")
+if printf '%s\n' "$staging_prefix" | grep -Eq 'kubectl (apply|delete)|kubectl .*rollout restart'; then
+  echo 'Staging must not mutate before the complete plan preview and final stale guard' >&2
+  exit 1
+fi
 staging_restart_step=$(sed -n '/name: Restart staging application Secret consumers/,/name: Verify staging service rollouts/p' "$STAGING_WORKFLOW")
 printf '%s\n' "$staging_restart_step" | grep -Fq "if: steps.secret-preview.outputs.app_secret_drift == 'true'"
 for consumer in mnema-auth mnema-user mnema-core mnema-media mnema-import; do

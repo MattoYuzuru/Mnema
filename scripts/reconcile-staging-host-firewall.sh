@@ -37,21 +37,53 @@ import sys
 
 pods = json.load(sys.stdin)
 print(",".join(sorted({
-    pod.get("status", {}).get("podIP", "")
+    value
     for pod in pods.get("items", [])
-    if pod.get("status", {}).get("podIP")
+    if not pod.get("metadata", {}).get("deletionTimestamp")
+    and pod.get("status", {}).get("phase") == "Running"
+    and any(
+        condition.get("type") == "Ready" and condition.get("status") == "True"
+        for condition in pod.get("status", {}).get("conditions", [])
+    )
+    for value in (
+        [pod.get("status", {}).get("podIP", "")]
+        + [entry.get("ip", "") for entry in pod.get("status", {}).get("podIPs", [])]
+    )
+    if value
+})))
+')
+prometheus_ips=$(kubectl -n observability get pods -l app=prometheus -o json | \
+  python3 -c '
+import json
+import sys
+
+pods = json.load(sys.stdin)
+print(",".join(sorted({
+    value
+    for pod in pods.get("items", [])
+    if not pod.get("metadata", {}).get("deletionTimestamp")
+    and pod.get("status", {}).get("phase") == "Running"
+    and any(
+        condition.get("type") == "Ready" and condition.get("status") == "True"
+        for condition in pod.get("status", {}).get("conditions", [])
+    )
+    for value in (
+        [pod.get("status", {}).get("podIP", "")]
+        + [entry.get("ip", "") for entry in pod.get("status", {}).get("podIPs", [])]
+    )
+    if value
 })))
 ')
 
 python3 - "$nodes_file" "$KUBE_API_SERVER" "$KUBE_API_ADDRESSES" \
-  "$kubernetes_service_ips" "$metrics_server_ips" >"$inventory_file" <<'PY'
+  "$kubernetes_service_ips" "$metrics_server_ips" "$prometheus_ips" >"$inventory_file" <<'PY'
 import ipaddress
 import json
 import socket
 import sys
 from urllib.parse import urlsplit
 
-nodes_path, api_url, configured_addresses, service_ip_values, metrics_values = sys.argv[1:]
+nodes_path, api_url, configured_addresses, service_ip_values, metrics_values, prometheus_values = sys.argv[1:]
 endpoint = urlsplit(api_url)
 if endpoint.scheme != "https" or not endpoint.hostname:
     raise SystemExit("KUBE_API_SERVER must be an HTTPS origin")
@@ -90,8 +122,13 @@ metrics_ips = {
     for value in metrics_values.split(",")
     if value
 }
-if not cidrs or not node_ips or not api_ips or not service_ips:
-    raise SystemExit("Pod CIDRs, node addresses and API addresses must all resolve")
+prometheus_ips = {
+    ipaddress.ip_address(value)
+    for value in prometheus_values.split(",")
+    if value
+}
+if not cidrs or not node_ips or not api_ips or not service_ips or not metrics_ips or not prometheus_ips:
+    raise SystemExit("Pod CIDRs, node/API addresses and trusted telemetry Pods must all resolve")
 
 records = set()
 for cidr in cidrs:
@@ -99,16 +136,23 @@ for cidr in cidrs:
     family_metrics = ",".join(
         sorted(str(address) for address in metrics_ips if address.version == cidr.version)
     )
+    family_prometheus = ",".join(
+        sorted(str(address) for address in prometheus_ips if address.version == cidr.version)
+    )
+    if any(address.version == cidr.version for address in node_ips) and (
+        not family_metrics or not family_prometheus
+    ):
+        raise SystemExit(f"Trusted telemetry Pod IPs are missing for IPv{cidr.version}")
     family_service_ips = sorted(
         str(address) for address in service_ips if address.version == cidr.version
     )
     service_ip = family_service_ips[0] if family_service_ips else "-"
     for address in node_ips:
         if address.version == cidr.version:
-            records.add((family, str(cidr), str(address), "node", str(api_port), service_ip, family_metrics))
+            records.add((family, str(cidr), str(address), "node", str(api_port), service_ip, family_metrics, family_prometheus))
     for address in api_ips:
         if address.version == cidr.version and address not in node_ips:
-            records.add((family, str(cidr), str(address), "api", str(api_port), "-", family_metrics))
+            records.add((family, str(cidr), str(address), "api", str(api_port), "-", family_metrics, family_prometheus))
 
 if not records:
     raise SystemExit("No same-family Pod CIDR and node/API address pairs were found")
@@ -138,7 +182,7 @@ manage_family() {
     fi
     "$firewall" -w -N "$CHAIN" 2>/dev/null || true
     "$firewall" -w -F "$CHAIN"
-    while IFS='|' read -r _family source target kind api_port service_ip metrics_ips; do
+    while IFS='|' read -r _family source target kind api_port service_ip metrics_ips prometheus_ips; do
       if [ "$kind" = api ]; then
         "$firewall" -w -A "$CHAIN" -s "$source" -d "$target" \
           -p tcp --dport "$api_port" -j REJECT
@@ -153,6 +197,18 @@ manage_family() {
           esac
           "$firewall" -w -A "$CHAIN" -s "$metrics_source" -d "$target" \
             -p tcp --dport 10250 -j RETURN
+        done
+        IFS=$old_ifs
+        old_ifs=$IFS
+        IFS=,
+        for prometheus_ip in $prometheus_ips; do
+          [ -n "$prometheus_ip" ] || continue
+          case "$family" in
+            4) prometheus_source="$prometheus_ip/32" ;;
+            6) prometheus_source="$prometheus_ip/128" ;;
+          esac
+          "$firewall" -w -A "$CHAIN" -s "$prometheus_source" -d "$target" \
+            -p tcp -m multiport --dports 9100,10250 -j RETURN
         done
         IFS=$old_ifs
         if [ "$service_ip" != - ]; then
@@ -186,7 +242,7 @@ manage_family() {
       exit 1
     fi
     "$firewall" -w -L "$CHAIN" >/dev/null
-    while IFS='|' read -r _family source target kind api_port service_ip metrics_ips; do
+    while IFS='|' read -r _family source target kind api_port service_ip metrics_ips prometheus_ips; do
       if [ "$kind" = api ]; then
         "$firewall" -w -C "$CHAIN" -s "$source" -d "$target" \
           -p tcp --dport "$api_port" -j REJECT
@@ -201,6 +257,18 @@ manage_family() {
           esac
           "$firewall" -w -C "$CHAIN" -s "$metrics_source" -d "$target" \
             -p tcp --dport 10250 -j RETURN
+        done
+        IFS=$old_ifs
+        old_ifs=$IFS
+        IFS=,
+        for prometheus_ip in $prometheus_ips; do
+          [ -n "$prometheus_ip" ] || continue
+          case "$family" in
+            4) prometheus_source="$prometheus_ip/32" ;;
+            6) prometheus_source="$prometheus_ip/128" ;;
+          esac
+          "$firewall" -w -C "$CHAIN" -s "$prometheus_source" -d "$target" \
+            -p tcp -m multiport --dports 9100,10250 -j RETURN
         done
         IFS=$old_ifs
         if [ "$service_ip" != - ]; then

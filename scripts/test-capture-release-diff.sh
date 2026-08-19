@@ -113,6 +113,9 @@ release_diff_sha256=${first_tree_hash}
 application_release_changes=true
 secret_drift=false
 secret_snapshot_hmac=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+live_secret_snapshot_hmac=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+app_secret_generation=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+grafana_secret_generation=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 has_release_changes=true
 kubectl_version=v1.36.0
 run_id=12345
@@ -130,6 +133,9 @@ EOF
   2 \
   false \
   eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee \
+  ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+  bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
   true >/dev/null
 
 printf '%s\n' 'tampered-after-preview' >>"$TEST_ROOT/first.diff"
@@ -144,6 +150,9 @@ if "$VERIFY" \
   2 \
   false \
   eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee \
+  ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff \
+  aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa \
+  bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb \
   true >/dev/null 2>&1; then
   echo 'tampered approved preview contents must fail verification' >&2
   exit 1

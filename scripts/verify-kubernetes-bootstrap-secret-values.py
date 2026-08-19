@@ -15,14 +15,17 @@ SAFE_NAME = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
 def main() -> int:
-    if len(sys.argv) < 4:
+    if len(sys.argv) < 5:
         print(
-            f"usage: {sys.argv[0]} NAMESPACE SECRET_NAME PROTECTED_KEY [PROTECTED_KEY ...]",
+            f"usage: {sys.argv[0]} MODE NAMESPACE SECRET_NAME PROTECTED_KEY [PROTECTED_KEY ...]",
             file=sys.stderr,
         )
         return 64
 
-    namespace, secret_name, *keys = sys.argv[1:]
+    mode, namespace, secret_name, *keys = sys.argv[1:]
+    if mode not in {"production", "staging"}:
+        print("MODE must be production or staging", file=sys.stderr)
+        return 64
     if len(keys) != len(set(keys)) or any(not SAFE_NAME.fullmatch(key) for key in keys):
         print("Protected Secret keys must be unique uppercase names", file=sys.stderr)
         return 64
@@ -58,11 +61,46 @@ def main() -> int:
         print("The Kubernetes API returned invalid Secret metadata", file=sys.stderr)
         return 2
 
-    if live is None or not live.get("data"):
-        print("initial")
-        return 0
+    if live is None:
+        print("The required Kubernetes application Secret is missing", file=sys.stderr)
+        return 1
     if live.get("type") != "Opaque":
         print("The live application Secret is not Opaque", file=sys.stderr)
+        return 1
+
+    if not live.get("data"):
+        if mode == "production":
+            print("The production application Secret is missing initialized data", file=sys.stderr)
+            return 1
+        annotations = live.get("metadata", {}).get("annotations", {})
+        if annotations.get("mnema.app/bootstrap-state") != "uninitialized":
+            print("The empty staging Secret lacks the uninitialized bootstrap marker", file=sys.stderr)
+            return 1
+        try:
+            for resource in ("statefulsets.apps", "persistentvolumeclaims"):
+                result = subprocess.run(
+                    ["kubectl", "-n", namespace, "get", resource, "-o", "json"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                )
+                inventory = json.loads(result.stdout)
+                if inventory.get("items"):
+                    print(
+                        "Empty staging Secret cannot initialize after durable resources exist",
+                        file=sys.stderr,
+                    )
+                    return 1
+        except (OSError, subprocess.CalledProcessError, json.JSONDecodeError):
+            print("Unable to prove that staging has no durable data", file=sys.stderr)
+            return 2
+        print("initial")
+        return 0
+
+    if mode == "staging" and live.get("metadata", {}).get("annotations", {}).get(
+        "mnema.app/bootstrap-state"
+    ) != "initialized":
+        print("The initialized staging Secret lacks its durable bootstrap marker", file=sys.stderr)
         return 1
 
     data = live.get("data", {})

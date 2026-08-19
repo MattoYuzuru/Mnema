@@ -96,6 +96,15 @@ jobs:
       - name: Verify production deployment safety contract
         run: ./scripts/test-production-deploy-safety.sh
 
+      - name: Verify exact live release binding and conditional Secret replace
+        run: ./scripts/test-kubernetes-live-release-binding.sh
+
+      - name: Verify staging plan is fully previewed before mutation
+        run: ./scripts/test-staging-plan-preview.sh
+
+      - name: Verify production telemetry host-boundary contract
+        run: ./scripts/test-production-telemetry-boundary.sh
+
       - name: Verify environment isolation contract
         run: ./scripts/test-deployment-contract.sh
 

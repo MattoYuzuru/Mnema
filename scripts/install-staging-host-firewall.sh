@@ -38,6 +38,8 @@ fi
 install -d -m 0755 /usr/local/libexec/mnema /etc/mnema
 install -m 0755 "$SCRIPT_DIR/reconcile-staging-host-firewall.sh" \
   /usr/local/libexec/mnema/reconcile-staging-host-firewall.sh
+install -m 0755 "$SCRIPT_DIR/verify-production-telemetry-boundary.py" \
+  /usr/local/libexec/mnema/verify-production-telemetry-boundary.py
 install -m 0644 \
   "$REPO_ROOT/deploy/systemd/mnema-staging-host-boundary.service" \
   /etc/systemd/system/mnema-staging-host-boundary.service
@@ -59,6 +61,7 @@ systemctl enable --now \
   mnema-staging-host-boundary.timer
 KUBE_API_SERVER="$KUBE_API_SERVER" MODE=check \
   /usr/local/libexec/mnema/reconcile-staging-host-firewall.sh >/dev/null
+/usr/local/libexec/mnema/verify-production-telemetry-boundary.py >/dev/null
 systemctl is-enabled --quiet mnema-staging-host-boundary.service
 systemctl is-enabled --quiet mnema-staging-host-boundary.timer
 systemctl is-active --quiet mnema-staging-host-boundary.timer

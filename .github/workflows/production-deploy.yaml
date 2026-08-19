@@ -27,6 +27,9 @@ jobs:
       has_release_changes: ${{ steps.preview.outputs.has_release_changes }}
       secret_drift: ${{ steps.secret-preview.outputs.secret_drift }}
       secret_snapshot_hmac: ${{ steps.secret-preview.outputs.secret_snapshot_hmac }}
+      live_secret_snapshot_hmac: ${{ steps.secret-preview.outputs.live_secret_snapshot_hmac }}
+      app_secret_generation: ${{ steps.secret-preview.outputs.app_secret_generation }}
+      grafana_secret_generation: ${{ steps.secret-preview.outputs.grafana_secret_generation }}
       preview_artifact_id: ${{ steps.upload-preview.outputs.artifact-id }}
       preview_artifact_digest: ${{ steps.upload-preview.outputs.artifact-digest }}
     env:
@@ -150,7 +153,13 @@ jobs:
           SECRET_SNAPSHOT_BINDING_KEY: ${{ secrets.PROD_RELEASE_BINDING_KEY }}
         run: |
           ./scripts/verify-kubernetes-bootstrap-secret-values.py \
-            "$NS" mnema-secrets POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD >/dev/null
+            production "$NS" mnema-secrets \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN >/dev/null
+          ./scripts/verify-kubernetes-bootstrap-secret-values.py \
+            production observability grafana-secrets \
+            GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD >/dev/null
           app_drift=$(./scripts/detect-kubernetes-secret-drift.py \
             "$NS" mnema-secrets \
             AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
@@ -164,7 +173,27 @@ jobs:
           grafana_drift=$(./scripts/detect-kubernetes-secret-drift.py \
             observability grafana-secrets \
             GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD)
-          if [ "$app_drift" = true ] || [ "$grafana_drift" = true ]; then
+          app_secret_generation=$(./scripts/create-secret-snapshot-binding.py \
+            production-application-secret-generation:v1 \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY \
+            GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+            GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
+            YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN)
+          grafana_secret_generation=$(./scripts/create-secret-snapshot-binding.py \
+            production-grafana-secret-generation:v1 \
+            GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD)
+          app_marker_drift=$(./scripts/detect-kubernetes-reconciliation-drift.py \
+            "$NS" mnema-secret-reconciliation applicationGeneration \
+            "$app_secret_generation")
+          grafana_marker_drift=$(./scripts/detect-kubernetes-reconciliation-drift.py \
+            "$NS" mnema-secret-reconciliation grafanaGeneration \
+            "$grafana_secret_generation")
+          if [ "$app_drift" = true ] || [ "$app_marker_drift" = true ] || \
+             [ "$grafana_drift" = true ] || [ "$grafana_marker_drift" = true ]; then
             secret_drift=true
           else
             secret_drift=false
@@ -180,8 +209,18 @@ jobs:
             AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
             MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN \
             GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD)
-          printf 'secret_drift=%s\n' "$secret_drift" >> "$GITHUB_OUTPUT"
-          printf 'secret_snapshot_hmac=%s\n' "$secret_snapshot_hmac" >> "$GITHUB_OUTPUT"
+          live_snapshot=$(./scripts/create-kubernetes-live-release-binding.py \
+            "production:${RELEASE_SHA}" \
+            "$NS/mnema-secrets" observability/grafana-secrets \
+            "$NS/mnema-secret-reconciliation")
+          live_secret_snapshot_hmac=$(printf '%s' "$live_snapshot" | jq -r '.hmac')
+          {
+            printf 'secret_drift=%s\n' "$secret_drift"
+            printf 'secret_snapshot_hmac=%s\n' "$secret_snapshot_hmac"
+            printf 'live_secret_snapshot_hmac=%s\n' "$live_secret_snapshot_hmac"
+            printf 'app_secret_generation=%s\n' "$app_secret_generation"
+            printf 'grafana_secret_generation=%s\n' "$grafana_secret_generation"
+          } >> "$GITHUB_OUTPUT"
           printf 'Production Secret drift: %s\n' "$secret_drift"
 
       - name: Capture complete application release preview
@@ -189,6 +228,9 @@ jobs:
         env:
           SECRET_DRIFT: ${{ steps.secret-preview.outputs.secret_drift }}
           SECRET_SNAPSHOT_HMAC: ${{ steps.secret-preview.outputs.secret_snapshot_hmac }}
+          LIVE_SECRET_SNAPSHOT_HMAC: ${{ steps.secret-preview.outputs.live_secret_snapshot_hmac }}
+          APP_SECRET_GENERATION: ${{ steps.secret-preview.outputs.app_secret_generation }}
+          GRAFANA_SECRET_GENERATION: ${{ steps.secret-preview.outputs.grafana_secret_generation }}
         run: |
           release_diff_sha256=$(./scripts/capture-release-diff.sh \
             "$RELEASE_MANIFEST" "$RELEASE_DIFF")
@@ -213,6 +255,9 @@ jobs:
           application_release_changes=${application_release_changes}
           secret_drift=${SECRET_DRIFT}
           secret_snapshot_hmac=${SECRET_SNAPSHOT_HMAC}
+          live_secret_snapshot_hmac=${LIVE_SECRET_SNAPSHOT_HMAC}
+          app_secret_generation=${APP_SECRET_GENERATION}
+          grafana_secret_generation=${GRAFANA_SECRET_GENERATION}
           has_release_changes=${has_release_changes}
           kubectl_version=${kubectl_version}
           run_id=${GITHUB_RUN_ID}
@@ -352,6 +397,9 @@ jobs:
             "$GITHUB_RUN_ATTEMPT" \
             '${{ needs.preview-production.outputs.secret_drift }}' \
             '${{ needs.preview-production.outputs.secret_snapshot_hmac }}' \
+            '${{ needs.preview-production.outputs.live_secret_snapshot_hmac }}' \
+            '${{ needs.preview-production.outputs.app_secret_generation }}' \
+            '${{ needs.preview-production.outputs.grafana_secret_generation }}' \
             true
 
       - name: Reject a stale release
@@ -489,10 +537,25 @@ jobs:
           USER_INTERNAL_TOKEN: ${{ secrets.PROD_USER_INTERNAL_TOKEN }}
           GF_SECURITY_ADMIN_USER: ${{ secrets.PROD_GF_SECURITY_ADMIN_USER }}
           GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.PROD_GF_SECURITY_ADMIN_PASSWORD }}
+          SECRET_SNAPSHOT_BINDING_KEY: ${{ secrets.PROD_RELEASE_BINDING_KEY }}
         run: |
           approved_diff_sha256='${{ needs.preview-production.outputs.release_diff_sha256 }}'
           ./scripts/capture-release-diff.sh \
             "$RELEASE_MANIFEST" "$RELEASE_DIFF" "$approved_diff_sha256"
+          live_snapshot=$(./scripts/create-kubernetes-live-release-binding.py \
+            "production:${RELEASE_SHA}" \
+            "$NS/mnema-secrets" observability/grafana-secrets \
+            "$NS/mnema-secret-reconciliation")
+          current_live_snapshot_hmac=$(printf '%s' "$live_snapshot" | jq -r '.hmac')
+          approved_live_snapshot_hmac='${{ needs.preview-production.outputs.live_secret_snapshot_hmac }}'
+          if [ "$current_live_snapshot_hmac" != "$approved_live_snapshot_hmac" ]; then
+            echo "::error::Live production Secret or reconciliation state changed after approval"
+            exit 1
+          fi
+          app_secret_resource_version=$(printf '%s' "$live_snapshot" | \
+            jq -r '.resourceVersions["prod/mnema-secrets"] // empty')
+          reconciliation_resource_version=$(printf '%s' "$live_snapshot" | \
+            jq -r '.resourceVersions["prod/mnema-secret-reconciliation"] // empty')
           app_drift=$(./scripts/detect-kubernetes-secret-drift.py \
             "$NS" mnema-secrets \
             AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
@@ -506,7 +569,32 @@ jobs:
           grafana_drift=$(./scripts/detect-kubernetes-secret-drift.py \
             observability grafana-secrets \
             GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD)
-          if [ "$app_drift" = true ] || [ "$grafana_drift" = true ]; then
+          app_secret_generation=$(./scripts/create-secret-snapshot-binding.py \
+            production-application-secret-generation:v1 \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY \
+            GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+            GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
+            YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN)
+          grafana_secret_generation=$(./scripts/create-secret-snapshot-binding.py \
+            production-grafana-secret-generation:v1 \
+            GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD)
+          if [ "$app_secret_generation" != '${{ needs.preview-production.outputs.app_secret_generation }}' ] || \
+             [ "$grafana_secret_generation" != '${{ needs.preview-production.outputs.grafana_secret_generation }}' ]; then
+            echo "::error::Production Secret reconciliation generation changed after approval"
+            exit 1
+          fi
+          app_marker_drift=$(./scripts/detect-kubernetes-reconciliation-drift.py \
+            "$NS" mnema-secret-reconciliation applicationGeneration \
+            "$app_secret_generation")
+          grafana_marker_drift=$(./scripts/detect-kubernetes-reconciliation-drift.py \
+            "$NS" mnema-secret-reconciliation grafanaGeneration \
+            "$grafana_secret_generation")
+          if [ "$app_drift" = true ] || [ "$app_marker_drift" = true ] || \
+             [ "$grafana_drift" = true ] || [ "$grafana_marker_drift" = true ]; then
             current_secret_drift=true
           else
             current_secret_drift=false
@@ -517,9 +605,33 @@ jobs:
             exit 1
           fi
           ./scripts/verify-kubernetes-bootstrap-secret-values.py \
-            "$NS" mnema-secrets POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD >/dev/null
-          printf 'app_secret_drift=%s\n' "$app_drift" >> "$GITHUB_OUTPUT"
-          printf 'grafana_secret_drift=%s\n' "$grafana_drift" >> "$GITHUB_OUTPUT"
+            production "$NS" mnema-secrets \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN >/dev/null
+          ./scripts/verify-kubernetes-bootstrap-secret-values.py \
+            production observability grafana-secrets \
+            GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD >/dev/null
+          if [ "$app_drift" = true ] || [ "$app_marker_drift" = true ]; then
+            app_reconciliation_drift=true
+          else
+            app_reconciliation_drift=false
+          fi
+          if [ "$grafana_drift" = true ] || [ "$grafana_marker_drift" = true ]; then
+            grafana_reconciliation_drift=true
+          else
+            grafana_reconciliation_drift=false
+          fi
+          {
+            printf 'app_secret_drift=%s\n' "$app_drift"
+            printf 'grafana_secret_drift=%s\n' "$grafana_drift"
+            printf 'app_reconciliation_drift=%s\n' "$app_reconciliation_drift"
+            printf 'grafana_reconciliation_drift=%s\n' "$grafana_reconciliation_drift"
+            printf 'app_secret_generation=%s\n' "$app_secret_generation"
+            printf 'grafana_secret_generation=%s\n' "$grafana_secret_generation"
+            printf 'app_secret_resource_version=%s\n' "$app_secret_resource_version"
+            printf 'reconciliation_resource_version=%s\n' "$reconciliation_resource_version"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Ensure namespace exists
         run: |
@@ -527,23 +639,15 @@ jobs:
           kubectl apply -f k8s/observability/00-namespace.yaml
 
       - name: Create/Update secret (mnema-secrets)
+        if: steps.drift-guard.outputs.app_secret_drift == 'true'
         run: |
           secret_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN"
-          {
-            printf '%s\n' \
-              'apiVersion: v1' \
-              'kind: Secret' \
-              'metadata:' \
-              '  name: mnema-secrets' \
-              "  namespace: ${NS}" \
-              'type: Opaque' \
-              'data:'
-            for name in $secret_names; do
-              value=${!name}
-              encoded=$(printf '%s' "$value" | base64 | tr -d '\n')
-              printf '  %s: "%s"\n' "$name" "$encoded"
-            done
-          } | kubectl apply -f -
+          # The approved resourceVersion makes this a fail-closed HTTP PUT.
+          # shellcheck disable=SC2086 # Intentional expansion into key arguments.
+          ./scripts/replace-kubernetes-secret-if-current.py \
+            "$NS" mnema-secrets \
+            '${{ steps.drift-guard.outputs.app_secret_resource_version }}' \
+            $secret_names
         env:
           AUTH_ISSUER: ${{ secrets.PROD_AUTH_ISSUER }}
           AUTH_ISSUER_URI: ${{ secrets.PROD_AUTH_ISSUER_URI }}
@@ -568,27 +672,6 @@ jobs:
           CORE_INTERNAL_TOKEN: ${{ secrets.PROD_CORE_INTERNAL_TOKEN }}
           USER_INTERNAL_TOKEN: ${{ secrets.PROD_USER_INTERNAL_TOKEN }}
 
-      - name: Create/Update secret (grafana-secrets)
-        run: |
-          {
-            printf '%s\n' \
-              'apiVersion: v1' \
-              'kind: Secret' \
-              'metadata:' \
-              '  name: grafana-secrets' \
-              '  namespace: observability' \
-              'type: Opaque' \
-              'data:'
-            for name in GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD; do
-              value=${!name}
-              encoded=$(printf '%s' "$value" | base64 | tr -d '\n')
-              printf '  %s: "%s"\n' "$name" "$encoded"
-            done
-          } | kubectl apply -f -
-        env:
-          GF_SECURITY_ADMIN_USER: ${{ secrets.PROD_GF_SECURITY_ADMIN_USER }}
-          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.PROD_GF_SECURITY_ADMIN_PASSWORD }}
-
       - name: Create/Update Grafana dashboards ConfigMap
         run: |
           kubectl -n observability create configmap grafana-dashboards \
@@ -606,23 +689,26 @@ jobs:
             --ignore-not-found=true
           kubectl apply -f k8s/observability/
 
-      - name: Restart observability pods (config reload)
+      - name: Restart observability configuration consumers
         run: |
           kubectl -n observability rollout restart daemonset/alloy
-          kubectl -n observability rollout restart deployment/grafana
+          if [ '${{ steps.drift-guard.outputs.grafana_reconciliation_drift }}' = true ]; then
+            kubectl -n observability patch deployment grafana --type=merge \
+              -p '{"spec":{"template":{"metadata":{"annotations":{"mnema.app/secret-generation":"${{ steps.drift-guard.outputs.grafana_secret_generation }}"}}}}}'
+          else
+            kubectl -n observability rollout restart deployment/grafana
+          fi
 
       - name: Apply complete application release once
         run: kubectl apply -f "$RELEASE_MANIFEST"
 
-      - name: Restart application Secret consumers
-        if: steps.drift-guard.outputs.app_secret_drift == 'true'
+      - name: Reconcile application Secret consumers
+        if: steps.drift-guard.outputs.app_reconciliation_drift == 'true'
         run: |
-          kubectl -n "$NS" rollout restart \
-            deployment/mnema-auth \
-            deployment/mnema-user \
-            deployment/mnema-core \
-            deployment/mnema-media \
-            deployment/mnema-import
+          for consumer in mnema-auth mnema-user mnema-core mnema-media mnema-import; do
+            kubectl -n "$NS" patch deployment "$consumer" --type=merge \
+              -p '{"spec":{"template":{"metadata":{"annotations":{"mnema.app/secret-generation":"${{ steps.drift-guard.outputs.app_secret_generation }}"}}}}}'
+          done
 
       - name: Verify service rollouts (sequential)
         run: |
@@ -652,3 +738,33 @@ jobs:
           wait_rollout mnema-core     1200s
           wait_rollout mnema-media    1800s
           wait_rollout mnema-import   1800s
+
+      - name: Verify observability rollouts
+        run: |
+          kubectl -n observability rollout status daemonset/alloy --timeout=600s
+          kubectl -n observability rollout status deployment/grafana --timeout=600s
+
+      - name: Record successful Secret reconciliation generations
+        env:
+          APP_SECRET_GENERATION: ${{ steps.drift-guard.outputs.app_secret_generation }}
+          GRAFANA_SECRET_GENERATION: ${{ steps.drift-guard.outputs.grafana_secret_generation }}
+          RECONCILIATION_RESOURCE_VERSION: ${{ steps.drift-guard.outputs.reconciliation_resource_version }}
+        run: |
+          if [ -n "$RECONCILIATION_RESOURCE_VERSION" ]; then
+            {
+              printf '%s\n' \
+                'apiVersion: v1' \
+                'kind: ConfigMap' \
+                'metadata:' \
+                '  name: mnema-secret-reconciliation' \
+                "  namespace: ${NS}" \
+                "  resourceVersion: \"${RECONCILIATION_RESOURCE_VERSION}\"" \
+                'data:' \
+                "  applicationGeneration: \"${APP_SECRET_GENERATION}\"" \
+                "  grafanaGeneration: \"${GRAFANA_SECRET_GENERATION}\""
+            } | kubectl replace -f -
+          else
+            kubectl -n "$NS" create configmap mnema-secret-reconciliation \
+              --from-literal="applicationGeneration=${APP_SECRET_GENERATION}" \
+              --from-literal="grafanaGeneration=${GRAFANA_SECRET_GENERATION}"
+          fi

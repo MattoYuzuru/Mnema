@@ -25,7 +25,15 @@ if [ "$*" = '-n default get service kubernetes -o json' ]; then
   exit 0
 fi
 if [ "$*" = '-n kube-system get pods -l k8s-app=metrics-server -o json' ]; then
-  printf '%s\n' '{"items":[{"status":{"podIP":"10.42.0.5"}}]}'
+  printf '%s\n' '{"items":[{"status":{"phase":"Running","conditions":[{"type":"Ready","status":"True"}],"podIP":"10.42.0.5"}}]}'
+  exit 0
+fi
+if [ "$*" = '-n observability get pods -l app=prometheus -o json' ]; then
+  printf '%s\n' '{"items":[{"status":{"phase":"Running","conditions":[{"type":"Ready","status":"True"}],"podIP":"10.42.0.9"}}]}'
+  exit 0
+fi
+if [ "$*" = 'get --raw /api/v1/namespaces/observability/services/http:prometheus:9090/proxy/api/v1/targets' ]; then
+  printf '%s\n' '{"data":{"activeTargets":[{"labels":{"job":"node-exporter"},"health":"up"},{"labels":{"job":"kubelet"},"health":"up"},{"labels":{"job":"cadvisor"},"health":"up"}]}}'
   exit 0
 fi
 if [ "${1:-}" = label ] && [ "${2:-}" = namespace ] && \
@@ -56,8 +64,12 @@ if [ "$*" = 'get clusterissuer letsencrypt-prod -o json' ]; then
   printf '%s\n' '{"spec":{"acme":{"solvers":[{"selector":{"dnsZones":["staging.mnema.app"]},"http01":{"ingress":{"ingressClassName":"traefik","serviceType":"ClusterIP"}}}]}},"status":{"conditions":[{"type":"Ready","status":"True"}]}}'
   exit 0
 fi
-if [ "$*" = '-n mnema-staging get resourcequota mnema-staging-quota -o jsonpath={.spec.hard.count\/secrets}' ]; then
-  printf '%s' 12
+if [ "$*" = '-n mnema-staging get resourcequota mnema-staging-quota -o jsonpath={.spec.hard.count\/secrets}{"|"}{.status.used.count\/secrets}' ]; then
+  printf '%s' '12|4'
+  exit 0
+fi
+if [ "$*" = '-n mnema-staging get secrets -o json' ]; then
+  printf '%s\n' '{"items":[{},{},{},{}]}'
   exit 0
 fi
 case "$*" in
