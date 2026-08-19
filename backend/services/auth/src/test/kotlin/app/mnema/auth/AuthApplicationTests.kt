@@ -1,6 +1,9 @@
 package app.mnema.auth
 
+import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Test
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.boot.actuate.info.InfoEndpoint
 import org.springframework.boot.test.context.TestConfiguration
 import org.springframework.boot.test.context.SpringBootTest
 import org.springframework.context.annotation.Bean
@@ -18,9 +21,12 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.utility.DockerImageName
 
 @Testcontainers(disabledWithoutDocker = true)
-@SpringBootTest
+@SpringBootTest(properties = ["MNEMA_BUILD_ID=test-release"])
 @Import(AuthApplicationTests.TestOAuth2ClientConfig::class)
 class AuthApplicationTests {
+
+    @Autowired
+    private lateinit var infoEndpoint: InfoEndpoint
 
     companion object {
         @Container
@@ -47,6 +53,13 @@ class AuthApplicationTests {
 
     @Test
     fun contextLoads() {
+    }
+
+    @Test
+    fun `exposes the deployed build identity`() {
+        val build = infoEndpoint.info()["build"] as Map<*, *>
+
+        assertEquals("test-release", build["id"])
     }
 
     @TestConfiguration

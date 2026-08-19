@@ -1,4 +1,4 @@
-# auth-deploy.yaml
+# Release template: render with scripts/render-release-manifest.sh; do not apply directly.
 
 apiVersion: apps/v1
 kind: Deployment
@@ -14,7 +14,7 @@ spec:
 
       initContainers:
         - name: wait-for-postgres
-          image: postgres:18
+          image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
           command: ['sh','-c','until pg_isready -h postgres.prod.svc.cluster.local -p 5432 -U "$POSTGRES_USER" -d "$POSTGRES_DB"; do echo waiting for postgres; sleep 2; done']
           env:
             - name: POSTGRES_USER
@@ -24,9 +24,11 @@ spec:
 
       containers:
         - name: auth
-          image: ghcr.io/mattoyuzuru/mnema/auth:latest
+          image: ghcr.io/mattoyuzuru/mnema/auth:release-placeholder
           ports: [ { containerPort: 8080 } ]
           env:
+            - name: MNEMA_BUILD_ID
+              value: "release-placeholder"
             - name: SPRING_DATASOURCE_URL
               value: jdbc:postgresql://postgres.prod.svc.cluster.local:5432/mnema
             - name: SPRING_DATASOURCE_USERNAME
