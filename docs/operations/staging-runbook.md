@@ -26,19 +26,24 @@ kubectl diff -f k8s/staging/namespace.yaml || test $? -eq 1
 kubectl apply -f k8s/staging/namespace.yaml
 kubectl diff -f k8s/staging/bootstrap.yaml || test $? -eq 1
 kubectl apply -f k8s/staging/bootstrap.yaml
+kubectl diff -f k8s/staging/routes.yaml || test $? -eq 1
+kubectl apply -f k8s/staging/routes.yaml
 ```
 
-This creates `mnema-staging`, ResourceQuota, LimitRange and a Role-bound `mnema-deployer` ServiceAccount. It creates no workload, PVC or application secret and grants no cluster-scoped permission. Kubernetes defines a `Role` as namespace-scoped and documents LimitRange default injection before quota admission ([RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/), [LimitRange](https://kubernetes.io/docs/concepts/policy/limit-range/)). The values are sized for the accepted shared-host staging envelope: 3 requested CPU, 8 GiB requested memory, 14 GiB memory limit and 20 GiB requested storage.
+This creates `mnema-staging`, ResourceQuota, LimitRange, three fixed staging routes and a Role-bound `mnema-deployer` ServiceAccount. It creates no workload, PVC or application secret and grants no cluster-scoped permission. The CI Role deliberately cannot create or change Ingress objects: Kubernetes RBAC cannot restrict a top-level `create` request by resource name or constrain its host fields, so delegating it on the shared Traefik controller would allow a staging credential to claim a production hostname. Route changes remain an explicit owner bootstrap action. Kubernetes defines a `Role` as namespace-scoped and documents both the `create` limitation and LimitRange default injection before quota admission ([RBAC](https://kubernetes.io/docs/reference/access-authn-authz/rbac/), [LimitRange](https://kubernetes.io/docs/concepts/policy/limit-range/)). The values are sized for the accepted shared-host staging envelope: 3 requested CPU, 8 GiB requested memory, 14 GiB memory limit and 20 GiB requested storage.
 
-Generate a bounded kubeconfig directly outside the repository; the script verifies that it can mutate staging but cannot read production secrets or create namespaces:
+Generate a bounded kubeconfig directly outside the repository; the script verifies that it can mutate staging workloads but cannot read production secrets, create namespaces or change shared-ingress routing:
 
 ```bash
 OUTPUT=/root/mnema-staging.kubeconfig \
+KUBE_API_SERVER=https://<main-cluster-api-host>:6443 \
 TOKEN_DURATION=720h \
 ./scripts/create-staging-kubeconfig.sh
 ```
 
-Base64-encode that file without printing it and store the result as the `STAGING_KUBECONFIG_B64` secret in the GitHub `staging` environment. Rotate before the actual token lifetime expires; the API server may issue a shorter duration than requested. Kubernetes recommends bounded TokenRequest credentials over manually created non-expiring ServiceAccount token Secrets ([ServiceAccount tokens](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/)).
+`KUBE_API_SERVER` must be the existing externally reachable TLS endpoint of the main cluster, with a certificate valid for that host; loopback endpoints from the default root k3s config are rejected. Do not expose a new endpoint or use keykomi for this bootstrap. The generated credential's own `kubectl auth can-i` checks must succeed through that exact endpoint before the file is accepted.
+
+Base64-encode that file without printing it and store the result as the `STAGING_KUBECONFIG_B64` secret in the GitHub `staging` environment. Record the script's `token_expires_at` value and rotate to a new file/secret before that time; the script deliberately refuses to overwrite an existing credential. The API server may issue a shorter duration than requested. Kubernetes recommends bounded TokenRequest credentials over manually created non-expiring ServiceAccount token Secrets ([ServiceAccount tokens](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/)).
 
 ## Environment-owned secret names
 
@@ -66,7 +71,7 @@ kubectl -n mnema-staging get resourcequota,limitrange,pods,pvc,ingress
 kubectl auth can-i get secrets -n prod --as=system:serviceaccount:mnema-staging:mnema-deployer
 ```
 
-The final command must return `no`. Record names/statuses only; never copy Secret data.
+The final command must return `no`. Also verify `kubectl auth can-i create ingresses.networking.k8s.io -n mnema-staging --as=system:serviceaccount:mnema-staging:mnema-deployer` returns `no`. Record names/statuses only; never copy Secret data.
 
 ## Rollback boundary
 

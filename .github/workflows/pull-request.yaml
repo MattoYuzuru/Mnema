@@ -85,3 +85,6 @@ jobs:
 
       - name: Verify environment isolation contract
         run: ./scripts/test-deployment-contract.sh
+
+      - name: Verify staging kubeconfig contract
+        run: ./scripts/test-create-staging-kubeconfig.sh

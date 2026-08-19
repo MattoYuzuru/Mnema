@@ -46,6 +46,7 @@ frontend/node_modules
 !/scripts/verify-release-preview.sh
 !/scripts/test-capture-release-diff.sh
 !/scripts/test-frontend-release-contract.sh
+!/scripts/test-create-staging-kubeconfig.sh
 !/scripts/test-render-release-manifest.sh
 !/scripts/test-production-deploy-safety.sh
 !/scripts/local-ai-gateway/

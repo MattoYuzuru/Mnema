@@ -42,6 +42,7 @@ SPRING_PROFILES=prod \
 S3_ENDPOINT=http://minio:9000 \
 S3_PUBLIC_ENDPOINT=https://storage.staging.mnema.app \
 S3_PATH_STYLE_ACCESS=true \
+INCLUDE_INGRESS=false \
   "$SCRIPT_DIR/render-release-manifest.sh"
 
 test "$(grep -E -c 'image: ghcr\.io/mattoyuzuru/mnema/(frontend|auth|user|core|media|import)@sha256:[0-9a-f]{64}$' "$TEST_ROOT/release-a.yaml")" -eq 6
@@ -54,9 +55,11 @@ if grep -Eq 'release(-[a-z0-9]+)*-placeholder|ghcr\.io/mattoyuzuru/mnema/(fronte
   exit 1
 fi
 
-test "$(grep -F -c 'namespace: mnema-staging' "$TEST_ROOT/release-staging.yaml")" -eq 15
-test "$(grep -F -c 'host: staging.mnema.app' "$TEST_ROOT/release-staging.yaml")" -eq 1
-test "$(grep -F -c 'host: auth.staging.mnema.app' "$TEST_ROOT/release-staging.yaml")" -eq 1
+test "$(grep -F -c 'namespace: mnema-staging' "$TEST_ROOT/release-staging.yaml")" -eq 13
+if grep -Fq 'kind: Ingress' "$TEST_ROOT/release-staging.yaml"; then
+  echo "staging routes must remain owner-managed outside the scoped CI release" >&2
+  exit 1
+fi
 test "$(grep -F -c 'value: "staging"' "$TEST_ROOT/release-staging.yaml")" -eq 5
 test "$(grep -F -c 'value: "http://minio:9000"' "$TEST_ROOT/release-staging.yaml")" -eq 1
 test "$(grep -F -c 'value: "https://storage.staging.mnema.app"' "$TEST_ROOT/release-staging.yaml")" -eq 1
@@ -84,6 +87,16 @@ if DIGEST_DIR="$DIGEST_DIR" \
   IMAGE_BASE="$image_base" \
     "$SCRIPT_DIR/render-release-manifest.sh" 2>/dev/null; then
   echo "renderer accepted an invalid release SHA" >&2
+  exit 1
+fi
+
+if DIGEST_DIR="$DIGEST_DIR" \
+  OUTPUT="$TEST_ROOT/invalid-ingress-mode.yaml" \
+  RELEASE_SHA="$release_sha" \
+  IMAGE_BASE="$image_base" \
+  INCLUDE_INGRESS=maybe \
+    "$SCRIPT_DIR/render-release-manifest.sh" 2>/dev/null; then
+  echo "renderer accepted an invalid ingress ownership mode" >&2
   exit 1
 fi
 

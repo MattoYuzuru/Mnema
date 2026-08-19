@@ -8,6 +8,11 @@ STAGING_WORKFLOW="$REPO_ROOT/.github/workflows/staging-deploy.yaml"
 BOOTSTRAP="$REPO_ROOT/k8s/staging/bootstrap.yaml"
 STAGING_DATA="$REPO_ROOT/k8s/staging/data.yaml"
 STAGING_BUCKET_JOB="$REPO_ROOT/k8s/staging/minio-bucket-job.yaml"
+STAGING_ROUTES="$REPO_ROOT/k8s/staging/routes.yaml"
+
+grep -Fq 'version: v1.36.0' "$STAGING_WORKFLOW"
+grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$REPO_ROOT/.github/workflows/deploy.yaml"
+grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
 
 assert_secret_prefix() {
   workflow="$1"
@@ -55,6 +60,18 @@ if grep -Eq '^kind: Cluster(Role|RoleBinding)$' "$BOOTSTRAP"; then
   echo "Staging bootstrap must not grant cluster-scoped RBAC" >&2
   exit 1
 fi
+if grep -Fq 'ingresses' "$BOOTSTRAP"; then
+  echo "Scoped staging CI must not be able to replace shared-ingress host routing" >&2
+  exit 1
+fi
+if grep -Fq 'kind: Ingress' "$STAGING_DATA"; then
+  echo "Staging data reconciliation must not delegate ingress mutation to CI" >&2
+  exit 1
+fi
+test "$(grep -c '^kind: Ingress$' "$STAGING_ROUTES")" -eq 3
+for host in staging.mnema.app auth.staging.mnema.app storage.staging.mnema.app; do
+  test "$(grep -F -c "host: $host" "$STAGING_ROUTES")" -eq 1
+done
 
 image_count=0
 pinned_image_count=0

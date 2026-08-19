@@ -19,6 +19,7 @@ SPRING_PROFILES="${SPRING_PROFILES:-prod}"
 S3_ENDPOINT="${S3_ENDPOINT:-https://storage.yandexcloud.net}"
 S3_PUBLIC_ENDPOINT="${S3_PUBLIC_ENDPOINT:-$S3_ENDPOINT}"
 S3_PATH_STYLE_ACCESS="${S3_PATH_STYLE_ACCESS:-false}"
+INCLUDE_INGRESS="${INCLUDE_INGRESS:-true}"
 
 if [ "${#RELEASE_SHA}" -ne 40 ]; then
   echo "RELEASE_SHA must be exactly 40 lowercase hexadecimal characters" >&2
@@ -89,6 +90,13 @@ case "$S3_PATH_STYLE_ACCESS" in
   true | false) ;;
   *)
     echo "S3_PATH_STYLE_ACCESS must be true or false" >&2
+    exit 1
+    ;;
+esac
+case "$INCLUDE_INGRESS" in
+  true | false) ;;
+  *)
+    echo "INCLUDE_INGRESS must be true or false" >&2
     exit 1
     ;;
 esac
@@ -177,14 +185,16 @@ render_template() {
       -e "s|release-placeholder|$RELEASE_SHA|g"
   done
 
-  for template in "$MANIFEST_ROOT/ingress.yaml" "$MANIFEST_ROOT/auth-ingress.yaml"; do
-    if [ ! -f "$template" ]; then
-      echo "Missing routing manifest: $template" >&2
-      exit 1
-    fi
-    printf '\n---\n'
-    render_template "$template"
-  done
+  if [ "$INCLUDE_INGRESS" = true ]; then
+    for template in "$MANIFEST_ROOT/ingress.yaml" "$MANIFEST_ROOT/auth-ingress.yaml"; do
+      if [ ! -f "$template" ]; then
+        echo "Missing routing manifest: $template" >&2
+        exit 1
+      fi
+      printf '\n---\n'
+      render_template "$template"
+    done
+  fi
 } > "$tmp_output"
 
 if grep -Eq 'release(-[a-z0-9]+)*-placeholder|ghcr\.io/mattoyuzuru/mnema/(frontend|auth|user|core|media|import):latest' "$tmp_output"; then

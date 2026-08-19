@@ -35,6 +35,8 @@ jobs:
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
+        with:
+          version: v1.36.0
 
       - name: Download staging release manifest
         uses: actions/download-artifact@v8
@@ -68,6 +70,7 @@ jobs:
         run: |
           test "$(kubectl auth can-i create deployments.apps -n "$NS")" = yes
           test "$(kubectl auth can-i create secrets -n "$NS")" = yes
+          test "$(kubectl auth can-i create ingresses.networking.k8s.io -n "$NS")" = no
           test "$(kubectl auth can-i get secrets -n prod)" = no
           test "$(kubectl auth can-i create namespaces)" = no
           kubectl -n "$NS" get resourcequota mnema-staging-quota >/dev/null

@@ -87,6 +87,9 @@ jobs:
       - name: Verify environment isolation contract
         run: ./scripts/test-deployment-contract.sh
 
+      - name: Verify staging kubeconfig contract
+        run: ./scripts/test-create-staging-kubeconfig.sh
+
   build-and-push:
     needs:
       - backend-quality
@@ -259,6 +262,7 @@ jobs:
           AUTH_HOST: auth.staging.mnema.app
           DIGEST_DIR: ${{ runner.temp }}/release-digests
           IMAGE_BASE: ghcr.io/${{ github.repository }}
+          INCLUDE_INGRESS: "false"
           OUTPUT: ${{ runner.temp }}/staging-release.yaml
           PUBLIC_HOST: staging.mnema.app
           RELEASE_NAMESPACE: mnema-staging
