@@ -80,5 +80,41 @@ jobs:
       - name: Verify canonical production release diff
         run: ./scripts/test-capture-release-diff.sh
 
+      - name: Verify value-silent Kubernetes Secret drift detection
+        run: ./scripts/test-detect-kubernetes-secret-drift.sh
+
+      - name: Verify approved Secret snapshot binding
+        run: ./scripts/test-secret-snapshot-binding.sh
+
+      - name: Verify bootstrap-only Secret rotation guard
+        run: ./scripts/test-kubernetes-bootstrap-secret-values.sh
+
+      - name: Verify environment credential separation contract
+        run: ./scripts/test-environment-secret-separation.sh
+
       - name: Verify production deployment safety contract
         run: ./scripts/test-production-deploy-safety.sh
+
+      - name: Verify exact live release binding and conditional Secret replace
+        run: ./scripts/test-kubernetes-live-release-binding.sh
+
+      - name: Verify staging plan is fully previewed before mutation
+        run: ./scripts/test-staging-plan-preview.sh
+
+      - name: Verify production telemetry host-boundary contract
+        run: ./scripts/test-production-telemetry-boundary.sh
+
+      - name: Verify environment isolation contract
+        run: ./scripts/test-deployment-contract.sh
+
+      - name: Verify staging kubeconfig contract
+        run: ./scripts/test-create-staging-kubeconfig.sh
+
+      - name: Verify staging host firewall contract
+        run: ./scripts/test-staging-host-firewall.sh
+
+      - name: Verify staging TLS boundary
+        run: ./scripts/test-staging-tls-boundary.sh
+
+      - name: Verify fail-closed staging bootstrap helper
+        run: ./scripts/test-apply-staging-bootstrap.sh

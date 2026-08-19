@@ -25,6 +25,11 @@ jobs:
     outputs:
       release_diff_sha256: ${{ steps.preview.outputs.release_diff_sha256 }}
       has_release_changes: ${{ steps.preview.outputs.has_release_changes }}
+      secret_drift: ${{ steps.secret-preview.outputs.secret_drift }}
+      secret_snapshot_hmac: ${{ steps.secret-preview.outputs.secret_snapshot_hmac }}
+      live_secret_snapshot_hmac: ${{ steps.secret-preview.outputs.live_secret_snapshot_hmac }}
+      app_secret_generation: ${{ steps.secret-preview.outputs.app_secret_generation }}
+      grafana_secret_generation: ${{ steps.secret-preview.outputs.grafana_secret_generation }}
       preview_artifact_id: ${{ steps.upload-preview.outputs.artifact-id }}
       preview_artifact_digest: ${{ steps.upload-preview.outputs.artifact-digest }}
     env:
@@ -63,6 +68,50 @@ jobs:
             exit 1
           fi
 
+      - name: Validate required production secrets
+        env:
+          AUTH_ISSUER: ${{ secrets.PROD_AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.PROD_AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.PROD_AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.PROD_AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.PROD_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.PROD_TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.PROD_GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.PROD_GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.PROD_YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.PROD_YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.PROD_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.PROD_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.PROD_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.PROD_AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.PROD_MEDIA_INTERNAL_TOKEN }}
+          CORE_INTERNAL_TOKEN: ${{ secrets.PROD_CORE_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.PROD_USER_INTERNAL_TOKEN }}
+          GF_SECURITY_ADMIN_USER: ${{ secrets.PROD_GF_SECURITY_ADMIN_USER }}
+          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.PROD_GF_SECURITY_ADMIN_PASSWORD }}
+          RELEASE_BINDING_KEY: ${{ secrets.PROD_RELEASE_BINDING_KEY }}
+        run: |
+          required_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD RELEASE_BINDING_KEY"
+          for name in $required_names; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required production secret ${name} is missing or empty"
+              exit 1
+            fi
+          done
+          if [ "$AUTH_ISSUER" != "https://auth.mnema.app" ] || [ "$AUTH_ISSUER_URI" != "$AUTH_ISSUER" ]; then
+            echo "::error::Production issuer secrets must identify auth.mnema.app"
+            exit 1
+          fi
+          if [ "$POSTGRES_DB" != mnema ]; then
+            echo "::error::PROD_POSTGRES_DB must match the release database contract"
+            exit 1
+          fi
+
       - name: Write kubeconfig (main cluster)
         env:
           PROD_KUBECONFIG_B64: ${{ secrets.PROD_KUBECONFIG_B64 }}
@@ -74,8 +123,114 @@ jobs:
           printf '%s' "$PROD_KUBECONFIG_B64" | base64 -d > "$KUBECONFIG"
           chmod 600 "$KUBECONFIG"
 
+      - name: Detect production Secret drift without exposing values
+        id: secret-preview
+        env:
+          AUTH_ISSUER: ${{ secrets.PROD_AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.PROD_AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.PROD_AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.PROD_AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.PROD_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.PROD_TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.PROD_GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.PROD_GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.PROD_YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.PROD_YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.PROD_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.PROD_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.PROD_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.PROD_AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.PROD_MEDIA_INTERNAL_TOKEN }}
+          CORE_INTERNAL_TOKEN: ${{ secrets.PROD_CORE_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.PROD_USER_INTERNAL_TOKEN }}
+          GF_SECURITY_ADMIN_USER: ${{ secrets.PROD_GF_SECURITY_ADMIN_USER }}
+          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.PROD_GF_SECURITY_ADMIN_PASSWORD }}
+          SECRET_SNAPSHOT_BINDING_KEY: ${{ secrets.PROD_RELEASE_BINDING_KEY }}
+        run: |
+          ./scripts/verify-kubernetes-bootstrap-secret-values.py \
+            production "$NS" mnema-secrets \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN >/dev/null
+          ./scripts/verify-kubernetes-bootstrap-secret-values.py \
+            production observability grafana-secrets \
+            GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD >/dev/null
+          app_drift=$(./scripts/detect-kubernetes-secret-drift.py \
+            "$NS" mnema-secrets \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY \
+            GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+            GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
+            YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN)
+          grafana_drift=$(./scripts/detect-kubernetes-secret-drift.py \
+            observability grafana-secrets \
+            GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD)
+          app_secret_generation=$(./scripts/create-secret-snapshot-binding.py \
+            production-application-secret-generation:v1 \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY \
+            GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+            GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
+            YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN)
+          grafana_secret_generation=$(./scripts/create-secret-snapshot-binding.py \
+            production-grafana-secret-generation:v1 \
+            GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD)
+          app_marker_drift=$(./scripts/detect-kubernetes-reconciliation-drift.py \
+            "$NS" mnema-secret-reconciliation applicationGeneration \
+            "$app_secret_generation")
+          grafana_marker_drift=$(./scripts/detect-kubernetes-reconciliation-drift.py \
+            "$NS" mnema-secret-reconciliation grafanaGeneration \
+            "$grafana_secret_generation")
+          if [ "$app_drift" = true ] || [ "$app_marker_drift" = true ] || \
+             [ "$grafana_drift" = true ] || [ "$grafana_marker_drift" = true ]; then
+            secret_drift=true
+          else
+            secret_drift=false
+          fi
+          secret_snapshot_hmac=$(./scripts/create-secret-snapshot-binding.py \
+            "production:${RELEASE_SHA}" \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY \
+            GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+            GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
+            YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN \
+            GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD)
+          live_snapshot=$(./scripts/create-kubernetes-live-release-binding.py \
+            "production:${RELEASE_SHA}" \
+            "$NS/mnema-secrets" observability/grafana-secrets \
+            "$NS/mnema-secret-reconciliation")
+          live_secret_snapshot_hmac=$(printf '%s' "$live_snapshot" | jq -r '.hmac')
+          {
+            printf 'secret_drift=%s\n' "$secret_drift"
+            printf 'secret_snapshot_hmac=%s\n' "$secret_snapshot_hmac"
+            printf 'live_secret_snapshot_hmac=%s\n' "$live_secret_snapshot_hmac"
+            printf 'app_secret_generation=%s\n' "$app_secret_generation"
+            printf 'grafana_secret_generation=%s\n' "$grafana_secret_generation"
+          } >> "$GITHUB_OUTPUT"
+          printf 'Production Secret drift: %s\n' "$secret_drift"
+
       - name: Capture complete application release preview
         id: preview
+        env:
+          SECRET_DRIFT: ${{ steps.secret-preview.outputs.secret_drift }}
+          SECRET_SNAPSHOT_HMAC: ${{ steps.secret-preview.outputs.secret_snapshot_hmac }}
+          LIVE_SECRET_SNAPSHOT_HMAC: ${{ steps.secret-preview.outputs.live_secret_snapshot_hmac }}
+          APP_SECRET_GENERATION: ${{ steps.secret-preview.outputs.app_secret_generation }}
+          GRAFANA_SECRET_GENERATION: ${{ steps.secret-preview.outputs.grafana_secret_generation }}
         run: |
           release_diff_sha256=$(./scripts/capture-release-diff.sh \
             "$RELEASE_MANIFEST" "$RELEASE_DIFF")
@@ -83,15 +238,26 @@ jobs:
           kubectl_version=$(kubectl version --client -o json | \
             jq -r '.clientVersion.gitVersion')
           if grep -Fxq 'No application release changes.' "$RELEASE_DIFF"; then
-            has_release_changes=false
+            application_release_changes=false
           else
+            application_release_changes=true
+          fi
+          if [ "$application_release_changes" = true ] || [ "$SECRET_DRIFT" = true ]; then
             has_release_changes=true
+          else
+            has_release_changes=false
           fi
 
           cat > "$RELEASE_PREVIEW_METADATA" <<EOF
           release_sha=${RELEASE_SHA}
           release_manifest_sha256=${release_manifest_sha256}
           release_diff_sha256=${release_diff_sha256}
+          application_release_changes=${application_release_changes}
+          secret_drift=${SECRET_DRIFT}
+          secret_snapshot_hmac=${SECRET_SNAPSHOT_HMAC}
+          live_secret_snapshot_hmac=${LIVE_SECRET_SNAPSHOT_HMAC}
+          app_secret_generation=${APP_SECRET_GENERATION}
+          grafana_secret_generation=${GRAFANA_SECRET_GENERATION}
           has_release_changes=${has_release_changes}
           kubectl_version=${kubectl_version}
           run_id=${GITHUB_RUN_ID}
@@ -119,6 +285,7 @@ jobs:
           PREVIEW_ARTIFACT_ID: ${{ steps.upload-preview.outputs.artifact-id }}
           PREVIEW_ARTIFACT_DIGEST: ${{ steps.upload-preview.outputs.artifact-digest }}
           HAS_RELEASE_CHANGES: ${{ steps.preview.outputs.has_release_changes }}
+          SECRET_DRIFT: ${{ steps.secret-preview.outputs.secret_drift }}
           RELEASE_DIFF_SHA256: ${{ steps.preview.outputs.release_diff_sha256 }}
         run: |
           {
@@ -128,6 +295,7 @@ jobs:
             printf -- '- Artifact ID: %s\n' "$PREVIEW_ARTIFACT_ID"
             printf -- '- Artifact digest: %s\n' "$PREVIEW_ARTIFACT_DIGEST"
             printf -- '- Changes: %s\n\n' "$HAS_RELEASE_CHANGES"
+            printf -- '- Secret drift (values hidden): %s\n\n' "$SECRET_DRIFT"
             if [ "$HAS_RELEASE_CHANGES" = true ]; then
               printf 'Inspect the preview artifact. Reject the next prod approval if any change is unexpected.\n'
             else
@@ -227,6 +395,11 @@ jobs:
             v1.36.0 \
             "$GITHUB_RUN_ID" \
             "$GITHUB_RUN_ATTEMPT" \
+            '${{ needs.preview-production.outputs.secret_drift }}' \
+            '${{ needs.preview-production.outputs.secret_snapshot_hmac }}' \
+            '${{ needs.preview-production.outputs.live_secret_snapshot_hmac }}' \
+            '${{ needs.preview-production.outputs.app_secret_generation }}' \
+            '${{ needs.preview-production.outputs.grafana_secret_generation }}' \
             true
 
       - name: Reject a stale release
@@ -234,6 +407,95 @@ jobs:
           current_main=$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')
           if [ "$RELEASE_SHA" != "$current_main" ]; then
             echo "::error::Refusing stale release ${RELEASE_SHA}; current main is ${current_main}"
+            exit 1
+          fi
+
+      - name: Validate required production secrets before mutation
+        env:
+          AUTH_ISSUER: ${{ secrets.PROD_AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.PROD_AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.PROD_AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.PROD_AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.PROD_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.PROD_TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.PROD_GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.PROD_GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.PROD_YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.PROD_YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.PROD_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.PROD_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.PROD_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.PROD_AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.PROD_MEDIA_INTERNAL_TOKEN }}
+          CORE_INTERNAL_TOKEN: ${{ secrets.PROD_CORE_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.PROD_USER_INTERNAL_TOKEN }}
+          GF_SECURITY_ADMIN_USER: ${{ secrets.PROD_GF_SECURITY_ADMIN_USER }}
+          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.PROD_GF_SECURITY_ADMIN_PASSWORD }}
+          RELEASE_BINDING_KEY: ${{ secrets.PROD_RELEASE_BINDING_KEY }}
+        run: |
+          required_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD RELEASE_BINDING_KEY"
+          for name in $required_names; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required production secret ${name} is missing or empty"
+              exit 1
+            fi
+          done
+          if [ "$AUTH_ISSUER" != "https://auth.mnema.app" ] || [ "$AUTH_ISSUER_URI" != "$AUTH_ISSUER" ]; then
+            echo "::error::Production issuer secrets must identify auth.mnema.app"
+            exit 1
+          fi
+          if [ "$POSTGRES_DB" != mnema ]; then
+            echo "::error::PROD_POSTGRES_DB must match the release database contract"
+            exit 1
+          fi
+
+      - name: Verify approved desired Secret snapshot before cluster access
+        env:
+          AUTH_ISSUER: ${{ secrets.PROD_AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.PROD_AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.PROD_AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.PROD_AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.PROD_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.PROD_TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.PROD_GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.PROD_GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.PROD_YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.PROD_YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.PROD_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.PROD_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.PROD_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.PROD_AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.PROD_MEDIA_INTERNAL_TOKEN }}
+          CORE_INTERNAL_TOKEN: ${{ secrets.PROD_CORE_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.PROD_USER_INTERNAL_TOKEN }}
+          GF_SECURITY_ADMIN_USER: ${{ secrets.PROD_GF_SECURITY_ADMIN_USER }}
+          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.PROD_GF_SECURITY_ADMIN_PASSWORD }}
+          SECRET_SNAPSHOT_BINDING_KEY: ${{ secrets.PROD_RELEASE_BINDING_KEY }}
+          APPROVED_SECRET_SNAPSHOT_HMAC: ${{ needs.preview-production.outputs.secret_snapshot_hmac }}
+        run: |
+          current_secret_snapshot_hmac=$(./scripts/create-secret-snapshot-binding.py \
+            "production:${RELEASE_SHA}" \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY \
+            GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+            GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
+            YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN \
+            GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD)
+          if [ "$current_secret_snapshot_hmac" != "$APPROVED_SECRET_SNAPSHOT_HMAC" ]; then
+            echo "::error::Desired production Secret snapshot changed after approval"
             exit 1
           fi
 
@@ -249,10 +511,127 @@ jobs:
           chmod 600 "$KUBECONFIG"
 
       - name: Reject release or cluster drift after approval
+        id: drift-guard
+        env:
+          AUTH_ISSUER: ${{ secrets.PROD_AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.PROD_AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.PROD_AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.PROD_AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.PROD_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.PROD_TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.PROD_GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.PROD_GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.PROD_YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.PROD_YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.PROD_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.PROD_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.PROD_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.PROD_AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.PROD_MEDIA_INTERNAL_TOKEN }}
+          CORE_INTERNAL_TOKEN: ${{ secrets.PROD_CORE_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.PROD_USER_INTERNAL_TOKEN }}
+          GF_SECURITY_ADMIN_USER: ${{ secrets.PROD_GF_SECURITY_ADMIN_USER }}
+          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.PROD_GF_SECURITY_ADMIN_PASSWORD }}
+          SECRET_SNAPSHOT_BINDING_KEY: ${{ secrets.PROD_RELEASE_BINDING_KEY }}
         run: |
           approved_diff_sha256='${{ needs.preview-production.outputs.release_diff_sha256 }}'
           ./scripts/capture-release-diff.sh \
             "$RELEASE_MANIFEST" "$RELEASE_DIFF" "$approved_diff_sha256"
+          live_snapshot=$(./scripts/create-kubernetes-live-release-binding.py \
+            "production:${RELEASE_SHA}" \
+            "$NS/mnema-secrets" observability/grafana-secrets \
+            "$NS/mnema-secret-reconciliation")
+          current_live_snapshot_hmac=$(printf '%s' "$live_snapshot" | jq -r '.hmac')
+          approved_live_snapshot_hmac='${{ needs.preview-production.outputs.live_secret_snapshot_hmac }}'
+          if [ "$current_live_snapshot_hmac" != "$approved_live_snapshot_hmac" ]; then
+            echo "::error::Live production Secret or reconciliation state changed after approval"
+            exit 1
+          fi
+          app_secret_resource_version=$(printf '%s' "$live_snapshot" | \
+            jq -r '.resourceVersions["prod/mnema-secrets"] // empty')
+          reconciliation_resource_version=$(printf '%s' "$live_snapshot" | \
+            jq -r '.resourceVersions["prod/mnema-secret-reconciliation"] // empty')
+          app_drift=$(./scripts/detect-kubernetes-secret-drift.py \
+            "$NS" mnema-secrets \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY \
+            GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+            GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
+            YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN)
+          grafana_drift=$(./scripts/detect-kubernetes-secret-drift.py \
+            observability grafana-secrets \
+            GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD)
+          app_secret_generation=$(./scripts/create-secret-snapshot-binding.py \
+            production-application-secret-generation:v1 \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY \
+            GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+            GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
+            YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN)
+          grafana_secret_generation=$(./scripts/create-secret-snapshot-binding.py \
+            production-grafana-secret-generation:v1 \
+            GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD)
+          if [ "$app_secret_generation" != '${{ needs.preview-production.outputs.app_secret_generation }}' ] || \
+             [ "$grafana_secret_generation" != '${{ needs.preview-production.outputs.grafana_secret_generation }}' ]; then
+            echo "::error::Production Secret reconciliation generation changed after approval"
+            exit 1
+          fi
+          app_marker_drift=$(./scripts/detect-kubernetes-reconciliation-drift.py \
+            "$NS" mnema-secret-reconciliation applicationGeneration \
+            "$app_secret_generation")
+          grafana_marker_drift=$(./scripts/detect-kubernetes-reconciliation-drift.py \
+            "$NS" mnema-secret-reconciliation grafanaGeneration \
+            "$grafana_secret_generation")
+          if [ "$app_drift" = true ] || [ "$app_marker_drift" = true ] || \
+             [ "$grafana_drift" = true ] || [ "$grafana_marker_drift" = true ]; then
+            current_secret_drift=true
+          else
+            current_secret_drift=false
+          fi
+          approved_secret_drift='${{ needs.preview-production.outputs.secret_drift }}'
+          if [ "$current_secret_drift" != "$approved_secret_drift" ]; then
+            echo "::error::Production Secret drift state changed after approval"
+            exit 1
+          fi
+          ./scripts/verify-kubernetes-bootstrap-secret-values.py \
+            production "$NS" mnema-secrets \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN >/dev/null
+          ./scripts/verify-kubernetes-bootstrap-secret-values.py \
+            production observability grafana-secrets \
+            GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD >/dev/null
+          if [ "$app_drift" = true ] || [ "$app_marker_drift" = true ]; then
+            app_reconciliation_drift=true
+          else
+            app_reconciliation_drift=false
+          fi
+          if [ "$grafana_drift" = true ] || [ "$grafana_marker_drift" = true ]; then
+            grafana_reconciliation_drift=true
+          else
+            grafana_reconciliation_drift=false
+          fi
+          {
+            printf 'app_secret_drift=%s\n' "$app_drift"
+            printf 'grafana_secret_drift=%s\n' "$grafana_drift"
+            printf 'app_reconciliation_drift=%s\n' "$app_reconciliation_drift"
+            printf 'grafana_reconciliation_drift=%s\n' "$grafana_reconciliation_drift"
+            printf 'app_secret_generation=%s\n' "$app_secret_generation"
+            printf 'grafana_secret_generation=%s\n' "$grafana_secret_generation"
+            printf 'app_secret_resource_version=%s\n' "$app_secret_resource_version"
+            printf 'reconciliation_resource_version=%s\n' "$reconciliation_resource_version"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Ensure namespace exists
         run: |
@@ -260,87 +639,38 @@ jobs:
           kubectl apply -f k8s/observability/00-namespace.yaml
 
       - name: Create/Update secret (mnema-secrets)
+        if: steps.drift-guard.outputs.app_secret_drift == 'true'
         run: |
-          AUTH_JWT_PUBLIC_KEY_B64=$(printf '%s' "$AUTH_JWT_PUBLIC_KEY" | base64 | tr -d '\n')
-          AUTH_JWT_PRIVATE_KEY_B64=$(printf '%s' "$AUTH_JWT_PRIVATE_KEY" | base64 | tr -d '\n')
-          CURRENT_USER_INTERNAL_TOKEN_B64=$(kubectl -n "$NS" get secret mnema-secrets -o jsonpath='{.data.USER_INTERNAL_TOKEN}' 2>/dev/null || true)
-          if [ -n "${USER_INTERNAL_TOKEN:-}" ]; then
-            USER_INTERNAL_TOKEN_VALUE="$USER_INTERNAL_TOKEN"
-          elif [ -n "$CURRENT_USER_INTERNAL_TOKEN_B64" ]; then
-            USER_INTERNAL_TOKEN_VALUE=$(printf '%s' "$CURRENT_USER_INTERNAL_TOKEN_B64" | base64 -d)
-          else
-            USER_INTERNAL_TOKEN_VALUE=$(openssl rand -hex 24)
-          fi
-          cat <<YAML | kubectl apply -f -
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: mnema-secrets
-            namespace: ${NS}
-          type: Opaque
-          data:
-            AUTH_JWT_PUBLIC_KEY: "${AUTH_JWT_PUBLIC_KEY_B64}"
-            AUTH_JWT_PRIVATE_KEY: "${AUTH_JWT_PRIVATE_KEY_B64}"
-          stringData:
-            AUTH_ISSUER: "${AUTH_ISSUER}"
-            AUTH_ISSUER_URI: "${AUTH_ISSUER_URI}"
-            TURNSTILE_SITE_KEY: "${TURNSTILE_SITE_KEY}"
-            TURNSTILE_SECRET_KEY: "${TURNSTILE_SECRET_KEY}"
-            GOOGLE_CLIENT_ID: "${GOOGLE_CLIENT_ID}"
-            GOOGLE_CLIENT_SECRET: "${GOOGLE_CLIENT_SECRET}"
-            GITHUB_CLIENT_ID: "${GITHUB_CLIENT_ID}"
-            GITHUB_CLIENT_SECRET: "${GITHUB_CLIENT_SECRET}"
-            YANDEX_CLIENT_ID: "${YANDEX_CLIENT_ID}"
-            YANDEX_CLIENT_SECRET: "${YANDEX_CLIENT_SECRET}"
-            POSTGRES_DB: "${POSTGRES_DB}"
-            POSTGRES_USER: "${POSTGRES_USER}"
-            POSTGRES_PASSWORD: "${POSTGRES_PASSWORD}"
-            AWS_REGION: "${AWS_REGION}"
-            AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID}"
-            AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY}"
-            AWS_BUCKET_NAME: "${AWS_BUCKET_NAME}"
-            MEDIA_INTERNAL_TOKEN: "${MEDIA_INTERNAL_TOKEN}"
-            USER_INTERNAL_TOKEN: "${USER_INTERNAL_TOKEN_VALUE}"
-          YAML
+          secret_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN"
+          # The approved resourceVersion makes this a fail-closed HTTP PUT.
+          # shellcheck disable=SC2086 # Intentional expansion into key arguments.
+          ./scripts/replace-kubernetes-secret-if-current.py \
+            "$NS" mnema-secrets \
+            '${{ steps.drift-guard.outputs.app_secret_resource_version }}' \
+            $secret_names
         env:
-          AUTH_ISSUER: ${{ secrets.AUTH_ISSUER }}
-          AUTH_ISSUER_URI: ${{ secrets.AUTH_ISSUER_URI }}
-          AUTH_JWT_PUBLIC_KEY: ${{ secrets.AUTH_JWT_PUBLIC_KEY }}
-          AUTH_JWT_PRIVATE_KEY: ${{ secrets.AUTH_JWT_PRIVATE_KEY }}
-          TURNSTILE_SITE_KEY: ${{ secrets.TURNSTILE_SITE_KEY }}
-          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GITHUB_CLIENT_ID: ${{ secrets.GH_CLIENT_ID }}
-          GITHUB_CLIENT_SECRET: ${{ secrets.GH_CLIENT_SECRET }}
-          YANDEX_CLIENT_ID: ${{ secrets.YANDEX_CLIENT_ID }}
-          YANDEX_CLIENT_SECRET: ${{ secrets.YANDEX_CLIENT_SECRET }}
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_BUCKET_NAME: ${{ secrets.AWS_BUCKET_NAME }}
-          MEDIA_INTERNAL_TOKEN: ${{ secrets.MEDIA_INTERNAL_TOKEN }}
-          USER_INTERNAL_TOKEN: ${{ secrets.USER_INTERNAL_TOKEN }}
-
-      - name: Create/Update secret (grafana-secrets)
-        run: |
-          cat <<YAML | kubectl apply -f -
-          apiVersion: v1
-          kind: Secret
-          metadata:
-            name: grafana-secrets
-            namespace: observability
-          type: Opaque
-          stringData:
-            GF_SECURITY_ADMIN_USER: "${GF_SECURITY_ADMIN_USER}"
-            GF_SECURITY_ADMIN_PASSWORD: "${GF_SECURITY_ADMIN_PASSWORD}"
-          YAML
-        env:
-          GF_SECURITY_ADMIN_USER: ${{ secrets.GF_SECURITY_ADMIN_USER }}
-          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.GF_SECURITY_ADMIN_PASSWORD }}
+          AUTH_ISSUER: ${{ secrets.PROD_AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.PROD_AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.PROD_AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.PROD_AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.PROD_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.PROD_TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.PROD_GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.PROD_GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.PROD_YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.PROD_YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.PROD_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.PROD_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.PROD_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.PROD_AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.PROD_MEDIA_INTERNAL_TOKEN }}
+          CORE_INTERNAL_TOKEN: ${{ secrets.PROD_CORE_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.PROD_USER_INTERNAL_TOKEN }}
 
       - name: Create/Update Grafana dashboards ConfigMap
         run: |
@@ -359,13 +689,26 @@ jobs:
             --ignore-not-found=true
           kubectl apply -f k8s/observability/
 
-      - name: Restart observability pods (config reload)
+      - name: Restart observability configuration consumers
         run: |
           kubectl -n observability rollout restart daemonset/alloy
-          kubectl -n observability rollout restart deployment/grafana
+          if [ '${{ steps.drift-guard.outputs.grafana_reconciliation_drift }}' = true ]; then
+            kubectl -n observability patch deployment grafana --type=merge \
+              -p '{"spec":{"template":{"metadata":{"annotations":{"mnema.app/secret-generation":"${{ steps.drift-guard.outputs.grafana_secret_generation }}"}}}}}'
+          else
+            kubectl -n observability rollout restart deployment/grafana
+          fi
 
       - name: Apply complete application release once
         run: kubectl apply -f "$RELEASE_MANIFEST"
+
+      - name: Reconcile application Secret consumers
+        if: steps.drift-guard.outputs.app_reconciliation_drift == 'true'
+        run: |
+          for consumer in mnema-auth mnema-user mnema-core mnema-media mnema-import; do
+            kubectl -n "$NS" patch deployment "$consumer" --type=merge \
+              -p '{"spec":{"template":{"metadata":{"annotations":{"mnema.app/secret-generation":"${{ steps.drift-guard.outputs.app_secret_generation }}"}}}}}'
+          done
 
       - name: Verify service rollouts (sequential)
         run: |
@@ -395,3 +738,33 @@ jobs:
           wait_rollout mnema-core     1200s
           wait_rollout mnema-media    1800s
           wait_rollout mnema-import   1800s
+
+      - name: Verify observability rollouts
+        run: |
+          kubectl -n observability rollout status daemonset/alloy --timeout=600s
+          kubectl -n observability rollout status deployment/grafana --timeout=600s
+
+      - name: Record successful Secret reconciliation generations
+        env:
+          APP_SECRET_GENERATION: ${{ steps.drift-guard.outputs.app_secret_generation }}
+          GRAFANA_SECRET_GENERATION: ${{ steps.drift-guard.outputs.grafana_secret_generation }}
+          RECONCILIATION_RESOURCE_VERSION: ${{ steps.drift-guard.outputs.reconciliation_resource_version }}
+        run: |
+          if [ -n "$RECONCILIATION_RESOURCE_VERSION" ]; then
+            {
+              printf '%s\n' \
+                'apiVersion: v1' \
+                'kind: ConfigMap' \
+                'metadata:' \
+                '  name: mnema-secret-reconciliation' \
+                "  namespace: ${NS}" \
+                "  resourceVersion: \"${RECONCILIATION_RESOURCE_VERSION}\"" \
+                'data:' \
+                "  applicationGeneration: \"${APP_SECRET_GENERATION}\"" \
+                "  grafanaGeneration: \"${GRAFANA_SECRET_GENERATION}\""
+            } | kubectl replace -f -
+          else
+            kubectl -n "$NS" create configmap mnema-secret-reconciliation \
+              --from-literal="applicationGeneration=${APP_SECRET_GENERATION}" \
+              --from-literal="grafanaGeneration=${GRAFANA_SECRET_GENERATION}"
+          fi

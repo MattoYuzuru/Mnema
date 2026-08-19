@@ -21,7 +21,7 @@ import org.testcontainers.junit.jupiter.Testcontainers
 import org.testcontainers.utility.DockerImageName
 
 @Testcontainers(disabledWithoutDocker = true)
-@SpringBootTest(properties = ["MNEMA_BUILD_ID=test-release"])
+@SpringBootTest(properties = ["MNEMA_BUILD_ID=test-release", "USER_INTERNAL_TOKEN=test-user-token"])
 @Import(AuthApplicationTests.TestOAuth2ClientConfig::class)
 class AuthApplicationTests {
 
