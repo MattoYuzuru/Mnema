@@ -21,6 +21,16 @@ grep -Fq 'canonical-kubectl-diff.sh' "$REPO_ROOT/scripts/capture-release-diff.sh
 grep -Fq 'artifact-ids: ${{ needs.preview-production.outputs.preview_artifact_id }}' "$DEPLOY"
 grep -Fq 'digest-mismatch: error' "$DEPLOY"
 grep -Fq './scripts/verify-release-preview.sh' "$DEPLOY"
+test "$(grep -c './scripts/detect-kubernetes-secret-drift.py' "$DEPLOY")" -eq 4
+# shellcheck disable=SC2016 # GitHub/shell expressions are literal contract markers.
+grep -Fq 'secret_drift: ${{ steps.secret-preview.outputs.secret_drift }}' "$DEPLOY"
+# shellcheck disable=SC2016 # Workflow variables are literal contract markers.
+grep -Fq 'if [ "$application_release_changes" = true ] || [ "$SECRET_DRIFT" = true ]; then' "$DEPLOY"
+# shellcheck disable=SC2016 # Workflow variables are literal contract markers.
+grep -Fq 'secret_drift=${SECRET_DRIFT}' "$DEPLOY"
+grep -Fq 'Production Secret drift state changed after approval' "$DEPLOY"
+grep -Fq 'run: ./scripts/test-detect-kubernetes-secret-drift.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
+grep -Fq 'run: ./scripts/test-detect-kubernetes-secret-drift.sh' "$CALLER"
 # shellcheck disable=SC2016 # GitHub expressions are literal contract markers.
 grep -Fq 'PROD_KUBECONFIG_B64: ${{ secrets.PROD_KUBECONFIG_B64 }}' "$DEPLOY"
 
@@ -63,6 +73,29 @@ awk '
   exit 1
 }
 
+production_secret_names='AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD'
+validation_count=$(grep -c 'name: Validate required production secrets' "$DEPLOY")
+required_list_count=$(grep -F -c "required_names=\"$production_secret_names\"" "$DEPLOY")
+issuer_check_count=$(grep -F -c 'Production issuer secrets must identify auth.mnema.app' "$DEPLOY")
+database_check_count=$(grep -F -c 'PROD_POSTGRES_DB must match the release database contract' "$DEPLOY")
+if [ "$validation_count" -ne 2 ] || [ "$required_list_count" -ne 2 ] || \
+   [ "$issuer_check_count" -ne 2 ] || [ "$database_check_count" -ne 2 ]; then
+  echo 'Both production jobs must validate every consumed secret and its semantic issuer/database contract' >&2
+  exit 1
+fi
+
+first_validation_line=$(grep -n 'name: Validate required production secrets' "$DEPLOY" | head -n 1 | cut -d: -f1)
+second_validation_line=$(grep -n 'name: Validate required production secrets' "$DEPLOY" | tail -n 1 | cut -d: -f1)
+first_kubeconfig_line=$(grep -n 'name: Write kubeconfig (main cluster)' "$DEPLOY" | head -n 1 | cut -d: -f1)
+second_kubeconfig_line=$(grep -n 'name: Write kubeconfig (main cluster)' "$DEPLOY" | tail -n 1 | cut -d: -f1)
+first_mutation_line=$(grep -n -m1 'name: Ensure namespace exists' "$DEPLOY" | cut -d: -f1)
+if [ "$first_validation_line" -ge "$first_kubeconfig_line" ] || \
+   [ "$second_validation_line" -ge "$second_kubeconfig_line" ] || \
+   [ "$second_validation_line" -ge "$first_mutation_line" ]; then
+  echo 'Fresh production secret validation must precede credential access and every mutation in both jobs' >&2
+  exit 1
+fi
+
 preview_job=$(sed -n '/^  preview-production:/,/^  deploy-production:/p' "$DEPLOY")
 if printf '%s\n' "$preview_job" | grep -Eq 'kubectl (apply|delete)|kubectl .*rollout restart'; then
   echo 'The review-only production preview job must not mutate the cluster' >&2
@@ -70,10 +103,14 @@ if printf '%s\n' "$preview_job" | grep -Eq 'kubectl (apply|delete)|kubectl .*rol
 fi
 
 drift_guard_line=$(grep -n 'name: Reject release or cluster drift after approval' "$DEPLOY" | cut -d: -f1)
-first_mutation_line=$(grep -n -m1 'name: Ensure namespace exists' "$DEPLOY" | cut -d: -f1)
 if [ -z "$drift_guard_line" ] || [ -z "$first_mutation_line" ] || \
    [ "$drift_guard_line" -ge "$first_mutation_line" ]; then
   echo 'The approved diff must be revalidated before any production mutation' >&2
+  exit 1
+fi
+secret_preview_line=$(grep -n 'name: Detect production Secret drift without exposing values' "$DEPLOY" | cut -d: -f1)
+if [ -z "$secret_preview_line" ] || [ "$secret_preview_line" -ge "$first_mutation_line" ]; then
+  echo 'Secret-only drift must be detected before deciding whether to create a production deployment' >&2
   exit 1
 fi
 

@@ -6,6 +6,7 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 PRODUCTION_WORKFLOW="$REPO_ROOT/.github/workflows/production-deploy.yaml"
 STAGING_WORKFLOW="$REPO_ROOT/.github/workflows/staging-deploy.yaml"
 BOOTSTRAP="$REPO_ROOT/k8s/staging/bootstrap.yaml"
+ADMISSION="$REPO_ROOT/k8s/staging/admission.yaml"
 STAGING_DATA="$REPO_ROOT/k8s/staging/data.yaml"
 STAGING_BUCKET_JOB="$REPO_ROOT/k8s/staging/minio-bucket-job.yaml"
 STAGING_ROUTES="$REPO_ROOT/k8s/staging/routes.yaml"
@@ -13,6 +14,10 @@ STAGING_ROUTES="$REPO_ROOT/k8s/staging/routes.yaml"
 grep -Fq 'version: v1.36.0' "$STAGING_WORKFLOW"
 grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$REPO_ROOT/.github/workflows/deploy.yaml"
 grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
+grep -Fq 'run: ./scripts/test-environment-secret-separation.sh' "$REPO_ROOT/.github/workflows/deploy.yaml"
+grep -Fq 'run: ./scripts/test-environment-secret-separation.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
+grep -Fq 'After revocation, never blindly revert' "$REPO_ROOT/docs/operations/staging-runbook.md"
+grep -Fq './scripts/verify-environment-secret-separation.py --desired' "$REPO_ROOT/docs/operations/staging-runbook.md"
 
 assert_secret_prefix() {
   workflow="$1"
@@ -60,6 +65,48 @@ if grep -Eq '^kind: Cluster(Role|RoleBinding)$' "$BOOTSTRAP"; then
   echo "Staging bootstrap must not grant cluster-scoped RBAC" >&2
   exit 1
 fi
+NAMESPACE_MANIFEST="$REPO_ROOT/k8s/staging/namespace.yaml"
+grep -Fq 'pod-security.kubernetes.io/enforce: baseline' "$NAMESPACE_MANIFEST"
+grep -Fq 'pod-security.kubernetes.io/audit: restricted' "$NAMESPACE_MANIFEST"
+grep -Fq 'pod-security.kubernetes.io/warn: restricted' "$NAMESPACE_MANIFEST"
+grep -Fq 'assert_pod_security_rejects privileged' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
+grep -Fq 'assert_pod_security_rejects hostPath' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
+grep -Fq 'assert_pod_security_rejects hostNetwork' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
+test "$(grep -c '^kind: ValidatingAdmissionPolicy$' "$ADMISSION")" -eq 4
+test "$(grep -c '^kind: ValidatingAdmissionPolicyBinding$' "$ADMISSION")" -eq 4
+test "$(grep -c 'failurePolicy: Fail' "$ADMISSION")" -eq 4
+test "$(grep -c 'validationActions: \[Deny\]' "$ADMISSION")" -eq 4
+grep -Fq "object.spec.type == 'ClusterIP'" "$ADMISSION"
+grep -Fq 'object.spec.externalIPs.size() == 0' "$ADMISSION"
+grep -Fq "serviceAccountName != 'mnema-deployer'" "$ADMISSION"
+grep -Fq 'automountServiceAccountToken == false' "$ADMISSION"
+grep -Fq "object.type == 'Opaque'" "$ADMISSION"
+grep -Fq 'kubernetes.io/service-account.name' "$ADMISSION"
+grep -Fq 'resourceNames: ["mnema-secrets"]' "$BOOTSTRAP"
+if grep -Fq 'resources: ["configmaps", "secrets", "services"]' "$BOOTSTRAP"; then
+  echo 'Scoped staging CI must not have unrestricted Secret CRUD' >&2
+  exit 1
+fi
+grep -Fq 'kind: NetworkPolicy' "$BOOTSTRAP"
+grep -Fq 'name: mnema-staging-default-deny' "$BOOTSTRAP"
+grep -Fq 'name: mnema-staging-allowed-traffic' "$BOOTSTRAP"
+grep -Fq '169.254.0.0/16' "$BOOTSTRAP"
+grep -Fq 'fe80::/10' "$BOOTSTRAP"
+grep -Fq 'requests.ephemeral-storage: 12Gi' "$BOOTSTRAP"
+grep -Fq 'limits.ephemeral-storage: 40Gi' "$BOOTSTRAP"
+grep -Fq 'ephemeral-storage: 256Mi' "$BOOTSTRAP"
+grep -Fq 'ephemeral-storage: 4Gi' "$BOOTSTRAP"
+for quota_key in \
+  count/configmaps \
+  count/secrets \
+  count/deployments.apps \
+  count/replicasets.apps \
+  count/statefulsets.apps \
+  count/jobs.batch
+do
+  grep -Fq "$quota_key:" "$BOOTSTRAP"
+done
+grep -Fq 'verify-staging-network-boundary.sh' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
 if grep -Fq 'ingresses' "$BOOTSTRAP"; then
   echo "Scoped staging CI must not be able to replace shared-ingress host routing" >&2
   exit 1

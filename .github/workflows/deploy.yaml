@@ -81,6 +81,12 @@ jobs:
       - name: Verify canonical production release diff
         run: ./scripts/test-capture-release-diff.sh
 
+      - name: Verify value-silent Kubernetes Secret drift detection
+        run: ./scripts/test-detect-kubernetes-secret-drift.sh
+
+      - name: Verify environment credential separation contract
+        run: ./scripts/test-environment-secret-separation.sh
+
       - name: Verify production deployment safety contract
         run: ./scripts/test-production-deploy-safety.sh
 

@@ -25,6 +25,7 @@ jobs:
     outputs:
       release_diff_sha256: ${{ steps.preview.outputs.release_diff_sha256 }}
       has_release_changes: ${{ steps.preview.outputs.has_release_changes }}
+      secret_drift: ${{ steps.secret-preview.outputs.secret_drift }}
       preview_artifact_id: ${{ steps.upload-preview.outputs.artifact-id }}
       preview_artifact_digest: ${{ steps.upload-preview.outputs.artifact-digest }}
     env:
@@ -117,8 +118,59 @@ jobs:
           printf '%s' "$PROD_KUBECONFIG_B64" | base64 -d > "$KUBECONFIG"
           chmod 600 "$KUBECONFIG"
 
+      - name: Detect production Secret drift without exposing values
+        id: secret-preview
+        env:
+          AUTH_ISSUER: ${{ secrets.PROD_AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.PROD_AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.PROD_AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.PROD_AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.PROD_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.PROD_TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.PROD_GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.PROD_GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.PROD_YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.PROD_YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.PROD_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.PROD_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.PROD_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.PROD_AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.PROD_MEDIA_INTERNAL_TOKEN }}
+          CORE_INTERNAL_TOKEN: ${{ secrets.PROD_CORE_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.PROD_USER_INTERNAL_TOKEN }}
+          GF_SECURITY_ADMIN_USER: ${{ secrets.PROD_GF_SECURITY_ADMIN_USER }}
+          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.PROD_GF_SECURITY_ADMIN_PASSWORD }}
+        run: |
+          app_drift=$(./scripts/detect-kubernetes-secret-drift.py \
+            "$NS" mnema-secrets \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY \
+            GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+            GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
+            YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN)
+          grafana_drift=$(./scripts/detect-kubernetes-secret-drift.py \
+            observability grafana-secrets \
+            GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD)
+          if [ "$app_drift" = true ] || [ "$grafana_drift" = true ]; then
+            secret_drift=true
+          else
+            secret_drift=false
+          fi
+          printf 'secret_drift=%s\n' "$secret_drift" >> "$GITHUB_OUTPUT"
+          printf 'Production Secret drift: %s\n' "$secret_drift"
+
       - name: Capture complete application release preview
         id: preview
+        env:
+          SECRET_DRIFT: ${{ steps.secret-preview.outputs.secret_drift }}
         run: |
           release_diff_sha256=$(./scripts/capture-release-diff.sh \
             "$RELEASE_MANIFEST" "$RELEASE_DIFF")
@@ -126,15 +178,22 @@ jobs:
           kubectl_version=$(kubectl version --client -o json | \
             jq -r '.clientVersion.gitVersion')
           if grep -Fxq 'No application release changes.' "$RELEASE_DIFF"; then
-            has_release_changes=false
+            application_release_changes=false
           else
+            application_release_changes=true
+          fi
+          if [ "$application_release_changes" = true ] || [ "$SECRET_DRIFT" = true ]; then
             has_release_changes=true
+          else
+            has_release_changes=false
           fi
 
           cat > "$RELEASE_PREVIEW_METADATA" <<EOF
           release_sha=${RELEASE_SHA}
           release_manifest_sha256=${release_manifest_sha256}
           release_diff_sha256=${release_diff_sha256}
+          application_release_changes=${application_release_changes}
+          secret_drift=${SECRET_DRIFT}
           has_release_changes=${has_release_changes}
           kubectl_version=${kubectl_version}
           run_id=${GITHUB_RUN_ID}
@@ -162,6 +221,7 @@ jobs:
           PREVIEW_ARTIFACT_ID: ${{ steps.upload-preview.outputs.artifact-id }}
           PREVIEW_ARTIFACT_DIGEST: ${{ steps.upload-preview.outputs.artifact-digest }}
           HAS_RELEASE_CHANGES: ${{ steps.preview.outputs.has_release_changes }}
+          SECRET_DRIFT: ${{ steps.secret-preview.outputs.secret_drift }}
           RELEASE_DIFF_SHA256: ${{ steps.preview.outputs.release_diff_sha256 }}
         run: |
           {
@@ -171,6 +231,7 @@ jobs:
             printf -- '- Artifact ID: %s\n' "$PREVIEW_ARTIFACT_ID"
             printf -- '- Artifact digest: %s\n' "$PREVIEW_ARTIFACT_DIGEST"
             printf -- '- Changes: %s\n\n' "$HAS_RELEASE_CHANGES"
+            printf -- '- Secret drift (values hidden): %s\n\n' "$SECRET_DRIFT"
             if [ "$HAS_RELEASE_CHANGES" = true ]; then
               printf 'Inspect the preview artifact. Reject the next prod approval if any change is unexpected.\n'
             else
@@ -270,6 +331,7 @@ jobs:
             v1.36.0 \
             "$GITHUB_RUN_ID" \
             "$GITHUB_RUN_ATTEMPT" \
+            '${{ needs.preview-production.outputs.secret_drift }}' \
             true
 
       - name: Reject a stale release
@@ -277,6 +339,49 @@ jobs:
           current_main=$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')
           if [ "$RELEASE_SHA" != "$current_main" ]; then
             echo "::error::Refusing stale release ${RELEASE_SHA}; current main is ${current_main}"
+            exit 1
+          fi
+
+      - name: Validate required production secrets before mutation
+        env:
+          AUTH_ISSUER: ${{ secrets.PROD_AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.PROD_AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.PROD_AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.PROD_AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.PROD_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.PROD_TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.PROD_GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.PROD_GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.PROD_YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.PROD_YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.PROD_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.PROD_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.PROD_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.PROD_AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.PROD_MEDIA_INTERNAL_TOKEN }}
+          CORE_INTERNAL_TOKEN: ${{ secrets.PROD_CORE_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.PROD_USER_INTERNAL_TOKEN }}
+          GF_SECURITY_ADMIN_USER: ${{ secrets.PROD_GF_SECURITY_ADMIN_USER }}
+          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.PROD_GF_SECURITY_ADMIN_PASSWORD }}
+        run: |
+          required_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD"
+          for name in $required_names; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Required production secret ${name} is missing or empty"
+              exit 1
+            fi
+          done
+          if [ "$AUTH_ISSUER" != "https://auth.mnema.app" ] || [ "$AUTH_ISSUER_URI" != "$AUTH_ISSUER" ]; then
+            echo "::error::Production issuer secrets must identify auth.mnema.app"
+            exit 1
+          fi
+          if [ "$POSTGRES_DB" != mnema ]; then
+            echo "::error::PROD_POSTGRES_DB must match the release database contract"
             exit 1
           fi
 
@@ -292,10 +397,58 @@ jobs:
           chmod 600 "$KUBECONFIG"
 
       - name: Reject release or cluster drift after approval
+        env:
+          AUTH_ISSUER: ${{ secrets.PROD_AUTH_ISSUER }}
+          AUTH_ISSUER_URI: ${{ secrets.PROD_AUTH_ISSUER_URI }}
+          AUTH_JWT_PUBLIC_KEY: ${{ secrets.PROD_AUTH_JWT_PUBLIC_KEY }}
+          AUTH_JWT_PRIVATE_KEY: ${{ secrets.PROD_AUTH_JWT_PRIVATE_KEY }}
+          TURNSTILE_SITE_KEY: ${{ secrets.PROD_TURNSTILE_SITE_KEY }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.PROD_TURNSTILE_SECRET_KEY }}
+          GOOGLE_CLIENT_ID: ${{ secrets.PROD_GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.PROD_GOOGLE_CLIENT_SECRET }}
+          GITHUB_CLIENT_ID: ${{ secrets.PROD_GH_CLIENT_ID }}
+          GITHUB_CLIENT_SECRET: ${{ secrets.PROD_GH_CLIENT_SECRET }}
+          YANDEX_CLIENT_ID: ${{ secrets.PROD_YANDEX_CLIENT_ID }}
+          YANDEX_CLIENT_SECRET: ${{ secrets.PROD_YANDEX_CLIENT_SECRET }}
+          POSTGRES_DB: ${{ secrets.PROD_POSTGRES_DB }}
+          POSTGRES_USER: ${{ secrets.PROD_POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.PROD_POSTGRES_PASSWORD }}
+          AWS_REGION: ${{ secrets.PROD_AWS_REGION }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.PROD_AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.PROD_AWS_SECRET_ACCESS_KEY }}
+          AWS_BUCKET_NAME: ${{ secrets.PROD_AWS_BUCKET_NAME }}
+          MEDIA_INTERNAL_TOKEN: ${{ secrets.PROD_MEDIA_INTERNAL_TOKEN }}
+          CORE_INTERNAL_TOKEN: ${{ secrets.PROD_CORE_INTERNAL_TOKEN }}
+          USER_INTERNAL_TOKEN: ${{ secrets.PROD_USER_INTERNAL_TOKEN }}
+          GF_SECURITY_ADMIN_USER: ${{ secrets.PROD_GF_SECURITY_ADMIN_USER }}
+          GF_SECURITY_ADMIN_PASSWORD: ${{ secrets.PROD_GF_SECURITY_ADMIN_PASSWORD }}
         run: |
           approved_diff_sha256='${{ needs.preview-production.outputs.release_diff_sha256 }}'
           ./scripts/capture-release-diff.sh \
             "$RELEASE_MANIFEST" "$RELEASE_DIFF" "$approved_diff_sha256"
+          app_drift=$(./scripts/detect-kubernetes-secret-drift.py \
+            "$NS" mnema-secrets \
+            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
+            TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY \
+            GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+            GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
+            YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET \
+            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
+            AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
+            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN)
+          grafana_drift=$(./scripts/detect-kubernetes-secret-drift.py \
+            observability grafana-secrets \
+            GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD)
+          if [ "$app_drift" = true ] || [ "$grafana_drift" = true ]; then
+            current_secret_drift=true
+          else
+            current_secret_drift=false
+          fi
+          approved_secret_drift='${{ needs.preview-production.outputs.secret_drift }}'
+          if [ "$current_secret_drift" != "$approved_secret_drift" ]; then
+            echo "::error::Production Secret drift state changed after approval"
+            exit 1
+          fi
 
       - name: Ensure namespace exists
         run: |

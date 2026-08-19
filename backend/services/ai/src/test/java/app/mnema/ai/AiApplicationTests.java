@@ -7,7 +7,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+		"CORE_INTERNAL_TOKEN=test-core-internal-token",
+		"MEDIA_INTERNAL_TOKEN=test-media-internal-token"
+})
 @ActiveProfiles("test")
 class AiApplicationTests extends PostgresIntegrationTest {
 

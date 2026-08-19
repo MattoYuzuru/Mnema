@@ -1,8 +1,8 @@
 #!/bin/sh
 set -eu
 
-if [ "$#" -ne 9 ]; then
-  echo "usage: $0 METADATA DIFF MANIFEST_CHECKSUM RELEASE_SHA DIFF_SHA256 KUBECTL_VERSION RUN_ID RUN_ATTEMPT HAS_CHANGES" >&2
+if [ "$#" -ne 10 ]; then
+  echo "usage: $0 METADATA DIFF MANIFEST_CHECKSUM RELEASE_SHA DIFF_SHA256 KUBECTL_VERSION RUN_ID RUN_ATTEMPT SECRET_DRIFT HAS_CHANGES" >&2
   exit 64
 fi
 
@@ -14,7 +14,8 @@ expected_diff_sha256=$5
 expected_kubectl_version=$6
 expected_run_id=$7
 expected_run_attempt=$8
-expected_has_changes=$9
+expected_secret_drift=$9
+expected_has_changes=${10}
 
 for required_file in "$metadata_file" "$diff_file" "$manifest_checksum_file"; do
   if [ ! -f "$required_file" ]; then
@@ -59,6 +60,7 @@ require_metadata release_sha "$expected_release_sha"
 require_metadata release_manifest_sha256 "$manifest_sha256"
 require_metadata release_diff_sha256 "$expected_diff_sha256"
 require_metadata release_diff_sha256 "$diff_sha256"
+require_metadata secret_drift "$expected_secret_drift"
 require_metadata has_release_changes "$expected_has_changes"
 require_metadata kubectl_version "$expected_kubectl_version"
 require_metadata run_id "$expected_run_id"

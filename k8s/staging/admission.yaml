@@ -1,0 +1,129 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: mnema-staging-secret-boundary
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["secrets"]
+  validations:
+    - expression: "object.metadata.name != 'mnema-secrets' || object.type == 'Opaque'"
+      message: "The Mnema staging application Secret must remain Opaque"
+    - expression: "object.metadata.name != 'mnema-secrets' || !has(object.metadata.annotations) || !('kubernetes.io/service-account.name' in object.metadata.annotations)"
+      message: "The Mnema staging application Secret must not request a ServiceAccount token"
+    - expression: "object.metadata.name != 'mnema-secrets' || !has(object.data) || object.data.all(key, key in ['AUTH_ISSUER', 'AUTH_ISSUER_URI', 'AUTH_JWT_PUBLIC_KEY', 'AUTH_JWT_PRIVATE_KEY', 'TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'YANDEX_CLIENT_ID', 'YANDEX_CLIENT_SECRET', 'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_BUCKET_NAME', 'MEDIA_INTERNAL_TOKEN', 'CORE_INTERNAL_TOKEN', 'USER_INTERNAL_TOKEN'])"
+      message: "The Mnema staging application Secret contains an undocumented key"
+    - expression: "object.metadata.name != 'mnema-secrets' || !has(object.stringData) || object.stringData.all(key, key in ['AUTH_ISSUER', 'AUTH_ISSUER_URI', 'AUTH_JWT_PUBLIC_KEY', 'AUTH_JWT_PRIVATE_KEY', 'TURNSTILE_SITE_KEY', 'TURNSTILE_SECRET_KEY', 'GOOGLE_CLIENT_ID', 'GOOGLE_CLIENT_SECRET', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'YANDEX_CLIENT_ID', 'YANDEX_CLIENT_SECRET', 'POSTGRES_DB', 'POSTGRES_USER', 'POSTGRES_PASSWORD', 'AWS_REGION', 'AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY', 'AWS_BUCKET_NAME', 'MEDIA_INTERNAL_TOKEN', 'CORE_INTERNAL_TOKEN', 'USER_INTERNAL_TOKEN'])"
+      message: "The Mnema staging application Secret contains undocumented stringData"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: mnema-staging-secret-boundary
+spec:
+  policyName: mnema-staging-secret-boundary
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        mnema.app/environment: staging
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: mnema-staging-service-boundary
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["services"]
+  validations:
+    - expression: "!has(object.spec.type) || object.spec.type == 'ClusterIP'"
+      message: "Mnema staging Services must remain cluster-internal"
+    - expression: "!has(object.spec.externalIPs) || object.spec.externalIPs.size() == 0"
+      message: "Mnema staging Services must not declare externalIPs"
+    - expression: "!has(object.spec.ports) || object.spec.ports.all(port, !has(port.nodePort))"
+      message: "Mnema staging Services must not declare nodePort"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: mnema-staging-service-boundary
+spec:
+  policyName: mnema-staging-service-boundary
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        mnema.app/environment: staging
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: mnema-staging-controller-identity
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: ["apps"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["deployments", "replicasets", "statefulsets"]
+      - apiGroups: ["batch"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["jobs"]
+  validations:
+    - expression: "!has(object.spec.template.spec.serviceAccountName) || object.spec.template.spec.serviceAccountName != 'mnema-deployer'"
+      message: "Workloads must not run as the Mnema staging deployer ServiceAccount"
+    - expression: "has(object.spec.template.spec.automountServiceAccountToken) && object.spec.template.spec.automountServiceAccountToken == false"
+      message: "Workloads must explicitly disable ServiceAccount token automounting"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: mnema-staging-controller-identity
+spec:
+  policyName: mnema-staging-controller-identity
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        mnema.app/environment: staging
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: mnema-staging-pod-identity
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  validations:
+    - expression: "!has(object.spec.serviceAccountName) || object.spec.serviceAccountName != 'mnema-deployer'"
+      message: "Pods must not run as the Mnema staging deployer ServiceAccount"
+    - expression: "has(object.spec.automountServiceAccountToken) && object.spec.automountServiceAccountToken == false"
+      message: "Pods must explicitly disable ServiceAccount token automounting"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: mnema-staging-pod-identity
+spec:
+  policyName: mnema-staging-pod-identity
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        mnema.app/environment: staging

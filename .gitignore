@@ -49,6 +49,11 @@ frontend/node_modules
 !/scripts/test-create-staging-kubeconfig.sh
 !/scripts/test-render-release-manifest.sh
 !/scripts/test-production-deploy-safety.sh
+!/scripts/detect-kubernetes-secret-drift.py
+!/scripts/test-detect-kubernetes-secret-drift.sh
+!/scripts/verify-environment-secret-separation.py
+!/scripts/test-environment-secret-separation.sh
+!/scripts/verify-staging-network-boundary.sh
 !/scripts/local-ai-gateway/
 !/scripts/local-ai-gateway/**
 !/scripts/local-audio-gateway/
