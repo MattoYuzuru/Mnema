@@ -24,11 +24,16 @@ FORBIDDEN_EQUAL_KEYS = (
     "MEDIA_INTERNAL_TOKEN",
     "CORE_INTERNAL_TOKEN",
     "USER_INTERNAL_TOKEN",
+    "SMOKE_LOGIN",
+    "SMOKE_TURNSTILE_BYPASS_KEY",
 )
+
+DESIRED_ONLY_FORBIDDEN_EQUAL_KEYS = ("SMOKE_PASSWORD",)
 
 
 def desired_values(prefix: str) -> dict[str, str]:
-    values = {key: os.environ.get(f"{prefix}_{key}", "") for key in FORBIDDEN_EQUAL_KEYS}
+    keys = (*FORBIDDEN_EQUAL_KEYS, *DESIRED_ONLY_FORBIDDEN_EQUAL_KEYS)
+    values = {key: os.environ.get(f"{prefix}_{key}", "") for key in keys}
     if any(not value for value in values.values()):
         raise ValueError(f"Required {prefix} comparison inputs are missing")
     return values
@@ -62,6 +67,7 @@ def main() -> int:
         except ValueError as error:
             print(error, file=sys.stderr)
             return 1
+        compared_keys = (*FORBIDDEN_EQUAL_KEYS, *DESIRED_ONLY_FORBIDDEN_EQUAL_KEYS)
     elif sys.argv[1:] == ["--live"]:
         try:
             staging = live_values("mnema-staging")
@@ -69,11 +75,12 @@ def main() -> int:
         except ValueError as error:
             print(error, file=sys.stderr)
             return 1
+        compared_keys = FORBIDDEN_EQUAL_KEYS
     else:
         print(f"usage: {sys.argv[0]} --desired|--live", file=sys.stderr)
         return 64
 
-    duplicates = [key for key in FORBIDDEN_EQUAL_KEYS if staging[key] == production[key]]
+    duplicates = [key for key in compared_keys if staging[key] == production[key]]
     if duplicates:
         for key in duplicates:
             print(f"forbidden_duplicate={key}", file=sys.stderr)

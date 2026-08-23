@@ -5,6 +5,7 @@ SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 PRODUCTION_WORKFLOW="$REPO_ROOT/.github/workflows/production-deploy.yaml"
 STAGING_WORKFLOW="$REPO_ROOT/.github/workflows/staging-deploy.yaml"
+ROLLBACK_DRILL_WORKFLOW="$REPO_ROOT/.github/workflows/staging-rollback-drill.yaml"
 BOOTSTRAP="$REPO_ROOT/k8s/staging/bootstrap.yaml"
 ADMISSION="$REPO_ROOT/k8s/staging/admission.yaml"
 STAGING_DATA="$REPO_ROOT/k8s/staging/data.yaml"
@@ -22,11 +23,31 @@ for contract_test in \
   test-apply-staging-bootstrap.sh \
   test-staging-plan-preview.sh \
   test-kubernetes-secret-consumer-reconciliation.sh \
+  test-kubernetes-secret-rollback.sh \
   test-production-telemetry-boundary.sh
 do
   grep -Fq "run: ./scripts/$contract_test" "$REPO_ROOT/.github/workflows/deploy.yaml"
   grep -Fq "run: ./scripts/$contract_test" "$REPO_ROOT/.github/workflows/pull-request.yaml"
 done
+
+for workflow in "$PRODUCTION_WORKFLOW" "$STAGING_WORKFLOW"; do
+  grep -Fq './scripts/preserve-kubernetes-secret.py snapshot' "$workflow"
+  grep -Fq './scripts/preserve-kubernetes-secret.py restore' "$workflow"
+  grep -Fq 'id: app-secret-restore' "$workflow"
+  grep -Fq "steps.app-secret-restore.outcome == 'success'" "$workflow"
+  grep -Fq 'SMOKE_LOGIN,SMOKE_TURNSTILE_BYPASS_KEY' "$workflow"
+done
+grep -Fq 'resourceVersion: \"${APP_SECRET_RESOURCE_VERSION}\"' "$STAGING_WORKFLOW"
+staging_rollback_smoke=$(sed -n '/name: Verify complete staging rollback/,/name: Upload staging failure evidence/p' "$STAGING_WORKFLOW")
+printf '%s\n' "$staging_rollback_smoke" | grep -Fq 'SMOKE_PASSWORD: ${{ secrets.STAGING_SMOKE_PASSWORD }}'
+if printf '%s\n' "$staging_rollback_smoke" | grep -Fq -- '--identity-only'; then
+  echo 'Staging rollback must pass the complete authenticated smoke' >&2
+  exit 1
+fi
+legacy_staging_rollback_smoke=$(sed -n '/name: Verify adopted legacy staging rollback identity/,/name: Verify complete staging rollback/p' "$STAGING_WORKFLOW")
+printf '%s\n' "$legacy_staging_rollback_smoke" | grep -Fq "steps.rollback.outputs.authenticated_smoke_supported != 'true'"
+printf '%s\n' "$legacy_staging_rollback_smoke" | grep -Fq -- '--identity-only'
+printf '%s\n' "$staging_rollback_smoke" | grep -Fq "steps.rollback.outputs.authenticated_smoke_supported == 'true'"
 grep -Fq 'After revocation, never blindly revert' "$REPO_ROOT/docs/operations/staging-runbook.md"
 grep -Fq './scripts/verify-environment-secret-separation.py --desired' "$REPO_ROOT/docs/operations/staging-runbook.md"
 
@@ -51,6 +72,7 @@ assert_secret_prefix() {
 
 assert_secret_prefix "$PRODUCTION_WORKFLOW" PROD_
 assert_secret_prefix "$STAGING_WORKFLOW" STAGING_
+assert_secret_prefix "$ROLLBACK_DRILL_WORKFLOW" STAGING_
 
 if grep -Fq 'secrets: inherit' "$REPO_ROOT/.github/workflows/deploy.yaml"; then
   echo "Deployment callers must not inherit repository secrets" >&2
@@ -68,6 +90,45 @@ for token in MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN; do
     exit 1
   }
 done
+
+for workflow in "$PRODUCTION_WORKFLOW" "$STAGING_WORKFLOW"; do
+  grep -Fq 'scripts/smoke/release_smoke.py' "$workflow"
+  grep -Fq 'scripts/smoke/release_state.py snapshot' "$workflow"
+  grep -Fq 'scripts/smoke/release_state.py rollback' "$workflow"
+  grep -Fq "steps.mutation-start.outputs.attempted == 'true'" "$workflow"
+  grep -Fq 'id: mutation-start' "$workflow"
+  grep -Fq "AUTO_ROLLBACK_ENABLED:" "$workflow"
+  grep -Fq 'release-record-${{ github.run_id }}' "$workflow"
+  if grep -E 'secret_names=.*SMOKE_PASSWORD' "$workflow" >/dev/null; then
+    echo "Smoke account passwords must never be persisted in Kubernetes application secrets" >&2
+    exit 1
+  fi
+done
+
+grep -Fq -- '--allow-empty' "$STAGING_WORKFLOW"
+grep -Fq "steps.snapshot.outputs.previous_available == 'true'" "$STAGING_WORKFLOW"
+grep -Fq 'name: Remove a failed first staging application candidate' "$STAGING_WORKFLOW"
+grep -Fq 'kubectl delete -f "$RELEASE_MANIFEST" --ignore-not-found=true --wait=true' "$STAGING_WORKFLOW"
+if grep -Fq -- '--allow-empty' "$PRODUCTION_WORKFLOW"; then
+  echo 'Production must never accept an empty previous release boundary' >&2
+  exit 1
+fi
+
+for key in SMOKE_LOGIN SMOKE_TURNSTILE_BYPASS_KEY; do
+  grep -Fq "key: $key" "$REPO_ROOT/k8s/auth-deploy.yaml" || {
+    echo "Auth deployment is missing mandatory $key injection" >&2
+    exit 1
+  }
+done
+
+grep -Fq 'RUN_STAGING_ROLLBACK_DRILL' "$ROLLBACK_DRILL_WORKFLOW"
+grep -Fq 'name: staging' "$ROLLBACK_DRILL_WORKFLOW"
+grep -Fq 'version: v1.36.0' "$ROLLBACK_DRILL_WORKFLOW"
+if grep -Eq 'PROD_|namespace:[[:space:]]+prod|NS:[[:space:]]+prod' "$ROLLBACK_DRILL_WORKFLOW"; then
+  echo "The destructive rollback drill must remain staging-only" >&2
+  exit 1
+fi
+
 grep -Fq 'kind: ResourceQuota' "$BOOTSTRAP"
 grep -Fq 'kind: LimitRange' "$BOOTSTRAP"
 grep -Fq 'kind: Role' "$BOOTSTRAP"
