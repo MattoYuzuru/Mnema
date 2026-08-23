@@ -78,6 +78,35 @@ assert_secret_prefix "$PRODUCTION_WORKFLOW" PROD_
 assert_secret_prefix "$STAGING_WORKFLOW" STAGING_
 assert_secret_prefix "$ROLLBACK_DRILL_WORKFLOW" STAGING_
 
+assert_reusable_environment_secret_contract() {
+  workflow=$1
+  prefix=$2
+  referenced=$(grep -Eo "secrets\\.${prefix}[A-Z0-9_]+" "$workflow" | \
+    sed 's/^secrets\.//' | sort -u)
+  declared=$(awk -v prefix="$prefix" '
+    /^    secrets:$/ { inside = 1; next }
+    inside && /^[^ ]/ { exit }
+    inside && $0 ~ "^      " prefix "[A-Z0-9_]+:" {
+      value = $1
+      sub(/:$/, "", value)
+      print value
+    }
+  ' "$workflow" | sort -u)
+  if [ "$referenced" != "$declared" ]; then
+    echo "Every $prefix Environment secret reference must be declared by workflow_call" >&2
+    exit 1
+  fi
+  for name in $declared; do
+    grep -Fq "$name: { required: false }" "$workflow" || {
+      echo "$name must remain optional because the job-level Environment supplies it" >&2
+      exit 1
+    }
+  done
+}
+
+assert_reusable_environment_secret_contract "$STAGING_WORKFLOW" STAGING_
+assert_reusable_environment_secret_contract "$PRODUCTION_WORKFLOW" PROD_
+
 if grep -Fq 'secrets: inherit' "$MAIN_WORKFLOW"; then
   echo "Deployment callers must not inherit repository secrets" >&2
   exit 1

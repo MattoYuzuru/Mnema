@@ -7,6 +7,39 @@ on:
         description: Exact tested and built main revision to deploy
         required: true
         type: string
+    # These values are supplied by the job-level prod Environment. Reusable
+    # workflows declare them as optional because the caller never receives or
+    # forwards protected Environment values.
+    secrets:
+      PROD_AUTH_ISSUER: { required: false }
+      PROD_AUTH_ISSUER_URI: { required: false }
+      PROD_AUTH_JWT_PRIVATE_KEY: { required: false }
+      PROD_AUTH_JWT_PUBLIC_KEY: { required: false }
+      PROD_AWS_ACCESS_KEY_ID: { required: false }
+      PROD_AWS_BUCKET_NAME: { required: false }
+      PROD_AWS_REGION: { required: false }
+      PROD_AWS_SECRET_ACCESS_KEY: { required: false }
+      PROD_CORE_INTERNAL_TOKEN: { required: false }
+      PROD_GF_SECURITY_ADMIN_PASSWORD: { required: false }
+      PROD_GF_SECURITY_ADMIN_USER: { required: false }
+      PROD_GH_CLIENT_ID: { required: false }
+      PROD_GH_CLIENT_SECRET: { required: false }
+      PROD_GOOGLE_CLIENT_ID: { required: false }
+      PROD_GOOGLE_CLIENT_SECRET: { required: false }
+      PROD_KUBECONFIG_B64: { required: false }
+      PROD_MEDIA_INTERNAL_TOKEN: { required: false }
+      PROD_POSTGRES_DB: { required: false }
+      PROD_POSTGRES_PASSWORD: { required: false }
+      PROD_POSTGRES_USER: { required: false }
+      PROD_RELEASE_BINDING_KEY: { required: false }
+      PROD_SMOKE_LOGIN: { required: false }
+      PROD_SMOKE_PASSWORD: { required: false }
+      PROD_SMOKE_TURNSTILE_BYPASS_KEY: { required: false }
+      PROD_TURNSTILE_SECRET_KEY: { required: false }
+      PROD_TURNSTILE_SITE_KEY: { required: false }
+      PROD_USER_INTERNAL_TOKEN: { required: false }
+      PROD_YANDEX_CLIENT_ID: { required: false }
+      PROD_YANDEX_CLIENT_SECRET: { required: false }
 
 permissions: {}
 

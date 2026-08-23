@@ -7,6 +7,36 @@ on:
         description: Exact tested and built main revision to deploy
         required: true
         type: string
+    # These values are supplied by the job-level staging Environment. Reusable
+    # workflows still need an explicit optional declaration for each secrets
+    # context name; the caller cannot and must not copy Environment values.
+    secrets:
+      STAGING_AUTH_ISSUER: { required: false }
+      STAGING_AUTH_ISSUER_URI: { required: false }
+      STAGING_AUTH_JWT_PRIVATE_KEY: { required: false }
+      STAGING_AUTH_JWT_PUBLIC_KEY: { required: false }
+      STAGING_AWS_ACCESS_KEY_ID: { required: false }
+      STAGING_AWS_BUCKET_NAME: { required: false }
+      STAGING_AWS_REGION: { required: false }
+      STAGING_AWS_SECRET_ACCESS_KEY: { required: false }
+      STAGING_CORE_INTERNAL_TOKEN: { required: false }
+      STAGING_GH_CLIENT_ID: { required: false }
+      STAGING_GH_CLIENT_SECRET: { required: false }
+      STAGING_GOOGLE_CLIENT_ID: { required: false }
+      STAGING_GOOGLE_CLIENT_SECRET: { required: false }
+      STAGING_KUBECONFIG_B64: { required: false }
+      STAGING_MEDIA_INTERNAL_TOKEN: { required: false }
+      STAGING_POSTGRES_DB: { required: false }
+      STAGING_POSTGRES_PASSWORD: { required: false }
+      STAGING_POSTGRES_USER: { required: false }
+      STAGING_SMOKE_LOGIN: { required: false }
+      STAGING_SMOKE_PASSWORD: { required: false }
+      STAGING_SMOKE_TURNSTILE_BYPASS_KEY: { required: false }
+      STAGING_TURNSTILE_SECRET_KEY: { required: false }
+      STAGING_TURNSTILE_SITE_KEY: { required: false }
+      STAGING_USER_INTERNAL_TOKEN: { required: false }
+      STAGING_YANDEX_CLIENT_ID: { required: false }
+      STAGING_YANDEX_CLIENT_SECRET: { required: false }
 
 permissions: {}
 
