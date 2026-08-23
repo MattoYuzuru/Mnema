@@ -174,15 +174,15 @@ if [ "${1:-}" = apply ] && [ "${2:-}" = --dry-run=server ] && \
    [ "${3:-}" = -f ] && [ "${4:-}" = - ]; then
   payload=$(while IFS= read -r line; do printf '%s\n' "$line"; done)
   case "$payload" in
-    *mnema-staging-pss-probe-privileged*)
+    *'kind: Pod'*mnema-staging-pss-probe-privileged*)
       probe=pss-privileged
       message='forbidden: violates PodSecurity "baseline:v1.36"'
       ;;
-    *mnema-staging-pss-probe-hostpath*)
+    *'kind: Pod'*mnema-staging-pss-probe-hostpath*)
       probe=pss-hostpath
       message='forbidden: violates PodSecurity "baseline:v1.36"'
       ;;
-    *mnema-staging-pss-probe-hostnetwork*)
+    *'kind: Pod'*mnema-staging-pss-probe-hostnetwork*)
       probe=pss-hostnetwork
       message='forbidden: violates PodSecurity "baseline:v1.36"'
       ;;
@@ -206,9 +206,9 @@ if [ "${1:-}" = apply ] && [ "${2:-}" = --dry-run=server ] && \
       probe=token-automount
       message='denied: Workloads must explicitly disable ServiceAccount token automounting'
       ;;
-    *mnema-staging-boundary-probe-ephemeral-storage*)
+    *mnema-staging-limitrange-probe-ephemeral-storage*)
       probe=excessive-ephemeral-storage
-      message='denied: maximum limit usage per Container is 4Gi'
+      message='forbidden: maximum ephemeral-storage usage per Container is 4Gi'
       ;;
     *) exit 66 ;;
   esac
@@ -227,7 +227,7 @@ if [ "${1:-}" = patch ] && [ "${2:-}" = secret ] && \
     printf '%s\n' accepted
     exit 0
   fi
-  echo 'denied: The Mnema staging application Secret must remain Opaque' >&2
+  echo 'denied: The Mnema staging application Secret must not request a ServiceAccount token' >&2
   exit 1
 fi
 
@@ -334,6 +334,26 @@ if PATH="$TEST_ROOT/bin:$PATH" FAKE_KUBECTL_LOG="$fake_log" \
   exit 1
 fi
 test ! -e "$TEST_ROOT/missing-service-policy.kubeconfig"
+
+if PATH="$TEST_ROOT/bin:$PATH" FAKE_KUBECTL_LOG="$fake_log" \
+  FAKE_ALLOWED_PROBE=pss-privileged \
+  OUTPUT="$TEST_ROOT/missing-pod-security.kubeconfig" \
+  KUBE_API_SERVER=https://kubernetes.main.example:6443 \
+  "$CREATE_KUBECONFIG" >/dev/null 2>&1; then
+  echo 'an admitted privileged Pod must block credential creation' >&2
+  exit 1
+fi
+test ! -e "$TEST_ROOT/missing-pod-security.kubeconfig"
+
+if PATH="$TEST_ROOT/bin:$PATH" FAKE_KUBECTL_LOG="$fake_log" \
+  FAKE_ALLOWED_PROBE=excessive-ephemeral-storage \
+  OUTPUT="$TEST_ROOT/missing-limitrange.kubeconfig" \
+  KUBE_API_SERVER=https://kubernetes.main.example:6443 \
+  "$CREATE_KUBECONFIG" >/dev/null 2>&1; then
+  echo 'an admitted excessive ephemeral-storage Pod must block credential creation' >&2
+  exit 1
+fi
+test ! -e "$TEST_ROOT/missing-limitrange.kubeconfig"
 
 if PATH="$TEST_ROOT/bin:$PATH" FAKE_KUBECTL_LOG="$fake_log" \
   FAKE_ALLOW_SECRET_TOKEN_PATCH=true \
