@@ -8,6 +8,9 @@ set -eu
 MODE=${MODE:-apply}
 KUBE_API_SERVER=${KUBE_API_SERVER:?KUBE_API_SERVER is required}
 KUBE_API_ADDRESSES=${KUBE_API_ADDRESSES:-}
+SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+TELEMETRY_VERIFY=${TELEMETRY_VERIFY:-$SCRIPT_DIR/verify-production-telemetry-boundary.py}
+TELEMETRY_VERIFY_TIMEOUT_SECONDS=${TELEMETRY_VERIFY_TIMEOUT_SECONDS:-60}
 CHAIN_A=MNEMA_POD_HOST_BOUNDARY_A
 CHAIN_B=MNEMA_POD_HOST_BOUNDARY_B
 
@@ -15,6 +18,16 @@ case "$MODE" in
   apply | check) ;;
   *) echo "MODE must be apply or check" >&2; exit 64 ;;
 esac
+case "$TELEMETRY_VERIFY_TIMEOUT_SECONDS" in
+  '' | *[!0-9]*)
+    echo "TELEMETRY_VERIFY_TIMEOUT_SECONDS must be an integer" >&2
+    exit 64
+    ;;
+esac
+if [ "$TELEMETRY_VERIFY_TIMEOUT_SECONDS" -gt 300 ] || [ ! -x "$TELEMETRY_VERIFY" ]; then
+  echo "A valid executable telemetry verifier and timeout <= 300 are required" >&2
+  exit 64
+fi
 
 TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/mnema-host-boundary.XXXXXX")
 trap 'rm -rf "$TEST_ROOT"' EXIT HUP INT TERM
@@ -169,14 +182,33 @@ manage_family() {
     return
   fi
 
+  a_input=false
+  a_forward=false
+  b_input=false
+  b_forward=false
+  if "$firewall" -w -C INPUT -j "$CHAIN_A" 2>/dev/null; then a_input=true; fi
+  if "$firewall" -w -C FORWARD -j "$CHAIN_A" 2>/dev/null; then a_forward=true; fi
+  if "$firewall" -w -C INPUT -j "$CHAIN_B" 2>/dev/null; then b_input=true; fi
+  if "$firewall" -w -C FORWARD -j "$CHAIN_B" 2>/dev/null; then b_forward=true; fi
+  if [ "$a_input" != "$a_forward" ] || [ "$b_input" != "$b_forward" ]; then
+    echo "Partial Mnema host-boundary hooks exist for IPv${family}; refusing mutation" >&2
+    exit 1
+  fi
+  if [ "$a_input" = true ] && [ "$b_input" = true ]; then
+    echo "Both Mnema host-boundary chains are active for IPv${family}; refusing mutation" >&2
+    exit 1
+  fi
+
+  old_chain=
+  if [ "$a_input" = true ]; then
+    old_chain=$CHAIN_A
+  elif [ "$b_input" = true ]; then
+    old_chain=$CHAIN_B
+  fi
+
   if [ "$MODE" = apply ]; then
-    old_chain=
-    if "$firewall" -w -C INPUT -j "$CHAIN_A" 2>/dev/null; then
-      old_chain=$CHAIN_A
+    if [ "$old_chain" = "$CHAIN_A" ]; then
       CHAIN=$CHAIN_B
-    elif "$firewall" -w -C INPUT -j "$CHAIN_B" 2>/dev/null; then
-      old_chain=$CHAIN_B
-      CHAIN=$CHAIN_A
     else
       CHAIN=$CHAIN_A
     fi
@@ -222,8 +254,30 @@ manage_family() {
       fi
     done <"$family_inventory"
     "$firewall" -w -A "$CHAIN" -j RETURN
-    "$firewall" -w -I INPUT 1 -j "$CHAIN"
-    "$firewall" -w -I FORWARD 1 -j "$CHAIN"
+
+    rollback_new_chain() {
+      "$firewall" -w -D INPUT -j "$CHAIN" 2>/dev/null || true
+      "$firewall" -w -D FORWARD -j "$CHAIN" 2>/dev/null || true
+      "$firewall" -w -F "$CHAIN" 2>/dev/null || true
+      "$firewall" -w -X "$CHAIN" 2>/dev/null || true
+    }
+
+    swap_started_at=$(date +%s)
+    if ! "$firewall" -w -I INPUT 1 -j "$CHAIN"; then
+      rollback_new_chain
+      return 1
+    fi
+    if ! "$firewall" -w -I FORWARD 1 -j "$CHAIN"; then
+      rollback_new_chain
+      return 1
+    fi
+    if ! "$TELEMETRY_VERIFY" \
+      --not-before-epoch "$swap_started_at" \
+      --timeout-seconds "$TELEMETRY_VERIFY_TIMEOUT_SECONDS"; then
+      rollback_new_chain
+      echo "Fresh production telemetry failed after IPv${family} activation; restored prior hooks" >&2
+      return 1
+    fi
     if [ -n "$old_chain" ]; then
       "$firewall" -w -D INPUT -j "$old_chain"
       "$firewall" -w -D FORWARD -j "$old_chain"
@@ -231,11 +285,9 @@ manage_family() {
       "$firewall" -w -X "$old_chain"
     fi
   else
-    if "$firewall" -w -C INPUT -j "$CHAIN_A" 2>/dev/null && \
-       "$firewall" -w -C FORWARD -j "$CHAIN_A" 2>/dev/null; then
+    if [ "$a_input" = true ]; then
       CHAIN=$CHAIN_A
-    elif "$firewall" -w -C INPUT -j "$CHAIN_B" 2>/dev/null && \
-         "$firewall" -w -C FORWARD -j "$CHAIN_B" 2>/dev/null; then
+    elif [ "$b_input" = true ]; then
       CHAIN=$CHAIN_B
     else
       echo "No complete active Mnema host-boundary chain for IPv${family}" >&2

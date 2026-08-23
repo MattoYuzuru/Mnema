@@ -102,6 +102,9 @@ jobs:
       - name: Verify staging plan is fully previewed before mutation
         run: ./scripts/test-staging-plan-preview.sh
 
+      - name: Verify idempotent Kubernetes Secret consumer reconciliation
+        run: ./scripts/test-kubernetes-secret-consumer-reconciliation.sh
+
       - name: Verify production telemetry host-boundary contract
         run: ./scripts/test-production-telemetry-boundary.sh
 

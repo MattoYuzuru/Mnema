@@ -7,6 +7,7 @@ metadata:
   namespace: release-namespace-placeholder
 spec:
   replicas: 1
+  revisionHistoryLimit: 2
   selector: { matchLabels: { app: mnema-auth } }
   template:
     metadata: { labels: { app: mnema-auth } }

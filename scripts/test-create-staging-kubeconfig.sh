@@ -33,7 +33,11 @@ if [ "$*" = '-n observability get pods -l app=prometheus -o json' ]; then
   exit 0
 fi
 if [ "$*" = 'get --raw /api/v1/namespaces/observability/services/http:prometheus:9090/proxy/api/v1/targets' ]; then
-  printf '%s\n' '{"data":{"activeTargets":[{"labels":{"job":"node-exporter"},"health":"up"},{"labels":{"job":"kubelet"},"health":"up"},{"labels":{"job":"cadvisor"},"health":"up"}]}}'
+  printf '%s\n' '{"data":{"activeTargets":[{"labels":{"job":"node-exporter"},"health":"up","lastScrape":"2099-01-01T00:00:00Z"},{"labels":{"job":"kubelet"},"health":"up","lastScrape":"2099-01-01T00:00:00Z"},{"labels":{"job":"cadvisor"},"health":"up","lastScrape":"2099-01-01T00:00:00Z"}]}}'
+  exit 0
+fi
+if [ "$*" = 'get --raw /apis/metrics.k8s.io/v1beta1/nodes' ]; then
+  printf '%s\n' '{"items":[{"timestamp":"2099-01-01T00:00:00Z"}]}'
   exit 0
 fi
 if [ "${1:-}" = label ] && [ "${2:-}" = namespace ] && \
@@ -232,6 +236,13 @@ EOF
 cat >"$TEST_ROOT/bin/iptables" <<'EOF'
 #!/bin/sh
 set -eu
+if [ "${1:-}" = -w ] && [ "${2:-}" = -C ] && \
+  { [ "${3:-}" = INPUT ] || [ "${3:-}" = FORWARD ]; }; then
+  if [ "${5:-}" = MNEMA_POD_HOST_BOUNDARY_A ]; then
+    exit 0
+  fi
+  exit 1
+fi
 exit 0
 EOF
 cat >"$TEST_ROOT/bin/systemctl" <<'EOF'
