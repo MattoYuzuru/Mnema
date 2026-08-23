@@ -3,6 +3,7 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
+MAIN_WORKFLOW="$REPO_ROOT/.github/workflows/deploy.yaml"
 PRODUCTION_WORKFLOW="$REPO_ROOT/.github/workflows/production-deploy.yaml"
 STAGING_WORKFLOW="$REPO_ROOT/.github/workflows/staging-deploy.yaml"
 ROLLBACK_DRILL_WORKFLOW="$REPO_ROOT/.github/workflows/staging-rollback-drill.yaml"
@@ -13,9 +14,12 @@ STAGING_BUCKET_JOB="$REPO_ROOT/k8s/staging/minio-bucket-job.yaml"
 STAGING_ROUTES="$REPO_ROOT/k8s/staging/routes.yaml"
 
 grep -Fq 'version: v1.36.0' "$STAGING_WORKFLOW"
-grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$REPO_ROOT/.github/workflows/deploy.yaml"
+grep -Fq 'workflow_dispatch:' "$MAIN_WORKFLOW"
+grep -Fq 'name: Require exact main branch' "$MAIN_WORKFLOW"
+test "$(grep -c 'needs: validate-main-ref' "$MAIN_WORKFLOW")" -eq 2
+grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$MAIN_WORKFLOW"
 grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
-grep -Fq 'run: ./scripts/test-environment-secret-separation.sh' "$REPO_ROOT/.github/workflows/deploy.yaml"
+grep -Fq 'run: ./scripts/test-environment-secret-separation.sh' "$MAIN_WORKFLOW"
 grep -Fq 'run: ./scripts/test-environment-secret-separation.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
 for contract_test in \
   test-staging-host-firewall.sh \
@@ -26,7 +30,7 @@ for contract_test in \
   test-kubernetes-secret-rollback.sh \
   test-production-telemetry-boundary.sh
 do
-  grep -Fq "run: ./scripts/$contract_test" "$REPO_ROOT/.github/workflows/deploy.yaml"
+  grep -Fq "run: ./scripts/$contract_test" "$MAIN_WORKFLOW"
   grep -Fq "run: ./scripts/$contract_test" "$REPO_ROOT/.github/workflows/pull-request.yaml"
 done
 
@@ -74,7 +78,7 @@ assert_secret_prefix "$PRODUCTION_WORKFLOW" PROD_
 assert_secret_prefix "$STAGING_WORKFLOW" STAGING_
 assert_secret_prefix "$ROLLBACK_DRILL_WORKFLOW" STAGING_
 
-if grep -Fq 'secrets: inherit' "$REPO_ROOT/.github/workflows/deploy.yaml"; then
+if grep -Fq 'secrets: inherit' "$MAIN_WORKFLOW"; then
   echo "Deployment callers must not inherit repository secrets" >&2
   exit 1
 fi
