@@ -377,6 +377,7 @@ jobs:
             --smoke-report "$SMOKE_REPORT"
 
       - name: Restore the previous staging application Secret
+        id: app-secret-restore
         if: ${{ always() && steps.app-secret-apply.outcome == 'success' && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') && (steps.snapshot.outputs.previous_available != 'true' || env.AUTO_ROLLBACK_ENABLED == 'true') }}
         env:
           AUTH_ISSUER: ${{ secrets.STAGING_AUTH_ISSUER }}
@@ -407,11 +408,12 @@ jobs:
           secret_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN SMOKE_LOGIN SMOKE_TURNSTILE_BYPASS_KEY"
           # shellcheck disable=SC2086 # Intentional expansion into key arguments.
           ./scripts/preserve-kubernetes-secret.py restore \
-            "$NS" mnema-secrets "$ROLLBACK_APP_SECRET" $secret_names
+            "$NS" mnema-secrets "$ROLLBACK_APP_SECRET" \
+            SMOKE_LOGIN,SMOKE_TURNSTILE_BYPASS_KEY $secret_names
 
       - name: Roll back failed staging candidate
         id: rollback
-        if: ${{ always() && steps.mutation-start.outputs.attempted == 'true' && steps.snapshot.outputs.previous_available == 'true' && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') && env.AUTO_ROLLBACK_ENABLED == 'true' }}
+        if: ${{ always() && steps.mutation-start.outputs.attempted == 'true' && steps.snapshot.outputs.previous_available == 'true' && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') && env.AUTO_ROLLBACK_ENABLED == 'true' && (steps.app-secret-apply.outcome != 'success' || steps.app-secret-restore.outcome == 'success') }}
         run: |
           python3 scripts/smoke/release_state.py rollback \
             --namespace "$NS" \

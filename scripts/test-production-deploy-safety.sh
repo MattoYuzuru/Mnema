@@ -176,6 +176,9 @@ fi
 grep -Fq 'resourceVersion: \"${RECONCILIATION_RESOURCE_VERSION}\"' "$DEPLOY"
 grep -Fq 'steps.drift-guard.outputs.app_secret_resource_version' "$DEPLOY"
 grep -Fq 'name: Restore the previous production application Secret' "$DEPLOY"
+grep -Fq 'id: app-secret-restore' "$DEPLOY"
+grep -Fq "steps.app-secret-restore.outcome == 'success'" "$DEPLOY"
+grep -Fq 'SMOKE_LOGIN,SMOKE_TURNSTILE_BYPASS_KEY' "$DEPLOY"
 rollback_smoke_step=$(sed -n '/name: Verify complete production rollback/,/name: Upload production failure evidence/p' "$DEPLOY")
 printf '%s\n' "$rollback_smoke_step" | grep -Fq 'SMOKE_PASSWORD: ${{ secrets.PROD_SMOKE_PASSWORD }}'
 if printf '%s\n' "$rollback_smoke_step" | grep -Fq -- '--identity-only'; then

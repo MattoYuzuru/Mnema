@@ -33,6 +33,9 @@ done
 for workflow in "$PRODUCTION_WORKFLOW" "$STAGING_WORKFLOW"; do
   grep -Fq './scripts/preserve-kubernetes-secret.py snapshot' "$workflow"
   grep -Fq './scripts/preserve-kubernetes-secret.py restore' "$workflow"
+  grep -Fq 'id: app-secret-restore' "$workflow"
+  grep -Fq "steps.app-secret-restore.outcome == 'success'" "$workflow"
+  grep -Fq 'SMOKE_LOGIN,SMOKE_TURNSTILE_BYPASS_KEY' "$workflow"
 done
 grep -Fq 'resourceVersion: \"${APP_SECRET_RESOURCE_VERSION}\"' "$STAGING_WORKFLOW"
 staging_rollback_smoke=$(sed -n '/name: Verify complete staging rollback/,/name: Upload staging failure evidence/p' "$STAGING_WORKFLOW")

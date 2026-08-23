@@ -107,9 +107,21 @@ def load_snapshot(path: Path, namespace: str, name: str) -> dict[str, object]:
     return value
 
 
-def restore(namespace: str, name: str, source: Path, keys: list[str]) -> int:
+def restore(
+    namespace: str,
+    name: str,
+    source: Path,
+    preserve_current_keys: list[str],
+    keys: list[str],
+) -> int:
     if len(keys) != len(set(keys)) or any(not SAFE_KEY.fullmatch(key) for key in keys):
         raise SecretError("Candidate Secret keys must be unique uppercase names")
+    if (
+        len(preserve_current_keys) != len(set(preserve_current_keys))
+        or any(not SAFE_KEY.fullmatch(key) for key in preserve_current_keys)
+        or not set(preserve_current_keys).issubset(keys)
+    ):
+        raise SecretError("Preserved Secret keys must be a unique subset of candidate keys")
     if any(not os.environ.get(key) for key in keys):
         raise SecretError("Required candidate Secret values are missing")
 
@@ -137,12 +149,15 @@ def restore(namespace: str, name: str, source: Path, keys: list[str]) -> int:
             replacement_metadata[field] = current_metadata[field]
     if "annotations" in saved_metadata:
         replacement_metadata["annotations"] = saved_metadata["annotations"]
+    restored_data = dict(saved["data"])
+    for key in preserve_current_keys:
+        restored_data[key] = expected_candidate[key]
     replacement = {
         "apiVersion": "v1",
         "kind": "Secret",
         "metadata": replacement_metadata,
         "type": "Opaque",
-        "data": saved["data"],
+        "data": restored_data,
     }
     try:
         subprocess.run(
@@ -165,14 +180,23 @@ def main() -> int:
             if not SAFE_RESOURCE.fullmatch(namespace) or not SAFE_RESOURCE.fullmatch(name):
                 raise SecretError("A stable Secret namespace and name are required")
             return snapshot(namespace, name, expected_version, Path(output))
-        if len(sys.argv) >= 6 and sys.argv[1] == "restore":
-            _, _, namespace, name, source, *keys = sys.argv
+        if len(sys.argv) >= 7 and sys.argv[1] == "restore":
+            _, _, namespace, name, source, preserve_argument, *keys = sys.argv
             if not SAFE_RESOURCE.fullmatch(namespace) or not SAFE_RESOURCE.fullmatch(name):
                 raise SecretError("A stable Secret namespace and name are required")
-            return restore(namespace, name, Path(source), keys)
+            preserve_current_keys = (
+                [] if preserve_argument == "-" else preserve_argument.split(",")
+            )
+            return restore(
+                namespace,
+                name,
+                Path(source),
+                preserve_current_keys,
+                keys,
+            )
         print(
             f"usage: {sys.argv[0]} snapshot NAMESPACE SECRET EXPECTED_VERSION OUTPUT | "
-            "restore NAMESPACE SECRET SNAPSHOT DATA_KEY [DATA_KEY ...]",
+            "restore NAMESPACE SECRET SNAPSHOT PRESERVE_CURRENT_KEYS DATA_KEY [DATA_KEY ...]",
             file=sys.stderr,
         )
         return 64
