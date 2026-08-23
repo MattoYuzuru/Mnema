@@ -113,9 +113,10 @@ spec:
         - ipBlock:
             cidr: ::/0
             except:
+              # Kubernetes canonicalizes IPv4-mapped CIDRs to the IPv4 family,
+              # so ::ffff:0:0/96 is not a valid IPv6 ipBlock exception.
               - ::/128
               - ::1/128
-              - ::ffff:0:0/96
               - 100::/64
               - 2001:db8::/32
               - fc00::/7

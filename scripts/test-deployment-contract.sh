@@ -106,6 +106,10 @@ grep -Fq 'name: mnema-staging-default-deny' "$BOOTSTRAP"
 grep -Fq 'name: mnema-staging-allowed-traffic' "$BOOTSTRAP"
 grep -Fq '169.254.0.0/16' "$BOOTSTRAP"
 grep -Fq 'fe80::/10' "$BOOTSTRAP"
+if grep -Eq '^[[:space:]]+- ::ffff:' "$BOOTSTRAP"; then
+  echo 'Kubernetes rejects IPv4-mapped CIDRs inside an IPv6 NetworkPolicy ipBlock' >&2
+  exit 1
+fi
 grep -Fq 'requests.ephemeral-storage: 12Gi' "$BOOTSTRAP"
 grep -Fq 'limits.ephemeral-storage: 40Gi' "$BOOTSTRAP"
 grep -Fq 'ephemeral-storage: 256Mi' "$BOOTSTRAP"
