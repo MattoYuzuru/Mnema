@@ -2,6 +2,7 @@ package app.mnema.auth.local
 
 import app.mnema.auth.config.LocalAuthProps
 import app.mnema.auth.config.AuthFeaturesProps
+import app.mnema.auth.config.SmokeAuthProps
 import app.mnema.auth.security.LocalTokenResponse
 import app.mnema.auth.security.LocalTokenService
 import app.mnema.auth.security.RateLimiter
@@ -30,6 +31,7 @@ class LocalAuthService(
     private val featureProps: AuthFeaturesProps,
     private val rateLimiter: RateLimiter,
     private val turnstileService: TurnstileService,
+    private val smokeAuthProps: SmokeAuthProps,
     private val identityRepository: FederatedIdentityRepository,
     private val loginModerationService: LoginModerationService
 ) {
@@ -107,13 +109,18 @@ class LocalAuthService(
     }
 
     @Transactional
-    fun login(req: LocalAuthController.LoginRequest, ip: String?): LocalTokenResponse {
+    fun login(
+        req: LocalAuthController.LoginRequest,
+        ip: String?,
+        smokeBypassKey: String? = null
+    ): LocalTokenResponse {
         val now = Instant.now()
 
         if (!rateLimiter.allow("login:${ip.orEmpty()}", props.loginLimit, props.loginWindow, now)) {
             throw ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "Too many login attempts")
         }
-        if (!turnstileService.verify(req.turnstileToken, ip)) {
+        val smokeBypass = smokeAuthProps.allows(req.login, smokeBypassKey)
+        if (!smokeBypass && !turnstileService.verify(req.turnstileToken, ip)) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Captcha verification failed")
         }
 

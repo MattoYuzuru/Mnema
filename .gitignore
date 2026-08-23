@@ -67,14 +67,18 @@ frontend/node_modules
 !/scripts/install-staging-host-firewall.sh
 !/scripts/create-kubernetes-live-release-binding.py
 !/scripts/replace-kubernetes-secret-if-current.py
+!/scripts/preserve-kubernetes-secret.py
 !/scripts/detect-kubernetes-reconciliation-drift.py
 !/scripts/preview-staging-plan.sh
 !/scripts/verify-production-telemetry-boundary.py
 !/scripts/test-kubernetes-live-release-binding.sh
+!/scripts/test-kubernetes-secret-rollback.sh
 !/scripts/test-staging-plan-preview.sh
 !/scripts/test-production-telemetry-boundary.sh
 !/scripts/reconcile-kubernetes-secret-consumers.sh
 !/scripts/test-kubernetes-secret-consumer-reconciliation.sh
+!/scripts/smoke/
+!/scripts/smoke/**
 !/scripts/local-ai-gateway/
 !/scripts/local-ai-gateway/**
 !/scripts/local-audio-gateway/
@@ -89,3 +93,4 @@ build
 
 .env.local
 .mnema
+.release-state/

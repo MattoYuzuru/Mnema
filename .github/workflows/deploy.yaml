@@ -105,6 +105,9 @@ jobs:
       - name: Verify idempotent Kubernetes Secret consumer reconciliation
         run: ./scripts/test-kubernetes-secret-consumer-reconciliation.sh
 
+      - name: Verify fail-closed Kubernetes Secret rollback
+        run: ./scripts/test-kubernetes-secret-rollback.sh
+
       - name: Verify production telemetry host-boundary contract
         run: ./scripts/test-production-telemetry-boundary.sh
 
@@ -122,6 +125,9 @@ jobs:
 
       - name: Verify fail-closed staging bootstrap helper
         run: ./scripts/test-apply-staging-bootstrap.sh
+
+      - name: Run release automation unit tests
+        run: python3 -m unittest discover -s scripts/smoke/tests -v
 
   build-and-push:
     needs:

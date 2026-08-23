@@ -39,10 +39,11 @@ class LocalAuthControllerTest {
         val servletRequest = mock(HttpServletRequest::class.java)
         `when`(servletRequest.getHeader("X-Forwarded-For")).thenReturn(null)
         `when`(servletRequest.remoteAddr).thenReturn("127.0.0.1")
-        `when`(authService.login(request, "127.0.0.1"))
+        `when`(servletRequest.getHeader("X-Mnema-Smoke-Key")).thenReturn("smoke-key")
+        `when`(authService.login(request, "127.0.0.1", "smoke-key"))
             .thenReturn(LocalTokenResponse("token", 1800, "Bearer", "openid"))
 
-        val response = controller.login(request, servletRequest)
+        val response = controller.login(request, servletRequest, "smoke-key")
 
         assertEquals("token", response.access_token)
         assertEquals(1800, response.expires_in)
