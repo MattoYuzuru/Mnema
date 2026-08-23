@@ -58,9 +58,13 @@ class LocalAuthController(
 
     @PostMapping("/register")
     @ResponseStatus(HttpStatus.CREATED)
-    fun register(@RequestBody req: RegisterRequest, request: HttpServletRequest): TokenResponse {
+    fun register(
+        @RequestBody req: RegisterRequest,
+        request: HttpServletRequest,
+        @RequestHeader(name = SMOKE_KEY_HEADER, required = false) smokeBypassKey: String?
+    ): TokenResponse {
         val ip = clientIp(request)
-        val result = authService.register(req, ip)
+        val result = authService.register(req, ip, smokeBypassKey)
         return TokenResponse(
             access_token = result.accessToken,
             expires_in = result.expiresIn,

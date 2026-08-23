@@ -6,7 +6,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties
 
 /**
  * A narrowly scoped Turnstile bypass for the dedicated release-smoke account.
- * Password validation, login rate limits, account locks and moderation remain active.
+ * Registration/login rate limits, validation, password checks, account locks and moderation remain active.
  */
 @ConfigurationProperties(prefix = "auth.smoke")
 data class SmokeAuthProps(
