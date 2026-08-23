@@ -17,7 +17,9 @@ UUID_PATTERN = re.compile(
     r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b"
 )
 IPV4_PATTERN = re.compile(r"(?<![0-9.])(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(?:\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}(?![0-9.])")
-AUTHORIZATION_PATTERN = re.compile(r"(?i)(authorization\s*[:=]\s*)[^\r\n,;]+")
+AUTHORIZATION_PATTERN = re.compile(
+    r"(?i)(authorization\s*[:=]\s*)(?:[A-Za-z][A-Za-z0-9+.-]*\s+)?[^\s,;]+"
+)
 COOKIE_PATTERN = re.compile(r"(?i)((?:set-)?cookie\s*[:=]\s*)[^\r\n]+")
 JWT_PATTERN = re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")
 AWS_ACCESS_KEY_PATTERN = re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")
