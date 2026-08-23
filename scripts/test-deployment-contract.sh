@@ -44,6 +44,10 @@ if printf '%s\n' "$staging_rollback_smoke" | grep -Fq -- '--identity-only'; then
   echo 'Staging rollback must pass the complete authenticated smoke' >&2
   exit 1
 fi
+legacy_staging_rollback_smoke=$(sed -n '/name: Verify adopted legacy staging rollback identity/,/name: Verify complete staging rollback/p' "$STAGING_WORKFLOW")
+printf '%s\n' "$legacy_staging_rollback_smoke" | grep -Fq "steps.rollback.outputs.authenticated_smoke_supported != 'true'"
+printf '%s\n' "$legacy_staging_rollback_smoke" | grep -Fq -- '--identity-only'
+printf '%s\n' "$staging_rollback_smoke" | grep -Fq "steps.rollback.outputs.authenticated_smoke_supported == 'true'"
 grep -Fq 'After revocation, never blindly revert' "$REPO_ROOT/docs/operations/staging-runbook.md"
 grep -Fq './scripts/verify-environment-secret-separation.py --desired' "$REPO_ROOT/docs/operations/staging-runbook.md"
 

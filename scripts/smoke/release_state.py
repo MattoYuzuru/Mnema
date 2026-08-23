@@ -28,6 +28,7 @@ DIGEST_REF_PATTERN = re.compile(r"^[a-z0-9./_-]+@sha256:[0-9a-f]{64}$")
 STATE_CURRENT = "mnema-release-current"
 STATE_PREVIOUS = "mnema-release-previous"
 MAX_CONFIGMAP_PAYLOAD = 900_000
+AUTHENTICATED_SMOKE_VERSION = 1
 
 
 class StateFailure(RuntimeError):
@@ -259,12 +260,15 @@ class ReleaseStateManager:
         self.kubectl.persist(STATE_CURRENT, manifest, record)
         return str(record["releaseId"])
 
-    def rollback(self, manifest_path: Path, record_path: Path) -> str:
+    def rollback(self, manifest_path: Path, record_path: Path) -> tuple[str, bool]:
         manifest = manifest_path.read_text(encoding="utf-8")
         record = read_record(record_path)
         validate_record(manifest, record)
         self.kubectl.apply_manifest(manifest_path)
-        return str(record["releaseId"])
+        return (
+            str(record["releaseId"]),
+            record["authenticatedSmokeVersion"] >= AUTHENTICATED_SMOKE_VERSION,
+        )
 
     def _adopt_live(
         self,
@@ -335,6 +339,7 @@ def build_record(
         "deployedAt": deployed_at or utc_now(),
         "workflowRunId": workflow_run_id,
         "adopted": adopted,
+        "authenticatedSmokeVersion": 0 if adopted else AUTHENTICATED_SMOKE_VERSION,
         "knownRisks": [
             "Binary rollback is allowed only across forward-compatible expand/contract schema changes.",
             "A destructive schema migration requires roll-forward or verified data restore instead of binary rollback.",
@@ -354,6 +359,11 @@ def validate_record(manifest: str, record: dict[str, Any]) -> None:
         raise StateFailure("record_checksum_mismatch")
     if not isinstance(record.get("knownRisks"), list) or not record["knownRisks"]:
         raise StateFailure("record_risks_missing")
+    smoke_version = record.get("authenticatedSmokeVersion")
+    if smoke_version not in (0, AUTHENTICATED_SMOKE_VERSION):
+        raise StateFailure("record_smoke_capability_invalid")
+    if smoke_version == 0 and record.get("adopted") is not True:
+        raise StateFailure("record_smoke_capability_downgrade")
 
 
 def create_broken_staging_manifest(manifest: str) -> tuple[str, str]:
@@ -421,14 +431,25 @@ def utc_now() -> str:
     return datetime.now(UTC).isoformat().replace("+00:00", "Z")
 
 
-def emit_result(release_id: str, status: str) -> None:
+def emit_result(
+    release_id: str,
+    status: str,
+    authenticated_smoke_supported: bool | None = None,
+) -> None:
     payload = {"releaseId": release_id, "status": status}
+    if authenticated_smoke_supported is not None:
+        payload["authenticatedSmokeSupported"] = authenticated_smoke_supported
     print(json.dumps(payload))
     github_output = os.environ.get("GITHUB_OUTPUT")
     if github_output:
         with Path(github_output).open("a", encoding="utf-8") as output:
             output.write(f"release_id={release_id}\n")
             output.write(f"state_status={status}\n")
+            if authenticated_smoke_supported is not None:
+                output.write(
+                    "authenticated_smoke_supported="
+                    f"{'true' if authenticated_smoke_supported else 'false'}\n"
+                )
 
 
 def parse_args() -> argparse.Namespace:
@@ -521,11 +542,13 @@ def main() -> int:
             )
             status = "release_recorded"
         else:
-            release_id = manager.rollback(
+            release_id, authenticated_smoke_supported = manager.rollback(
                 required(args.rollback_manifest, "rollback_manifest"),
                 required(args.rollback_record, "rollback_record"),
             )
             status = "rollback_applied"
+            emit_result(release_id, status, authenticated_smoke_supported)
+            return 0
         emit_result(release_id, status)
         return 0
     except (StateFailure, OSError) as error:

@@ -138,6 +138,7 @@ class ReleaseStateTest(unittest.TestCase):
         self.assertEqual(set(release_state.SERVICES), set(record["images"]))
         self.assertEqual(hashlib.sha256(content.encode()).hexdigest(), record["manifestSha256"])
         self.assertGreaterEqual(len(record["knownRisks"]), 2)
+        self.assertEqual(1, record["authenticatedSmokeVersion"])
         release_state.validate_record(content, record)
 
     def test_successful_record_rotates_current_to_previous(self) -> None:
@@ -227,6 +228,8 @@ class ReleaseStateTest(unittest.TestCase):
             )
             self.assertEqual("a" * 40, release_id)
             self.assertEqual(content, (root / "rollback.yaml").read_text())
+            rollback_record = json.loads((root / "rollback.json").read_text())
+            self.assertEqual(0, rollback_record["authenticatedSmokeVersion"])
         self.assertNotIn(release_state.STATE_CURRENT, kubectl.configmaps)
 
     def test_first_staging_snapshot_accepts_only_a_truly_empty_application_boundary(self) -> None:
@@ -282,6 +285,46 @@ class ReleaseStateTest(unittest.TestCase):
             with self.assertRaises(release_state.StateFailure):
                 manager.rollback(manifest_path, record_path)
         self.assertEqual([], kubectl.applied)
+
+    def test_rollback_reports_authenticated_smoke_capability(self) -> None:
+        content = manifest()
+        capable = release_state.build_record(
+            content,
+            environment="prod",
+            deployed_at="2026-08-19T00:00:00Z",
+            workflow_run_id="1",
+        )
+        adopted = {**capable, "authenticatedSmokeVersion": 0, "adopted": True}
+        manager = release_state.ReleaseStateManager(FakeKubectl())
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path = root / "rollback.yaml"
+            record_path = root / "rollback.json"
+            manifest_path.write_text(content)
+            record_path.write_text(json.dumps(adopted))
+            release_id, authenticated = manager.rollback(manifest_path, record_path)
+            self.assertEqual("a" * 40, release_id)
+            self.assertFalse(authenticated)
+            record_path.write_text(json.dumps(capable))
+            _, authenticated = manager.rollback(manifest_path, record_path)
+            self.assertTrue(authenticated)
+
+    def test_non_adopted_record_cannot_downgrade_smoke_capability(self) -> None:
+        content = manifest()
+        record = release_state.build_record(
+            content,
+            environment="prod",
+            deployed_at="2026-08-19T00:00:00Z",
+            workflow_run_id="1",
+        )
+        record["authenticatedSmokeVersion"] = 0
+
+        with self.assertRaisesRegex(
+            release_state.StateFailure,
+            "record_smoke_capability_downgrade",
+        ):
+            release_state.validate_record(content, record)
 
 
 if __name__ == "__main__":

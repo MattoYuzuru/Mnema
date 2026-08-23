@@ -979,8 +979,20 @@ jobs:
           wait_rollout mnema-media    1800s
           wait_rollout mnema-import   1800s
 
+      - name: Verify adopted legacy production rollback identity
+        if: ${{ always() && steps.rollback.outcome == 'success' && steps.rollback.outputs.authenticated_smoke_supported != 'true' }}
+        run: |
+          python3 scripts/smoke/release_smoke.py \
+            --environment production-rollback-legacy \
+            --public-url https://mnema.app \
+            --auth-url https://auth.mnema.app \
+            --expected-release-sha "${{ steps.rollback.outputs.release_id }}" \
+            --timeout-seconds 300 \
+            --identity-only \
+            --report "$ROLLBACK_SMOKE_REPORT"
+
       - name: Verify complete production rollback
-        if: ${{ always() && steps.rollback.outcome == 'success' }}
+        if: ${{ always() && steps.rollback.outcome == 'success' && steps.rollback.outputs.authenticated_smoke_supported == 'true' }}
         env:
           SMOKE_LOGIN: ${{ secrets.PROD_SMOKE_LOGIN }}
           SMOKE_PASSWORD: ${{ secrets.PROD_SMOKE_PASSWORD }}
