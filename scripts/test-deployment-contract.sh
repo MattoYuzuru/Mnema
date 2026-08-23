@@ -144,6 +144,13 @@ grep -Fq 'pod-security.kubernetes.io/warn: restricted' "$NAMESPACE_MANIFEST"
 grep -Fq 'assert_pod_security_rejects privileged' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
 grep -Fq 'assert_pod_security_rejects hostPath' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
 grep -Fq 'assert_pod_security_rejects hostNetwork' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
+test "$(grep -c '^kind: Pod$' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh")" -eq 4
+grep -Fq 'assert_limit_range_rejects excessive-ephemeral-storage' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
+grep -Fq 'maximum ephemeral-storage usage per Container is 4Gi' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
+if grep -Fq 'assert_admission_rejects excessive-ephemeral-storage' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"; then
+  echo 'LimitRange must be verified against Pod admission, not a controller template' >&2
+  exit 1
+fi
 test "$(grep -c '^kind: ValidatingAdmissionPolicy$' "$ADMISSION")" -eq 4
 test "$(grep -c '^kind: ValidatingAdmissionPolicyBinding$' "$ADMISSION")" -eq 4
 test "$(grep -c 'failurePolicy: Fail' "$ADMISSION")" -eq 4
@@ -154,6 +161,13 @@ grep -Fq "serviceAccountName != 'mnema-deployer'" "$ADMISSION"
 grep -Fq 'automountServiceAccountToken == false' "$ADMISSION"
 grep -Fq "object.type == 'Opaque'" "$ADMISSION"
 grep -Fq 'kubernetes.io/service-account.name' "$ADMISSION"
+grep -Fq 'The Mnema staging application Secret must not request a ServiceAccount token' \
+  "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
+if grep -Fq '"type":"kubernetes.io/service-account-token"' \
+  "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"; then
+  echo 'Secret boundary probe must not be preempted by immutable-type validation' >&2
+  exit 1
+fi
 grep -Fq "mnema.app/bootstrap-state: uninitialized" "$BOOTSTRAP"
 grep -Fq "mnema.app/bootstrap-state: initialized" "$STAGING_WORKFLOW"
 grep -Fq "oldObject.metadata.annotations['mnema.app/bootstrap-state']" "$ADMISSION"

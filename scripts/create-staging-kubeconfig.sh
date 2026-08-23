@@ -199,9 +199,44 @@ test "$(KUBECONFIG="$tmp_output" kubectl auth can-i create ingresses.networking.
 test "$(KUBECONFIG="$tmp_output" kubectl auth can-i get secrets -n prod)" = no
 test "$(KUBECONFIG="$tmp_output" kubectl auth can-i create namespaces)" = no
 
+assert_limit_range_rejects() {
+  probe_name=$1
+  expected_message=$2
+  # LimitRange evaluates containers only when a Pod itself reaches admission;
+  # a dry-run Deployment validates the controller object, not its Pod template.
+  if kubectl apply --dry-run=server -f - >"$probe_output" 2>&1; then
+    echo "LimitRange admitted the forbidden $probe_name staging Pod" >&2
+    exit 1
+  fi
+  if ! grep -Fq "$expected_message" "$probe_output"; then
+    echo "The $probe_name probe failed without proving the expected LimitRange" >&2
+    exit 1
+  fi
+}
+
+assert_limit_range_rejects excessive-ephemeral-storage \
+  'maximum ephemeral-storage usage per Container is 4Gi' <<'YAML'
+apiVersion: v1
+kind: Pod
+metadata:
+  name: mnema-staging-limitrange-probe-ephemeral-storage
+  namespace: mnema-staging
+spec:
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  containers:
+    - name: probe
+      image: registry.k8s.io/pause:3.10
+      resources:
+        limits: {ephemeral-storage: 5Gi}
+YAML
+
 assert_pod_security_rejects() {
   probe_name=$1
-  if KUBECONFIG="$tmp_output" kubectl apply --dry-run=server -f - >"$probe_output" 2>&1; then
+  # Pod Security enforce is evaluated when a Pod reaches admission. Controller
+  # templates only receive audit/warn feedback, and the scoped deployer cannot
+  # create Pods directly, so use the bootstrap context for this dry-run proof.
+  if kubectl apply --dry-run=server -f - >"$probe_output" 2>&1; then
     echo "Pod Security admitted the forbidden $probe_name staging workload" >&2
     exit 1
   fi
@@ -212,58 +247,49 @@ assert_pod_security_rejects() {
 }
 
 assert_pod_security_rejects privileged <<'YAML'
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: Pod
 metadata:
   name: mnema-staging-pss-probe-privileged
   namespace: mnema-staging
 spec:
-  replicas: 0
-  selector: {matchLabels: {app: mnema-staging-pss-probe-privileged}}
-  template:
-    metadata: {labels: {app: mnema-staging-pss-probe-privileged}}
-    spec:
-      containers:
-        - name: probe
-          image: registry.k8s.io/pause:3.10
-          securityContext: {privileged: true}
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  containers:
+    - name: probe
+      image: registry.k8s.io/pause:3.10
+      securityContext: {privileged: true}
 YAML
 
 assert_pod_security_rejects hostPath <<'YAML'
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: Pod
 metadata:
   name: mnema-staging-pss-probe-hostpath
   namespace: mnema-staging
 spec:
-  replicas: 0
-  selector: {matchLabels: {app: mnema-staging-pss-probe-hostpath}}
-  template:
-    metadata: {labels: {app: mnema-staging-pss-probe-hostpath}}
-    spec:
-      containers:
-        - name: probe
-          image: registry.k8s.io/pause:3.10
-          volumeMounts: [{name: host, mountPath: /host}]
-      volumes: [{name: host, hostPath: {path: /}}]
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  containers:
+    - name: probe
+      image: registry.k8s.io/pause:3.10
+      volumeMounts: [{name: host, mountPath: /host}]
+  volumes: [{name: host, hostPath: {path: /}}]
 YAML
 
 assert_pod_security_rejects hostNetwork <<'YAML'
-apiVersion: apps/v1
-kind: Deployment
+apiVersion: v1
+kind: Pod
 metadata:
   name: mnema-staging-pss-probe-hostnetwork
   namespace: mnema-staging
 spec:
-  replicas: 0
-  selector: {matchLabels: {app: mnema-staging-pss-probe-hostnetwork}}
-  template:
-    metadata: {labels: {app: mnema-staging-pss-probe-hostnetwork}}
-    spec:
-      hostNetwork: true
-      containers:
-        - name: probe
-          image: registry.k8s.io/pause:3.10
+  automountServiceAccountToken: false
+  restartPolicy: Never
+  hostNetwork: true
+  containers:
+    - name: probe
+      image: registry.k8s.io/pause:3.10
 YAML
 
 assert_admission_rejects() {
@@ -348,34 +374,14 @@ spec:
       containers: [{name: probe, image: registry.k8s.io/pause:3.10}]
 YAML
 
-assert_admission_rejects excessive-ephemeral-storage 'maximum limit usage per Container is 4Gi' <<'YAML'
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: mnema-staging-boundary-probe-ephemeral-storage
-  namespace: mnema-staging
-spec:
-  replicas: 0
-  selector: {matchLabels: {app: mnema-staging-boundary-probe-ephemeral-storage}}
-  template:
-    metadata: {labels: {app: mnema-staging-boundary-probe-ephemeral-storage}}
-    spec:
-      automountServiceAccountToken: false
-      containers:
-        - name: probe
-          image: registry.k8s.io/pause:3.10
-          resources:
-            limits: {ephemeral-storage: 5Gi}
-YAML
-
 if KUBECONFIG="$tmp_output" kubectl patch secret mnema-secrets -n "$NAMESPACE" \
   --type=merge --dry-run=server \
-  -p '{"metadata":{"annotations":{"kubernetes.io/service-account.name":"mnema-deployer"}},"type":"kubernetes.io/service-account-token"}' \
+  -p '{"metadata":{"annotations":{"kubernetes.io/service-account.name":"mnema-deployer"}}}' \
   >"$probe_output" 2>&1; then
   echo "Admission policy allowed the application Secret to mint a ServiceAccount token" >&2
   exit 1
 fi
-if ! grep -Fq 'The Mnema staging application Secret must remain Opaque' "$probe_output"; then
+if ! grep -Fq 'The Mnema staging application Secret must not request a ServiceAccount token' "$probe_output"; then
   echo "The Secret probe failed without proving the ServiceAccount-token boundary" >&2
   exit 1
 fi
