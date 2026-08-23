@@ -21,6 +21,7 @@ for contract_test in \
   test-staging-tls-boundary.sh \
   test-apply-staging-bootstrap.sh \
   test-staging-plan-preview.sh \
+  test-kubernetes-secret-consumer-reconciliation.sh \
   test-production-telemetry-boundary.sh
 do
   grep -Fq "run: ./scripts/$contract_test" "$REPO_ROOT/.github/workflows/deploy.yaml"
@@ -119,6 +120,20 @@ for quota_key in \
 do
   grep -Fq "$quota_key:" "$BOOTSTRAP"
 done
+deployment_manifests="frontend auth user core media import"
+deployment_count=0
+for service in $deployment_manifests; do
+  manifest="$REPO_ROOT/k8s/${service}-deploy.yaml"
+  grep -Fq 'revisionHistoryLimit: 2' "$manifest"
+  deployment_count=$((deployment_count + 1))
+done
+replicaset_quota=$(awk '$1 == "count/replicasets.apps:" {gsub(/"/, "", $2); print $2; exit}' "$BOOTSTRAP")
+maximum_retained_replicasets=$((deployment_count * 3))
+if [ -z "$replicaset_quota" ] || \
+  [ "$replicaset_quota" -lt $((maximum_retained_replicasets + deployment_count * 3)) ]; then
+  echo 'ReplicaSet quota must fit retained revisions, two template changes, and one recovery revision per Deployment' >&2
+  exit 1
+fi
 grep -Fq 'verify-staging-network-boundary.sh' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
 grep -Fq 'reconcile-staging-host-firewall.sh' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
 grep -Fq 'verify-staging-tls-boundary.sh' "$REPO_ROOT/scripts/create-staging-kubeconfig.sh"
@@ -148,12 +163,16 @@ if printf '%s\n' "$staging_prefix" | grep -Eq 'kubectl (apply|delete)|kubectl .*
   echo 'Staging must not mutate before the complete plan preview and final stale guard' >&2
   exit 1
 fi
-staging_restart_step=$(sed -n '/name: Restart staging application Secret consumers/,/name: Verify staging service rollouts/p' "$STAGING_WORKFLOW")
-printf '%s\n' "$staging_restart_step" | grep -Fq "if: steps.secret-preview.outputs.app_secret_drift == 'true'"
+staging_reconcile_step=$(sed -n '/name: Reconcile staging application Secret consumers/,/name: Verify staging service rollouts/p' "$STAGING_WORKFLOW")
+printf '%s\n' "$staging_reconcile_step" | grep -Fq './scripts/reconcile-kubernetes-secret-consumers.sh'
+if printf '%s\n' "$staging_reconcile_step" | grep -Fq 'if: steps.secret-preview.outputs.app_secret_drift'; then
+  echo 'Secret consumers must reconcile on retries even when desired Secret drift is now empty' >&2
+  exit 1
+fi
 for consumer in mnema-auth mnema-user mnema-core mnema-media mnema-import; do
-  printf '%s\n' "$staging_restart_step" | grep -Fq "deployment/$consumer"
+  printf '%s\n' "$staging_reconcile_step" | grep -Fq "$consumer"
 done
-if printf '%s\n' "$staging_restart_step" | grep -Fq 'deployment/mnema-frontend'; then
+if printf '%s\n' "$staging_reconcile_step" | grep -Fq 'mnema-frontend'; then
   echo 'Staging frontend must not restart for a Secret it does not consume' >&2
   exit 1
 fi

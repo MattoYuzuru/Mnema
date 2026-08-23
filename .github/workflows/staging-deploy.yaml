@@ -122,7 +122,6 @@ jobs:
           fi
 
       - name: Validate bootstrap values and detect staging Secret drift
-        id: secret-preview
         env:
           AUTH_ISSUER: ${{ secrets.STAGING_AUTH_ISSUER }}
           AUTH_ISSUER_URI: ${{ secrets.STAGING_AUTH_ISSUER_URI }}
@@ -163,7 +162,6 @@ jobs:
             POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
             AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
             MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN)
-          printf 'app_secret_drift=%s\n' "$app_secret_drift" >> "$GITHUB_OUTPUT"
           printf 'Staging application Secret drift: %s\n' "$app_secret_drift"
 
       - name: Render desired staging application Secret
@@ -248,15 +246,11 @@ jobs:
       - name: Apply complete staging application release once
         run: kubectl apply -f "$RELEASE_MANIFEST"
 
-      - name: Restart staging application Secret consumers
-        if: steps.secret-preview.outputs.app_secret_drift == 'true'
+      - name: Reconcile staging application Secret consumers
         run: |
-          kubectl -n "$NS" rollout restart \
-            deployment/mnema-auth \
-            deployment/mnema-user \
-            deployment/mnema-core \
-            deployment/mnema-media \
-            deployment/mnema-import
+          ./scripts/reconcile-kubernetes-secret-consumers.sh \
+            "$NS" mnema-secrets \
+            mnema-auth mnema-user mnema-core mnema-media mnema-import
 
       - name: Verify staging service rollouts
         run: |
