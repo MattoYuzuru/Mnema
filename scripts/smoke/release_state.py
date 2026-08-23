@@ -196,6 +196,12 @@ class Kubectl:
         self._run(["kubectl", "apply", "--dry-run=server", "-f", str(manifest_path)])
         self._run(["kubectl", "apply", "-f", str(manifest_path)])
 
+    def has_application_deployments(self) -> bool:
+        command = ["kubectl", "-n", self.namespace, "get", "deployment"]
+        command.extend(f"mnema-{service}" for service in SERVICES)
+        command.extend(["--ignore-not-found=true", "-o", "name"])
+        return bool(self._run(command).strip())
+
     def _run(self, command: list[str], input_text: str | None = None) -> str:
         result = subprocess.run(
             command,
@@ -222,10 +228,18 @@ class ReleaseStateManager:
         artifact_filename: str,
         rollback_manifest: Path,
         rollback_record: Path,
-    ) -> str:
+        allow_empty: bool = False,
+    ) -> str | None:
         current = self.kubectl.get_configmap(STATE_CURRENT, required=False)
         if current is None:
-            current = self._adopt_live(environment, artifact_name, artifact_filename)
+            current = self._adopt_live(
+                environment,
+                artifact_name,
+                artifact_filename,
+                allow_empty=allow_empty,
+            )
+        if current is None:
+            return None
         manifest, record = state_from_configmap(current)
         validate_record(manifest, record)
         write_private(rollback_manifest, manifest)
@@ -252,10 +266,21 @@ class ReleaseStateManager:
         self.kubectl.apply_manifest(manifest_path)
         return str(record["releaseId"])
 
-    def _adopt_live(self, environment: str, artifact_name: str, artifact_filename: str) -> dict[str, Any]:
+    def _adopt_live(
+        self,
+        environment: str,
+        artifact_name: str,
+        artifact_filename: str,
+        *,
+        allow_empty: bool,
+    ) -> dict[str, Any] | None:
         if self.artifact_client is None:
             raise StateFailure("artifact_client_missing")
-        live = self.kubectl.get_configmap("mnema-release")
+        live = self.kubectl.get_configmap("mnema-release", required=False)
+        if live is None:
+            if allow_empty and not self.kubectl.has_application_deployments():
+                return None
+            raise StateFailure("live_release_state_missing")
         live_data = configmap_data(live)
         release_id = str(live_data.get("releaseId", ""))
         if not SHA_PATTERN.fullmatch(release_id):
@@ -422,6 +447,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--artifact-filename")
     parser.add_argument("--source-manifest", type=Path)
     parser.add_argument("--output-manifest", type=Path)
+    parser.add_argument("--allow-empty", action="store_true")
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", ""))
     parser.add_argument("--workflow-run-id", default=os.environ.get("GITHUB_RUN_ID"))
     return parser.parse_args()
@@ -473,7 +499,20 @@ def main() -> int:
                 artifact_filename=required(args.artifact_filename, "artifact_filename"),
                 rollback_manifest=required(args.rollback_manifest, "rollback_manifest"),
                 rollback_record=required(args.rollback_record, "rollback_record"),
+                allow_empty=args.allow_empty,
             )
+            if release_id is None:
+                print(json.dumps({"releaseId": None, "status": "no_previous_release"}))
+                github_output = os.environ.get("GITHUB_OUTPUT")
+                if github_output:
+                    with Path(github_output).open("a", encoding="utf-8") as output:
+                        output.write("previous_available=false\n")
+                        output.write("state_status=no_previous_release\n")
+                return 0
+            github_output = os.environ.get("GITHUB_OUTPUT")
+            if github_output:
+                with Path(github_output).open("a", encoding="utf-8") as output:
+                    output.write("previous_available=true\n")
             status = "snapshot_ready"
         elif args.command == "record":
             release_id = manager.record(

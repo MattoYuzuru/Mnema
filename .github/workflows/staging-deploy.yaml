@@ -244,6 +244,7 @@ jobs:
             --record "$RELEASE_RECORD"
 
       - name: Snapshot the current complete staging release
+        id: snapshot
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -253,7 +254,8 @@ jobs:
             --artifact-name staging-release-manifest \
             --artifact-filename staging-release.yaml \
             --rollback-manifest "$ROLLBACK_MANIFEST" \
-            --rollback-record "$ROLLBACK_RECORD"
+            --rollback-record "$ROLLBACK_RECORD" \
+            --allow-empty
 
       - name: Preview complete staging plan before mutation
         run: |
@@ -364,12 +366,17 @@ jobs:
 
       - name: Roll back failed staging candidate
         id: rollback
-        if: ${{ always() && steps.mutation-start.outputs.attempted == 'true' && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') && env.AUTO_ROLLBACK_ENABLED == 'true' }}
+        if: ${{ always() && steps.mutation-start.outputs.attempted == 'true' && steps.snapshot.outputs.previous_available == 'true' && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') && env.AUTO_ROLLBACK_ENABLED == 'true' }}
         run: |
           python3 scripts/smoke/release_state.py rollback \
             --namespace "$NS" \
             --rollback-manifest "$ROLLBACK_MANIFEST" \
             --rollback-record "$ROLLBACK_RECORD"
+
+      - name: Remove a failed first staging application candidate
+        id: bootstrap-cleanup
+        if: ${{ always() && steps.mutation-start.outputs.attempted == 'true' && steps.snapshot.outputs.previous_available != 'true' && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') }}
+        run: kubectl delete -f "$RELEASE_MANIFEST" --ignore-not-found=true --wait=true
 
       - name: Verify staging rollback rollouts
         if: ${{ always() && steps.rollback.outcome == 'success' }}

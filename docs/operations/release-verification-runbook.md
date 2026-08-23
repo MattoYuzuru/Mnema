@@ -67,7 +67,7 @@ Exit `0` means every selected step passed. Exit `1` means invalid configuration 
 
 The same secret-free successful record is retained as a 90-day Actions artifact (`staging-release-record-*` or `production-release-record-*`) for review without cluster access.
 
-On the first guarded deployment, no state ConfigMap exists yet. The workflow reads the live `mnema-release` identity, downloads the exact matching retained Actions artifact, verifies its checksum and all six live image references, then adopts it as current. Any missing artifact, mismatch or incomplete record fails before candidate application.
+On the first guarded deployment, no state ConfigMap exists yet. The workflow reads the live `mnema-release` identity, downloads the exact matching retained Actions artifact, verifies its checksum and all six live image references, then adopts it for the rollback snapshot without mutating cluster state before preview. Any missing artifact, mismatch or incomplete record fails before candidate application. The only exception is the first-ever staging release: it may proceed without a rollback target only when both `mnema-release` and every Mnema application Deployment are absent. A failed first candidate is deleted back to that empty application boundary; production never permits this bootstrap exception.
 
 Rollback verifies the saved checksum, performs a server-side dry run, applies the complete manifest once, waits for all six rollouts and runs identity-only smoke against the restored release SHA. It never reconstructs a release from mutable tags.
 

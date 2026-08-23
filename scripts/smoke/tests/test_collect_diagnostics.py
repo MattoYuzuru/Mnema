@@ -22,6 +22,11 @@ class CollectDiagnosticsTest(unittest.TestCase):
             "password=hunter2 api_key=abcdef username=actual-user "
             "userId=123e4567-e89b-42d3-a456-426614174000 remote=203.0.113.42 "
             "pod=mnema-auth-123\n"
+            '{"client_secret":"json-secret","access_token":"eyJhbGciOiJIUzI1NiJ9.'
+            'eyJzdWIiOiJzbW9rZSJ9.signature123"}\n'
+            "oauth.refresh_token=refresh-value Set-Cookie: session=raw-cookie; Secure\n"
+            "aws=AKIAABCDEFGHIJKLMNOP\n"
+            "-----BEGIN PRIVATE KEY-----\nprivate-material\n-----END PRIVATE KEY-----\n"
         )
 
         sanitized = collect_diagnostics.redact(raw)
@@ -33,6 +38,12 @@ class CollectDiagnosticsTest(unittest.TestCase):
         self.assertNotIn("actual-user", sanitized)
         self.assertNotIn("123e4567", sanitized)
         self.assertNotIn("203.0.113.42", sanitized)
+        self.assertNotIn("json-secret", sanitized)
+        self.assertNotIn("refresh-value", sanitized)
+        self.assertNotIn("raw-cookie", sanitized)
+        self.assertNotIn("AKIAABCDEFGHIJKLMNOP", sanitized)
+        self.assertNotIn("private-material", sanitized)
+        self.assertNotIn("eyJzdWIiOiJzbW9rZSJ9", sanitized)
         self.assertIn("service=auth", sanitized)
         self.assertIn("pod=mnema-auth-123", sanitized)
 

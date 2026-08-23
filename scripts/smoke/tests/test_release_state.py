@@ -33,9 +33,15 @@ def manifest(release_id: str = "a" * 40) -> str:
 
 
 class FakeKubectl:
-    def __init__(self, configmaps: dict[str, dict[str, Any]] | None = None) -> None:
+    def __init__(
+        self,
+        configmaps: dict[str, dict[str, Any]] | None = None,
+        *,
+        application_deployments: bool = False,
+    ) -> None:
         self.configmaps = configmaps or {}
         self.applied: list[Path] = []
+        self.application_deployments = application_deployments
 
     def get_configmap(self, name: str, *, required: bool = True):
         value = self.configmaps.get(name)
@@ -53,6 +59,9 @@ class FakeKubectl:
 
     def apply_manifest(self, manifest_path: Path) -> None:
         self.applied.append(manifest_path)
+
+    def has_application_deployments(self) -> bool:
+        return self.application_deployments
 
 
 class FakeArtifacts:
@@ -219,6 +228,41 @@ class ReleaseStateTest(unittest.TestCase):
             self.assertEqual("a" * 40, release_id)
             self.assertEqual(content, (root / "rollback.yaml").read_text())
         self.assertNotIn(release_state.STATE_CURRENT, kubectl.configmaps)
+
+    def test_first_staging_snapshot_accepts_only_a_truly_empty_application_boundary(self) -> None:
+        manager = release_state.ReleaseStateManager(
+            FakeKubectl(application_deployments=False),
+            FakeArtifacts(None),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            release_id = manager.snapshot(
+                environment="staging",
+                artifact_name="staging-release-manifest",
+                artifact_filename="staging-release.yaml",
+                rollback_manifest=root / "rollback.yaml",
+                rollback_record=root / "rollback.json",
+                allow_empty=True,
+            )
+            self.assertIsNone(release_id)
+            self.assertFalse((root / "rollback.yaml").exists())
+
+        manager = release_state.ReleaseStateManager(
+            FakeKubectl(application_deployments=True),
+            FakeArtifacts(None),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(release_state.StateFailure, "live_release_state_missing"):
+                manager.snapshot(
+                    environment="staging",
+                    artifact_name="staging-release-manifest",
+                    artifact_filename="staging-release.yaml",
+                    rollback_manifest=root / "rollback.yaml",
+                    rollback_record=root / "rollback.json",
+                    allow_empty=True,
+                )
 
     def test_tampered_record_is_rejected_before_rollback_apply(self) -> None:
         content = manifest()

@@ -17,9 +17,24 @@ UUID_PATTERN = re.compile(
     r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b"
 )
 IPV4_PATTERN = re.compile(r"(?<![0-9.])(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})(?:\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]{1,2})){3}(?![0-9.])")
-BEARER_PATTERN = re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)[A-Za-z0-9._~+/=-]+")
-SENSITIVE_FIELD_PATTERN = re.compile(
-    r"(?i)(\b(?:password|passwd|secret|token|api[_-]?key|private[_-]?key|user[_-]?id|username|login)\b\s*[:=]\s*)([^\s,;]+)"
+AUTHORIZATION_PATTERN = re.compile(r"(?i)(authorization\s*[:=]\s*)[^\r\n,;]+")
+COOKIE_PATTERN = re.compile(r"(?i)((?:set-)?cookie\s*[:=]\s*)[^\r\n]+")
+JWT_PATTERN = re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b")
+AWS_ACCESS_KEY_PATTERN = re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b")
+PRIVATE_KEY_PATTERN = re.compile(
+    r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----.*?"
+    r"-----END (?:RSA |EC |OPENSSH )?PRIVATE KEY-----",
+    re.DOTALL,
+)
+SENSITIVE_ASSIGNMENT_PATTERN = re.compile(
+    r'''(?ix)
+    (
+      ["']?[a-z0-9_.-]*
+      (?:password|passwd|secret|token|api[_-]?key|private[_-]?key|user[_-]?id|username|login)
+      [a-z0-9_.-]*["']?\s*[:=]\s*
+    )
+    (?:"(?:\\.|[^"])*"|'(?:\\.|[^'])*'|[^\s,;]+)
+    '''
 )
 
 
@@ -27,8 +42,12 @@ def redact(text: str) -> str:
     text = EMAIL_PATTERN.sub("[REDACTED_EMAIL]", text)
     text = UUID_PATTERN.sub("[REDACTED_UUID]", text)
     text = IPV4_PATTERN.sub("[REDACTED_IP]", text)
-    text = BEARER_PATTERN.sub(r"\1[REDACTED]", text)
-    return SENSITIVE_FIELD_PATTERN.sub(r"\1[REDACTED]", text)
+    text = PRIVATE_KEY_PATTERN.sub("[REDACTED_PRIVATE_KEY]", text)
+    text = AUTHORIZATION_PATTERN.sub(r"\1[REDACTED]", text)
+    text = COOKIE_PATTERN.sub(r"\1[REDACTED]", text)
+    text = JWT_PATTERN.sub("[REDACTED_JWT]", text)
+    text = AWS_ACCESS_KEY_PATTERN.sub("[REDACTED_AWS_ACCESS_KEY]", text)
+    return SENSITIVE_ASSIGNMENT_PATTERN.sub(r"\1[REDACTED]", text)
 
 
 def run(command: list[str]) -> str:

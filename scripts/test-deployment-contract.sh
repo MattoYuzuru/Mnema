@@ -85,6 +85,15 @@ for workflow in "$PRODUCTION_WORKFLOW" "$STAGING_WORKFLOW"; do
   fi
 done
 
+grep -Fq -- '--allow-empty' "$STAGING_WORKFLOW"
+grep -Fq "steps.snapshot.outputs.previous_available == 'true'" "$STAGING_WORKFLOW"
+grep -Fq 'name: Remove a failed first staging application candidate' "$STAGING_WORKFLOW"
+grep -Fq 'kubectl delete -f "$RELEASE_MANIFEST" --ignore-not-found=true --wait=true' "$STAGING_WORKFLOW"
+if grep -Fq -- '--allow-empty' "$PRODUCTION_WORKFLOW"; then
+  echo 'Production must never accept an empty previous release boundary' >&2
+  exit 1
+fi
+
 for key in SMOKE_LOGIN SMOKE_TURNSTILE_BYPASS_KEY; do
   grep -Fq "key: $key" "$REPO_ROOT/k8s/auth-deploy.yaml" || {
     echo "Auth deployment is missing mandatory $key injection" >&2
