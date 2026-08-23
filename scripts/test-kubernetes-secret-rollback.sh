@@ -31,7 +31,12 @@ chmod +x "$TEST_ROOT/bin/kubectl" "$PRESERVE"
 snapshot="$TEST_ROOT/snapshot.json"
 PATH="$TEST_ROOT/bin:$PATH" FAKE_KUBECTL_LOG="$TEST_ROOT/kubectl.log" \
   "$PRESERVE" snapshot prod mnema-secrets 11 "$snapshot" >"$TEST_ROOT/snapshot.out"
-test "$(stat -f '%Lp' "$snapshot" 2>/dev/null || stat -c '%a' "$snapshot")" = 600
+if stat -f '%Lp' "$snapshot" >/dev/null 2>&1; then
+  snapshot_mode=$(stat -f '%Lp' "$snapshot")
+else
+  snapshot_mode=$(stat -c '%a' "$snapshot")
+fi
+test "$snapshot_mode" = 600
 grep -Fxq 'resource_version=11' "$TEST_ROOT/snapshot.out"
 
 replacement="$TEST_ROOT/replacement.json"
