@@ -11,7 +11,7 @@ artifact:
 
 # Mnema release smoke, diagnostics and rollback
 
-Every hosted release is accepted as one six-image unit. Staging and production first snapshot the last verified complete manifest, apply the candidate once, wait for all rollouts, run the black-box smoke from GitHub-hosted infrastructure and only then record the candidate. A failed rollout, smoke or release-state write rejects the candidate and, while automatic rollback is enabled, reapplies the saved complete manifest.
+Every hosted release is accepted as one six-image unit. Staging and production first snapshot the last verified complete manifest and the current application Secret, apply the candidate once, wait for all rollouts, run the black-box smoke from GitHub-hosted infrastructure and only then record the candidate. A failed rollout, smoke or release-state write rejects the candidate and, while automatic rollback is enabled, restores the prior Secret and reapplies the saved complete manifest.
 
 AI is deliberately absent from this gate. The hosted runtime must report `aiEnabled = false`; no keykomi workload, model or data is read or mutated.
 
@@ -69,7 +69,7 @@ The same secret-free successful record is retained as a 90-day Actions artifact 
 
 On the first guarded deployment, no state ConfigMap exists yet. The workflow reads the live `mnema-release` identity, downloads the exact matching retained Actions artifact, verifies its checksum and all six live image references, then adopts it for the rollback snapshot without mutating cluster state before preview. Any missing artifact, mismatch or incomplete record fails before candidate application. The only exception is the first-ever staging release: it may proceed without a rollback target only when both `mnema-release` and every Mnema application Deployment are absent. A failed first candidate is deleted back to that empty application boundary; production never permits this bootstrap exception.
 
-Rollback verifies the saved checksum, performs a server-side dry run, applies the complete manifest once, waits for all six rollouts and runs identity-only smoke against the restored release SHA. It never reconstructs a release from mutable tags.
+The Secret snapshot exists only in a mode-`0600` runner file and is never uploaded as evidence. Restoration first proves that the Secret still has the same Kubernetes UID and exact candidate data, then uses the current `resourceVersion` for an atomic replacement; unexpected concurrent changes fail closed. Staging also includes the snapshotted `resourceVersion` in candidate apply. After restoring the Secret, rollback verifies the saved manifest checksum, performs a server-side dry run, applies the complete manifest once, reconciles all Secret-consuming Deployments, waits for all six rollouts and repeats the full authenticated/content smoke against the restored release SHA. It never reconstructs a release from mutable tags.
 
 Binary rollback is safe only across forward-compatible expand/contract database migrations. A release with a destructive schema migration must use a separately verified data restore or roll-forward plan; automatic binary rollback alone is not an acceptable recovery boundary.
 
@@ -77,7 +77,7 @@ Binary rollback is safe only across forward-compatible expand/contract database 
 
 Before rollback, the workflow records bounded workload status, namespace events and the last 200 lines from only non-ready or smoke-affected services. The collector removes email addresses, UUIDs, IP addresses, bearer values and named identity/credential fields. It does not read Kubernetes Secrets.
 
-The 30-day Actions artifact also contains the safe smoke report, rollback record and post-rollback identity report. If those are insufficient, inspect the live cluster under the normal incident-access boundary; do not expand the artifact collector to dump arbitrary ConfigMaps, environment variables or full namespace logs.
+The 30-day Actions artifact also contains the safe smoke report, rollback record and post-rollback smoke report. It never contains the rollback Secret snapshot. If those are insufficient, inspect the live cluster under the normal incident-access boundary; do not expand the artifact collector to dump arbitrary ConfigMaps, environment variables or full namespace logs.
 
 ## Mandatory staging rollback drill
 

@@ -23,11 +23,24 @@ for contract_test in \
   test-apply-staging-bootstrap.sh \
   test-staging-plan-preview.sh \
   test-kubernetes-secret-consumer-reconciliation.sh \
+  test-kubernetes-secret-rollback.sh \
   test-production-telemetry-boundary.sh
 do
   grep -Fq "run: ./scripts/$contract_test" "$REPO_ROOT/.github/workflows/deploy.yaml"
   grep -Fq "run: ./scripts/$contract_test" "$REPO_ROOT/.github/workflows/pull-request.yaml"
 done
+
+for workflow in "$PRODUCTION_WORKFLOW" "$STAGING_WORKFLOW"; do
+  grep -Fq './scripts/preserve-kubernetes-secret.py snapshot' "$workflow"
+  grep -Fq './scripts/preserve-kubernetes-secret.py restore' "$workflow"
+done
+grep -Fq 'resourceVersion: \"${APP_SECRET_RESOURCE_VERSION}\"' "$STAGING_WORKFLOW"
+staging_rollback_smoke=$(sed -n '/name: Verify complete staging rollback/,/name: Upload staging failure evidence/p' "$STAGING_WORKFLOW")
+printf '%s\n' "$staging_rollback_smoke" | grep -Fq 'SMOKE_PASSWORD: ${{ secrets.STAGING_SMOKE_PASSWORD }}'
+if printf '%s\n' "$staging_rollback_smoke" | grep -Fq -- '--identity-only'; then
+  echo 'Staging rollback must pass the complete authenticated smoke' >&2
+  exit 1
+fi
 grep -Fq 'After revocation, never blindly revert' "$REPO_ROOT/docs/operations/staging-runbook.md"
 grep -Fq './scripts/verify-environment-secret-separation.py --desired' "$REPO_ROOT/docs/operations/staging-runbook.md"
 

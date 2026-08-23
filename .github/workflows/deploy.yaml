@@ -105,6 +105,9 @@ jobs:
       - name: Verify idempotent Kubernetes Secret consumer reconciliation
         run: ./scripts/test-kubernetes-secret-consumer-reconciliation.sh
 
+      - name: Verify fail-closed Kubernetes Secret rollback
+        run: ./scripts/test-kubernetes-secret-rollback.sh
+
       - name: Verify production telemetry host-boundary contract
         run: ./scripts/test-production-telemetry-boundary.sh
 

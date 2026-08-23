@@ -86,7 +86,7 @@ awk '
   exit 1
 }
 
-production_secret_names='AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD RELEASE_BINDING_KEY'
+production_secret_names='AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN GF_SECURITY_ADMIN_USER GF_SECURITY_ADMIN_PASSWORD RELEASE_BINDING_KEY SMOKE_LOGIN SMOKE_PASSWORD SMOKE_TURNSTILE_BYPASS_KEY'
 validation_count=$(grep -c 'name: Validate required production secrets' "$DEPLOY")
 required_list_count=$(grep -F -c "required_names=\"$production_secret_names\"" "$DEPLOY")
 issuer_check_count=$(grep -F -c 'Production issuer secrets must identify auth.mnema.app' "$DEPLOY")
@@ -148,6 +148,7 @@ test "$(grep -c './scripts/create-secret-snapshot-binding.py' "$DEPLOY")" -eq 6
 test "$(grep -c './scripts/create-kubernetes-live-release-binding.py' "$DEPLOY")" -eq 2
 test "$(grep -c './scripts/detect-kubernetes-reconciliation-drift.py' "$DEPLOY")" -eq 4
 test "$(grep -c './scripts/replace-kubernetes-secret-if-current.py' "$DEPLOY")" -eq 1
+test "$(grep -c './scripts/preserve-kubernetes-secret.py' "$DEPLOY")" -eq 2
 test "$(grep -c './scripts/verify-kubernetes-bootstrap-secret-values.py' "$DEPLOY")" -eq 4
 test "$(grep -c 'MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN >/dev/null' "$DEPLOY")" -eq 2
 
@@ -174,6 +175,13 @@ if printf '%s\n' "$restart_step" | grep -Fq 'deployment/mnema-frontend'; then
 fi
 grep -Fq 'resourceVersion: \"${RECONCILIATION_RESOURCE_VERSION}\"' "$DEPLOY"
 grep -Fq 'steps.drift-guard.outputs.app_secret_resource_version' "$DEPLOY"
+grep -Fq 'name: Restore the previous production application Secret' "$DEPLOY"
+rollback_smoke_step=$(sed -n '/name: Verify complete production rollback/,/name: Upload production failure evidence/p' "$DEPLOY")
+printf '%s\n' "$rollback_smoke_step" | grep -Fq 'SMOKE_PASSWORD: ${{ secrets.PROD_SMOKE_PASSWORD }}'
+if printf '%s\n' "$rollback_smoke_step" | grep -Fq -- '--identity-only'; then
+  echo 'Production rollback must pass the complete authenticated smoke' >&2
+  exit 1
+fi
 if grep -Fq 'steps.drift-guard.outputs.grafana_secret_resource_version' "$DEPLOY"; then
   echo 'Generic deploy must not pretend that a Grafana bootstrap password is rotatable' >&2
   exit 1
