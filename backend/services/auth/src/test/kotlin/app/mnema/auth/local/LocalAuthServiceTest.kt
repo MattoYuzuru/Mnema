@@ -173,6 +173,82 @@ class LocalAuthServiceTest {
     }
 
     @Test
+    fun `dedicated smoke email can bypass only turnstile during registration`() {
+        val smokeKey = "release-smoke-key-that-is-longer-than-32-characters"
+        val service = service(smokeAuthProps = SmokeAuthProps("smoke@example.com", smokeKey))
+        val request = LocalAuthController.RegisterRequest(
+            " SMOKE@example.com ",
+            "mnema-smoke",
+            "secret-password"
+        )
+        val saved = AuthUser(
+            id = UUID.randomUUID(),
+            email = "smoke@example.com",
+            username = "mnema-smoke",
+            passwordHash = "encoded"
+        )
+
+        `when`(userRepository.findByEmailIgnoreCase("smoke@example.com")).thenReturn(Optional.empty())
+        `when`(userRepository.existsByUsernameIgnoreCase("mnema-smoke")).thenReturn(false)
+        `when`(passwordEncoder.encode("secret-password")).thenReturn("encoded")
+        `when`(userRepository.save(any(AuthUser::class.java))).thenReturn(saved)
+        stubToken()
+
+        val response = service.register(request, "127.0.0.1", smokeKey)
+
+        assertEquals("token", response.accessToken)
+        verify(turnstileService, never()).verify(any(), any())
+        verify(userRepository).save(any(AuthUser::class.java))
+    }
+
+    @Test
+    fun `registration smoke bypass rejects another email and a wrong key`() {
+        val smokeKey = "release-smoke-key-that-is-longer-than-32-characters"
+        val service = service(smokeAuthProps = SmokeAuthProps("smoke@example.com", smokeKey))
+        `when`(turnstileService.verify(null, "127.0.0.1")).thenReturn(false)
+
+        val wrongEmail = assertThrows<ResponseStatusException> {
+            service.register(
+                LocalAuthController.RegisterRequest("other@example.com", "mnema-smoke", "secret-password"),
+                "127.0.0.1",
+                smokeKey
+            )
+        }
+        val wrongKey = assertThrows<ResponseStatusException> {
+            service.register(
+                LocalAuthController.RegisterRequest("smoke@example.com", "mnema-smoke", "secret-password"),
+                "127.0.0.1",
+                "wrong-key"
+            )
+        }
+
+        assertEquals("Captcha verification failed", wrongEmail.reason)
+        assertEquals("Captcha verification failed", wrongKey.reason)
+        verify(userRepository, never()).save(any(AuthUser::class.java))
+    }
+
+    @Test
+    fun `registration smoke bypass remains rate limited`() {
+        val smokeKey = "release-smoke-key-that-is-longer-than-32-characters"
+        val service = service(
+            localAuthProps = props.copy(registerLimit = 0),
+            smokeAuthProps = SmokeAuthProps("smoke@example.com", smokeKey)
+        )
+
+        val ex = assertThrows<ResponseStatusException> {
+            service.register(
+                LocalAuthController.RegisterRequest("smoke@example.com", "mnema-smoke", "secret-password"),
+                "127.0.0.1",
+                smokeKey
+            )
+        }
+
+        assertEquals(HttpStatus.TOO_MANY_REQUESTS, ex.statusCode)
+        verify(turnstileService, never()).verify(any(), any())
+        verify(userRepository, never()).save(any(AuthUser::class.java))
+    }
+
+    @Test
     fun `register rejects captcha failure and invalid input`() {
         val service = service()
         `when`(turnstileService.verify("captcha", "127.0.0.1")).thenReturn(false)

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -23,6 +24,7 @@ from urllib.request import Request, urlopen
 SERVICES = ("auth", "user", "core", "media", "import")
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 MAIN_BUNDLE_PATTERN = re.compile(r"(?:^|/)main\.[0-9a-f]+\.js$")
+SMOKE_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
 class SmokeFailure(RuntimeError):
@@ -256,7 +258,13 @@ class ReleaseSmoke:
                 raise SmokeFailure("service_release_mismatch", service)
 
     def authenticate(self) -> None:
-        self.access_token = self.login()
+        try:
+            self.access_token = self.login()
+        except SmokeFailure as error:
+            if not is_missing_smoke_account(error):
+                raise
+            self.bootstrap_smoke_account()
+            self.access_token = self.login()
 
     def renew_token(self) -> None:
         previous = self.require_token()
@@ -279,6 +287,24 @@ class ReleaseSmoke:
         if str(payload.get("token_type", "")).lower() != "bearer":
             raise SmokeFailure("token_type_invalid", "auth")
         return token
+
+    def bootstrap_smoke_account(self) -> None:
+        email = self.config.login.strip().lower()
+        if not SMOKE_EMAIL_PATTERN.fullmatch(email):
+            raise SmokeFailure("smoke_account_bootstrap_requires_email", "auth")
+        self.client.json(
+            "POST",
+            f"{self.config.auth_url.rstrip('/')}/auth/register",
+            headers={"X-Mnema-Smoke-Key": self.config.turnstile_bypass_key},
+            json_body={
+                "email": email,
+                "username": smoke_username(email),
+                "password": self.config.password,
+            },
+            expected_statuses=(201,),
+            service="auth",
+        )
+        print("smoke_account_bootstrap=created")
 
     def exercise_content_and_review(self) -> None:
         fixture_id = uuid.uuid4().hex
@@ -376,6 +402,19 @@ def required_uuid(payload: dict[str, Any], key: str, error_code: str) -> str:
         return str(uuid.UUID(str(value)))
     except (ValueError, TypeError, AttributeError):
         raise SmokeFailure(error_code, "core") from None
+
+
+def is_missing_smoke_account(error: SmokeFailure) -> bool:
+    return (
+        error.code == "unexpected_http_status"
+        and error.service == "auth"
+        and error.safe_detail == "status=401"
+    )
+
+
+def smoke_username(email: str) -> str:
+    digest = hashlib.sha256(email.casefold().encode("utf-8")).hexdigest()[:16]
+    return f"mnema-smoke-{digest}"
 
 
 def utc_now() -> str:

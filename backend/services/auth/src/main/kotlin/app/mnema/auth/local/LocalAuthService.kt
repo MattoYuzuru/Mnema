@@ -42,13 +42,18 @@ class LocalAuthService(
     private val scopes = setOf("openid", "profile", "email", "user.read", "user.write")
 
     @Transactional
-    fun register(req: LocalAuthController.RegisterRequest, ip: String?): LocalTokenResponse {
+    fun register(
+        req: LocalAuthController.RegisterRequest,
+        ip: String?,
+        smokeBypassKey: String? = null
+    ): LocalTokenResponse {
         val now = Instant.now()
 
         if (!rateLimiter.allow("register:${ip.orEmpty()}", props.registerLimit, props.registerWindow, now)) {
             throw ResponseStatusException(HttpStatus.TOO_MANY_REQUESTS, "Too many registration attempts")
         }
-        if (!turnstileService.verify(req.turnstileToken, ip)) {
+        val smokeBypass = smokeAuthProps.allows(req.email, smokeBypassKey)
+        if (!smokeBypass && !turnstileService.verify(req.turnstileToken, ip)) {
             throw ResponseStatusException(HttpStatus.BAD_REQUEST, "Captcha verification failed")
         }
 

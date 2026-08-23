@@ -5,7 +5,7 @@ artifact:
   title: "Mnema release smoke, diagnostics and rollback"
   status: current
   created_at: "2026-08-19"
-  updated_at: "2026-08-19"
+  updated_at: "2026-08-23"
   owners: ["project-owner"]
 ---
 
@@ -17,7 +17,7 @@ AI is deliberately absent from this gate. The hosted runtime must report `aiEnab
 
 ## Environment contract
 
-The dedicated account must not be used by a person or contain persistent content. Create it through the normal local-auth registration flow before enabling deployment, give it the ordinary `user.read user.write` scopes, and keep its password only in the matching GitHub Environment.
+The dedicated account must use an email login, must not be used by a person and must not contain persistent content beyond its identity. On the first authenticated smoke, an expected `401` causes the runner to create exactly that configured email through the normal local-auth registration endpoint and then retry login. Registration uses the same account-bound Turnstile bypass; a malformed login, duplicate identity, wrong password, unexpected status or second failure rejects the release. No direct database write or manual registration race is required.
 
 Add these secrets to both `staging` and `prod`, using the environment prefix:
 
@@ -27,7 +27,7 @@ Add these secrets to both `staging` and `prod`, using the environment prefix:
 | Account password | `STAGING_SMOKE_PASSWORD` | `PROD_SMOKE_PASSWORD` |
 | Random Turnstile bypass key, at least 32 characters | `STAGING_SMOKE_TURNSTILE_BYPASS_KEY` | `PROD_SMOKE_TURNSTILE_BYPASS_KEY` |
 
-The password is passed only to the GitHub-hosted smoke process. It is not written to Kubernetes. The login and bypass key enter `mnema-secrets` because the auth Pod must recognize the exact dedicated identity. The bypass skips only Turnstile for that login/key pair; password verification, rate limiting, account locking and moderation still execute. Rotate the password and bypass key together after suspected disclosure.
+The password is passed only to the GitHub-hosted smoke process. It is not written to Kubernetes. The login and bypass key enter `mnema-secrets` because the auth Pod must recognize the exact dedicated identity. The bypass skips only Turnstile for that login/key pair during registration and login. Registration/login rate limits, input and uniqueness validation, password verification, account locking and moderation still execute. Rotate the password and bypass key together after suspected disclosure.
 
 The optional GitHub Environment variable `AUTO_ROLLBACK_ENABLED` accepts only `true` or `false` and defaults to `true`. Set it to `false` only for a diagnosed rollback fault: the workflow will still reject the candidate, but an applied candidate may remain live and then requires an explicit operator rollback.
 
