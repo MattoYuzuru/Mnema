@@ -3,6 +3,7 @@ name: Main CI
 on:
   push:
     branches: [main]
+  workflow_dispatch:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -10,7 +11,20 @@ env:
 permissions: {}
 
 jobs:
+  validate-main-ref:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Require exact main branch
+        run: |
+          if [ "$GITHUB_REF" != refs/heads/main ]; then
+            echo '::error::Main CI may run only for refs/heads/main.'
+            exit 1
+          fi
+
   backend-quality:
+    needs: validate-main-ref
     runs-on: ubuntu-latest
     concurrency:
       group: main-ci-backend-${{ github.ref }}
@@ -39,6 +53,7 @@ jobs:
           path: backend/build/reports/jacoco/jacocoRootReport/
 
   frontend-quality:
+    needs: validate-main-ref
     runs-on: ubuntu-latest
     concurrency:
       group: main-ci-frontend-${{ github.ref }}

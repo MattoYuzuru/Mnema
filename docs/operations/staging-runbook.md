@@ -60,7 +60,26 @@ TOKEN_DURATION=720h \
 
 `KUBE_API_SERVER` must be the existing externally reachable TLS origin of the main cluster, with a certificate valid for that host. The generator uses Python's standard URL/IP parsers to reject localhost, the full IPv4/IPv6 loopback classes, credentials, path/query/fragment ambiguity and malformed ports; the default root k3s loopback endpoint is never accepted. Do not expose a new endpoint or use keykomi for this bootstrap. The command pins Pod Security labels as its only persistent cluster mutation, then the generated credential's own authorization and forbidden-workload checks must succeed through that exact endpoint before the file is accepted.
 
-Base64-encode that file without printing it and store the result as the `STAGING_KUBECONFIG_B64` secret in the GitHub `staging` environment. Record the script's `token_expires_at` value and rotate to a new file/secret before that time; the script deliberately refuses to overwrite an existing credential. The API server may issue a shorter duration than requested. Kubernetes recommends bounded TokenRequest credentials over manually created non-expiring ServiceAccount token Secrets ([ServiceAccount tokens](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/)). GitHub `staging` and `prod` environments must both keep a custom deployment-branch policy with the single exact branch `main`; `prod` must additionally keep the required reviewer. Read back the environment and branch-policy APIs before uploading any credential. This exact-main policy was installed and read back on 2026-08-19; changing it is a security-sensitive owner action ([GitHub deployment branch policies](https://docs.github.com/en/rest/deployments/branch-policies)).
+Base64-encode that file without printing it and store the result as the `STAGING_KUBECONFIG_B64` secret in the GitHub `staging` environment. Never pipe an unchecked remote command directly into `gh secret set`: GitHub accepts an empty stdin as a valid secret update. Capture the base64 in shell memory with tracing disabled, reject an empty or implausibly short result, upload it through stdin, then unset it and delete the remote tmpfs file:
+
+```bash
+set +x
+staging_kubeconfig_b64=$(ssh yandex \
+  'sudo base64 -w0 /run/mnema-staging.kubeconfig')
+if [ "${#staging_kubeconfig_b64}" -lt 500 ]; then
+  unset staging_kubeconfig_b64
+  echo 'Refusing an empty or truncated staging kubeconfig' >&2
+  exit 1
+fi
+printf '%s' "$staging_kubeconfig_b64" | \
+  gh secret set STAGING_KUBECONFIG_B64 --env staging -R MattoYuzuru/Mnema
+unset staging_kubeconfig_b64
+ssh yandex 'sudo rm -f /run/mnema-staging.kubeconfig'
+```
+
+Authenticate `sudo` through the owner's protected stdin or interactive mechanism; never put its password in an argument, log or copied command. `gh secret list --env staging` proves only that the name and update timestamp exist, not that the encrypted value is non-empty. After rotating a secret, start a fresh `Main CI` run from `main` with `workflow_dispatch`; a rerun of a workflow that began before the rotation can retain its original secret snapshot.
+
+Record the script's `token_expires_at` value and rotate to a new file/secret before that time; the script deliberately refuses to overwrite an existing credential. The API server may issue a shorter duration than requested. Kubernetes recommends bounded TokenRequest credentials over manually created non-expiring ServiceAccount token Secrets ([ServiceAccount tokens](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/)). GitHub `staging` and `prod` environments must both keep a custom deployment-branch policy with the single exact branch `main`; `prod` must additionally keep the required reviewer. Read back the environment and branch-policy APIs before uploading any credential. This exact-main policy was installed and read back on 2026-08-19; changing it is a security-sensitive owner action ([GitHub deployment branch policies](https://docs.github.com/en/rest/deployments/branch-policies)).
 
 ## Environment-owned secret names
 
