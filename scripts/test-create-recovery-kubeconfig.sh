@@ -38,13 +38,14 @@ if [ "${1:-}" = auth ] && [ "${2:-}" = can-i ]; then
     'create statefulsets.apps -n mnema-restore-drill' | \
     'create jobs.batch -n mnema-restore-drill' | \
     'create secrets -n mnema-restore-drill' | \
-    'delete persistentvolumeclaim/data-postgres-0 -n mnema-restore-drill')
+    'get secret/mnema-restore-db-secrets -n mnema-restore-drill')
       printf 'yes\n'
       ;;
     'get secrets -n mnema-restore-drill')
       if [ "${FAKE_ALLOW_SECRET_READ:-false}" = true ]; then printf 'yes\n'; else printf 'no\n'; fi
       ;;
     'list secrets -n mnema-restore-drill' | \
+    'delete persistentvolumeclaim/data-postgres-0 -n mnema-restore-drill' | \
     'create networkpolicies.networking.k8s.io -n mnema-restore-drill' | \
     'delete configmap/mnema-restore-boundary -n mnema-restore-drill' | \
     'create namespaces' | \

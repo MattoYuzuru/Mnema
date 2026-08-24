@@ -54,8 +54,8 @@ spec:
             periodSeconds: 5
             timeoutSeconds: 5
           resources:
-            requests: { cpu: 250m, memory: 512Mi }
-            limits: { cpu: "2", memory: 2Gi }
+            requests: { cpu: 250m, memory: 512Mi, ephemeral-storage: 20Gi }
+            limits: { cpu: "2", memory: 2Gi, ephemeral-storage: 22Gi }
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: { drop: ["ALL"] }
@@ -65,14 +65,10 @@ spec:
           volumeMounts:
             - name: data
               mountPath: /var/lib/postgresql
-  volumeClaimTemplates:
-    - metadata:
-        name: data
-      spec:
-        accessModes: ["ReadWriteOnce"]
-        resources:
-          requests:
-            storage: 20Gi
+      volumes:
+        - name: data
+          emptyDir:
+            sizeLimit: 20Gi
 ---
 apiVersion: batch/v1
 kind: Job
@@ -118,8 +114,8 @@ spec:
             - name: BACKUP_ID
               valueFrom: { configMapKeyRef: { name: mnema-restore-config, key: BACKUP_ID } }
           resources:
-            requests: { cpu: 50m, memory: 128Mi }
-            limits: { cpu: 500m, memory: 512Mi }
+            requests: { cpu: 50m, memory: 128Mi, ephemeral-storage: 20Gi }
+            limits: { cpu: 500m, memory: 512Mi, ephemeral-storage: 22Gi }
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: { drop: ["ALL"] }
@@ -153,8 +149,8 @@ spec:
             - name: PGPASSWORD
               valueFrom: { secretKeyRef: { name: mnema-restore-db-secrets, key: POSTGRES_PASSWORD } }
           resources:
-            requests: { cpu: 250m, memory: 512Mi }
-            limits: { cpu: "2", memory: 2Gi }
+            requests: { cpu: 250m, memory: 512Mi, ephemeral-storage: 20Gi }
+            limits: { cpu: "2", memory: 2Gi, ephemeral-storage: 22Gi }
           securityContext:
             allowPrivilegeEscalation: false
             capabilities: { drop: ["ALL"] }

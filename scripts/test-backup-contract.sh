@@ -58,12 +58,22 @@ grep -Fq 'namespace: mnema-restore-drill' "$RESTORE_MANIFEST"
 grep -Fq 'name: mnema-recovery' "$RESTORE_BOUNDARY"
 grep -Fq 'name: mnema-restore-boundary' "$RESTORE_BOUNDARY"
 grep -Fq 'pod-security.kubernetes.io/enforce: restricted' "$RESTORE_BOUNDARY"
-grep -Fq 'resourceNames: ["data-postgres-0"]' "$RESTORE_BOUNDARY"
+grep -Fq 'requests.ephemeral-storage: 45Gi' "$RESTORE_BOUNDARY"
+grep -Fq 'limits.ephemeral-storage: 50Gi' "$RESTORE_BOUNDARY"
+if grep -Fq 'resourceNames: ["data-postgres-0"]' "$RESTORE_BOUNDARY"; then
+  echo 'Recovery credential must not delete storage because drills use ephemeral data' >&2
+  exit 1
+fi
 if grep -Eq '^kind: Cluster(Role|RoleBinding)$' "$RESTORE_BOUNDARY"; then
   echo 'Recovery boundary must not grant cluster-scoped RBAC' >&2
   exit 1
 fi
 grep -Fq 'postgres.mnema-restore-drill.svc.cluster.local' "$RESTORE_MANIFEST"
+grep -Fq 'sizeLimit: 20Gi' "$RESTORE_MANIFEST"
+if grep -Fq 'volumeClaimTemplates:' "$RESTORE_MANIFEST"; then
+  echo 'Restore drills must not leave persistent backing volumes' >&2
+  exit 1
+fi
 grep -Fq 'name: default-deny-ingress' "$RESTORE_BOUNDARY"
 grep -Fq 'name: default-deny-egress' "$RESTORE_BOUNDARY"
 grep -Fq 'cidr: ::/0' "$RESTORE_BOUNDARY"
@@ -117,11 +127,22 @@ if grep -Eq -- '--from-file=scripts/backup([[:space:]]|$)' "$RECOVERY_WORKFLOW";
 fi
 grep -Fq -- '--no-sign-request' "$BACKUP_SCRIPTS/upload.sh"
 grep -Fq -- '--no-sign-request' "$BACKUP_SCRIPTS/download.sh"
+grep -Fq -- "--if-none-match '*'" "$BACKUP_SCRIPTS/upload.sh"
+grep -Fq -- '--if-match "$current_etag"' "$BACKUP_SCRIPTS/upload.sh"
+grep -Fq -- '--server-side-encryption aws:kms' "$BACKUP_SCRIPTS/upload.sh"
+grep -Fq -- '--acl private' "$BACKUP_SCRIPTS/upload.sh"
+grep -Fq 'bucket_versioning_must_be_enabled' "$BACKUP_SCRIPTS/upload.sh"
+grep -Fq 'write_once_policy_allows_unconditional_overwrite' "$BACKUP_SCRIPTS/upload.sh"
 grep -Fq 'CONFIRMATION" != RESTORE_IN_ISOLATED_NAMESPACE' "$RECOVERY_WORKFLOW"
 grep -Fq 'name: Refuse a busy restore boundary' "$RECOVERY_WORKFLOW"
 grep -Fq 'get configmap mnema-restore-boundary' "$RECOVERY_WORKFLOW"
+grep -Fq 'get configmap kube-root-ca.crt' "$RECOVERY_WORKFLOW"
+grep -Fq 'timeout-minutes: 210' "$RECOVERY_WORKFLOW"
 grep -Fq 'kubectl create -f k8s/backup/restore-drill.yaml' "$RECOVERY_WORKFLOW"
-grep -Fq 'delete persistentvolumeclaim data-postgres-0' "$RECOVERY_WORKFLOW"
+if grep -Fq 'delete persistentvolumeclaim data-postgres-0' "$RECOVERY_WORKFLOW"; then
+  echo 'Restore cleanup must not depend on deleting persistent storage' >&2
+  exit 1
+fi
 if grep -Eq 'kubectl (create|delete) namespace' "$RECOVERY_WORKFLOW"; then
   echo 'Scoped recovery workflow must not create or delete namespaces' >&2
   exit 1
@@ -137,65 +158,176 @@ cat > "$TEST_ROOT/bin/aws" <<'MOCK_AWS'
 #!/bin/sh
 set -eu
 
-if [ "$1 $2" = 's3api get-bucket-encryption' ]; then
-  case "$*" in
-    *SSEAlgorithm*) printf '%s\n' 'aws:kms' ;;
-    *KMSMasterKeyID*) printf '%s\n' 'kms-test' ;;
-    *) exit 2 ;;
-  esac
-  exit 0
-fi
-if [ "$1 $2" = 's3api get-bucket-lifecycle-configuration' ]; then
-  case "$*" in
-    *Filter.Prefix*) printf '%s\n' "${AWS_MOCK_RETENTION_PREFIX:-mnema-backups/postgres/}" ;;
-    *NoncurrentVersionExpiration.NoncurrentDays*) printf '%s\n' '30' ;;
-    *AbortIncompleteMultipartUpload.DaysAfterInitiation*) printf '%s\n' '7' ;;
-    *Expiration.Days*) printf '%s\n' '30' ;;
-    *Status*) printf '%s\n' 'Enabled' ;;
-    *) exit 2 ;;
-  esac
-  exit 0
-fi
-if [ "$1 $2" = 's3api get-bucket-versioning' ]; then
-  printf '%s\n' 'None'
-  exit 0
-fi
-if [ "$1 $2" = 's3api head-object' ]; then
-  case "$*" in
-    *--no-sign-request*)
-      if [ "${AWS_MOCK_PUBLIC_OBJECT:-false}" = true ]; then
-        exit 0
-      fi
-      printf '%s\n' 'An error occurred (403) when calling HeadObject: AccessDenied' >&2
-      exit 254
-      ;;
-  esac
-  case "$*" in
-    *SSEKMSKeyId*) printf '%s\n' 'kms-test' ;;
-    *ServerSideEncryption*) printf '%s\n' 'aws:kms' ;;
-    *) exit 2 ;;
-  esac
-  exit 0
-fi
-if [ "$1 $2" = 's3 cp' ]; then
-  source_path=$3
-  destination_path=$4
-  case "$source_path" in
-    s3://test-bucket/*)
-      object_key=${source_path#s3://test-bucket/}
-      cp "$AWS_MOCK_ROOT/$object_key" "$destination_path"
-      ;;
-    *)
-      object_key=${destination_path#s3://test-bucket/}
-      destination="$AWS_MOCK_ROOT/$object_key"
-      mkdir -p "$(dirname -- "$destination")"
-      cp "$source_path" "$destination"
-      ;;
-  esac
-  exit 0
-fi
+operation="${1:-} ${2:-}"
 
-exit 2
+value_after() {
+  wanted="$1"
+  shift
+  while [ "$#" -gt 0 ]; do
+    if [ "$1" = "$wanted" ]; then
+      shift
+      printf '%s' "${1:-}"
+      return 0
+    fi
+    shift
+  done
+  return 1
+}
+
+object_etag() {
+  sha256sum "$1" | awk '{ print "\"" $1 "\"" }'
+}
+
+next_version() {
+  counter_file="$AWS_MOCK_ROOT/.version-counter"
+  current=0
+  if [ -f "$counter_file" ]; then current=$(cat "$counter_file"); fi
+  current=$((current + 1))
+  printf '%s\n' "$current" > "$counter_file"
+  printf 'version-%s' "$current"
+}
+
+case "$operation" in
+  's3api get-bucket-encryption')
+    case "$*" in
+      *SSEAlgorithm*) printf '%s\n' "${AWS_MOCK_BUCKET_ENCRYPTION:-aws:kms}" ;;
+      *KMSMasterKeyID*) printf '%s\n' "${AWS_MOCK_BUCKET_KMS_KEY:-kms-test}" ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  's3api get-bucket-lifecycle-configuration')
+    case "$*" in
+      *Filter.Prefix*) printf '%s\n' "${AWS_MOCK_RETENTION_PREFIX:-mnema-backups/postgres/}" ;;
+      *NoncurrentVersionExpiration.NoncurrentDays*) printf '%s\n' "${AWS_MOCK_NONCURRENT_DAYS:-30}" ;;
+      *AbortIncompleteMultipartUpload.DaysAfterInitiation*) printf '%s\n' '7' ;;
+      *Expiration.Days*) printf '%s\n' '30' ;;
+      *Status*) printf '%s\n' 'Enabled' ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  's3api get-bucket-versioning')
+    printf '%s\n' "${AWS_MOCK_VERSIONING_STATE:-Enabled}"
+    ;;
+  's3api put-object')
+    body=$(value_after --body "$@")
+    key=$(value_after --key "$@")
+    encryption=$(value_after --server-side-encryption "$@")
+    kms_key=$(value_after --ssekms-key-id "$@")
+    acl=$(value_after --acl "$@")
+    destination="$AWS_MOCK_ROOT/$key"
+    if [ "$encryption" != aws:kms ] || [ "$kms_key" != kms-test ] || [ "$acl" != private ]; then
+      printf '%s\n' 'An error occurred (400) when calling PutObject: missing explicit object controls' >&2
+      exit 254
+    fi
+
+    if_none=false
+    if_match=''
+    case "$*" in *'--if-none-match *'*) if_none=true ;; esac
+    if value=$(value_after --if-match "$@" 2>/dev/null); then if_match=$value; fi
+    policy_enforced=${AWS_MOCK_ENFORCE_WRITE_ONCE:-true}
+    case "$key" in */postgres/latest.env) pointer=true ;; *) pointer=false ;; esac
+
+    if [ -f "$destination" ]; then
+      current_etag=$(object_etag "$destination")
+      if [ "$if_none" = true ]; then
+        printf '%s\n' 'An error occurred (412) when calling PutObject: Precondition Failed' >&2
+        exit 254
+      fi
+      if [ -n "$if_match" ]; then
+        if [ "$if_match" != "$current_etag" ]; then
+          printf '%s\n' 'An error occurred (412) when calling PutObject: Precondition Failed' >&2
+          exit 254
+        fi
+        if [ "$policy_enforced" = true ] && [ "$pointer" = false ] && \
+           [ "${AWS_MOCK_ALLOW_IMMUTABLE_IF_MATCH:-false}" != true ]; then
+          printf '%s\n' 'An error occurred (403) when calling PutObject: AccessDenied' >&2
+          exit 254
+        fi
+      elif [ "$policy_enforced" = true ]; then
+        printf '%s\n' 'An error occurred (403) when calling PutObject: AccessDenied' >&2
+        exit 254
+      fi
+    else
+      if [ -n "$if_match" ]; then
+        printf '%s\n' 'An error occurred (404) when calling PutObject: Not Found' >&2
+        exit 254
+      fi
+      if [ "$if_none" = false ] && [ "$policy_enforced" = true ]; then
+        printf '%s\n' 'An error occurred (403) when calling PutObject: AccessDenied' >&2
+        exit 254
+      fi
+    fi
+
+    mkdir -p "$(dirname -- "$destination")"
+    cp "$body" "$destination"
+    version_id=$(next_version)
+    etag=$(object_etag "$destination")
+    printf '%s\t%s\n' "$version_id" "$etag"
+    ;;
+  's3api head-object')
+    key=$(value_after --key "$@")
+    destination="$AWS_MOCK_ROOT/$key"
+    case "$*" in
+      *--no-sign-request*)
+        if [ "${AWS_MOCK_PUBLIC_OBJECT:-false}" = true ]; then exit 0; fi
+        printf '%s\n' 'An error occurred (403) when calling HeadObject: AccessDenied' >&2
+        exit 254
+        ;;
+    esac
+    if [ ! -f "$destination" ]; then
+      printf '%s\n' 'An error occurred (404) when calling HeadObject: Not Found' >&2
+      exit 254
+    fi
+    case "$*" in
+      *SSEKMSKeyId*) printf '%s\n' "${AWS_MOCK_OBJECT_KMS_KEY:-kms-test}" ;;
+      *ServerSideEncryption*) printf '%s\n' "${AWS_MOCK_OBJECT_ENCRYPTION:-aws:kms}" ;;
+      *ETag*) object_etag "$destination"; printf '\n' ;;
+      *) exit 2 ;;
+    esac
+    ;;
+  's3api get-object')
+    key=$(value_after --key "$@")
+    source_path="$AWS_MOCK_ROOT/$key"
+    destination_path=''
+    previous=''
+    for argument in "$@"; do
+      case "$previous" in
+        --bucket|--key|--endpoint-url|--query|--output) previous=''; continue ;;
+      esac
+      case "$argument" in
+        --bucket|--key|--endpoint-url|--query|--output) previous=$argument ;;
+        s3api|get-object) ;;
+        --*) ;;
+        *) destination_path=$argument ;;
+      esac
+    done
+    if [ ! -f "$source_path" ]; then
+      printf '%s\n' 'An error occurred (404) when calling GetObject: NoSuchKey' >&2
+      exit 254
+    fi
+    cp "$source_path" "$destination_path"
+    object_etag "$source_path"
+    printf '\n'
+    ;;
+  's3 cp')
+    source_path=$3
+    destination_path=$4
+    case "$source_path" in
+      s3://test-bucket/*)
+        object_key=${source_path#s3://test-bucket/}
+        cp "$AWS_MOCK_ROOT/$object_key" "$destination_path"
+        ;;
+      *)
+        printf '%s\n' 'Unexpected high-level upload' >&2
+        exit 2
+        ;;
+    esac
+    ;;
+  *)
+    printf 'unexpected aws call: %s\n' "$*" >&2
+    exit 2
+    ;;
+esac
 MOCK_AWS
 chmod +x "$TEST_ROOT/bin/aws"
 
@@ -224,6 +356,20 @@ CAPACITY_SHA256=$capacity_sha
 EOF
 touch "$TEST_ROOT/backup/READY"
 
+set_backup_identity() {
+  backup_id="$1"
+  snapshot_epoch="$2"
+  completed_epoch="$3"
+  awk -F= -v backup_id="$backup_id" -v snapshot_epoch="$snapshot_epoch" -v completed_epoch="$completed_epoch" '
+    $1 == "BACKUP_ID" { print "BACKUP_ID=" backup_id; next }
+    $1 == "BACKUP_SNAPSHOT_EPOCH" { print "BACKUP_SNAPSHOT_EPOCH=" snapshot_epoch; next }
+    $1 == "BACKUP_DUMP_COMPLETED_EPOCH" { print "BACKUP_DUMP_COMPLETED_EPOCH=" completed_epoch; next }
+    { print }
+  ' "$TEST_ROOT/backup/metadata.env" > "$TEST_ROOT/backup/metadata.env.next"
+  mv "$TEST_ROOT/backup/metadata.env.next" "$TEST_ROOT/backup/metadata.env"
+  rm -f "$TEST_ROOT/backup/UPLOAD_FAILED" "$TEST_ROOT/backup/UPLOADED"
+}
+
 export PATH="$TEST_ROOT/bin:$PATH"
 export AWS_MOCK_ROOT="$TEST_ROOT/object-store"
 export AWS_ENDPOINT_URL=https://storage.example.test
@@ -244,6 +390,16 @@ BACKUP_DIR="$TEST_ROOT/restore" BACKUP_ID=latest \
 cmp "$TEST_ROOT/backup/database.dump" "$TEST_ROOT/restore/database.dump"
 cmp "$TEST_ROOT/backup/reconciliation.csv" "$TEST_ROOT/restore/reconciliation.csv"
 
+if BACKUP_DIR="$TEST_ROOT/backup" RETENTION_POLICY_ID=retention-test \
+  UPDATE_LATEST_POINTER=false \
+  "$BACKUP_SCRIPTS/upload.sh" >/dev/null 2> "$TEST_ROOT/duplicate-upload.err"; then
+  echo 'Uploader must not overwrite an existing immutable backup set' >&2
+  exit 1
+fi
+grep -Fxq 'upload_error=immutable_object_already_exists' "$TEST_ROOT/duplicate-upload.err"
+
+public_backup_id=20260819T020305Z-00000000-0000-4000-8000-000000000002
+set_backup_identity "$public_backup_id" 200 210
 if AWS_MOCK_PUBLIC_OBJECT=true \
   BACKUP_DIR="$TEST_ROOT/backup" \
   RETENTION_POLICY_ID=retention-test \
@@ -253,6 +409,67 @@ if AWS_MOCK_PUBLIC_OBJECT=true \
   exit 1
 fi
 grep -Fxq 'upload_error=object_anonymously_readable' "$TEST_ROOT/public-object.err"
+test ! -e "$TEST_ROOT/object-store/mnema-backups/postgres/$public_backup_id/database.dump"
+
+wrong_kms_backup_id=20260819T020306Z-00000000-0000-4000-8000-000000000003
+set_backup_identity "$wrong_kms_backup_id" 300 310
+if AWS_MOCK_BUCKET_KMS_KEY=wrong-kms \
+  BACKUP_DIR="$TEST_ROOT/backup" \
+  RETENTION_POLICY_ID=retention-test \
+  "$BACKUP_SCRIPTS/upload.sh" >/dev/null 2> "$TEST_ROOT/wrong-kms.err"; then
+  echo 'Uploader must reject a mismatched bucket KMS key before uploading data' >&2
+  exit 1
+fi
+grep -Fxq 'upload_error=bucket_default_kms_key_mismatch' "$TEST_ROOT/wrong-kms.err"
+test ! -e "$TEST_ROOT/object-store/mnema-backups/postgres/$wrong_kms_backup_id/database.dump"
+
+wrong_object_kms_backup_id=20260819T020312Z-00000000-0000-4000-8000-000000000009
+set_backup_identity "$wrong_object_kms_backup_id" 350 360
+if AWS_MOCK_OBJECT_KMS_KEY=wrong-kms \
+  BACKUP_DIR="$TEST_ROOT/backup" \
+  RETENTION_POLICY_ID=retention-test \
+  "$BACKUP_SCRIPTS/upload.sh" >/dev/null 2> "$TEST_ROOT/wrong-object-kms.err"; then
+  echo 'Uploader must validate the harmless boundary object before uploading data' >&2
+  exit 1
+fi
+grep -Fxq 'upload_error=object_not_encrypted_with_expected_kms_key' "$TEST_ROOT/wrong-object-kms.err"
+test ! -e "$TEST_ROOT/object-store/mnema-backups/postgres/$wrong_object_kms_backup_id/database.dump"
+
+unsafe_policy_backup_id=20260819T020307Z-00000000-0000-4000-8000-000000000004
+set_backup_identity "$unsafe_policy_backup_id" 400 410
+if AWS_MOCK_ENFORCE_WRITE_ONCE=false \
+  BACKUP_DIR="$TEST_ROOT/backup" \
+  RETENTION_POLICY_ID=retention-test \
+  "$BACKUP_SCRIPTS/upload.sh" >/dev/null 2> "$TEST_ROOT/unsafe-policy.err"; then
+  echo 'Uploader must reject a bucket that allows unconditional overwrite' >&2
+  exit 1
+fi
+grep -Fxq 'upload_error=write_once_policy_allows_unconditional_overwrite' "$TEST_ROOT/unsafe-policy.err"
+test ! -e "$TEST_ROOT/object-store/mnema-backups/postgres/$unsafe_policy_backup_id/database.dump"
+
+unsafe_if_match_backup_id=20260819T020313Z-00000000-0000-4000-8000-00000000000a
+set_backup_identity "$unsafe_if_match_backup_id" 450 460
+if AWS_MOCK_ALLOW_IMMUTABLE_IF_MATCH=true \
+  BACKUP_DIR="$TEST_ROOT/backup" \
+  RETENTION_POLICY_ID=retention-test \
+  "$BACKUP_SCRIPTS/upload.sh" >/dev/null 2> "$TEST_ROOT/unsafe-if-match.err"; then
+  echo 'Uploader must reject a bucket that allows If-Match overwrite of backup sets' >&2
+  exit 1
+fi
+grep -Fxq 'upload_error=write_once_policy_allows_if_match_overwrite' "$TEST_ROOT/unsafe-if-match.err"
+test ! -e "$TEST_ROOT/object-store/mnema-backups/postgres/$unsafe_if_match_backup_id/database.dump"
+
+unversioned_backup_id=20260819T020308Z-00000000-0000-4000-8000-000000000005
+set_backup_identity "$unversioned_backup_id" 500 510
+if AWS_MOCK_VERSIONING_STATE=Suspended \
+  BACKUP_DIR="$TEST_ROOT/backup" \
+  RETENTION_POLICY_ID=retention-test \
+  "$BACKUP_SCRIPTS/upload.sh" >/dev/null 2> "$TEST_ROOT/unversioned.err"; then
+  echo 'Uploader must require active bucket versioning before uploading data' >&2
+  exit 1
+fi
+grep -Fxq 'upload_error=bucket_versioning_must_be_enabled' "$TEST_ROOT/unversioned.err"
+test ! -e "$TEST_ROOT/object-store/mnema-backups/postgres/$unversioned_backup_id/database.dump"
 
 mkdir -p "$TEST_ROOT/restore-public"
 if AWS_MOCK_PUBLIC_OBJECT=true \
@@ -273,7 +490,24 @@ if AWS_ENDPOINT_URL=https://unexpected.example.test \
 fi
 grep -Fxq 'upload_error=unexpected_object_storage_endpoint' "$TEST_ROOT/unexpected-endpoint.err"
 
+newer_backup_id=20260819T020309Z-00000000-0000-4000-8000-000000000006
+set_backup_identity "$newer_backup_id" 600 610
+BACKUP_DIR="$TEST_ROOT/backup" RETENTION_POLICY_ID=retention-test \
+  "$BACKUP_SCRIPTS/upload.sh" > "$TEST_ROOT/newer-backup-report.json"
+python3 "$BACKUP_SCRIPTS/validate_report.py" --kind backup --report "$TEST_ROOT/newer-backup-report.json"
+grep -Fxq "BACKUP_ID=$newer_backup_id" "$TEST_ROOT/object-store/mnema-backups/postgres/latest.env"
+
 cp "$TEST_ROOT/object-store/mnema-backups/postgres/latest.env" "$TEST_ROOT/latest-before.env"
+older_backup_id=20260819T020310Z-00000000-0000-4000-8000-000000000007
+set_backup_identity "$older_backup_id" 550 560
+BACKUP_DIR="$TEST_ROOT/backup" RETENTION_POLICY_ID=retention-test \
+  "$BACKUP_SCRIPTS/upload.sh" > "$TEST_ROOT/older-backup-report.json"
+python3 "$BACKUP_SCRIPTS/validate_report.py" --kind backup --report "$TEST_ROOT/older-backup-report.json"
+python3 -c 'import json, sys; report = json.load(open(sys.argv[1], encoding="utf-8")); assert report["latestPointerUpdated"] is False' "$TEST_ROOT/older-backup-report.json"
+cmp "$TEST_ROOT/latest-before.env" "$TEST_ROOT/object-store/mnema-backups/postgres/latest.env"
+
+manual_backup_id=20260819T020311Z-00000000-0000-4000-8000-000000000008
+set_backup_identity "$manual_backup_id" 700 710
 BACKUP_DIR="$TEST_ROOT/backup" RETENTION_POLICY_ID=retention-test UPDATE_LATEST_POINTER=false \
   "$BACKUP_SCRIPTS/upload.sh" > "$TEST_ROOT/manual-backup-report.json"
 python3 "$BACKUP_SCRIPTS/validate_report.py" --kind backup --report "$TEST_ROOT/manual-backup-report.json"

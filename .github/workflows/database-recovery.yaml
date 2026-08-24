@@ -28,7 +28,7 @@ concurrency:
 jobs:
   database-recovery:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 210
     permissions:
       contents: read
     environment:
@@ -100,6 +100,7 @@ jobs:
           chmod 600 "$KUBECONFIG"
           test "$(kubectl -n "$RESTORE_NAMESPACE" get configmap mnema-restore-boundary -o jsonpath='{.data.contractVersion}')" = 1
           test "$(kubectl -n "$RESTORE_NAMESPACE" get configmap mnema-restore-boundary -o jsonpath='{.data.targetNamespace}')" = "$RESTORE_NAMESPACE"
+          test -n "$(kubectl -n "$RESTORE_NAMESPACE" get configmap kube-root-ca.crt -o jsonpath='{.data.ca\.crt}')"
           test "$(kubectl auth can-i get secrets -n "$RESTORE_NAMESPACE")" = no
           test "$(kubectl auth can-i create jobs.batch -n prod)" = no
           test "$(kubectl auth can-i delete namespaces)" = no
@@ -111,7 +112,7 @@ jobs:
             pods,jobs.batch,statefulsets.apps,persistentvolumeclaims,services \
             -o name)
           mutable_configmaps=$(kubectl -n "$RESTORE_NAMESPACE" get configmaps -o name | \
-            grep -v '^configmap/mnema-restore-boundary$' || true)
+            grep -Ev '^configmap/(mnema-restore-boundary|kube-root-ca\.crt)$' || true)
           if [ -n "$busy_resources" ] || [ -n "$mutable_configmaps" ]; then
             echo "::error::Restore boundary is not empty; inspect it before retrying"
             exit 1
@@ -209,10 +210,27 @@ jobs:
           fi
           kubectl delete -f k8s/backup/restore-drill.yaml \
             --ignore-not-found=true --wait=true --timeout=15m
-          kubectl -n "$RESTORE_NAMESPACE" delete persistentvolumeclaim data-postgres-0 \
-            --ignore-not-found=true --wait=true --timeout=15m
           kubectl -n "$RESTORE_NAMESPACE" delete configmap \
-            mnema-backup-scripts mnema-restore-config --ignore-not-found=true
+            mnema-backup-scripts mnema-restore-config \
+            --ignore-not-found=true --wait=true --timeout=5m
           kubectl -n "$RESTORE_NAMESPACE" delete secret \
             mnema-restore-db-secrets mnema-restore-backup-secrets \
-            --ignore-not-found=true
+            --ignore-not-found=true --wait=true --timeout=5m
+
+          leftover_workloads=$(kubectl -n "$RESTORE_NAMESPACE" get \
+            pods,jobs.batch,statefulsets.apps,persistentvolumeclaims,services \
+            -o name)
+          leftover_configmaps=$(kubectl -n "$RESTORE_NAMESPACE" get configmaps -o name | \
+            grep -Ev '^configmap/(mnema-restore-boundary|kube-root-ca\.crt)$' || true)
+          leftover_secrets=''
+          for secret in mnema-restore-db-secrets mnema-restore-backup-secrets; do
+            found=$(kubectl -n "$RESTORE_NAMESPACE" get "secret/$secret" \
+              --ignore-not-found=true -o name)
+            if [ -n "$found" ]; then
+              leftover_secrets="$leftover_secrets $found"
+            fi
+          done
+          if [ -n "$leftover_workloads" ] || [ -n "$leftover_configmaps" ] || [ -n "$leftover_secrets" ]; then
+            echo "::error::Fixed restore resources remain after cleanup"
+            exit 1
+          fi

@@ -22,8 +22,8 @@ spec:
     requests.memory: 4Gi
     limits.cpu: "5"
     limits.memory: 6Gi
-    requests.storage: 25Gi
-    persistentvolumeclaims: "1"
+    requests.ephemeral-storage: 45Gi
+    limits.ephemeral-storage: 50Gi
     pods: "8"
     services: "2"
     secrets: "4"
@@ -48,10 +48,7 @@ spec:
       max:
         cpu: "2"
         memory: 2Gi
-        ephemeral-storage: 20Gi
-    - type: PersistentVolumeClaim
-      max:
-        storage: 20Gi
+        ephemeral-storage: 24Gi
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -101,14 +98,10 @@ rules:
   - apiGroups: [""]
     resources: ["secrets"]
     resourceNames: ["mnema-restore-db-secrets", "mnema-restore-backup-secrets"]
-    verbs: ["delete"]
+    verbs: ["get", "delete"]
   - apiGroups: [""]
     resources: ["persistentvolumeclaims"]
     verbs: ["get", "list", "watch"]
-  - apiGroups: [""]
-    resources: ["persistentvolumeclaims"]
-    resourceNames: ["data-postgres-0"]
-    verbs: ["delete"]
   - apiGroups: ["apps"]
     resources: ["statefulsets"]
     verbs: ["create", "get", "list", "watch"]
