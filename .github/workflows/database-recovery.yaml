@@ -82,7 +82,10 @@ jobs:
               exit 1
             fi
           done
-          case "$AWS_ENDPOINT_URL" in https://*) ;; *) echo "::error::Backup endpoint must use HTTPS"; exit 1 ;; esac
+          if [ "$AWS_ENDPOINT_URL" != https://storage.yandexcloud.net ]; then
+            echo "::error::Backup endpoint must be the Yandex Object Storage origin"
+            exit 1
+          fi
 
       - name: Set up kubectl
         uses: azure/setup-kubectl@v4
@@ -130,10 +133,21 @@ jobs:
         run: |
           drill_started_epoch=$(date -u +%s)
           db_password=$(openssl rand -hex 32)
-          kubectl -n "$RESTORE_NAMESPACE" create secret generic mnema-restore-db-secrets \
-            --from-literal=POSTGRES_DB=mnema_restore \
-            --from-literal=POSTGRES_USER=mnema_restore \
-            --from-literal=POSTGRES_PASSWORD="$db_password"
+
+          {
+            printf '%s\n' \
+              'apiVersion: v1' \
+              'kind: Secret' \
+              'metadata:' \
+              '  name: mnema-restore-db-secrets' \
+              "  namespace: ${RESTORE_NAMESPACE}" \
+              'type: Opaque' \
+              'data:' \
+              '  POSTGRES_DB: "bW5lbWFfcmVzdG9yZQ=="' \
+              '  POSTGRES_USER: "bW5lbWFfcmVzdG9yZQ=="'
+            encoded_password=$(printf '%s' "$db_password" | base64 | tr -d '\n')
+            printf '  POSTGRES_PASSWORD: "%s"\n' "$encoded_password"
+          } | kubectl create -f -
 
           {
             printf '%s\n' \
@@ -152,7 +166,9 @@ jobs:
           } | kubectl create -f -
 
           kubectl -n "$RESTORE_NAMESPACE" create configmap mnema-backup-scripts \
-            --from-file=scripts/backup
+            --from-file=scripts/backup/download.sh \
+            --from-file=scripts/backup/restore.sh \
+            --from-file=scripts/backup/reconcile.sql
           kubectl -n "$RESTORE_NAMESPACE" create configmap mnema-restore-config \
             --from-literal=BACKUP_ID="$BACKUP_ID" \
             --from-literal=DRILL_STARTED_EPOCH="$drill_started_epoch"

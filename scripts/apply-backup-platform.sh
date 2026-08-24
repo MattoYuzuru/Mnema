@@ -37,12 +37,44 @@ if [ "$available_kib" -lt "$required_kib" ]; then
 fi
 
 test "$(kubectl -n prod get statefulset postgres -o jsonpath='{.status.readyReplicas}')" = 1
+source_image=$(kubectl -n prod get statefulset postgres -o jsonpath='{.spec.template.spec.containers[?(@.name=="postgres")].image}')
+case "$source_image" in
+  postgres:16 | postgres:16-* | postgres:16@* | */postgres:16 | */postgres:16-* | */postgres:16@*) ;;
+  *) echo "Production PostgreSQL must remain on the reviewed PostgreSQL 16 source boundary" >&2; exit 1 ;;
+esac
+test "$(kubectl get storageclass local-path -o jsonpath='{.provisioner}')" = rancher.io/local-path
+test "$(kubectl get storageclass local-path -o jsonpath='{.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}')" = true
+test "$(kubectl -n prod get persistentvolumeclaim data-postgres-0 -o jsonpath='{.status.phase}')" = Bound
+test "$(kubectl -n prod get persistentvolumeclaim data-postgres-0 -o jsonpath='{.spec.storageClassName}')" = local-path
+test -n "$(kubectl -n prod get persistentvolumeclaim data-postgres-0 -o jsonpath='{.status.capacity.storage}')"
 kubectl -n prod get secret mnema-secrets >/dev/null
 kubectl -n prod get secret mnema-backup-secrets >/dev/null
-kubectl -n observability get statefulset prometheus >/dev/null
+test "$(kubectl -n observability get statefulset prometheus -o jsonpath='{.status.readyReplicas}')" = 1
+
+active_backup_jobs=$(kubectl -n prod get jobs \
+  -l app.kubernetes.io/name=mnema-postgres-backup \
+  -o jsonpath='{range .items[*]}{.metadata.name}{"|"}{.status.active}{"\n"}{end}' | \
+  awk -F'|' '$2 + 0 > 0 { print $1 }')
+if [ -n "$active_backup_jobs" ]; then
+  echo 'A production backup Job is active; refuse to change its mounted scripts or schedule' >&2
+  exit 1
+fi
+
+if kubectl get namespace mnema-restore-drill >/dev/null 2>&1; then
+  busy_restore_resources=$(kubectl -n mnema-restore-drill get \
+    pods,jobs.batch,statefulsets.apps,persistentvolumeclaims,services \
+    -o name)
+  if [ -n "$busy_restore_resources" ]; then
+    echo 'The restore boundary is busy; refuse to change its policy or quota' >&2
+    exit 1
+  fi
+fi
 
 kubectl -n prod create configmap mnema-backup-scripts \
-  --from-file="$REPO_ROOT/scripts/backup" \
+  --from-file="$REPO_ROOT/scripts/backup/backup.sh" \
+  --from-file="$REPO_ROOT/scripts/backup/upload.sh" \
+  --from-file="$REPO_ROOT/scripts/backup/reconcile.sql" \
+  --from-file="$REPO_ROOT/scripts/backup/capacity.sql" \
   --dry-run=client -o yaml > "$TEST_ROOT/backup-scripts.yaml"
 
 preview() {

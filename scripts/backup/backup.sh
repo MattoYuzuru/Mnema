@@ -15,7 +15,7 @@ completed=false
 
 required() {
   name="$1"
-  eval "value=\${$name:-}"
+  value="$2"
   if [ -z "$value" ]; then
     echo "backup_error=missing_${name}" >&2
     exit 1
@@ -39,9 +39,12 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-for name in BACKUP_RUN_ID PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD; do
-  required "$name"
-done
+required BACKUP_RUN_ID "${BACKUP_RUN_ID:-}"
+required PGHOST "${PGHOST:-}"
+required PGPORT "${PGPORT:-}"
+required PGDATABASE "${PGDATABASE:-}"
+required PGUSER "${PGUSER:-}"
+required PGPASSWORD "${PGPASSWORD:-}"
 
 if [ "$BACKUP_DIR" != /backup ]; then
   echo 'backup_error=backup_dir_must_be_/backup' >&2

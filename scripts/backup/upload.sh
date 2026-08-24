@@ -5,10 +5,11 @@ umask 007
 
 BACKUP_DIR=${BACKUP_DIR:-/backup}
 UPDATE_LATEST_POINTER=${UPDATE_LATEST_POINTER:-true}
+EXPECTED_AWS_ENDPOINT_URL=${EXPECTED_AWS_ENDPOINT_URL:-https://storage.yandexcloud.net}
 
 required() {
   name="$1"
-  eval "value=\${$name:-}"
+  value="$2"
   if [ -z "$value" ]; then
     echo "upload_error=missing_${name}" >&2
     exit 1
@@ -81,6 +82,25 @@ require_object_encryption() {
   fi
 }
 
+require_private_object() {
+  key="$1"
+  anonymous_error="$BACKUP_DIR/anonymous-head.stderr"
+  if aws s3api head-object \
+    --bucket "$S3_BUCKET" \
+    --key "$key" \
+    --endpoint-url "$AWS_ENDPOINT_URL" \
+    --no-sign-request \
+    > /dev/null 2> "$anonymous_error"; then
+    echo 'upload_error=object_anonymously_readable' >&2
+    exit 1
+  fi
+  if ! grep -Eq '(403|Forbidden|AccessDenied)' "$anonymous_error"; then
+    echo 'upload_error=anonymous_access_check_failed' >&2
+    exit 1
+  fi
+  rm -f "$anonymous_error"
+}
+
 fail() {
   touch "$BACKUP_DIR/UPLOAD_FAILED" 2>/dev/null || true
 }
@@ -89,19 +109,24 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-for name in AWS_ENDPOINT_URL AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY S3_BUCKET S3_PREFIX RETENTION_POLICY_ID KMS_KEY_ID; do
-  required "$name"
-done
+required AWS_ENDPOINT_URL "${AWS_ENDPOINT_URL:-}"
+required AWS_REGION "${AWS_REGION:-}"
+required AWS_ACCESS_KEY_ID "${AWS_ACCESS_KEY_ID:-}"
+required AWS_SECRET_ACCESS_KEY "${AWS_SECRET_ACCESS_KEY:-}"
+required S3_BUCKET "${S3_BUCKET:-}"
+required S3_PREFIX "${S3_PREFIX:-}"
+required RETENTION_POLICY_ID "${RETENTION_POLICY_ID:-}"
+required KMS_KEY_ID "${KMS_KEY_ID:-}"
 
 case "$UPDATE_LATEST_POINTER" in
   true | false) ;;
   *) echo 'upload_error=invalid_latest_pointer_mode' >&2; exit 1 ;;
 esac
 
-case "$AWS_ENDPOINT_URL" in
-  https://*) ;;
-  *) echo 'upload_error=endpoint_must_use_https' >&2; exit 1 ;;
-esac
+if [ "$AWS_ENDPOINT_URL" != "$EXPECTED_AWS_ENDPOINT_URL" ]; then
+  echo 'upload_error=unexpected_object_storage_endpoint' >&2
+  exit 1
+fi
 case "$S3_BUCKET" in
   '' | *[!a-z0-9.-]* | .* | *. | *..*) echo 'upload_error=invalid_bucket' >&2; exit 1 ;;
 esac
@@ -267,6 +292,7 @@ for file in database.dump reconciliation.csv capacity.csv checksums.sha256 metad
     --endpoint-url "$AWS_ENDPOINT_URL" \
     --only-show-errors
   require_object_encryption "$object_prefix/$file"
+  require_private_object "$object_prefix/$file"
 done
 
 latest_pointer_updated=false
@@ -278,6 +304,7 @@ if [ "$UPDATE_LATEST_POINTER" = true ]; then
     --endpoint-url "$AWS_ENDPOINT_URL" \
     --only-show-errors
   require_object_encryption "$S3_PREFIX/postgres/latest.env"
+  require_private_object "$S3_PREFIX/postgres/latest.env"
   latest_pointer_updated=true
 fi
 

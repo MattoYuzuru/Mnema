@@ -25,11 +25,28 @@ grep -Fq 'RETENTION_POLICY_ID' "$CRONJOB"
 grep -Fq 'KMS_KEY_ID' "$CRONJOB"
 grep -Fq 'pg_try_advisory_lock' "$BACKUP_SCRIPTS/backup.sh"
 grep -Fq 'backup_error=lock_contended' "$BACKUP_SCRIPTS/backup.sh"
+if grep -Eq '(^|[[:space:]])eval([[:space:]]|$)' \
+  "$BACKUP_SCRIPTS/backup.sh" \
+  "$BACKUP_SCRIPTS/upload.sh" \
+  "$BACKUP_SCRIPTS/download.sh" \
+  "$BACKUP_SCRIPTS/restore.sh"; then
+  echo 'Backup scripts must not use eval for indirect environment reads' >&2
+  exit 1
+fi
+if grep -Fq 'FROM pg_sequences' "$BACKUP_SCRIPTS/reconcile.sql"; then
+  echo 'Snapshot reconciliation must not claim non-MVCC sequence state' >&2
+  exit 1
+fi
 grep -Fq 'APPLY_CHANGES=${APPLY_CHANGES:-false}' "$PLATFORM_APPLY"
 grep -Fq 'MINIMUM_FREE_GIB=${MINIMUM_FREE_GIB:-60}' "$PLATFORM_APPLY"
 grep -Fq 'kubectl diff -f' "$PLATFORM_APPLY"
 grep -Fq 'kubectl -n prod get secret mnema-backup-secrets' "$PLATFORM_APPLY"
 grep -Fq 'rollout status statefulset/prometheus' "$PLATFORM_APPLY"
+grep -Fq 'Production PostgreSQL must remain on the reviewed PostgreSQL 16 source boundary' "$PLATFORM_APPLY"
+grep -Fq "storageclass local-path" "$PLATFORM_APPLY"
+grep -Fq 'A production backup Job is active' "$PLATFORM_APPLY"
+grep -Fq 'The restore boundary is busy' "$PLATFORM_APPLY"
+grep -Fq -- '--from-file="$REPO_ROOT/scripts/backup/backup.sh"' "$PLATFORM_APPLY"
 image_count=$(grep -E -c '^[[:space:]]+image:' "$CRONJOB" || true)
 pinned_image_count=$(grep -E -c '^[[:space:]]+image: [^[:space:]]+@sha256:[0-9a-f]{64}$' "$CRONJOB" || true)
 if [ "$image_count" -ne 2 ] || [ "$pinned_image_count" -ne "$image_count" ]; then
@@ -86,6 +103,20 @@ for required in \
   PROD_BACKUP_KMS_KEY_ID; do
   grep -Fq "secrets.$required" "$RECOVERY_WORKFLOW"
 done
+grep -Fq 'AWS_ENDPOINT_URL" != https://storage.yandexcloud.net' "$RECOVERY_WORKFLOW"
+if grep -Fq -- '--from-literal=POSTGRES_PASSWORD=' "$RECOVERY_WORKFLOW"; then
+  echo 'Generated restore passwords must not be placed in process arguments' >&2
+  exit 1
+fi
+grep -Fq -- '--from-file=scripts/backup/download.sh' "$RECOVERY_WORKFLOW"
+grep -Fq -- '--from-file=scripts/backup/restore.sh' "$RECOVERY_WORKFLOW"
+grep -Fq -- '--from-file=scripts/backup/reconcile.sql' "$RECOVERY_WORKFLOW"
+if grep -Eq -- '--from-file=scripts/backup([[:space:]]|$)' "$RECOVERY_WORKFLOW"; then
+  echo 'Recovery ConfigMap must not mount unrelated backup scripts' >&2
+  exit 1
+fi
+grep -Fq -- '--no-sign-request' "$BACKUP_SCRIPTS/upload.sh"
+grep -Fq -- '--no-sign-request' "$BACKUP_SCRIPTS/download.sh"
 grep -Fq 'CONFIRMATION" != RESTORE_IN_ISOLATED_NAMESPACE' "$RECOVERY_WORKFLOW"
 grep -Fq 'name: Refuse a busy restore boundary' "$RECOVERY_WORKFLOW"
 grep -Fq 'get configmap mnema-restore-boundary' "$RECOVERY_WORKFLOW"
@@ -130,6 +161,15 @@ if [ "$1 $2" = 's3api get-bucket-versioning' ]; then
   exit 0
 fi
 if [ "$1 $2" = 's3api head-object' ]; then
+  case "$*" in
+    *--no-sign-request*)
+      if [ "${AWS_MOCK_PUBLIC_OBJECT:-false}" = true ]; then
+        exit 0
+      fi
+      printf '%s\n' 'An error occurred (403) when calling HeadObject: AccessDenied' >&2
+      exit 254
+      ;;
+  esac
   case "$*" in
     *SSEKMSKeyId*) printf '%s\n' 'kms-test' ;;
     *ServerSideEncryption*) printf '%s\n' 'aws:kms' ;;
@@ -187,6 +227,7 @@ touch "$TEST_ROOT/backup/READY"
 export PATH="$TEST_ROOT/bin:$PATH"
 export AWS_MOCK_ROOT="$TEST_ROOT/object-store"
 export AWS_ENDPOINT_URL=https://storage.example.test
+export EXPECTED_AWS_ENDPOINT_URL=https://storage.example.test
 export AWS_REGION=ru-central1
 export AWS_ACCESS_KEY_ID=test-key
 export AWS_SECRET_ACCESS_KEY=test-secret
@@ -202,6 +243,35 @@ BACKUP_DIR="$TEST_ROOT/restore" BACKUP_ID=latest \
   "$BACKUP_SCRIPTS/download.sh"
 cmp "$TEST_ROOT/backup/database.dump" "$TEST_ROOT/restore/database.dump"
 cmp "$TEST_ROOT/backup/reconciliation.csv" "$TEST_ROOT/restore/reconciliation.csv"
+
+if AWS_MOCK_PUBLIC_OBJECT=true \
+  BACKUP_DIR="$TEST_ROOT/backup" \
+  RETENTION_POLICY_ID=retention-test \
+  UPDATE_LATEST_POINTER=false \
+  "$BACKUP_SCRIPTS/upload.sh" >/dev/null 2> "$TEST_ROOT/public-object.err"; then
+  echo 'Uploader must reject an anonymously readable backup object' >&2
+  exit 1
+fi
+grep -Fxq 'upload_error=object_anonymously_readable' "$TEST_ROOT/public-object.err"
+
+mkdir -p "$TEST_ROOT/restore-public"
+if AWS_MOCK_PUBLIC_OBJECT=true \
+  BACKUP_DIR="$TEST_ROOT/restore-public" \
+  BACKUP_ID=20260819T020304Z-00000000-0000-4000-8000-000000000001 \
+  "$BACKUP_SCRIPTS/download.sh" >/dev/null 2> "$TEST_ROOT/public-download.err"; then
+  echo 'Downloader must reject an anonymously readable backup object' >&2
+  exit 1
+fi
+grep -Fxq 'download_error=object_anonymously_readable' "$TEST_ROOT/public-download.err"
+
+if AWS_ENDPOINT_URL=https://unexpected.example.test \
+  BACKUP_DIR="$TEST_ROOT/backup" \
+  RETENTION_POLICY_ID=retention-test \
+  "$BACKUP_SCRIPTS/upload.sh" >/dev/null 2> "$TEST_ROOT/unexpected-endpoint.err"; then
+  echo 'Uploader must reject an unexpected object-storage origin' >&2
+  exit 1
+fi
+grep -Fxq 'upload_error=unexpected_object_storage_endpoint' "$TEST_ROOT/unexpected-endpoint.err"
 
 cp "$TEST_ROOT/object-store/mnema-backups/postgres/latest.env" "$TEST_ROOT/latest-before.env"
 BACKUP_DIR="$TEST_ROOT/backup" RETENTION_POLICY_ID=retention-test UPDATE_LATEST_POINTER=false \
@@ -246,5 +316,76 @@ if AWS_MOCK_RETENTION_PREFIX=unrelated-prefix/ \
   echo 'Uploader must reject a lifecycle rule for another prefix' >&2
   exit 1
 fi
+
+mkdir -p "$TEST_ROOT/storage"
+cat > "$TEST_ROOT/bin/df" <<'MOCK_DF'
+#!/bin/sh
+set -eu
+printf '%s\n' \
+  'Filesystem 1024-blocks Used Available Capacity Mounted on' \
+  "mock 200000000 1 100000000 1% $2"
+MOCK_DF
+cat > "$TEST_ROOT/bin/kubectl" <<'MOCK_KUBECTL'
+#!/bin/sh
+set -eu
+
+case "$*" in
+  '-n prod get statefulset postgres -o jsonpath={.status.readyReplicas}') printf '1' ;;
+  *'get statefulset postgres -o jsonpath={.spec.template.spec.containers'*'.image}')
+    printf '%s' "${FAKE_POSTGRES_IMAGE:-postgres:16-alpine@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa}"
+    ;;
+  'get storageclass local-path -o jsonpath={.provisioner}') printf 'rancher.io/local-path' ;;
+  'get storageclass local-path -o jsonpath={.metadata.annotations.storageclass\.kubernetes\.io/is-default-class}') printf 'true' ;;
+  '-n prod get persistentvolumeclaim data-postgres-0 -o jsonpath={.status.phase}') printf 'Bound' ;;
+  '-n prod get persistentvolumeclaim data-postgres-0 -o jsonpath={.spec.storageClassName}') printf 'local-path' ;;
+  '-n prod get persistentvolumeclaim data-postgres-0 -o jsonpath={.status.capacity.storage}') printf '15Gi' ;;
+  '-n prod get secret mnema-secrets' | '-n prod get secret mnema-backup-secrets') ;;
+  '-n observability get statefulset prometheus -o jsonpath={.status.readyReplicas}') printf '1' ;;
+  '-n prod get jobs -l app.kubernetes.io/name=mnema-postgres-backup -o jsonpath={range .items[*]}{.metadata.name}{"|"}{.status.active}{"\n"}{end}')
+    if [ "${FAKE_ACTIVE_BACKUP:-false}" = true ]; then printf 'active-backup|1\n'; fi
+    ;;
+  'get namespace mnema-restore-drill') ;;
+  '-n mnema-restore-drill get pods,jobs.batch,statefulsets.apps,persistentvolumeclaims,services -o name')
+    if [ "${FAKE_BUSY_RESTORE:-false}" = true ]; then printf 'pod/busy-restore\n'; fi
+    ;;
+  '-n prod create configmap mnema-backup-scripts '*'-o yaml')
+    printf '%s\n' 'apiVersion: v1' 'kind: ConfigMap' 'metadata:' '  name: mnema-backup-scripts'
+    ;;
+  'diff -f '*) ;;
+  *)
+    printf 'unexpected kubectl call: %s\n' "$*" >&2
+    exit 2
+    ;;
+esac
+MOCK_KUBECTL
+chmod +x "$TEST_ROOT/bin/df" "$TEST_ROOT/bin/kubectl"
+
+STORAGE_PATH="$TEST_ROOT/storage" \
+  "$PLATFORM_APPLY" > "$TEST_ROOT/platform-preview.out"
+grep -Fq 'backup_platform=previewed' "$TEST_ROOT/platform-preview.out"
+
+if FAKE_ACTIVE_BACKUP=true STORAGE_PATH="$TEST_ROOT/storage" \
+  "$PLATFORM_APPLY" >/dev/null 2> "$TEST_ROOT/active-backup.err"; then
+  echo 'Platform apply must reject an active production backup Job' >&2
+  exit 1
+fi
+grep -Fxq 'A production backup Job is active; refuse to change its mounted scripts or schedule' \
+  "$TEST_ROOT/active-backup.err"
+
+if FAKE_BUSY_RESTORE=true STORAGE_PATH="$TEST_ROOT/storage" \
+  "$PLATFORM_APPLY" >/dev/null 2> "$TEST_ROOT/busy-restore.err"; then
+  echo 'Platform apply must reject a busy restore boundary' >&2
+  exit 1
+fi
+grep -Fxq 'The restore boundary is busy; refuse to change its policy or quota' \
+  "$TEST_ROOT/busy-restore.err"
+
+if FAKE_POSTGRES_IMAGE=postgres:18 STORAGE_PATH="$TEST_ROOT/storage" \
+  "$PLATFORM_APPLY" >/dev/null 2> "$TEST_ROOT/wrong-source.err"; then
+  echo 'Platform apply must reject an unreviewed PostgreSQL source major' >&2
+  exit 1
+fi
+grep -Fxq 'Production PostgreSQL must remain on the reviewed PostgreSQL 16 source boundary' \
+  "$TEST_ROOT/wrong-source.err"
 
 printf 'backup_contract=ok\n'

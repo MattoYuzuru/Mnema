@@ -9,7 +9,7 @@ EXPECTED_HOST=postgres.mnema-restore-drill.svc.cluster.local
 
 required() {
   name="$1"
-  eval "value=\${$name:-}"
+  value="$2"
   if [ -z "$value" ]; then
     echo "restore_error=missing_${name}" >&2
     exit 1
@@ -26,9 +26,13 @@ metadata_value() {
   printf '%s' "$value"
 }
 
-for name in TARGET_NAMESPACE DRILL_STARTED_EPOCH PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD; do
-  required "$name"
-done
+required TARGET_NAMESPACE "${TARGET_NAMESPACE:-}"
+required DRILL_STARTED_EPOCH "${DRILL_STARTED_EPOCH:-}"
+required PGHOST "${PGHOST:-}"
+required PGPORT "${PGPORT:-}"
+required PGDATABASE "${PGDATABASE:-}"
+required PGUSER "${PGUSER:-}"
+required PGPASSWORD "${PGPASSWORD:-}"
 
 if [ "$TARGET_NAMESPACE" != "$EXPECTED_NAMESPACE" ] || [ "$PGHOST" != "$EXPECTED_HOST" ]; then
   echo 'restore_error=target_must_be_fixed_isolated_namespace' >&2

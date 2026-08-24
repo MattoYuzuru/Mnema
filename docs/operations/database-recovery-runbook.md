@@ -5,7 +5,7 @@ artifact:
   title: "Production PostgreSQL backup and isolated recovery drill"
   status: current
   created_at: "2026-08-19"
-  updated_at: "2026-08-23"
+  updated_at: "2026-08-24"
   owners: ["project-owner"]
   implementation_issue: 93
 ---
@@ -24,8 +24,8 @@ The implemented path is:
 2. A PostgreSQL 18 client exports one read-only repeatable-read snapshot, creates a custom-format logical dump and computes reconciliation rows from the same snapshot.
 3. The uploader verifies the bucket's expected KMS key and enabled lifecycle policy before writing anything.
 4. The lifecycle rule must target the exact backup prefix and define a positive expiration period; versioned buckets must also expire non-current versions. Immutable objects are uploaded below a UTC timestamp plus the Kubernetes Pod UID, so duplicate controller starts cannot overwrite one another. The `latest.env` pointer is written last and only after each object is read back as `aws:kms` encrypted with the expected key.
-5. A drill downloads one complete backup into a fresh PostgreSQL 18 instance in the fixed namespace `mnema-restore-drill`, restores it, and compares every application table's row count and two-part aggregate checksum plus sequence state.
-6. The drill records measured RPO and RTO from timestamps. Its StatefulSet, Job, Services, generated ConfigMaps, Secrets and PVC are then deleted, while the owner-created namespace, quota, default-deny policies and scoped ServiceAccount remain. Production is never a restore target.
+5. A drill downloads one complete backup into a fresh PostgreSQL 18 instance in the fixed namespace `mnema-restore-drill`, restores it, and compares every application table's row count and two-part aggregate checksum. PostgreSQL sequence values are deliberately excluded: they are not governed by MVCC snapshot visibility and therefore cannot be claimed as part of the exported repeatable-read snapshot.
+6. The drill records measured RPO and RTO from explicit timestamps. Its StatefulSet, Job, Services, generated ConfigMaps, Secrets and PVC are then deleted, while the owner-created namespace, quota, default-deny policies and scoped ServiceAccount remain. Production is never a restore target.
 
 The source dump contains production data and is sensitive. Dump content, reconciliation CSVs and credentials must not be copied into GitHub issues, pull requests, Actions artifacts or chat. PostgreSQL dump/restore and reconciliation stderr stays only on the transient Pod volume; Actions receives a generic failure code. The only publishable evidence is the allowlisted JSON emitted by `validate_report.py`: UTC backup ID, timestamps, counts, hashes, sizes and version numbers.
 
@@ -51,7 +51,7 @@ The GitHub `prod` Environment owns these names:
 
 Repository code and Environment secret names are not applied evidence. As of the 2026-08-23 audit, the protected `prod` Environment had no recovery values, and no dedicated KMS-encrypted backup bucket or scheduled backup had been verified. Keep Issue #93 open until the first scheduled upload and isolated restore drill are recorded below.
 
-The uploader deliberately does not hard-code a retention duration. It proves that the exact configured lifecycle policy is enabled, targets `<prefix>/postgres/`, defines positive expiration and incomplete-multipart cleanup periods and, when bucket versioning is enabled or suspended, also expires non-current versions. The effective object duration is included in safe backup evidence. The duration remains governed by O-09 in [owner decisions](../decisions/owner-decisions-2026-08.md): the owner's preference of up to six months is not a lawful default for every data category. Before the destructive v2 reset, O-10 must also decide whether any full legacy snapshot is permitted and its forced destruction date. Disabling the lifecycle rule or changing the KMS key makes new backup jobs fail closed.
+The uploader deliberately does not hard-code a retention duration. It proves that the exact configured lifecycle policy is enabled, targets `<prefix>/postgres/`, defines positive expiration and incomplete-multipart cleanup periods and, when bucket versioning is enabled or suspended, also expires non-current versions. It also performs an authenticated metadata read followed by an unsigned read attempt for every uploaded or downloaded object; a backup is rejected unless anonymous access is explicitly denied. The exact endpoint must be `https://storage.yandexcloud.net`, so an Environment value cannot silently redirect credentials or sensitive data to another origin. The effective object duration is included in safe backup evidence. The duration remains governed by O-09 in [owner decisions](../decisions/owner-decisions-2026-08.md): the owner's preference of up to six months is not a lawful default for every data category. Before the destructive v2 reset, O-10 must also decide whether any full legacy snapshot is permitted and its forced destruction date. Disabling the lifecycle rule, changing the KMS key, making an object publicly readable or changing the endpoint makes the operation fail closed.
 
 The bucket must use default `aws:kms` encryption with `PROD_BACKUP_KMS_KEY_ID`. Deleting or disabling that key makes encrypted backups unrecoverable; key lifecycle therefore needs the same recovery ownership as the bucket.
 
@@ -68,7 +68,7 @@ Each successful backup writes:
 <prefix>/postgres/latest.env
 ```
 
-`database.dump` and reconciliation observe one exported PostgreSQL snapshot. Capacity is sampled during the same backup window, but PostgreSQL relation-size functions report physical storage and are not MVCC snapshot values. The pointer and metadata have a strict, non-executable key allowlist and are rejected on duplicate, missing or unexpected fields. Checksums and byte size are verified after download. `capacity.csv` records table, index and total relation bytes for trend inspection without row content.
+`database.dump` and table reconciliation observe one exported PostgreSQL snapshot. Sequence values are not reconciled because PostgreSQL sequence changes are immediately visible to other transactions and are not rolled back; they are not a consistent property of that snapshot. Capacity is sampled during the same backup window, but PostgreSQL relation-size functions report physical storage and are not MVCC snapshot values. The pointer and metadata have a strict, non-executable key allowlist and are rejected on duplicate, missing or unexpected fields. Checksums and byte size are verified after download. `capacity.csv` records table, index and total relation bytes for trend inspection without row content.
 
 The logical dump covers the full database. Reconciliation covers the hosted application schemas `auth`, `app_user`, `app_core`, `app_media` and `app_import`; hosted AI is intentionally excluded from this cluster path. Account count is the `auth.users` row count.
 
@@ -159,7 +159,7 @@ The drill is an authorized L3 mutation only inside the pre-created `mnema-restor
 4. Use the exact pre-migration backup ID, or `latest` for a routine drill, and type `RESTORE_IN_ISOLATED_NAMESPACE`.
 5. Observe PostgreSQL readiness, restore completion, reconciliation and artifact upload.
 6. Confirm the workflow removed only `postgres`, `mnema-postgres-restore`, their two generated ConfigMaps, two generated Secrets and `data-postgres-0`. The boundary namespace, marker, quota, NetworkPolicies, ServiceAccount and Role remain.
-7. Record the run date, backup ID, measured RPO/RTO, account/checksum result and run URL below.
+7. Record the run date, backup ID, measured RPO/RTO, account/checksum result and run URL below. RPO is the interval from the backup snapshot timestamp to the drill start. RTO starts immediately before the workflow creates the first transient drill resource and ends after restore plus reconciliation succeed; it includes resource creation, scheduling, download, restore and verification, but excludes the GitHub Actions queue and protected-Environment approval wait.
 
 Stop conditions are: missing/changed boundary marker, busy restore namespace, non-main or stale workflow revision, missing protected value, unexpected KMS key, invalid pointer/checksum, non-empty target database, restore error, checksum/account mismatch, insufficient disk or cleanup of any non-fixed resource. A failed drill is evidence that the backup is not proven recoverable.
 
@@ -201,6 +201,7 @@ No production backup/restore run is recorded merely because the repository imple
 
 ## Design sources
 
-- PostgreSQL 18 [`pg_dump`](https://www.postgresql.org/docs/current/app-pgdump.html) and [`pg_restore`](https://www.postgresql.org/docs/current/app-pgrestore.html): custom archive, exported snapshot and restore behavior.
+- PostgreSQL 18 [`pg_dump`](https://www.postgresql.org/docs/18/app-pgdump.html), [`pg_restore`](https://www.postgresql.org/docs/18/app-pgrestore.html), [snapshot synchronization](https://www.postgresql.org/docs/18/functions-admin.html) and [sequence behavior](https://www.postgresql.org/docs/18/functions-sequence.html): custom archive, exported snapshot, restore behavior and the boundary of snapshot-consistent reconciliation.
 - Kubernetes [CronJob](https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/): `Forbid`, `startingDeadlineSeconds` and stable `.spec.timeZone` semantics.
-- Yandex Object Storage [AWS CLI setup](https://yandex.cloud/en/docs/storage/tools/aws-cli), [bucket encryption](https://yandex.cloud/en/docs/storage/operations/buckets/encrypt) and [object lifecycle](https://yandex.cloud/en/docs/storage/concepts/lifecycles): endpoint/region, KMS default encryption and lifecycle ownership.
+- Kubernetes [RBAC good practices](https://kubernetes.io/docs/concepts/security/rbac-good-practices/) and [NetworkPolicy](https://kubernetes.io/docs/concepts/services-networking/network-policies/): namespace-scoped recovery authority and default-deny isolation.
+- Yandex Object Storage [AWS CLI setup](https://yandex.cloud/en/docs/storage/tools/aws-cli), [server-side encryption](https://yandex.cloud/en/docs/storage/tutorials/server-side-encryption), [object lifecycle](https://yandex.cloud/en/docs/storage/concepts/lifecycles) and [bucket access](https://yandex.cloud/en/docs/storage/operations/buckets/bucket-availability): exact endpoint/region, KMS ownership, retention and denial of anonymous reads.

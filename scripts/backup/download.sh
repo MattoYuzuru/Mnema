@@ -4,10 +4,11 @@ set -eu
 umask 007
 
 BACKUP_DIR=${BACKUP_DIR:-/restore}
+EXPECTED_AWS_ENDPOINT_URL=${EXPECTED_AWS_ENDPOINT_URL:-https://storage.yandexcloud.net}
 
 required() {
   name="$1"
-  eval "value=\${$name:-}"
+  value="$2"
   if [ -z "$value" ]; then
     echo "download_error=missing_${name}" >&2
     exit 1
@@ -85,6 +86,22 @@ download_object() {
     echo 'download_error=object_not_encrypted_with_expected_kms_key' >&2
     exit 1
   fi
+
+  anonymous_error="$BACKUP_DIR/anonymous-head.stderr"
+  if aws s3api head-object \
+    --bucket "$S3_BUCKET" \
+    --key "$key" \
+    --endpoint-url "$AWS_ENDPOINT_URL" \
+    --no-sign-request \
+    > /dev/null 2> "$anonymous_error"; then
+    echo 'download_error=object_anonymously_readable' >&2
+    exit 1
+  fi
+  if ! grep -Eq '(403|Forbidden|AccessDenied)' "$anonymous_error"; then
+    echo 'download_error=anonymous_access_check_failed' >&2
+    exit 1
+  fi
+  rm -f "$anonymous_error"
 }
 
 fail() {
@@ -95,11 +112,19 @@ trap 'exit 129' HUP
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
-for name in AWS_ENDPOINT_URL AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY S3_BUCKET S3_PREFIX KMS_KEY_ID BACKUP_ID; do
-  required "$name"
-done
+required AWS_ENDPOINT_URL "${AWS_ENDPOINT_URL:-}"
+required AWS_REGION "${AWS_REGION:-}"
+required AWS_ACCESS_KEY_ID "${AWS_ACCESS_KEY_ID:-}"
+required AWS_SECRET_ACCESS_KEY "${AWS_SECRET_ACCESS_KEY:-}"
+required S3_BUCKET "${S3_BUCKET:-}"
+required S3_PREFIX "${S3_PREFIX:-}"
+required KMS_KEY_ID "${KMS_KEY_ID:-}"
+required BACKUP_ID "${BACKUP_ID:-}"
 
-case "$AWS_ENDPOINT_URL" in https://*) ;; *) echo 'download_error=endpoint_must_use_https' >&2; exit 1 ;; esac
+if [ "$AWS_ENDPOINT_URL" != "$EXPECTED_AWS_ENDPOINT_URL" ]; then
+  echo 'download_error=unexpected_object_storage_endpoint' >&2
+  exit 1
+fi
 case "$S3_BUCKET" in '' | *[!a-z0-9.-]* | .* | *. | *..*) echo 'download_error=invalid_bucket' >&2; exit 1 ;; esac
 case "$S3_PREFIX" in '' | /* | */ | *..* | *//* | *[!A-Za-z0-9._/-]*) echo 'download_error=invalid_prefix' >&2; exit 1 ;; esac
 case "$KMS_KEY_ID" in '' | *[!A-Za-z0-9:/._-]*) echo 'download_error=invalid_kms_key_id' >&2; exit 1 ;; esac

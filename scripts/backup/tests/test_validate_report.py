@@ -1,12 +1,16 @@
 import unittest
 
-from validate_report import validate_report
+from validate_report import parse_report, validate_report
 
 
 HASH = "a" * 64
 
 
 class ValidateReportTest(unittest.TestCase):
+    def test_rejects_duplicate_json_keys_before_schema_validation(self) -> None:
+        with self.assertRaisesRegex(ValueError, "duplicate report field: schemaVersion"):
+            parse_report('{"schemaVersion":1,"schemaVersion":2}')
+
     def test_accepts_backup_report_with_effective_retention(self) -> None:
         report = {
             "schemaVersion": 1,

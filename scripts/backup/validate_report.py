@@ -51,6 +51,19 @@ BACKUP_ID = re.compile(
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
+def reject_duplicate_json_keys(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate report field: {key}")
+        result[key] = value
+    return result
+
+
+def parse_report(raw_report: str) -> Any:
+    return json.loads(raw_report, object_pairs_hook=reject_duplicate_json_keys)
+
+
 def require_non_negative_integer(report: dict[str, Any], field: str) -> int:
     value = report[field]
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -126,7 +139,7 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        report = json.loads(args.report.read_text(encoding="utf-8"))
+        report = parse_report(args.report.read_text(encoding="utf-8"))
         if not isinstance(report, dict):
             raise ValueError("report root must be an object")
         validate_report(report, args.kind)
