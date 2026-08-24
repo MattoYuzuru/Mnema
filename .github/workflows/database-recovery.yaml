@@ -148,7 +148,7 @@ jobs:
               '  POSTGRES_USER: "bW5lbWFfcmVzdG9yZQ=="'
             encoded_password=$(printf '%s' "$db_password" | base64 | tr -d '\n')
             printf '  POSTGRES_PASSWORD: "%s"\n' "$encoded_password"
-          } | kubectl create -f -
+          } | kubectl create --request-timeout=30s -f -
 
           {
             printf '%s\n' \
@@ -164,73 +164,91 @@ jobs:
               encoded=$(printf '%s' "$value" | base64 | tr -d '\n')
               printf '  %s: "%s"\n' "$name" "$encoded"
             done
-          } | kubectl create -f -
+          } | kubectl create --request-timeout=30s -f -
 
           kubectl -n "$RESTORE_NAMESPACE" create configmap mnema-backup-scripts \
             --from-file=scripts/backup/download.sh \
             --from-file=scripts/backup/restore.sh \
-            --from-file=scripts/backup/reconcile.sql
+            --from-file=scripts/backup/reconcile.sql \
+            --request-timeout=30s
           kubectl -n "$RESTORE_NAMESPACE" create configmap mnema-restore-config \
             --from-literal=BACKUP_ID="$BACKUP_ID" \
-            --from-literal=DRILL_STARTED_EPOCH="$drill_started_epoch"
-          kubectl create -f k8s/backup/restore-drill.yaml
+            --from-literal=DRILL_STARTED_EPOCH="$drill_started_epoch" \
+            --request-timeout=30s
+          kubectl create --request-timeout=30s -f k8s/backup/restore-drill.yaml
 
       - name: Wait for restore and validate reconciliation evidence
         run: |
-          kubectl -n "$RESTORE_NAMESPACE" rollout status statefulset/postgres --timeout=10m
-          if ! kubectl -n "$RESTORE_NAMESPACE" wait --for=condition=complete job/mnema-postgres-restore --timeout=120m; then
-            safe_error=$(kubectl -n "$RESTORE_NAMESPACE" logs job/mnema-postgres-restore --container=restore --tail=200 2>/dev/null | grep -E '^restore_error=[a-z0-9_]+$' | tail -1 || true)
+          kubectl -n "$RESTORE_NAMESPACE" rollout status statefulset/postgres \
+            --timeout=10m
+          if ! kubectl -n "$RESTORE_NAMESPACE" wait --for=condition=complete job/mnema-postgres-restore \
+            --timeout=120m; then
+            safe_error=$(kubectl -n "$RESTORE_NAMESPACE" logs job/mnema-postgres-restore \
+              --container=restore --tail=200 --request-timeout=30s 2>/dev/null | \
+              grep -E '^restore_error=[a-z0-9_]+$' | tail -1 || true)
             echo "::error::${safe_error:-restore_job_failed}"
             exit 1
           fi
-          kubectl -n "$RESTORE_NAMESPACE" logs job/mnema-postgres-restore --container=restore > "$EVIDENCE_DIR/restore-drill.json"
+          kubectl -n "$RESTORE_NAMESPACE" logs job/mnema-postgres-restore \
+            --container=restore --request-timeout=30s > "$EVIDENCE_DIR/restore-drill.json"
           python3 scripts/backup/validate_report.py \
             --kind restore-drill \
             --report "$EVIDENCE_DIR/restore-drill.json"
 
+      - name: Remove only fixed restore drill resources
+        if: ${{ always() }}
+        timeout-minutes: 4
+        run: |
+          if [ ! -s "$KUBECONFIG" ]; then
+            exit 0
+          fi
+          contract_version=$(kubectl -n "$RESTORE_NAMESPACE" get configmap mnema-restore-boundary \
+            --request-timeout=10s -o jsonpath='{.data.contractVersion}' 2>/dev/null || true)
+          if [ "$contract_version" != 1 ]; then
+            echo "::error::Restore boundary marker is missing or changed; refusing cleanup"
+            exit 1
+          fi
+          kubectl delete --request-timeout=10s -f k8s/backup/restore-drill.yaml \
+            --ignore-not-found=true --wait=false
+          kubectl -n "$RESTORE_NAMESPACE" delete configmap \
+            mnema-backup-scripts mnema-restore-config \
+            --ignore-not-found=true --wait=false --request-timeout=10s
+          kubectl -n "$RESTORE_NAMESPACE" delete secret \
+            mnema-restore-db-secrets mnema-restore-backup-secrets \
+            --ignore-not-found=true --wait=false --request-timeout=10s
+
+          cleanup_attempt=0
+          while true; do
+            leftover_workloads=$(kubectl -n "$RESTORE_NAMESPACE" get \
+              pods,jobs.batch,statefulsets.apps,persistentvolumeclaims,services \
+              --request-timeout=10s -o name)
+            leftover_configmaps=$(kubectl -n "$RESTORE_NAMESPACE" get configmaps \
+              --request-timeout=10s -o name | \
+              grep -Ev '^configmap/(mnema-restore-boundary|kube-root-ca\.crt)$' || true)
+            leftover_secrets=''
+            for secret in mnema-restore-db-secrets mnema-restore-backup-secrets; do
+              found=$(kubectl -n "$RESTORE_NAMESPACE" get "secret/$secret" \
+                --ignore-not-found=true --request-timeout=10s -o name)
+              if [ -n "$found" ]; then
+                leftover_secrets="$leftover_secrets $found"
+              fi
+            done
+            if [ -z "$leftover_workloads" ] && [ -z "$leftover_configmaps" ] && [ -z "$leftover_secrets" ]; then
+              break
+            fi
+            cleanup_attempt=$((cleanup_attempt + 1))
+            if [ "$cleanup_attempt" -ge 120 ]; then
+              echo "::error::Fixed restore resources remain after cleanup"
+              exit 1
+            fi
+            sleep 1
+          done
+
       - name: Upload restore drill evidence
+        if: ${{ always() && hashFiles('.recovery-evidence/restore-drill.json') != '' }}
         uses: actions/upload-artifact@v7
         with:
           name: restore-drill-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ env.EVIDENCE_DIR }}/restore-drill.json
           if-no-files-found: error
           retention-days: 30
-
-      - name: Remove only fixed restore drill resources
-        if: ${{ always() }}
-        run: |
-          if [ ! -s "$KUBECONFIG" ]; then
-            exit 0
-          fi
-          contract_version=$(kubectl -n "$RESTORE_NAMESPACE" get configmap mnema-restore-boundary \
-            -o jsonpath='{.data.contractVersion}' 2>/dev/null || true)
-          if [ "$contract_version" != 1 ]; then
-            echo "::error::Restore boundary marker is missing or changed; refusing cleanup"
-            exit 1
-          fi
-          kubectl delete -f k8s/backup/restore-drill.yaml \
-            --ignore-not-found=true --wait=true --timeout=15m
-          kubectl -n "$RESTORE_NAMESPACE" delete configmap \
-            mnema-backup-scripts mnema-restore-config \
-            --ignore-not-found=true --wait=true --timeout=5m
-          kubectl -n "$RESTORE_NAMESPACE" delete secret \
-            mnema-restore-db-secrets mnema-restore-backup-secrets \
-            --ignore-not-found=true --wait=true --timeout=5m
-
-          leftover_workloads=$(kubectl -n "$RESTORE_NAMESPACE" get \
-            pods,jobs.batch,statefulsets.apps,persistentvolumeclaims,services \
-            -o name)
-          leftover_configmaps=$(kubectl -n "$RESTORE_NAMESPACE" get configmaps -o name | \
-            grep -Ev '^configmap/(mnema-restore-boundary|kube-root-ca\.crt)$' || true)
-          leftover_secrets=''
-          for secret in mnema-restore-db-secrets mnema-restore-backup-secrets; do
-            found=$(kubectl -n "$RESTORE_NAMESPACE" get "secret/$secret" \
-              --ignore-not-found=true -o name)
-            if [ -n "$found" ]; then
-              leftover_secrets="$leftover_secrets $found"
-            fi
-          done
-          if [ -n "$leftover_workloads" ] || [ -n "$leftover_configmaps" ] || [ -n "$leftover_secrets" ]; then
-            echo "::error::Fixed restore resources remain after cleanup"
-            exit 1
-          fi

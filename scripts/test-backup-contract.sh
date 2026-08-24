@@ -4,6 +4,7 @@ set -eu
 SCRIPT_DIR=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
 REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 BACKUP_SCRIPTS="$REPO_ROOT/scripts/backup"
+POLICY_RENDERER="$BACKUP_SCRIPTS/render_bucket_policy.py"
 CRONJOB="$REPO_ROOT/k8s/backup/cronjob.yaml"
 RESTORE_MANIFEST="$REPO_ROOT/k8s/backup/restore-drill.yaml"
 RESTORE_BOUNDARY="$REPO_ROOT/k8s/backup/restore-boundary.yaml"
@@ -133,18 +134,28 @@ grep -Fq -- '--server-side-encryption aws:kms' "$BACKUP_SCRIPTS/upload.sh"
 grep -Fq -- '--acl private' "$BACKUP_SCRIPTS/upload.sh"
 grep -Fq 'bucket_versioning_must_be_enabled' "$BACKUP_SCRIPTS/upload.sh"
 grep -Fq 'write_once_policy_allows_unconditional_overwrite' "$BACKUP_SCRIPTS/upload.sh"
+grep -Fq 'policy_probe_prefix="$S3_PREFIX/postgres/$policy_probe_backup_id"' "$BACKUP_SCRIPTS/upload.sh"
+grep -Fq 'for file in database.dump reconciliation.csv capacity.csv checksums.sha256 metadata.env' "$BACKUP_SCRIPTS/upload.sh"
 grep -Fq 'CONFIRMATION" != RESTORE_IN_ISOLATED_NAMESPACE' "$RECOVERY_WORKFLOW"
 grep -Fq 'name: Refuse a busy restore boundary' "$RECOVERY_WORKFLOW"
 grep -Fq 'get configmap mnema-restore-boundary' "$RECOVERY_WORKFLOW"
 grep -Fq 'get configmap kube-root-ca.crt' "$RECOVERY_WORKFLOW"
 grep -Fq 'timeout-minutes: 210' "$RECOVERY_WORKFLOW"
-grep -Fq 'kubectl create -f k8s/backup/restore-drill.yaml' "$RECOVERY_WORKFLOW"
+grep -Fq 'timeout-minutes: 4' "$RECOVERY_WORKFLOW"
+grep -Fq -- '--ignore-not-found=true --wait=false' "$RECOVERY_WORKFLOW"
+grep -Fq 'kubectl create --request-timeout=30s -f k8s/backup/restore-drill.yaml' "$RECOVERY_WORKFLOW"
 if grep -Fq 'delete persistentvolumeclaim data-postgres-0' "$RECOVERY_WORKFLOW"; then
   echo 'Restore cleanup must not depend on deleting persistent storage' >&2
   exit 1
 fi
 if grep -Eq 'kubectl (create|delete) namespace' "$RECOVERY_WORKFLOW"; then
   echo 'Scoped recovery workflow must not create or delete namespaces' >&2
+  exit 1
+fi
+cleanup_line=$(grep -n 'name: Remove only fixed restore drill resources' "$RECOVERY_WORKFLOW" | cut -d: -f1)
+artifact_line=$(grep -n 'name: Upload restore drill evidence' "$RECOVERY_WORKFLOW" | cut -d: -f1)
+if [ "$cleanup_line" -ge "$artifact_line" ]; then
+  echo 'Restore resources must be removed before the potentially slow artifact upload' >&2
   exit 1
 fi
 
@@ -154,6 +165,32 @@ grep -Fq 'MnemaPostgresBackupMissing' "$PROMETHEUS_RULES"
 grep -Fq 'MnemaPostgresBackupStale' "$PROMETHEUS_RULES"
 
 mkdir -p "$TEST_ROOT/bin" "$TEST_ROOT/object-store" "$TEST_ROOT/backup" "$TEST_ROOT/restore"
+S3_BUCKET=test-bucket S3_PREFIX=mnema-backups \
+  python3 "$POLICY_RENDERER" > "$TEST_ROOT/policy-fragment.json"
+python3 - "$TEST_ROOT/policy-fragment.json" <<'PY'
+import json
+import sys
+
+fragment = json.load(open(sys.argv[1], encoding="utf-8"))
+statements = {statement["Sid"]: statement for statement in fragment["Statement"]}
+immutable = statements["DenyImmutableWritesWithoutIfNoneMatch"]
+assert immutable["Effect"] == "Deny"
+assert immutable["Principal"] == "*"
+assert immutable["Action"] == "s3:PutObject"
+assert immutable["Resource"] == "arn:aws:s3:::test-bucket/mnema-backups/postgres/*/*"
+assert immutable["Condition"] == {"Null": {"s3:if-none-match": "true"}}
+latest = statements["DenyUnconditionalLatestPointerWrites"]
+assert latest["Resource"] == "arn:aws:s3:::test-bucket/mnema-backups/postgres/latest.env"
+assert latest["Condition"] == {
+    "Null": {"s3:if-match": "true", "s3:if-none-match": "true"}
+}
+assert len(statements) == 2
+PY
+if S3_BUCKET=test-bucket S3_PREFIX='../unsafe' \
+  python3 "$POLICY_RENDERER" >/dev/null 2>&1; then
+  echo 'Policy renderer must reject an unsafe backup prefix' >&2
+  exit 1
+fi
 cat > "$TEST_ROOT/bin/aws" <<'MOCK_AWS'
 #!/bin/sh
 set -eu

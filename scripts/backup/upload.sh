@@ -395,8 +395,20 @@ esac
 object_prefix="$S3_PREFIX/postgres/$BACKUP_ID"
 boundary_file="$BACKUP_DIR/write-boundary"
 printf 'mnema-backup-write-boundary-v1\n' > "$boundary_file"
+
+backup_id_last_character=${BACKUP_ID#"${BACKUP_ID%?}"}
+case "$backup_id_last_character" in
+  0) probe_last_character=1 ;;
+  *) probe_last_character=0 ;;
+esac
+policy_probe_backup_id="${BACKUP_ID%?}$probe_last_character"
+policy_probe_prefix="$S3_PREFIX/postgres/$policy_probe_backup_id"
+for file in database.dump reconciliation.csv capacity.csv checksums.sha256 metadata.env; do
+  put_immutable_object "$boundary_file" "$policy_probe_prefix/$file"
+  require_write_once_policy "$policy_probe_prefix/$file" "$boundary_file" "$PUT_ETAG"
+done
+
 put_immutable_object "$boundary_file" "$object_prefix/.write-boundary"
-require_write_once_policy "$object_prefix/.write-boundary" "$boundary_file" "$PUT_ETAG"
 
 for file in database.dump reconciliation.csv capacity.csv checksums.sha256 metadata.env; do
   put_immutable_object "$BACKUP_DIR/$file" "$object_prefix/$file"
