@@ -27,6 +27,7 @@ concurrency:
 
 jobs:
   database-recovery:
+    if: ${{ always() }}
     runs-on: ubuntu-latest
     timeout-minutes: 210
     permissions:

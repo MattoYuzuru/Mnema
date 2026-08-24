@@ -141,6 +141,10 @@ grep -Fq 'name: Refuse a busy restore boundary' "$RECOVERY_WORKFLOW"
 grep -Fq 'get configmap mnema-restore-boundary' "$RECOVERY_WORKFLOW"
 grep -Fq 'get configmap kube-root-ca.crt' "$RECOVERY_WORKFLOW"
 grep -Fq 'timeout-minutes: 210' "$RECOVERY_WORKFLOW"
+if ! grep -Eq '^    if: \$\{\{ always\(\) \}\}$' "$RECOVERY_WORKFLOW"; then
+  echo 'Recovery job must survive workflow cancellation long enough to run bounded cleanup' >&2
+  exit 1
+fi
 grep -Fq 'timeout-minutes: 4' "$RECOVERY_WORKFLOW"
 grep -Fq -- '--ignore-not-found=true --wait=false' "$RECOVERY_WORKFLOW"
 grep -Fq 'kubectl create --request-timeout=30s -f k8s/backup/restore-drill.yaml' "$RECOVERY_WORKFLOW"
