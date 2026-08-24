@@ -1,45 +1,10 @@
 name: Production Deploy
 
 on:
-  workflow_call:
-    inputs:
-      release_sha:
-        description: Exact tested and built main revision to deploy
-        required: true
-        type: string
-    # These values are supplied by the job-level prod Environment. Reusable
-    # workflows declare them as optional because the caller never receives or
-    # forwards protected Environment values.
-    secrets:
-      PROD_AUTH_ISSUER: { required: false }
-      PROD_AUTH_ISSUER_URI: { required: false }
-      PROD_AUTH_JWT_PRIVATE_KEY: { required: false }
-      PROD_AUTH_JWT_PUBLIC_KEY: { required: false }
-      PROD_AWS_ACCESS_KEY_ID: { required: false }
-      PROD_AWS_BUCKET_NAME: { required: false }
-      PROD_AWS_REGION: { required: false }
-      PROD_AWS_SECRET_ACCESS_KEY: { required: false }
-      PROD_CORE_INTERNAL_TOKEN: { required: false }
-      PROD_GF_SECURITY_ADMIN_PASSWORD: { required: false }
-      PROD_GF_SECURITY_ADMIN_USER: { required: false }
-      PROD_GH_CLIENT_ID: { required: false }
-      PROD_GH_CLIENT_SECRET: { required: false }
-      PROD_GOOGLE_CLIENT_ID: { required: false }
-      PROD_GOOGLE_CLIENT_SECRET: { required: false }
-      PROD_KUBECONFIG_B64: { required: false }
-      PROD_MEDIA_INTERNAL_TOKEN: { required: false }
-      PROD_POSTGRES_DB: { required: false }
-      PROD_POSTGRES_PASSWORD: { required: false }
-      PROD_POSTGRES_USER: { required: false }
-      PROD_RELEASE_BINDING_KEY: { required: false }
-      PROD_SMOKE_LOGIN: { required: false }
-      PROD_SMOKE_PASSWORD: { required: false }
-      PROD_SMOKE_TURNSTILE_BYPASS_KEY: { required: false }
-      PROD_TURNSTILE_SECRET_KEY: { required: false }
-      PROD_TURNSTILE_SITE_KEY: { required: false }
-      PROD_USER_INTERNAL_TOKEN: { required: false }
-      PROD_YANDEX_CLIENT_ID: { required: false }
-      PROD_YANDEX_CLIENT_SECRET: { required: false }
+  workflow_run:
+    workflows: [Staging Deploy]
+    types: [completed]
+    branches: [main]
 
 permissions: {}
 
@@ -47,7 +12,70 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  validate-staging-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      UPSTREAM_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+    steps:
+      - name: Validate Staging Deploy predecessor
+        run: |
+          if [ "$UPSTREAM_CONCLUSION" != success ]; then
+            echo "::error::Staging Deploy did not succeed"
+            exit 1
+          fi
+          if [ "$UPSTREAM_BRANCH" != main ] || [ "$UPSTREAM_EVENT" != workflow_run ]; then
+            echo "::error::Staging Deploy has an invalid source boundary"
+            exit 1
+          fi
+          if ! printf '%s\n' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Staging Deploy did not provide an exact release SHA"
+            exit 1
+          fi
+
+      - name: Checkout release revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Download staging-approved release for preflight
+        uses: actions/download-artifact@v8
+        with:
+          name: production-release-manifest
+          path: ${{ runner.temp }}/production-preflight
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify exact release artifact before production access
+        env:
+          RELEASE_MANIFEST: ${{ runner.temp }}/production-preflight/production-release.yaml
+          IDENTITY_RECORD: ${{ runner.temp }}/production-preflight-record.json
+        run: |
+          (cd "$(dirname "$RELEASE_MANIFEST")" && sha256sum --check production-release.yaml.sha256)
+          python3 scripts/smoke/release_state.py build-record \
+            --environment production-preflight \
+            --manifest "$RELEASE_MANIFEST" \
+            --record "$IDENTITY_RECORD" >/dev/null
+          artifact_sha=$(python3 -c \
+            'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["releaseId"])' \
+            "$IDENTITY_RECORD")
+          if [ "$artifact_sha" != "$RELEASE_SHA" ]; then
+            echo "::error::Production release artifact does not match the staging-approved revision"
+            exit 1
+          fi
+          current_main=$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')
+          if [ "$RELEASE_SHA" != "$current_main" ]; then
+            echo "::error::Refusing stale release ${RELEASE_SHA}; current main is ${current_main}"
+            exit 1
+          fi
+
   preview-production:
+    needs: validate-staging-deploy
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -71,7 +99,7 @@ jobs:
       RELEASE_MANIFEST: ${{ github.workspace }}/production-release.yaml
       RELEASE_DIFF: ${{ github.workspace }}/production-release.diff
       RELEASE_PREVIEW_METADATA: ${{ github.workspace }}/production-release-preview.txt
-      RELEASE_SHA: ${{ inputs.release_sha }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       - name: Checkout release revision
         uses: actions/checkout@v6
@@ -88,10 +116,26 @@ jobs:
         with:
           name: production-release-manifest
           path: ${{ github.workspace }}
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
 
       - name: Verify release artifact integrity
         working-directory: ${{ github.workspace }}
-        run: sha256sum --check production-release.yaml.sha256
+        env:
+          IDENTITY_RECORD: ${{ runner.temp }}/production-preview-identity.json
+        run: |
+          sha256sum --check production-release.yaml.sha256
+          python3 scripts/smoke/release_state.py build-record \
+            --environment production-preview \
+            --manifest "$RELEASE_MANIFEST" \
+            --record "$IDENTITY_RECORD" >/dev/null
+          artifact_sha=$(python3 -c \
+            'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["releaseId"])' \
+            "$IDENTITY_RECORD")
+          if [ "$artifact_sha" != "$RELEASE_SHA" ]; then
+            echo "::error::Production release artifact does not match the staging-approved revision"
+            exit 1
+          fi
 
       - name: Reject a stale release
         run: |
@@ -352,6 +396,9 @@ jobs:
   deploy-production:
     needs: preview-production
     if: needs.preview-production.outputs.has_release_changes == 'true'
+    concurrency:
+      group: production-deploy
+      cancel-in-progress: false
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -374,7 +421,7 @@ jobs:
       SMOKE_REPORT: ${{ github.workspace }}/.release-state/production-smoke-report.json
       DIAGNOSTICS_DIR: ${{ github.workspace }}/.release-state/production-release-diagnostics
       AUTO_ROLLBACK_ENABLED: ${{ vars.AUTO_ROLLBACK_ENABLED || 'true' }}
-      RELEASE_SHA: ${{ inputs.release_sha }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       - name: Checkout release revision
         uses: actions/checkout@v6
@@ -391,6 +438,8 @@ jobs:
         with:
           name: production-release-manifest
           path: ${{ github.workspace }}
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
 
       - name: Validate approved preview artifact reference
         env:
@@ -436,7 +485,21 @@ jobs:
 
       - name: Verify release artifact integrity
         working-directory: ${{ github.workspace }}
-        run: sha256sum --check production-release.yaml.sha256
+        env:
+          IDENTITY_RECORD: ${{ runner.temp }}/production-deploy-identity.json
+        run: |
+          sha256sum --check production-release.yaml.sha256
+          python3 scripts/smoke/release_state.py build-record \
+            --environment production-deploy \
+            --manifest "$RELEASE_MANIFEST" \
+            --record "$IDENTITY_RECORD" >/dev/null
+          artifact_sha=$(python3 -c \
+            'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["releaseId"])' \
+            "$IDENTITY_RECORD")
+          if [ "$artifact_sha" != "$RELEASE_SHA" ]; then
+            echo "::error::Production release artifact does not match the staging-approved revision"
+            exit 1
+          fi
 
       - name: Verify approved production preview contents
         run: |

@@ -78,37 +78,56 @@ assert_secret_prefix "$PRODUCTION_WORKFLOW" PROD_
 assert_secret_prefix "$STAGING_WORKFLOW" STAGING_
 assert_secret_prefix "$ROLLBACK_DRILL_WORKFLOW" STAGING_
 
-assert_reusable_environment_secret_contract() {
-  workflow=$1
-  prefix=$2
-  referenced=$(grep -Eo "secrets\\.${prefix}[A-Z0-9_]+" "$workflow" | \
-    sed 's/^secrets\.//' | sort -u)
-  declared=$(awk -v prefix="$prefix" '
-    /^    secrets:$/ { inside = 1; next }
-    inside && /^[^ ]/ { exit }
-    inside && $0 ~ "^      " prefix "[A-Z0-9_]+:" {
-      value = $1
-      sub(/:$/, "", value)
-      print value
-    }
-  ' "$workflow" | sort -u)
-  if [ "$referenced" != "$declared" ]; then
-    echo "Every $prefix Environment secret reference must be declared by workflow_call" >&2
-    exit 1
-  fi
-  for name in $declared; do
-    grep -Fq "$name: { required: false }" "$workflow" || {
-      echo "$name must remain optional because the job-level Environment supplies it" >&2
-      exit 1
-    }
-  done
-}
+grep -Fq 'workflows: [Main CI]' "$STAGING_WORKFLOW"
+grep -Fq 'workflows: [Staging Deploy]' "$PRODUCTION_WORKFLOW"
+staging_gate=$(sed -n '/^  validate-main-ci:/,/^  deploy-staging:/p' "$STAGING_WORKFLOW")
+production_gate=$(sed -n '/^  validate-staging-deploy:/,/^  preview-production:/p' "$PRODUCTION_WORKFLOW")
+staging_deploy_header=$(sed -n '/^  deploy-staging:/,/^    steps:/p' "$STAGING_WORKFLOW")
+production_preview_header=$(sed -n '/^  preview-production:/,/^    steps:/p' "$PRODUCTION_WORKFLOW")
+printf '%s\n' "$staging_gate" | grep -Fq 'UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}'
+printf '%s\n' "$staging_gate" | grep -Fq 'if [ "$UPSTREAM_CONCLUSION" != success ]; then'
+printf '%s\n' "$staging_gate" | grep -Fq 'push | workflow_dispatch'
+printf '%s\n' "$staging_gate" | grep -Fq 'exit 1'
+printf '%s\n' "$staging_gate" | grep -Fq 'Verify exact release artifacts before staging access'
+printf '%s\n' "$production_gate" | grep -Fq 'UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}'
+printf '%s\n' "$production_gate" | grep -Fq 'if [ "$UPSTREAM_CONCLUSION" != success ]; then'
+printf '%s\n' "$production_gate" | grep -Fq '[ "$UPSTREAM_EVENT" != workflow_run ]'
+printf '%s\n' "$production_gate" | grep -Fq 'exit 1'
+printf '%s\n' "$production_gate" | grep -Fq 'Verify exact release artifact before production access'
+if printf '%s\n%s\n' "$staging_gate" "$production_gate" | grep -Fq 'environment:'; then
+  echo 'Untrusted predecessor and artifact validation must run before Environment access' >&2
+  exit 1
+fi
+printf '%s\n' "$staging_deploy_header" | grep -Fq 'needs: validate-main-ci'
+printf '%s\n' "$production_preview_header" | grep -Fq 'needs: validate-staging-deploy'
+if printf '%s\n%s\n' "$staging_deploy_header" "$production_preview_header" | grep -Eq '^    if:'; then
+  echo 'Environment jobs must not turn a rejected predecessor into a successful skipped workflow' >&2
+  exit 1
+fi
+grep -Fq 'RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}' "$STAGING_WORKFLOW"
+test "$(grep -c 'RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}' "$PRODUCTION_WORKFLOW")" -eq 3
+test "$(grep -c 'run-id: ${{ github.event.workflow_run.id }}' "$STAGING_WORKFLOW")" -eq 4
+test "$(grep -c 'run-id: ${{ github.event.workflow_run.id }}' "$PRODUCTION_WORKFLOW")" -eq 3
+test "$(grep -c 'github-token: ${{ github.token }}' "$STAGING_WORKFLOW")" -eq 4
+test "$(grep -c 'github-token: ${{ github.token }}' "$PRODUCTION_WORKFLOW")" -eq 3
+grep -Fq 'Staging release artifact does not match the tested revision' "$STAGING_WORKFLOW"
+grep -Fq 'name: Relay the staging-approved production release' "$STAGING_WORKFLOW"
+grep -Fq '${{ runner.temp }}/production-promotion/production-release.yaml' "$STAGING_WORKFLOW"
+grep -Fq -- '--environment production-promotion' "$STAGING_WORKFLOW"
+grep -Fq 'Production promotion manifest does not match the tested revision' "$STAGING_WORKFLOW"
+test "$(grep -c 'Production release artifact does not match the staging-approved revision' "$PRODUCTION_WORKFLOW")" -eq 3
+test "$(grep -c 'group: production-deploy' "$PRODUCTION_WORKFLOW")" -eq 1
+production_deploy_header=$(sed -n '/^  deploy-production:/,/^    env:/p' "$PRODUCTION_WORKFLOW")
+printf '%s\n' "$production_deploy_header" | grep -Fq 'concurrency:'
+printf '%s\n' "$production_deploy_header" | grep -Fq 'cancel-in-progress: false'
+if grep -Fq 'workflow_call:' "$STAGING_WORKFLOW" "$PRODUCTION_WORKFLOW" || \
+   grep -Fq 'uses: ./.github/workflows/' "$MAIN_WORKFLOW"; then
+  echo "Environment deployment jobs must run directly, not behind workflow_call" >&2
+  exit 1
+fi
 
-assert_reusable_environment_secret_contract "$STAGING_WORKFLOW" STAGING_
-assert_reusable_environment_secret_contract "$PRODUCTION_WORKFLOW" PROD_
-
-if grep -Fq 'secrets: inherit' "$MAIN_WORKFLOW"; then
-  echo "Deployment callers must not inherit repository secrets" >&2
+if grep -Fq 'secrets: inherit' "$MAIN_WORKFLOW" "$STAGING_WORKFLOW" "$PRODUCTION_WORKFLOW"; then
+  echo "Deployment workflows must not inherit repository secrets" >&2
   exit 1
 fi
 

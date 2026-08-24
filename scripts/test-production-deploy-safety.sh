@@ -6,8 +6,8 @@ REPO_ROOT=$(CDPATH='' cd -- "$SCRIPT_DIR/.." && pwd)
 CALLER="$REPO_ROOT/.github/workflows/deploy.yaml"
 DEPLOY="$REPO_ROOT/.github/workflows/production-deploy.yaml"
 
-grep -Fq 'group: production-deploy' "$CALLER"
-grep -Fq 'cancel-in-progress: false' "$CALLER"
+grep -Fq 'group: production-deploy' "$DEPLOY"
+grep -Fq 'cancel-in-progress: false' "$DEPLOY"
 grep -Fq 'name: prod' "$DEPLOY"
 grep -Fq 'deployment: false' "$DEPLOY"
 grep -Fq 'needs: preview-production' "$DEPLOY"

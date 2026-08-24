@@ -352,27 +352,3 @@ jobs:
             ${{ runner.temp }}/staging-release.yaml.sha256
           if-no-files-found: error
           retention-days: 30
-
-  deploy-staging:
-    needs: render-release
-    concurrency:
-      group: staging-deploy
-      cancel-in-progress: false
-    permissions:
-      actions: read
-      contents: read
-    uses: ./.github/workflows/staging-deploy.yaml
-    with:
-      release_sha: ${{ github.sha }}
-
-  deploy-production:
-    needs: deploy-staging
-    concurrency:
-      group: production-deploy
-      cancel-in-progress: false
-    permissions:
-      actions: read
-      contents: read
-    uses: ./.github/workflows/production-deploy.yaml
-    with:
-      release_sha: ${{ github.sha }}
