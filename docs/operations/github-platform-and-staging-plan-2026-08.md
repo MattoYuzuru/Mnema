@@ -5,7 +5,7 @@ artifact:
   title: "GitHub platform, CI/CD and staging plan"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-08-17"
+  updated_at: "2026-08-24"
   owners: ["project-owner"]
   evidence_date: "2026-08-17"
 ---
@@ -57,7 +57,7 @@ Ruleset gap тоже уже проявился: PR #59 был merged при кр
 
 Дополнительная ошибка GitHub Deployments: `environment: prod` назначен build-matrix, из-за чего одна release может создавать семь deployment records, тогда как job, который реально меняет cluster, environment не объявляет. Environment history и protection должны охватывать именно mutation.
 
-Решение #89 разделяет этот путь на cancellable quality/build jobs в `Main CI` и reusable `Production Deploy`. Deployment call запускается только после успешной сборки всех images, сериализуется отдельной non-cancelling concurrency group и создаёт один `prod` deployment record на cluster mutation. Перед доступом к kubeconfig проверяется, что release SHA всё ещё совпадает с `main`. GitHub rerun исполняет историческую версию workflow, поэтому одного guard недостаточно: cluster authority переносится в environment-only `PROD_KUBECONFIG_B64`, а оба repository kubeconfig, доступные rerunnable историческим workflow (`KUBECONFIG_B64` и `AI_KUBECONFIG_B64`), отзываются.
+Решение #89 разделяет этот путь на cancellable quality/build jobs в `Main CI`, прямой `Staging Deploy` после успешного `workflow_run` и прямой `Production Deploy` только после принятого staging. Каждый deployment сериализуется своей non-cancelling concurrency group; только cluster mutation создаёт `prod` deployment record. Между workflow передаются checksummed artifacts и точный SHA предшественника, а перед доступом к kubeconfig проверяется, что этот SHA всё ещё совпадает с `main`. Deployment jobs напрямую владеют GitHub Environment и не получают repository secrets через `secrets: inherit`. GitHub rerun исполняет историческую версию workflow, поэтому одного guard недостаточно: cluster authority переносится в environment-only `PROD_KUBECONFIG_B64`, а оба repository kubeconfig, доступные rerunnable историческим workflow (`KUBECONFIG_B64` и `AI_KUBECONFIG_B64`), отзываются.
 
 Это обязательный **pre-merge** stop condition, а не post-merge cleanup: сначала создать `prod/PROD_KUBECONFIG_B64`, убедиться, что старый deploy не выполняется, удалить оба repository secret и read-back проверить `prod/PROD_KUBECONFIG_B64 present` плюс оба legacy name `absent`; только затем merge запускает новую Main CI. После полного отзыва старые main/AI workflow не могут аутентифицироваться ни в одном прежнем Kubernetes-контуре независимо от содержимого их YAML. Возвращать repository kubeconfig при rollback запрещено. Каждый job получает явный минимальный `GITHUB_TOKEN` contract; PR required checks остаются в отдельном `PR Quality` без изменения имён.
 

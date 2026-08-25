@@ -5,13 +5,15 @@ artifact:
   title: "Mnema release smoke, diagnostics and rollback"
   status: current
   created_at: "2026-08-19"
-  updated_at: "2026-08-23"
+  updated_at: "2026-08-24"
   owners: ["project-owner"]
 ---
 
 # Mnema release smoke, diagnostics and rollback
 
 Every hosted release is accepted as one six-image unit. Staging and production first snapshot the last verified complete manifest and the current application Secret, apply the candidate once, wait for all rollouts, run the black-box smoke from GitHub-hosted infrastructure and only then record the candidate. A failed rollout, smoke or release-state write rejects the candidate and, while automatic rollback is enabled, restores the prior Secret and reapplies the saved complete manifest.
+
+`Main CI`, `Staging Deploy` and `Production Deploy` are separate workflows. The two privileged workflows run directly after a successful `workflow_run` predecessor so their jobs read only their own GitHub Environment secrets. Artifact downloads are bound to the predecessor run ID; staging verifies both manifests but relays the production manifest only after its smoke and release record succeed. Production verifies that relay again before preview. Every stage binds to the predecessor head SHA and rejects it if it is no longer current `main`.
 
 AI is deliberately absent from this gate. The hosted runtime must report `aiEnabled = false`; no keykomi workload, model or data is read or mutated.
 

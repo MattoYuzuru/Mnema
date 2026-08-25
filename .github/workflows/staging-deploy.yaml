@@ -1,50 +1,107 @@
 name: Staging Deploy
 
 on:
-  workflow_call:
-    inputs:
-      release_sha:
-        description: Exact tested and built main revision to deploy
-        required: true
-        type: string
-    # These values are supplied by the job-level staging Environment. Reusable
-    # workflows still need an explicit optional declaration for each secrets
-    # context name; the caller cannot and must not copy Environment values.
-    secrets:
-      STAGING_AUTH_ISSUER: { required: false }
-      STAGING_AUTH_ISSUER_URI: { required: false }
-      STAGING_AUTH_JWT_PRIVATE_KEY: { required: false }
-      STAGING_AUTH_JWT_PUBLIC_KEY: { required: false }
-      STAGING_AWS_ACCESS_KEY_ID: { required: false }
-      STAGING_AWS_BUCKET_NAME: { required: false }
-      STAGING_AWS_REGION: { required: false }
-      STAGING_AWS_SECRET_ACCESS_KEY: { required: false }
-      STAGING_CORE_INTERNAL_TOKEN: { required: false }
-      STAGING_GH_CLIENT_ID: { required: false }
-      STAGING_GH_CLIENT_SECRET: { required: false }
-      STAGING_GOOGLE_CLIENT_ID: { required: false }
-      STAGING_GOOGLE_CLIENT_SECRET: { required: false }
-      STAGING_KUBECONFIG_B64: { required: false }
-      STAGING_MEDIA_INTERNAL_TOKEN: { required: false }
-      STAGING_POSTGRES_DB: { required: false }
-      STAGING_POSTGRES_PASSWORD: { required: false }
-      STAGING_POSTGRES_USER: { required: false }
-      STAGING_SMOKE_LOGIN: { required: false }
-      STAGING_SMOKE_PASSWORD: { required: false }
-      STAGING_SMOKE_TURNSTILE_BYPASS_KEY: { required: false }
-      STAGING_TURNSTILE_SECRET_KEY: { required: false }
-      STAGING_TURNSTILE_SITE_KEY: { required: false }
-      STAGING_USER_INTERNAL_TOKEN: { required: false }
-      STAGING_YANDEX_CLIENT_ID: { required: false }
-      STAGING_YANDEX_CLIENT_SECRET: { required: false }
+  workflow_run:
+    workflows: [Main CI]
+    types: [completed]
+    branches: [main]
 
 permissions: {}
+
+concurrency:
+  group: staging-deploy
+  cancel-in-progress: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
+  validate-main-ci:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    env:
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      UPSTREAM_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+      UPSTREAM_BRANCH: ${{ github.event.workflow_run.head_branch }}
+      UPSTREAM_EVENT: ${{ github.event.workflow_run.event }}
+    steps:
+      - name: Validate Main CI predecessor
+        run: |
+          if [ "$UPSTREAM_CONCLUSION" != success ]; then
+            echo "::error::Main CI did not succeed"
+            exit 1
+          fi
+          if [ "$UPSTREAM_BRANCH" != main ]; then
+            echo "::error::Main CI did not run for main"
+            exit 1
+          fi
+          case "$UPSTREAM_EVENT" in
+            push | workflow_dispatch) ;;
+            *) echo "::error::Unsupported Main CI event: ${UPSTREAM_EVENT}"; exit 1 ;;
+          esac
+          if ! printf '%s\n' "$RELEASE_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::Main CI did not provide an exact release SHA"
+            exit 1
+          fi
+
+      - name: Checkout release revision
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.RELEASE_SHA }}
+
+      - name: Download staging release manifest for preflight
+        uses: actions/download-artifact@v8
+        with:
+          name: staging-release-manifest
+          path: ${{ runner.temp }}/staging-preflight
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Download production promotion manifest for preflight
+        uses: actions/download-artifact@v8
+        with:
+          name: production-release-manifest
+          path: ${{ runner.temp }}/production-preflight
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Verify exact release artifacts before staging access
+        env:
+          STAGING_DIR: ${{ runner.temp }}/staging-preflight
+          PRODUCTION_DIR: ${{ runner.temp }}/production-preflight
+        run: |
+          (cd "$STAGING_DIR" && sha256sum --check staging-release.yaml.sha256)
+          (cd "$PRODUCTION_DIR" && sha256sum --check production-release.yaml.sha256)
+          for entry in \
+            "staging-preflight|$STAGING_DIR/staging-release.yaml|$RUNNER_TEMP/staging-preflight-record.json" \
+            "production-preflight|$PRODUCTION_DIR/production-release.yaml|$RUNNER_TEMP/production-preflight-record.json"
+          do
+            environment=${entry%%|*}
+            remainder=${entry#*|}
+            manifest=${remainder%%|*}
+            record=${remainder#*|}
+            python3 scripts/smoke/release_state.py build-record \
+              --environment "$environment" \
+              --manifest "$manifest" \
+              --record "$record" >/dev/null
+            artifact_sha=$(python3 -c \
+              'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["releaseId"])' \
+              "$record")
+            if [ "$artifact_sha" != "$RELEASE_SHA" ]; then
+              echo "::error::${environment} artifact does not match the tested revision"
+              exit 1
+            fi
+          done
+          current_main=$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')
+          if [ "$RELEASE_SHA" != "$current_main" ]; then
+            echo "::error::Refusing stale staging release ${RELEASE_SHA}; current main is ${current_main}"
+            exit 1
+          fi
+
   deploy-staging:
+    needs: validate-main-ci
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -58,7 +115,7 @@ jobs:
       RELEASE_MANIFEST: ${{ github.workspace }}/staging-release.yaml
       STAGING_SECRET_MANIFEST: ${{ github.workspace }}/staging-application-secret.yaml
       RELEASE_RECORD: ${{ github.workspace }}/.release-state/staging-release-record.json
-      RELEASE_SHA: ${{ inputs.release_sha }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
       ROLLBACK_MANIFEST: ${{ github.workspace }}/.release-state/staging-rollback-release.yaml
       ROLLBACK_RECORD: ${{ github.workspace }}/.release-state/staging-rollback-record.json
       ROLLBACK_APP_SECRET: ${{ github.workspace }}/.release-state/staging-rollback-application-secret.json
@@ -82,9 +139,51 @@ jobs:
         with:
           name: staging-release-manifest
           path: ${{ github.workspace }}
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+
+      - name: Download production promotion manifest
+        uses: actions/download-artifact@v8
+        with:
+          name: production-release-manifest
+          path: ${{ runner.temp }}/production-promotion
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
 
       - name: Verify release artifact integrity
-        run: sha256sum --check staging-release.yaml.sha256
+        env:
+          STAGING_IDENTITY_RECORD: ${{ runner.temp }}/staging-release-identity.json
+        run: |
+          sha256sum --check staging-release.yaml.sha256
+          python3 scripts/smoke/release_state.py build-record \
+            --environment staging-artifact \
+            --manifest "$RELEASE_MANIFEST" \
+            --record "$STAGING_IDENTITY_RECORD" >/dev/null
+          artifact_sha=$(python3 -c \
+            'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["releaseId"])' \
+            "$STAGING_IDENTITY_RECORD")
+          if [ "$artifact_sha" != "$RELEASE_SHA" ]; then
+            echo "::error::Staging release artifact does not match the tested revision"
+            exit 1
+          fi
+
+      - name: Verify production promotion artifact integrity
+        env:
+          PRODUCTION_MANIFEST: ${{ runner.temp }}/production-promotion/production-release.yaml
+          PRODUCTION_RECORD: ${{ runner.temp }}/production-promotion-record.json
+        run: |
+          (cd "$(dirname "$PRODUCTION_MANIFEST")" && sha256sum --check production-release.yaml.sha256)
+          python3 scripts/smoke/release_state.py build-record \
+            --environment production-promotion \
+            --manifest "$PRODUCTION_MANIFEST" \
+            --record "$PRODUCTION_RECORD" >/dev/null
+          promotion_sha=$(python3 -c \
+            'import json, sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["releaseId"])' \
+            "$PRODUCTION_RECORD")
+          if [ "$promotion_sha" != "$RELEASE_SHA" ]; then
+            echo "::error::Production promotion manifest does not match the tested revision"
+            exit 1
+          fi
 
       - name: Reject a stale release
         run: |
@@ -396,6 +495,17 @@ jobs:
           path: ${{ env.RELEASE_RECORD }}
           if-no-files-found: error
           retention-days: 90
+
+      - name: Relay the staging-approved production release
+        if: ${{ steps.record.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: production-release-manifest
+          path: |
+            ${{ runner.temp }}/production-promotion/production-release.yaml
+            ${{ runner.temp }}/production-promotion/production-release.yaml.sha256
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Collect sanitized staging diagnostics
         if: ${{ always() && (failure() || steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') }}
