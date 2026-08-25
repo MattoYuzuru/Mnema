@@ -5,7 +5,7 @@ artifact:
   title: "Mnema delivery and production readiness audit"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-08-18"
+  updated_at: "2026-08-24"
   owners: ["project-owner"]
   evidence_revision: "8e0c83d"
   assumptions:
@@ -58,7 +58,7 @@ Target behavior:
 
 Use a separate non-cancelling deployment concurrency group or a reusable deployment workflow triggered after CI. Assign `environment: prod` to deployment jobs themselves so protection rules, approvals and history cover the mutation, not only image builds. GitHub documents environment protection and concurrency semantics in [Deployments and environments](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments) and [Control deployments](https://docs.github.com/en/actions/how-tos/deploy/configure-and-manage-deployments/control-deployments).
 
-Resolution update (2026-08-18, [#89](https://github.com/MattoYuzuru/Mnema/issues/89)): cancellable quality/build jobs now live in `Main CI`, while a reusable `Production Deploy` workflow is called only after every tested image has been built. The caller owns an independent `production-deploy` concurrency group with `cancel-in-progress: false`, so a newer CI run can cancel superseded build work but cannot cancel an active mutation. The single cluster-mutating job owns the `prod` environment record; build jobs no longer impersonate deployments. The reusable boundary receives the exact tested SHA from its same-commit caller and rejects that SHA if it is no longer current `main` before reading the kubeconfig or touching the cluster.
+Resolution update (2026-08-24, [#89](https://github.com/MattoYuzuru/Mnema/issues/89)): cancellable quality/build jobs live in `Main CI`. A successful run triggers the direct `Staging Deploy` workflow, which receives the tested SHA and artifacts through the bounded `workflow_run` event. Only after staging smoke and release-state recording succeed does it relay the checksummed production manifest to direct `Production Deploy`. Each triggered workflow has an unprivileged predecessor/artifact gate that fails the workflow for an unsuccessful, invalid or stale predecessor before Environment access; this avoids GitHub's successful conclusion for a workflow containing only skipped jobs. Staging owns a non-cancelling workflow group, while production applies non-cancelling concurrency only to its mutating job so stale preview approvals do not block a newer preview. Privileged jobs directly declare `staging` or `prod`, so Environment secrets are never copied through a reusable-workflow caller. Both staging and production artifacts are checksummed and bound to the exact predecessor SHA before credential access, then checked again inside the privileged path. The production mutation alone creates the production deployment record.
 
 GitHub reruns use the historical workflow definition, so the YAML guard cannot revoke historical authority by itself. This PR therefore has a strict **pre-merge** cutover: provision `prod/PROD_KUBECONFIG_B64`, confirm no legacy deploy is running, revoke both repository credentials used by rerunnable historical workflows (`KUBECONFIG_B64` and `AI_KUBECONFIG_B64`), and verify the environment name is present while both repository names are absent. Do not merge until those checks hold. Only after that revocation do historical workflow revisions fail before Kubernetes authentication; the merge then starts the first guarded deployment. Restoring either repository credential is not an allowed rollback.
 
