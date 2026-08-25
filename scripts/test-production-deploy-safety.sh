@@ -186,8 +186,11 @@ if printf '%s\n' "$rollback_smoke_step" | grep -Fq -- '--identity-only'; then
   exit 1
 fi
 legacy_rollback_smoke_step=$(sed -n '/name: Verify adopted legacy production rollback identity/,/name: Verify complete production rollback/p' "$DEPLOY")
-printf '%s\n' "$legacy_rollback_smoke_step" | grep -Fq "steps.rollback.outputs.authenticated_smoke_supported != 'true'"
+printf '%s\n' "$legacy_rollback_smoke_step" | grep -Fq "steps.rollback.outputs.authenticated_smoke_supported != 'true' && steps.rollback.outputs.identity_smoke_supported == 'true'"
 printf '%s\n' "$legacy_rollback_smoke_step" | grep -Fq -- '--identity-only'
+pre_identity_rollback_smoke_step=$(sed -n '/name: Verify pre-identity production rollback readiness/,/name: Verify complete production rollback/p' "$DEPLOY")
+printf '%s\n' "$pre_identity_rollback_smoke_step" | grep -Fq "steps.rollback.outputs.identity_smoke_supported != 'true'"
+printf '%s\n' "$pre_identity_rollback_smoke_step" | grep -Fq -- '--readiness-only'
 printf '%s\n' "$rollback_smoke_step" | grep -Fq "steps.rollback.outputs.authenticated_smoke_supported == 'true'"
 if grep -Fq 'steps.drift-guard.outputs.grafana_secret_resource_version' "$DEPLOY"; then
   echo 'Generic deploy must not pretend that a Grafana bootstrap password is rotatable' >&2

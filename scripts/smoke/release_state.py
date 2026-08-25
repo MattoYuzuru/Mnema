@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -29,6 +30,19 @@ STATE_CURRENT = "mnema-release-current"
 STATE_PREVIOUS = "mnema-release-previous"
 MAX_CONFIGMAP_PAYLOAD = 900_000
 AUTHENTICATED_SMOKE_VERSION = 1
+IDENTITY_SMOKE_VERSION = 0
+READINESS_SMOKE_VERSION = -1
+LIVE_RESOURCE_ANNOTATIONS_TO_DROP = {
+    "deployment.kubernetes.io/revision",
+    "kubectl.kubernetes.io/last-applied-configuration",
+}
+SERVICE_CLUSTER_FIELDS = {
+    "clusterIP",
+    "clusterIPs",
+    "healthCheckNodePort",
+    "ipFamilies",
+    "ipFamilyPolicy",
+}
 
 
 class StateFailure(RuntimeError):
@@ -193,6 +207,26 @@ class Kubectl:
             )
             self._run(["kubectl", "apply", "-f", "-"], input_text=rendered)
 
+    def create_state(self, name: str, manifest: str, record: dict[str, Any]) -> None:
+        record_text = json.dumps(record, indent=2, sort_keys=True) + "\n"
+        if len(manifest.encode()) + len(record_text.encode()) > MAX_CONFIGMAP_PAYLOAD:
+            raise StateFailure("release_state_too_large")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path = root / "manifest.yaml"
+            record_path = root / "record.json"
+            manifest_path.write_text(manifest, encoding="utf-8")
+            record_path.write_text(record_text, encoding="utf-8")
+            rendered = self._run(
+                [
+                    "kubectl", "-n", self.namespace, "create", "configmap", name,
+                    f"--from-file=manifest.yaml={manifest_path}",
+                    f"--from-file=record.json={record_path}",
+                    "--dry-run=client", "-o", "yaml",
+                ]
+            )
+            self._run(["kubectl", "create", "-f", "-"], input_text=rendered)
+
     def apply_manifest(self, manifest_path: Path) -> None:
         self._run(["kubectl", "apply", "--dry-run=server", "-f", str(manifest_path)])
         self._run(["kubectl", "apply", "-f", str(manifest_path)])
@@ -202,6 +236,32 @@ class Kubectl:
         command.extend(f"mnema-{service}" for service in SERVICES)
         command.extend(["--ignore-not-found=true", "-o", "name"])
         return bool(self._run(command).strip())
+
+    def get_resource(self, kind: str, name: str) -> dict[str, Any]:
+        output = self._run(["kubectl", "-n", self.namespace, "get", kind, name, "-o", "json"])
+        try:
+            value = json.loads(output)
+        except json.JSONDecodeError:
+            raise StateFailure("live_resource_json_invalid") from None
+        if not isinstance(value, dict):
+            raise StateFailure("live_resource_json_invalid")
+        return value
+
+    def get_pods(self, selector: str) -> list[dict[str, Any]]:
+        output = self._run(
+            ["kubectl", "-n", self.namespace, "get", "pods", "-l", selector, "-o", "json"]
+        )
+        try:
+            value = json.loads(output)
+        except json.JSONDecodeError:
+            raise StateFailure("live_pod_json_invalid") from None
+        items = value.get("items") if isinstance(value, dict) else None
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+            raise StateFailure("live_pod_json_invalid")
+        return items
+
+    def dry_run_manifest(self, manifest_path: Path) -> None:
+        self._run(["kubectl", "apply", "--dry-run=server", "-f", str(manifest_path)])
 
     def _run(self, command: list[str], input_text: str | None = None) -> str:
         result = subprocess.run(
@@ -260,14 +320,33 @@ class ReleaseStateManager:
         self.kubectl.persist(STATE_CURRENT, manifest, record)
         return str(record["releaseId"])
 
-    def rollback(self, manifest_path: Path, record_path: Path) -> tuple[str, bool]:
+    def seed_live(self, manifest_path: Path, record_path: Path) -> str:
+        manifest = manifest_path.read_text(encoding="utf-8")
+        record = read_record(record_path)
+        validate_record(manifest, record)
+        if (
+            record.get("environment") != "production"
+            or record.get("adopted") is not True
+            or record.get("authenticatedSmokeVersion") != READINESS_SMOKE_VERSION
+            or record.get("legacyReadinessOnly") is not True
+        ):
+            raise StateFailure("live_seed_record_invalid")
+        if any(
+            self.kubectl.get_configmap(name, required=False) is not None
+            for name in (STATE_CURRENT, STATE_PREVIOUS, "mnema-release")
+        ):
+            raise StateFailure("live_seed_already_initialized")
+        self.kubectl.create_state(STATE_CURRENT, manifest, record)
+        return str(record["releaseId"])
+
+    def rollback(self, manifest_path: Path, record_path: Path) -> tuple[str, int]:
         manifest = manifest_path.read_text(encoding="utf-8")
         record = read_record(record_path)
         validate_record(manifest, record)
         self.kubectl.apply_manifest(manifest_path)
         return (
             str(record["releaseId"]),
-            record["authenticatedSmokeVersion"] >= AUTHENTICATED_SMOKE_VERSION,
+            int(record["authenticatedSmokeVersion"]),
         )
 
     def _adopt_live(
@@ -302,6 +381,223 @@ class ReleaseStateManager:
             if live_data.get(f"{service}Image") != artifact_images[service]:
                 raise StateFailure("live_release_artifact_mismatch")
         return {"data": {"manifest.yaml": artifact.manifest, "record.json": json.dumps(record)}}
+
+
+class LiveReleaseCapture:
+    """Build a secret-free rollback baseline for a pre-release-state production deployment."""
+
+    def __init__(self, kubectl: Kubectl) -> None:
+        self.kubectl = kubectl
+
+    def capture(self, release_id: str, environment: str) -> tuple[str, dict[str, Any]]:
+        if (
+            environment != "production"
+            or self.kubectl.namespace != "prod"
+            or not SHA_PATTERN.fullmatch(release_id)
+        ):
+            raise StateFailure("live_capture_identity_invalid")
+        if (
+            self.kubectl.get_configmap(STATE_CURRENT, required=False) is not None
+            or self.kubectl.get_configmap(STATE_PREVIOUS, required=False) is not None
+            or self.kubectl.get_configmap("mnema-release", required=False) is not None
+        ):
+            raise StateFailure("live_capture_already_initialized")
+
+        resources: list[dict[str, Any]] = []
+        images: dict[str, str] = {}
+        for service in SERVICES:
+            name = f"mnema-{service}"
+            deployment = self.kubectl.get_resource("deployment", name)
+            pods = self.kubectl.get_pods(f"app={name}")
+            captured, image = capture_deployment(deployment, pods, service, release_id)
+            resources.append(captured)
+            images[service] = image
+            resources.append(sanitize_live_resource(self.kubectl.get_resource("service", name)))
+
+        for ingress in ("mnema", "mnema-auth"):
+            resources.append(sanitize_live_resource(self.kubectl.get_resource("ingress", ingress)))
+
+        manifest = render_live_manifest(release_id, images, resources, self.kubectl.namespace)
+        record = build_record(
+            manifest,
+            environment=environment,
+            deployed_at=utc_now(),
+            workflow_run_id=None,
+            adopted=True,
+        )
+        record = {
+            **record,
+            "authenticatedSmokeVersion": READINESS_SMOKE_VERSION,
+            "legacyReadinessOnly": True,
+        }
+        validate_record(manifest, record)
+        return manifest, record
+
+
+def capture_deployment(
+    deployment: dict[str, Any],
+    pods: list[dict[str, Any]],
+    service: str,
+    release_id: str,
+) -> tuple[dict[str, Any], str]:
+    name = f"mnema-{service}"
+    metadata = deployment.get("metadata", {})
+    spec = deployment.get("spec", {})
+    status = deployment.get("status", {})
+    replicas = spec.get("replicas", 1)
+    if (
+        metadata.get("name") != name
+        or not isinstance(replicas, int)
+        or replicas < 1
+        or status.get("observedGeneration") != metadata.get("generation")
+        or status.get("updatedReplicas") != replicas
+        or status.get("readyReplicas") != replicas
+        or status.get("availableReplicas") != replicas
+        or status.get("unavailableReplicas", 0) not in (0, None)
+    ):
+        raise StateFailure("live_deployment_not_stable")
+
+    active_pods = [pod for pod in pods if not pod.get("metadata", {}).get("deletionTimestamp")]
+    if len(active_pods) != replicas or any(not pod_is_ready(pod) for pod in active_pods):
+        raise StateFailure("live_deployment_pods_not_stable")
+
+    captured = sanitize_live_resource(deployment)
+    template_spec = captured.get("spec", {}).get("template", {}).get("spec", {})
+    app_image = ""
+    for spec_key, status_key in (
+        ("initContainers", "initContainerStatuses"),
+        ("containers", "containerStatuses"),
+    ):
+        containers = template_spec.get(spec_key, [])
+        if not isinstance(containers, list):
+            raise StateFailure("live_deployment_containers_invalid")
+        for container in containers:
+            if not isinstance(container, dict) or not isinstance(container.get("name"), str):
+                raise StateFailure("live_deployment_containers_invalid")
+            original_image = container.get("image")
+            runtime_image = one_runtime_image(active_pods, status_key, container["name"])
+            if not isinstance(original_image, str) or not image_repositories_match(
+                original_image, runtime_image
+            ):
+                raise StateFailure("live_runtime_image_repository_mismatch")
+            container["image"] = runtime_image
+            if spec_key == "containers" and container["name"] == service:
+                assert_release_identity(original_image, container, release_id, runtime_image)
+                app_image = runtime_image
+    if not app_image:
+        raise StateFailure("live_application_container_missing")
+    return captured, app_image
+
+
+def pod_is_ready(pod: dict[str, Any]) -> bool:
+    status = pod.get("status", {})
+    conditions = status.get("conditions", [])
+    return status.get("phase") == "Running" and any(
+        isinstance(condition, dict)
+        and condition.get("type") == "Ready"
+        and condition.get("status") == "True"
+        for condition in conditions
+    )
+
+
+def one_runtime_image(pods: list[dict[str, Any]], status_key: str, container_name: str) -> str:
+    images: set[str] = set()
+    for pod in pods:
+        statuses = pod.get("status", {}).get(status_key, [])
+        matches = [item for item in statuses if isinstance(item, dict) and item.get("name") == container_name]
+        if len(matches) != 1 or not matches[0].get("imageID"):
+            raise StateFailure("live_runtime_image_missing")
+        image = re.sub(r"^[a-z0-9+.-]+://", "", str(matches[0]["imageID"]))
+        if not DIGEST_REF_PATTERN.fullmatch(image):
+            raise StateFailure("live_runtime_image_not_immutable")
+        images.add(image)
+    if len(images) != 1:
+        raise StateFailure("live_runtime_image_mixed")
+    return next(iter(images))
+
+
+def image_repository(image: str) -> str:
+    without_digest = image.split("@", 1)[0]
+    slash = without_digest.rfind("/")
+    colon = without_digest.rfind(":")
+    return without_digest[:colon] if colon > slash else without_digest
+
+
+def image_repositories_match(original_image: str, runtime_image: str) -> bool:
+    original = image_repository(original_image)
+    runtime = image_repository(runtime_image)
+    return original == runtime or ("/" not in original and runtime.endswith(f"/{original}"))
+
+
+def assert_release_identity(
+    original_image: str,
+    container: dict[str, Any],
+    release_id: str,
+    runtime_image: str,
+) -> None:
+    tag = re.search(r":sha-([0-9a-f]{7,40})$", original_image)
+    if tag is not None:
+        if not release_id.startswith(tag.group(1)):
+            raise StateFailure("live_release_tag_mismatch")
+        return
+    if original_image != runtime_image:
+        raise StateFailure("live_release_identity_missing")
+    env = container.get("env", [])
+    build_ids = [
+        item.get("value")
+        for item in env
+        if isinstance(item, dict) and item.get("name") == "MNEMA_BUILD_ID"
+    ]
+    if build_ids != [release_id]:
+        raise StateFailure("live_release_identity_missing")
+
+
+def sanitize_live_resource(resource: dict[str, Any]) -> dict[str, Any]:
+    value = copy.deepcopy(resource)
+    metadata = value.get("metadata")
+    if not isinstance(metadata, dict) or not metadata.get("name") or not metadata.get("namespace"):
+        raise StateFailure("live_resource_identity_invalid")
+    for key in ("creationTimestamp", "generation", "managedFields", "resourceVersion", "selfLink", "uid"):
+        metadata.pop(key, None)
+    annotations = metadata.get("annotations")
+    if isinstance(annotations, dict):
+        for key in LIVE_RESOURCE_ANNOTATIONS_TO_DROP:
+            annotations.pop(key, None)
+        if not annotations:
+            metadata.pop("annotations", None)
+    value.pop("status", None)
+    if value.get("kind") == "Service":
+        service_spec = value.get("spec", {})
+        for key in SERVICE_CLUSTER_FIELDS:
+            service_spec.pop(key, None)
+    return value
+
+
+def render_live_manifest(
+    release_id: str,
+    images: dict[str, str],
+    resources: list[dict[str, Any]],
+    namespace: str,
+) -> str:
+    if set(images) != set(SERVICES):
+        raise StateFailure("live_release_images_incomplete")
+    lines = [
+        "apiVersion: v1",
+        "kind: ConfigMap",
+        "metadata:",
+        "  name: mnema-release",
+        f"  namespace: {namespace}",
+        "data:",
+        f'  releaseId: "{release_id}"',
+    ]
+    for service in SERVICES:
+        lines.append(f'  {service}Image: "{images[service]}"')
+    documents = ["\n".join(lines) + "\n"]
+    documents.extend(json.dumps(resource, indent=2, sort_keys=True) + "\n" for resource in resources)
+    manifest = "---\n".join(documents)
+    if len(manifest.encode()) > MAX_CONFIGMAP_PAYLOAD:
+        raise StateFailure("release_state_too_large")
+    return manifest
 
 
 def parse_manifest(manifest: str) -> tuple[str, dict[str, str]]:
@@ -360,10 +656,16 @@ def validate_record(manifest: str, record: dict[str, Any]) -> None:
     if not isinstance(record.get("knownRisks"), list) or not record["knownRisks"]:
         raise StateFailure("record_risks_missing")
     smoke_version = record.get("authenticatedSmokeVersion")
-    if smoke_version not in (0, AUTHENTICATED_SMOKE_VERSION):
+    if smoke_version not in (
+        READINESS_SMOKE_VERSION,
+        IDENTITY_SMOKE_VERSION,
+        AUTHENTICATED_SMOKE_VERSION,
+    ):
         raise StateFailure("record_smoke_capability_invalid")
-    if smoke_version == 0 and record.get("adopted") is not True:
+    if smoke_version < AUTHENTICATED_SMOKE_VERSION and record.get("adopted") is not True:
         raise StateFailure("record_smoke_capability_downgrade")
+    if smoke_version == READINESS_SMOKE_VERSION and record.get("legacyReadinessOnly") is not True:
+        raise StateFailure("record_readiness_capability_invalid")
 
 
 def create_broken_staging_manifest(manifest: str) -> tuple[str, str]:
@@ -435,10 +737,13 @@ def emit_result(
     release_id: str,
     status: str,
     authenticated_smoke_supported: bool | None = None,
+    identity_smoke_supported: bool | None = None,
 ) -> None:
     payload = {"releaseId": release_id, "status": status}
     if authenticated_smoke_supported is not None:
         payload["authenticatedSmokeSupported"] = authenticated_smoke_supported
+    if identity_smoke_supported is not None:
+        payload["identitySmokeSupported"] = identity_smoke_supported
     print(json.dumps(payload))
     github_output = os.environ.get("GITHUB_OUTPUT")
     if github_output:
@@ -450,13 +755,26 @@ def emit_result(
                     "authenticated_smoke_supported="
                     f"{'true' if authenticated_smoke_supported else 'false'}\n"
                 )
+            if identity_smoke_supported is not None:
+                output.write(
+                    "identity_smoke_supported="
+                    f"{'true' if identity_smoke_supported else 'false'}\n"
+                )
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=("build-record", "snapshot", "record", "rollback", "create-broken-staging"),
+        choices=(
+            "build-record",
+            "capture-live",
+            "seed-live",
+            "snapshot",
+            "record",
+            "rollback",
+            "create-broken-staging",
+        ),
     )
     parser.add_argument("--namespace")
     parser.add_argument("--environment")
@@ -468,6 +786,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--artifact-filename")
     parser.add_argument("--source-manifest", type=Path)
     parser.add_argument("--output-manifest", type=Path)
+    parser.add_argument("--release-id")
     parser.add_argument("--allow-empty", action="store_true")
     parser.add_argument("--repository", default=os.environ.get("GITHUB_REPOSITORY", ""))
     parser.add_argument("--workflow-run-id", default=os.environ.get("GITHUB_RUN_ID"))
@@ -505,8 +824,30 @@ def main() -> int:
             emit_result(release_id, "broken_staging_manifest_built")
             return 0
 
+        if args.command == "capture-live":
+            manifest_path = required(args.manifest, "manifest")
+            record_path = required(args.record, "record")
+            kubectl = Kubectl(required(args.namespace, "namespace"))
+            manifest, record = LiveReleaseCapture(kubectl).capture(
+                required(args.release_id, "release_id"),
+                required(args.environment, "environment"),
+            )
+            write_private(manifest_path, manifest)
+            write_private(record_path, json.dumps(record, indent=2, sort_keys=True) + "\n")
+            kubectl.dry_run_manifest(manifest_path)
+            emit_result(str(record["releaseId"]), "live_capture_ready", False)
+            return 0
+
         kubectl = Kubectl(required(args.namespace, "namespace"))
         artifact_client = None
+        if args.command == "seed-live":
+            manager = ReleaseStateManager(kubectl)
+            release_id = manager.seed_live(
+                required(args.manifest, "manifest"),
+                required(args.record, "record"),
+            )
+            emit_result(release_id, "live_state_seeded", False, False)
+            return 0
         if args.command == "snapshot":
             artifact_client = GitHubArtifactClient(
                 required(args.repository, "repository"),
@@ -542,12 +883,17 @@ def main() -> int:
             )
             status = "release_recorded"
         else:
-            release_id, authenticated_smoke_supported = manager.rollback(
+            release_id, smoke_version = manager.rollback(
                 required(args.rollback_manifest, "rollback_manifest"),
                 required(args.rollback_record, "rollback_record"),
             )
             status = "rollback_applied"
-            emit_result(release_id, status, authenticated_smoke_supported)
+            emit_result(
+                release_id,
+                status,
+                smoke_version >= AUTHENTICATED_SMOKE_VERSION,
+                smoke_version >= IDENTITY_SMOKE_VERSION,
+            )
             return 0
         emit_result(release_id, status)
         return 0

@@ -24,6 +24,7 @@ from urllib.request import Request, urlopen
 SERVICES = ("auth", "user", "core", "media", "import")
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 MAIN_BUNDLE_PATTERN = re.compile(r"(?:^|/)main\.[0-9a-f]+\.js$")
+READINESS_MAIN_BUNDLE_PATTERN = re.compile(r"(?:^|/)main(?:\.[0-9a-f]+)?\.js$")
 SMOKE_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
 
 
@@ -62,6 +63,7 @@ class SmokeConfig:
     report_path: Path
     force_failure_step: str | None = None
     identity_only: bool = False
+    readiness_only: bool = False
 
     def validate(self) -> None:
         if not SHA_PATTERN.fullmatch(self.expected_release_sha):
@@ -73,7 +75,9 @@ class SmokeConfig:
         for name, value in (("public URL", self.public_url), ("auth URL", self.auth_url)):
             if not value.startswith("https://"):
                 raise ValueError(f"{name} must use https")
-        if not self.identity_only:
+        if self.identity_only and self.readiness_only:
+            raise ValueError("identity-only and readiness-only modes are mutually exclusive")
+        if not self.identity_only and not self.readiness_only:
             for name, value in (
                 ("smoke login", self.login),
                 ("smoke password", self.password),
@@ -184,9 +188,13 @@ class ReleaseSmoke:
     def run(self) -> SmokeReport:
         failure: SmokeFailure | None = None
         try:
-            self.step("public_identity", "frontend", self.verify_public_identity)
-            self.step("service_identities", "release", self.verify_service_identities)
-            if not self.config.identity_only:
+            if self.config.readiness_only:
+                self.step("public_readiness", "frontend", self.verify_public_readiness)
+                self.step("service_readiness", "release", self.verify_service_readiness)
+            else:
+                self.step("public_identity", "frontend", self.verify_public_identity)
+                self.step("service_identities", "release", self.verify_service_identities)
+            if not self.config.identity_only and not self.config.readiness_only:
                 self.step("authentication", "auth", self.authenticate)
                 self.step("token_renewal", "auth", self.renew_token)
                 self.step("content_and_review", "core", self.exercise_content_and_review)
@@ -228,14 +236,7 @@ class ReleaseSmoke:
         print(f"smoke_step={name} service={service} status=passed duration_ms={duration}")
 
     def verify_public_identity(self) -> None:
-        html = self.client.request("GET", self.url("/"), service="frontend").decode("utf-8")
-        collector = ScriptCollector()
-        collector.feed(html)
-        main_sources = [source for source in collector.sources if MAIN_BUNDLE_PATTERN.search(source)]
-        if len(main_sources) != 1:
-            raise SmokeFailure("main_bundle_identity_missing", "frontend")
-        self.client.request("HEAD", urljoin(self.config.public_url + "/", main_sources[0]), service="frontend")
-
+        self.verify_public_reachability(MAIN_BUNDLE_PATTERN)
         runtime_config = self.client.request(
             "GET", self.url("/app-config.js"), service="frontend", max_body_bytes=131_072
         ).decode("utf-8")
@@ -243,6 +244,30 @@ class ReleaseSmoke:
             raise SmokeFailure("frontend_release_mismatch", "frontend")
         if not re.search(r'MNEMA_APP_CONFIG\.features\.aiEnabled\s*=\s*false\s*;', runtime_config):
             raise SmokeFailure("hosted_ai_not_disabled", "frontend")
+
+    def verify_public_readiness(self) -> None:
+        self.verify_public_reachability(READINESS_MAIN_BUNDLE_PATTERN)
+
+    def verify_public_reachability(self, bundle_pattern: re.Pattern[str]) -> list[str]:
+        html = self.client.request("GET", self.url("/"), service="frontend").decode("utf-8")
+        collector = ScriptCollector()
+        collector.feed(html)
+        main_sources = [source for source in collector.sources if bundle_pattern.search(source)]
+        if len(main_sources) != 1:
+            raise SmokeFailure("main_bundle_identity_missing", "frontend")
+        self.client.request("HEAD", urljoin(self.config.public_url + "/", main_sources[0]), service="frontend")
+        return main_sources
+
+    def verify_service_readiness(self) -> None:
+        endpoints = {
+            "auth": f"{self.config.auth_url.rstrip('/')}/actuator/health/readiness",
+            "user": self.url("/api/user/actuator/health/readiness"),
+            "core": self.url("/api/core/actuator/health/readiness"),
+            "media": self.url("/api/media/actuator/health/readiness"),
+            "import": self.url("/api/import/actuator/health/readiness"),
+        }
+        for service, endpoint in endpoints.items():
+            self.client.request("GET", endpoint, service=service, max_body_bytes=131_072)
 
     def verify_service_identities(self) -> None:
         endpoints = {
@@ -485,6 +510,7 @@ def parse_args() -> SmokeConfig:
     parser.add_argument("--request-timeout-seconds", type=int, default=15)
     parser.add_argument("--force-failure-step")
     parser.add_argument("--identity-only", action="store_true")
+    parser.add_argument("--readiness-only", action="store_true")
     args = parser.parse_args()
     config = SmokeConfig(
         environment=args.environment,
@@ -499,6 +525,7 @@ def parse_args() -> SmokeConfig:
         report_path=args.report,
         force_failure_step=args.force_failure_step,
         identity_only=args.identity_only,
+        readiness_only=args.readiness_only,
     )
     config.validate()
     return config
