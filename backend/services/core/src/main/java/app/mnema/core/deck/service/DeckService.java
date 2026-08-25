@@ -759,18 +759,20 @@ public class DeckService {
     }
 
     private int resolveTemplateVersion(UUID templateId, Integer templateVersion) {
-        if (templateVersion != null) {
-            return templateVersion;
-        }
         if (templateId == null) {
-            return 1;
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Template ID is required");
         }
-        Optional<CardTemplateEntity> templateOpt = cardTemplateRepository.findById(templateId);
-        if (templateOpt == null || templateOpt.isEmpty()) {
-            return 1;
+
+        CardTemplateEntity template = cardTemplateRepository.findById(templateId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Template not found"));
+        int latestVersion = template.getLatestVersion() != null ? template.getLatestVersion() : 1;
+        if (templateVersion == null) {
+            return latestVersion;
         }
-        Integer latestVersion = templateOpt.get().getLatestVersion();
-        return latestVersion != null ? latestVersion : 1;
+        if (templateVersion < 1 || templateVersion > latestVersion) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Template version not found");
+        }
+        return templateVersion;
     }
 
     private UserDeckEntity toUserDeckEntityForFork(UserDeckDTO userDeckDTO) {

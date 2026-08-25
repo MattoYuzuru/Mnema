@@ -1,9 +1,12 @@
 package app.mnema.core.deck.integration;
 
+import app.mnema.core.deck.domain.dto.CardTemplateDTO;
+import app.mnema.core.deck.domain.dto.FieldTemplateDTO;
 import app.mnema.core.deck.domain.dto.PublicDeckDTO;
 import app.mnema.core.deck.domain.dto.UserCardDTO;
 import app.mnema.core.deck.domain.dto.UserDeckDTO;
 import app.mnema.core.deck.domain.request.CreateCardRequest;
+import app.mnema.core.deck.domain.type.CardFieldType;
 import app.mnema.core.deck.domain.type.LanguageTag;
 import app.mnema.core.deck.domain.type.SrAlgorithm;
 import app.mnema.core.deck.repository.PublicDeckRepository;
@@ -11,6 +14,7 @@ import app.mnema.core.deck.repository.UserCardRepository;
 import app.mnema.core.deck.repository.UserDeckRepository;
 import app.mnema.core.deck.service.CardService;
 import app.mnema.core.deck.service.DeckService;
+import app.mnema.core.deck.service.TemplateService;
 import app.mnema.core.support.PostgresIntegrationTest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -24,6 +28,7 @@ import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -41,6 +46,9 @@ class DeckFlowIT extends PostgresIntegrationTest {
     CardService cardService;
 
     @Autowired
+    TemplateService templateService;
+
+    @Autowired
     UserDeckRepository userDeckRepository;
 
     @Autowired
@@ -54,51 +62,6 @@ class DeckFlowIT extends PostgresIntegrationTest {
 
     @Autowired
     JdbcTemplate jdbcTemplate;
-
-    /**
-     * Возвращает любой валидный template_id из card_templates.
-     * Если записей нет – создаёт минимально валидную запись.
-     */
-    private UUID anyTemplateId() {
-        UUID existing = null;
-        try {
-            existing = jdbcTemplate.query(
-                    "select template_id from card_templates limit 1",
-                    rs -> rs.next() ? (UUID) rs.getObject(1) : null
-            );
-        } catch (DataAccessException ignored) {
-            // если таблицы ещё нет или другая ошибка – создадим запись ниже
-        }
-        if (existing != null) {
-            ensureTemplateVersion(existing);
-            return existing;
-        }
-
-        UUID id = UUID.randomUUID();
-        UUID ownerId = UUID.randomUUID();
-        String name = "Integration template";
-
-        jdbcTemplate.update(
-                "insert into card_templates (template_id, owner_id, name) values (?, ?, ?)",
-                id, ownerId, name
-        );
-        ensureTemplateVersion(id);
-
-        return id;
-    }
-
-    private void ensureTemplateVersion(UUID templateId) {
-        UUID ownerId = jdbcTemplate.queryForObject(
-                "select owner_id from card_templates where template_id = ?",
-                UUID.class,
-                templateId
-        );
-        jdbcTemplate.update(
-                "insert into card_template_versions (template_id, version, created_by) values (?, 1, ?) on conflict do nothing",
-                templateId,
-                ownerId
-        );
-    }
 
     /**
      * Гарантирует, что в sr_algorithms есть запись для SrAlgorithm.fsrs_v6.
@@ -132,7 +95,32 @@ class DeckFlowIT extends PostgresIntegrationTest {
         // обеспечиваем наличие необходимых справочников
         ensureFsrsAlgorithmExists();
         UUID userId = UUID.randomUUID();
-        UUID templateId = anyTemplateId();
+        ObjectNode layout = objectMapper.createObjectNode();
+        layout.putArray("front").add("front");
+        layout.putArray("back").add("back");
+        CardTemplateDTO createdTemplate = templateService.createNewTemplate(
+                userId,
+                new CardTemplateDTO(
+                        null,
+                        null,
+                        null,
+                        null,
+                        "Integration template",
+                        "Disposable verification fixture",
+                        false,
+                        null,
+                        null,
+                        layout,
+                        null,
+                        null,
+                        List.of(
+                                new FieldTemplateDTO(null, null, "front", "Front", CardFieldType.text, true, true, 0, null, null),
+                                new FieldTemplateDTO(null, null, "back", "Back", CardFieldType.text, true, false, 0, null, null)
+                        )
+                ),
+                null
+        );
+        UUID templateId = createdTemplate.templateId();
 
         // 1. Создаём публичную + пользовательскую деку через сервис
         PublicDeckDTO deckRequest = new PublicDeckDTO(
@@ -144,7 +132,7 @@ class DeckFlowIT extends PostgresIntegrationTest {
                 null,                 // iconMediaId
                 null,                 // iconUrl
                 templateId,           // валидный FK в card_templates
-                1,                    // templateVersion
+                null,                 // latest templateVersion resolves server-side
                 true,                 // isPublic
                 true,                 // isListed
                 LanguageTag.en,

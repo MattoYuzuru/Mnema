@@ -234,6 +234,65 @@ class DeckServiceTest {
     }
 
     @Test
+    void createNewDeck_rejectsMissingTemplateBeforePersistence() {
+        UUID userId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> deckService.createNewDeck(userId, deckRequest(null, null)))
+                .isInstanceOfSatisfying(ResponseStatusException.class, error -> {
+                    assertThat(error.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+                    assertThat(error.getReason()).isEqualTo("Template ID is required");
+                });
+
+        verify(publicDeckRepository, never()).save(any(PublicDeckEntity.class));
+        verify(userDeckRepository, never()).save(any(UserDeckEntity.class));
+    }
+
+    @Test
+    void createNewDeck_rejectsUnknownTemplateBeforePersistence() {
+        UUID userId = UUID.randomUUID();
+        UUID templateId = UUID.randomUUID();
+        when(cardTemplateRepository.findById(templateId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> deckService.createNewDeck(userId, deckRequest(templateId, null)))
+                .isInstanceOfSatisfying(ResponseStatusException.class, error -> {
+                    assertThat(error.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+                    assertThat(error.getReason()).isEqualTo("Template not found");
+                });
+
+        verify(publicDeckRepository, never()).save(any(PublicDeckEntity.class));
+        verify(userDeckRepository, never()).save(any(UserDeckEntity.class));
+    }
+
+    @Test
+    void createNewDeck_rejectsUnknownTemplateVersionBeforePersistence() {
+        UUID userId = UUID.randomUUID();
+        UUID templateId = UUID.randomUUID();
+        when(cardTemplateRepository.findById(templateId))
+                .thenReturn(Optional.of(new CardTemplateEntity(
+                        templateId,
+                        userId,
+                        "Template",
+                        null,
+                        false,
+                        Instant.parse("2026-04-07T12:00:00Z"),
+                        null,
+                        null,
+                        null,
+                        null,
+                        2
+                )));
+
+        assertThatThrownBy(() -> deckService.createNewDeck(userId, deckRequest(templateId, 3)))
+                .isInstanceOfSatisfying(ResponseStatusException.class, error -> {
+                    assertThat(error.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+                    assertThat(error.getReason()).isEqualTo("Template version not found");
+                });
+
+        verify(publicDeckRepository, never()).save(any(PublicDeckEntity.class));
+        verify(userDeckRepository, never()).save(any(UserDeckEntity.class));
+    }
+
+    @Test
     void updateUserDeckMeta_retriesOnOptimisticLockAndUpdatesFields() {
         UUID userId = UUID.randomUUID();
         UUID deckId = UUID.randomUUID();
@@ -519,6 +578,28 @@ class DeckServiceTest {
         ArgumentCaptor<List<app.mnema.core.deck.domain.entity.UserCardEntity>> captor = ArgumentCaptor.forClass(List.class);
         verify(userCardRepository).saveAll(captor.capture());
         assertThat(captor.getValue()).singleElement().satisfies(card -> assertThat(card.getPublicCardId()).isEqualTo(activeCardId));
+    }
+
+    private PublicDeckDTO deckRequest(UUID templateId, Integer templateVersion) {
+        return new PublicDeckDTO(
+                null,
+                null,
+                null,
+                "Release verification deck",
+                "Description",
+                null,
+                null,
+                templateId,
+                templateVersion,
+                false,
+                false,
+                LanguageTag.en,
+                new String[]{"release-smoke"},
+                null,
+                null,
+                null,
+                null
+        );
     }
 
     private UserDeckEntity userDeck(UUID userDeckId,
