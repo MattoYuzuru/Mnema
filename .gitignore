@@ -77,6 +77,13 @@ frontend/node_modules
 !/scripts/test-production-telemetry-boundary.sh
 !/scripts/reconcile-kubernetes-secret-consumers.sh
 !/scripts/test-kubernetes-secret-consumer-reconciliation.sh
+!/scripts/test-backup-contract.sh
+!/scripts/test-backup-integration.sh
+!/scripts/create-recovery-kubeconfig.sh
+!/scripts/test-create-recovery-kubeconfig.sh
+!/scripts/apply-backup-platform.sh
+!/scripts/backup/
+!/scripts/backup/**
 !/scripts/smoke/
 !/scripts/smoke/**
 !/scripts/local-ai-gateway/

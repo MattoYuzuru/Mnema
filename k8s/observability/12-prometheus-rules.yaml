@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-rules
+  namespace: observability
+data:
+  mnema-recovery.yaml: |
+    groups:
+      - name: mnema-recovery
+        interval: 1m
+        rules:
+          - alert: MnemaPostgresPersistentVolumeFreeSpaceLow
+            expr: |
+              100 * min by (namespace, persistentvolumeclaim) (
+                kubelet_volume_stats_available_bytes{
+                  namespace="prod",
+                  persistentvolumeclaim="data-postgres-0"
+                }
+              )
+              /
+              min by (namespace, persistentvolumeclaim) (
+                kubelet_volume_stats_capacity_bytes{
+                  namespace="prod",
+                  persistentvolumeclaim="data-postgres-0"
+                }
+              ) < 20
+            for: 30m
+            labels:
+              severity: warning
+              owner: project-owner
+            annotations:
+              summary: Production PostgreSQL PVC has less than 20% free space
+              runbook_url: https://github.com/MattoYuzuru/Mnema/blob/main/docs/operations/database-recovery-runbook.md
+          - alert: MnemaPostgresPersistentVolumeFreeSpaceCritical
+            expr: |
+              100 * min by (namespace, persistentvolumeclaim) (
+                kubelet_volume_stats_available_bytes{
+                  namespace="prod",
+                  persistentvolumeclaim="data-postgres-0"
+                }
+              )
+              /
+              min by (namespace, persistentvolumeclaim) (
+                kubelet_volume_stats_capacity_bytes{
+                  namespace="prod",
+                  persistentvolumeclaim="data-postgres-0"
+                }
+              ) < 10
+            for: 10m
+            labels:
+              severity: critical
+              owner: project-owner
+            annotations:
+              summary: Production PostgreSQL PVC has less than 10% free space
+              runbook_url: https://github.com/MattoYuzuru/Mnema/blob/main/docs/operations/database-recovery-runbook.md
+          - alert: MnemaPostgresPersistentVolumeMetricsMissing
+            expr: |
+              absent(kubelet_volume_stats_capacity_bytes{
+                namespace="prod",
+                persistentvolumeclaim="data-postgres-0"
+              })
+            for: 30m
+            labels:
+              severity: warning
+              owner: project-owner
+            annotations:
+              summary: Production PostgreSQL PVC capacity metrics are missing
+              runbook_url: https://github.com/MattoYuzuru/Mnema/blob/main/docs/operations/database-recovery-runbook.md
+          - alert: MnemaPostgresBackupMissing
+            expr: |
+              absent(max(kube_job_status_completion_time{
+                namespace="prod",
+                job_name=~"mnema-postgres-backup-[0-9]+"
+              }))
+            for: 2h
+            labels:
+              severity: critical
+              owner: project-owner
+            annotations:
+              summary: No successful scheduled production PostgreSQL backup is visible
+              runbook_url: https://github.com/MattoYuzuru/Mnema/blob/main/docs/operations/database-recovery-runbook.md
+          - alert: MnemaPostgresBackupStale
+            expr: |
+              time() - max(kube_job_status_completion_time{
+                namespace="prod",
+                job_name=~"mnema-postgres-backup-[0-9]+"
+              }) > 7200
+            for: 15m
+            labels:
+              severity: critical
+              owner: project-owner
+            annotations:
+              summary: Latest successful scheduled production PostgreSQL backup is older than two hours
+              runbook_url: https://github.com/MattoYuzuru/Mnema/blob/main/docs/operations/database-recovery-runbook.md

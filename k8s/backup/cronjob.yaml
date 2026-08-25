@@ -1,0 +1,117 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: mnema-postgres-backup
+  namespace: prod
+  labels:
+    app.kubernetes.io/name: mnema-postgres-backup
+    app.kubernetes.io/part-of: mnema
+spec:
+  schedule: "17 * * * *"
+  timeZone: Etc/UTC
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 1800
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mnema-postgres-backup
+        app.kubernetes.io/part-of: mnema
+    spec:
+      activeDeadlineSeconds: 3600
+      backoffLimit: 0
+      ttlSecondsAfterFinished: 604800
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: mnema-postgres-backup
+            app.kubernetes.io/part-of: mnema
+        spec:
+          automountServiceAccountToken: false
+          restartPolicy: Never
+          securityContext:
+            fsGroup: 999
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: backup
+              image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+              command: ["/bin/sh", "/scripts/backup.sh"]
+              env:
+                - name: BACKUP_RUN_ID
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.uid
+                - name: PGHOST
+                  value: postgres.prod.svc.cluster.local
+                - name: PGPORT
+                  value: "5432"
+                - name: PGDATABASE
+                  valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_DB } }
+                - name: PGUSER
+                  valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_USER } }
+                - name: PGPASSWORD
+                  valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_PASSWORD } }
+              resources:
+                requests: { cpu: 100m, memory: 256Mi }
+                limits: { cpu: "1", memory: 1Gi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: ["ALL"] }
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 999
+                runAsGroup: 999
+              volumeMounts:
+                - { name: backup, mountPath: /backup }
+                - { name: scripts, mountPath: /scripts, readOnly: true }
+                - { name: temp, mountPath: /tmp }
+            - name: uploader
+              image: public.ecr.aws/aws-cli/aws-cli:2.36.25@sha256:d5b61bcb558149739b6d17410bdff21ec66518f3c921f0b8fc8ffa725f3f1b00
+              command: ["/bin/sh", "/scripts/upload.sh"]
+              env:
+                - name: AWS_ENDPOINT_URL
+                  valueFrom: { secretKeyRef: { name: mnema-backup-secrets, key: AWS_ENDPOINT_URL } }
+                - name: AWS_REGION
+                  valueFrom: { secretKeyRef: { name: mnema-backup-secrets, key: AWS_REGION } }
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom: { secretKeyRef: { name: mnema-backup-secrets, key: AWS_ACCESS_KEY_ID } }
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom: { secretKeyRef: { name: mnema-backup-secrets, key: AWS_SECRET_ACCESS_KEY } }
+                - name: S3_BUCKET
+                  valueFrom: { secretKeyRef: { name: mnema-backup-secrets, key: S3_BUCKET } }
+                - name: S3_PREFIX
+                  valueFrom: { secretKeyRef: { name: mnema-backup-secrets, key: S3_PREFIX } }
+                - name: RETENTION_POLICY_ID
+                  valueFrom: { secretKeyRef: { name: mnema-backup-secrets, key: RETENTION_POLICY_ID } }
+                - name: KMS_KEY_ID
+                  valueFrom: { secretKeyRef: { name: mnema-backup-secrets, key: KMS_KEY_ID } }
+                - name: UPDATE_LATEST_POINTER
+                  value: "true"
+              resources:
+                requests: { cpu: 50m, memory: 128Mi }
+                limits: { cpu: 500m, memory: 512Mi }
+              securityContext:
+                allowPrivilegeEscalation: false
+                capabilities: { drop: ["ALL"] }
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                runAsUser: 1000
+                runAsGroup: 999
+              volumeMounts:
+                - { name: backup, mountPath: /backup }
+                - { name: scripts, mountPath: /scripts, readOnly: true }
+                - { name: temp, mountPath: /tmp }
+          volumes:
+            - name: backup
+              emptyDir:
+                sizeLimit: 20Gi
+            - name: scripts
+              configMap:
+                name: mnema-backup-scripts
+                defaultMode: 0555
+            - name: temp
+              emptyDir:
+                sizeLimit: 256Mi
