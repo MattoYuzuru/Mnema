@@ -22,6 +22,31 @@ cleanup() {
 }
 trap cleanup EXIT HUP INT TERM
 
+wait_for_final_postgres() {
+  container=$1
+  username=$2
+  database=$3
+  label=$4
+  attempt=0
+
+  while true; do
+    pid_one=$(docker exec "$container" sh -c 'cat /proc/1/comm' 2>/dev/null || true)
+    if [ "$pid_one" = postgres ] && \
+      docker exec "$container" pg_isready --quiet --username="$username" --dbname="$database" && \
+      docker exec "$container" psql --username="$username" --dbname="$database" \
+        --tuples-only --no-align --command='SELECT 1' >/dev/null 2>&1; then
+      return 0
+    fi
+
+    attempt=$((attempt + 1))
+    if [ "$attempt" -ge 60 ]; then
+      echo "$label PostgreSQL did not reach its final ready server process" >&2
+      exit 1
+    fi
+    sleep 1
+  done
+}
+
 docker network create "$NETWORK" >/dev/null
 docker volume create "$BACKUP_VOLUME" >/dev/null
 docker volume create "$TARGET_VOLUME" >/dev/null
@@ -37,15 +62,7 @@ docker run --detach \
   --env POSTGRES_PASSWORD=integration-password \
   "$POSTGRES_16_IMAGE" >/dev/null
 
-attempt=0
-until docker exec "$SOURCE" pg_isready --quiet --username=mnema --dbname=mnema; do
-  attempt=$((attempt + 1))
-  if [ "$attempt" -ge 60 ]; then
-    echo 'Source PostgreSQL did not become ready' >&2
-    exit 1
-  fi
-  sleep 1
-done
+wait_for_final_postgres "$SOURCE" mnema mnema Source
 
 docker exec --interactive "$SOURCE" psql --username=mnema --dbname=mnema --set=ON_ERROR_STOP=1 <<'SQL' >/dev/null
 CREATE SCHEMA auth;
@@ -160,15 +177,7 @@ docker run --detach \
   --volume "$TARGET_VOLUME:/var/lib/postgresql" \
   "$POSTGRES_18_IMAGE" >/dev/null
 
-attempt=0
-until docker exec "$TARGET" pg_isready --quiet --username=mnema_restore --dbname=mnema_restore; do
-  attempt=$((attempt + 1))
-  if [ "$attempt" -ge 60 ]; then
-    echo 'Restore PostgreSQL did not become ready' >&2
-    exit 1
-  fi
-  sleep 1
-done
+wait_for_final_postgres "$TARGET" mnema_restore mnema_restore Restore
 
 docker run --rm \
   --user 999:999 \

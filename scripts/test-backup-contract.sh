@@ -11,6 +11,7 @@ RESTORE_BOUNDARY="$REPO_ROOT/k8s/backup/restore-boundary.yaml"
 RECOVERY_WORKFLOW="$REPO_ROOT/.github/workflows/database-recovery.yaml"
 PLATFORM_APPLY="$REPO_ROOT/scripts/apply-backup-platform.sh"
 PROMETHEUS_RULES="$REPO_ROOT/k8s/observability/12-prometheus-rules.yaml"
+INTEGRATION_TEST="$REPO_ROOT/scripts/test-backup-integration.sh"
 TEST_ROOT=$(mktemp -d "${TMPDIR:-/tmp}/mnema-backup-contract.XXXXXX")
 trap 'rm -rf "$TEST_ROOT"' EXIT HUP INT TERM
 
@@ -18,6 +19,12 @@ for script in backup.sh upload.sh download.sh restore.sh; do
   sh -n "$BACKUP_SCRIPTS/$script"
 done
 sh -n "$PLATFORM_APPLY"
+sh -n "$INTEGRATION_TEST"
+
+grep -Fq 'wait_for_final_postgres()' "$INTEGRATION_TEST"
+grep -Fq "cat /proc/1/comm" "$INTEGRATION_TEST"
+grep -Fq 'wait_for_final_postgres "$SOURCE" mnema mnema Source' "$INTEGRATION_TEST"
+grep -Fq 'wait_for_final_postgres "$TARGET" mnema_restore mnema_restore Restore' "$INTEGRATION_TEST"
 
 grep -Fq 'concurrencyPolicy: Forbid' "$CRONJOB"
 grep -Fq 'timeZone: Etc/UTC' "$CRONJOB"
