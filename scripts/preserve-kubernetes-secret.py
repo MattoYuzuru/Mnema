@@ -32,6 +32,10 @@ def read_live_secret(namespace: str, name: str) -> dict[str, object]:
         value = json.loads(result.stdout)
     except (OSError, subprocess.CalledProcessError, json.JSONDecodeError):
         raise SecretError("Unable to read the Kubernetes Secret") from None
+    if isinstance(value, dict) and "data" not in value:
+        # Kubernetes omits empty optional maps from the JSON representation.
+        # Keep the snapshot format explicit while accepting an empty bootstrap Secret.
+        value["data"] = {}
     validate_secret(value, namespace, name)
     return value
 

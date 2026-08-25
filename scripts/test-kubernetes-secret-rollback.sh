@@ -13,12 +13,18 @@ set -eu
 printf '%s\n' "$*" >>"$FAKE_KUBECTL_LOG"
 case "$*" in
   '-n prod get secret mnema-secrets -o json')
-    if [ "${FAKE_PHASE:-saved}" = saved ]; then
-      printf '%s\n' '{"apiVersion":"v1","kind":"Secret","metadata":{"name":"mnema-secrets","namespace":"prod","uid":"secret-uid","resourceVersion":"11","labels":{"owner":"mnema"},"annotations":{"mnema.app/generation":"saved"}},"type":"Opaque","data":{"TOKEN":"b2xk","SMOKE_LOGIN":"b2xkLWxvZ2lu","SMOKE_TURNSTILE_BYPASS_KEY":"b2xkLWtleQ=="}}'
-    else
-      printf '{"apiVersion":"v1","kind":"Secret","metadata":{"name":"mnema-secrets","namespace":"prod","uid":"%s","resourceVersion":"12","labels":{"owner":"mnema"},"annotations":{"mnema.app/generation":"candidate"}},"type":"Opaque","data":{"TOKEN":"%s","SMOKE_LOGIN":"Y2FuZGlkYXRlLWxvZ2lu","SMOKE_TURNSTILE_BYPASS_KEY":"Y2FuZGlkYXRlLWtleQ=="}}\n' \
-        "${FAKE_UID:-secret-uid}" "${FAKE_VALUE:-bmV3}"
-    fi
+    case "${FAKE_PHASE:-saved}" in
+      empty)
+        printf '%s\n' '{"apiVersion":"v1","kind":"Secret","metadata":{"name":"mnema-secrets","namespace":"prod","uid":"empty-secret-uid","resourceVersion":"10"},"type":"Opaque"}'
+        ;;
+      saved)
+        printf '%s\n' '{"apiVersion":"v1","kind":"Secret","metadata":{"name":"mnema-secrets","namespace":"prod","uid":"secret-uid","resourceVersion":"11","labels":{"owner":"mnema"},"annotations":{"mnema.app/generation":"saved"}},"type":"Opaque","data":{"TOKEN":"b2xk","SMOKE_LOGIN":"b2xkLWxvZ2lu","SMOKE_TURNSTILE_BYPASS_KEY":"b2xkLWtleQ=="}}'
+        ;;
+      *)
+        printf '{"apiVersion":"v1","kind":"Secret","metadata":{"name":"mnema-secrets","namespace":"prod","uid":"%s","resourceVersion":"12","labels":{"owner":"mnema"},"annotations":{"mnema.app/generation":"candidate"}},"type":"Opaque","data":{"TOKEN":"%s","SMOKE_LOGIN":"Y2FuZGlkYXRlLWxvZ2lu","SMOKE_TURNSTILE_BYPASS_KEY":"Y2FuZGlkYXRlLWtleQ=="}}\n' \
+          "${FAKE_UID:-secret-uid}" "${FAKE_VALUE:-bmV3}"
+        ;;
+    esac
     ;;
   'replace -f -')
     dd 2>/dev/null >"$FAKE_REPLACE_PAYLOAD"
@@ -27,6 +33,18 @@ case "$*" in
 esac
 EOF
 chmod +x "$TEST_ROOT/bin/kubectl" "$PRESERVE"
+
+empty_snapshot="$TEST_ROOT/empty-snapshot.json"
+PATH="$TEST_ROOT/bin:$PATH" FAKE_KUBECTL_LOG="$TEST_ROOT/kubectl.log" \
+  FAKE_PHASE=empty \
+  "$PRESERVE" snapshot prod mnema-secrets 10 "$empty_snapshot" >"$TEST_ROOT/empty-snapshot.out"
+python3 - "$empty_snapshot" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as source:
+    value = json.load(source)
+assert value["data"] == {}
+assert value["metadata"]["resourceVersion"] == "10"
+PY
 
 snapshot="$TEST_ROOT/snapshot.json"
 PATH="$TEST_ROOT/bin:$PATH" FAKE_KUBECTL_LOG="$TEST_ROOT/kubectl.log" \
