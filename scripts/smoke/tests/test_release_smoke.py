@@ -22,8 +22,11 @@ class FakeClient:
     def __init__(self, release_id: str) -> None:
         self.release_id = release_id
         self.login_count = 0
+        self.template_id = str(uuid.uuid4())
         self.deck_id = str(uuid.uuid4())
         self.card_id = str(uuid.uuid4())
+        self.template_body: dict[str, Any] | None = None
+        self.template_deleted = False
         self.archived = False
         self.hard_deleted = False
 
@@ -45,6 +48,11 @@ class FakeClient:
                 raise AssertionError("hard delete happened before archive")
             self.hard_deleted = True
             return b""
+        if method == "DELETE" and url.endswith(f"/templates/{self.template_id}"):
+            if self.archived and not self.hard_deleted:
+                raise AssertionError("template delete happened before deck hard delete")
+            self.template_deleted = True
+            return b""
         raise AssertionError(f"unexpected request {method} {url}")
 
     def json(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
@@ -57,7 +65,12 @@ class FakeClient:
                 "token_type": "Bearer",
                 "expires_in": 3600,
             }
+        if method == "POST" and url.endswith("/api/core/templates"):
+            self.template_body = kwargs.get("json_body")
+            return {"templateId": self.template_id, "version": 1}
         if method == "POST" and url.endswith("/api/core/decks"):
+            if kwargs.get("json_body", {}).get("templateId") != self.template_id:
+                raise AssertionError("deck was not linked to the disposable template")
             return {"userDeckId": self.deck_id}
         if method == "POST" and url.endswith(f"/decks/{self.deck_id}/cards"):
             return {"userCardId": self.card_id}
@@ -102,6 +115,13 @@ class BootstrapClient(FakeClient):
         return super().json(method, url, **kwargs)
 
 
+class DeckCreationFailureClient(FakeClient):
+    def json(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
+        if method == "POST" and url.endswith("/api/core/decks"):
+            raise release_smoke.SmokeFailure("unexpected_http_status", "core", "status=500")
+        return super().json(method, url, **kwargs)
+
+
 class ReleaseSmokeTest(unittest.TestCase):
     release_id = "a" * 40
 
@@ -129,8 +149,12 @@ class ReleaseSmokeTest(unittest.TestCase):
 
             self.assertEqual("passed", result.status)
             self.assertEqual(2, client.login_count)
+            self.assertTrue(client.template_deleted)
             self.assertTrue(client.archived)
             self.assertTrue(client.hard_deleted)
+            self.assertEqual(["front"], client.template_body["layout"]["front"])
+            self.assertEqual(["back"], client.template_body["layout"]["back"])
+            self.assertEqual(2, len(client.template_body["fields"]))
             persisted = json.loads(report.read_text())
             self.assertEqual("passed", persisted["status"])
             self.assertNotIn("mnema-smoke", report.read_text())
@@ -152,6 +176,21 @@ class ReleaseSmokeTest(unittest.TestCase):
             self.assertEqual("core", persisted["failed_service"])
             self.assertTrue(client.archived)
             self.assertTrue(client.hard_deleted)
+
+    def test_deck_creation_failure_still_removes_created_template(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "report.json"
+            client = DeckCreationFailureClient(self.release_id)
+
+            with self.assertRaises(release_smoke.SmokeFailure):
+                release_smoke.ReleaseSmoke(self.config(report), client).run()
+
+            self.assertTrue(client.template_deleted)
+            self.assertFalse(client.archived)
+            self.assertFalse(client.hard_deleted)
+            persisted = json.loads(report.read_text())
+            self.assertEqual("failed", persisted["status"])
+            self.assertEqual("core", persisted["failed_service"])
 
     def test_missing_smoke_account_is_registered_once_without_secret_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

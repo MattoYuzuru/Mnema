@@ -178,6 +178,7 @@ class ReleaseSmoke:
             started_at=utc_now(),
         )
         self.access_token: str | None = None
+        self.template_id: str | None = None
         self.deck_id: str | None = None
 
     def run(self) -> SmokeReport:
@@ -192,7 +193,7 @@ class ReleaseSmoke:
         except SmokeFailure as error:
             failure = error
         finally:
-            if self.deck_id is not None:
+            if self.deck_id is not None or self.template_id is not None:
                 try:
                     self.step("fixture_cleanup", "core", self.cleanup_fixture)
                 except SmokeFailure as cleanup_error:
@@ -308,6 +309,41 @@ class ReleaseSmoke:
 
     def exercise_content_and_review(self) -> None:
         fixture_id = uuid.uuid4().hex
+        template = self.client.json(
+            "POST",
+            self.url("/api/core/templates"),
+            headers=self.auth_headers(),
+            json_body={
+                "name": f"Release smoke template {fixture_id[:12]}",
+                "description": "Disposable release verification fixture",
+                "isPublic": False,
+                "layout": {"front": ["front"], "back": ["back"]},
+                "fields": [
+                    {
+                        "name": "front",
+                        "label": "Front",
+                        "fieldType": "text",
+                        "isRequired": True,
+                        "isOnFront": True,
+                        "orderIndex": 0,
+                        "defaultValue": None,
+                        "helpText": None,
+                    },
+                    {
+                        "name": "back",
+                        "label": "Back",
+                        "fieldType": "text",
+                        "isRequired": True,
+                        "isOnFront": False,
+                        "orderIndex": 0,
+                        "defaultValue": None,
+                        "helpText": None,
+                    },
+                ],
+            },
+            service="core",
+        )
+        self.template_id = required_uuid(template, "templateId", "template_id_missing")
         deck = self.client.json(
             "POST",
             self.url("/api/core/decks"),
@@ -315,7 +351,7 @@ class ReleaseSmoke:
             json_body={
                 "name": f"Release smoke {fixture_id[:12]}",
                 "description": "Disposable release verification fixture",
-                "templateVersion": 1,
+                "templateId": self.template_id,
                 "isPublic": False,
                 "isListed": False,
                 "language": "en",
@@ -365,24 +401,41 @@ class ReleaseSmoke:
             raise SmokeFailure("review_answer_mismatch", "core")
 
     def cleanup_fixture(self) -> None:
-        deck_id = self.deck_id
-        if deck_id is None:
-            return
-        self.client.request(
-            "DELETE",
-            self.url(f"/api/core/decks/{deck_id}"),
-            headers=self.auth_headers(),
-            expected_statuses=(204,),
-            service="core",
-        )
-        self.client.request(
-            "DELETE",
-            self.url(f"/api/core/decks/{deck_id}/hard"),
-            headers=self.auth_headers(),
-            expected_statuses=(204,),
-            service="core",
-        )
-        self.deck_id = None
+        failure: SmokeFailure | None = None
+        if self.deck_id is not None:
+            try:
+                self.client.request(
+                    "DELETE",
+                    self.url(f"/api/core/decks/{self.deck_id}"),
+                    headers=self.auth_headers(),
+                    expected_statuses=(204,),
+                    service="core",
+                )
+                self.client.request(
+                    "DELETE",
+                    self.url(f"/api/core/decks/{self.deck_id}/hard"),
+                    headers=self.auth_headers(),
+                    expected_statuses=(204,),
+                    service="core",
+                )
+                self.deck_id = None
+            except SmokeFailure as error:
+                failure = error
+
+        if self.template_id is not None:
+            try:
+                self.client.request(
+                    "DELETE",
+                    self.url(f"/api/core/templates/{self.template_id}"),
+                    headers=self.auth_headers(),
+                    service="core",
+                )
+                self.template_id = None
+            except SmokeFailure as error:
+                failure = failure or error
+
+        if failure is not None:
+            raise failure
 
     def auth_headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.require_token()}"}
