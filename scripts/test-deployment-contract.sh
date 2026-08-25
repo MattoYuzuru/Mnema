@@ -159,6 +159,12 @@ done
 
 grep -Fq -- '--allow-empty' "$STAGING_WORKFLOW"
 grep -Fq "steps.snapshot.outputs.previous_available == 'true'" "$STAGING_WORKFLOW"
+app_secret_restore_step=$(sed -n '/name: Restore the previous staging application Secret/,/name: Roll back failed staging candidate/p' "$STAGING_WORKFLOW")
+printf '%s\n' "$app_secret_restore_step" | grep -Fq "steps.snapshot.outputs.previous_available == 'true'"
+if printf '%s\n' "$app_secret_restore_step" | grep -Fq "steps.snapshot.outputs.previous_available != 'true'"; then
+  echo 'A failed first staging release must keep the initialized data-service Secret' >&2
+  exit 1
+fi
 grep -Fq 'name: Remove a failed first staging application candidate' "$STAGING_WORKFLOW"
 grep -Fq 'kubectl delete -f "$RELEASE_MANIFEST" --ignore-not-found=true --wait=true' "$STAGING_WORKFLOW"
 if grep -Fq -- '--allow-empty' "$PRODUCTION_WORKFLOW"; then
@@ -224,6 +230,12 @@ grep -Fq "mnema.app/bootstrap-state: uninitialized" "$BOOTSTRAP"
 grep -Fq "mnema.app/bootstrap-state: initialized" "$STAGING_WORKFLOW"
 grep -Fq "oldObject.metadata.annotations['mnema.app/bootstrap-state']" "$ADMISSION"
 grep -Fq 'resourceNames: ["mnema-secrets"]' "$BOOTSTRAP"
+grep -Fq 'retry() {' "$STAGING_BUCKET_JOB"
+grep -Fq "if [ \"\$attempts\" -ge 30 ]; then" "$STAGING_BUCKET_JOB"
+grep -Fq 'sleep 2' "$STAGING_BUCKET_JOB"
+grep -Fq 'retry mc alias set staging http://minio:9000' "$STAGING_BUCKET_JOB"
+grep -Fq "retry mc mb --ignore-existing \"staging/\$AWS_BUCKET_NAME\"" "$STAGING_BUCKET_JOB"
+"$SCRIPT_DIR/test-staging-minio-bucket-retry.sh"
 if grep -Fq 'resources: ["configmaps", "secrets", "services"]' "$BOOTSTRAP"; then
   echo 'Scoped staging CI must not have unrestricted Secret CRUD' >&2
   exit 1
