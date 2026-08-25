@@ -518,7 +518,7 @@ jobs:
 
       - name: Restore the previous staging application Secret
         id: app-secret-restore
-        if: ${{ always() && steps.app-secret-apply.outcome == 'success' && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') && (steps.snapshot.outputs.previous_available != 'true' || env.AUTO_ROLLBACK_ENABLED == 'true') }}
+        if: ${{ always() && steps.app-secret-apply.outcome == 'success' && steps.snapshot.outputs.previous_available == 'true' && env.AUTO_ROLLBACK_ENABLED == 'true' && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') }}
         env:
           AUTH_ISSUER: ${{ secrets.STAGING_AUTH_ISSUER }}
           AUTH_ISSUER_URI: ${{ secrets.STAGING_AUTH_ISSUER_URI }}

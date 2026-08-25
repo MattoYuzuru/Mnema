@@ -24,8 +24,19 @@ spec:
             - /bin/sh
             - -ec
             - |
-              mc alias set staging http://minio:9000 "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
-              mc mb --ignore-existing "staging/$AWS_BUCKET_NAME"
+              retry() {
+                attempts=0
+                until "$@"; do
+                  attempts=$((attempts + 1))
+                  if [ "$attempts" -ge 30 ]; then
+                    echo "MinIO bootstrap command did not become ready after 30 attempts" >&2
+                    return 1
+                  fi
+                  sleep 2
+                done
+              }
+              retry mc alias set staging http://minio:9000 "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY"
+              retry mc mb --ignore-existing "staging/$AWS_BUCKET_NAME"
           resources:
             requests: { cpu: 10m, memory: 32Mi }
             limits: { cpu: 250m, memory: 128Mi }
