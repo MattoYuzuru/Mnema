@@ -71,7 +71,57 @@ The same secret-free successful record is retained as a 90-day Actions artifact 
 
 On the first guarded deployment, no state ConfigMap exists yet. The workflow reads the live `mnema-release` identity, downloads the exact matching retained Actions artifact, verifies its checksum and all six live image references, then adopts it for the rollback snapshot without mutating cluster state before preview. Any missing artifact, mismatch or incomplete record fails before candidate application. The only exception is the first-ever staging release: it may proceed without a rollback target only when both `mnema-release` and every Mnema application Deployment are absent. A failed first candidate is deleted back to that empty application boundary; production never permits this bootstrap exception.
 
-The Secret snapshot exists only in a mode-`0600` runner file and is never uploaded as evidence. Restoration first proves that the Secret still has the same Kubernetes UID and exact candidate data, then uses the current `resourceVersion` for an atomic replacement; unexpected concurrent changes fail closed and prevent the old manifest from being applied. Staging also includes the snapshotted `resourceVersion` in candidate apply. `SMOKE_LOGIN` and `SMOKE_TURNSTILE_BYPASS_KEY` are delivery-control credentials, not release state: they deliberately remain at the current Environment version so the runner-only current password stays a consistent verification tuple. Every other application Secret key returns to its saved value. Rollback then verifies the saved manifest checksum, performs a server-side dry run, applies the complete manifest once, reconciles all Secret-consuming Deployments and waits for all six rollouts. Release records created by this mechanism declare authenticated-smoke capability v1 and must pass the full authenticated/content smoke after rollback. The single pre-capability release adopted during bootstrap declares capability v0 and may pass identity-only rollback verification because its auth binary cannot consume the smoke bypass header. Once a v1 release is recorded, missing or unknown capability is rejected rather than silently weakening verification. Rollback never reconstructs a release from mutable tags.
+An older production deployment can predate both release-state ConfigMaps and the
+`mnema-release` marker. Do not bypass `live_release_state_missing` or allow an empty
+production rollback target. Before moving its credential into the GitHub `prod`
+Environment, use the owner/admin context to capture the exact healthy legacy state:
+
+```bash
+capture_dir=$(mktemp -d /dev/shm/mnema-live-release.XXXXXX)
+chmod 700 "$capture_dir"
+KUBECONFIG=/path/to/admin.kubeconfig \
+  python3 scripts/smoke/release_state.py capture-live \
+    --namespace prod \
+    --environment production \
+    --release-id '<full SHA matching every live sha-* image tag>' \
+    --manifest "$capture_dir/manifest.yaml" \
+    --record "$capture_dir/record.json"
+```
+
+`capture-live` is read-only apart from Kubernetes server-side dry-run. It requires all
+six allowlisted Deployments to be fully observed/ready, every non-terminating Pod to
+agree on immutable runtime image digests, the live tag prefix to match the supplied
+full commit, all six Services and both application Ingresses to exist, and both release
+markers to still be absent. It strips runtime metadata and Service-assigned addresses,
+captures no Secret or arbitrary ConfigMap, and writes mode-`0600` files. Review the
+resource names, release SHA, digest references, record capability and manifest checksum;
+do not publish the manifest as an artifact because it is an operational rollback input.
+
+Persisting the capture is a separate production mutation that requires an exact owner
+confirmation immediately before it runs:
+
+```bash
+KUBECONFIG=/path/to/admin.kubeconfig \
+  python3 scripts/smoke/release_state.py seed-live \
+    --namespace prod \
+    --manifest "$capture_dir/manifest.yaml" \
+    --record "$capture_dir/record.json"
+kubectl --kubeconfig=/path/to/admin.kubeconfig -n prod \
+  get configmap mnema-release-current -o name
+```
+
+This atomically creates only `prod/mnema-release-current`; it fails if current, previous
+or live release markers appear after capture, never rotates or overwrites them, and does
+not apply the captured manifest or restart a workload. Delete the tmpfs capture after the ConfigMap read-back. The first
+guarded deployment then snapshots that digest-pinned baseline normally. A failed candidate
+may reapply it and verifies the public bundle plus all five backend readiness endpoints. This
+pre-identity capability is reserved for the one captured baseline: a marker-based adopted
+release still verifies build identity, and every release produced by the guarded workflow
+requires the full authenticated/content smoke. Never run this bootstrap path after either
+release marker exists, and never reconstruct the baseline from registry tags without matching
+the runtime digest evidence.
+
+The Secret snapshot exists only in a mode-`0600` runner file and is never uploaded as evidence. Restoration first proves that the Secret still has the same Kubernetes UID and exact candidate data, then uses the current `resourceVersion` for an atomic replacement; unexpected concurrent changes fail closed and prevent the old manifest from being applied. Staging also includes the snapshotted `resourceVersion` in candidate apply. `SMOKE_LOGIN` and `SMOKE_TURNSTILE_BYPASS_KEY` are delivery-control credentials, not release state: they deliberately remain at the current Environment version so the runner-only current password stays a consistent verification tuple. Every other application Secret key returns to its saved value. Rollback then verifies the saved manifest checksum, performs a server-side dry run, applies the complete manifest once, reconciles all Secret-consuming Deployments and waits for all six rollouts. Release records created by this mechanism declare authenticated-smoke capability v1 and must pass the full authenticated/content smoke after rollback. An artifact-adopted pre-capability release declares capability v0 and may pass identity-only rollback verification because its auth binary cannot consume the smoke bypass header. A captured release that predates build identity declares the explicit readiness-only capability `-1`. Once a v1 release is recorded, missing, unknown or unmarked downgraded capability is rejected rather than silently weakening verification. Rollback never reconstructs a release from mutable tags.
 
 Binary rollback is safe only across forward-compatible expand/contract database migrations. A release with a destructive schema migration must use a separately verified data restore or roll-forward plan; automatic binary rollback alone is not an acceptable recovery boundary.
 

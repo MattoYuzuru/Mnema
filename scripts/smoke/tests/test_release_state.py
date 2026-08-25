@@ -6,6 +6,7 @@ import json
 import sys
 import tempfile
 import unittest
+from argparse import Namespace
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -32,6 +33,92 @@ def manifest(release_id: str = "a" * 40) -> str:
     return "\n".join(lines) + "\n"
 
 
+def live_deployment(service: str, *, replicas: int = 1, release_prefix: str = "a" * 7) -> dict[str, Any]:
+    name = f"mnema-{service}"
+    containers = [{"name": service, "image": f"ghcr.io/mattoyuzuru/mnema/{service}:sha-{release_prefix}"}]
+    init_containers = [] if service == "frontend" else [{"name": "wait-for-postgres", "image": "postgres:18"}]
+    return {
+        "apiVersion": "apps/v1",
+        "kind": "Deployment",
+        "metadata": {
+            "name": name,
+            "namespace": "prod",
+            "generation": 3,
+            "resourceVersion": "123",
+            "uid": f"uid-{service}",
+            "annotations": {
+                "deployment.kubernetes.io/revision": "7",
+                "kubectl.kubernetes.io/last-applied-configuration": "not-for-rollback",
+            },
+        },
+        "spec": {
+            "replicas": replicas,
+            "selector": {"matchLabels": {"app": name}},
+            "template": {
+                "metadata": {"labels": {"app": name}},
+                "spec": {"initContainers": init_containers, "containers": containers},
+            },
+        },
+        "status": {
+            "observedGeneration": 3,
+            "replicas": replicas,
+            "updatedReplicas": replicas,
+            "readyReplicas": replicas,
+            "availableReplicas": replicas,
+        },
+    }
+
+
+def live_pod(service: str, replica: int = 0, *, digest: str | None = None) -> dict[str, Any]:
+    name = f"mnema-{service}"
+    app_digest = digest or format(release_state.SERVICES.index(service) + 1, "064x")
+    init_statuses = [] if service == "frontend" else [{
+        "name": "wait-for-postgres",
+        "imageID": "docker-pullable://docker.io/library/postgres@sha256:" + "f" * 64,
+    }]
+    return {
+        "metadata": {"name": f"{name}-{replica}", "namespace": "prod", "labels": {"app": name}},
+        "status": {
+            "phase": "Running",
+            "conditions": [{"type": "Ready", "status": "True"}],
+            "initContainerStatuses": init_statuses,
+            "containerStatuses": [{
+                "name": service,
+                "ready": True,
+                "imageID": f"ghcr.io/mattoyuzuru/mnema/{service}@sha256:{app_digest}",
+            }],
+        },
+    }
+
+
+def live_namespaced_resource(kind: str, name: str) -> dict[str, Any]:
+    api_version = "v1" if kind == "Service" else "networking.k8s.io/v1"
+    spec: dict[str, Any]
+    if kind == "Service":
+        spec = {
+            "clusterIP": "10.43.0.10",
+            "clusterIPs": ["10.43.0.10"],
+            "ipFamilies": ["IPv4"],
+            "ipFamilyPolicy": "SingleStack",
+            "selector": {"app": name},
+            "ports": [{"port": 80, "targetPort": 8080}],
+        }
+    else:
+        spec = {"rules": [{"host": "mnema.app", "http": {"paths": []}}]}
+    return {
+        "apiVersion": api_version,
+        "kind": kind,
+        "metadata": {
+            "name": name,
+            "namespace": "prod",
+            "resourceVersion": "456",
+            "uid": f"uid-{name}",
+        },
+        "spec": spec,
+        "status": {"loadBalancer": {}},
+    }
+
+
 class FakeKubectl:
     def __init__(
         self,
@@ -42,6 +129,7 @@ class FakeKubectl:
         self.configmaps = configmaps or {}
         self.applied: list[Path] = []
         self.application_deployments = application_deployments
+        self.created_states: list[str] = []
 
     def get_configmap(self, name: str, *, required: bool = True):
         value = self.configmaps.get(name)
@@ -56,6 +144,12 @@ class FakeKubectl:
                 "record.json": json.dumps(record),
             }
         }
+
+    def create_state(self, name: str, release_manifest: str, record: dict[str, Any]) -> None:
+        if name in self.configmaps:
+            raise release_state.StateFailure("kubectl_command_failed")
+        self.created_states.append(name)
+        self.persist(name, release_manifest, record)
 
     def apply_manifest(self, manifest_path: Path) -> None:
         self.applied.append(manifest_path)
@@ -72,7 +166,155 @@ class FakeArtifacts:
         return self.artifact
 
 
+class FakeLiveKubectl(FakeKubectl):
+    namespace = "prod"
+
+    def __init__(self, configmaps: dict[str, dict[str, Any]] | None = None) -> None:
+        super().__init__(configmaps)
+        self.deployments = {
+            service: live_deployment(service, replicas=2 if service == "frontend" else 1)
+            for service in release_state.SERVICES
+        }
+        self.pods = {
+            service: [live_pod(service, replica) for replica in range(2 if service == "frontend" else 1)]
+            for service in release_state.SERVICES
+        }
+
+    def get_resource(self, kind: str, name: str) -> dict[str, Any]:
+        if kind == "deployment":
+            return self.deployments[name.removeprefix("mnema-")]
+        if kind == "service":
+            return live_namespaced_resource("Service", name)
+        if kind == "ingress":
+            return live_namespaced_resource("Ingress", name)
+        raise AssertionError((kind, name))
+
+    def get_pods(self, selector: str) -> list[dict[str, Any]]:
+        return self.pods[selector.removeprefix("app=mnema-")]
+
+
 class ReleaseStateTest(unittest.TestCase):
+    def test_capture_live_builds_secret_free_digest_pinned_legacy_baseline(self) -> None:
+        captured, record = release_state.LiveReleaseCapture(FakeLiveKubectl()).capture(
+            "a" * 40,
+            "production",
+        )
+
+        release_id, images = release_state.parse_manifest(captured)
+        self.assertEqual("a" * 40, release_id)
+        self.assertEqual(set(release_state.SERVICES), set(images))
+        self.assertTrue(record["adopted"])
+        self.assertEqual(release_state.READINESS_SMOKE_VERSION, record["authenticatedSmokeVersion"])
+        self.assertTrue(record["legacyReadinessOnly"])
+        release_state.validate_record(captured, record)
+        self.assertNotIn("resourceVersion", captured)
+        self.assertNotIn('"status"', captured)
+        self.assertNotIn("last-applied-configuration", captured)
+        self.assertNotIn('"clusterIP"', captured)
+        self.assertNotIn("Secret", captured)
+        for service, image in images.items():
+            self.assertIn(f'"image": "{image}"', captured)
+            self.assertIn(f'  {service}Image: "{image}"', captured)
+
+    def test_capture_live_rejects_existing_release_state(self) -> None:
+        for existing in (
+            release_state.STATE_CURRENT,
+            release_state.STATE_PREVIOUS,
+            "mnema-release",
+        ):
+            kubectl = FakeLiveKubectl({existing: {"data": {}}})
+            with self.assertRaisesRegex(release_state.StateFailure, "live_capture_already_initialized"):
+                release_state.LiveReleaseCapture(kubectl).capture("a" * 40, "production")
+
+    def test_capture_live_is_fixed_to_the_production_namespace(self) -> None:
+        kubectl = FakeLiveKubectl()
+        kubectl.namespace = "mnema-staging"
+        with self.assertRaisesRegex(release_state.StateFailure, "live_capture_identity_invalid"):
+            release_state.LiveReleaseCapture(kubectl).capture("a" * 40, "production")
+
+    def test_capture_live_rejects_tag_or_runtime_digest_disagreement(self) -> None:
+        kubectl = FakeLiveKubectl()
+        kubectl.deployments["auth"]["spec"]["template"]["spec"]["containers"][0]["image"] = (
+            "ghcr.io/mattoyuzuru/mnema/auth:sha-bbbbbbb"
+        )
+        with self.assertRaisesRegex(release_state.StateFailure, "live_release_tag_mismatch"):
+            release_state.LiveReleaseCapture(kubectl).capture("a" * 40, "production")
+
+        kubectl = FakeLiveKubectl()
+        kubectl.pods["frontend"][1] = live_pod("frontend", 1, digest="e" * 64)
+        with self.assertRaisesRegex(release_state.StateFailure, "live_runtime_image_mixed"):
+            release_state.LiveReleaseCapture(kubectl).capture("a" * 40, "production")
+
+    def test_capture_live_rejects_unready_workload(self) -> None:
+        kubectl = FakeLiveKubectl()
+        kubectl.pods["core"][0]["status"]["conditions"][0]["status"] = "False"
+        with self.assertRaisesRegex(release_state.StateFailure, "live_deployment_pods_not_stable"):
+            release_state.LiveReleaseCapture(kubectl).capture("a" * 40, "production")
+
+    def test_seed_live_is_create_only_and_preserves_the_capture_record(self) -> None:
+        captured, record = release_state.LiveReleaseCapture(FakeLiveKubectl()).capture(
+            "a" * 40,
+            "production",
+        )
+        kubectl = FakeLiveKubectl()
+        manager = release_state.ReleaseStateManager(kubectl)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path = root / "captured.yaml"
+            record_path = root / "captured.json"
+            manifest_path.write_text(captured)
+            record_path.write_text(json.dumps(record))
+
+            release_id = manager.seed_live(manifest_path, record_path)
+
+        self.assertEqual("a" * 40, release_id)
+        self.assertEqual([release_state.STATE_CURRENT], kubectl.created_states)
+        _, persisted = release_state.state_from_configmap(kubectl.configmaps[release_state.STATE_CURRENT])
+        self.assertEqual(record, persisted)
+        self.assertNotIn(release_state.STATE_PREVIOUS, kubectl.configmaps)
+
+    def test_seed_live_cli_initializes_the_manager_before_use(self) -> None:
+        args = Namespace(
+            command="seed-live",
+            namespace="prod",
+            manifest=Path("captured.yaml"),
+            record=Path("captured.json"),
+        )
+        kubectl = MagicMock()
+        manager = MagicMock()
+        manager.seed_live.return_value = "a" * 40
+
+        with (
+            patch.object(release_state, "parse_args", return_value=args),
+            patch.object(release_state, "Kubectl", return_value=kubectl),
+            patch.object(release_state, "ReleaseStateManager", return_value=manager) as manager_type,
+            patch.object(release_state, "emit_result") as emit_result,
+        ):
+            self.assertEqual(0, release_state.main())
+
+        manager_type.assert_called_once_with(kubectl)
+        manager.seed_live.assert_called_once_with(Path("captured.yaml"), Path("captured.json"))
+        emit_result.assert_called_once_with("a" * 40, "live_state_seeded", False, False)
+
+    def test_seed_live_refuses_any_existing_release_marker(self) -> None:
+        captured, record = release_state.LiveReleaseCapture(FakeLiveKubectl()).capture(
+            "a" * 40,
+            "production",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest_path = root / "captured.yaml"
+            record_path = root / "captured.json"
+            manifest_path.write_text(captured)
+            record_path.write_text(json.dumps(record))
+            for existing in (release_state.STATE_CURRENT, release_state.STATE_PREVIOUS, "mnema-release"):
+                kubectl = FakeLiveKubectl({existing: {"data": {}}})
+                with self.assertRaisesRegex(
+                    release_state.StateFailure,
+                    "live_seed_already_initialized",
+                ):
+                    release_state.ReleaseStateManager(kubectl).seed_live(manifest_path, record_path)
+
     def test_artifact_lookup_requires_exact_release_sha(self) -> None:
         client = release_state.GitHubArtifactClient("MattoYuzuru/Mnema", "token")
         payload = {
@@ -303,12 +545,12 @@ class ReleaseStateTest(unittest.TestCase):
             record_path = root / "rollback.json"
             manifest_path.write_text(content)
             record_path.write_text(json.dumps(adopted))
-            release_id, authenticated = manager.rollback(manifest_path, record_path)
+            release_id, smoke_version = manager.rollback(manifest_path, record_path)
             self.assertEqual("a" * 40, release_id)
-            self.assertFalse(authenticated)
+            self.assertEqual(release_state.IDENTITY_SMOKE_VERSION, smoke_version)
             record_path.write_text(json.dumps(capable))
-            _, authenticated = manager.rollback(manifest_path, record_path)
-            self.assertTrue(authenticated)
+            _, smoke_version = manager.rollback(manifest_path, record_path)
+            self.assertEqual(release_state.AUTHENTICATED_SMOKE_VERSION, smoke_version)
 
     def test_non_adopted_record_cannot_downgrade_smoke_capability(self) -> None:
         content = manifest()
@@ -323,6 +565,34 @@ class ReleaseStateTest(unittest.TestCase):
         with self.assertRaisesRegex(
             release_state.StateFailure,
             "record_smoke_capability_downgrade",
+        ):
+            release_state.validate_record(content, record)
+
+        record = {
+            **record,
+            "authenticatedSmokeVersion": release_state.READINESS_SMOKE_VERSION,
+            "legacyReadinessOnly": True,
+        }
+        with self.assertRaisesRegex(
+            release_state.StateFailure,
+            "record_smoke_capability_downgrade",
+        ):
+            release_state.validate_record(content, record)
+
+    def test_readiness_capability_requires_explicit_legacy_marker(self) -> None:
+        content = manifest()
+        record = release_state.build_record(
+            content,
+            environment="prod",
+            deployed_at="2026-08-19T00:00:00Z",
+            workflow_run_id=None,
+            adopted=True,
+        )
+        record["authenticatedSmokeVersion"] = release_state.READINESS_SMOKE_VERSION
+
+        with self.assertRaisesRegex(
+            release_state.StateFailure,
+            "record_readiness_capability_invalid",
         ):
             release_state.validate_record(content, record)
 

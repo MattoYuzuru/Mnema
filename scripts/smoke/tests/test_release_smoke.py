@@ -40,6 +40,8 @@ class FakeClient:
                 f'window.MNEMA_APP_CONFIG.buildId = "{self.release_id}";\n'
                 'window.MNEMA_APP_CONFIG.features.aiEnabled = false;\n'
             ).encode()
+        if url.endswith("/actuator/health/readiness"):
+            return b'{"status":"UP"}'
         if method == "DELETE" and url.endswith(f"/decks/{self.deck_id}"):
             self.archived = True
             return b""
@@ -262,6 +264,37 @@ class ReleaseSmokeTest(unittest.TestCase):
             release_smoke.ReleaseSmoke(config, client).run()
 
             self.assertEqual(0, client.login_count)
+
+    def test_readiness_only_supports_a_pre_identity_rollback_without_credentials(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "report.json"
+            config = self.config(
+                report,
+                login="",
+                password="",
+                turnstile_bypass_key="",
+                readiness_only=True,
+            )
+            config.validate()
+            client = FakeClient(self.release_id)
+
+            result = release_smoke.ReleaseSmoke(config, client).run()
+
+            self.assertEqual("passed", result.status)
+            self.assertEqual(0, client.login_count)
+            self.assertEqual(
+                ["public_readiness", "service_readiness"],
+                [step.name for step in result.steps],
+            )
+
+    def test_readiness_only_and_identity_only_are_mutually_exclusive(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises(ValueError):
+                self.config(
+                    Path(directory) / "report.json",
+                    identity_only=True,
+                    readiness_only=True,
+                ).validate()
 
     def test_configuration_rejects_non_https_and_weak_bypass_key(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
