@@ -313,7 +313,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           printf 'Production Secret drift: %s\n' "$secret_drift"
 
-      - name: Capture complete application release preview
+      - name: Capture complete production deployment preview
         id: preview
         env:
           SECRET_DRIFT: ${{ steps.secret-preview.outputs.secret_drift }}
@@ -327,12 +327,12 @@ jobs:
           release_manifest_sha256=$(awk '{print $1}' production-release.yaml.sha256)
           kubectl_version=$(kubectl version --client -o json | \
             jq -r '.clientVersion.gitVersion')
-          if grep -Fxq 'No application release changes.' "$RELEASE_DIFF"; then
-            application_release_changes=false
+          if grep -Fxq 'No production resource changes.' "$RELEASE_DIFF"; then
+            production_resource_changes=false
           else
-            application_release_changes=true
+            production_resource_changes=true
           fi
-          if [ "$application_release_changes" = true ] || [ "$SECRET_DRIFT" = true ]; then
+          if [ "$production_resource_changes" = true ] || [ "$SECRET_DRIFT" = true ]; then
             has_release_changes=true
           else
             has_release_changes=false
@@ -342,7 +342,7 @@ jobs:
           release_sha=${RELEASE_SHA}
           release_manifest_sha256=${release_manifest_sha256}
           release_diff_sha256=${release_diff_sha256}
-          application_release_changes=${application_release_changes}
+          production_resource_changes=${production_resource_changes}
           secret_drift=${SECRET_DRIFT}
           secret_snapshot_hmac=${SECRET_SNAPSHOT_HMAC}
           live_secret_snapshot_hmac=${LIVE_SECRET_SNAPSHOT_HMAC}
@@ -922,6 +922,7 @@ jobs:
         id: observability
         continue-on-error: true
         run: |
+          kubectl -n observability rollout status statefulset/prometheus --timeout=600s
           kubectl -n observability rollout status daemonset/alloy --timeout=600s
           kubectl -n observability rollout status deployment/grafana --timeout=600s
 

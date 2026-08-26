@@ -92,4 +92,25 @@ require_metadata kubectl_version "$expected_kubectl_version"
 require_metadata run_id "$expected_run_id"
 require_metadata run_attempt "$expected_run_attempt"
 
+production_resource_changes=$(metadata_value production_resource_changes) || {
+  echo "Approved production preview metadata must contain exactly one production_resource_changes" >&2
+  exit 1
+}
+case "$production_resource_changes" in
+  true | false) ;;
+  *)
+    echo "Approved production preview has an invalid production resource change state" >&2
+    exit 1
+    ;;
+esac
+if [ "$production_resource_changes" = true ] || [ "$expected_secret_drift" = true ]; then
+  derived_has_changes=true
+else
+  derived_has_changes=false
+fi
+if [ "$derived_has_changes" != "$expected_has_changes" ]; then
+  echo "Approved production preview change summary is inconsistent" >&2
+  exit 1
+fi
+
 printf 'approved_release_preview=ok\n'
