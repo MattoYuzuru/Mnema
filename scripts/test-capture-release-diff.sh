@@ -12,12 +12,45 @@ cat >"$TEST_ROOT/bin/kubectl" <<'EOF'
 #!/bin/sh
 set -eu
 
+namespace=
+if [ "${1:-}" = -n ]; then
+  namespace=$2
+  shift 2
+fi
+
 case "$1" in
+  create)
+    if [ "$namespace" != observability ] || [ "${2:-}" != configmap ] || \
+       [ "${3:-}" != grafana-dashboards ]; then
+      echo 'capture must render the exact Grafana dashboards ConfigMap' >&2
+      exit 65
+    fi
+    printf '%s\n' \
+      'apiVersion: v1' \
+      'kind: ConfigMap' \
+      'metadata:' \
+      '  name: grafana-dashboards' \
+      '  namespace: observability'
+    ;;
   apply)
     if [ "${2:-}" != '--dry-run=server' ] || [ "${3:-}" != '-f' ]; then
       echo 'capture must perform a server-side dry run before diffing' >&2
       exit 65
     fi
+    for required in \
+      k8s/namespace.yaml \
+      k8s/cluster-issuers.yaml \
+      k8s/postgres.yaml \
+      k8s/redis.yaml \
+      k8s/observability \
+      grafana-dashboards.yaml \
+      release.yaml
+    do
+      if ! printf '%s\n' "$*" | grep -Fq "$required"; then
+        echo "production plan omitted $required" >&2
+        exit 65
+      fi
+    done
     exit "${FAKE_DRY_RUN_STATUS:-0}"
     ;;
   diff)
@@ -34,6 +67,22 @@ case "$1" in
     fi
     exit "${FAKE_DIFF_STATUS:-0}"
     ;;
+  get)
+    if [ "${FAKE_GET_STATUS:-0}" -ne 0 ]; then
+      exit "$FAKE_GET_STATUS"
+    fi
+    case "${2:-}" in
+      service)
+        printf '%s' "${FAKE_LEGACY_SERVICE:-}"
+        ;;
+      endpointslice)
+        printf '%s' "${FAKE_LEGACY_SLICES:-}"
+        ;;
+      *)
+        exit 64
+        ;;
+    esac
+    ;;
   *)
     exit 64
     ;;
@@ -45,18 +94,31 @@ manifest="$TEST_ROOT/release.yaml"
 diff_file="$TEST_ROOT/release.diff"
 printf '%s\n' 'apiVersion: v1' >"$manifest"
 
-expected_no_change=$(printf 'No application release changes.\n' | sha256sum | awk '{print $1}')
+expected_no_change=$(printf 'No production resource changes.\n' | sha256sum | awk '{print $1}')
 actual_no_change=$(PATH="$TEST_ROOT/bin:$PATH" FAKE_DIFF_STATUS=0 \
   "$CAPTURE" "$manifest" "$diff_file")
 test "$actual_no_change" = "$expected_no_change"
-grep -Fxq 'No application release changes.' "$diff_file"
+grep -Fxq 'No production resource changes.' "$diff_file"
 
-expected_change=$(printf '%s\n' 'sanitized-release-diff' | sha256sum | awk '{print $1}')
+cat >"$TEST_ROOT/expected-change.diff" <<'EOF'
+Production declarative resource diff:
+sanitized-release-diff
+
+Planned legacy resource removals:
+None.
+EOF
+expected_change=$(sha256sum "$TEST_ROOT/expected-change.diff" | awk '{print $1}')
 actual_change=$(PATH="$TEST_ROOT/bin:$PATH" FAKE_DIFF_STATUS=1 \
   FAKE_DIFF_BODY='sanitized-release-diff' \
   "$CAPTURE" "$manifest" "$diff_file")
 test "$actual_change" = "$expected_change"
-grep -Fxq 'sanitized-release-diff' "$diff_file"
+cmp "$TEST_ROOT/expected-change.diff" "$diff_file"
+
+legacy_change=$(PATH="$TEST_ROOT/bin:$PATH" FAKE_DIFF_STATUS=0 \
+  FAKE_LEGACY_SERVICE='service/mnema-ai-bridge' \
+  "$CAPTURE" "$manifest" "$diff_file")
+test "$legacy_change" = "$(sha256sum "$diff_file" | awk '{print $1}')"
+grep -Fxq -- '- service/mnema-ai-bridge' "$diff_file"
 
 mkdir -p \
   "$TEST_ROOT/first-live/apps.v1.Deployment.prod.mnema-auth" \
@@ -110,7 +172,7 @@ cat >"$TEST_ROOT/production-release-preview.txt" <<EOF
 release_sha=dddddddddddddddddddddddddddddddddddddddd
 release_manifest_sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 release_diff_sha256=${first_tree_hash}
-application_release_changes=true
+production_resource_changes=true
 secret_drift=false
 secret_snapshot_hmac=eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
 live_secret_snapshot_hmac=ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
@@ -185,6 +247,12 @@ fi
 if PATH="$TEST_ROOT/bin:$PATH" FAKE_DRY_RUN_STATUS=1 \
   "$CAPTURE" "$manifest" "$diff_file" >/dev/null 2>&1; then
   echo 'server-side dry-run errors must fail the preview' >&2
+  exit 1
+fi
+
+if PATH="$TEST_ROOT/bin:$PATH" FAKE_GET_STATUS=1 \
+  "$CAPTURE" "$manifest" "$diff_file" >/dev/null 2>&1; then
+  echo 'legacy removal inventory failures must fail the preview' >&2
   exit 1
 fi
 

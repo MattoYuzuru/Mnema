@@ -30,9 +30,10 @@ grep -Fq 'live_secret_snapshot_hmac: ${{ steps.secret-preview.outputs.live_secre
 grep -Fq 'app_secret_generation: ${{ steps.secret-preview.outputs.app_secret_generation }}' "$DEPLOY"
 grep -Fq 'grafana_secret_generation: ${{ steps.secret-preview.outputs.grafana_secret_generation }}' "$DEPLOY"
 # shellcheck disable=SC2016 # Workflow variables are literal contract markers.
-grep -Fq 'if [ "$application_release_changes" = true ] || [ "$SECRET_DRIFT" = true ]; then' "$DEPLOY"
+grep -Fq 'if [ "$production_resource_changes" = true ] || [ "$SECRET_DRIFT" = true ]; then' "$DEPLOY"
 # shellcheck disable=SC2016 # Workflow variables are literal contract markers.
 grep -Fq 'secret_drift=${SECRET_DRIFT}' "$DEPLOY"
+grep -Fq 'production_resource_changes=${production_resource_changes}' "$DEPLOY"
 grep -Fq 'Production Secret drift state changed after approval' "$DEPLOY"
 grep -Fq 'Desired production Secret snapshot changed after approval' "$DEPLOY"
 grep -Fq 'Live production Secret or reconciliation state changed after approval' "$DEPLOY"
@@ -164,6 +165,10 @@ if [ "$apply_release_line" -ge "$restart_consumers_line" ] || \
   echo 'Secret reconciliation must be recorded only after every consumer rollout succeeds' >&2
   exit 1
 fi
+observability_step=$(sed -n '/name: Verify observability rollouts/,/name: Run production black-box release smoke/p' "$DEPLOY")
+printf '%s\n' "$observability_step" | grep -Fq 'rollout status statefulset/prometheus'
+printf '%s\n' "$observability_step" | grep -Fq 'rollout status daemonset/alloy'
+printf '%s\n' "$observability_step" | grep -Fq 'rollout status deployment/grafana'
 restart_step=$(sed -n '/name: Reconcile application Secret consumers/,/name: Verify service rollouts/p' "$DEPLOY")
 printf '%s\n' "$restart_step" | grep -Fq "if: steps.drift-guard.outputs.app_reconciliation_drift == 'true'"
 for consumer in mnema-auth mnema-user mnema-core mnema-media mnema-import; do
