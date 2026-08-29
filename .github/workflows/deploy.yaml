@@ -65,6 +65,7 @@ jobs:
         run: |
           python3 scripts/verify_github_actions_pins.py
           python3 scripts/verify_security_automation_policy.py
+          python3 scripts/verify_production_image_pins.py
           python3 -m unittest discover -s scripts/tests -p 'test_verify_*.py' -v
 
       - name: Set up Node.js

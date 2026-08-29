@@ -16,7 +16,7 @@ spec:
       serviceAccountName: kube-state-metrics
       containers:
         - name: kube-state-metrics
-          image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.13.0
+          image: registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.13.0@sha256:639a1e2da549210adddc0391ff91e270e83f7873014aec53258462812f741e6f
           ports:
             - name: http
               containerPort: 8080
