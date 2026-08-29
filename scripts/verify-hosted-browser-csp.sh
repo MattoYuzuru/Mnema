@@ -35,8 +35,10 @@ if ! grep -Fq 'data-turnstile="true"' "$TEST_ROOT/dom.html"; then
   echo "Hosted login shell did not attempt to load the configured Turnstile client" >&2
   exit 1
 fi
-if ! grep -Eq '<iframe[^>]+challenges\.cloudflare\.com' "$TEST_ROOT/dom.html"; then
-  echo "Hosted Turnstile client did not render its challenge frame" >&2
+# Chrome's serialized DOM omits Turnstile's internal challenge frame. The
+# documented hidden response field is created only after the widget renders.
+if ! grep -Fq 'name="cf-turnstile-response"' "$TEST_ROOT/dom.html"; then
+  echo "Hosted Turnstile client did not complete widget rendering" >&2
   exit 1
 fi
 

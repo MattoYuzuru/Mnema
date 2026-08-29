@@ -51,7 +51,7 @@ The contract rejects unknown deployment modes, non-HTTPS or injected hosted orig
 After a staging rollout, `staging-deploy.yaml` performs two fail-closed checks inside the existing release smoke boundary:
 
 1. an HTTP smoke checks `/`, `/login`, `/app-config.js`, the hashed main bundle, a static `404`, and the AI-disabled `503` response;
-2. headless Chrome loads `/login`, confirms that the configured Turnstile client was attempted, and rejects any CSP violation in the browser log.
+2. headless Chrome loads `/login`, confirms that Turnstile created its [documented `cf-turnstile-response` form field](https://developers.cloudflare.com/turnstile/get-started/client-side-rendering/widget-configurations/#form-integration), and rejects any CSP violation in the browser log. Chrome's serialized DOM does not expose Turnstile's internal challenge frame, so the stable form-integration contract is used instead.
 
 The same checks are part of the production smoke with enforced CSP, but production deployment still requires the repository's explicit production environment authorization.
 
