@@ -255,32 +255,99 @@ manage_family() {
     done <"$family_inventory"
     "$firewall" -w -A "$CHAIN" -j RETURN
 
-    rollback_new_chain() {
-      "$firewall" -w -D INPUT -j "$CHAIN" 2>/dev/null || true
-      "$firewall" -w -D FORWARD -j "$CHAIN" 2>/dev/null || true
-      "$firewall" -w -F "$CHAIN" 2>/dev/null || true
-      "$firewall" -w -X "$CHAIN" 2>/dev/null || true
+    candidate_input_hooked=false
+    candidate_forward_hooked=false
+    previous_input_removed=false
+    previous_forward_removed=false
+
+    remove_candidate_boundary() {
+      cleanup_failed=false
+      if [ "$candidate_input_hooked" = true ]; then
+        if "$firewall" -w -D INPUT -j "$CHAIN"; then
+          candidate_input_hooked=false
+        else
+          cleanup_failed=true
+        fi
+      fi
+      if [ "$candidate_forward_hooked" = true ]; then
+        if "$firewall" -w -D FORWARD -j "$CHAIN"; then
+          candidate_forward_hooked=false
+        else
+          cleanup_failed=true
+        fi
+      fi
+      if [ "$cleanup_failed" = true ]; then
+        echo "Candidate IPv${family} host-boundary hooks could not be removed" >&2
+        return 1
+      fi
+      "$firewall" -w -F "$CHAIN"
+      "$firewall" -w -X "$CHAIN"
     }
 
-    swap_started_at=$(date +%s)
+    restore_previous_boundary() {
+      restore_failed=false
+      if [ "$previous_input_removed" = true ]; then
+        if "$firewall" -w -I INPUT 1 -j "$old_chain"; then
+          previous_input_removed=false
+        else
+          restore_failed=true
+        fi
+      fi
+      if [ "$previous_forward_removed" = true ]; then
+        if "$firewall" -w -I FORWARD 1 -j "$old_chain"; then
+          previous_forward_removed=false
+        else
+          restore_failed=true
+        fi
+      fi
+      if [ "$restore_failed" = true ]; then
+        echo "Previous IPv${family} host-boundary hooks could not be restored; candidate remains active" >&2
+        return 1
+      fi
+      remove_candidate_boundary
+    }
+
     if ! "$firewall" -w -I INPUT 1 -j "$CHAIN"; then
-      rollback_new_chain
+      remove_candidate_boundary
       return 1
     fi
+    candidate_input_hooked=true
     if ! "$firewall" -w -I FORWARD 1 -j "$CHAIN"; then
-      rollback_new_chain
+      remove_candidate_boundary
       return 1
     fi
+    candidate_forward_hooked=true
+    if [ -n "$old_chain" ]; then
+      # A successful rule returns to its caller. Leaving both A/B hooks in the
+      # built-in chain would therefore send newly allowed traffic through the
+      # stale boundary next, where it can be rejected. Keep both complete
+      # chains, but let only the candidate own the hooks during verification.
+      if ! "$firewall" -w -D INPUT -j "$old_chain"; then
+        remove_candidate_boundary
+        return 1
+      fi
+      previous_input_removed=true
+      if ! "$firewall" -w -D FORWARD -j "$old_chain"; then
+        restore_previous_boundary || true
+        return 1
+      fi
+      previous_forward_removed=true
+    fi
+    # Prometheus timestamps have sub-second precision while POSIX date may not.
+    # Requiring a sample after the next whole second prevents a scrape taken
+    # earlier in this second from proving the candidate-only boundary.
+    verification_not_before_epoch=$(($(date +%s) + 1))
     if ! "$TELEMETRY_VERIFY" \
-      --not-before-epoch "$swap_started_at" \
+      --not-before-epoch "$verification_not_before_epoch" \
       --timeout-seconds "$TELEMETRY_VERIFY_TIMEOUT_SECONDS"; then
-      rollback_new_chain
-      echo "Fresh production telemetry failed after IPv${family} activation; restored prior hooks" >&2
+      if restore_previous_boundary; then
+        echo "Fresh production telemetry failed after IPv${family} activation; restored prior hooks" >&2
+      else
+        echo "Fresh production telemetry failed and the previous IPv${family} hooks need owner repair" >&2
+      fi
       return 1
     fi
     if [ -n "$old_chain" ]; then
-      "$firewall" -w -D INPUT -j "$old_chain"
-      "$firewall" -w -D FORWARD -j "$old_chain"
       "$firewall" -w -F "$old_chain"
       "$firewall" -w -X "$old_chain"
     fi

@@ -200,7 +200,7 @@ No production backup/restore run is recorded merely because the repository imple
 
 | Drill date UTC | Backup ID | Source → target | Measured RPO | Measured RTO | Account/checksum result | Evidence |
 |---|---|---|---:|---:|---|---|
-| Pending first applied drill | — | PostgreSQL 16 → 18 | — | — | — | Issue #93 |
+| 2026-08-29 | `20260829T121700Z-63d236af-4fd6-4ebb-b554-1ba80c6769ee` | PostgreSQL 16.11 → 18.6 | 655 s | 76 s | 17 accounts; dump and reconciliation checksums matched | [Actions run 33252542200](https://github.com/MattoYuzuru/Mnema/actions/runs/33252542200) |
 
 ## Design sources
 
