@@ -155,9 +155,13 @@ if [ "$actual_backup_id" != "$requested_backup_id" ]; then
   echo 'download_error=backup_identity_mismatch' >&2
   exit 1
 fi
-if [ -f "$BACKUP_DIR/pointer.env" ] && ! cmp -s "$BACKUP_DIR/pointer.env" "$BACKUP_DIR/metadata.env"; then
-  echo 'download_error=latest_pointer_mismatch' >&2
-  exit 1
+if [ -f "$BACKUP_DIR/pointer.env" ]; then
+  pointer_sha256=$(sha256sum "$BACKUP_DIR/pointer.env" | awk '{ print $1 }')
+  metadata_sha256=$(sha256sum "$BACKUP_DIR/metadata.env" | awk '{ print $1 }')
+  if [ "$pointer_sha256" != "$metadata_sha256" ]; then
+    echo 'download_error=latest_pointer_mismatch' >&2
+    exit 1
+  fi
 fi
 
 for file in database.dump reconciliation.csv capacity.csv checksums.sha256; do

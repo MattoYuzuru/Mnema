@@ -179,17 +179,43 @@ jobs:
           kubectl create --request-timeout=30s -f k8s/backup/restore-drill.yaml
 
       - name: Wait for restore and validate reconciliation evidence
+        if: ${{ success() && !cancelled() }}
         run: |
+          report_restore_failure() {
+            fallback=$1
+            safe_error=''
+            for container in download restore; do
+              candidate=$(kubectl -n "$RESTORE_NAMESPACE" logs job/mnema-postgres-restore \
+                --container="$container" --tail=200 --request-timeout=30s 2>/dev/null | \
+                grep -E '^(download_error|restore_error)=[a-z0-9_]+$' | tail -1 || true)
+              if [ -n "$candidate" ]; then
+                safe_error=$candidate
+              fi
+            done
+            echo "::error::${safe_error:-$fallback}"
+            exit 1
+          }
+
           kubectl -n "$RESTORE_NAMESPACE" rollout status statefulset/postgres \
             --timeout=10m
-          if ! kubectl -n "$RESTORE_NAMESPACE" wait --for=condition=complete job/mnema-postgres-restore \
-            --timeout=120m; then
-            safe_error=$(kubectl -n "$RESTORE_NAMESPACE" logs job/mnema-postgres-restore \
-              --container=restore --tail=200 --request-timeout=30s 2>/dev/null | \
-              grep -E '^restore_error=[a-z0-9_]+$' | tail -1 || true)
-            echo "::error::${safe_error:-restore_job_failed}"
-            exit 1
-          fi
+          restore_deadline_epoch=$(($(date -u +%s) + 7200))
+          while true; do
+            if ! restore_conditions=$(kubectl -n "$RESTORE_NAMESPACE" get job mnema-postgres-restore \
+              --request-timeout=30s \
+              -o jsonpath='{range .status.conditions[*]}{.type}={.status}{"\n"}{end}'); then
+              report_restore_failure restore_job_status_unavailable
+            fi
+            if printf '%s\n' "$restore_conditions" | grep -Fxq 'Complete=True'; then
+              break
+            fi
+            if printf '%s\n' "$restore_conditions" | grep -Fxq 'Failed=True'; then
+              report_restore_failure restore_job_failed
+            fi
+            if [ "$(date -u +%s)" -ge "$restore_deadline_epoch" ]; then
+              report_restore_failure restore_job_timeout
+            fi
+            sleep 5
+          done
           kubectl -n "$RESTORE_NAMESPACE" logs job/mnema-postgres-restore \
             --container=restore --request-timeout=30s > "$EVIDENCE_DIR/restore-drill.json"
           python3 scripts/backup/validate_report.py \

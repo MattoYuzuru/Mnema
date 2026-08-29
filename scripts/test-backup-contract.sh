@@ -137,6 +137,11 @@ if grep -Eq -- '--from-file=scripts/backup([[:space:]]|$)' "$RECOVERY_WORKFLOW";
 fi
 grep -Fq -- '--no-sign-request' "$BACKUP_SCRIPTS/upload.sh"
 grep -Fq -- '--no-sign-request' "$BACKUP_SCRIPTS/download.sh"
+grep -Fq 'pointer_sha256=$(sha256sum' "$BACKUP_SCRIPTS/download.sh"
+if grep -Eq '(^|[[:space:]])cmp([[:space:]]|$)' "$BACKUP_SCRIPTS/download.sh"; then
+  echo 'Downloader must use commands available in the pinned aws-cli image' >&2
+  exit 1
+fi
 grep -Fq -- "--if-none-match '*'" "$BACKUP_SCRIPTS/upload.sh"
 grep -Fq -- '--if-match "$current_etag"' "$BACKUP_SCRIPTS/upload.sh"
 grep -Fq -- '--server-side-encryption aws:kms' "$BACKUP_SCRIPTS/upload.sh"
@@ -151,9 +156,16 @@ grep -Fq 'get configmap mnema-restore-boundary' "$RECOVERY_WORKFLOW"
 grep -Fq 'get configmap kube-root-ca.crt' "$RECOVERY_WORKFLOW"
 grep -Fq 'timeout-minutes: 210' "$RECOVERY_WORKFLOW"
 if ! grep -Eq '^    if: \$\{\{ always\(\) \}\}$' "$RECOVERY_WORKFLOW"; then
-  echo 'Recovery job must survive workflow cancellation long enough to run bounded cleanup' >&2
+  echo 'Recovery job must survive cancellation long enough to evaluate bounded cleanup' >&2
   exit 1
 fi
+grep -A2 -F 'name: Wait for restore and validate reconciliation evidence' "$RECOVERY_WORKFLOW" | \
+  grep -Fq 'if: ${{ success() && !cancelled() }}'
+grep -Fq 'restore_deadline_epoch=$(($(date -u +%s) + 7200))' "$RECOVERY_WORKFLOW"
+grep -Fq "grep -Fxq 'Failed=True'" "$RECOVERY_WORKFLOW"
+grep -Fq "grep -E '^(download_error|restore_error)=" "$RECOVERY_WORKFLOW"
+grep -A2 -F 'name: Remove only fixed restore drill resources' "$RECOVERY_WORKFLOW" | \
+  grep -Fq 'if: ${{ always() }}'
 grep -Fq 'timeout-minutes: 4' "$RECOVERY_WORKFLOW"
 grep -Fq -- '--ignore-not-found=true --wait=false' "$RECOVERY_WORKFLOW"
 grep -Fq 'kubectl create --request-timeout=30s -f k8s/backup/restore-drill.yaml' "$RECOVERY_WORKFLOW"
@@ -431,12 +443,24 @@ export S3_BUCKET=test-bucket
 export S3_PREFIX=mnema-backups
 export KMS_KEY_ID=kms-test
 
+mkdir -p "$TEST_ROOT/no-cmp"
+cat > "$TEST_ROOT/no-cmp/cmp" <<'MOCK_CMP'
+#!/bin/sh
+set -eu
+touch "${NO_CMP_MARKER:?}"
+exit 127
+MOCK_CMP
+chmod +x "$TEST_ROOT/no-cmp/cmp"
+
 BACKUP_DIR="$TEST_ROOT/backup" RETENTION_POLICY_ID=retention-test \
   "$BACKUP_SCRIPTS/upload.sh" > "$TEST_ROOT/backup-report.json"
 python3 "$BACKUP_SCRIPTS/validate_report.py" --kind backup --report "$TEST_ROOT/backup-report.json"
 
+PATH="$TEST_ROOT/no-cmp:$PATH" \
+NO_CMP_MARKER="$TEST_ROOT/cmp-called" \
 BACKUP_DIR="$TEST_ROOT/restore" BACKUP_ID=latest \
   "$BACKUP_SCRIPTS/download.sh"
+test ! -e "$TEST_ROOT/cmp-called"
 cmp "$TEST_ROOT/backup/database.dump" "$TEST_ROOT/restore/database.dump"
 cmp "$TEST_ROOT/backup/reconciliation.csv" "$TEST_ROOT/restore/reconciliation.csv"
 
