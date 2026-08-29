@@ -15,6 +15,8 @@ allprojects {
 
 subprojects {
     apply(plugin = "jacoco")
+    extra["netty.version"] = "4.1.137.Final"
+    extra["postgresql.version"] = "42.7.13"
 
     extensions.configure<org.gradle.testing.jacoco.plugins.JacocoPluginExtension> {
         toolVersion = "0.8.11"

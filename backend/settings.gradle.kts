@@ -4,7 +4,7 @@ pluginManagement {
         mavenCentral()
     }
     plugins {
-        id("org.springframework.boot") version "3.5.7"
+        id("org.springframework.boot") version "3.5.16"
         id("io.spring.dependency-management") version "1.1.7"
         kotlin("jvm") version "2.1.10"
         kotlin("plugin.spring") version "2.1.10"

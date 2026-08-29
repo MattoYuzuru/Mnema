@@ -83,6 +83,30 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
         )
         self.assertEqual([], self.findings())
 
+    def test_previously_declared_internal_stage_is_accepted(self):
+        self.replace(
+            "backend/Dockerfile",
+            "FROM backend-runtime AS auth-runtime",
+            "FROM backend-runtime AS auth-runtime-copy",
+        )
+        self.assertEqual([], self.findings())
+
+    def test_undefined_internal_stage_is_rejected(self):
+        self.replace(
+            "backend/Dockerfile",
+            "FROM backend-runtime AS auth-runtime",
+            "FROM unknown-runtime AS auth-runtime",
+        )
+        self.assertTrue(any("unknown-runtime" in finding.message for finding in self.findings()))
+
+    def test_duplicate_internal_stage_alias_is_rejected(self):
+        self.replace(
+            "backend/Dockerfile",
+            "FROM backend-runtime AS auth-runtime",
+            "FROM backend-runtime AS backend-runtime",
+        )
+        self.assertTrue(any("alias is duplicated" in finding.message for finding in self.findings()))
+
     def test_tag_only_frontend_runtime_image_is_rejected(self):
         self.replace(
             "frontend/Dockerfile",

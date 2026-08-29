@@ -54,6 +54,7 @@ jobs:
           IDENTITY_RECORD: ${{ runner.temp }}/production-preflight-record.json
         run: |
           (cd "$(dirname "$RELEASE_MANIFEST")" && sha256sum --check production-release.yaml.sha256)
+          (cd "$(dirname "$RELEASE_MANIFEST")" && sha256sum --check release-security-evidence.json.sha256)
           python3 scripts/smoke/release_state.py build-record \
             --environment production-preflight \
             --manifest "$RELEASE_MANIFEST" \
@@ -65,6 +66,12 @@ jobs:
             echo "::error::Production release artifact does not match the staging-approved revision"
             exit 1
           fi
+          python3 scripts/verify_release_security_evidence.py verify-release \
+            --evidence "$(dirname "$RELEASE_MANIFEST")/release-security-evidence.json" \
+            --manifest "$RELEASE_MANIFEST" \
+            --expected-repository "$GITHUB_REPOSITORY" \
+            --expected-commit "$RELEASE_SHA" \
+            --trivy-ignore security/trivy-release-ignore
           current_main=$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')
           if [ "$RELEASE_SHA" != "$current_main" ]; then
             echo "::error::Refusing stale release ${RELEASE_SHA}; current main is ${current_main}"
@@ -122,6 +129,7 @@ jobs:
           IDENTITY_RECORD: ${{ runner.temp }}/production-preview-identity.json
         run: |
           sha256sum --check production-release.yaml.sha256
+          sha256sum --check release-security-evidence.json.sha256
           python3 scripts/smoke/release_state.py build-record \
             --environment production-preview \
             --manifest "$RELEASE_MANIFEST" \
@@ -133,6 +141,12 @@ jobs:
             echo "::error::Production release artifact does not match the staging-approved revision"
             exit 1
           fi
+          python3 scripts/verify_release_security_evidence.py verify-release \
+            --evidence release-security-evidence.json \
+            --manifest "$RELEASE_MANIFEST" \
+            --expected-repository "$GITHUB_REPOSITORY" \
+            --expected-commit "$RELEASE_SHA" \
+            --trivy-ignore security/trivy-release-ignore
 
       - name: Reject a stale release
         run: |
@@ -486,6 +500,7 @@ jobs:
           IDENTITY_RECORD: ${{ runner.temp }}/production-deploy-identity.json
         run: |
           sha256sum --check production-release.yaml.sha256
+          sha256sum --check release-security-evidence.json.sha256
           python3 scripts/smoke/release_state.py build-record \
             --environment production-deploy \
             --manifest "$RELEASE_MANIFEST" \
@@ -497,6 +512,12 @@ jobs:
             echo "::error::Production release artifact does not match the staging-approved revision"
             exit 1
           fi
+          python3 scripts/verify_release_security_evidence.py verify-release \
+            --evidence release-security-evidence.json \
+            --manifest "$RELEASE_MANIFEST" \
+            --expected-repository "$GITHUB_REPOSITORY" \
+            --expected-commit "$RELEASE_SHA" \
+            --trivy-ignore security/trivy-release-ignore
 
       - name: Verify approved production preview contents
         run: |
