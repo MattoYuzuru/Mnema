@@ -525,17 +525,20 @@ jobs:
 
       - name: Upload verified staging release record
         if: ${{ steps.record.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/safe-upload-artifact
         with:
+          policy-id: staging-release-record
           name: staging-release-record-${{ github.run_id }}
           path: ${{ env.RELEASE_RECORD }}
           if-no-files-found: error
           retention-days: 90
+          classification: release-state
 
       - name: Relay the staging-approved production release
         if: ${{ steps.record.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/safe-upload-artifact
         with:
+          policy-id: staging-production-promotion
           name: production-release-manifest
           path: |
             ${{ runner.temp }}/production-promotion/production-release.yaml
@@ -544,6 +547,7 @@ jobs:
             ${{ runner.temp }}/production-promotion/release-security-evidence.json.sha256
           if-no-files-found: error
           retention-days: 30
+          classification: release-manifest
 
       - name: Collect sanitized staging diagnostics
         if: ${{ always() && (failure() || steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') }}
@@ -645,8 +649,9 @@ jobs:
 
       - name: Upload staging failure evidence
         if: ${{ always() && (failure() || steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/safe-upload-artifact
         with:
+          policy-id: staging-failure-diagnostics
           name: staging-release-diagnostics-${{ github.run_id }}
           path: |
             ${{ env.DIAGNOSTICS_DIR }}
@@ -655,6 +660,7 @@ jobs:
             ${{ env.ROLLBACK_RECORD }}
           if-no-files-found: warn
           retention-days: 30
+          classification: sanitized-diagnostics
 
       - name: Fail rejected staging candidate
         if: ${{ always() && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') }}

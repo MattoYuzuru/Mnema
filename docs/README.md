@@ -29,6 +29,7 @@
 - **Current:** [Release verification runbook](./operations/release-verification-runbook.md) — hosted smoke, safe diagnostics, complete-manifest rollback and staging recovery drill.
 - **Current:** [Database recovery runbook](./operations/database-recovery-runbook.md) — off-host PostgreSQL backup, pre-migration evidence, isolated restore drill and measured RPO/RTO contract.
 - **Current:** [Security automation triage](./operations/security-triage.md) — baseline, new-regression blocking and expiring private exceptions for Dependabot, dependency review and CodeQL.
+- **Current:** [CI artifact security boundary](./operations/ci-artifact-security-boundary.md) — exact upload inventory, pre-upload secret classes and least-privilege workflow tokens.
 - **Current:** [Production image inventory](./operations/production-image-inventory.md) — immutable build/runtime pins, production image boundary, update verification and rollback.
 - **Proposed:** [V2 reset, capacity and offline plan](./operations/v2-reset-capacity-and-offline-plan.md) — account-only cutover, 1k/10k/100k capacity, scale triggers, offline and MinIO harness.
 - **Legacy:** [Схема core-сущностей v1](./core-entities-schema.md) — обзор старой модели; миграции остаются источником истины.

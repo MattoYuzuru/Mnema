@@ -162,8 +162,9 @@ jobs:
 
       - name: Upload complete rollback drill evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/safe-upload-artifact
         with:
+          policy-id: staging-rollback-drill
           name: staging-rollback-drill-${{ github.run_id }}
           path: |
             ${{ env.DIAGNOSTICS_DIR }}
@@ -173,6 +174,7 @@ jobs:
             ${{ env.ROLLBACK_SMOKE_REPORT }}
           if-no-files-found: warn
           retention-days: 30
+          classification: sanitized-recovery-evidence
 
       - name: Assert the failure and recovery sequence
         if: ${{ always() }}
