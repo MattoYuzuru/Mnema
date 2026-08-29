@@ -1,9 +1,0 @@
-{
-  "name": "mnema-dependency-review-negative-fixture",
-  "version": "1.0.0",
-  "private": true,
-  "description": "Temporary synthetic fixture for issue 120; remove before merge.",
-  "dependencies": {
-    "lodash": "4.17.20"
-  }
-}
