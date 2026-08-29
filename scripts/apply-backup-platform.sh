@@ -60,7 +60,17 @@ if [ -n "$active_backup_jobs" ]; then
   exit 1
 fi
 
-if kubectl get namespace mnema-restore-drill >/dev/null 2>&1; then
+restore_boundary_exists=false
+restore_namespace=$(kubectl get namespace mnema-restore-drill --ignore-not-found -o name)
+case "$restore_namespace" in
+  '') ;;
+  namespace/mnema-restore-drill) restore_boundary_exists=true ;;
+  *)
+    echo "Unexpected restore namespace lookup result: $restore_namespace" >&2
+    exit 1
+    ;;
+esac
+if [ "$restore_boundary_exists" = true ]; then
   busy_restore_resources=$(kubectl -n mnema-restore-drill get \
     pods,jobs.batch,statefulsets.apps,persistentvolumeclaims,services \
     -o name)
@@ -90,7 +100,16 @@ preview() {
   fi
 }
 
-preview "$REPO_ROOT/k8s/backup/restore-boundary.yaml"
+if [ "$restore_boundary_exists" = true ]; then
+  preview "$REPO_ROOT/k8s/backup/restore-boundary.yaml"
+else
+  # Namespaced objects cannot be server-diffed until their namespace exists.
+  # On the first bootstrap every object in this boundary is necessarily new, so
+  # client dry-run validates and lists the exact create set without mutating it.
+  kubectl apply --dry-run=client --validate=strict \
+    -f "$REPO_ROOT/k8s/backup/restore-boundary.yaml" -o name
+  printf 'restore_boundary=planned-create namespace=mnema-restore-drill\n'
+fi
 preview "$TEST_ROOT/backup-scripts.yaml"
 preview "$REPO_ROOT/k8s/backup/cronjob.yaml"
 preview "$REPO_ROOT/k8s/observability/10-prometheus-config.yaml"
