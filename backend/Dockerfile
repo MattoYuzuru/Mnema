@@ -40,37 +40,40 @@ RUN --mount=type=cache,target=/home/gradle/.gradle \
 
 # 4. Runtime-образы
 
-FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS auth-runtime
+FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS backend-runtime
+RUN rm -f /usr/bin/pebble
+
+FROM backend-runtime AS auth-runtime
 WORKDIR /app
 COPY --from=build /workspace/services/auth/build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]
 
-FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS user-runtime
+FROM backend-runtime AS user-runtime
 WORKDIR /app
 COPY --from=build /workspace/services/user/build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]
 
-FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS core-runtime
+FROM backend-runtime AS core-runtime
 WORKDIR /app
 COPY --from=build /workspace/services/core/build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]
 
-FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS media-runtime
+FROM backend-runtime AS media-runtime
 WORKDIR /app
 COPY --from=build /workspace/services/media/build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]
 
-FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS import-runtime
+FROM backend-runtime AS import-runtime
 WORKDIR /app
 COPY --from=build /workspace/services/import/build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]
 
-FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS ai-runtime
+FROM backend-runtime AS ai-runtime
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

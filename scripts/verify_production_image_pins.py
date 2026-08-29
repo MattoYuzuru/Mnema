@@ -32,7 +32,8 @@ IMAGE_LINE = re.compile(
 IMAGE_KEY = re.compile(r'(?<![A-Za-z0-9_-])(?:image|"image"|\'image\')\s*:')
 FROM_INSTRUCTION = re.compile(r"^\s*FROM\b", re.IGNORECASE)
 FROM_LINE = re.compile(
-    r"^\s*FROM(?:\s+--platform=\S+)?\s+(?P<image>\S+)(?:\s+AS\s+\S+)?\s*$",
+    r"^\s*FROM(?:\s+--platform=\S+)?\s+(?P<image>\S+)"
+    r"(?:\s+AS\s+(?P<alias>[A-Za-z0-9_.-]+))?\s*$",
     re.IGNORECASE,
 )
 APPLY_TARGET = re.compile(r"\bapply\s+-f\s+(?P<target>\S+)")
@@ -74,17 +75,23 @@ def validate_dockerfile(path: Path) -> list[Finding]:
         return findings
 
     from_lines = [line for line in content.splitlines() if FROM_INSTRUCTION.match(line)]
-    stages = [
-        match.group("image") for line in from_lines if (match := FROM_LINE.fullmatch(line))
-    ]
+    stages = [match for line in from_lines if (match := FROM_LINE.fullmatch(line))]
     if not from_lines:
         return [Finding(path, "Dockerfile must declare at least one FROM image")]
     if len(stages) != len(from_lines):
         findings.append(
             Finding(path, "every FROM instruction must use the supported, verifiable syntax")
         )
-    for image in stages:
-        findings.extend(_validate_pinned_image(path, image, "Dockerfile FROM image"))
+    aliases: set[str] = set()
+    for stage in stages:
+        image = stage.group("image")
+        if image not in aliases:
+            findings.extend(_validate_pinned_image(path, image, "Dockerfile FROM image"))
+        alias = stage.group("alias")
+        if alias:
+            if alias in aliases:
+                findings.append(Finding(path, f"Dockerfile stage alias is duplicated: {alias}"))
+            aliases.add(alias)
     return findings
 
 

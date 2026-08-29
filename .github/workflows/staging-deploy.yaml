@@ -68,9 +68,12 @@ jobs:
         env:
           STAGING_DIR: ${{ runner.temp }}/staging-preflight
           PRODUCTION_DIR: ${{ runner.temp }}/production-preflight
+          UPSTREAM_RUN_ID: ${{ github.event.workflow_run.id }}
         run: |
           (cd "$STAGING_DIR" && sha256sum --check staging-release.yaml.sha256)
+          (cd "$STAGING_DIR" && sha256sum --check release-security-evidence.json.sha256)
           (cd "$PRODUCTION_DIR" && sha256sum --check production-release.yaml.sha256)
+          (cd "$PRODUCTION_DIR" && sha256sum --check release-security-evidence.json.sha256)
           for entry in \
             "staging-preflight|$STAGING_DIR/staging-release.yaml|$RUNNER_TEMP/staging-preflight-record.json" \
             "production-preflight|$PRODUCTION_DIR/production-release.yaml|$RUNNER_TEMP/production-preflight-record.json"
@@ -91,6 +94,20 @@ jobs:
               exit 1
             fi
           done
+          python3 scripts/verify_release_security_evidence.py verify-release \
+            --evidence "$STAGING_DIR/release-security-evidence.json" \
+            --manifest "$STAGING_DIR/staging-release.yaml" \
+            --expected-repository "$GITHUB_REPOSITORY" \
+            --expected-commit "$RELEASE_SHA" \
+            --trivy-ignore security/trivy-release-ignore \
+            --expected-run-id "$UPSTREAM_RUN_ID"
+          python3 scripts/verify_release_security_evidence.py verify-release \
+            --evidence "$PRODUCTION_DIR/release-security-evidence.json" \
+            --manifest "$PRODUCTION_DIR/production-release.yaml" \
+            --expected-repository "$GITHUB_REPOSITORY" \
+            --expected-commit "$RELEASE_SHA" \
+            --trivy-ignore security/trivy-release-ignore \
+            --expected-run-id "$UPSTREAM_RUN_ID"
           current_main=$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')
           if [ "$RELEASE_SHA" != "$current_main" ]; then
             echo "::error::Refusing stale staging release ${RELEASE_SHA}; current main is ${current_main}"
@@ -152,6 +169,7 @@ jobs:
           STAGING_IDENTITY_RECORD: ${{ runner.temp }}/staging-release-identity.json
         run: |
           sha256sum --check staging-release.yaml.sha256
+          sha256sum --check release-security-evidence.json.sha256
           python3 scripts/smoke/release_state.py build-record \
             --environment staging-artifact \
             --manifest "$RELEASE_MANIFEST" \
@@ -163,6 +181,13 @@ jobs:
             echo "::error::Staging release artifact does not match the tested revision"
             exit 1
           fi
+          python3 scripts/verify_release_security_evidence.py verify-release \
+            --evidence release-security-evidence.json \
+            --manifest "$RELEASE_MANIFEST" \
+            --expected-repository "$GITHUB_REPOSITORY" \
+            --expected-commit "$RELEASE_SHA" \
+            --trivy-ignore security/trivy-release-ignore \
+            --expected-run-id "${{ github.event.workflow_run.id }}"
 
       - name: Verify production promotion artifact integrity
         env:
@@ -170,6 +195,7 @@ jobs:
           PRODUCTION_RECORD: ${{ runner.temp }}/production-promotion-record.json
         run: |
           (cd "$(dirname "$PRODUCTION_MANIFEST")" && sha256sum --check production-release.yaml.sha256)
+          (cd "$(dirname "$PRODUCTION_MANIFEST")" && sha256sum --check release-security-evidence.json.sha256)
           python3 scripts/smoke/release_state.py build-record \
             --environment production-promotion \
             --manifest "$PRODUCTION_MANIFEST" \
@@ -181,6 +207,13 @@ jobs:
             echo "::error::Production promotion manifest does not match the tested revision"
             exit 1
           fi
+          python3 scripts/verify_release_security_evidence.py verify-release \
+            --evidence "$(dirname "$PRODUCTION_MANIFEST")/release-security-evidence.json" \
+            --manifest "$PRODUCTION_MANIFEST" \
+            --expected-repository "$GITHUB_REPOSITORY" \
+            --expected-commit "$RELEASE_SHA" \
+            --trivy-ignore security/trivy-release-ignore \
+            --expected-run-id "${{ github.event.workflow_run.id }}"
 
       - name: Reject a stale release
         run: |
@@ -501,6 +534,8 @@ jobs:
           path: |
             ${{ runner.temp }}/production-promotion/production-release.yaml
             ${{ runner.temp }}/production-promotion/production-release.yaml.sha256
+            ${{ runner.temp }}/production-promotion/release-security-evidence.json
+            ${{ runner.temp }}/production-promotion/release-security-evidence.json.sha256
           if-no-files-found: error
           retention-days: 30
 

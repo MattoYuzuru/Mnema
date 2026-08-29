@@ -130,6 +130,9 @@ jobs:
       - name: Verify production telemetry host-boundary contract
         run: ./scripts/test-production-telemetry-boundary.sh
 
+      - name: Verify release security evidence contract
+        run: ./scripts/test-release-security-contract.sh
+
       - name: Verify environment isolation contract
         run: ./scripts/test-deployment-contract.sh
 
@@ -169,7 +172,9 @@ jobs:
       group: main-ci-build-${{ github.ref }}-${{ matrix.name }}
       cancel-in-progress: true
     permissions:
+      attestations: write
       contents: read
+      id-token: write
       packages: write
     strategy:
       matrix:
@@ -244,6 +249,8 @@ jobs:
             ghcr.io/${{ steps.repo.outputs.REPO }}/${{ matrix.name }}:latest
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
+          provenance: mode=max
+          sbom: true
 
       - name: Build & push backend ${{ matrix.name }}
         if: ${{ matrix.kind == 'backend' }}
@@ -259,33 +266,157 @@ jobs:
             ghcr.io/${{ steps.repo.outputs.REPO }}/${{ matrix.name }}:latest
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
+          provenance: mode=max
+          sbom: true
 
       - name: Record immutable image digest
+        id: release-image
         env:
           FRONTEND_DIGEST: ${{ steps.frontend-image.outputs.digest }}
           BACKEND_DIGEST: ${{ steps.backend-image.outputs.digest }}
-          IMAGE_NAME: ${{ matrix.name }}
+          IMAGE_NAME: ghcr.io/${{ steps.repo.outputs.REPO }}/${{ matrix.name }}
+          SERVICE: ${{ matrix.name }}
         run: |
           digest="${FRONTEND_DIGEST:-$BACKEND_DIGEST}"
           case "$digest" in
             sha256:*) digest_hex=${digest#sha256:} ;;
             *)
-              echo "::error::Missing or invalid digest for ${IMAGE_NAME}: ${digest}"
+              echo "::error::Missing or invalid digest for ${SERVICE}: ${digest}"
               exit 1
               ;;
           esac
           case "$digest_hex" in
             *[!0-9a-f]*)
-              echo "::error::Invalid digest for ${IMAGE_NAME}: ${digest}"
+              echo "::error::Invalid digest for ${SERVICE}: ${digest}"
               exit 1
               ;;
           esac
           if [ "${#digest_hex}" -ne 64 ]; then
-            echo "::error::Unexpected digest length for ${IMAGE_NAME}"
+            echo "::error::Unexpected digest length for ${SERVICE}"
             exit 1
           fi
           mkdir -p "${RUNNER_TEMP}/release-digests"
-          printf '%s\n' "$digest" > "${RUNNER_TEMP}/release-digests/${IMAGE_NAME}.digest"
+          printf '%s\n' "$digest" > "${RUNNER_TEMP}/release-digests/${SERVICE}.digest"
+          {
+            echo "digest=${digest}"
+            echo "image-name=${IMAGE_NAME}"
+            echo "image=${IMAGE_NAME}@${digest}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Extract BuildKit SPDX SBOM for the exact digest
+        env:
+          IMAGE: ${{ steps.release-image.outputs.image }}
+          SERVICE: ${{ matrix.name }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/release-security"
+          docker buildx imagetools inspect "$IMAGE" \
+            --format '{{ json .SBOM.SPDX }}' \
+            > "$RUNNER_TEMP/release-security/${SERVICE}-sbom.spdx.json"
+
+      - name: Create GitHub build provenance attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.release-image.outputs.image-name }}
+          subject-digest: ${{ steps.release-image.outputs.digest }}
+          push-to-registry: true
+
+      - name: Create GitHub SBOM attestation
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.release-image.outputs.image-name }}
+          subject-digest: ${{ steps.release-image.outputs.digest }}
+          sbom-path: ${{ runner.temp }}/release-security/${{ matrix.name }}-sbom.spdx.json
+          push-to-registry: true
+
+      - name: Verify GitHub attestations against release identity
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ${{ steps.release-image.outputs.image }}
+          SERVICE: ${{ matrix.name }}
+        run: |
+          gh attestation verify "oci://${IMAGE}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/deploy.yaml" \
+            --source-digest "$GITHUB_SHA" \
+            --source-ref refs/heads/main \
+            --deny-self-hosted-runners \
+            --format json \
+            > "$RUNNER_TEMP/release-security/${SERVICE}-provenance-verification.json"
+          gh attestation verify "oci://${IMAGE}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/deploy.yaml" \
+            --source-digest "$GITHUB_SHA" \
+            --source-ref refs/heads/main \
+            --deny-self-hosted-runners \
+            --predicate-type https://spdx.dev/Document/v2.3 \
+            --format json \
+            > "$RUNNER_TEMP/release-security/${SERVICE}-sbom-verification.json"
+
+      - name: Scan exact release digest with Trivy
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: image
+          image-ref: ${{ steps.release-image.outputs.image }}
+          scanners: vuln
+          format: json
+          output: ${{ runner.temp }}/release-security/${{ matrix.name }}-trivy-report.json
+          severity: UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          ignore-unfixed: "false"
+          exit-code: "0"
+          timeout: 10m
+          version: v0.70.0
+          cache: true
+          trivyignores: security/trivy-release-ignore
+
+      - name: Record scanner and vulnerability database identity
+        env:
+          IMAGE: ${{ steps.release-image.outputs.image }}
+          SERVICE: ${{ matrix.name }}
+        run: |
+          trivy image "$IMAGE" \
+            --cache-dir "$GITHUB_WORKSPACE/.cache/trivy" \
+            --skip-db-update \
+            --ignorefile security/trivy-release-ignore \
+            --scanners vuln \
+            --format sarif \
+            --output "$RUNNER_TEMP/release-security/${SERVICE}-trivy-results.sarif" \
+            --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            --exit-code 0
+          trivy version \
+            --cache-dir "$GITHUB_WORKSPACE/.cache/trivy" \
+            --format json \
+            > "$RUNNER_TEMP/release-security/${SERVICE}-trivy-version.json"
+
+      - name: Enforce release vulnerability policy
+        env:
+          IMAGE: ${{ steps.release-image.outputs.image }}
+          SERVICE: ${{ matrix.name }}
+        run: |
+          python3 scripts/verify_release_security_evidence.py evaluate \
+            --service "$SERVICE" \
+            --image "$IMAGE" \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-commit "$GITHUB_SHA" \
+            --build-run-id "$GITHUB_RUN_ID" \
+            --build-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --report "$RUNNER_TEMP/release-security/${SERVICE}-trivy-report.json" \
+            --sarif "$RUNNER_TEMP/release-security/${SERVICE}-trivy-results.sarif" \
+            --scanner-metadata "$RUNNER_TEMP/release-security/${SERVICE}-trivy-version.json" \
+            --exceptions security/release-image-exceptions.json \
+            --trivy-ignore security/trivy-release-ignore \
+            --sbom "$RUNNER_TEMP/release-security/${SERVICE}-sbom.spdx.json" \
+            --provenance-verification "$RUNNER_TEMP/release-security/${SERVICE}-provenance-verification.json" \
+            --sbom-verification "$RUNNER_TEMP/release-security/${SERVICE}-sbom-verification.json" \
+            --output "$RUNNER_TEMP/release-security/${SERVICE}-security-evidence.json"
+
+      - name: Upload full per-image security evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-security-${{ matrix.name }}
+          path: ${{ runner.temp }}/release-security/${{ matrix.name }}-*
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Upload immutable image digest
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -311,6 +442,28 @@ jobs:
           pattern: release-image-*
           path: ${{ runner.temp }}/release-digests
           merge-multiple: true
+
+      - name: Download verified per-image security evidence
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: release-security-*
+          path: ${{ runner.temp }}/release-security
+          merge-multiple: true
+
+      - name: Aggregate exact release security evidence
+        run: |
+          python3 scripts/verify_release_security_evidence.py aggregate \
+            --evidence-dir "$RUNNER_TEMP/release-security" \
+            --digests-dir "$RUNNER_TEMP/release-digests" \
+            --exceptions security/release-image-exceptions.json \
+            --trivy-ignore security/trivy-release-ignore \
+            --repository "$GITHUB_REPOSITORY" \
+            --source-commit "$GITHUB_SHA" \
+            --build-run-id "$GITHUB_RUN_ID" \
+            --build-run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --output "$RUNNER_TEMP/release-security-evidence.json"
+          (cd "$RUNNER_TEMP" && sha256sum release-security-evidence.json \
+            > release-security-evidence.json.sha256)
 
       - name: Render immutable production release
         env:
@@ -349,6 +502,18 @@ jobs:
           output_name=$(basename -- "$OUTPUT")
           (cd "$output_dir" && sha256sum "$output_name" > "${output_name}.sha256")
 
+      - name: Bind verified security evidence to both release manifests
+        run: |
+          for manifest in production-release.yaml staging-release.yaml; do
+            python3 scripts/verify_release_security_evidence.py verify-release \
+              --evidence "$RUNNER_TEMP/release-security-evidence.json" \
+              --manifest "$RUNNER_TEMP/$manifest" \
+              --expected-repository "$GITHUB_REPOSITORY" \
+              --expected-commit "$GITHUB_SHA" \
+              --trivy-ignore security/trivy-release-ignore \
+              --expected-run-id "$GITHUB_RUN_ID"
+          done
+
       - name: Upload complete release manifest
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -356,6 +521,8 @@ jobs:
           path: |
             ${{ runner.temp }}/production-release.yaml
             ${{ runner.temp }}/production-release.yaml.sha256
+            ${{ runner.temp }}/release-security-evidence.json
+            ${{ runner.temp }}/release-security-evidence.json.sha256
           if-no-files-found: error
           retention-days: 30
 
@@ -366,5 +533,7 @@ jobs:
           path: |
             ${{ runner.temp }}/staging-release.yaml
             ${{ runner.temp }}/staging-release.yaml.sha256
+            ${{ runner.temp }}/release-security-evidence.json
+            ${{ runner.temp }}/release-security-evidence.json.sha256
           if-no-files-found: error
           retention-days: 30

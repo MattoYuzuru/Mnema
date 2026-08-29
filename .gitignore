@@ -75,6 +75,7 @@ frontend/node_modules
 !/scripts/test-kubernetes-secret-rollback.sh
 !/scripts/test-staging-plan-preview.sh
 !/scripts/test-production-telemetry-boundary.sh
+!/scripts/test-release-security-contract.sh
 !/scripts/reconcile-kubernetes-secret-consumers.sh
 !/scripts/test-kubernetes-secret-consumer-reconciliation.sh
 !/scripts/test-backup-contract.sh
@@ -91,6 +92,7 @@ frontend/node_modules
 !/scripts/verify_github_actions_pins.py
 !/scripts/verify_security_automation_policy.py
 !/scripts/verify_production_image_pins.py
+!/scripts/verify_release_security_evidence.py
 !/scripts/tests/
 !/scripts/tests/**
 !/scripts/local-audio-gateway/

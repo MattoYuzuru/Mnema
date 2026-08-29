@@ -114,6 +114,9 @@ jobs:
       - name: Verify production telemetry host-boundary contract
         run: ./scripts/test-production-telemetry-boundary.sh
 
+      - name: Verify release security evidence contract
+        run: ./scripts/test-release-security-contract.sh
+
       - name: Verify environment isolation contract
         run: ./scripts/test-deployment-contract.sh
 

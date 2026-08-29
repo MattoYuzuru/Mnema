@@ -20,7 +20,8 @@ and PRs contain only sanitized status, counts and links.
 The shipping scope is the frontend image and backend service images promoted by the immutable
 release manifest. The dependency graph, CodeQL Default Setup and dependency review cover repository
 source and manifests; they do not prove the deployed image digest is clean. SBOM, provenance and
-shipping-image scans remain the separate #122 boundary.
+shipping-image scans are enforced by the
+[release image security evidence contract](release-security-evidence.md).
 
 An alert is classified as confirmed, probable, design risk, missing evidence, intentional behavior
 or unverified hypothesis only after checking reachability, affected revision, scope, mitigating
