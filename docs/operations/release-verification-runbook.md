@@ -15,6 +15,8 @@ Every hosted release is accepted as one six-image unit. Staging and production f
 
 `Main CI`, `Staging Deploy` and `Production Deploy` are separate workflows. The two privileged workflows run directly after a successful `workflow_run` predecessor so their jobs read only their own GitHub Environment secrets. Artifact downloads are bound to the predecessor run ID; staging verifies both manifests but relays the production manifest only after its smoke and release record succeed. Production verifies that relay again before preview. Every stage binds to the predecessor head SHA and rejects it if it is no longer current `main`.
 
+Every retained upload is inventoried and scanned immediately before upload under the [CI artifact security boundary](ci-artifact-security-boundary.md). Release and recovery evidence remains available, while kubeconfigs, Secret snapshots and raw credential values are explicitly outside the artifact boundary.
+
 AI is deliberately absent from this gate. The hosted runtime must report `aiEnabled = false`; no keykomi workload, model or data is read or mutated.
 
 ## Environment contract

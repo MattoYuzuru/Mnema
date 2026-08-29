@@ -143,6 +143,8 @@ Resolution update (2026-08-18, [#88](https://github.com/MattoYuzuru/Mnema/issues
 
 Resolution update (2026-08-29, [#119](https://github.com/MattoYuzuru/Mnema/issues/119)): CI and the frontend build image use the Angular 18-compatible Node 22.23.2 baseline. Every external Action is pinned to an official release commit with a readable version comment and declares the supported Node 24 Actions runtime, so the forced runtime compatibility flag is removed. A repository test rejects mutable refs and inconsistent pins; image digests remain the separate follow-up boundary in #121.
 
+Resolution update (2026-08-29, [#124](https://github.com/MattoYuzuru/Mnema/issues/124)): every workflow denies token permissions by default and every job's exact permission map is contract-tested. All 14 retained uploads use one pre-upload boundary with an exact name/path/retention/classification inventory; it rejects known credential files, raw Kubernetes Secrets and credential markers without reading real secret stores. Sanitized release and recovery evidence remains allowed. Private Vulnerability Reporting is enabled and `SECURITY.md` routes reports to the private advisory flow. See the [CI artifact security boundary](ci-artifact-security-boundary.md) for the operational contract and residual limits.
+
 ### P2 — production ownership is implicit
 
 The repository has useful liveness/readiness probes and observability manifests, but no concise production runbook covering ownership, dashboards, alert thresholds, incident access, certificate renewal, secret rotation, queue recovery or data restoration. Create the runbook after the actual environment is inventoried; copying guessed commands would be worse than marking the gap.
