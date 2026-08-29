@@ -180,10 +180,10 @@ When implementing:
 - Do not move a task to `Ready` while a product/architecture choice is unresolved or the work cannot fit into a reviewable 1–3 day change.
 - Generated code, commits, and green unit tests are evidence, not the outcome. `Done` requires merged/applied behavior and proportional verification.
 
-### Merge boundary
+### Task-scoped autonomy and merge boundary
 
-- **Open the pull request; do not merge it.** Merging is the owner's action. This applies to every change, and especially to schema/migration, security, dependency, payment, and production-delivery changes.
-- Be honest about what enforces this. The `main protection` ruleset technically guarantees only three things: no direct push, no force-push or deletion, and no merge until both required checks are green. It does **not** require an approving review — the repository has a single maintainer, GitHub does not allow approving your own pull request, and requiring an approval would block every merge.
-- Therefore "an agent does not self-merge" is a procedural rule, not a platform guarantee. Do not describe it as one in issues, pull requests, or documentation.
-- `bypass_actors` on the ruleset is deliberately empty. Do not request, add, or use a bypass. If a merge is genuinely blocked, report why instead of finding a way around it.
-- Never disable, weaken, or delete the ruleset to make your own change mergeable.
+- An explicit request to deliver an issue, epic, or change end to end authorizes the ordinary in-scope workflow: create a feature branch, edit, test, commit, push that branch, open or update its pull request, monitor CI, fix failures, and push follow-up commits. If the request also says to merge, auto-merge, or ship the result, it authorizes squash-merging that pull request after every required gate passes. Do not pause for repeated approval as the branch, PR number, or head SHA becomes known, and do not restate the authorization in routine updates.
+- Treat that authorization as one finite task mandate, not standing permission for unrelated work. Ask only when a product or architecture choice would materially change the outcome, required credentials or permissions are missing, the scope or external effect expands, or another actor changes the pull request beyond the approved task.
+- Before merge, re-read the current PR head and rules, require an up-to-date branch, resolved review threads, green `backend-quality` and `frontend-quality`, and the full repository quality gate required above on the exact commit. Merge only through the protected pull request with squash; never push directly to `main`, bypass protection, force-push, or weaken/delete the ruleset.
+- Push/PR CI and configured non-production workflows triggered by the authorized delivery are part of the mandate. Production deployment, an environment approval, destructive data work, or publication outside GitHub is included only when the user names that target and effect in the task or a later instruction; otherwise stop at that boundary once and report it.
+- The `main protection` ruleset is enforcement, not human approval: it has no bypass actor or required approving review, and it requires PR/squash flow, linear history, resolved threads, an up-to-date branch, and both quality checks.
