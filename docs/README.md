@@ -28,6 +28,7 @@
 - **Current:** [Staging bootstrap and secret contract](./operations/staging-runbook.md) — namespace/RBAC bootstrap, prefixed GitHub Environment keys, promotion and rollback boundary.
 - **Current:** [Release verification runbook](./operations/release-verification-runbook.md) — hosted smoke, safe diagnostics, complete-manifest rollback and staging recovery drill.
 - **Current:** [Database recovery runbook](./operations/database-recovery-runbook.md) — off-host PostgreSQL backup, pre-migration evidence, isolated restore drill and measured RPO/RTO contract.
+- **Current:** [Security automation triage](./operations/security-triage.md) — baseline, new-regression blocking and expiring private exceptions for Dependabot, dependency review and CodeQL.
 - **Proposed:** [V2 reset, capacity and offline plan](./operations/v2-reset-capacity-and-offline-plan.md) — account-only cutover, 1k/10k/100k capacity, scale triggers, offline and MinIO harness.
 - **Legacy:** [Схема core-сущностей v1](./core-entities-schema.md) — обзор старой модели; миграции остаются источником истины.
 
