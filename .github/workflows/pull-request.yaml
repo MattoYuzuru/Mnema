@@ -5,9 +5,6 @@ on:
     branches:
       - main
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 concurrency:
   group: pr-quality-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -21,10 +18,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with:
           distribution: temurin
           java-version: '21'
@@ -35,7 +32,7 @@ jobs:
         run: ./gradlew quality
 
       - name: Upload backend coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: backend-jacoco-report
           path: backend/build/reports/jacoco/jacocoRootReport/
@@ -46,12 +43,17 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify immutable GitHub Actions pins
+        run: |
+          python3 scripts/verify_github_actions_pins.py
+          python3 -m unittest discover -s scripts/tests -p 'test_verify_github_actions_pins.py' -v
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: '20'
+          node-version: '22.23.2'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 

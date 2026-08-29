@@ -141,6 +141,8 @@ Resolution update (2026-08-18, [#88](https://github.com/MattoYuzuru/Mnema/issues
 - Local compose and Kubernetes use different PostgreSQL major versions. Pick one supported major, document the upgrade/rollback process and test extensions/migrations against it.
 - Third-party Actions and container base images use moving version tags. Pin high-impact Actions to full commit SHAs, record update ownership and use digest or controlled update automation for runtime bases. GitHub recommends full-length commit SHA pinning in [Secure use reference](https://docs.github.com/en/actions/reference/security/secure-use).
 
+Resolution update (2026-08-29, [#119](https://github.com/MattoYuzuru/Mnema/issues/119)): CI and the frontend build image use the Angular 18-compatible Node 22.23.2 baseline. Every external Action is pinned to an official release commit with a readable version comment and declares the supported Node 24 Actions runtime, so the forced runtime compatibility flag is removed. A repository test rejects mutable refs and inconsistent pins; image digests remain the separate follow-up boundary in #121.
+
 ### P2 — production ownership is implicit
 
 The repository has useful liveness/readiness probes and observability manifests, but no concise production runbook covering ownership, dashboards, alert thresholds, incident access, certificate renewal, secret rotation, queue recovery or data restoration. Create the runbook after the actual environment is inventoried; copying guessed commands would be worse than marking the gap.

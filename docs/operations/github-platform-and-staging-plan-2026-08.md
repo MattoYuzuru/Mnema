@@ -141,6 +141,13 @@ pull request
 9. Добавить scheduled backup + isolated restore drill до account cutover.
 10. Включить Dependabot, dependency review, CodeQL и image scan в audit-mode; сделать blocking только после triage существующего baseline.
 
+External Actions используют только full 40-character commit SHA с соседним комментарием
+`# vX.Y.Z` в канонической отдельной строке `uses:`. При обновлении сначала сверяются официальный immutable release, объявленный
+Node runtime и совместимость используемых inputs/outputs, затем одновременно меняются все
+call sites и запускаются `python3 scripts/verify_github_actions_pins.py`, его unit tests и
+`actionlint`. Mutable tag, branch или неполный SHA блокируется repository policy; сам release
+comment не заменяет проверку commit против официального tag.
+
 Обещание «ни одной уязвимости вообще» технически непроверяемо. Реальный release policy: ноль известных Critical/High в shipping scope; временное исключение допустимо только как private security issue с owner, компенсирующей мерой и датой истечения. Security scanners дополняют threat modeling, renderer adversarial corpus и ручное review, а не заменяют их.
 
 ## Read-only inventory серверов

@@ -8,9 +8,6 @@ on:
 
 permissions: {}
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 jobs:
   validate-staging-deploy:
     runs-on: ubuntu-latest
@@ -39,12 +36,12 @@ jobs:
           fi
 
       - name: Checkout release revision
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.RELEASE_SHA }}
 
       - name: Download staging-approved release for preflight
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: production-release-manifest
           path: ${{ runner.temp }}/production-preflight
@@ -102,17 +99,17 @@ jobs:
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       - name: Checkout release revision
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.RELEASE_SHA }}
 
       - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
         with:
           version: v1.36.0
 
       - name: Download complete release manifest
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: production-release-manifest
           path: ${{ github.workspace }}
@@ -361,7 +358,7 @@ jobs:
 
       - name: Upload sanitized production release preview
         id: upload-preview
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: production-release-preview-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
@@ -424,17 +421,17 @@ jobs:
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
       - name: Checkout release revision
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ env.RELEASE_SHA }}
 
       - name: Set up kubectl
-        uses: azure/setup-kubectl@v4
+        uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
         with:
           version: v1.36.0
 
       - name: Download complete release manifest
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: production-release-manifest
           path: ${{ github.workspace }}
@@ -477,7 +474,7 @@ jobs:
           fi
 
       - name: Download approved production preview by immutable ID
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           artifact-ids: ${{ needs.preview-production.outputs.preview_artifact_id }}
           path: ${{ env.APPROVED_PREVIEW_DIR }}
@@ -983,7 +980,7 @@ jobs:
 
       - name: Upload verified production release record
         if: ${{ steps.record.outcome == 'success' }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: production-release-record-${{ github.run_id }}
           path: ${{ env.RELEASE_RECORD }}
@@ -1117,7 +1114,7 @@ jobs:
 
       - name: Upload production failure evidence
         if: ${{ always() && (failure() || steps.rollout.outcome != 'success' || steps.observability.outcome != 'success' || steps.smoke.outcome != 'success' || steps.reconciliation.outcome != 'success' || steps.record.outcome != 'success') }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: production-release-diagnostics-${{ github.run_id }}
           path: |

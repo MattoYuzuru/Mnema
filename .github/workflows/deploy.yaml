@@ -5,9 +5,6 @@ on:
     branches: [main]
   workflow_dispatch:
 
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
-
 permissions: {}
 
 jobs:
@@ -33,10 +30,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@dd06d9cba3e5552c54d9f8ea23572deb30010f7c # v6.0.0
         with:
           distribution: temurin
           java-version: "21"
@@ -47,7 +44,7 @@ jobs:
         run: ./gradlew quality
 
       - name: Upload backend coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: backend-jacoco-report
           path: backend/build/reports/jacoco/jacocoRootReport/
@@ -62,12 +59,17 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Verify immutable GitHub Actions pins
+        run: |
+          python3 scripts/verify_github_actions_pins.py
+          python3 -m unittest discover -s scripts/tests -p 'test_verify_github_actions_pins.py' -v
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "20"
+          node-version: "22.23.2"
           cache: npm
           cache-dependency-path: frontend/package-lock.json
 
@@ -207,17 +209,17 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
       - name: Repo slug (lowercase)
         id: repo
@@ -230,7 +232,7 @@ jobs:
       - name: Build & push frontend
         if: ${{ matrix.kind == 'frontend' }}
         id: frontend-image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
@@ -244,7 +246,7 @@ jobs:
       - name: Build & push backend ${{ matrix.name }}
         if: ${{ matrix.kind == 'backend' }}
         id: backend-image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
@@ -284,7 +286,7 @@ jobs:
           printf '%s\n' "$digest" > "${RUNNER_TEMP}/release-digests/${IMAGE_NAME}.digest"
 
       - name: Upload immutable image digest
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-image-${{ matrix.name }}
           path: ${{ runner.temp }}/release-digests/${{ matrix.name }}.digest
@@ -299,10 +301,10 @@ jobs:
       contents: read
     steps:
       - name: Checkout release revision
-        uses: actions/checkout@v6
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Download image digests
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: release-image-*
           path: ${{ runner.temp }}/release-digests
@@ -346,7 +348,7 @@ jobs:
           (cd "$output_dir" && sha256sum "$output_name" > "${output_name}.sha256")
 
       - name: Upload complete release manifest
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: production-release-manifest
           path: |
@@ -356,7 +358,7 @@ jobs:
           retention-days: 30
 
       - name: Upload staging release manifest
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: staging-release-manifest
           path: |
