@@ -43,6 +43,23 @@ grep -Fq './scripts/verify-hosted-browser-csp.sh https://staging.mnema.app/login
 grep -Fq './scripts/verify-hosted-browser-csp.sh https://mnema.app/login' "$REPO_ROOT/.github/workflows/production-deploy.yaml"
 sh -n "$REPO_ROOT/scripts/verify-hosted-browser-csp.sh"
 
+FAKE_CHROME="$REPO_ROOT/scripts/tests/fake-hosted-chrome.sh"
+MNEMA_FAKE_CHROME_CASE=rendered CHROME_BIN="$FAKE_CHROME" \
+  "$REPO_ROOT/scripts/verify-hosted-browser-csp.sh" \
+  https://app.example.test/login >/dev/null
+if MNEMA_FAKE_CHROME_CASE=missing-response CHROME_BIN="$FAKE_CHROME" \
+  "$REPO_ROOT/scripts/verify-hosted-browser-csp.sh" \
+  https://app.example.test/login >/dev/null 2>&1; then
+  echo "Hosted browser verifier accepted a Turnstile script without a rendered widget" >&2
+  exit 1
+fi
+if MNEMA_FAKE_CHROME_CASE=csp-violation CHROME_BIN="$FAKE_CHROME" \
+  "$REPO_ROOT/scripts/verify-hosted-browser-csp.sh" \
+  https://app.example.test/login >/dev/null 2>&1; then
+  echo "Hosted browser verifier accepted a same-origin CSP violation" >&2
+  exit 1
+fi
+
 generate() {
   mode="$1"
   mode_root="$TEST_ROOT/$mode"
