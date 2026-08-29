@@ -1,6 +1,6 @@
 # backend/Dockerfile
 
-FROM gradle:8.10.2-jdk21 AS build
+FROM gradle:8.10.2-jdk21@sha256:963d59f7f22767da4efbcf46b661361b61af5fb88b0309da1071c4234c647eba AS build
 WORKDIR /workspace
 
 # 1. Копируем только gradle-конфиги для кэширования зависимостей
@@ -40,37 +40,37 @@ RUN --mount=type=cache,target=/home/gradle/.gradle \
 
 # 4. Runtime-образы
 
-FROM eclipse-temurin:21-jre AS auth-runtime
+FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS auth-runtime
 WORKDIR /app
 COPY --from=build /workspace/services/auth/build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]
 
-FROM eclipse-temurin:21-jre AS user-runtime
+FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS user-runtime
 WORKDIR /app
 COPY --from=build /workspace/services/user/build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]
 
-FROM eclipse-temurin:21-jre AS core-runtime
+FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS core-runtime
 WORKDIR /app
 COPY --from=build /workspace/services/core/build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]
 
-FROM eclipse-temurin:21-jre AS media-runtime
+FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS media-runtime
 WORKDIR /app
 COPY --from=build /workspace/services/media/build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]
 
-FROM eclipse-temurin:21-jre AS import-runtime
+FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS import-runtime
 WORKDIR /app
 COPY --from=build /workspace/services/import/build/libs/*.jar app.jar
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]
 
-FROM eclipse-temurin:21-jre AS ai-runtime
+FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS ai-runtime
 WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \

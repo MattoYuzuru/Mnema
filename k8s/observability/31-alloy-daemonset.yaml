@@ -22,7 +22,7 @@ spec:
           effect: "NoSchedule"
       containers:
         - name: alloy
-          image: grafana/alloy:v1.3.1
+          image: grafana/alloy:v1.3.1@sha256:e5a674ee6b90d8d25d1adcdbcf885fa3bf6b592f3e2ab358b47431f3ca0e771f
           args:
             - run
             - --server.http.listen-addr=0.0.0.0:12345

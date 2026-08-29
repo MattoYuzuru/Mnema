@@ -1,5 +1,5 @@
 # --- build stage ---
-FROM node:22.23.2-alpine AS build
+FROM node:22.23.2-alpine@sha256:c610fcdfb1d5b4740dd70c284ed3cb16bb857e0f7166196e36a5501df7a3aa32 AS build
 WORKDIR /app
 
 # Dependency resolution must match the tested lockfile exactly.
@@ -13,7 +13,7 @@ COPY . .
 RUN npm run build
 
 # --- serve stage ---
-FROM nginx:alpine
+FROM nginx:1.31.4-alpine@sha256:db35bfc6b2951e7f8a72db5db120288c127ffaeeb4a6d4b95a26fead017d5913
 
 # SPA-фолбэк, чтобы роутинг работал при F5
 COPY nginx.conf /etc/nginx/conf.d/default.conf
