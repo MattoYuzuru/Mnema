@@ -89,6 +89,7 @@ frontend/node_modules
 !/scripts/local-ai-gateway/
 !/scripts/local-ai-gateway/**
 !/scripts/verify_github_actions_pins.py
+!/scripts/verify_security_automation_policy.py
 !/scripts/tests/
 !/scripts/tests/**
 !/scripts/local-audio-gateway/
