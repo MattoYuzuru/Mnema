@@ -94,6 +94,9 @@ jobs:
       - name: Verify frontend release contract
         run: ./scripts/test-frontend-release-contract.sh
 
+      - name: Verify browser response-security contract
+        run: ./scripts/test-browser-security-headers.sh
+
       - name: Verify release manifest renderer
         run: ./scripts/test-render-release-manifest.sh
 

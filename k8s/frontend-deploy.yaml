@@ -26,6 +26,12 @@ spec:
               value: "release-placeholder"
             - name: MNEMA_AUTH_SERVER_URL
               value: "https://release-auth-host-placeholder"
+            - name: MNEMA_APP_ENV
+              value: "release-app-env-placeholder"
+            - name: MNEMA_PUBLIC_ORIGIN
+              value: "https://release-public-host-placeholder"
+            - name: MNEMA_STORAGE_ORIGIN
+              value: "release-s3-public-endpoint-placeholder"
             - name: MNEMA_FEATURE_AI_ENABLED
               value: "false"
           ports: [ { containerPort: 80 } ]

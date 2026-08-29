@@ -50,6 +50,8 @@ test "$(grep -E -c '^[[:space:]]+image:' "$TEST_ROOT/release-a.yaml")" -eq 11
 test "$(grep -E -c '^[[:space:]]+image: [^[:space:]]+@sha256:[0-9a-f]{64}$' "$TEST_ROOT/release-a.yaml")" -eq 11
 test "$(grep -F -c "value: \"$release_sha\"" "$TEST_ROOT/release-a.yaml")" -eq 6
 test "$(grep -F -c "releaseId: \"$release_sha\"" "$TEST_ROOT/release-a.yaml")" -eq 1
+production_path_style=$(awk '/name: AWS_PATH_STYLE_ACCESS/{getline; print; exit}' "$TEST_ROOT/release-a.yaml")
+test "$production_path_style" = '              value: "true"'
 if grep -Eq 'release(-[a-z0-9]+)*-placeholder|ghcr\.io/mattoyuzuru/mnema/(frontend|auth|user|core|media|import):latest' "$TEST_ROOT/release-a.yaml"; then
   echo "rendered release contains a mutable image or unresolved placeholder" >&2
   exit 1
@@ -60,9 +62,9 @@ if grep -Fq 'kind: Ingress' "$TEST_ROOT/release-staging.yaml"; then
   echo "staging routes must remain owner-managed outside the scoped CI release" >&2
   exit 1
 fi
-test "$(grep -F -c 'value: "staging"' "$TEST_ROOT/release-staging.yaml")" -eq 5
+test "$(grep -F -c 'value: "staging"' "$TEST_ROOT/release-staging.yaml")" -eq 6
 test "$(grep -F -c 'value: "http://minio:9000"' "$TEST_ROOT/release-staging.yaml")" -eq 1
-test "$(grep -F -c 'value: "https://storage.staging.mnema.app"' "$TEST_ROOT/release-staging.yaml")" -eq 1
+test "$(grep -F -c 'value: "https://storage.staging.mnema.app"' "$TEST_ROOT/release-staging.yaml")" -eq 2
 grep -E '^[[:space:]]+image: ghcr\.io/mattoyuzuru/mnema/' "$TEST_ROOT/release-a.yaml" > "$TEST_ROOT/production-images.txt"
 grep -E '^[[:space:]]+image: ghcr\.io/mattoyuzuru/mnema/' "$TEST_ROOT/release-staging.yaml" > "$TEST_ROOT/staging-images.txt"
 if ! diff -u "$TEST_ROOT/production-images.txt" "$TEST_ROOT/staging-images.txt" >/dev/null; then

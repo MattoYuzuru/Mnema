@@ -5,7 +5,7 @@ artifact:
   title: "Mnema staging bootstrap and secret contract"
   status: current
   created_at: "2026-08-18"
-  updated_at: "2026-08-24"
+  updated_at: "2026-08-29"
   owners: ["project-owner"]
 ---
 
@@ -99,6 +99,8 @@ Before uploading values, load both environment copies from the owner's external 
 After both environment copies are loaded and verified, remove the superseded unprefixed repository secrets. Keep `GITHUB_TOKEN` automatic. Do not delete the old repository secrets until both prefixed copies are confirmed because GitHub does not expose existing secret values for migration.
 
 ## Promotion and evidence
+
+The hosted release smoke includes the staged Report-Only response contract and headless Chrome inspection defined in the [browser security headers runbook](./browser-security-headers.md). Any missing header, unexpected broad source, Turnstile loading failure, or browser-observed CSP violation rejects the candidate inside the same automatic rollback boundary.
 
 `Main CI` builds each image once, records its registry digest, and renders both environment manifests from those same six digest files. The unprivileged `Staging Deploy` gate downloads both checksummed artifacts by the exact predecessor run ID and proves both embedded release identities before the staging Environment is entered; the direct deployment job repeats those checks. Staging renders its Secret and server-side dry-runs/diffs that Secret, data services, bucket Job and complete release before the first apply/delete/restart, then performs one final stale-main check. It must complete all six rollouts, the behavioral release smoke and release-state recording before it relays the unchanged checksummed production manifest to its own run. The unprivileged `Production Deploy` gate validates only that staging-approved relay and the current SHA before either production approval; non-cancelling concurrency begins only on the mutating job, so obsolete preview approvals do not block a newer safe preview. A fresh staging database has no dedicated smoke identity; after the first expected login `401`, the smoke creates the exact configured email through the normal registration endpoint with the account-bound Turnstile bypass, then retries authentication. Conflicts, wrong credentials and all non-`401` failures stop the rollout. Production's preview artifact binds the application diff, exact desired Secret and smoke inputs, exact live application/Grafana Secret identities/data/resourceVersions, and the reconciliation marker with context-separated keyed HMACs; no values or unkeyed value hashes are exposed. The mutating job repeats all bindings, then conditionally replaces Secrets with the approved `resourceVersion`, so a live A→C change fails instead of being overwritten. Successful application, observability and smoke verification are recorded last; a failed rollout or smoke leaves reconciliation/release state stale and invokes the saved complete-release rollback path. Kubernetes documents that `resourceVersion` on replacement provides optimistic concurrency and rejects stale updates ([API concepts](https://kubernetes.io/docs/reference/using-api/api-concepts/#updates-to-existing-resources)). Release state, sanitized diagnostics, automatic rollback and the mandatory controlled drill are defined in the [release verification runbook](./release-verification-runbook.md).
 

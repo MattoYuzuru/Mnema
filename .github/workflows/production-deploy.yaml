@@ -960,6 +960,12 @@ jobs:
             --expected-release-sha "$RELEASE_SHA" \
             --timeout-seconds 300 \
             --report "$SMOKE_REPORT"
+          python3 scripts/verify_browser_security_headers.py hosted \
+            --base-url https://mnema.app \
+            --mode prod \
+            --auth-origin https://auth.mnema.app \
+            --storage-origin https://storage.yandexcloud.net
+          ./scripts/verify-hosted-browser-csp.sh https://mnema.app/login
 
       - name: Record successful Secret reconciliation generations
         id: reconciliation
