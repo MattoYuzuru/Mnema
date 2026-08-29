@@ -88,6 +88,9 @@ frontend/node_modules
 !/scripts/smoke/**
 !/scripts/local-ai-gateway/
 !/scripts/local-ai-gateway/**
+!/scripts/verify_github_actions_pins.py
+!/scripts/tests/
+!/scripts/tests/**
 !/scripts/local-audio-gateway/
 !/scripts/local-audio-gateway/**
 !/scripts/local-image-gateway/

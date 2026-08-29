@@ -1,5 +1,5 @@
 # --- build stage ---
-FROM node:20-alpine AS build
+FROM node:22.23.2-alpine AS build
 WORKDIR /app
 
 # Dependency resolution must match the tested lockfile exactly.

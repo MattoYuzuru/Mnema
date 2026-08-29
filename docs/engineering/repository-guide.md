@@ -77,7 +77,7 @@ When prose and executable configuration disagree, verify runtime behavior and fi
 
 ## Quality commands
 
-Prerequisites: JDK 21, a supported Node release compatible with the checked-in Angular version, npm and Chrome/Chromium for Karma. Docker is only needed for stack/integration work.
+Prerequisites: JDK 21, Node 22.23.2 (the CI and image-build baseline for Angular 18.2), npm and Chrome/Chromium for Karma. Docker is only needed for stack/integration work.
 
 ```bash
 cd backend
