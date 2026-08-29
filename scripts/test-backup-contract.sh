@@ -48,6 +48,8 @@ fi
 grep -Fq 'APPLY_CHANGES=${APPLY_CHANGES:-false}' "$PLATFORM_APPLY"
 grep -Fq 'MINIMUM_FREE_GIB=${MINIMUM_FREE_GIB:-60}' "$PLATFORM_APPLY"
 grep -Fq 'kubectl diff -f' "$PLATFORM_APPLY"
+grep -Fq 'kubectl apply --dry-run=client --validate=strict' "$PLATFORM_APPLY"
+grep -Fq 'restore_boundary=planned-create namespace=mnema-restore-drill' "$PLATFORM_APPLY"
 grep -Fq 'kubectl -n prod get secret mnema-backup-secrets' "$PLATFORM_APPLY"
 grep -Fq 'rollout status statefulset/prometheus' "$PLATFORM_APPLY"
 grep -Fq 'Production PostgreSQL must remain on the reviewed PostgreSQL 16 source boundary' "$PLATFORM_APPLY"
@@ -611,6 +613,7 @@ cat > "$TEST_ROOT/bin/kubectl" <<'MOCK_KUBECTL'
 #!/bin/sh
 set -eu
 
+printf '%s\n' "$*" >> "${FAKE_KUBECTL_LOG:-/dev/null}"
 case "$*" in
   '-n prod get statefulset postgres -o jsonpath={.status.readyReplicas}') printf '1' ;;
   *'get statefulset postgres -o jsonpath={.spec.template.spec.containers'*'.image}')
@@ -626,12 +629,37 @@ case "$*" in
   '-n prod get jobs -l app.kubernetes.io/name=mnema-postgres-backup -o jsonpath={range .items[*]}{.metadata.name}{"|"}{.status.active}{"\n"}{end}')
     if [ "${FAKE_ACTIVE_BACKUP:-false}" = true ]; then printf 'active-backup|1\n'; fi
     ;;
-  'get namespace mnema-restore-drill') ;;
+  'get namespace mnema-restore-drill --ignore-not-found -o name')
+    if [ "${FAKE_NAMESPACE_LOOKUP_ERROR:-false}" = true ]; then exit 2; fi
+    if [ "${FAKE_NAMESPACE_EXISTS:-true}" = true ]; then
+      printf 'namespace/mnema-restore-drill'
+    fi
+    ;;
   '-n mnema-restore-drill get pods,jobs.batch,statefulsets.apps,persistentvolumeclaims,services -o name')
     if [ "${FAKE_BUSY_RESTORE:-false}" = true ]; then printf 'pod/busy-restore\n'; fi
     ;;
   '-n prod create configmap mnema-backup-scripts '*'-o yaml')
     printf '%s\n' 'apiVersion: v1' 'kind: ConfigMap' 'metadata:' '  name: mnema-backup-scripts'
+    ;;
+  'apply --dry-run=client --validate=strict -f '*'restore-boundary.yaml -o name')
+    if [ "${FAKE_NAMESPACE_EXISTS:-true}" = true ]; then
+      echo 'Existing restore boundary must use live diff' >&2
+      exit 2
+    fi
+    printf '%s\n' \
+      'namespace/mnema-restore-drill' \
+      'resourcequota/restore-drill-quota' \
+      'limitrange/restore-drill-limits' \
+      'configmap/mnema-restore-boundary' \
+      'serviceaccount/mnema-recovery' \
+      'role.rbac.authorization.k8s.io/mnema-recovery' \
+      'rolebinding.rbac.authorization.k8s.io/mnema-recovery'
+    ;;
+  'diff -f '*'restore-boundary.yaml')
+    if [ "${FAKE_NAMESPACE_EXISTS:-true}" != true ]; then
+      echo 'Absent restore boundary must use client preview' >&2
+      exit 2
+    fi
     ;;
   'diff -f '*) ;;
   *)
@@ -642,9 +670,39 @@ esac
 MOCK_KUBECTL
 chmod +x "$TEST_ROOT/bin/df" "$TEST_ROOT/bin/kubectl"
 
+: > "$TEST_ROOT/platform-kubectl.log"
+FAKE_KUBECTL_LOG="$TEST_ROOT/platform-kubectl.log" \
 STORAGE_PATH="$TEST_ROOT/storage" \
   "$PLATFORM_APPLY" > "$TEST_ROOT/platform-preview.out"
 grep -Fq 'backup_platform=previewed' "$TEST_ROOT/platform-preview.out"
+grep -Eq 'diff -f .*restore-boundary\.yaml' "$TEST_ROOT/platform-kubectl.log"
+
+: > "$TEST_ROOT/platform-kubectl.log"
+FAKE_NAMESPACE_EXISTS=false \
+FAKE_KUBECTL_LOG="$TEST_ROOT/platform-kubectl.log" \
+STORAGE_PATH="$TEST_ROOT/storage" \
+  "$PLATFORM_APPLY" > "$TEST_ROOT/platform-first-bootstrap.out"
+grep -Fq 'restore_boundary=planned-create namespace=mnema-restore-drill' \
+  "$TEST_ROOT/platform-first-bootstrap.out"
+grep -Fq 'apply --dry-run=client --validate=strict -f' \
+  "$TEST_ROOT/platform-kubectl.log"
+if grep -Eq 'diff -f .*restore-boundary\.yaml' "$TEST_ROOT/platform-kubectl.log"; then
+  echo 'First bootstrap must not diff namespaced resources before namespace creation' >&2
+  exit 1
+fi
+
+: > "$TEST_ROOT/platform-kubectl.log"
+if FAKE_NAMESPACE_LOOKUP_ERROR=true \
+  FAKE_KUBECTL_LOG="$TEST_ROOT/platform-kubectl.log" \
+  STORAGE_PATH="$TEST_ROOT/storage" \
+  "$PLATFORM_APPLY" >/dev/null 2> "$TEST_ROOT/namespace-lookup.err"; then
+  echo 'Platform preview must fail closed when restore namespace lookup fails' >&2
+  exit 1
+fi
+if grep -Eq 'apply --dry-run=client|diff -f' "$TEST_ROOT/platform-kubectl.log"; then
+  echo 'A namespace lookup error must stop before manifest preview' >&2
+  exit 1
+fi
 
 if FAKE_ACTIVE_BACKUP=true STORAGE_PATH="$TEST_ROOT/storage" \
   "$PLATFORM_APPLY" >/dev/null 2> "$TEST_ROOT/active-backup.err"; then
