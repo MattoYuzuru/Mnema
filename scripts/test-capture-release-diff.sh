@@ -125,14 +125,58 @@ mkdir -p \
   "$TEST_ROOT/first-desired/apps.v1.Deployment.prod.mnema-auth" \
   "$TEST_ROOT/second-live/apps.v1.Deployment.prod.mnema-auth" \
   "$TEST_ROOT/second-desired/apps.v1.Deployment.prod.mnema-auth"
-printf '%s\n' 'image: old@sha256:aaaaaaaa' > \
-  "$TEST_ROOT/first-live/apps.v1.Deployment.prod.mnema-auth/object.yaml"
-printf '%s\n' 'image: new@sha256:bbbbbbbb' > \
-  "$TEST_ROOT/first-desired/apps.v1.Deployment.prod.mnema-auth/object.yaml"
-printf '%s\n' 'image: old@sha256:aaaaaaaa' > \
-  "$TEST_ROOT/second-live/apps.v1.Deployment.prod.mnema-auth/object.yaml"
-printf '%s\n' 'image: new@sha256:bbbbbbbb' > \
-  "$TEST_ROOT/second-desired/apps.v1.Deployment.prod.mnema-auth/object.yaml"
+cat >"$TEST_ROOT/first-live/apps.v1.Deployment.prod.mnema-auth/object.yaml" <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: "2026-08-29T09:00:00Z"
+  generation: 10
+  name: mnema-auth
+  resourceVersion: "100"
+  uid: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+spec:
+  generation: preserve-spec-fields-with-the-same-name
+  image: old@sha256:aaaaaaaa
+EOF
+cat >"$TEST_ROOT/first-desired/apps.v1.Deployment.prod.mnema-auth/object.yaml" <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: "2026-08-29T09:00:01Z"
+  generation: 11
+  name: mnema-auth
+  resourceVersion: "101"
+  uid: bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb
+spec:
+  generation: preserve-spec-fields-with-the-same-name
+  image: new@sha256:bbbbbbbb
+EOF
+cat >"$TEST_ROOT/second-live/apps.v1.Deployment.prod.mnema-auth/object.yaml" <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: "2026-08-29T09:05:00Z"
+  generation: 20
+  name: mnema-auth
+  resourceVersion: "200"
+  uid: cccccccc-cccc-cccc-cccc-cccccccccccc
+spec:
+  generation: preserve-spec-fields-with-the-same-name
+  image: old@sha256:aaaaaaaa
+EOF
+cat >"$TEST_ROOT/second-desired/apps.v1.Deployment.prod.mnema-auth/object.yaml" <<'EOF'
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  creationTimestamp: "2026-08-29T09:05:01Z"
+  generation: 21
+  name: mnema-auth
+  resourceVersion: "201"
+  uid: dddddddd-dddd-dddd-dddd-dddddddddddd
+spec:
+  generation: preserve-spec-fields-with-the-same-name
+  image: new@sha256:bbbbbbbb
+EOF
 
 first_tree_hash=$(PATH="$TEST_ROOT/bin:$PATH" \
   FAKE_LIVE_PATH="$TEST_ROOT/first-live" \
@@ -144,6 +188,11 @@ second_tree_hash=$(PATH="$TEST_ROOT/bin:$PATH" \
   "$CAPTURE" "$manifest" "$TEST_ROOT/second.diff")
 test "$first_tree_hash" = "$second_tree_hash"
 cmp "$TEST_ROOT/first.diff" "$TEST_ROOT/second.diff"
+if grep -Eq 'creationTimestamp|resourceVersion|uid:' "$TEST_ROOT/first.diff"; then
+  echo 'canonical diff must exclude volatile API-server metadata' >&2
+  exit 1
+fi
+grep -Fq 'preserve-spec-fields-with-the-same-name' "$TEST_ROOT/first.diff"
 if grep -Fq "$TEST_ROOT" "$TEST_ROOT/first.diff"; then
   echo 'canonical diff must not contain random temporary roots' >&2
   exit 1
