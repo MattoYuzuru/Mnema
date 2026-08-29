@@ -506,6 +506,12 @@ jobs:
             --expected-release-sha "$RELEASE_SHA" \
             --timeout-seconds 300 \
             --report "$SMOKE_REPORT"
+          python3 scripts/verify_browser_security_headers.py hosted \
+            --base-url https://staging.mnema.app \
+            --mode staging \
+            --auth-origin https://auth.staging.mnema.app \
+            --storage-origin https://storage.staging.mnema.app
+          ./scripts/verify-hosted-browser-csp.sh https://staging.mnema.app/login
 
       - name: Record successful complete staging release
         id: record

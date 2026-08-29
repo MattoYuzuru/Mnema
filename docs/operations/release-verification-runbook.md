@@ -5,7 +5,7 @@ artifact:
   title: "Mnema release smoke, diagnostics and rollback"
   status: current
   created_at: "2026-08-19"
-  updated_at: "2026-08-24"
+  updated_at: "2026-08-29"
   owners: ["project-owner"]
 ---
 
@@ -44,6 +44,8 @@ Within a five-minute overall deadline and a 15-second per-request timeout, `rele
 5. a uniquely named private deck and one card can be created;
 6. that card is returned by the review queue and answered once with `GOOD`;
 7. the deck is archived and hard-deleted in `finally`, including after a later smoke failure.
+
+Hosted releases also run the response and headless-browser checks from the [browser security headers and CSP runbook](browser-security-headers.md). Staging must have the full policy in Report-Only with no observed browser violation; production must enforce that same policy and return the bounded host-only HSTS header. These checks share the release smoke outcome, so a failure rejects and rolls back the candidate.
 
 The current local-login contract returns an access token but no refresh token. The `token_renewal` step therefore performs a second real password login and requires a different JWT `jti`; it does not claim to test an OAuth refresh grant.
 
