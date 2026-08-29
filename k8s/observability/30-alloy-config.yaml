@@ -39,7 +39,7 @@ data:
     }
 
     loki.source.kubernetes "pods" {
-      targets    = discovery.relabel.pods.targets
+      targets    = discovery.relabel.pods.output
       forward_to = [loki.process.pods.receiver]
     }
 

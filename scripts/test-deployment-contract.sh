@@ -12,6 +12,14 @@ ADMISSION="$REPO_ROOT/k8s/staging/admission.yaml"
 STAGING_DATA="$REPO_ROOT/k8s/staging/data.yaml"
 STAGING_BUCKET_JOB="$REPO_ROOT/k8s/staging/minio-bucket-job.yaml"
 STAGING_ROUTES="$REPO_ROOT/k8s/staging/routes.yaml"
+ALLOY_CONFIG="$REPO_ROOT/k8s/observability/30-alloy-config.yaml"
+
+grep -Eq '^[[:space:]]*targets[[:space:]]*=[[:space:]]*discovery\.relabel\.pods\.output[[:space:]]*$' \
+  "$ALLOY_CONFIG"
+if grep -Eq 'discovery\.relabel\.pods\.targets' "$ALLOY_CONFIG"; then
+  echo 'Alloy must consume the discovery.relabel output export' >&2
+  exit 1
+fi
 
 grep -Fq 'version: v1.36.0' "$STAGING_WORKFLOW"
 grep -Fq 'workflow_dispatch:' "$MAIN_WORKFLOW"
