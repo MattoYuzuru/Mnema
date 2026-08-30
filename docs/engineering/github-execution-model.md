@@ -5,7 +5,7 @@ artifact:
   title: "Mnema v2 GitHub planning model"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-08-15"
+  updated_at: "2026-08-30"
   owners: ["project-owner"]
 ---
 
@@ -15,11 +15,11 @@ artifact:
 
 GitHub Projects достаточно для Mnema; отдельная Jira сейчас добавит синхронизацию без пользы. Projects поддерживает table, board/Kanban, roadmap, custom fields, charts и iterations ([GitHub Projects](https://docs.github.com/en/issues/planning-and-tracking-with-projects)). «Эпики» в личном repository лучше моделировать parent issues с sub-issues; GitHub поддерживает такую иерархию напрямую ([sub-issues](https://docs.github.com/en/issues/tracking-your-work-with-issues/using-issues/adding-sub-issues)). Organization issue types с типом `Epic` для личного user repository не нужны.
 
-Целевая доска: [MattoYuzuru Project #4](https://github.com/users/MattoYuzuru/projects/4). Владелец разрешил создать parent epics и добавить их в существующую доску без новой taxonomy. Остальные external changes по-прежнему проходят exact preview.
+Целевая доска: [MattoYuzuru Project #4](https://github.com/users/MattoYuzuru/projects/4). Parent epics и reviewable tasks добавляются в существующую доску без новой taxonomy.
 
 ## Фактическое состояние Project #4
 
-Project `Mnema Kanban` приватный и открыт. После materialization 2026-08-15 он содержал 76 linked items: 44 issues и 32 pull requests. `DraftIssue` отсутствуют и в рабочие отчёты не включаются. Новую доску создавать не нужно: Project #4 уже является execution surface.
+Project `Mnema Kanban` приватный и открыт. После refinement #73 2026-08-30 он содержит 106 linked items: 69 issues и 37 pull requests. `DraftIssue` отсутствуют и в рабочие отчёты не включаются. Новую доску создавать не нужно: Project #4 уже является execution surface.
 
 Состояние на 2026-08-17: у всех 11 эпиков заполнены `Size` и `Estimate` в ideal agent-days. Даты стоят только у committed-работы — эпика #71 и его sub-issues #81–#84; у #45 и #58 просроченные даты из старого планирования сняты, потому что создавали ложное впечатление запланированной работы. Taxonomy не расширялась: labels 9, полей 18, views 6.
 
@@ -31,7 +31,7 @@ Project `Mnema Kanban` приватный и открыт. После materializ
 | #45 `Интегрировать платежный модуль` | устаревший Prodamus/self-employed flow | переписать под ИП, T‑Bank recurrent, offer/consent/receipts; не закрывать как выполненную |
 | #35 `Создать рекомендательную систему` | streak, author profiles, fork metrics, recommendations | разделить: profiles/usage metrics в P1; recommendations отложить до достаточного usage signal |
 
-Labels остаются только стандартные GitHub. Milestones созданы 2026-08-16 под датированные outcomes: `Staging v2 — 2026-08-31`, `Billing core — 2026-09-07`, `Bank/legal sandbox — 2026-09-14`; #80 намеренно оставлен без milestone, потому что его срок зависит от прохождения P0-гейтов, а не от календаря. Доступ к приватному Project #4 подтверждён через GitHub CLI со scopes `read:project`/`project`.
+Labels остаются только стандартные GitHub. Milestones используются лишь для реально committed calendar outcomes. У #73–#77 milestone снят: greenfield foundation/content/study/media ещё не прошли последовательный refinement, а #77 явно deferred. Доступ к приватному Project #4 подтверждён через GitHub API helper с project scope.
 
 ## Поля Project #4
 
@@ -70,46 +70,34 @@ WIP limit — максимум одна `In progress` задача на один
 1. [#70 Delivery foundation: CI, staging CD, rollback и recovery](https://github.com/MattoYuzuru/Mnema/issues/70) — первый implementation epic.
 2. [#71 GitHub governance и agent/PR workflow](https://github.com/MattoYuzuru/Mnema/issues/71).
 3. [#72 Security, supply chain и quality gates](https://github.com/MattoYuzuru/Mnema/issues/72).
-4. [#73 V2-фундамент и account-only cutover](https://github.com/MattoYuzuru/Mnema/issues/73).
-5. [#74 Нативный контент, редактор и renderer](https://github.com/MattoYuzuru/Mnema/issues/74).
-6. [#75 Deck-scoped Study и платформа упражнений](https://github.com/MattoYuzuru/Mnema/issues/75).
-7. [#76 Медиа, storage и offline-compatible contracts](https://github.com/MattoYuzuru/Mnema/issues/76).
-8. [#77 Managed AI, оценка провайдеров и квоты](https://github.com/MattoYuzuru/Mnema/issues/77).
+4. [#73 Greenfield foundation, unified Identity и account-only cutover](https://github.com/MattoYuzuru/Mnema/issues/73).
+5. [#74 LearningItem, immutable content revisions и полный frontend redesign](https://github.com/MattoYuzuru/Mnema/issues/74).
+6. [#75 Deck-scoped Study, M:N exercises и новый scheduler](https://github.com/MattoYuzuru/Mnema/issues/75).
+7. [#76 Greenfield media lifecycle и offline-ready references](https://github.com/MattoYuzuru/Mnema/issues/76).
+8. [#77 Deferred AI capabilities после product validation](https://github.com/MattoYuzuru/Mnema/issues/77).
 9. [#78 ИП на НПД, документы и Роскомнадзор](https://github.com/MattoYuzuru/Mnema/issues/78) — преимущественно human actions.
 10. [#79 T‑Bank acquiring, recurring и receipt reconciliation](https://github.com/MattoYuzuru/Mnema/issues/79).
 11. [#80 Concierge-запуск и продуктовая валидация](https://github.com/MattoYuzuru/Mnema/issues/80).
 
-Parent issue описывает outcome, scope/out-of-scope, dependency graph, metric и exit gate. Реализация живёт в sub-issues размером не больше 1–3 инженерных дней. Checklist не заменяет sub-issues, если работа имеет отдельный PR, owner или acceptance evidence.
+Parent issue описывает outcome, scope/out-of-scope, dependency graph, metric и exit gate. Реализация живёт в самостоятельных issues размером не больше 1–3 инженерных дней. GitHub поддерживает native sub-issues, но установленный repository helper пока не создаёт это relation: поэтому #73 использует проверяемый parent checklist и двусторонние `Parent #73` links в body. Это ограничение инструмента, а не разрешение складывать реализацию в один issue; каждый task всё равно имеет отдельный PR/owner/evidence.
 
-## Очередь первых sub-issues
+## Очередь tasks epic #73
 
-Parent epics уже materialized. Таблица ниже — ещё не созданные sub-issues; они проходят refinement по [work item standard](./work-item-standard.md) перед внешней записью. `Estimate` — ideal agent-days; calendar placement остаётся условным до editor spike.
+#73 разбит 2026-08-30. Все tasks добавлены в Project как `Backlog/P0`; только один reviewable task переводится в активную колонку одновременно. `Estimate` — ideal agent-days, фиктивные даты не назначаются.
 
-| Parent | Sub-issue | Priority | Iteration | Size / estimate | Depends on |
-|---|---|---|---|---:|---|
-| Platform | Исправить non-atomic/cancellable deploy и ввести release identity/rollback | P0 | 17–31 Aug | L / 5 | delivery audit |
-| Platform | Поднять изолированный staging namespace и namespace-scoped deploy identity | P0 | 17–31 Aug | M / 3 | server/DNS access |
-| GitHub | Ввести main ruleset, required PR/checks и least-privilege Actions | P0 | 17–31 Aug | M / 3 | exact owner approval |
-| Security | Включить Dependabot/CodeQL/dependency review и image/SBOM policy | P0 | 17–31 Aug | M / 3 | security policy |
-| Foundation | Зафиксировать P0-контракты v2 и corpus golden fixtures | P0 | 17–31 Aug | S / 1.5 | owner decisions |
-| Content | Проверить Angular editor на IME, ruby, RTL, mobile и a11y | P0 | 17–31 Aug | M / 3 | dependency permission after evidence |
-| Content | Описать versioned AST P0 и security policy renderer | P0 | 17–31 Aug | M / 3 | editor spike |
-| Foundation | Создать fresh v2 PostgreSQL schema и immutable revision API | P0 | 17–31 Aug | L / 5 | AST contract |
-| Content | Реализовать safe native renderer и split editor/preview | P0 | 17–31 Aug | L / 5 | AST contract |
-| Platform | Добавить PostgreSQL 18/MinIO protocol E2E harness | P0 | 17–31 Aug | M / 3 | media-ref contract |
-| Study | Реализовать deck-scoped Browse и reveal/self-rating | P0 | 17–31 Aug | M / 3 | revision API + renderer |
-| Study | Реализовать typed answer и idempotent attempt contract | P0 | 17–31 Aug | L / 4 | objective/exercise contract |
-| Foundation | Отрепетировать account-only export/import и restore | P0 | 17–31 Aug | M / 3 | account allowlist |
-| Platform | Прогнать blackbox E2E, renderer security, a11y и load baseline | P0 | 17–31 Aug | M / 3 | integrated staging slice |
-| Billing | Зафиксировать plan/entitlement/trial/quota/usage contracts | P0 | 1–7 Sep | M / 3 | staging go/no-go + 299 ₽ offer |
-| Billing | Реализовать idempotent quota reserve/commit/refund ledger | P0 | 1–7 Sep | L / 4 | billing contract |
-| Billing | Добавить fake payment adapter и subscription state-machine tests | P0 | 1–7 Sep | M / 3 | billing contract |
-| AI | Собрать golden eval из 100 fixtures для DeepSeek/fallback | P0 | 1–7 Sep | M / 3 | synthetic corpus + provider accounts |
-| Legal | Подтвердить НПД, зарегистрировать ИП и собрать legal documents | P0 | 8–14 Sep | L / human | owner + lawyer/accountant |
-| Payments | Получить T‑Bank terms/receipt answer и интегрировать sandbox | P0 | 8–14 Sep | L / 5 | merchant credentials + legal text |
-| Launch | Провести closed-alpha go/no-go и записать residual risks | P0 | after gates | S / 1 | all P0 gates |
+| Issue | Outcome | Size / estimate | Depends on |
+|---|---|---:|---|
+| #139 | Greenfield decisions и supersession map | S / 1.5 | owner decisions |
+| #140 | Runtime shell и canonical API boundary | M / 3 | #139 |
+| #141 | Unified Identity & Account schema/issuer | M / 2.5 | #139–#140 |
+| #142 | Account/profile behavior без standalone `user` | M / 3 | #141 |
+| #143 | Replacement CI/CD topology | S / 2 | #140–#142 |
+| #144 | Account-only transfer/reconciliation | M / 3 | #141–#142 |
+| #145 | No-snapshot purge preflight/rehearsal | M / 3 | #143–#144, #76 target boundary |
+| #146 | Legacy runtime/build removal | M / 3 | #74–#76 replacement gates, #145 |
+| #147 | Production cutover и irreversible purge | S / 1.5 | #139–#146, #74–#76 release slices |
 
-Сумма staging iteration превышает безопасную capacity и описывает целевой envelope. После CI/CD и editor/AST spikes Project оставляет в committed `Ready` только поднабор, который помещается в capacity; остальное переносится без скрытого сокращения тестов.
+Архитектура и реализация будущих доменов не раскладываются внутри #73: #74–#76 получат собственные tasks только при старте их refinement. #77 остаётся `Backlog/P2` без milestone и implementation tasks до отдельной реактивации.
 
 Существующие issues разобраны 2026-08-17 в рамках #83:
 
@@ -155,11 +143,12 @@ Materialization выполняется поэтапно:
 
 1. ✅ Прочитаны существующие views, fields и linked items; `DraftIssue` нет.
 2. ✅ Сохранена существующая taxonomy.
-3. ✅ Созданы #70–#80 и добавлены в Project: #70 и #72–#79 `Backlog/P0`, #71 `In progress/P0`, #80 `Backlog/P1`.
+3. ✅ Созданы #70–#80 и добавлены в Project; приоритеты и milestones уточняются по текущим owner decisions.
 4. ✅ #58/#45/#35 связаны с подходящими parents, устаревшие acceptance criteria переписаны (2026-08-17).
 5. ✅ Первый пакет sub-issues создан только для #71: #81–#84, из них в `Ready` переводился по одному.
-6. Создавать Ready P0/P1 sub-issues следующих эпиков по мере снятия зависимостей.
-7. Даты назначать лишь committed задачам с выполненным Definition of Ready.
-8. Post-MVP идеи держать в Backlog без фиктивных дат.
+6. ✅ #73 уточнён и разбит на #139–#147; oversized parent возвращён в `Backlog`, а tasks оценены по 1–3 ideal agent-days.
+7. Создавать Ready P0/P1 tasks следующих эпиков по мере снятия зависимостей и отдельного refinement.
+8. Даты назначать лишь committed задачам с выполненным Definition of Ready.
+9. Post-MVP идеи держать в Backlog без фиктивных дат.
 
-Создание десятков задач до согласования contracts создаст ложную точность. Сначала принимаются content format, progress-on-edit, license/repository boundary и двухнедельный scope; затем Project становится исполнимым источником истины.
+Создание десятков задач до согласования contracts создаст ложную точность. Поэтому будущие #74–#76 пока описывают outcome/границы/acceptance, а их implementation tasks появятся во время отдельного refinement; #77 не активируется до продуктового сигнала.

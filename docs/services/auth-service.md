@@ -1,5 +1,7 @@
 # Auth Service (`backend/services/auth`)
 
+> **Legacy runtime inventory:** этот документ описывает текущий сервис до greenfield replacement. Epic #73 объединяет его с `user` в один Identity & Account deployable; отдельный compatibility service/API не сохраняется.
+
 ## Назначение
 
 `auth` — центр аутентификации и авторизации Mnema:
@@ -41,4 +43,3 @@
 - Является issuer JWT для `user/core/media/import/ai`.
 - Вызывается фронтендом напрямую для login/register/token exchange.
 - Может быть вызван `user`-сервисом для операций, связанных с удалением аккаунта.
-

@@ -5,7 +5,7 @@ artifact:
   title: "Mnema technical and product review"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-08-15"
+  updated_at: "2026-08-30"
   owners: ["project-owner"]
   evidence_revision: "8e0c83d"
   review_scope: [architecture, data, scale, frontend, ux, product, monetization, documentation, delivery]
@@ -14,6 +14,8 @@ artifact:
 # Mnema technical and product review
 
 ## Outcome
+
+> **Owner resolution update (2026-08-30):** this review's evidence remains valid, but the replacement is now explicitly greenfield: no `/v2` coexistence, compatibility layer, retained legacy snapshot or old visual identity. Downtime is acceptable, Identity and User consolidate, and AI follows the manual learning MVP.
 
 **Mnema стоит превращать в hosted startup, но не масштабировать текущую модель.** Spring, Java, PostgreSQL and Angular are not the core problem. The current content/version/subscription model, unsafe release details and configuration-heavy UX are.
 
@@ -24,9 +26,9 @@ The proposed v2 is:
 - immutable deck/item revisions, change sets, shared content and sparse personal state;
 - PostgreSQL + JSONB + object storage, not MongoDB or literal Git;
 - deck-scoped Browse/Study, not a cross-deck Today queue;
-- managed AI in the Russian hosted product, with manual learning free;
-- a modular Spring API plus independently scalable AI/import/media workers;
-- a fresh account-only production cutover, because only about ten identities must survive.
+- managed AI later in the Russian hosted product, with a manual learning MVP first;
+- a unified Identity & Account deployable plus modular Learning API and only justified workers;
+- a fresh account-only production cutover with no retained legacy snapshot or rollback after deletion.
 
 The owner decisions are recorded in [owner-decisions-2026-08](../decisions/owner-decisions-2026-08.md). This review is the executive sequence; linked designs contain the contracts.
 
@@ -125,21 +127,13 @@ T‑Bank recurring acquiring requires IP/legal entity; a self-employed physical 
 
 ## Frontend direction
 
-Preserve the current broad visual identity but simplify surfaces:
-
-1. fix asset hashing/cache semantics, identity-scoped local state and focus management;
-2. lazy-load routes and establish bundle budgets;
-3. extract accessible `StudySessionShell`, native content renderer registry, editor/preview shell, dialog and job primitives;
-4. upgrade Angular majors sequentially;
-5. use Liquid Glass sparingly for navigation/controls, with solid high-contrast content surfaces.
-
-The full audit and evidence are in [frontend experience audit](../frontend/experience-audit-2026-08.md).
+Keep Angular, but replace the UI completely. Liquid Glass and the current broad visual identity are not constraints. Epic #74 will receive separate owner design input; until then, use a minimal accessible semantic HTML/CSS baseline, preserve no v1 component boundary for compatibility, and keep the Angular upgrade separate from product-surface work. Performance/a11y evidence remains in the [superseded frontend direction audit](../frontend/experience-audit-2026-08.md).
 
 ## Migration decision
 
-Preserve only allowlisted account/identity/profile fields for approximately ten production users. Delete decks, media, reviews, imports and AI jobs/credentials. Use maintenance and a fresh PostgreSQL 18 database rather than dual writes or an in-place content transformer.
+Preserve only allowlisted long-lived account/identity/profile fields and account-owned avatar assets. Delete sessions/authorizations plus all learning content, media, reviews, imports and AI data. The canonical product is replaced directly: no `/v2`, dual writes, transformer or compatibility runtime.
 
-The point of no return must explicitly cover database snapshots/PITR/WAL, object versions, multipart uploads and caches. “Irreversible immediately” conflicts with keeping a complete emergency snapshot, so the owner must choose account-only backup or a short encrypted legacy snapshot with a forced destruction date. The exact rehearsal, account allowlist, category-specific account deletion lifecycle and offline contract are in [operations plan](../operations/v2-reset-capacity-and-offline-plan.md).
+The point of no return covers the live legacy database/PVC, snapshots/PITR/WAL, object versions, multipart uploads and caches. No full legacy snapshot is created or retained. After deletion begins, v1 rollback is impossible by accepted owner decision; only account-only recovery and roll-forward remain. The exact operational contract is in the [operations plan](../operations/v2-reset-capacity-and-offline-plan.md).
 
 ## Sequenced roadmap
 
@@ -152,28 +146,24 @@ The point of no return must explicitly cover database snapshots/PITR/WAL, object
 - establish PostgreSQL/MinIO E2E and backup/restore evidence;
 - run editor/renderer spike before selecting a dependency.
 
-### Slice 1 — v2 foundation
+### Slice 1 — greenfield foundation
 
-- fresh v2 migrations and unified Identity/Account boundary;
-- immutable item/deck revisions, changes and head projection;
-- pointer subscription, sparse overlays/pins and coauthor ACL;
-- media blob/asset/reference/variant model;
-- idempotent job and attempt contracts;
-- content renderer with P0 nodes and security corpus.
+- fresh runtime/migration baseline and unified Identity & Account boundary;
+- canonical unversioned routes, UUID/CAS/idempotency contracts and delivery topology;
+- account-only transfer/reconciliation and no-snapshot cutover tooling;
+- no editor, exercise, media or AI implementation hidden in foundation.
 
 ### Slice 2 — useful product loop
 
 - full editor + quick text/voice draft;
 - deck-scoped Browse/Study and P0 exercises;
 - deterministic evaluation and scheduler objective state;
-- managed AI provider adapter/ledger and native preview;
 - two concierge cohorts with activation/retention instrumentation.
 
 ### Slice 3 — differentiation and payment
 
 - safe deck update/conflict flow, collaboration review and profiles;
 - P1 exercises;
-- direct DeepSeek/non-Yandex fallback quality, cost and privacy router;
 - T‑Bank recurring pilot at 299 ₽ and quota validation;
 - production load/fault tests at 2× expected launch traffic.
 
@@ -181,8 +171,8 @@ The point of no return must explicitly cover database snapshots/PITR/WAL, object
 
 - maintenance, final account export/import and reconciliation;
 - synthetic end-to-end smoke while writes remain closed;
-- traffic cutover, v2 monitoring and explicit point of no return;
-- approved destruction of legacy content/media artifacts;
+- traffic cutover, replacement monitoring and explicit point of no return;
+- deletion of all legacy content/media/database/backup artifacts with no retained snapshot;
 - only then expand acquisition and P2 exercises.
 
 ## Do not do

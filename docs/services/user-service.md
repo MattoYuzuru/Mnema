@@ -1,5 +1,7 @@
 # User Service (`backend/services/user`)
 
+> **Legacy runtime inventory:** этот документ описывает текущий сервис до greenfield replacement. Epic #73 переносит долгоживущие profile/identity данные в единый Identity & Account deployable и удаляет отдельный `user` runtime без compatibility proxy.
+
 ## Назначение
 
 `user` хранит и обслуживает профильные данные пользователя:
@@ -36,4 +38,3 @@
 - Вызывает `media` для резолва `avatarMediaId`.
 - Вызывает `auth` для account-related действий (например удаление аккаунта).
 - Используется фронтендом для страницы профиля и account settings.
-

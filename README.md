@@ -60,7 +60,7 @@
 
 **Mnema** — веб-платформа для интервального запоминания с упором на инженерную архитектуру и реальный production-пайплайн.
 
-> **V2 redesign:** текущий checkout описывает работающий v1. Принятые owner inputs и предлагаемая новая модель — structured learning items, отдельные exercises, shared revisions, hosted managed AI и account-only reset — собраны в [Mnema Docs](docs/README.md). Текущие self-host scripts остаются v1/legacy и не блокируют hosted v2.
+> **Greenfield redesign:** текущий checkout всё ещё содержит v1 runtime, но целевой продукт переписывается напрямую вокруг versioned `LearningItem`, нескольких exercises и spaced practice. `/v2`, compatibility runtime и retained legacy snapshot не создаются; сохраняются только account identity/profile данные. Managed AI отложен до manual learning MVP. Принятые решения собраны в [Mnema Docs](docs/README.md).
 
 Проект включает:
 - модульный backend на Spring Boot;
@@ -515,8 +515,8 @@ APP_ENV=dev
 - Поиск по колодам/карточкам/шаблонам + индексы.
 - Пагинация, lazy loading, стабильность fork/checksum сценариев.
 
-#### 11) UI redesign phase (январь 2026)
-- Новый визуальный стиль (Liquid Glass).
+#### 11) UI redesign phase (январь 2026, historical and rejected for the rewrite)
+- Тогда был введён Liquid Glass; owner decision от 2026-08-30 требует полностью удалить этот стиль.
 - Hero/landing, улучшенная навигация, адаптивность.
 - Доработки UX карточного браузера и review.
 
@@ -552,7 +552,7 @@ APP_ENV=dev
 ### Прежний forward backlog (historical, не принят как v2 plan)
 
 #### Near-term (1-2 релизных цикла)
-- [ ] Улучшить стили импортированных колод (HTML/CSS compatibility слой + fallback renderer).
+- [ ] Историческая идея HTML/CSS compatibility/fallback renderer отклонена; будущий importer только компилирует поддерживаемый смысл в native format.
 - [ ] Улучшить import pipeline для проблемных форматов и частично битых APKG/CSV.
 - [ ] Добавить систему стриков (daily streak, freeze/day pass, streak analytics).
 - [ ] Доработать global/local scope инструменты для массовых изменений карточек.

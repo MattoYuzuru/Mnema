@@ -15,7 +15,7 @@ artifact:
 
 # Delivery and production readiness audit
 
-> **V2 cutover note:** the owner has since authorized a maintenance reset that preserves only account/identity data and deletes legacy content/media/review/AI data. The fresh-database procedure, point of no return, capacity model and offline/MinIO requirements in [v2 reset, capacity and offline plan](./v2-reset-capacity-and-offline-plan.md) supersede generic additive-content-migration wording here.
+> **Greenfield cutover note (2026-08-30):** the owner has authorized downtime, direct canonical replacement and deletion of every non-account DB/S3/backup artifact. Only long-lived account/profile data survives; sessions/grants do not. No `/v2`, compatibility runtime or full legacy snapshot is permitted, and rollback ends at the first deletion. The [reset/capacity/offline plan](./v2-reset-capacity-and-offline-plan.md) supersedes additive-migration wording here.
 
 This is a read-only review of the repository, public health endpoints, GitHub configuration/Actions history and the two SSH targets supplied by the owner. The later SSH inventory confirmed a shared 6-vCPU/29-GiB host and a smaller k3s/AI host already near 72% Kubernetes memory usage. It is still not evidence that production data is backed up: no database query, backup or restore test was attempted. The detailed GitHub and staging plan is [GitHub platform and staging plan](./github-platform-and-staging-plan-2026-08.md).
 

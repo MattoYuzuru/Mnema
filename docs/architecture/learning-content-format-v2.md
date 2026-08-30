@@ -2,15 +2,19 @@
 artifact:
   id: learning-content-format-v2
   type: architecture
-  title: "Mnema native learning content format v2"
+  title: "Mnema native LearningItem content format"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-08-15"
+  updated_at: "2026-08-30"
   owners: ["project-owner"]
   decision_scope: [content-format, rendering, exercises, media, anki, offline]
 ---
 
-# Native learning content format v2
+# Native LearningItem content format
+
+This proposed format belongs to greenfield epic #74. It replaces the canonical
+content/editor/renderer directly: no `/v2`, legacy renderer, compatibility route or
+mechanical reuse of v1 components is required. AI authoring is deferred to #77.
 
 ## Decision
 
@@ -169,9 +173,9 @@ Three creation paths share the same document output:
 
 1. full editor;
 2. quick drafts, including batch text and voice capture with optional original audio;
-3. asynchronous AI generation/enhancement with reviewable diff and idempotent retry.
+3. future AI generation/enhancement only after #77 is explicitly reactivated.
 
-The current block/template builder should not be migrated mechanically. Its useful editing behaviours can be reused only where they fit this contract.
+The current block/template builder is not migrated or wrapped. Historical UX findings may inform requirements, but new components and persistence are designed from this contract.
 
 ## Rendering and security boundary
 

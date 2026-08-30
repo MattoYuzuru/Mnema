@@ -1,6 +1,8 @@
 # Mnema: обзор системы
 
-## Что получает пользователь
+> Этот файл описывает текущий v1 checkout как evidence для удаления и замены. Целевая архитектура — greenfield `LearningItem`/exercise platform без `/v2` coexistence и compatibility runtime; см. [owner decisions](./decisions/owner-decisions-2026-08.md) и [content platform](./architecture/content-platform-v2.md).
+
+## Что реализовано в legacy runtime
 
 Mnema — это платформа для интервального обучения на карточках с акцентом на практический workflow, а не только на «карточки и кнопки Again/Good».
 
@@ -23,7 +25,7 @@ Mnema — это платформа для интервального обуче
 - AI как часть домена, а не внешний скрипт: отдельный сервис с квотами, usage ledger, воркером и несколькими AI-провайдерами.
 - Отдельный media-сервис с S3 presigned/multipart upload, что лучше масштабируется для больших вложений.
 
-## Архитектура верхнего уровня
+## Архитектура legacy runtime
 
 Mnema — сервисно-модульная система:
 - backend: набор Spring Boot сервисов;
