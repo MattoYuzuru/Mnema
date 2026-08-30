@@ -1,201 +1,219 @@
-                                 Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
+Mnema Source-Available License 1.0
 
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+Copyright (c) 2025-2026 Matvei Riabushkin
+Effective Date: 30 August 2026
+License Contact: matveybobr937@gmail.com
 
-   1. Definitions.
+This license is not an Open Source license. It permits limited private personal
+use of the Licensed Work. Any organizational, shared, hosted, commercial, or
+machine-learning use requires a separate written license from the Licensor.
 
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
+1. Acceptance
 
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
+These terms are intended to constitute an open license concluded in a
+simplified manner under Article 1286.1 of the Civil Code of the Russian
+Federation. "Open license" in that legal sense does not mean "Open Source" as
+defined by the Open Source Initiative.
 
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
+You accept these terms by exercising any permission granted in Section 3,
+including by reproducing, compiling, executing, or modifying the Licensed Work.
+No permission under these terms is required merely to view the repository or
+to use functionality that GitHub separately permits under its own terms.
 
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
+2. Definitions
 
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
+"Licensor" means Matvei Riabushkin.
 
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
+"Licensed Work" means the Mnema software, source code, object code,
+documentation, and other materials that the Licensor makes available in this
+repository or in an official Mnema release under these terms, but only to the
+extent that the Licensor owns the applicable rights.
 
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
+"Apache Version" means the Mnema materials made available at or before Git
+commit f4c37df69c143d67e478b6b84af575e94941ece2, identified by the tag
+v1-apache-final. Those materials remain available under Apache License 2.0.
+Nothing in these terms limits rights that a recipient independently obtained
+for the Apache Version under Apache License 2.0.
 
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
+"Private Personal Use" means use by one natural person, solely for that
+person's own private learning, personal study, research, experimentation,
+evaluation, private entertainment, or hobby, on devices owned or controlled by
+that person. It does not include use for, on behalf of, at the direction of, or
+for the benefit of any other person or Organization.
 
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
+"Organization" means any legal entity, sole proprietorship, employer, client,
+governmental or public body, educational institution, research institution,
+nonprofit body, unincorporated association, class, team, or other group acting
+for a shared purpose, regardless of funding source or profit status.
 
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
+"Commercial Use" means use connected with revenue, compensation, professional
+activity, business operations, cost avoidance, product or service development,
+fundraising, advertising-supported activity, or any reasonably anticipated
+commercial application, whether the benefit is direct or indirect.
 
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
+"Shared or Hosted Use" means operating or making the Licensed Work available
+so that any person other than the individual licensee can access, interact with,
+receive functionality from, or benefit from it, whether over a network or
+otherwise. It includes public deployments, multi-user deployments, SaaS,
+managed services, service bureaus, and deployments for a household, class,
+school, university, team, employer, client, or community.
 
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
+"Machine-Learning Use" means using the Licensed Work or any material portion of
+it to train, fine-tune, evaluate, benchmark, validate, ground, retrieve for, or
+otherwise develop or improve an artificial-intelligence or machine-learning
+model, dataset, embedding system, code-generation system, or similar automated
+system.
 
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
+"Third-Party Materials" means components, dependencies, assets, data, or other
+materials for which a person other than the Licensor owns the applicable rights
+or that carry their own license or notice.
 
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
+3. Private Personal License
 
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
+Subject to full compliance with these terms, the Licensor grants You a
+worldwide, royalty-free, non-exclusive, non-transferable, and non-sublicensable
+license, for the duration of the applicable copyright, to do the following only
+for Private Personal Use:
 
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
+  a. reproduce a reasonable number of copies of the Licensed Work on devices
+     owned or controlled by You, including reasonable backup copies;
 
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
+  b. compile and execute the Licensed Work for use only by You; and
 
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
+  c. modify the Licensed Work and create derivative works for use only by You.
 
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
+To the extent the Licensor controls patent claims necessarily infringed by the
+activities expressly permitted above, the Licensor grants You a patent license
+limited to those permitted activities. That patent license terminates
+immediately if You or Your Organization asserts in writing that the Licensed
+Work infringes a patent.
 
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
+4. Restrictions
 
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
+The permissions in Section 3 are expressly conditioned on every restriction in
+this Section. Unless the Licensor gives You a separate written license, You may
+not:
 
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
+  a. use the Licensed Work for, on behalf of, at the direction of, or for the
+     benefit of an Organization, including for internal evaluation, education,
+     teaching, research, administration, or production;
 
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
+  b. make any Commercial Use of the Licensed Work;
 
-   END OF TERMS AND CONDITIONS
+  c. make any Shared or Hosted Use of the Licensed Work;
 
-   APPENDIX: How to apply the Apache License to your work.
+  d. distribute, publish, sublicense, sell, lease, lend, transfer, provide, or
+     otherwise make available the Licensed Work, a modified version, a
+     derivative work, or an object-code build to any third party;
 
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "[]"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
+  e. use the Licensed Work to provide consulting, implementation, support,
+     hosting, training, or other services to a third party;
 
-   Copyright [yyyy] [name of copyright owner]
+  f. make any Machine-Learning Use of the Licensed Work, except to the extent
+     the Licensor has separately granted platform rights to GitHub under
+     GitHub's terms solely for operating GitHub functionality;
 
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
+  g. remove, conceal, or alter copyright, license, attribution, source, or other
+     legal notices included with the Licensed Work;
 
-       http://www.apache.org/licenses/LICENSE-2.0
+  h. circumvent or disable a license key, access control, usage limit, or other
+     technical measure that controls access to or use of the Licensed Work; or
 
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
+  i. use the Licensed Work in violation of applicable law.
+
+No right to distribute modifications or derivative works is granted by these
+terms, including through a public patch or pull request. Proposed source-code
+contributions may be submitted only under a separate contributor agreement or
+other written terms accepted by the Licensor.
+
+Nothing in these terms restricts rights that cannot lawfully be restricted,
+including applicable statutory exceptions. No permission is granted to copy
+protected expression merely because ideas, methods, interfaces, or functionality
+may not themselves be protected by copyright law.
+
+5. Separate Licenses
+
+The Licensor may offer separate commercial, organizational, educational,
+research, pilot, discounted, or no-charge licenses on individually agreed
+written terms. No such license is granted by implication, and these terms do
+not obligate the Licensor to offer any plan, price, discount, support level, or
+equivalent terms to any other person or Organization.
+
+Hosted Mnema service subscriptions and end-user service terms are separate from
+this source-code license and do not grant any right to the Licensed Work unless
+they expressly say so.
+
+6. Third-Party Materials
+
+Third-Party Materials are governed solely by their respective licenses and
+notices. These terms do not reduce, replace, or expand rights or obligations
+under a third-party license. When a file or directory identifies different
+license terms, those different terms control for that material.
+
+7. Trademarks
+
+These terms do not grant any right to use the name "Mnema", any Mnema logo,
+domain name, product appearance, service mark, or other brand identifier, except
+for truthful, nominative reference to the origin of an unmodified copy where
+applicable law permits it. See TRADEMARKS.md.
+
+8. Ownership and Reservation of Rights
+
+The Licensed Work is licensed, not sold. The Licensor and applicable third
+parties retain all right, title, and interest in their respective materials.
+All rights not expressly granted in Section 3 are reserved. The Licensor may use,
+license, sublicense, distribute, commercialize, or relicense the Licensed Work
+on any terms.
+
+9. Termination
+
+Your rights under these terms terminate automatically and immediately if You
+breach any condition or exceed the permissions granted. Upon termination, You
+must stop using the Licensed Work and delete or destroy all copies and modified
+versions in Your possession or control, except copies that applicable law
+requires You to retain. The Licensor may reinstate rights only in a written
+notice. Sections that by their nature should survive termination survive it.
+
+10. Disclaimer of Warranty
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSED WORK IS PROVIDED
+"AS IS" AND "AS AVAILABLE", WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND,
+EXPRESS, IMPLIED, OR STATUTORY, INCLUDING WARRANTIES OF TITLE,
+NON-INFRINGEMENT, MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, ACCURACY,
+SECURITY, OR AVAILABILITY. YOU BEAR ALL RISK ARISING FROM YOUR USE OF THE
+LICENSED WORK.
+
+11. Limitation of Liability
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSOR WILL NOT BE
+LIABLE UNDER ANY LEGAL THEORY FOR ANY INDIRECT, INCIDENTAL, SPECIAL,
+CONSEQUENTIAL, EXEMPLARY, OR PUNITIVE DAMAGES, OR FOR LOSS OF DATA, PROFITS,
+REVENUE, GOODWILL, OR BUSINESS OPPORTUNITY, ARISING FROM OR RELATED TO THE
+LICENSED WORK OR THESE TERMS, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+THE LICENSOR'S AGGREGATE LIABILITY WILL NOT EXCEED THE AMOUNT, IF ANY, THAT YOU
+PAID DIRECTLY TO THE LICENSOR FOR THE LICENSED WORK UNDER THESE TERMS.
+
+12. Governing Law and Language
+
+These terms and any dispute arising from them are governed by the law of the
+Russian Federation, without regard to conflict-of-laws rules. A dispute must be
+brought before a court having jurisdiction under the applicable procedural law
+of the Russian Federation.
+
+The English text is the controlling text to the extent permitted by applicable
+law. A Russian translation may be provided for convenience and accessibility.
+Mandatory provisions of applicable law prevail over either text.
+
+13. General
+
+If a provision is unenforceable, it will be modified only to the minimum extent
+necessary to make it enforceable, or severed if modification is not possible.
+The remaining provisions remain effective. Failure to enforce a provision is
+not a waiver. You may not assign or transfer these terms or any license granted
+under them. The Licensor may publish different terms for future versions, but a
+change does not retroactively alter rights already granted for a version.
+
+14. Contact
+
+Requests for commercial, organizational, educational, research, pilot, or other
+separate licensing may be sent to matveybobr937@gmail.com.

@@ -1,0 +1,23 @@
+Mnema Licensing Notice
+
+Copyright (c) 2025-2026 Matvei Riabushkin.
+
+Current official revisions of Mnema are made available under the Mnema
+Source-Available License 1.0 in the root LICENSE file. The Russian translation
+is available in LICENSE.ru.md.
+
+The last Mnema revision released under Apache License 2.0 is Git commit
+f4c37df69c143d67e478b6b84af575e94941ece2, identified by the tag
+v1-apache-final. The historical Apache License text is preserved at
+LICENSES/Apache-2.0.txt. Rights already granted for that revision are not
+withdrawn or restricted by the current license.
+
+Third-party components and assets remain subject to their respective licenses
+and notices. A license identified in a file or directory controls for that
+third-party material.
+
+No license to the Mnema name, logo, domains, or other brand identifiers is
+granted. See TRADEMARKS.md.
+
+Separate commercial, organizational, educational, research, and pilot licenses
+may be requested at matveybobr937@gmail.com.

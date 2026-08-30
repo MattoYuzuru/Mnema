@@ -112,7 +112,12 @@ npm run build
 
 Run the complete relevant gate before presenting or pushing a change. There is no configured frontend coverage threshold or end-to-end test suite at this revision; do not imply those checks ran.
 
-For the local stack, follow [Self-hosted local deployment](../deploy/selfhost-local.md) and the launchers documented in [scripts/README.md](../../scripts/README.md). Never assume checked-in defaults are safe production secrets.
+For the local stack, first read the root [source license](../../LICENSE), then
+follow [Self-hosted local deployment](../deploy/selfhost-local.md) and the
+launchers documented in [scripts/README.md](../../scripts/README.md). Current
+source permits only private personal use by one natural person unless a separate
+written license applies. Never assume checked-in defaults are safe production
+secrets.
 
 ## Change routes
 

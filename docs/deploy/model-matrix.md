@@ -1,6 +1,11 @@
 # Local AI Model Matrix (Self-Hosted)
 
-Матрица для текущего v1 self-host режима без внешних AI SaaS. Self-host compatibility is not a hosted-v2 launch requirement; the future managed Russian provider evaluation is documented separately in [Russia launch economics](../product/russia-launch-economics-2026.md).
+Матрица для текущего v1 self-host режима без внешних AI SaaS. Для current
+source она применима только к личному локальному использованию одним физическим
+лицом; organizational/shared deployment требует отдельной письменной лицензии.
+Self-host compatibility is not a hosted-v2 launch requirement; the future
+managed Russian provider evaluation is documented separately in
+[Russia launch economics](../product/russia-launch-economics-2026.md).
 
 ## Важно про Ollama
 

@@ -16,13 +16,22 @@
   </p>
 
   <p>
-    <a href="https://github.com/MattoYuzuru/Mnema/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
+    <a href="https://github.com/MattoYuzuru/Mnema/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-source--available-orange.svg"></a>
     <a href="https://github.com/MattoYuzuru/Mnema/actions"><img alt="CI" src="https://img.shields.io/badge/CI-GitHub%20Actions-informational"></a>
     <img alt="i18n" src="https://img.shields.io/badge/i18n-ru%20%7C%20en-brightgreen">
   </p>
 </div>
 
 ---
+
+> [!IMPORTANT]
+> **Source-available licensing:** current Mnema revisions permit private local
+> use by one natural person. Organizational, shared, hosted, commercial, and
+> machine-learning use requires a separate written license. The final Apache
+> 2.0 revision is preserved at [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final).
+> See [License](LICENSE), [Russian translation](LICENSE.ru.md), and
+> [commercial/institutional licensing](COMMERCIAL-LICENSING.md) before running
+> or modifying the current source.
 
 ## Содержание
 
@@ -32,7 +41,7 @@
 * [Технологии](#технологии)
 * [Архитектура](#архитектура)
 * [Self-Hosted Local (one-command)](#self-hosted-local-one-command)
-* [Self-Hosted Public (own domain)](#self-hosted-public-own-domain)
+* [Архивный Self-Hosted Public](#архивный-self-hosted-public)
 * [Локальная разработка](#локальная-разработка)
 * [Системные требования и sizing](#системные-требования-и-sizing)
 * [Переменные окружения (.env)](#переменные-окружения-env)
@@ -146,6 +155,11 @@ Frontend (`frontend`) общается с backend API:
 
 ## Self-Hosted Local (one-command)
 
+> Текущая лицензия разрешает этот режим только одному физическому лицу для
+> личного частного использования на собственных или контролируемых устройствах.
+> Развёртывание для семьи, класса, команды, работодателя или иной организации
+> требует [отдельной письменной лицензии](COMMERCIAL-LICENSING.md).
+
 Для локального self-host режима добавлены bootstrap-скрипты:
 
 - Linux/macOS:
@@ -175,9 +189,17 @@ Frontend (`frontend`) общается с backend API:
 
 ---
 
-## Self-Hosted Public (own domain)
+## Архивный Self-Hosted Public
 
-Для публичного self-host (домен/поддомены, доступ из интернета) добавлены bootstrap-скрипты:
+Публичное или многопользовательское развёртывание текущей версии не разрешено
+публичной source-лицензией. Инструкции ниже сохранены только для последнего
+Apache 2.0-среза. Перед их использованием переключитесь на него:
+
+```bash
+git checkout v1-apache-final
+```
+
+Для публичного self-host Apache-версии добавлены bootstrap-скрипты:
 
 - Linux/macOS:
 ```bash
@@ -594,12 +616,29 @@ APP_ENV=dev
 - Используйте демо и открывайте issue с багами/идеями.
 - Предлагайте улучшения импортов и UX review-сессий.
 - Для крупных изменений желательно сначала описать proposal (краткий RFC в issue).
+- Публичные code-PR и патчи временно не принимаются до публикации отдельного
+  contributor agreement; подробности — в [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ---
 
 ## Лицензия
 
-Проект распространяется по лицензии **Apache 2.0**. См. файл [`LICENSE`](LICENSE).
+Текущие официальные ревизии распространяются по
+**Mnema Source-Available License 1.0**. Разрешено личное локальное использование
+одним физическим лицом; использование организациями, совместный или публичный
+доступ, hosting/SaaS, коммерческое использование и machine-learning use требуют
+отдельной письменной лицензии.
+
+- Канонический английский текст: [`LICENSE`](LICENSE)
+- Русский перевод: [`LICENSE.ru.md`](LICENSE.ru.md)
+- Последний Apache 2.0-срез: tag
+  [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final),
+  commit `f4c37df69c143d67e478b6b84af575e94941ece2`
+- Коммерческие, образовательные и пилотные запросы:
+  [`COMMERCIAL-LICENSING.md`](COMMERCIAL-LICENSING.md)
+- Использование названия и логотипа: [`TRADEMARKS.md`](TRADEMARKS.md)
+
+Уже предоставленные права Apache 2.0 на исторический срез сохраняются.
 
 ---
 
@@ -608,6 +647,7 @@ APP_ENV=dev
 Автор: Матвей Рябушкин
 Telegram: [@Keyko_Mi](https://t.me/Keyko_Mi)
 Email: [matveyryabushkin@gmail.com](mailto:matveyryabushkin@gmail.com)
+Лицензирование: [matveybobr937@gmail.com](mailto:matveybobr937@gmail.com)
 Репозиторий: [https://github.com/MattoYuzuru/Mnema](https://github.com/MattoYuzuru/Mnema)
 
 <p align="right">(<a href="#readme-top">наверх</a>)</p>

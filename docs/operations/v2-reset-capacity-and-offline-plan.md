@@ -199,13 +199,17 @@ Testcontainers recommends disposable real PostgreSQL instances for compatibility
 
 Apache 2.0 grants already distributed versions perpetual, irrevocable rights; replacing the current `LICENSE` cannot retract them ([Apache License 2.0](https://www.apache.org/licenses/LICENSE-2.0.html), [ASF FAQ](https://apache.org/foundation/license-faq.html)). A stricter license may govern future code only if ownership and contributor rights permit it. A license cannot prevent independent implementation of the product idea.
 
-Before relicensing:
+Resolution update (2026-08-30): `v1-apache-final` fixes the last Apache revision.
+New official revisions remain public under a personal-use source-available
+license. One natural person may run and modify the current source privately;
+organizational, shared, public, hosted, commercial and machine-learning use
+requires a separate written license. Public code contributions are paused until
+a separate contributor agreement is available. See the accepted
+[license decision](../decisions/source-license-transition.md).
 
-- prove ownership of code, assets and generated material rather than relying only on `git shortlog`;
-- define a contributor agreement/policy before accepting new external work;
-- audit third-party licences;
-- obtain counsel on proprietary/source-available terms;
-- tag and document the last Apache release;
-- update repository, packages, images and release metadata consistently.
-
-Do not delete current self-host assets during the architecture phase. Mark them legacy/unsupported for v2, then decide in a separate cleanup. A later public self-host repository should be a one-way sanitized downstream release of the private hosted source, with its own compatibility matrix and security-update policy; manual copy/cherry-pick between two diverging products will create operational debt.
+Do not delete current self-host assets during the architecture phase. The local
+path remains available for licensed private personal use. The public/multi-user
+path is archival for the Apache tag and requires a separate license for current
+revisions. If a separately licensed self-host edition is introduced later, keep
+its compatibility matrix and security-update policy explicit; manual divergence
+without an owned release process remains operational debt.
