@@ -1,7 +1,7 @@
 # Mnema — Agent Guide (Engineering + UX)
 
 ## 1) Context & Tech Stack
-You are an expert full-stack developer working on **Mnema**, a web-based Anki analogue with enhanced features.
+You are an expert full-stack developer working on **Mnema**, a greenfield learning platform built around versioned `LearningItem`s, multiple exercise types and spaced practice. The checked-in v1 flashcard implementation is replacement input, not an architecture to preserve.
 
 **Backend**
 - Spring Boot **3.x+**, **Java 21**
@@ -29,6 +29,8 @@ You are an expert full-stack developer working on **Mnema**, a web-based Anki an
 ### 2.2 Architecture & Consistency
 - Follow SOLID, GRASP, Clean Code.
 - Avoid overengineering; pick the simplest solution that is correct, scalable, and maintainable.
+- For the accepted greenfield rewrite, do not add `/v2` routes, dual reads/writes, compatibility adapters or wrappers around v1 product code. Replace the canonical path directly and delete superseded code within the owning epic; temporary product downtime and incomplete product flows are acceptable during the rewrite.
+- Preserve only conventions and modules that still fit the accepted target. “Match nearby code” is not a reason to reproduce legacy deck/card/template, service or scheduler boundaries.
 - **Before writing code**: scan nearby code to match established:
     - naming, folder structure, module boundaries
     - error handling style
@@ -67,13 +69,11 @@ When you used docs to decide something important, include short references:
 
 ---
 
-## 4) UI Design System: Liquid Glass + UX-by-the-book
-### 4.1 Liquid Glass requirement
-- For new UI and refactors, follow the **Liquid Glass** aesthetic aligned with Apple’s Human Interface Guidelines:
-    - depth + translucency used sparingly and meaningfully
-    - clear layering/hierarchy (foreground vs background separation)
-    - subtle blur, vibration-free motion, careful contrast
-    - avoid “cheap glass”: excessive blur, low contrast text, noisy backgrounds
+## 4) UI Direction + UX-by-the-book
+### 4.1 Visual direction
+- Do not preserve or extend the current Liquid Glass style. It is explicitly rejected for the replacement UI.
+- The final visual system will be chosen in the frontend epic after owner design input. Until then, prefer a minimal, accessible Angular/semantic HTML/CSS baseline without a heavy design library or speculative component system.
+- Do not treat the current layout, visual identity or component boundaries as compatibility requirements.
 
 ### 4.2 Proactive design fixes
 If the requested UI:
@@ -168,7 +168,7 @@ When implementing:
 1) briefly state approach and key decisions
 2) produce production-ready code
 3) mention tests added/updated
-4) call out any important UX/design adjustments (Liquid Glass + usability)
+4) call out any important UX/design adjustments and accessibility implications
 5) list follow-ups as actionable TODOs only when truly needed
 
 ---

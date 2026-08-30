@@ -3,9 +3,9 @@ artifact:
   id: experience-audit-2026-08
   type: frontend-review
   title: "Mnema frontend, UX and exercise audit"
-  status: proposed
+  status: superseded-direction
   created_at: "2026-08-15"
-  updated_at: "2026-08-15"
+  updated_at: "2026-08-30"
   owners: ["project-owner"]
   evidence_revision: "8e0c83d"
   assumptions:
@@ -17,11 +17,11 @@ artifact:
 
 ## Decision
 
+> **Resolution update (2026-08-30):** performance, accessibility and code-structure evidence below remains useful, but the proposed Focused Study Desk/Liquid Glass direction is rejected. Epic #74 owns a full visual reset; until separate owner design input, the baseline is minimal accessible Angular/semantic HTML/CSS. The old UI has no compatibility value.
+
 Keep Angular. The slow/fragile behavior is explained by application choices: all feature routes load eagerly, static content waits for APIs, large components combine several responsibilities, modal/focus behavior is reimplemented and production cache headers are incompatible with unhashed bundles.
 
-The recommended experience direction is **Focused Study Desk**: a solid, quiet content canvas, one obvious next action and Liquid Glass limited to floating navigation/control surfaces. This satisfies the repository's Liquid Glass constraint while removing glass-on-glass decoration from learning content.
-
-Do the correctness, loading and accessibility slice first. Do not combine an Angular 18→22 migration, exercise-platform extraction and visual redesign into one release.
+Keep the Angular/performance/a11y findings as implementation evidence. Angular upgrade, exercise platform and visual system still require separate reviewable tasks, but none must preserve v1 component boundaries or presentation.
 
 ## Evidence snapshot
 
@@ -171,15 +171,7 @@ The persisted JSON contract belongs to Mnema, not to an Angular component. Rende
 
 ## Visual direction
 
-Apple continues to document Liquid Glass; the issue is Mnema's scope of use, not whether the style is fashionable. Apple positions glass as a navigation/control layer and cautions against glass in the content layer or glass-on-glass stacking in [Meet Liquid Glass](https://developer.apple.com/videos/play/wwdc2025/219/).
-
-| Direction | Use | Trade-off |
-|---|---|---|
-| **Focused Study Desk — recommended** | Solid high-contrast canvas, one primary action, glass only for sticky navigation/command bar | Best focus, accessibility and likely paint behavior; moderate redesign |
-| Editorial Knowledge Library | Strong typography, compact catalogue/list views, almost no motion | Excellent browsing density; less emotional training feedback |
-| Playful Training Lab | Progress rail, brighter correctness feedback and short celebrations | More engagement potential; highest motion/noise/performance risk |
-
-Use Focused Study Desk as the system, Editorial density for catalogue/content browsing and brief Playful feedback only after an attempt/session. Avoid putting blur, pseudo-surfaces and `will-change` on every card; the global `.glass` currently does so ([global_styles.css](../../frontend/src/global_styles.css#L255)). A paint profile on low-end mobile hardware is still required before attributing measured latency specifically to blur.
+No visual direction from this 2026-08-15 audit remains active. Liquid Glass, Focused Study Desk and preservation of the broad v1 identity are explicitly out. A later #74 design refinement will define the new direction; a plain high-contrast CSS baseline is acceptable meanwhile. The measured concern around global blur/`will-change` remains evidence for deleting the old `.glass` styling rather than tuning it ([global_styles.css](../../frontend/src/global_styles.css#L255)).
 
 ## Exercise platform
 
@@ -212,7 +204,7 @@ Contracts:
 
 Implementation sequence:
 
-1. Extract `StudySessionShell` while preserving current reveal behavior.
+1. Build the new `StudySessionShell` against the greenfield attempt contract and delete the replaced reveal path; do not wrap it for compatibility.
 2. Add typed recall and real cloze.
 3. Add multiple choice as an error scaffold with deterministic distractor rules.
 4. Add listening only when an audio capability is present.
@@ -268,6 +260,6 @@ The repository has 18 frontend spec files and no E2E suite, coverage threshold, 
 - React/Vue/Svelte rewrite;
 - universal microfrontend/plugin runtime for exercises;
 - broad signal rewrite for syntax alone;
-- full visual redesign coupled to the Angular upgrade;
+- choosing the final visual direction without separate owner design input;
 - SSR for authenticated study routes;
 - animation-heavy gamification before retention evidence.

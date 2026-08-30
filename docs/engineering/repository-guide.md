@@ -5,14 +5,14 @@ artifact:
   title: "Mnema repository guide"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-08-15"
+  updated_at: "2026-08-30"
   owners: ["project-owner"]
   evidence_revision: "8e0c83d"
 ---
 
 # Repository guide
 
-Start here when changing Mnema. This page maps the checkout as it exists; proposed product and architecture changes are explicitly labelled and live in separate documents.
+Start here when changing Mnema. This page maps the v1 checkout as evidence; the accepted target is a direct greenfield replacement. Proposed relational/product details remain labelled, but `/v2`, compatibility wrappers and preservation of old module/algorithm boundaries are already rejected.
 
 ## First read
 
@@ -52,7 +52,7 @@ Mnema/
 └── .github/workflows/               PR quality and main CI/CD
 ```
 
-All backend modules share one PostgreSQL instance but own separate Flyway schemas/migrations. Do not edit an already-applied versioned migration; add a new migration. The six services are independent deployables, but core still contains most content and study behavior.
+The current six services share one PostgreSQL instance with separate schemas/migration histories. That is a legacy runtime fact, not a target. Ordinary fixes never edit deployed migrations; the greenfield runtime instead starts a new migration history and later deletes the replaced modules/histories from the shipping build.
 
 ## Canonical locations
 
@@ -67,11 +67,11 @@ All backend modules share one PostgreSQL instance but own separate Flyway schema
 | Local topology | [docker-compose.yml](../../docker-compose.yml) |
 | Production manifests | [k8s](../../k8s) |
 | PR/main automation | [.github/workflows](../../.github/workflows) |
-| Proposed v2 model | [content-platform-v2.md](../architecture/content-platform-v2.md) |
+| Proposed greenfield model | [content-platform-v2.md](../architecture/content-platform-v2.md) |
 | Native content/rendering contract | [learning-content-format-v2.md](../architecture/learning-content-format-v2.md) |
 | Exercise contracts | [exercise-catalog-v2.md](../product/exercise-catalog-v2.md) |
 | Product hypotheses | [product-direction-v2.md](../product/product-direction-v2.md) |
-| Account-only cutover/capacity/offline | [v2-reset-capacity-and-offline-plan.md](../operations/v2-reset-capacity-and-offline-plan.md) |
+| No-snapshot account-only cutover/capacity/offline | [v2-reset-capacity-and-offline-plan.md](../operations/v2-reset-capacity-and-offline-plan.md) |
 
 When prose and executable configuration disagree, verify runtime behavior and fix the prose; do not preserve a stale claim for consistency.
 
@@ -127,20 +127,20 @@ secrets.
 - Check both browser and review adapters: current version selection is not uniform.
 - Preserve stable identities across edits; never use mutable content/checksum as identity.
 - Distinguish draft, publish, subscribe, update and fork in naming and tests.
-- In v1 work, templates/fields remain current runtime facts. Do not carry them into v2 APIs or migrations: the owner decision replaces them with a structured content document and exercises.
+- Templates/fields are legacy evidence only. Greenfield work must not repair, wrap or carry them into new APIs/migrations; #74 replaces the whole path.
 - Treat the v2 architecture documents as proposals until ADRs accept their exact contracts.
 
 ### Review or exercise behavior
 
-- Current scheduler implementations live under `core/.../review/algorithm`.
+- Current scheduler implementations live under `core/.../review/algorithm` as deletion/research evidence; #75 does not port them.
 - Current state/log persistence lives under `core/.../review/entity` and core migrations.
 - The frontend review route is currently one reveal/self-rating flow.
 - Keep content, exercise attempts and scheduler state separate in new contracts.
 - Add idempotency tests for answer retries and concurrency tests for first state creation.
 
-### AI or import behavior
+### Deferred AI or import behavior
 
-- Both are asynchronous workflows crossing service/database boundaries.
+- Neither is part of the first replacement runtime. #77 requires explicit reactivation; a later import compiler follows native launch.
 - Define idempotency, retry, timeout, partial-success and job-recovery behavior before changing a client loop.
 - Never log provider credentials, prompts containing sensitive material or tokens.
 - Verify provider/security APIs in official current documentation.
@@ -150,15 +150,15 @@ secrets.
 - Scan the containing feature and shared primitives before adding a component.
 - New route features should be lazy unless they are part of the initial shell.
 - Use accessible dialog/focus behavior, semantic controls, mobile-first layout and reduced-motion fallbacks.
-- Liquid Glass is a sparse navigation/control layer, not a default material for every content card.
+- Do not preserve Liquid Glass or the current visual identity. Until #74 receives owner design input, use a minimal accessible semantic HTML/CSS baseline.
 - Keep user-scoped local state keyed by identity and clear it when identity changes.
 
 ### Schema migration
 
 - Add a new migration; never rewrite V1–V25 or any migration already deployed.
 - For ordinary v1 fixes, use expand/contract migrations.
-- For the proposed v2, the accepted data scope is a fresh PostgreSQL database plus an idempotent account-only importer; do not build content/media/review transformers for data authorized for deletion.
-- Verify the explicit account-field allowlist and rehearse an isolated restore before any production deletion. Follow the [reset plan](../operations/v2-reset-capacity-and-offline-plan.md) and require a separate destructive confirmation for exact database/object targets.
+- For greenfield replacement, start a fresh PostgreSQL migration history; do not run the v1 chain, build transformers or add compatibility migrations.
+- Verify the account allowlist and rehearse only account-only restore. No full legacy snapshot is created. Follow the [reset plan](../operations/v2-reset-capacity-and-offline-plan.md); the first deletion is the explicit point of no return.
 
 ### Deployment
 
@@ -193,7 +193,7 @@ Do not create empty framework folders. Add a repo-owned tool when its first cons
 2. account-only export/import reconciliation checker;
 3. PostgreSQL 18 + MinIO API/worker E2E harness;
 4. anonymous/authenticated release smoke;
-5. bounded review/deck/media/AI-backlog load profile;
+5. bounded deck/attempt/evidence/media load profile;
 6. docs/link validation.
 
 ## Documentation rule

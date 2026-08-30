@@ -2,22 +2,21 @@
 artifact:
   id: product-direction-v2
   type: prd
-  title: "Mnema product direction v2"
+  title: "Mnema greenfield product direction"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-08-15"
+  updated_at: "2026-08-30"
   owners: ["project-owner"]
   assumptions:
     - "Approximately ten production accounts must survive; content, media, review and AI data may be reset."
     - "The initial hosted market and infrastructure are in Russia."
-    - "Hosted managed AI is the default; current self-host/BYOK support is not a v2 launch requirement."
+    - "The manual LearningItem/Study replacement launches without AI; managed AI is a separately reactivated future capability."
   unresolved_questions:
     - "Which launch message wins within the accessible cohorts: language learning or general exam/student learning?"
-    - "Which Starter quota retains a positive p95 contribution margin at the accepted 299 RUB price?"
-    - "Does direct DeepSeek or a non-Yandex fallback produce the lowest compliant cost per accepted item?"
+    - "Which deterministic exercise mix produces retained use in each launch cohort?"
 ---
 
-# Направление продукта Mnema v2
+# Greenfield-направление продукта Mnema
 
 ## Решение
 
@@ -29,7 +28,7 @@ Mnema — не «ещё один конструктор карточек» и н
 
 > Запоминайте то, что важно именно вам: Mnema превращает материал в подходящие упражнения и помогает заниматься регулярно без настройки сложного инструмента.
 
-Hosted v2 не требует API key, provider/model, card schema или выбора алгоритма. Автор создаёт rich learning item и добавляет упражнения; учащийся выбирает колоду и запускает Browse или Study. Native content не зависит от Anki, но будущий импорт старается сохранить учебный смысл и безопасную визуальную близость.
+Первый replacement не требует API key, provider/model, card schema или выбора алгоритма. Автор создаёт rich `LearningItem` и добавляет упражнения; учащийся выбирает колоду и запускает Browse или Study. Native content не зависит от Anki. `V2` в старых именах документов не означает `/v2`: продукт занимает канонические routes без legacy coexistence.
 
 Принятые owner inputs находятся в [decision log](../decisions/owner-decisions-2026-08.md); техническая модель — в [content architecture](../architecture/content-platform-v2.md) и [native content format](../architecture/learning-content-format-v2.md).
 
@@ -60,7 +59,7 @@ Job: совместно поддерживать колоду, выпускат�
 | D-01 | `pursue` | Native entity — rich learning item; templates, arbitrary fields and mandatory deck languages удаляются. |
 | D-02 | `pursue` | Exercises are separate versioned interactions over stable content and memory objectives. |
 | D-03 | `pursue` | Study is always deck-scoped; no global cross-deck Today queue. Browse remains separate. |
-| D-04 | `pursue` | Managed AI is the only ordinary hosted path; BYOK/provider selection is removed from hosted v2. |
+| D-04 | `defer` | Manual LearningItem/Study MVP has no AI dependency. Managed AI, provider selection and quota economics return only through reactivated #77. |
 | D-05 | `pursue` | Shared content/revisions are reused; subscription and personal changes are sparse, not copied decks. |
 | D-06 | `pursue` | Public, request/link-restricted and private visibility; coauthors and review/approval supported. |
 | D-07 | `pursue` | Automatic safe updates, clear summary, per-item conflicts and opt-out from tracking. |
@@ -77,7 +76,7 @@ The same native output can be created through:
 1. full editor with desktop split preview and mobile editor/preview switch;
 2. quick text/batch draft;
 3. voice capture with transcript and optional retained original audio;
-4. AI prompt/import/enhancement with previewable diff and retry-safe job.
+4. future AI/import/enhancement only after the manual loop is validated; it is not part of current delivery.
 
 The full editor supports long scrolling rich content, media, ruby, RTL, math, code and diagrams without exposing schema fields. Deck theme controls the initial visual style; arbitrary per-card layout is deferred.
 
@@ -86,7 +85,7 @@ The full editor supports long scrolling rich content, media, ruby, RTL, math, co
 1. User opens one deck and chooses `Учить`.
 2. Mnema shows due/new volume for that deck only.
 3. Session routes among compatible enabled exercises within the deck.
-4. User answers before reveal, receives deterministic feedback first and optional AI assessment where justified.
+4. User answers before reveal and receives deterministic or explicit self/human-rubric feedback; AI assessment is absent.
 5. Pause/exit preserves confirmed attempts exactly once.
 6. Completion shows progress and next due time for this deck.
 
@@ -117,31 +116,31 @@ An author profile has visibility settings, public decks, last update and current
 - preserve and rehearse restoration of production accounts;
 - fix immutable asset caching and release safety;
 - prototype native editor/renderer against ruby, RTL, math, code, media, Mermaid and long content;
-- establish cost, attempt and funnel ledgers.
+- establish attempt and privacy-safe funnel evidence.
 
 ### P0 — useful learning loop
 
 - deck-scoped Browse and Study;
-- reveal/self-rating, typed answer, cloze, single and multiple choice;
+- reveal/behavioral self-check, typed answer, single-blank cloze and single choice;
 - full editor plus quick text/voice draft;
 - deterministic evaluator and standard attempt envelope;
-- manual/free product plus small managed-AI onboarding allowance;
+- fully manual/free product with no provider or AI runtime dependency;
 - public/private/restricted deck basics and shared revision storage;
 - two 15–20-person concierge cohorts: language and exam/student.
 
 ### P1 — visible differentiation
 
-- matching, ordering/assembly, listening dictation, multi-value recall and image occlusion/labeling;
+- multiple select, matching, ordering/assembly, listening dictation, multi-value recall and measured image occlusion/labeling;
 - coauthors + publication review;
 - safe auto-updates and conflict UI;
 - public author profiles/reputation signals;
 - Russian recurring payment pilot at 299 ₽ and quota/cancellation validation;
-- AI provider router and quality/cost fallback.
+- evidence-calibrated exercise policies and targeted interleaving.
 
 ### P2 — segment depth
 
 - code completion/test runner, pronunciation/oral recall, numeric/symbolic answers;
-- structured AI grading for explanation, scenario, translation and interview answers;
+- human/self-rubric explanation experiments; AI grading remains outside this roadmap until #77 is reactivated;
 - native Android/iOS offline deck packs and review sync;
 - higher-price speaking/tutor experiment only after retention and unit economics.
 
@@ -154,16 +153,16 @@ The full capability envelope is in [exercise catalog](./exercise-catalog-v2.md).
 - user reaches a valid native item without choosing template, field schema, deck languages, provider or scheduler;
 - desktop editor and preview remain synchronized; mobile switch does not lose selection/draft;
 - ruby has hover, focus and tap behaviour; RTL mixed text, math, code, media and long scroll are accessible;
-- AI/voice jobs are idempotent and never lose the original draft on failure;
+- draft/autosave operations are idempotent and never lose the original on failure;
 - unsupported content is shown explicitly and preserved, not silently deleted.
 
 ### Study
 
 - Study launched from deck A never presents an item from deck B;
 - Browse never changes due state;
-- the same attempt ID never produces two outcomes or two quota charges;
+- the same attempt ID never produces two outcomes or two scheduler updates;
 - the result explains aliases/normalization/typo tolerance;
-- AI verdict is distinguished from deterministic evidence and can be disputed;
+- self/human results are distinguished from deterministic evidence and remain explainable;
 - all primary actions work with keyboard/screen reader/reduced motion and touch.
 
 ### Updates and collaboration
@@ -175,14 +174,12 @@ The full capability envelope is in [exercise catalog](./exercise-catalog-v2.md).
 - source deletion/withdrawal does not break an existing subscriber's last revision;
 - only authorized author/reviewer can publish.
 
-### Managed AI and billing
+### Deferred AI and later billing
 
-- hosted first value never asks for a third-party key;
-- before a costly action user sees credit cost and remaining budget;
-- failed/retried operation has defined charge/reversal semantics;
-- manual editing and study continue when quota/provider is unavailable;
-- entitlement is granted from verified durable payment state, not return URL;
-- cancellation, next charge and usage history are understandable.
+- first value requires no AI service, provider key, quota or paid entitlement;
+- every create/Browse/Study journey remains complete with AI absent;
+- #77 requires a new owner activation plus quality, privacy, availability and cost evidence;
+- any later billing entitlement comes from verified durable payment state, not a return URL.
 
 ### Data control
 
@@ -199,25 +196,25 @@ The full capability envelope is in [exercise catalog](./exercise-catalog-v2.md).
 | M-02 | time from ready material/deck to first submitted answer | p75 ≤2 minutes |
 | M-03 | activated user with a second session in 7 days | initial target ≥25%, split by cohort |
 | M-04 | deck session completed or intentionally stopped after ≥80% planned volume | ≥70% without inflated session time |
-| M-05 | generated item accepted without semantic repair | ≥70%; factual report/delete <5% |
+| M-05 | authored item reaches first valid assessed attempt without schema repair | establish baseline in concierge cohort |
 | M-06 | source update without personal-data loss | 100% in test corpus and production telemetry |
-| M-07 | p95 AI + media + egress + payment variable cost / realized plan revenue | ≤20–25% |
-| M-08 | paid conversion after actual AI value/quota event | baseline at 299 ₽; no universal target yet |
-| M-09 | cost per accepted generated item | choose provider route and credit weights |
+| M-07 | p95 media + egress variable cost / active learner | establish before paid launch |
+| M-08 | future paid conversion after validated non-AI or AI value | deferred; no universal target yet |
+| M-09 | future AI cost per accepted result | #77 only after reactivation |
 | M-10 | weekly users completing ≥2 assessed sessions | proposed north-star with quality guardrails |
 
 Do not optimize card count, raw review count, opens or streak in isolation. Segment/channel/exercise/provider/price must be attached to every funnel metric without logging full private material.
 
 ## Packaging and economics
 
-Manual creation/study, public decks and own media are free. AI plans use a monthly budget with weekly unlock, a one-time 14-day trial without a card, Starter at 299 ₽/30 days and hard media caps. Exact quota follows measured p95 cost. Market, T‑Bank and provider evidence are maintained in [Russia launch economics](./russia-launch-economics-2026.md), while launch legality is gated by the [legal/payment checklist](./russia-legal-launch-checklist-2026.md).
+Manual creation/study, public decks and own media are the first product. Existing AI pricing/provider research is retained as future evidence, not as a dependency or committed package. Any paid offer is reconsidered after manual-product validation and the [legal/payment checklist](./russia-legal-launch-checklist-2026.md).
 
 The immutable `v1-apache-final` revision permits commercial derivatives and its
 grants remain irrevocable. New official revisions use the accepted personal-use
 source-available license: organizational, shared, hosted, commercial and
 machine-learning use requires a separate written license. This legal boundary
 is not a product moat by itself; hosted advantage must still come from quality,
-safe rich rendering, maintained decks, collaboration, managed AI and operations.
+safe rich rendering, maintained decks, varied practice, collaboration and reliable operations.
 
 ## Risks and guardrails
 
@@ -225,8 +222,8 @@ safe rich rendering, maintained decks, collaboration, managed AI and operations.
 |---|---|
 | Product remains a configuration tool | no templates/fields/provider/scheduler decisions before first result |
 | Broad audience creates incoherent roadmap | same P0 loop, separate acquisition cohorts, no segment-heavy P2 before cohort evidence |
-| AI creates confident errors | preview, source/provenance, deterministic schema validation, accepted-item metric |
-| AI/media destroy margin | credits, media caps, p95 ledger and no unlimited promise |
+| Deferred AI assumptions leak into core | no provider/jobs/quota dependency in #73–#76; #77 requires explicit reactivation |
+| Media destroys margin | explicit caps, p95 ledger and no unlimited promise |
 | Rich content becomes an XSS platform | typed renderer; no native JS/arbitrary CSS; Anki converts to native nodes and never executes legacy content |
 | Public updates destroy trust | immutable revisions, sparse overlays, explicit conflicts and retained last source revision |
 | Two repositories diverge | self-host unsupported now; later one-way sanitized release, not manual dual development |

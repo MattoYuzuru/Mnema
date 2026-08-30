@@ -8,7 +8,7 @@
 - **Current:** [Обзор системы](./system-overview.md) — существующая сервисная топология и возможности.
 - **Accepted input:** [Owner decisions](./decisions/owner-decisions-2026-08.md) — зафиксированные ответы, отклонённые варианты и действительно открытые решения.
 - **Accepted:** [Source license transition](./decisions/source-license-transition.md) — personal-use source-available для новых ревизий и неизменяемая Apache-граница `v1-apache-final`.
-- **Proposed:** [Итоговое ревью проекта](./reviews/project-review-2026-08.md) — новая рекомендация, риски и последовательность работ.
+- **Proposed, owner-updated:** [Итоговое ревью проекта](./reviews/project-review-2026-08.md) — рекомендация, риски и последовательность greenfield-работ.
 - **Proposed:** [Product direction v2](./product/product-direction-v2.md) — deck-scoped learning, hosted business, roadmap и метрики.
 - **Proposed:** [Content and study platform v2](./architecture/content-platform-v2.md) — shared revisions, sparse overlays and study model.
 - **Proposed:** [Native content format v2](./architecture/learning-content-format-v2.md) — structured AST, Markdown/editor, rendering, Anki, media and offline boundary.
@@ -21,8 +21,8 @@
 - **Current:** [Capability inventory](./engineering/capability-inventory.yaml) — машиночитаемый каталог команд, workflows и пробелов harness.
 - **Current:** [Work item standard](./engineering/work-item-standard.md) — единый человеко- и агентопонятный формат epic, задачи, human action и PR.
 - **Current:** [GitHub execution model](./engineering/github-execution-model.md) — Project #4, созданные epics #70–#80, DoR/DoD и commit/PR discipline без новой taxonomy.
-- **Proposed:** [V2 delivery plan](./engineering/v2-delivery-plan-2026-08.md) — реалистичный scope на 17–31 августа, parallel lanes и production gates.
-- **Proposed:** [Frontend / UX audit](./frontend/experience-audit-2026-08.md) — performance, a11y, Liquid Glass и exercise shell.
+- **Proposed:** [Greenfield delivery plan](./engineering/v2-delivery-plan-2026-08.md) — границы эпиков, reviewable work items и destructive-cutover gate.
+- **Superseded direction / retained evidence:** [Frontend / UX audit](./frontend/experience-audit-2026-08.md) — актуальные performance/a11y findings, но прежняя Liquid Glass/Focused Study Desk рекомендация отменена owner decision.
 - **Proposed:** [Delivery audit](./operations/delivery-audit-2026-08.md) — CI/CD, Kubernetes, recovery и безопасный rollout.
 - **Proposed:** [GitHub platform and staging plan](./operations/github-platform-and-staging-plan-2026-08.md) — фактические settings, GitHub Pro/Copilot, test layers, два сервера и P0 delivery epic.
 - **Current:** [Staging bootstrap and secret contract](./operations/staging-runbook.md) — namespace/RBAC bootstrap, prefixed GitHub Environment keys, promotion and rollback boundary.
@@ -31,7 +31,7 @@
 - **Current:** [Security automation triage](./operations/security-triage.md) — baseline, new-regression blocking and expiring private exceptions for Dependabot, dependency review and CodeQL.
 - **Current:** [CI artifact security boundary](./operations/ci-artifact-security-boundary.md) — exact upload inventory, pre-upload secret classes and least-privilege workflow tokens.
 - **Current:** [Production image inventory](./operations/production-image-inventory.md) — immutable build/runtime pins, production image boundary, update verification and rollback.
-- **Proposed:** [V2 reset, capacity and offline plan](./operations/v2-reset-capacity-and-offline-plan.md) — account-only cutover, 1k/10k/100k capacity, scale triggers, offline and MinIO harness.
+- **Proposed:** [Greenfield reset, capacity and offline plan](./operations/v2-reset-capacity-and-offline-plan.md) — account-only cutover без legacy snapshot/rollback, capacity boundaries, offline and MinIO harness.
 - **Legacy:** [Схема core-сущностей v1](./core-entities-schema.md) — обзор старой модели; миграции остаются источником истины.
 
 ## Развёртывание

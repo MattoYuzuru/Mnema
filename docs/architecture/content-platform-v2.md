@@ -2,31 +2,32 @@
 artifact:
   id: content-platform-v2
   type: architecture
-  title: "Mnema content and study platform v2"
+  title: "Mnema greenfield content and study platform"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-08-15"
+  updated_at: "2026-08-30"
   owners: ["project-owner"]
   source_tasks: ["project architecture and product review"]
   supersedes: []
   superseded_by: null
   assumptions:
-    - "Production has approximately ten accounts whose identity data must be retained; deck, media, review and AI data may be irreversibly reset after an account-only export is verified."
+    - "Only long-lived account identity/profile data and account avatar survive; all other DB/S3/backup state is deleted without a retained legacy snapshot."
+    - "The owner accepts downtime and an incomplete product during a direct replacement with no /v2 or compatibility runtime."
     - "PostgreSQL remains the primary transactional store."
     - "Real multi-author merge is not required in the first v2 release."
   unresolved_questions:
     - "Which exercise directions deserve independent memory objectives after the first instrumented cohort?"
     - "What compact/aggregate review retention policy meets product analytics needs before archival is required?"
     - "After an expected answer/objective change, should one near-term revalidation be scheduled automatically or require confirmation?"
-    - "May an account-only reset verification artifact contain hashes/counts of deleted content, without retaining the content itself?"
+    - "Should multi-target attempts be a P1 feature, or should P0 restrict every scheduler-affecting attempt to one assessed objective?"
   evidence:
     - "backend/services/core schema, services, repositories and tests at 8e0c83d"
     - "official Git and Flyway documentation, accessed 2026-08-15"
 ---
 
-# Content and study platform v2
+# Greenfield content and study platform
 
-This document is a design proposal, not an accepted ADR and not an implemented schema. Its purpose is to make the data-model decision reviewable before a destructive migration.
+This document is a design proposal, not an implemented schema. Owner constraints are accepted inputs; relational details remain proposed until their epic is refined. The target directly replaces v1 on canonical routes. It has no `/v2`, dual read/write, legacy adapter, old scheduler fallback or retained full legacy snapshot.
 
 ## Requirements and workload
 
@@ -38,12 +39,12 @@ The target model must:
 4. Keep personal notes, edits, hides and progress private and sparse.
 5. Make subscribe, fork and export three different operations.
 6. Support pinned/manual updates and explicit conflicts.
-7. Add exercise types without copying content or coupling every exercise to a card template.
+7. Add single- and multi-item exercise types without copying content or coupling every exercise to a card template.
 8. Represent rich multilingual, mathematical, code, diagram and media content without executing user code.
 9. Preserve IDs and idempotency boundaries needed by future offline review and native clients.
-8. Keep the common read and review paths simple enough for PostgreSQL.
+10. Keep the common read and review paths simple enough for PostgreSQL.
 
-Unknown workload inputs must not be disguised as measurements. Before implementation, collect row sizes, relation/index sizes, query plans, p95/p99 latency, active users, review volume, deck-size distribution and tenant skew.
+Unknown workload inputs must not be disguised as measurements. The owner's zero-usage assertion is not a gate to recheck. Capacity choices below are scenarios; after the replacement has real traffic, collect its row sizes, query plans, p95/p99 latency, review volume, deck-size distribution and tenant skew before adding scale mechanisms.
 
 ### Confirmed current scaling behavior
 
@@ -91,25 +92,25 @@ Do not expose hashes as entity identity. Identical text can represent separate l
 
 ## Context and components
 
-The content model is deployment-neutral. Logical ownership must remain the same whether the current six deployables remain or a separate ADR consolidates them into a modular API plus worker processes. Consolidation is attractive at current scale because independent scaling has not been demonstrated, but it is not a prerequisite for the data migration and must not be coupled to its cutover.
+The current six-deployable topology is not preserved. Identity and User become one Identity & Account deployable; content/library/study begin as modules of one Learning API. Separate media/import/AI workers appear only when their later epic introduces an actual resource, failure or trust boundary. This topology is a source boundary, not an invitation to recreate current remote calls inside one process.
 
 ```mermaid
 flowchart LR
-    Web[Angular web app] --> API[Mnema API]
-    API --> Auth[Identity module]
+    Web[Angular web app] --> Identity[Identity & Account]
+    Web --> API[Learning API]
     API --> Catalog[Catalog and content module]
     API --> Library[Library module]
     API --> Study[Study module]
-    Auth --> PG[(PostgreSQL)]
+    Identity --> PG[(PostgreSQL)]
     Catalog --> PG
     Library --> PG
     Study --> PG
     API --> S3[(Object storage)]
-    Worker[Import and AI workers] --> Integration[Integration commands and owned inbox]
+    Worker[Later media/import/AI workers] --> Integration[Integration commands and owned inbox]
     Integration --> Catalog
     Integration --> PG
     Worker --> S3
-    Worker --> Providers[AI providers or local inference]
+    Worker --> Providers[Approved future providers]
 ```
 
 Workers may write only integration-owned inbox/job tables or call an application command. They must not update catalog/library/study tables directly. Deployment boundaries may change when measurements show different scaling, security or failure-isolation needs; source modules should not depend on that choice.
@@ -119,10 +120,10 @@ Workers may write only integration-owned inbox/job tables or call an application
 - `catalog`: shared decks, structured learning items, publication and public search.
 - `library`: subscriptions, personal overlays, forks and upstream conflicts.
 - `study`: exercise selection, memory state, review events and aggregate progress.
-- `integration`: idempotent import/AI commands, outbox and media/provider adapters.
-- `identity`: authentication and account/profile boundaries.
+- `integration`: idempotent commands/inbox for capabilities introduced by later epics.
+- `identity-account` (separate deployable): credentials, issuer, federated identity, account/profile and avatar ownership.
 
-No Kafka or additional database is required for the first v2. PostgreSQL-backed workers with `FOR UPDATE SKIP LOCKED` are adequate when reclaim, idempotency and observability are correct.
+No Kafka or additional database is required for the first replacement. PostgreSQL-backed workers are sufficient when a later capability needs them and reclaim, idempotency and observability are correct.
 
 ## Data ownership and contracts
 
@@ -173,7 +174,7 @@ erDiagram
         int ordinal
         uuid item_id FK
         text operation
-        uuid item_revision_id nullable FK
+        uuid item_revision_id FK
         text rank
         jsonb contextual_tags
     }
@@ -190,7 +191,7 @@ Required relational constraints include:
 
 - `DECK_REVISION UNIQUE(deck_id, revision_id)`, `UNIQUE(deck_id, sequence)` and a composite parent FK that keeps a parent revision in the same deck;
 - `CHECK ((base_deck_id IS NULL) = (base_revision_id IS NULL))` plus a composite base FK `(base_deck_id, base_revision_id)` to `deck_revision(deck_id, revision_id)`;
-- `DECK_ITEM_CHANGE` ordered uniquely within a revision; `REMOVE` has no item revision, while add/update does;
+- `DECK_ITEM_CHANGE` is ordered uniquely within a revision; `ADD`/`UPDATE` select the new item revision and `REMOVE` pins the exact previously selected revision being removed;
 - `DECK_HEAD_ITEM PRIMARY KEY(deck_id, item_id)` and deterministic tie-breaking for equal ranks;
 - `ITEM_REVISION UNIQUE(item_id, item_revision_id)` for composite lineage references.
 
@@ -284,72 +285,134 @@ This makes schema evolution local: `format_version` governs the document, each n
 
 ```mermaid
 erDiagram
-    LEARNING_ITEM ||--o{ MEMORY_UNIT : creates
-    MEMORY_UNIT ||--o{ EXERCISE_DEFINITION : measured_by
-    MEMORY_UNIT ||--o{ STUDY_STATE : scheduled_as
-    MEMORY_UNIT ||--o{ REVIEW_EVENT : attempted_as
+    LEARNING_ITEM ||--o{ MEMORY_OBJECTIVE : owns
+    MEMORY_OBJECTIVE ||--o{ OBJECTIVE_REVISION : evolves
+    EXERCISE_DEFINITION ||--o{ EXERCISE_REVISION : evolves
+    EXERCISE_REVISION ||--|{ EXERCISE_CONTENT_BINDING : presents
+    ITEM_REVISION ||--o{ EXERCISE_CONTENT_BINDING : pinned_as
+    EXERCISE_REVISION ||--|{ EXERCISE_OBJECTIVE_BINDING : assesses
+    OBJECTIVE_REVISION ||--o{ EXERCISE_OBJECTIVE_BINDING : evidenced_by
+    DECK_REVISION ||--o{ DECK_EXERCISE_POLICY : enables
+    EXERCISE_REVISION ||--o{ DECK_EXERCISE_POLICY : selected_by
     COLLECTION_SUBSCRIPTION ||--o{ STUDY_STATE : owns
+    MEMORY_OBJECTIVE ||--o{ STUDY_STATE : scheduled_as
+    EXERCISE_ATTEMPT ||--|{ ATTEMPT_EVIDENCE : produces
+    OBJECTIVE_REVISION ||--o{ ATTEMPT_EVIDENCE : evaluates
 
     EXERCISE_DEFINITION {
         uuid exercise_definition_id PK
-        uuid item_revision_id FK
-        uuid memory_unit_id FK
         text type
-        int version
+    }
+    EXERCISE_REVISION {
+        uuid exercise_revision_id PK
+        uuid exercise_definition_id FK
+        int schema_version
         jsonb prompt_projection
         jsonb answer_spec
         jsonb evaluator_policy
     }
-    MEMORY_UNIT {
-        uuid memory_unit_id PK
+    EXERCISE_CONTENT_BINDING {
+        uuid exercise_revision_id FK
+        uuid item_revision_id FK
+        text role
+        text node_id
+        int ordinal
+    }
+    MEMORY_OBJECTIVE {
+        uuid objective_id PK
         uuid item_id FK
         text objective_key
     }
+    OBJECTIVE_REVISION {
+        uuid objective_revision_id PK
+        uuid objective_id FK
+        int schema_version
+        jsonb answer_contract
+    }
+    EXERCISE_OBJECTIVE_BINDING {
+        uuid exercise_revision_id FK
+        uuid objective_revision_id FK
+        text role
+        jsonb evidence_policy
+    }
+    DECK_EXERCISE_POLICY {
+        uuid deck_revision_id FK
+        uuid exercise_revision_id FK
+        boolean enabled
+        numeric selection_weight
+        jsonb eligibility
+    }
     STUDY_STATE {
-        uuid user_id
         uuid subscription_id FK
-        uuid memory_unit_id FK
+        uuid objective_id FK
         text algorithm_id
         text algorithm_version
-        text algorithm_config_version
+        text policy_version
         jsonb state
         timestamptz next_due
         boolean suspended
         bigint row_version
     }
-    REVIEW_EVENT {
-        uuid event_id PK
-        uuid user_id
+    EXERCISE_ATTEMPT {
+        uuid attempt_id PK
         uuid subscription_id FK
-        uuid memory_unit_id FK
-        uuid item_revision_id FK
-        uuid exercise_definition_id FK
-        text algorithm_id
-        text algorithm_version
-        text algorithm_config_version
-        smallint rating
-        text source
+        uuid deck_revision_id FK
+        uuid exercise_revision_id FK
         text payload_hash
-        jsonb outcome
-        jsonb transition_result
+        jsonb raw_response
+        text evaluator_version
         int response_ms
-        timestamptz reviewed_at
+        timestamptz submitted_at
+    }
+    ATTEMPT_EVIDENCE {
+        uuid evidence_id PK
+        uuid attempt_id FK
+        uuid objective_revision_id FK
+        text result
+        text evidence_class
+        jsonb reason_codes
+        text scheduler_version
+        jsonb transition_result
     }
 ```
 
-Required constraints include `UNIQUE(item_id, objective_key)`, a composite lineage constraint keeping an exercise's item revision under the objective's item, and `STUDY_STATE PRIMARY KEY(subscription_id, memory_unit_id)`. `REVIEW_EVENT.event_id` is the global primary key. Ownership should be derived from subscription where possible rather than duplicated without a composite FK.
+Required constraints include `UNIQUE(item_id, objective_key)`, immutable objective/exercise revisions, unique binding ordinals/roles, lineage FKs from every revision to its stable entity, and `STUDY_STATE PRIMARY KEY(subscription_id, objective_id)`. `EXERCISE_ATTEMPT.attempt_id` is a client-generated global idempotency key. Reuse with the same owner and payload hash returns the stored result; conflicting reuse returns an idempotency conflict.
 
-Because `event_id` is client-generated and globally unique, it is the primary database idempotency key; `user_id` and payload hash are checked when replaying it. A revision-scoped `deck_exercise_policy(revision_id, exercise_definition_id, enabled_by_default, weight, eligibility)` selects exercises compatible with the content capabilities; an optional sparse user preference may narrow the set without copying shared definitions.
+`ExerciseDefinition` is stable identity; `ExerciseRevision` pins prompt, answer and evaluator policy. `ExerciseContentBinding` creates the M:N relation requested by the product and uses allowlisted roles `ASSESSED`, `CUE`, `OPTION`, `CONTEXT`. `ExerciseObjectiveBinding` identifies exactly which objectives may receive evidence. A deck-revision policy enables compatible exercises without copying their definitions.
 
-Study state is created lazily on first presentation. `memory_unit` represents a learning objective, not a UI exercise: several exercise definitions can provide evidence for one shared state; separate forward/reverse objectives create independent states. Updating a renderer/exercise version therefore does not reset memory by itself. The product must decide objective granularity before migration.
+Study state is created lazily for a `MemoryObjective`, not for a renderer. Forward/reverse objectives remain independent. Several exercise kinds can emit evidence for one shared state, so a renderer change does not reset memory. In P0 an objective belongs to one `LearningItem`; cross-item objectives remain deferred until a real case cannot be represented as several per-item outcomes.
 
-Track actual first exposure sparsely (for example `study_exposure(subscription_id, memory_unit_id, introduced_at, source_revision_id)`) rather than relying on one reorder-sensitive cursor. A monotonic introduction key may optimize selection, but source insertion/reorder must not silently skip unseen items.
+### Multi-item attempt semantics
 
-Each review event records the item revision actually shown, exercise definition and scheduler/config version so an answer remains explainable after content changes. A content change policy classifies presentation-only edits (normally keep state) versus semantic-answer changes (keep, mark relearn or reset by explicit rule).
+- Candidate bindings come only from one pinned deck revision. `OPTION`/`CONTEXT` exposure never changes progress.
+- A focal matching exercise may pin one `ASSESSED` item plus several options. A group matching submission may return several `ATTEMPT_EVIDENCE` rows, but each row needs an observable response for its own objective.
+- Aggregate `4/4` feedback is not copied to all items. If a mechanic cannot produce valid per-objective evidence, it is feedback-only and rejected as scheduler-affecting.
+- A directional relation updates only its declared direction. Showing or matching one pair does not automatically credit the reverse objective.
+- For P0, prefer one assessed objective per attempt. A later atomic multi-target submission locks study-state rows in deterministic objective-ID order and commits all transitions or none; it never leaves partial progress on failure.
+- The full presented set is immutable for the attempt. A concurrent deck edit affects the next attempt, not the one already started.
+
+Do not select neighbors with `ORDER BY random()` over a large head. Start with indexed eligibility by `(deck_revision_id, capability/tag/objective kind, item_id)` and deterministic hash/cursor sampling. Add a rebuildable candidate projection or reservoir only when query plans show it is needed. Semantic distractor quality remains a product validation problem, not something row adjacency proves.
+
+### Evidence and scheduler boundary
+
+Evaluators return normalized evidence, not an interval:
+
+- result: `CORRECT`, `PARTIAL`, `INCORRECT`, `UNSURE`, `NOT_ASSESSED` or `UNAVAILABLE`;
+- evidence class: `HIGH`, `MEDIUM`, `LOW` or `NONE`;
+- reason codes such as retrieval mode, hints/reveal, deterministic/self/human evaluator and uncertainty;
+- per-part feedback plus the exact evaluator/runtime version.
+
+Browse, cancel, timeout and evaluator failure create no scheduler transition. Response time is diagnostic only. Recognition, cued recall and free production may produce different evidence classes, but no hard-coded scientific weight is claimed before Mnema cohort calibration.
+
+Use one canonical versioned scheduler-reducer interface over normalized evidence. Do not bind an algorithm to an exercise type: that duplicates memory state and makes cross-exercise learning incoherent. Different algorithms/configs remain possible through a durable assignment and reducer version, so A/B tests compare policies without rewriting content or UI. Record experiment ID/version, assignment unit and reducer/config on every transition. Assignment should be stable at account/deck or account/objective level; avoid changing it mid-history without an explicit migration/analysis boundary.
+
+Track actual first exposure sparsely (for example `study_exposure(subscription_id, objective_id, introduced_at, source_revision_id)`) rather than relying on one reorder-sensitive cursor. A monotonic introduction key may optimize selection, but source insertion/reorder must not silently skip unseen items.
+
+Each attempt records all item/exercise revisions actually shown, evaluator version, normalized evidence and scheduler/config assignment so the transition remains explainable after content changes. A content change policy classifies presentation-only edits (normally keep state) versus semantic-answer changes (retain history and schedule explicit revalidation by an accepted rule).
 
 ## API boundaries
 
-The exact URL names are an LLD concern, but v2 must preserve these resource/command semantics:
+The exact URL names are an LLD concern, but the canonical replacement API must provide these resource/command semantics without a `/v2` prefix or legacy aliases:
 
 | Operation | Contract |
 |---|---|
@@ -368,7 +431,10 @@ Large documents/media never ride in an unbounded deck response. Use pagination/p
 
 ## Consistency, failure and recovery
 
-### Correctness defects to fix even before v2
+### Legacy defects that justify replacement, not repair scope
+
+The following findings are evidence for deleting the old paths. Do not turn them
+into a v1 remediation backlog unless a defect blocks the greenfield cutover itself:
 
 - Browser/review paths sometimes fetch the latest `public_card` by `card_id` rather than the subscription's pinned deck/version ([DeckCardViewAdapter.java](../../backend/services/core/src/main/java/app/mnema/core/deck/adapter/DeckCardViewAdapter.java#L103)). Search and review can therefore disagree.
 - The database no longer enforces a source FK for `user_cards.public_card_id` ([V21__public_card_id_non_unique.sql](../../backend/services/core/src/main/resources/db/migration/V21__public_card_id_non_unique.sql#L1)).
@@ -390,9 +456,9 @@ Large documents/media never ride in an unbounded deck response. Use pagination/p
 
 This closes the current first-answer race and duplicate retry risk.
 
-### Import and AI commands
+### Later integration commands
 
-Remote service calls are not distributed transactions. Every import/AI write carries `job_id + item/batch key`, returns a queryable command result and is safe to retry. A worker must reclaim stale `processing` work; the current import worker selects only `queued` jobs even though its query mentions stale locks ([ImportJobWorker.java](../../backend/services/import/src/main/java/app/mnema/importer/service/ImportJobWorker.java#L78)).
+Remote service calls are not distributed transactions. When media/import/AI is introduced by later epics, every write carries `job_id + item/batch key`, returns a queryable command result and is safe to retry. These workers and their legacy behavior are not foundation dependencies; the current import worker's stale-lock defect is deletion evidence ([ImportJobWorker.java](../../backend/services/import/src/main/java/app/mnema/importer/service/ImportJobWorker.java#L78)).
 
 ## Security and observability
 
@@ -414,49 +480,90 @@ Remote service calls are not distributed transactions. Every import/AI write car
 
 The present architecture cannot name an exact user count at which it fails because no representative workload, relation sizes or p95/p99 baseline were provided. The formulas identify cliffs; only measured load tests can place the boundary.
 
-## Validation and migration
+### Attempt fan-out scenario
 
-Do not rewrite applied Flyway V1–V25. Flyway validates checksums of versioned migrations; corrections belong in new versioned migrations, as described in [Flyway versioned migrations](https://documentation.red-gate.com/fd/versioned-migrations-273973333.html).
+This is a design envelope, not traffic evidence. Reusing the operations plan's low/
+medium/high attempt rates and assuming mean `1.5` evidence rows per attempt, a hard
+cap of `20`, p95 request target `300 ms`, roughly `1.7 KiB` logical attempt bundle
+and 100% index overhead. The last column deliberately assumes that the listed
+peak is sustained for a full year; it is a storage upper envelope, not a usage
+forecast:
 
-### Phase 0 — verify and export accounts
+| Scenario | Attempt writes/s | Mean evidence/s | Adversarial cap evidence/s | Approx. annual event + index |
+|---|---:|---:|---:|---:|
+| low | 1.5 | 2.3 | 30 | ~153 GiB |
+| medium | 18.5 | 28 | 370 | ~1.85 TiB |
+| high | 222 | 333 | 4,440 | ~22.2 TiB |
 
-- Put the hosted product into maintenance mode and record deployed image/database migration identities.
-- Count and export the approximately ten identity/account/profile records that must survive, including a deterministic mapping and checksums that do not expose secrets.
-- Restore the account-only export into an isolated fresh database and prove login/password-reset/OAuth-link behaviour.
-- Count users, decks, cards, review states/events and unfinished import/AI jobs before irreversible deletion.
-- Capture `pg_total_relation_size`, indexes and orphan/duplicate lineage queries.
-- Confirm that no deck, media, review or AI data must survive and explicitly approve deletion of object-storage keys.
+The high case is dominated by append/index/vacuum/retention rather than ordinary
+API RPS. Bound a multi-target attempt (initial proposal: at most 20 objectives),
+lock state rows in objective-ID order and keep the compact idempotency receipt
+separate from bulky/raw response retention.
 
-The owner has authorized downtime and deletion of non-account data. Prefer a fresh v2 database plus verified account import over an in-place transformation or dual writes. A full legacy backup that contains the data declared “irreversibly deleted” is not a valid long-term rollback artifact; if one is used for the cutover rehearsal, define its encrypted location and destruction deadline before proceeding.
+Initial hot indexes:
 
-### Phase 1 — build and rehearse the fresh v2 schema
+- due pool: partial `(subscription_id, next_due, objective_id)` where not suspended;
+- current deck: `(deck_id, rank, item_id) INCLUDE (item_revision_id)`;
+- exercise policy/candidates: `(deck_revision_id, enabled, exercise_revision_id)`;
+- bindings: primary keys by revision/binding key plus reverse indexes on
+  `item_revision_id` and `objective_revision_id`;
+- idempotency: `exercise_attempt(attempt_id)` primary key;
+- replay/audit: `(subscription_id, objective_id, submitted_at, evidence_id)`.
 
-Create the v2 schema in a fresh PostgreSQL database using new ordered Flyway migrations. Keep the legacy production database read-only during rehearsal. Prepare an idempotent account transformer with a persisted old-to-new ID map; do not build deck/card/media transformers for data explicitly being discarded.
+Start unpartitioned. Prepare monthly partitions for append-only evidence/transition
+history only when measured growth approaches roughly 25–50 million rows or 50 GiB;
+do not partition `StudyState`, head projections or revision tables by time. PostgreSQL
+requires partition keys in unique constraints on partitioned tables, another reason
+to keep the globally unique attempt receipt separate ([PostgreSQL partitioning](https://www.postgresql.org/docs/18/ddl-partitioning.html)).
 
-### Phase 2 — account-only migration and destructive reset
+## Validation and direct replacement
 
-- Stop auth/account writes and background workers.
-- Run the final account export and import; verify exact account count, stable IDs or mapping, unique emails/provider links and credential/session policy.
-- Start v2 with no decks, item content, media references, review history or AI jobs.
-- Delete legacy object data only from an explicit manifest/prefix after a dry-run count and owner approval; record tombstone/result counts without retaining user content.
-- Keep no silent compatibility path that can resurrect old deck/card data after cutover.
+The legacy database and its applied Flyway history remain untouched while it exists;
+the replacement runtime owns a new migration baseline built from zero. It does not
+run the old chain or append compatibility migrations. After cutover, the legacy
+migration source leaves the shipping build together with its module; Git history
+and `v1-apache-final` preserve evidence.
 
-### Phase 3 — cutover
+### Phase 0 — planning and account-only rehearsal
 
-1. Keep the whole product in maintenance while identity is frozen.
-2. Import and reconcile accounts in the fresh database.
-3. Switch the API and compatible workers while writes remain disabled.
-4. Smoke-test login/password reset, create, publish, subscribe, review, media upload, update and collaboration with synthetic data.
-5. If gates pass, explicitly open v2 for writes and observe error rate, latency, locks, queue age and storage.
+- Define one field-level allowlist for stable ID, email/verification, local
+  credential, federated binding, profile/moderation fields and account avatar.
+- Explicitly deny sessions, tokens, OAuth authorization/consent/grants, transient
+  auth state and all learning/media/import/AI data.
+- Restore only that export into an isolated fresh database and prove forced
+  re-authentication, password reset, federated link and profile/avatar behavior.
+- Build an exact deletion-manifest schema for DB/PVC/WAL/backups, Redis, object
+  versions/delete markers, multipart uploads, old deployables/routes and credentials.
+- Do not re-open the accepted zero-usage/RPS question and do not create a full
+  legacy snapshot for rehearsal.
 
-Binary/schema rollback is guaranteed only before v2 is opened for writes and before the approved legacy-destruction point. After v2-only writes and irreversible content deletion, recovery is roll-forward or restore of the v2/account-only backup. Document the exact point of no return, RPO/RTO, object-store deletion manifest and account verification sign-off.
+### Phase 1 — build the replacement
+
+Build Identity & Account and the Learning API from new source/module/schema roots.
+Canonical endpoints have no `/v2` prefix or old aliases. #74 owns Deck/LearningItem
+revision implementation; #75 owns exercise/evidence/scheduler; #76 owns new learning
+media. #77 is absent. The product may remain in maintenance or incomplete while
+these epics replace their paths.
+
+### Phase 2 — frozen cutover and point of no return
+
+1. Stop account writes, old application traffic and every legacy worker; keep maintenance.
+2. Run final account-only export/import and exact allowlist reconciliation.
+3. Start the replacement with writes closed and run account plus completed #74–#76 synthetic smoke.
+4. If any account, target or smoke gate fails, stop before deletion; the untouched old resources are still available.
+5. Record the explicit no-rollback acknowledgement.
+6. The first deletion of non-allowlisted legacy data is the point of no return. Remove every full legacy backup/snapshot/PITR/WAL copy, DB/PVC, Redis state, learning-media object/version/multipart upload and old runtime target from the manifest.
+7. Verify absence, create the first fresh-system backup and only then open replacement writes.
+
+After step 6, recovery of deleted v1 content/study/media/import/AI data is impossible
+by owner decision. Only account-only/fresh-system recovery and roll-forward exist.
+No runbook may promise an emergency legacy restore.
 
 ## Proposed decision sequence
 
-1. Accept the native content and exercise contracts.
-2. Approve fresh-database/account-only reset and its irreversible deletion envelope.
-3. Decide partial subscription-update pins, fork lineage limits, semantic-change policy and review retention.
-4. Approve the v2 relational constraints and point of no return.
-5. Implement publication/idempotency, base reconstruction, projection rebuild and MinIO integration tests.
-6. Move import/AI/media workers to idempotent application commands.
-7. Measure v2 before adding checkpoints, outbox, partitions, replicas, Kafka or a new datastore.
+1. Merge owner-decision/document/epic reconciliation; this is the current planning step.
+2. Implement #73 Identity & Account, greenfield runtime and platform contracts in reviewable tasks.
+3. Accept and implement #74 content, #75 study and #76 media contracts in their own epics.
+4. Rehearse the exact no-snapshot cutover on isolated synthetic targets.
+5. Execute the destructive operational issue only after all gates; #77 is not a dependency.
+6. Measure the replacement before adding checkpoints, partitions, replicas, Kafka or another datastore.

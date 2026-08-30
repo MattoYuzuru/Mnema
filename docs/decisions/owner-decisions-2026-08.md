@@ -5,7 +5,7 @@ artifact:
   title: "Mnema v2 owner decisions"
   status: accepted-input
   created_at: "2026-08-15"
-  updated_at: "2026-08-15"
+  updated_at: "2026-08-30"
   owners: ["project-owner"]
 ---
 
@@ -25,6 +25,7 @@ artifact:
 - На desktop нужен split-screen: editor с toolbar/hotkeys слева и live preview справа; на mobile — две понятные поверхности editor/preview без потери draft/selection.
 - В будущем нужны full editor, quick/batch draft, voice capture/transcription и AI generation/enhancement.
 - На первом этапе достаточно системной темы; произвольная стилизация карточек отложена.
+- Текущий UI и Liquid Glass не сохраняются. Полный визуальный редизайн относится к frontend epic; до отдельного design input допустим простой, быстрый и доступный Angular/semantic HTML/CSS интерфейс без тяжёлой UI-библиотеки.
 - Anki import вторичен относительно native launch. Legacy HTML/CSS renderer не строится: будущий importer компилирует поддерживаемый смысл в native AST/exercises, а непереносимое показывает в conversion report. APKG round-trip не обещается.
 
 Архитектурное следствие принято как рекомендация: канонический формат — typed versioned document AST; Markdown — authoring/interchange view; front/reveal — exercise projection. Детали: [learning-content-format-v2](../architecture/learning-content-format-v2.md).
@@ -46,6 +47,8 @@ artifact:
 - Проверка сначала детерминированная: normalization, aliases, typo tolerance, sets/order/tolerance. AI нужен для эссе, объяснения, интервью и иных открытых ответов.
 - AI assessment возвращает стабильный JSON verdict/evidence; пользователь может оспорить оценку.
 - История прогресса не удаляется при смысловой правке материала.
+- `LearningItem` — канонический термин для единицы материала. Одно упражнение может ссылаться на один или несколько `LearningItem`/revision, а один item может участвовать в нескольких упражнениях.
+- Любая подтверждённая попытка в Study, кроме Browse/простого чтения, создаёт evidence для spaced practice. Сила evidence зависит от механики, подсказок, качества проверки и проверяемой цели; точные веса и алгоритмы должны быть versioned и проверяемы экспериментами, а не зашиты в UI.
 
 Каталог и P0/P1/P2: [exercise-catalog-v2](../product/exercise-catalog-v2.md).
 
@@ -66,7 +69,7 @@ artifact:
 - Первый рынок — Россия, инфраструктура также в России.
 - Начальные каналы: студенты ВШЭ и Центрального университета, языковые преподаватели/курсы и Telegram-сообщества; программисты — дополнительный сегмент.
 - Ценность формулируется вокруг эффективного изучения собственного материала и видимого прогресса, а не вокруг Git, конструктора или document conversion.
-- Hosted использует managed AI по умолчанию и не показывает BYOK/provider selection.
+- Hosted в будущем использует managed AI и не показывает BYOK/provider selection, но manual content/Study MVP выпускается раньше AI; AI не является зависимостью greenfield foundation, editor или детерминированных упражнений.
 - Текущий self-host режим можно не поддерживать во время v2 rewrite; возможен отдельный репозиторий позже.
 - Manual content/study остаются бесплатными; монетизируется variable-cost AI.
 - Предпочтительны freemium, одноразовый 14-day trial без карты и простые платные tiers; media quotas не должны скрываться под unlimited.
@@ -74,19 +77,22 @@ artifact:
 - Yandex AI исключён из provider shortlist владельцем. Direct DeepSeek — основной eval-кандидат, но production route требует quality/cost/latency, доступности из РФ и cross-border/privacy gates; нужен не-Yandex fallback.
 - Публичные колоды бесплатны; авторам не выплачивается revenue share.
 
-### Data reset, clients and operations
+### Greenfield rewrite, data reset, clients and operations
 
-- В production примерно десять аккаунтов и фактически нулевой RPS.
-- Сохраняются account/identity данные. Decks, content/media, review history and AI jobs разрешено удалить безвозвратно.
-- Maintenance downtime разрешён.
+- Для планирования принимается owner assertion: продуктом никто не пользуется и RPS равен нулю; повторная проверка usage не является gate.
+- Переписывается канонический продуктовый путь. `/v2`, параллельные API, dual read/write, migration adapters и compatibility runtime запрещены; заменённый v1 code удаляется, а временно неработающий продукт допустим.
+- `auth` и `user` объединяются в один Identity & Account boundary/deployable. Сохраняются долгоживущие account identity/profile данные, включая локальные credentials, federated identities и относящийся к профилю avatar asset; sessions, OAuth authorizations/consents, grants and tokens не сохраняются.
+- Decks, cards/templates, learning content, study/review state, imports, AI jobs/ledgers/credentials и learning media в DB/S3 удаляются безвозвратно. Legacy database/object snapshots, PITR/WAL copies, object versions, multipart uploads, caches и иные backup-shaped копии этих данных также удаляются; полный legacy snapshot не создаётся и не удерживается.
+- Account-only export/restore допустим и обязан содержать только allowlisted сохраняемые account fields. После начала удаления legacy данных rollback к v1 отсутствует; восстановление возможно только roll-forward из новой системы и account-only recovery artifacts.
+- Maintenance downtime, временная недоступность production и сломанные продуктовые flows во время rewrite разрешены.
 - Future iOS/Android clients and offline review downloaded decks обязательны к учёту в IDs, idempotency and sync; PWA не является текущим приоритетом.
 - Spring/Java and PostgreSQL remain. Kotlin migration is not a goal by itself.
-- Начальная топология может быть проще нынешней: modular API плюс отдельно масштабируемые AI/import/media workers. Физические сервисы выделяются по measured load/failure/security boundary.
+- Начальная топология проще нынешней: единый Identity & Account deployable и modular Learning API; workers выделяются только для уже нужного failure/resource boundary. Существующая микросервисная нарезка не сохраняется ради совместимости.
 - Нужны автоматизированные edge/E2E/load tests с реальным PostgreSQL и MinIO-compatible storage.
 - Владелец предпочитает recovery/retention до шести месяцев, но этот срок не становится контрактом до появления законного основания по каждой категории данных; product data должны удаляться раньше, если того требует утверждённая policy.
 - Возможность использовать публичные колоды для AI improvement остаётся открытой и требует consent/licensing/privacy решения до реализации.
 - Existing private GitHub Project #4 остаётся Kanban/source of execution. Создание parent epics разрешено; новую taxonomy labels/fields/views пока не вводить, использовать существующие `Status` и `Priority`.
-- Период 17–31 августа посвящён staging/delivery foundation и v2 vertical slice; billing/quota начинается после этого gate.
+- Текущий этап — planning: уточнить epics/docs и разбить #73 на reviewable tasks. Реализация, production reset и удаление данных выполняются только отдельными последующими issues.
 
 ## Rejected or deferred
 
@@ -99,6 +105,9 @@ artifact:
 - Глобальная Today queue, смешивающая колоды.
 - Поддержка текущего self-host и BYOK как blocker hosted v2.
 - Миграция старых decks/media/review/AI data.
+- `/v2` namespace, side-by-side product generations, legacy compatibility/adapters и сохранение старых scheduler algorithms ради continuity.
+- Любой retained full legacy snapshot после destructive cutover.
+- Liquid Glass и сохранение текущей визуальной идентичности как constraint нового frontend.
 - Произвольные theme/layout builders в первом релизе.
 - Unlimited AI и deck-size monetization limit.
 - Yandex AI как hosted provider.
@@ -116,12 +125,10 @@ artifact:
 | O-07 | Лицензия нового кода? | **Решено 2026-08-30:** public source-available с private personal use для одного физического лица; любое organizational/shared/hosted/commercial/ML use требует отдельной письменной лицензии. Последний Apache-срез — `v1-apache-final`; см. [license transition](./source-license-transition.md). |
 | O-08 | Можно ли использовать public content for AI improvement? | Require explicit author grant, provenance, deletion/export rules and provider terms before enabling. |
 | O-09 | Точный account-retention legal policy? | Six months is not assumed lawful. Separate product deletion from legally retained tax/payment records and approve every retention period with Russian counsel; см. [legal launch checklist](../product/russia-legal-launch-checklist-2026.md). |
-| O-10 | Какие production deletion artifacts можно retain? | Decide whether only counts/hashes and account mapping may remain; no raw content backup after irreversible reset deadline. |
 
 ## Immediate implementation gates
 
-1. Approve the content/exercise ADRs and fresh account-only migration boundary.
-2. Query/export production accounts and rehearse restore without touching production.
-3. Prototype P0 AST/editor/renderer and one end-to-end exercise contract.
-4. Build the v2 relational schema only after the prototype validates node/reference semantics.
-5. Fix current release cache/deployment safety before any hosted cutover.
+1. Reconcile the greenfield, account-only and no-legacy decisions across canonical docs and epics.
+2. Split epic #73 into reviewable Identity & Account, fresh foundation, delivery-topology, account-transfer and destructive-cutover tasks.
+3. Refine #74–#77 with their target product contracts without implementing them in #73.
+4. Execute each implementation task through a separate reviewed change; the destructive production cutover remains a final operational issue with an explicit point of no return.

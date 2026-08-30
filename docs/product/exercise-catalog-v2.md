@@ -2,201 +2,280 @@
 artifact:
   id: exercise-catalog-v2
   type: product-requirements
-  title: "Mnema exercise catalog and learning contracts v2"
+  title: "Mnema exercise and learning-evidence contracts"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-08-15"
+  updated_at: "2026-08-30"
   owners: ["project-owner"]
 ---
 
-# Каталог упражнений Mnema v2
+# Каталог упражнений и learning evidence
 
 ## Принцип
 
-Материал, способ его показа, проверяемый навык и упражнение — разные сущности.
+Материал, проверяемый навык, упражнение, попытка и изменение расписания — разные
+сущности.
 
 ```text
-Learning item → immutable content revision
-              → one or more memory objectives
-              → zero or more versioned exercises
-Exercise attempt → deterministic evidence → optional AI evidence → scheduler outcome
+LearningItem → immutable ItemRevision
+             → one or more MemoryObjectives
+ExerciseDefinition → immutable ExerciseRevision
+ExerciseRevision → one or more pinned ItemRevisions with explicit roles
+Attempt → per-objective evaluated evidence → versioned scheduler reducer → StudyState
+Browse/exposure ────────────────────────────X no scheduler update
 ```
 
-Простая «карточка Anki» остаётся одним из пресетов: показать prompt, вспомнить, открыть reveal, оценить себя. Она больше не определяет форму всех данных. Автор колоды может добавлять совместимые упражнения к одному материалу; AI может предлагать их, но не создаёт исполняемый пользовательский код.
+`LearningItem` — канонический термин. Forward/reverse и иные независимо
+проверяемые направления принадлежат разным `MemoryObjective`. Одно упражнение
+может использовать несколько items, но показанный distractor/context не получает
+progress. Scheduler update разрешён только для objective, по которому есть
+наблюдаемый assessed response.
 
-Просмотр не обновляет интервальный прогресс. Прогресс принадлежит `memory objective`: например, `слово → смысл` и `смысл → слово` могут планироваться независимо, тогда как typed и reveal одного направления могут давать evidence одному objective.
+AI не входит в этот epic. P0/P1 работают с deterministic evaluator или явной
+self/human rubric. Будущий #77 может добавить versioned evaluator, но не прямую
+запись в `StudyState`.
+
+## Learning evidence, а не «вес кнопки»
+
+Relative class описывает достоверность конкретного измерения, а не обещанный
+педагогический эффект механики:
+
+| Class | Значение | Примеры |
+|---|---|---|
+| `HIGH` | самостоятельное воспроизведение objective надёжно проверено | correct unhinted typed production, deterministic domain answer |
+| `MEDIUM` | полезный сигнал с cues, partial result или context dependence | cloze, matching per assessed pair, correct after a hint |
+| `LOW` | правильный ответ мог возникнуть из recognition/guess/self-report | single choice, uncalibrated self-grade |
+| `NONE` | assessment не произошло | Browse, context/distractor exposure, cancel, timeout, evaluator failure |
+
+Evidence class зависит от результата, evaluator и подсказок. Response time хранится
+для диагностики, но сам по себе не меняет correctness или strength: устройство,
+IME и assistive technology влияют на время.
+
+Точные numeric weights не являются product requirement. Их калибруют по следующему
+unhinted retrieval и versioned experiment, не по субъективной сложности UI.
 
 ## Общий контракт попытки
 
-Каждая оцениваемая механика обязана вернуть один стандартный envelope:
+Клиент отправляет один идемпотентный envelope, привязанный к зафиксированным
+revision:
 
 ```json
 {
   "attemptId": "client-generated-uuid",
-  "exerciseRevisionId": "...",
-  "itemRevisionId": "...",
-  "objectiveId": "...",
+  "deckRevisionId": "uuid",
+  "exerciseRevisionId": "uuid",
+  "presentedBindings": [
+    {"itemRevisionId": "uuid", "role": "ASSESSED|CUE|OPTION|CONTEXT"}
+  ],
   "response": {},
   "hintsUsed": [],
+  "confidence": "KNEW|UNSURE|GUESSED|null",
   "durationMs": 4200
 }
 ```
 
-Сервер сохраняет точную ревизию, версию evaluator, deterministic result, optional AI result и окончательное решение. Повторная отправка того же `attemptId` не создаёт вторую попытку.
-
-Проверка выполняется слоями:
-
-1. нормализация, aliases, допустимые варианты, единицы, tolerance и явные правила;
-2. специализированный детерминированный evaluator, если нужен;
-3. AI только для действительно открытых ответов или как объяснимый второй сигнал;
-4. self-grade/manual override там, где автоматическая проверка не заслуживает доверия.
-
-Опечатка пользователя не становится общим правильным ответом автоматически. Её можно сохранить как личный accepted alias с источником и аудитом; автор отдельно решает, добавлять ли её в общую ревизию.
-
-## Каталог возможностей
-
-Каталог — граница расширяемости, а не обещание реализовать всё сразу.
-
-### Просмотр и управляемое раскрытие
-
-| Тип | Ответ | Проверка | Применение |
-|---|---|---|---|
-| Browse/read | bookmark/telemetry | не оценивается | свободный просмотр длинного материала |
-| Progressive reveal | раскрытые стадии | не оценивается | пошаговое доказательство, стих, код, схема |
-| Recall → reveal → self-rating | Again/Hard/Good/Easy | self-grade | универсальная Anki-подобная механика |
-
-### Активное воспроизведение
-
-| Тип | Ответ | Проверка | Применение |
-|---|---|---|---|
-| Short typed answer | строка | aliases, normalization, typo tolerance | термин, дата, определение |
-| Multi-value/list recall | набор строк | set/order policy, partial score | признаки, этапы, перечисления |
-| Cloze | значения по blank ID | deterministic | текст, код, формула, стих |
-| Listening dictation | текст | transcript aliases | языки, музыка, фонетика |
-| Oral semantic recall | audio + transcript | STT + rubric/AI позже | интервью, объяснение, устная речь |
-| Pronunciation/shadowing | audio | specialized scorer/self-grade | произношение и интонация |
-| Draw/sketch recall | strokes/asset | self-grade/CV позже | анатомия, схемы, графики |
-| Code completion | текст по blank ID | tokens/AST fragments | syntax/API recall |
-| Code solution against tests | source | isolated deterministic runner | алгоритмы и программирование |
-
-### Узнавание и различение
-
-| Тип | Ответ | Проверка | Применение |
-|---|---|---|---|
-| Single choice | option ID | deterministic | первый контакт, диагностический scaffold |
-| Multiple select | option IDs | deterministic/partial | несколько верных признаков |
-| True/false + correction | boolean + текст | deterministic + optional rubric | misconceptions |
-| Error spotting | ranges/node IDs + fix | anchored rules | язык, код, доказательства |
-| Odd one out | option + reason | choice deterministic | классификация и границы понятия |
-
-### Связи, структура и порядок
-
-| Тип | Ответ | Проверка | Применение |
-|---|---|---|---|
-| Matching pairs | пары ID | deterministic | термин–смысл, событие–дата |
-| Categorization | item→bucket | deterministic | классы, части речи, диагнозы |
-| Ordering/timeline | ordered IDs | deterministic/partial distance | процессы, история, алгоритмы |
-| Sentence/code assembly | token IDs | accepted sequences | синтаксис, код, формулы |
-| Diagram labeling/hotspots | label→region | deterministic | анатомия, география, UI |
-| Image occlusion | region response/reveal | deterministic/self-grade | визуальные структуры |
-| Concept-map completion | nodes/edges | graph constraints | причинные и системные связи |
-
-### Применение и объяснение
-
-| Тип | Ответ | Проверка | Применение |
-|---|---|---|---|
-| Explain in own words | long text/audio | self/manual or structured AI | понимание концепта |
-| Why/how question | long text | rubric/key concepts | причинное мышление |
-| Scenario/case decision | option/text | rules or AI rubric | медицина, право, product cases |
-| Continue worked solution | next step/text | solution graph | математика, физика, алгоритмы |
-| Numeric/problem solving | value/unit/work | tolerance/unit rules | STEM |
-| Symbolic equivalence | expression | symbolic engine later | алгебра, логика, химия |
-| Translation/adaptation | text/audio | aliases then AI | естественные языки |
-| Use in sentence | text/audio | constraints then AI | продуктивная лексика |
-| Compare/contrast | structured/prose | dimensions/rubric | сложные концепты |
-| Essay/interview answer | long text/audio | structured AI/manual | экзамены и собеседования |
-
-AI verdict для открытых ответов имеет стабильную схему, а не свободный текст:
+Evaluator сохраняет raw response, exact revisions, evaluator version и возвращает
+per-objective results:
 
 ```json
 {
-  "verdict": "CORRECT|MOSTLY_CORRECT|MOSTLY_INCORRECT|INCORRECT|UNSURE",
-  "score": 0.0,
-  "confidence": 0.0,
-  "matchedCriteria": [],
-  "missingCriteria": [],
-  "feedback": ""
+  "status": "ASSESSED|NOT_ASSESSED|UNAVAILABLE",
+  "objectiveEvidence": [
+    {
+      "objectiveId": "uuid",
+      "result": "CORRECT|PARTIAL|INCORRECT|UNSURE",
+      "evidenceClass": "HIGH|MEDIUM|LOW|NONE",
+      "reasonCodes": ["UNHINTED", "DETERMINISTIC"]
+    }
+  ],
+  "feedback": {}
 }
 ```
 
-`UNSURE` не должен превращаться в уверенную автоматическую оценку. Пользователь видит основание, может оспорить результат, а исходный ответ и deterministic evidence остаются неизменными.
+Versioned scheduler policy отдельно преобразует evidence в transition. Повторная
+отправка того же `attemptId` и payload возвращает сохранённый outcome; повторное
+использование ID с другим payload — idempotency conflict. Cancel, navigation away,
+timeout или evaluator failure не становятся incorrect attempt.
 
-## Совместимость упражнений с материалом
+Проверка выполняется слоями:
 
-Каждая ревизия материала публикует вычисляемые capabilities, например `HAS_AUDIO`, `HAS_ORDERED_SEGMENTS`, `HAS_CLOZE_ANCHORS`, `HAS_HOTSPOTS`, `HAS_EXECUTABLE_CODE_SPEC`. Exercise type декларирует обязательные capabilities и валидирует node references при публикации.
+1. normalization, aliases, sets/order/unit/tolerance и явные deterministic rules;
+2. специализированный deterministic evaluator;
+3. self/human rubric, только когда автоматическая проверка недостоверна;
+4. AI evaluator — deferred #77 после отдельного owner/privacy/evidence gate.
 
-Это позволяет смешивать в одной колоде язык, код, схемы, стихи и видео. Нельзя назначить listening без audio segment или diagram labeling без region map; UI объясняет, чего не хватает, и предлагает совместимый тип.
+Опечатка не становится общим правильным ответом автоматически. Personal alias
+хранит источник; author отдельно публикует shared alias в новой revision.
 
-## Рекомендуемый порядок реализации
+## Каталог кластеров
 
-### P0 — доказать учебный цикл
+Каталог — граница возможностей, не обещание реализовать все mechanics одновременно.
 
-1. Browse/read.
-2. Recall → reveal → self-rating.
-3. Short typed answer.
-4. Cloze.
-5. Single choice и multiple select.
+| ID | Кластер | Cardinality | Основная цель | Evaluation | Typical evidence | Priority |
+|---|---|---|---|---|---|---|
+| E-00 | Browse/read, bookmark, progressive reveal без ответа | 1..N items | знакомство и навигация | none | `NONE` | P0 |
+| E-01 | Recall → reveal → behavioral self-check | 1 item / 1 objective | свободное извлечение до показа | self rubric | `LOW`, later calibrated | P0 |
+| E-02 | Short typed production: термин, дата, translation aliases | 1 / 1 | самостоятельно произвести ответ | deterministic | `HIGH` unhinted | P0 |
+| E-03 | Cloze/code/formula completion | 1 item / 1..N blanks | cued production | deterministic per blank | `MEDIUM–HIGH` | P0 single; P1 multi |
+| E-04 | Single choice; later multiple select, T/F+correction, odd-one-out | focal item + deck options | recognition/discrimination | deterministic | correct choice `LOW`; correction `MEDIUM` | P0 single; P1 rest |
+| E-05 | Multi-value/list recall | 1 item / 1..N elements | полный set/order | deterministic partial | `HIGH` full; `MEDIUM` partial | P1 |
+| E-06 | Matching/categorization | 2..N items from one deck revision | relation/discrimination | deterministic per assessed binding | `MEDIUM` | P1 |
+| E-07 | Ordering/timeline/sentence/code assembly | one segmented item or 2..N items | structure/order/procedure | deterministic partial order | `MEDIUM` for order objective | P1 |
+| E-08 | Contrast, contextual decision, error spotting + correction | focal + 1..N contrast items | apply or distinguish concepts | structured deterministic/self | `MEDIUM`, context-bound | P1 structured |
+| E-09 | Explain/why/compare/free recall/worked next step | 1 item or explicit small set | conceptual reconstruction | self or human; AI deferred | `LOW` self, stronger only with valid rubric | P1 experiment/P2 |
+| E-10 | Listening dictation/audio → typed | 1 / 1, audio capability | auditory retrieval | deterministic transcript/aliases | `MEDIUM–HIGH` | P1 language cohort |
+| E-11 | Pronunciation/oral production/shadowing | 1 / 1 | spoken form/prosody | self/human; scorer deferred | `LOW` self | P2 |
+| E-12 | Labeling/hotspot/image occlusion/sketch | 1 item, several regions/objectives | spatial/visual relation | deterministic regions or self/human | `MEDIUM` | P2 unless cohort gate |
+| E-13 | Numeric/unit, symbolic, code completion/tests | normally 1 / 1 | exact domain application | specialized deterministic | `HIGH` when evaluator valid | P2 |
 
-Это минимальный набор с одним `StudySessionShell`, общим attempt contract и детерминированной проверкой. Он покрывает текущую механику и первые новые режимы без дорогого AI в критическом пути.
+Recognition не бесполезно, но correct choice не означает `EASY`. Free response может
+быть хорошей учебной практикой, но self-grade остаётся слабым измерением. Эти две
+оси нельзя смешивать.
 
-### P1 — дать ощутимое разнообразие
+## Multi-item contract
 
-1. Matching pairs.
-2. Ordering/sentence assembly.
-3. Listening dictation.
-4. Multi-value recall.
-5. Diagram labeling/image occlusion.
-6. Deterministic translation aliases and accepted variants.
+1. Все bindings принадлежат выбранной deck и одной pinned `DeckRevision`.
+2. У каждого binding есть роль `ASSESSED`, `CUE`, `OPTION` или `CONTEXT`.
+3. Только `ASSESSED` binding связывается с `MemoryObjective` и scheduler evidence.
+4. Aggregate UI score не копируется всем участвующим items.
+5. Matching/categorization возвращает per-objective result. Если валидное
+   разложение невозможно, mechanic остаётся feedback-only и не влияет на schedule.
+6. Forward/reverse objectives не получают двойной credit от одного directional
+   exercise.
+7. Incorrect pair не превращает два независимых objectives в две ошибки без двух
+   наблюдаемых assessed responses.
+8. Neighbor, показанный как option/context, получает exposure, но не review.
+9. Набор revision фиксируется до ответа. Concurrent edit/remove не меняет
+   начатое упражнение и не создаёт partial scheduler update.
+10. Candidate pool использует semantic/capability eligibility внутри deck;
+    случайная близость по rank сама по себе не делает distractor хорошим.
 
-### P2 — сегментные режимы
+Пример владельца с четырьмя idioms поддерживается двумя способами: один focal
+objective + три pinned options или четыре independently assessed pair results в
+одном attempt group. Во втором случае каждый result обновляется отдельно; один
+общий `4/4` не раздаёт mastery автоматически.
 
-1. Code completion and isolated test runner.
-2. Pronunciation/oral recall.
-3. Numeric/symbolic solving.
-4. Explain/why/scenario/use-in-sentence with structured AI assessment.
-5. Draw and concept-map recall.
+## Feedback, confidence и spacing
 
-Приоритет retrieval и spacing важнее декоративного разнообразия: крупный обзор оценил practice testing и distributed practice как high-utility, а self-explanation/interleaving — как полезные, но более контекстные техники ([Dunlosky et al.](https://pubmed.ncbi.nlm.nih.gov/26173288/)); retrieval practice особенно полезна для долгосрочного удержания и выигрывает от feedback ([Roediger & Butler](https://pubmed.ncbi.nlm.nih.gov/20951630/)).
+- Response фиксируется до reveal/correctness.
+- Feedback показывает overall/per-part result, reference answer и применённые
+  aliases/normalization/tolerance/hints.
+- Choice/matching всегда дают corrective feedback; неправильный distractor не
+  становится learned alias.
+- Feedback не считается второй assessed attempt.
+- Confidence, если собирается, фиксируется до feedback и сначала используется
+  только для calibration; оно не отменяет deterministic incorrect.
+- Self-check описывает поведение: «не вспомнил», «после существенной подсказки»,
+  «самостоятельно, но частично», «самостоятельно и полно», а не только
+  `Hard/Good/Easy`.
+- Spacing — scheduler/session policy, не exercise type.
+- Interleaving применяется внутри deck к действительно близким категориям и
+  проверяется экспериментом; universal random mixing запрещён.
 
-## UX requirements
+## P0 / P1 / P2
 
-- пользователь запускает обучение из конкретной колоды; глобальная межколодная очередь запрещена для v2;
-- Browse и Study — две явные команды;
-- автор добавляет упражнения к материалу через «+ упражнение» и preview, а не через schema builder;
-- AI suggestions объясняют, какой objective и какие content nodes они используют;
-- одна сессия может чередовать упражнения только внутри выбранной колоды;
-- answer input, reveal, feedback, override, pause и exit полностью доступны с клавиатуры;
-- hover-функции имеют focus/tap эквивалент;
-- длинный контент скроллится, а основное действие остаётся достижимым;
-- собственные audio/video controls имеют semantic fallback, captions/transcript и reduced-motion behaviour.
+### P0 — доказать корректный learning loop
 
-## Изменение материала и прогресс
+1. Browse, полностью отделённый от scheduler.
+2. Recall → reveal → behavioral self-check.
+3. Short typed production.
+4. Single-blank cloze.
+5. Single choice как recognition/error scaffold.
+6. Common attempt/feedback/evidence/idempotency contract.
+7. Keyboard, screen-reader and touch baseline общего shell.
 
-Каждая правка классифицируется внутренне; пользователь видит обычные формулировки, а не `semantic breaking`:
+Multiple select перенесён из P0 в P1: он добавляет partial-scoring semantics, но не
+доказывает новый loop сверх single choice.
 
-- `PRESENTATION_ONLY`: прогресс сохраняется;
-- `SEMANTIC_COMPATIBLE`: прогресс сохраняется, новая ревизия фиксируется в следующей попытке;
-- `OBJECTIVE_CHANGED`: изменился правильный ответ, rubric или то, что проверяется. История остаётся связанной со старой revision; новая objective revision получает `REVALIDATION_REQUIRED` и одну ближайшую проверку, а не молчаливый полный reset.
+### P1 — разнообразие без AI
 
-Автоматически стирать историю нельзя. AI может предложить классификацию, но детерминированные правила сначала сравнивают answer specs, objective and referenced nodes; low-confidence решение требует подтверждения.
+- multiple select и true/false + correction;
+- multi-value recall;
+- matching/categorization с per-objective outcomes;
+- ordering/assembly при однозначном decomposition;
+- structured contrast/context decisions;
+- limited self/human-graded explanation experiment;
+- listening dictation;
+- image labeling/occlusion только при cohort evidence;
+- confidence calibration и targeted interleaving experiments.
 
-## Acceptance gates
+### P2 — сегментные/дорогие evaluators
 
-- один content item публикуется с несколькими exercises без копирования контента;
-- разные exercises одного objective корректно обновляют одну study state, а reverse objective — другую;
-- invalid node/capability references отклоняются до публикации;
-- retries идемпотентны;
-- deterministic result и AI result различимы и аудируемы;
-- browse никогда не изменяет scheduler;
-- deck-scoped session не выдаёт item из другой колоды;
-- accessibility и offline retry входят в контракт общего shell, а не реализуются отдельно каждым exercise.
+- pronunciation/oral production;
+- general long-form explanation, essay/interview and cases;
+- sketch/concept map;
+- numeric/symbolic/code evaluators;
+- cross-item objectives, если per-item decomposition доказанно недостаточно;
+- delayed human assessment workflow.
+
+AI grading не является P2 promise этого epic; он остаётся deferred #77.
+
+## Accessibility requirements
+
+- каждый exercise завершается keyboard-only, screen-reader, touch and speech-control flow;
+- matching, sorting и hotspot имеют non-drag/non-gesture alternative;
+- correctness, partial feedback, moved position and validation error объявляются
+  assistive technology без неожиданного focus loss;
+- radio/checkbox используют native semantics или полный documented interaction pattern;
+- audio имеет accessible controls; transcript/accommodation policy не превращает
+  disability в incorrect result;
+- text scaling, zoom, reduced motion, RTL and IME не меняют учебный смысл;
+- duration не штрафует assistive input.
+
+Официальные accessibility boundaries: [WCAG 2.2 dragging movements](https://www.w3.org/WAI/WCAG22/Understanding/dragging-movements), [WAI-ARIA radio pattern](https://www.w3.org/WAI/ARIA/apg/patterns/radio/) и [audio-only alternatives](https://www.w3.org/WAI/WCAG22/Understanding/audio-only-and-video-only-prerecorded.html).
+
+## Evidence и ограничения вывода
+
+Evidence-backed:
+
+- retrieval practice улучшает delayed retention относительно restudy, хотя restudy
+  может выглядеть лучше немедленно ([Roediger & Karpicke, 2006](https://pubmed.ncbi.nlm.nih.gov/16507066/));
+- recall в среднем даёт больший testing benefit, чем recognition, но initial
+  retrieval success и domain matter ([Rowland, 2014](https://pubmed.ncbi.nlm.nih.gov/25150680/), [Smith & Karpicke, 2014](https://pubmed.ncbi.nlm.nih.gov/24059563/));
+- multiple-choice feedback снижает последующие lure intrusions, а feedback полезен
+  для correct low-confidence answers ([Butler & Roediger, 2008](https://pubmed.ncbi.nlm.nih.gov/18491500/), [Butler et al., 2008](https://pubmed.ncbi.nlm.nih.gov/18605878/));
+- generation обычно лучше пассивного чтения, но зависит от task constraints
+  ([generation meta-analysis](https://pubmed.ncbi.nlm.nih.gov/32671573/));
+- spacing benefit устойчив, но optimal gap зависит от retention horizon
+  ([Cepeda et al., 2008](https://doi.org/10.1111/j.1467-9280.2008.02209.x));
+- interleaving зависит от similarity/material и не является universal win
+  ([Brunmair & Richter, 2019](https://pubmed.ncbi.nlm.nih.gov/31556629/));
+- self-assessment страдает от fluency illusions, поэтому не становится сильным
+  scheduler signal без calibration ([Koriat & Bjork, 2005](https://pubmed.ncbi.nlm.nih.gov/15755238/)).
+
+Эти работы поддерживают semantic evidence classes и обязательный feedback, но не
+дают готовых numeric scheduler weights для Mnema.
+
+Product hypotheses для проверки на cohorts:
+
+- bands `HIGH/MEDIUM/LOW` предсказывают следующий unhinted recall;
+- deck-neighbor matching улучшает discrimination без confusion;
+- per-objective multi-item feedback понятен и не создаёт false mastery;
+- confidence capture улучшает calibration без лишнего friction;
+- listening/contrast mechanics повышают retained use в соответствующем cohort;
+- deterministic neighbor selection создаёт качественные distractors без AI.
+
+## Acceptance gates epic #75
+
+- **AC-STUDY-01:** Study из deck A не показывает items deck B даже как distractors.
+- **AC-STUDY-02:** Browse/reveal без assessed response никогда не меняет due/mastery.
+- **AC-STUDY-03:** Attempt изменяет только objectives с ролью `ASSESSED` и сохраняет объяснимый evidence class/reasons.
+- **AC-STUDY-04:** cancel/timeout/evaluator failure дают `NOT_ASSESSED`, не incorrect.
+- **AC-STUDY-05:** retry одного attempt имеет exactly-once scheduler effect.
+- **AC-EVAL-01:** deterministic evaluator имеет приоритет; AI отсутствует.
+- **AC-EVAL-02:** result различает correct, partial, incorrect, unsure, not-assessed and unavailable.
+- **AC-EVAL-03:** feedback раскрывает reference и применённые checking rules.
+- **AC-EVAL-04:** recognition не превращается автоматически в strongest evidence.
+- **AC-EVAL-05:** hints снижают positive evidence по явной policy.
+- **AC-MULTI-01:** item/exercise/deck revisions фиксируются до submit.
+- **AC-MULTI-02:** multi-item response возвращает per-objective outcomes; context/options не получают update.
+- **AC-MULTI-03:** directional relation обновляет только объявленный objective.
+- **AC-MULTI-04:** невозможность decomposition отклоняет scheduler-affecting publication.
+- **AC-A11Y-01:** все P0 mechanics проходят keyboard/screen-reader/touch flow.
+- **AC-A11Y-02:** drag/gesture никогда не является единственным способом ответа.
+- **AC-A11Y-03:** feedback/focus/media alternatives доступны и предсказуемы.
+- **AC-LEGACY-01:** ни один flow не зависит от card/template API, current review state или old algorithms.
+
+P1 mechanic продвигается после P0 только если он доступен, его evidence
+калибруется по следующему unhinted retrieval, он не повышает misconception/lure
+rate и его cohort value оправдывает authoring/runtime cost.
