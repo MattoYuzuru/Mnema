@@ -44,9 +44,19 @@ class ApiExceptionHandlerTest {
     @Test
     void returnsStableVersionConflictProblem() throws Exception {
         mockMvc.perform(get("/_test/version"))
-                .andExpect(status().isConflict())
+                .andExpect(status().isPreconditionFailed())
                 .andExpect(jsonPath("$.type").value("urn:mnema:problem:version-conflict"))
+                .andExpect(jsonPath("$.status").value(412))
                 .andExpect(jsonPath("$.code").value("VERSION_CONFLICT"));
+    }
+
+    @Test
+    void returnsPreconditionRequiredProblem() throws Exception {
+        mockMvc.perform(get("/_test/precondition-required"))
+                .andExpect(status().isPreconditionRequired())
+                .andExpect(jsonPath("$.type").value("urn:mnema:problem:precondition-required"))
+                .andExpect(jsonPath("$.status").value(428))
+                .andExpect(jsonPath("$.code").value("PRECONDITION_REQUIRED"));
     }
 
     @Test
@@ -62,6 +72,13 @@ class ApiExceptionHandlerTest {
                 .andExpect(status().isMethodNotAllowed())
                 .andExpect(header().string("Allow", "POST"))
                 .andExpect(jsonPath("$.code").value("METHOD_NOT_ALLOWED"));
+
+        mockMvc.perform(post("/_test/validation")
+                        .contentType(MediaType.TEXT_PLAIN)
+                        .content("name"))
+                .andExpect(status().isUnsupportedMediaType())
+                .andExpect(jsonPath("$.status").value(415))
+                .andExpect(jsonPath("$.code").value("INVALID_REQUEST"));
 
         mockMvc.perform(get("/_test/missing"))
                 .andExpect(status().isNotFound())

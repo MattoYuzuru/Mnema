@@ -30,6 +30,9 @@ public final class UuidPolicy {
         if (id.variant() != IETF_VARIANT) {
             throw new IllegalArgumentException(field + " must use the RFC 9562/IETF UUID variant");
         }
+        if (id.version() < 1 || id.version() > 8) {
+            throw new IllegalArgumentException(field + " must use a registered UUID version from 1 through 8");
+        }
         return id;
     }
 

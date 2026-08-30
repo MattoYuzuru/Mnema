@@ -1,6 +1,7 @@
 package app.mnema.learning.platform.api;
 
 import app.mnema.learning.platform.concurrency.VersionConflictException;
+import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
@@ -36,6 +37,14 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return response(ApiErrorCode.VERSION_CONFLICT, request.getRequestURI(), new HttpHeaders());
     }
 
+    @ExceptionHandler(VersionPreconditionRequiredException.class)
+    ResponseEntity<Object> handleVersionPreconditionRequired(
+            VersionPreconditionRequiredException exception,
+            HttpServletRequest request
+    ) {
+        return response(ApiErrorCode.PRECONDITION_REQUIRED, request.getRequestURI(), new HttpHeaders());
+    }
+
     @ExceptionHandler(Exception.class)
     ResponseEntity<Object> handleUnexpected(Exception exception, HttpServletRequest request) {
         log.error(
@@ -65,11 +74,20 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         String requestUri = request instanceof ServletWebRequest servletRequest
                 ? servletRequest.getRequest().getRequestURI()
                 : "/";
-        return response(code, requestUri, headers);
+        return response(code, status, requestUri, headers);
     }
 
     private ResponseEntity<Object> response(ApiErrorCode code, String requestUri, HttpHeaders headers) {
-        ProblemDetail problem = ProblemDetail.forStatusAndDetail(code.status(), code.detail());
+        return response(code, code.status(), requestUri, headers);
+    }
+
+    private ResponseEntity<Object> response(
+            ApiErrorCode code,
+            HttpStatusCode responseStatus,
+            String requestUri,
+            HttpHeaders headers
+    ) {
+        ProblemDetail problem = ProblemDetail.forStatusAndDetail(responseStatus, code.detail());
         problem.setType(code.type());
         problem.setTitle(code.title());
         problem.setInstance(URI.create(requestUri));
@@ -78,6 +96,6 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         HttpHeaders responseHeaders = new HttpHeaders();
         responseHeaders.putAll(headers);
         responseHeaders.setContentType(MediaType.APPLICATION_PROBLEM_JSON);
-        return new ResponseEntity<>(problem, responseHeaders, code.status());
+        return new ResponseEntity<>(problem, responseHeaders, responseStatus);
     }
 }

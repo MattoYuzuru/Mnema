@@ -1,6 +1,7 @@
 package app.mnema.learning.platform.api;
 
 import app.mnema.learning.platform.concurrency.VersionConflictException;
+import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -22,6 +23,11 @@ class TestFailureController {
     @GetMapping("/_test/version")
     void version() {
         throw new VersionConflictException();
+    }
+
+    @GetMapping("/_test/precondition-required")
+    void preconditionRequired() {
+        throw new VersionPreconditionRequiredException();
     }
 
     @PostMapping("/_test/validation")

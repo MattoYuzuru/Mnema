@@ -2,8 +2,8 @@ package app.mnema.learning.platform.json;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.JsonGenerator;
+import com.fasterxml.jackson.core.json.JsonWriteFeature;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.stereotype.Component;
 
 import java.io.ByteArrayOutputStream;
@@ -25,8 +25,10 @@ public final class CanonicalJsonHasher {
 
     private final JsonFactory jsonFactory;
 
-    public CanonicalJsonHasher(ObjectMapper objectMapper) {
-        this.jsonFactory = objectMapper.getFactory();
+    public CanonicalJsonHasher() {
+        this.jsonFactory = JsonFactory.builder()
+                .disable(JsonWriteFeature.ESCAPE_NON_ASCII)
+                .build();
     }
 
     public CanonicalPayload hash(JsonNode payload) {

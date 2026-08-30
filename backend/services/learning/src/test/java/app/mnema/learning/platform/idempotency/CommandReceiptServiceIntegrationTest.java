@@ -11,6 +11,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -103,6 +104,42 @@ class CommandReceiptServiceIntegrationTest extends PostgresIntegrationTest {
         }
 
         assertThat(calls).hasValue(1);
+        assertThat(receiptCount(identity.commandId())).isOne();
+    }
+
+    @Test
+    void concurrentChangedPayloadConflictsWithoutExecutingTheLosingAction() throws Exception {
+        var identity = identity();
+        var firstEntered = new CountDownLatch(1);
+        var releaseFirst = new CountDownLatch(1);
+        var losingCalls = new AtomicInteger();
+
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var first = executor.submit(() -> service.execute(
+                    identity,
+                    objectMapper.createObjectNode().put("value", 1),
+                    () -> {
+                        firstEntered.countDown();
+                        await(releaseFirst);
+                        return objectMapper.createObjectNode().put("winner", true);
+                    }
+            ));
+            assertThat(firstEntered.await(10, TimeUnit.SECONDS)).isTrue();
+
+            var conflicting = executor.submit(() -> service.execute(
+                    identity,
+                    objectMapper.createObjectNode().put("value", 2),
+                    () -> objectMapper.createObjectNode().put("loser", losingCalls.incrementAndGet())
+            ));
+            releaseFirst.countDown();
+
+            assertThat(first.get(10, TimeUnit.SECONDS).path("winner").booleanValue()).isTrue();
+            assertThatThrownBy(() -> conflicting.get(10, TimeUnit.SECONDS))
+                    .isInstanceOf(ExecutionException.class)
+                    .hasCauseInstanceOf(IdempotencyConflictException.class);
+        }
+
+        assertThat(losingCalls).hasValue(0);
         assertThat(receiptCount(identity.commandId())).isOne();
     }
 

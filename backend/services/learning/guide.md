@@ -27,11 +27,14 @@ epics add them.
   result; any mismatch returns `IDEMPOTENCY_CONFLICT` when exposed over HTTP.
   The action and receipt share one JDBC transaction, so failure leaves neither
   side effects nor an in-progress receipt.
+- Payload canonicalization is a durable protocol: UTF-8 JSON with lexicographically
+  sorted object fields, preserved array order, normalized finite numbers and a
+  fixed escaping policy independent of application-wide Jackson configuration.
 - Mutable rows use a non-negative `row_version`. Repository SQL performs an update
   guarded by the expected version, and `CompareAndSetExecutor` accepts exactly one
   changed row or raises `VERSION_CONFLICT`.
 - API failures use `application/problem+json` (RFC 9457). Stable machine codes are
-  `IDEMPOTENCY_CONFLICT`, `VERSION_CONFLICT`, `INVALID_REQUEST`,
+  `IDEMPOTENCY_CONFLICT`, `VERSION_CONFLICT`, `PRECONDITION_REQUIRED`, `INVALID_REQUEST`,
   `RESOURCE_NOT_FOUND`, `METHOD_NOT_ALLOWED` and `INTERNAL_ERROR`. Public details
   never contain exception messages, SQL or stored command data.
 

@@ -8,6 +8,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -63,6 +67,37 @@ class CompareAndSetExecutorIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void concurrentWritersWithOneExpectedVersionHaveExactlyOneWinner() throws Exception {
+        UUID entityId = insert("before");
+        var ready = new CountDownLatch(2);
+        var start = new CountDownLatch(1);
+
+        try (var threads = Executors.newVirtualThreadPerTaskExecutor()) {
+            var first = threads.submit(() -> concurrentUpdate(entityId, "first", ready, start));
+            var second = threads.submit(() -> concurrentUpdate(entityId, "second", ready, start));
+
+            assertThat(ready.await(10, TimeUnit.SECONDS)).isTrue();
+            start.countDown();
+
+            int successfulUpdates = 0;
+            int conflicts = 0;
+            for (var result : java.util.List.of(first, second)) {
+                try {
+                    assertThat(result.get(10, TimeUnit.SECONDS)).isEqualTo(1L);
+                    successfulUpdates++;
+                } catch (ExecutionException exception) {
+                    assertThat(exception.getCause()).isInstanceOf(VersionConflictException.class);
+                    conflicts++;
+                }
+            }
+            assertThat(successfulUpdates).isOne();
+            assertThat(conflicts).isOne();
+        }
+
+        assertThat(row(entityId)[1]).isEqualTo(1L);
+    }
+
+    @Test
     void validatesVersionAndUpdateCallbackBeforeWriting() {
         assertThatThrownBy(() -> executor.updateOne(-1, () -> 1))
                 .isInstanceOf(IllegalArgumentException.class);
@@ -94,6 +129,19 @@ class CompareAndSetExecutorIntegrationTest extends PostgresIntegrationTest {
                 .param("expectedVersion", expectedVersion)
                 .param("value", value)
                 .update();
+    }
+
+    private long concurrentUpdate(
+            UUID entityId,
+            String value,
+            CountDownLatch ready,
+            CountDownLatch start
+    ) throws InterruptedException {
+        ready.countDown();
+        if (!start.await(10, TimeUnit.SECONDS)) {
+            throw new IllegalStateException("Timed out waiting to start CAS fixture");
+        }
+        return executor.updateOne(0, () -> update(entityId, 0, value));
     }
 
     private Object[] row(UUID entityId) {

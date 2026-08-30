@@ -29,7 +29,7 @@ class UuidPolicyTest {
     }
 
     @Test
-    void rejectsNullNilNonIetfAndUnsupportedCommandVersions() {
+    void rejectsNullNilNonIetfReservedAndUnsupportedCommandVersions() {
         assertThatThrownBy(() -> UuidPolicy.requireEntityId(null, "entityId"))
                 .isInstanceOf(NullPointerException.class);
         assertThatThrownBy(() -> UuidPolicy.requireEntityId(new UUID(0, 0), "entityId"))
@@ -38,6 +38,18 @@ class UuidPolicyTest {
         assertThatThrownBy(() -> UuidPolicy.requireEntityId(new UUID(0x1000, 1), "entityId"))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("variant");
+        assertThatThrownBy(() -> UuidPolicy.requireEntityId(
+                UUID.fromString("00000000-0000-0000-8000-000000000001"), "entityId"
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("registered UUID version");
+        assertThatThrownBy(() -> UuidPolicy.requireEntityId(
+                UUID.fromString("00000000-0000-9000-8000-000000000001"), "entityId"
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("registered UUID version");
+        assertThatThrownBy(() -> UuidPolicy.requireEntityId(
+                UUID.fromString("00000000-0000-f000-8000-000000000001"), "entityId"
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("registered UUID version");
         assertThatThrownBy(() -> UuidPolicy.requireCommandId(
                 UUID.fromString("00000000-0000-1000-8000-000000000001")
         )).isInstanceOf(IllegalArgumentException.class)

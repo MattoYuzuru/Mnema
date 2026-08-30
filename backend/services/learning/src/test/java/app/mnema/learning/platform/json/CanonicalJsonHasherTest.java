@@ -1,6 +1,8 @@
 package app.mnema.learning.platform.json;
 
+import com.fasterxml.jackson.core.json.JsonWriteFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.BinaryNode;
 import com.fasterxml.jackson.databind.node.DoubleNode;
 import org.junit.jupiter.api.Test;
@@ -13,7 +15,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class CanonicalJsonHasherTest {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final CanonicalJsonHasher hasher = new CanonicalJsonHasher(objectMapper);
+    private final CanonicalJsonHasher hasher = new CanonicalJsonHasher();
 
     @Test
     void normalizesObjectOrderNestedValuesAndNumberRepresentation() throws Exception {
@@ -40,6 +42,18 @@ class CanonicalJsonHasherTest {
         returned[0] ^= 1;
         assertThat(first.sha256()).isNotEqualTo(returned);
         assertThat(first.byteLength()).isEqualTo(5);
+    }
+
+    @Test
+    void usesAConfigurationIndependentUtf8StringEncoding() throws Exception {
+        var escapingMapper = JsonMapper.builder()
+                .enable(JsonWriteFeature.ESCAPE_NON_ASCII)
+                .build();
+        var payload = escapingMapper.readTree("{\"text\":\"é\\n\\u0001\"}");
+
+        assertThat(escapingMapper.writeValueAsString(payload)).contains("\\u00E9");
+        assertThat(hasher.canonicalBytes(payload))
+                .isEqualTo("{\"text\":\"é\\n\\u0001\"}".getBytes(StandardCharsets.UTF_8));
     }
 
     @Test

@@ -11,9 +11,14 @@ enum ApiErrorCode {
             "The command identifier was already used for a different command."
     ),
     VERSION_CONFLICT(
-            HttpStatus.CONFLICT,
+            HttpStatus.PRECONDITION_FAILED,
             "Version conflict",
             "The resource changed after the supplied version was read."
+    ),
+    PRECONDITION_REQUIRED(
+            HttpStatus.PRECONDITION_REQUIRED,
+            "Precondition required",
+            "A current resource version is required for this command."
     ),
     INVALID_REQUEST(
             HttpStatus.BAD_REQUEST,
