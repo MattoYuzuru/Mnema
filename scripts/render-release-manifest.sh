@@ -18,7 +18,9 @@ APP_ENV="${APP_ENV:-prod}"
 SPRING_PROFILES="${SPRING_PROFILES:-prod}"
 S3_ENDPOINT="${S3_ENDPOINT:-https://storage.yandexcloud.net}"
 S3_PUBLIC_ENDPOINT="${S3_PUBLIC_ENDPOINT:-$S3_ENDPOINT}"
-S3_PATH_STYLE_ACCESS="${S3_PATH_STYLE_ACCESS:-false}"
+# Keep browser-facing presigned URLs on the exact configured storage origin.
+# Yandex Object Storage supports /<bucket>/<key> URLs on this endpoint.
+S3_PATH_STYLE_ACCESS="${S3_PATH_STYLE_ACCESS:-true}"
 INCLUDE_INGRESS="${INCLUDE_INGRESS:-true}"
 
 if [ "${#RELEASE_SHA}" -ne 40 ]; then

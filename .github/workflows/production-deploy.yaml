@@ -372,14 +372,16 @@ jobs:
 
       - name: Upload sanitized production release preview
         id: upload-preview
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/safe-upload-artifact
         with:
+          policy-id: production-release-preview
           name: production-release-preview-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ env.RELEASE_DIFF }}
             ${{ env.RELEASE_PREVIEW_METADATA }}
           if-no-files-found: error
           retention-days: 30
+          classification: sanitized-release-preview
 
       - name: Publish production review instructions
         env:
@@ -960,6 +962,12 @@ jobs:
             --expected-release-sha "$RELEASE_SHA" \
             --timeout-seconds 300 \
             --report "$SMOKE_REPORT"
+          python3 scripts/verify_browser_security_headers.py hosted \
+            --base-url https://mnema.app \
+            --mode prod \
+            --auth-origin https://auth.mnema.app \
+            --storage-origin https://storage.yandexcloud.net
+          ./scripts/verify-hosted-browser-csp.sh https://mnema.app/login
 
       - name: Record successful Secret reconciliation generations
         id: reconciliation
@@ -1001,12 +1009,14 @@ jobs:
 
       - name: Upload verified production release record
         if: ${{ steps.record.outcome == 'success' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/safe-upload-artifact
         with:
+          policy-id: production-release-record
           name: production-release-record-${{ github.run_id }}
           path: ${{ env.RELEASE_RECORD }}
           if-no-files-found: error
           retention-days: 90
+          classification: release-state
 
       - name: Collect sanitized production diagnostics
         if: ${{ always() && (failure() || steps.rollout.outcome != 'success' || steps.observability.outcome != 'success' || steps.smoke.outcome != 'success' || steps.reconciliation.outcome != 'success' || steps.record.outcome != 'success') }}
@@ -1135,8 +1145,9 @@ jobs:
 
       - name: Upload production failure evidence
         if: ${{ always() && (failure() || steps.rollout.outcome != 'success' || steps.observability.outcome != 'success' || steps.smoke.outcome != 'success' || steps.reconciliation.outcome != 'success' || steps.record.outcome != 'success') }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/safe-upload-artifact
         with:
+          policy-id: production-failure-diagnostics
           name: production-release-diagnostics-${{ github.run_id }}
           path: |
             ${{ env.DIAGNOSTICS_DIR }}
@@ -1145,6 +1156,7 @@ jobs:
             ${{ env.ROLLBACK_RECORD }}
           if-no-files-found: warn
           retention-days: 30
+          classification: sanitized-diagnostics
 
       - name: Fail rejected production candidate
         if: ${{ always() && (steps.rollout.outcome != 'success' || steps.observability.outcome != 'success' || steps.smoke.outcome != 'success' || steps.reconciliation.outcome != 'success' || steps.record.outcome != 'success') }}

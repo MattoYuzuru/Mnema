@@ -44,10 +44,14 @@ jobs:
         run: ./gradlew quality
 
       - name: Upload backend coverage report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/safe-upload-artifact
         with:
+          policy-id: main-backend-jacoco
           name: backend-jacoco-report
           path: backend/build/reports/jacoco/jacocoRootReport/
+          retention-days: 30
+          if-no-files-found: warn
+          classification: internal-test-report
 
   frontend-quality:
     needs: validate-main-ref
@@ -65,6 +69,7 @@ jobs:
         run: |
           python3 scripts/verify_github_actions_pins.py
           python3 scripts/verify_security_automation_policy.py
+          python3 scripts/verify_artifact_security_policy.py
           python3 scripts/verify_production_image_pins.py
           python3 -m unittest discover -s scripts/tests -p 'test_verify_*.py' -v
 
@@ -93,6 +98,9 @@ jobs:
 
       - name: Verify frontend release contract
         run: ./scripts/test-frontend-release-contract.sh
+
+      - name: Verify browser response-security contract
+        run: ./scripts/test-browser-security-headers.sh
 
       - name: Verify release manifest renderer
         run: ./scripts/test-render-release-manifest.sh
@@ -411,20 +419,24 @@ jobs:
 
       - name: Upload full per-image security evidence
         if: ${{ always() }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/safe-upload-artifact
         with:
+          policy-id: main-release-security
           name: release-security-${{ matrix.name }}
           path: ${{ runner.temp }}/release-security/${{ matrix.name }}-*
           if-no-files-found: warn
           retention-days: 30
+          classification: security-evidence
 
       - name: Upload immutable image digest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/safe-upload-artifact
         with:
+          policy-id: main-release-image-digest
           name: release-image-${{ matrix.name }}
           path: ${{ runner.temp }}/release-digests/${{ matrix.name }}.digest
           if-no-files-found: error
           retention-days: 30
+          classification: release-identifier
 
   render-release:
     needs: build-and-push
@@ -515,8 +527,9 @@ jobs:
           done
 
       - name: Upload complete release manifest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/safe-upload-artifact
         with:
+          policy-id: main-production-release-manifest
           name: production-release-manifest
           path: |
             ${{ runner.temp }}/production-release.yaml
@@ -525,10 +538,12 @@ jobs:
             ${{ runner.temp }}/release-security-evidence.json.sha256
           if-no-files-found: error
           retention-days: 30
+          classification: release-manifest
 
       - name: Upload staging release manifest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: ./.github/actions/safe-upload-artifact
         with:
+          policy-id: main-staging-release-manifest
           name: staging-release-manifest
           path: |
             ${{ runner.temp }}/staging-release.yaml
@@ -537,3 +552,4 @@ jobs:
             ${{ runner.temp }}/release-security-evidence.json.sha256
           if-no-files-found: error
           retention-days: 30
+          classification: release-manifest

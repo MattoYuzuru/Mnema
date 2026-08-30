@@ -5,7 +5,7 @@ artifact:
   title: "Mnema release smoke, diagnostics and rollback"
   status: current
   created_at: "2026-08-19"
-  updated_at: "2026-08-24"
+  updated_at: "2026-08-29"
   owners: ["project-owner"]
 ---
 
@@ -14,6 +14,8 @@ artifact:
 Every hosted release is accepted as one six-image unit. Staging and production first snapshot the last verified complete manifest and the current application Secret, apply the candidate once, wait for all rollouts, run the black-box smoke from GitHub-hosted infrastructure and only then record the candidate. A failed rollout, smoke or release-state write rejects the candidate and, while automatic rollback is enabled, restores the prior Secret and reapplies the saved complete manifest.
 
 `Main CI`, `Staging Deploy` and `Production Deploy` are separate workflows. The two privileged workflows run directly after a successful `workflow_run` predecessor so their jobs read only their own GitHub Environment secrets. Artifact downloads are bound to the predecessor run ID; staging verifies both manifests but relays the production manifest only after its smoke and release record succeed. Production verifies that relay again before preview. Every stage binds to the predecessor head SHA and rejects it if it is no longer current `main`.
+
+Every retained upload is inventoried and scanned immediately before upload under the [CI artifact security boundary](ci-artifact-security-boundary.md). Release and recovery evidence remains available, while kubeconfigs, Secret snapshots and raw credential values are explicitly outside the artifact boundary.
 
 AI is deliberately absent from this gate. The hosted runtime must report `aiEnabled = false`; no keykomi workload, model or data is read or mutated.
 
@@ -44,6 +46,8 @@ Within a five-minute overall deadline and a 15-second per-request timeout, `rele
 5. a uniquely named private deck and one card can be created;
 6. that card is returned by the review queue and answered once with `GOOD`;
 7. the deck is archived and hard-deleted in `finally`, including after a later smoke failure.
+
+Hosted releases also run the response and headless-browser checks from the [browser security headers and CSP runbook](browser-security-headers.md). Staging must have the full policy in Report-Only with no observed browser violation; production must enforce that same policy and return the bounded host-only HSTS header. These checks share the release smoke outcome, so a failure rejects and rolls back the candidate.
 
 The current local-login contract returns an access token but no refresh token. The `token_renewal` step therefore performs a second real password login and requires a different JWT `jti`; it does not claim to test an OAuth refresh grant.
 

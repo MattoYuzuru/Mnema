@@ -1,0 +1,54 @@
+name: Safe artifact upload
+description: Verify an inventoried artifact boundary before uploading generated evidence.
+
+inputs:
+  policy-id:
+    description: Stable identifier from .github/artifact-policy.json
+    required: true
+  name:
+    description: Artifact name
+    required: true
+  path:
+    description: Newline-delimited resolved upload paths
+    required: true
+  retention-days:
+    description: Explicit retention period
+    required: true
+  if-no-files-found:
+    description: upload-artifact behavior when no file matches
+    required: true
+  classification:
+    description: Documented artifact data classification
+    required: true
+
+outputs:
+  artifact-id:
+    description: GitHub artifact identifier
+    value: ${{ steps.upload.outputs.artifact-id }}
+  artifact-url:
+    description: GitHub artifact URL
+    value: ${{ steps.upload.outputs.artifact-url }}
+  artifact-digest:
+    description: SHA-256 digest reported by upload-artifact
+    value: ${{ steps.upload.outputs.artifact-digest }}
+
+runs:
+  using: composite
+  steps:
+    - name: Verify resolved artifact boundary
+      shell: bash
+      env:
+        MNEMA_ARTIFACT_POLICY_ID: ${{ inputs.policy-id }}
+        MNEMA_ARTIFACT_PATHS: ${{ inputs.path }}
+        MNEMA_ARTIFACT_IF_NO_FILES_FOUND: ${{ inputs.if-no-files-found }}
+      run: python3 "$GITHUB_WORKSPACE/scripts/verify_artifact_contents.py"
+
+    - name: Upload verified artifact
+      id: upload
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: ${{ inputs.name }}
+        path: ${{ inputs.path }}
+        retention-days: ${{ inputs.retention-days }}
+        if-no-files-found: ${{ inputs.if-no-files-found }}
+        include-hidden-files: false

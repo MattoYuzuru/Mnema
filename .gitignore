@@ -46,6 +46,9 @@ frontend/node_modules
 !/scripts/verify-release-preview.sh
 !/scripts/test-capture-release-diff.sh
 !/scripts/test-frontend-release-contract.sh
+!/scripts/test-browser-security-headers.sh
+!/scripts/verify_browser_security_headers.py
+!/scripts/verify-hosted-browser-csp.sh
 !/scripts/test-create-staging-kubeconfig.sh
 !/scripts/test-render-release-manifest.sh
 !/scripts/test-production-deploy-safety.sh
@@ -91,6 +94,8 @@ frontend/node_modules
 !/scripts/local-ai-gateway/**
 !/scripts/verify_github_actions_pins.py
 !/scripts/verify_security_automation_policy.py
+!/scripts/verify_artifact_contents.py
+!/scripts/verify_artifact_security_policy.py
 !/scripts/verify_production_image_pins.py
 !/scripts/verify_release_security_evidence.py
 !/scripts/tests/
