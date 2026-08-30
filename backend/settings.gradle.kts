@@ -20,5 +20,6 @@ include(
     "services:media",
     "services:import",
     "services:ai",
-    "services:learning"
+    "services:learning",
+    "services:identity-account"
 )
