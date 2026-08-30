@@ -11,18 +11,22 @@ dependency on the legacy `auth` or `user` applications.
   `app_identity` and never scans either legacy migration chain.
 - `account.account_id` is the stable account identifier. It is preserved during
   account-only transfer and is never reassigned.
-- Email uniqueness is enforced on stored `lower(btrim(email))`; username
-  uniqueness uses the same normalization when a username exists.
+- Email uniqueness is enforced on stored `lower(btrim(email))`.
+  `account.profile_username` is the mutable profile handle, while
+  `local_credential.login_name` preserves the independent local-login name;
+  each has its own normalized uniqueness constraint.
 - `local_credential`, `external_identity`, and `account_avatar` all belong to
   `account` and cascade only inside this aggregate.
 - Federated provider keys are normalized lowercase identifiers. Provider
   subjects are opaque, case-sensitive strings and are unique only together with
   the provider key.
-- Account status is one of `ACTIVE`, `SUSPENDED`, `PENDING_DELETION`, `PURGING`,
-  or `PURGED`. No retention duration is encoded in this schema.
-- An owned avatar asset requires an object key, content type, byte size and
-  SHA-256. A source URL without a copied object remains representable for the
-  account-only transfer decision in #144; it never becomes learning media.
+- Account status is `ACTIVE` or `BANNED`, with coherent moderation metadata.
+  The deletion lifecycle and its retention timestamps belong to #142 and must
+  not be represented by partially specified states.
+- An owned avatar asset requires its UUID, fresh object key, allowlisted image
+  type, positive bounded byte size, optional bounded dimensions and SHA-256.
+  Provider pictures and arbitrary profile URLs are denied because they neither
+  prove ownership nor preserve a recoverable account asset.
 
 PostgreSQL constraints are named so duplicate normalized email and duplicate
 provider/subject failures have stable database evidence (`23505` plus the
@@ -33,9 +37,10 @@ belong to #142.
 
 `MNEMA_IDENTITY_ISSUER` is required to denote one absolute HTTPS issuer without
 user info, query or fragment; startup fails when it is absent or invalid. The
-issuer is never derived from request headers. `sub` is the lowercase canonical UUID text
+production value remains exactly `https://auth.mnema.app`, and the issuer is
+never derived from request headers. `sub` is the lowercase canonical UUID text
 of `account_id`, so it is locally unique, at most 36 ASCII characters and never
-changes when email, username or profile fields change.
+changes when email, login name, profile username or profile fields change.
 
 Consumers identify a person by the exact `(iss, sub)` pair. They must not use
 email, username or display name as a stable identifier. This follows

@@ -4,7 +4,9 @@ import org.junit.jupiter.api.Test;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -99,6 +101,7 @@ class LegacyFieldClassificationTest {
     void classifiesEveryCurrentAuthAndUserSourceFieldExactlyOnce() throws Exception {
         Set<String> classified = new LinkedHashSet<>();
         Set<String> duplicates = new LinkedHashSet<>();
+        Map<String, String> classifications = new LinkedHashMap<>();
 
         for (String line : Files.readAllLines(projectDirectory().resolve("legacy-field-classification.md"))) {
             var matcher = CLASSIFICATION_ROW.matcher(line);
@@ -107,11 +110,26 @@ class LegacyFieldClassificationTest {
                 if (!classified.add(field)) {
                     duplicates.add(field);
                 }
+                classifications.put(field, matcher.group(3));
             }
         }
 
         assertThat(duplicates).isEmpty();
         assertThat(classified).containsExactlyInAnyOrderElementsOf(EXPECTED_SOURCE_FIELDS);
+        assertThat(classifications)
+                .containsEntry("auth.users.id", "PRESERVE")
+                .containsEntry("auth.users.password_hash", "PRESERVE")
+                .containsEntry("auth.users.username", "PRESERVE")
+                .containsEntry("app_user.users.username", "PRESERVE")
+                .containsEntry("app_user.users.avatar_media_id", "PRESERVE")
+                .containsEntry("auth.accounts.provider", "PRESERVE")
+                .containsEntry("auth.accounts.provider_sub", "PRESERVE")
+                .containsEntry("auth.accounts.email", "DELETE")
+                .containsEntry("auth.accounts.picture_url", "DELETE")
+                .containsEntry("auth.users.picture_url", "DELETE")
+                .containsEntry("app_user.users.avatar_url", "DELETE")
+                .containsEntry("auth.users.failed_login_attempts", "RECREATE")
+                .containsEntry("auth.users.locked_until", "RECREATE");
     }
 
     private static Path projectDirectory() {

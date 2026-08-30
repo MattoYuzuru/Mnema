@@ -91,6 +91,13 @@ class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest 
         assertThat(tables).allSatisfy(table ->
                 assertThat(FORBIDDEN_TABLE_FRAGMENTS).noneMatch(table::contains)
         );
+        assertThat(columns("external_identity")).containsExactly(
+                "identity_id", "account_id", "provider", "provider_subject", "linked_at", "last_login_at"
+        );
+        assertThat(columns("account_avatar")).containsExactly(
+                "account_id", "asset_id", "storage_key", "content_type", "byte_size",
+                "content_sha256", "width", "height", "created_at"
+        );
         assertThat(jdbcClient.sql("SELECT current_setting('server_version_num')::int / 10000")
                 .query(Integer.class)
                 .single()).isEqualTo(18);
@@ -138,5 +145,17 @@ class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest 
                 .andExpect(status().isNotFound());
         mockMvc.perform(get("/api/users").contextPath("/api"))
                 .andExpect(status().isNotFound());
+    }
+
+    private java.util.List<String> columns(String table) {
+        return jdbcClient.sql("""
+                        SELECT column_name
+                        FROM information_schema.columns
+                        WHERE table_schema = 'app_identity' AND table_name = :table
+                        ORDER BY ordinal_position
+                        """)
+                .param("table", table)
+                .query(String.class)
+                .list();
     }
 }
