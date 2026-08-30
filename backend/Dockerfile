@@ -1,6 +1,6 @@
 # backend/Dockerfile
 
-FROM gradle:8.10.2-jdk21@sha256:963d59f7f22767da4efbcf46b661361b61af5fb88b0309da1071c4234c647eba AS build
+FROM gradle:8.14.5-jdk21@sha256:94452354d9218922457d82e85a343391bab351e7f518f6f5ab1db996967d238b AS build
 WORKDIR /workspace
 
 # 1. Копируем только gradle-конфиги для кэширования зависимостей
