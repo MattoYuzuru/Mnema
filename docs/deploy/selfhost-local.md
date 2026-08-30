@@ -1,6 +1,11 @@
 # Self-Hosted Local Deployment
 
-> **V1 / maintenance status:** this runbook remains valid for the current checkout. Self-host compatibility is not a hosted-v2 launch requirement and may be frozen while the new content model is built. See [owner decisions](../decisions/owner-decisions-2026-08.md) before treating this topology as a v2 contract.
+> **License and maintenance boundary:** this runbook remains valid for the
+> current checkout only for private personal use by one natural person on owned
+> or controlled devices. A household, class, team, employer, client or other
+> organization needs a [separate written license](../../COMMERCIAL-LICENSING.md).
+> Self-host compatibility is not a hosted-v2 launch requirement. The broader
+> Apache 2.0 permissions remain available only for `v1-apache-final`.
 
 Этот режим предназначен для запуска Mnema на одной машине без внешних облачных сервисов.
 

@@ -1,6 +1,11 @@
 # Self-Hosted Public Deployment
 
-> **V1 / maintenance status:** this runbook remains valid for the current checkout. Self-host compatibility is not a hosted-v2 launch requirement and may be frozen while the new content model is built. See [owner decisions](../decisions/owner-decisions-2026-08.md) before treating this topology as a v2 contract.
+> **Archived Apache v1 runbook:** public, shared and multi-user deployment of
+> the current source is not permitted by the public source license. This runbook
+> is retained for the Apache 2.0 revision `v1-apache-final`. For any current
+> revision, obtain a [separate written license](../../COMMERCIAL-LICENSING.md)
+> before following these instructions. Self-host compatibility is not a
+> hosted-v2 launch requirement.
 
 Этот режим предназначен для собственного домена/сервера, когда к Mnema подключаются пользователи через интернет.
 

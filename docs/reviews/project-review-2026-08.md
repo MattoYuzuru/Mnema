@@ -198,6 +198,13 @@ The point of no return must explicitly cover database snapshots/PITR/WAL, object
 - Do not delete production data before an isolated account restore and explicit target manifest.
 - Do not change `LICENSE` without ownership/contributor/legal review; Apache rights already granted remain granted.
 
+Resolution update (2026-08-30): the owner accepted a prospective
+personal-use source-available license and fixed `v1-apache-final` as the last
+Apache revision. Historical Apache grants remain unchanged. Public code
+contributions are paused pending a separate contributor agreement, and final
+IP-counsel review remains a pre-merge residual risk. See
+[source license transition](../decisions/source-license-transition.md).
+
 ## Evidence status
 
 The repository gates passed during the audit: backend quality with 647 tests and configured coverage thresholds; frontend lint, 48 tests and production build. There is no configured frontend coverage threshold or end-to-end suite, and S3 behaviour is not yet verified against automated MinIO E2E. No production mutation or destructive database operation was performed.

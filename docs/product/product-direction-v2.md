@@ -212,7 +212,12 @@ Do not optimize card count, raw review count, opens or streak in isolation. Segm
 
 Manual creation/study, public decks and own media are free. AI plans use a monthly budget with weekly unlock, a one-time 14-day trial without a card, Starter at 299 ₽/30 days and hard media caps. Exact quota follows measured p95 cost. Market, T‑Bank and provider evidence are maintained in [Russia launch economics](./russia-launch-economics-2026.md), while launch legality is gated by the [legal/payment checklist](./russia-legal-launch-checklist-2026.md).
 
-The current Apache license already permits commercial derivatives and granted rights are not revocable for released versions. Relicensing future code requires ownership/contributor/legal review; it is not a product moat by itself. Hosted advantage should come from quality, safe rich rendering, maintained decks, collaboration, managed AI and operations.
+The immutable `v1-apache-final` revision permits commercial derivatives and its
+grants remain irrevocable. New official revisions use the accepted personal-use
+source-available license: organizational, shared, hosted, commercial and
+machine-learning use requires a separate written license. This legal boundary
+is not a product moat by itself; hosted advantage must still come from quality,
+safe rich rendering, maintained decks, collaboration, managed AI and operations.
 
 ## Risks and guardrails
 

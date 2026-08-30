@@ -7,7 +7,7 @@
 - **Current:** [Repository guide](./engineering/repository-guide.md) — карта кода, источники истины, команды и маршруты изменений.
 - **Current:** [Обзор системы](./system-overview.md) — существующая сервисная топология и возможности.
 - **Accepted input:** [Owner decisions](./decisions/owner-decisions-2026-08.md) — зафиксированные ответы, отклонённые варианты и действительно открытые решения.
-- **Proposed:** [Source license transition](./decisions/source-license-transition.md) — что остаётся Apache, почему права нельзя отозвать и как отделить hosted v2.
+- **Accepted:** [Source license transition](./decisions/source-license-transition.md) — personal-use source-available для новых ревизий и неизменяемая Apache-граница `v1-apache-final`.
 - **Proposed:** [Итоговое ревью проекта](./reviews/project-review-2026-08.md) — новая рекомендация, риски и последовательность работ.
 - **Proposed:** [Product direction v2](./product/product-direction-v2.md) — deck-scoped learning, hosted business, roadmap и метрики.
 - **Proposed:** [Content and study platform v2](./architecture/content-platform-v2.md) — shared revisions, sparse overlays and study model.
@@ -36,7 +36,11 @@
 
 ## Развёртывание
 
-Текущие self-host документы описывают v1 и остаются полезны для существующего checkout. Они **не являются launch requirement для hosted v2** и могут быть заморожены/вынесены в отдельный downstream repository после отдельного решения.
+Self-host документы описывают v1 и не являются launch requirement для hosted
+v2. Текущий local runbook разрешён публичной лицензией только одному физическому
+лицу для личного использования. Public/multi-user runbook является архивным и
+относится к Apache-срезу `v1-apache-final`; для текущих ревизий такое
+развёртывание требует отдельной письменной лицензии.
 
 - [Self-Hosted Local Deployment](./deploy/selfhost-local.md)
 - [Self-Hosted Public Deployment](./deploy/selfhost-public.md)
