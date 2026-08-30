@@ -3,6 +3,7 @@
   "auth": 0.90,
   "core": 0.90,
   "import": 0.80,
+  "identity-account": 0.90,
   "learning": 0.90,
   "media": 0.90,
   "user": 0.95
