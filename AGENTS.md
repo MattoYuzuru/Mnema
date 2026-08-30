@@ -187,3 +187,9 @@ When implementing:
 - Before merge, re-read the current PR head and rules, require an up-to-date branch, resolved review threads, green `backend-quality` and `frontend-quality`, and the full repository quality gate required above on the exact commit. Merge only through the protected pull request with squash; never push directly to `main`, bypass protection, force-push, or weaken/delete the ruleset.
 - Push/PR CI and configured non-production workflows triggered by the authorized delivery are part of the mandate. Production deployment, an environment approval, destructive data work, or publication outside GitHub is included only when the user names that target and effect in the task or a later instruction; otherwise stop at that boundary once and report it.
 - The `main protection` ruleset is enforcement, not human approval: it has no bypass actor or required approving review, and it requires PR/squash flow, linear history, resolved threads, an up-to-date branch, and both quality checks.
+
+### Commit attribution
+
+- Use the repository-local Git identity as the sole commit attribution.
+- Do not add `Co-authored-by`, `Signed-off-by`, `Generated-by`, `On-behalf-of`, or similar attribution trailers unless the user explicitly requests them.
+- Do not modify commit author or committer identity. AI assistance is documented through review evidence when relevant, not by injecting additional Git authors.
