@@ -46,10 +46,15 @@ class FakeKubectl:
 
 class IdentitySigningBootstrapTest(unittest.TestCase):
     def setUp(self):
-        modulus = base64.urlsafe_b64encode(bytes([0x80]) + bytes(255)).rstrip(b"=").decode()
-        self.jwk = json.dumps({"keys": [{"kty": "RSA", "kid": "fresh-kid", "n": modulus,
-                                         "e": "AQAB", "d": "AQ", "p": "AQ", "q": "AQ",
-                                         "dp": "AQ", "dq": "AQ", "qi": "AQ"}]})
+        generated = subprocess.run([
+            "node", "-e",
+            "const {generateKeyPairSync}=require('node:crypto');"
+            "const {privateKey}=generateKeyPairSync('rsa',{modulusLength:2048,publicExponent:0x10001});"
+            "const key=privateKey.export({format:'jwk'});"
+            "Object.assign(key,{kid:'fresh-kid',use:'sig',alg:'RS256'});"
+            "process.stdout.write(JSON.stringify({keys:[key]}));",
+        ], check=True, capture_output=True, text=True, timeout=10)
+        self.jwk = generated.stdout
         self.environment = {bootstrap.JWK_KEY: self.jwk, bootstrap.KID_KEY: "fresh-kid"}
 
     def test_preview_is_server_dry_run_and_preserves_existing_keys(self):
@@ -82,7 +87,10 @@ class IdentitySigningBootstrapTest(unittest.TestCase):
             self.assertEqual(1, len(fake.commands))
 
     def test_invalid_or_missing_private_key_is_rejected_before_cluster_read(self):
-        for document in ("", "{}", json.dumps({"keys": [{"kty": "RSA", "kid": "fresh-kid", "n": "AA"}]})):
+        incoherent = json.loads(self.jwk)
+        incoherent["keys"][0]["p"] = "AQ"
+        for document in ("", "{}", json.dumps({"keys": [{"kty": "RSA", "kid": "fresh-kid", "n": "AA"}]}),
+                         json.dumps(incoherent)):
             fake = FakeKubectl()
             environment = {bootstrap.JWK_KEY: document, bootstrap.KID_KEY: "fresh-kid"}
             with self.subTest(document=document), patch.dict(os.environ, environment, clear=True), \

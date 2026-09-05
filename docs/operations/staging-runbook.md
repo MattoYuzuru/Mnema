@@ -135,6 +135,49 @@ deleted by this bootstrap procedure.
 
 ## Environment-owned secret names
 
+Before the first replacement Identity rollout, widen only the existing staging
+Secret policy for the new immutable signing fields. Do not reapply the complete
+`admission.yaml`: its other cluster-scoped policies are outside this transition.
+With the owner/admin context, render exactly one named policy into a mode-0600
+temporary file, server-preview it, and inspect the diff before applying that same
+file:
+
+```bash
+set -eu
+umask 077
+identity_policy=$(mktemp "${TMPDIR:-/tmp}/mnema-identity-secret-policy.XXXXXX.json")
+trap 'rm -f "$identity_policy"' EXIT HUP INT TERM
+kubectl create --dry-run=client --validate=false \
+  -f k8s/staging/admission.yaml -o json |
+  jq -c 'select(.kind == "ValidatingAdmissionPolicy" and .metadata.name == "mnema-staging-secret-boundary")' \
+  >"$identity_policy"
+test "$(jq -s 'length' "$identity_policy")" -eq 1
+jq -e '.kind == "ValidatingAdmissionPolicy" and .metadata.name == "mnema-staging-secret-boundary"' \
+  "$identity_policy" >/dev/null
+kubectl apply --dry-run=server -f "$identity_policy" >/dev/null
+set +e
+kubectl diff -f "$identity_policy"
+diff_status=$?
+set -e
+test "$diff_status" -le 1
+```
+
+After reviewing that exact diff, apply and read it back. A post-apply diff, stale
+generation, CEL warning, missing binding or changed Namespace selector is a no-go:
+
+```bash
+kubectl apply -f "$identity_policy"
+kubectl diff -f "$identity_policy"
+kubectl get validatingadmissionpolicy mnema-staging-secret-boundary -o json |
+  jq -e '.status.observedGeneration == .metadata.generation and
+         ((.status.typeChecking.expressionWarnings // []) | length == 0)' >/dev/null
+kubectl get validatingadmissionpolicybinding mnema-staging-secret-boundary -o json |
+  jq -e '.spec.policyName == "mnema-staging-secret-boundary" and
+         .spec.validationActions == ["Deny"] and
+         .spec.matchResources.namespaceSelector.matchLabels["mnema.app/environment"] == "staging"' \
+    >/dev/null
+```
+
 Current Identity delivery also requires a fresh
 `STAGING_IDENTITY_SIGNING_JWK_SET`/`STAGING_IDENTITY_SIGNING_ACTIVE_KID` pair.
 The staging workflow validates and server-previews an add-only update to the existing
@@ -142,6 +185,13 @@ The staging workflow validates and server-previews an add-only update to the exi
 state is idempotent and partial/different state fails into the explicit rotation path.
 The runtime mounts the private set read-only and reads existing database, provider
 and avatar credentials by Secret reference.
+Postbox keys remain optional runtime inputs because the current owner secret source
+does not contain a dedicated Postbox credential pair. Reset token generation,
+single-use invalidation and the mail adapter are covered by integration tests, but
+live outbound delivery is not claimed by the maintenance smoke. Provision a fresh,
+least-privilege `STAGING_POSTBOX_ACCESS_KEY`/`STAGING_POSTBOX_SECRET_KEY` pair and
+add a provider-level mail smoke before making live email delivery a release gate;
+never reuse the object-storage key by assumption.
 The three `STAGING_SMOKE_*` inputs below are used only if a legacy rollback needs
 its previously recorded authenticated smoke. They are not required by new shells.
 The remaining table is the retained legacy/production credential inventory, not a

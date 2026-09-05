@@ -6,7 +6,9 @@ from __future__ import annotations
 import argparse
 import base64
 import binascii
+import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -36,6 +38,34 @@ def rsa_parameter(key: dict[str, Any], name: str) -> bytes:
         raise ValueError from None
 
 
+def rsa_integer(key: dict[str, Any], name: str) -> int:
+    value = int.from_bytes(rsa_parameter(key, name))
+    if value <= 0:
+        raise ValueError
+    return value
+
+
+def validate_private_rsa(key: dict[str, Any]) -> None:
+    n = rsa_integer(key, "n")
+    e = rsa_integer(key, "e")
+    d, p, q, dp, dq, qi = (rsa_integer(key, name) for name in PRIVATE_RSA_PARAMETERS)
+    if (n.bit_length() < 2048 or e < 3 or e % 2 == 0 or d >= n or p == q
+            or p < 3 or q < 3 or p % 2 == 0 or q % 2 == 0
+            or p * q != n or dp != d % (p - 1) or dq != d % (q - 1)
+            or qi != pow(q, -1, p) or e * d % math.lcm(p - 1, q - 1) != 1):
+        raise ValueError
+
+    # Prove that the supplied private components perform the RS256 primitive,
+    # rather than merely having plausible lengths and field names.
+    digest_info = bytes.fromhex("3031300d060960864801650304020105000420") + hashlib.sha256(
+        b"mnema-staging-signing-bootstrap"
+    ).digest()
+    size = (n.bit_length() + 7) // 8
+    encoded = int.from_bytes(b"\x00\x01" + b"\xff" * (size - len(digest_info) - 3) + b"\x00" + digest_info)
+    if pow(pow(encoded, d, n), e, n) != encoded:
+        raise ValueError
+
+
 def desired() -> dict[str, str]:
     raw = os.environ.get(JWK_KEY, "")
     kid = os.environ.get(KID_KEY, "")
@@ -54,16 +84,15 @@ def desired() -> dict[str, str]:
             key_id = key.get("kid")
             if not isinstance(key_id, str) or not key_id:
                 raise ValueError
-            modulus = rsa_parameter(key, "n")
-            exponent = int.from_bytes(rsa_parameter(key, "e"))
-            if int.from_bytes(modulus).bit_length() < 2048 or exponent < 3 or exponent % 2 == 0:
+            modulus = rsa_integer(key, "n")
+            exponent = rsa_integer(key, "e")
+            if modulus.bit_length() < 2048 or exponent < 3 or exponent % 2 == 0:
                 raise ValueError
             ids.append(key_id)
         if len(ids) != len(set(ids)) or ids.count(kid) != 1:
             raise ValueError
         active = next(key for key in keys if key["kid"] == kid)
-        for parameter in PRIVATE_RSA_PARAMETERS:
-            rsa_parameter(active, parameter)
+        validate_private_rsa(active)
     except (KeyError, StopIteration, TypeError, ValueError, json.JSONDecodeError):
         raise BootstrapFailure("Fresh staging Identity JWKSet is invalid") from None
     canonical = json.dumps(document, ensure_ascii=False, separators=(",", ":"), sort_keys=True)

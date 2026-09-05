@@ -16,6 +16,7 @@ STAGING_BUCKET_JOB="$REPO_ROOT/k8s/staging/minio-bucket-job.yaml"
 STAGING_ROUTES="$REPO_ROOT/k8s/staging/routes.yaml"
 ALLOY_CONFIG="$REPO_ROOT/k8s/observability/30-alloy-config.yaml"
 IDENTITY_TEMPLATE="$REPO_ROOT/k8s/identity-account-deploy.yaml"
+STAGING_RUNBOOK="$REPO_ROOT/docs/operations/staging-runbook.md"
 
 grep -Eq '^[[:space:]]*targets[[:space:]]*=[[:space:]]*discovery\.relabel\.pods\.output[[:space:]]*$' \
   "$ALLOY_CONFIG"
@@ -175,6 +176,20 @@ grep -Fq 'mountPath: /var/run/secrets/mnema-identity' "$IDENTITY_TEMPLATE"
 for value in IDENTITY_SIGNING_JWK_SET IDENTITY_SIGNING_ACTIVE_KID POSTBOX_ACCESS_KEY POSTBOX_SECRET_KEY; do
   test "$(grep -c "'$value'" "$ADMISSION")" -eq 2
 done
+for identity_policy_guard in \
+  'select(.kind == "ValidatingAdmissionPolicy" and .metadata.name == "mnema-staging-secret-boundary")' \
+  'kubectl apply --dry-run=server -f "$identity_policy"' \
+  'kubectl diff -f "$identity_policy"' \
+  '.status.observedGeneration == .metadata.generation' \
+  '.status.typeChecking.expressionWarnings' \
+  '.spec.policyName == "mnema-staging-secret-boundary"' \
+  '.spec.validationActions == ["Deny"]' \
+  '.spec.matchResources.namespaceSelector.matchLabels["mnema.app/environment"] == "staging"'
+do
+  grep -Fq "$identity_policy_guard" "$STAGING_RUNBOOK"
+done
+grep -Fq 'STAGING_POSTBOX_ACCESS_KEY' "$STAGING_RUNBOOK"
+grep -Fq 'live outbound delivery is not claimed by the maintenance smoke' "$STAGING_RUNBOOK"
 grep -Fq 'path: /' "$REPO_ROOT/k8s/auth-ingress.yaml"
 if grep -R -E 'UserApiClient|USER_BASE_URL|app\.user\.base-url' \
   "$REPO_ROOT/backend/services/core/src/main" >/dev/null; then

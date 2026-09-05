@@ -177,6 +177,10 @@ def probes(name: str, resource_version: str) -> list[Probe]:
     replacement = route(name, "replacement", resource_version)
     legacy = route(name, "legacy", resource_version)
     result = [Probe(f"{name}/replacement", replacement), Probe(f"{name}/legacy", legacy)]
+    if name == "mnema-auth":
+        previous_replacement = deepcopy(replacement)
+        previous_replacement["spec"]["rules"][0]["http"]["paths"][0]["path"] = "/api"
+        result.append(Probe(f"{name}/previous-replacement", previous_replacement))
 
     def changed(label: str, category: str, path: tuple, value: Any, base: dict = replacement) -> None:
         document = deepcopy(base)

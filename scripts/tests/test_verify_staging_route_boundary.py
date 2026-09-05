@@ -124,7 +124,11 @@ class FakeKubectl:
                  ("/api/import", "Prefix", "mnema-import", 80)],
             ]
         else:
-            allowed = [[("/", "Prefix", "mnema-identity-account", 80)], [("/", "Prefix", "mnema-auth", 80)]]
+            allowed = [
+                [("/", "Prefix", "mnema-identity-account", 80)],
+                [("/api", "Prefix", "mnema-identity-account", 80)],
+                [("/", "Prefix", "mnema-auth", 80)],
+            ]
         return None if signatures in allowed else verifier.MESSAGES["topology"]
 
 
@@ -133,9 +137,9 @@ class StagingRouteBoundaryTest(unittest.TestCase):
         fake = FakeKubectl()
         with patch.object(verifier.subprocess, "run", side_effect=fake):
             count = verifier.verify(verifier.Kubectl("owner-admin"))
-        self.assertEqual(count, 44)
+        self.assertEqual(count, 45)
         replacements = [kwargs for command, kwargs in fake.calls if "replace" in command]
-        self.assertEqual(len(replacements), 44)
+        self.assertEqual(len(replacements), 45)
         for command, _ in fake.calls:
             self.assertEqual(command[command.index("--context") + 1], "owner-admin")
         self.assertEqual(fake.boundary_reads, 4)
