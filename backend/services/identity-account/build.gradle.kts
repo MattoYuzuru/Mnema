@@ -47,3 +47,10 @@ springBoot {
         }
     }
 }
+
+tasks.register<JavaExec>("accountTransfer") {
+    group = "application"
+    description = "Run the disposable account-only export/import/reconciliation tool"
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("app.mnema.identityaccount.transfer.AccountTransferCli")
+}
