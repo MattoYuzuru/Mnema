@@ -108,6 +108,15 @@ current patch, updating the existing PostgreSQL JDBC driver patch, and removing 
 `/usr/bin/pebble` binary inherited from the JRE image. These are direct fixes, not release
 exceptions; the full backend quality gate remains mandatory for future patch updates.
 
+The replacement's first Main CI scan (2026-09-05, run `33973146293`) rejected
+Tomcat 10.1.55 for CVE-2026-65182, CVE-2026-65905 and CVE-2026-68525.
+The shared build pins the existing Tomcat family to 10.1.59 through Spring Boot's
+[managed-version property](https://docs.spring.io/spring-boot/3.5/gradle-plugin/managing-dependencies.html#managing-dependencies.dependency-management-plugin.customizing-managed-versions).
+[Apache's advisory](https://tomcat.apache.org/security-10.html#Fixed_in_Apache_Tomcat_10.1.59)
+identifies 10.1.59 as the released fix: 10.1.58 did not pass its release vote.
+Keep this override until an adopted Boot BOM provides that fix or newer; verify
+both replacement JARs and the exact image scan before removing it.
+
 ## Failure and retry
 
 - A Trivy binary, registry, vulnerability database or attestation service outage is a scanner or

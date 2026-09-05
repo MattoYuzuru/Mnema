@@ -17,6 +17,8 @@ subprojects {
     apply(plugin = "jacoco")
     extra["netty.version"] = "4.1.137.Final"
     extra["postgresql.version"] = "42.7.13"
+    // Boot 3.5.16 manages 10.1.55; Apache's August 2026 fixes ship in 10.1.59.
+    extra["tomcat.version"] = "10.1.59"
 
     extensions.configure<org.gradle.testing.jacoco.plugins.JacocoPluginExtension> {
         toolVersion = "0.8.11"
