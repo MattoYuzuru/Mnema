@@ -124,6 +124,34 @@ class DeckCreationFailureClient(FakeClient):
         return super().json(method, url, **kwargs)
 
 
+class MaintenanceClient:
+    def __init__(self, release_id: str, *, learning_release_id: str | None = None) -> None:
+        self.release_id = release_id
+        self.learning_release_id = learning_release_id or release_id
+        self.requests: list[tuple[str, str, str]] = []
+
+    def request(self, method: str, url: str, **kwargs: Any) -> bytes:
+        self.requests.append((method, url, str(kwargs["service"])))
+        if url.endswith("/api/actuator/health/readiness"):
+            return b'{"status":"UP"}'
+        raise AssertionError(f"unexpected request {method} {url}")
+
+    def json(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
+        service = str(kwargs["service"])
+        self.requests.append((method, url, service))
+        if not url.endswith("/api/actuator/info"):
+            raise AssertionError(f"unexpected JSON request {method} {url}")
+        release_id = self.learning_release_id if service == "learning" else self.release_id
+        return {
+            "release": {
+                "id": release_id,
+                "mode": "maintenance",
+                "topology": "identity-learning",
+                "runtime": "learning-api" if service == "learning" else "identity-account",
+            }
+        }
+
+
 class ReleaseSmokeTest(unittest.TestCase):
     release_id = "a" * 40
 
@@ -294,6 +322,104 @@ class ReleaseSmokeTest(unittest.TestCase):
                     Path(directory) / "report.json",
                     identity_only=True,
                     readiness_only=True,
+                ).validate()
+
+    def test_maintenance_smoke_checks_both_shell_health_and_exact_release_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "report.json"
+            config = self.config(
+                report,
+                public_url="",
+                auth_url="",
+                login="",
+                password="",
+                turnstile_bypass_key="",
+                mode="maintenance",
+                identity_url="https://auth.staging.mnema.app",
+                learning_url="https://staging.mnema.app",
+            )
+            config.validate()
+            client = MaintenanceClient(self.release_id)
+
+            result = release_smoke.ReleaseSmoke(config, client).run()
+
+            self.assertEqual("passed", result.status)
+            self.assertEqual(
+                [
+                    "identity_account_readiness",
+                    "identity_account_identity",
+                    "learning_readiness",
+                    "learning_identity",
+                ],
+                [step.name for step in result.steps],
+            )
+            self.assertTrue(
+                all(url.endswith(("/api/actuator/health/readiness", "/api/actuator/info"))
+                    for _, url, _ in client.requests)
+            )
+            persisted = json.loads(report.read_text())
+            self.assertEqual(2, persisted["schema_version"])
+            self.assertEqual("identity-learning", persisted["release_topology"])
+            self.assertEqual("maintenance", persisted["release_mode"])
+            self.assertFalse(persisted["production_eligible"])
+
+    def test_maintenance_smoke_fails_if_one_shell_does_not_bind_the_full_sha(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.config(
+                Path(directory) / "report.json",
+                public_url="",
+                auth_url="",
+                mode="maintenance",
+                identity_url="https://auth.staging.mnema.app",
+                learning_url="https://staging.mnema.app",
+            )
+            client = MaintenanceClient(self.release_id, learning_release_id="b" * 40)
+
+            with self.assertRaises(release_smoke.SmokeFailure) as raised:
+                release_smoke.ReleaseSmoke(config, client).run()
+
+            self.assertEqual("service_release_mismatch", raised.exception.code)
+            self.assertEqual("learning", raised.exception.service)
+
+    def test_maintenance_smoke_rejects_wrong_or_missing_runtime(self) -> None:
+        for service, unexpected_runtime in [
+            ("identity-account", "learning-api"),
+            ("learning", "identity-account"),
+            ("identity-account", None),
+            ("learning", None),
+        ]:
+            with self.subTest(service=service, runtime=unexpected_runtime), tempfile.TemporaryDirectory() as directory:
+                class WrongRuntimeClient(MaintenanceClient):
+                    def json(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
+                        result = super().json(method, url, **kwargs)
+                        result["release"]["runtime"] = unexpected_runtime
+                        return result
+
+                smoke = release_smoke.ReleaseSmoke(
+                    self.config(Path(directory) / "report.json"), WrongRuntimeClient(self.release_id)
+                )
+                with self.assertRaises(release_smoke.SmokeFailure) as raised:
+                    smoke.verify_maintenance_identity(service, "https://staging.mnema.app")
+                self.assertEqual("service_runtime_mismatch", raised.exception.code)
+                self.assertEqual(service, raised.exception.service)
+
+    def test_maintenance_smoke_rejects_legacy_selectors_and_non_https_shell_urls(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "report.json"
+            with self.assertRaises(ValueError):
+                self.config(
+                    report,
+                    mode="maintenance",
+                    identity_url="http://identity.example",
+                    learning_url="https://learning.example",
+                ).validate()
+            with self.assertRaises(ValueError):
+                self.config(
+                    report,
+                    mode="maintenance",
+                    identity_url="https://identity.example",
+                    learning_url="https://learning.example",
+                    identity_only=True,
                 ).validate()
 
     def test_configuration_rejects_non_https_and_weak_bypass_key(self) -> None:

@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
-RELEASE_SERVICES = ("frontend", "auth", "user", "core", "media", "import")
+RELEASE_SERVICES = ("identity-account", "learning")
 EXPECTED_PRODUCTION_APPLY_TARGETS = (
     "k8s/namespace.yaml",
     "k8s/observability/00-namespace.yaml",
@@ -190,7 +190,7 @@ def validate_renderer(path: Path) -> list[Finding]:
     expected_services = f'services="{" ".join(RELEASE_SERVICES)}"'
     if content.count(expected_services) != 1:
         findings.append(Finding(path, "release service set must match the verified production templates"))
-    required_guard = "Rendered manifest contains an image that is not pinned by sha256 digest"
+    required_guard = "Rendered manifest must contain exactly two sha256-pinned release images"
     if content.count(required_guard) != 1:
         findings.append(Finding(path, "renderer must retain its final digest-only image guard"))
     return findings

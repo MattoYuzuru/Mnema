@@ -11,15 +11,15 @@ spec:
   ingressClassName: traefik
   tls:
     - hosts: [ release-auth-host-placeholder ]
-      secretName: auth-mnema-app-tls
+      secretName: release-auth-tls-secret-placeholder
   rules:
     - host: release-auth-host-placeholder
       http:
         paths:
-          - path: /
+          - path: /api
             pathType: Prefix
             backend:
               service:
-                name: mnema-auth
+                name: mnema-identity-account
                 port:
                   number: 80

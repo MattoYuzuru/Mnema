@@ -1,6 +1,30 @@
 #!/bin/sh
 set -eu
 
+# Replacement delivery is intentionally separate from the older owner bootstrap
+# preview below. It never reads or mutates Secret/data/bucket resources.
+if [ "${1-}" = --replacement ]; then
+  if [ "$#" -ne 4 ]; then
+    echo "usage: $0 --replacement RELEASE_MANIFEST SOURCE_MANIFEST TRANSITION_PLAN" >&2
+    exit 64
+  fi
+  script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" && pwd)
+  python3 "$script_dir/smoke/release_state.py" plan-transition \
+    --namespace mnema-staging --source-manifest "$3" --target-manifest "$2" --plan "$4"
+  kubectl -n mnema-staging apply --dry-run=server -f "$2" >/dev/null
+  set +e
+  KUBECTL_EXTERNAL_DIFF="$script_dir/canonical-kubectl-diff.sh" \
+    kubectl -n mnema-staging diff --show-secrets=false -f "$2"
+  status=$?
+  set -e
+  if [ "$status" -gt 1 ]; then
+    echo "Unable to preview replacement staging release" >&2
+    exit "$status"
+  fi
+  printf 'staging_plan_preview=ok topology=identity-learning mode=maintenance\n'
+  exit 0
+fi
+
 if [ "$#" -ne 4 ]; then
   echo "usage: $0 SECRET_MANIFEST DATA_MANIFEST BUCKET_JOB_MANIFEST RELEASE_MANIFEST" >&2
   exit 64

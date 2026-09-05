@@ -1,7 +1,10 @@
 # Release image security evidence
 
-Every Main CI release candidate is the same set of six immutable GHCR image digests used by
-staging and production. A digest becomes a releasable artifact only after all of the following
+Status: **current**, updated 2026-09-05.
+
+Every Main CI replacement candidate contains exactly two immutable GHCR image digests:
+`identity-account` and `learning`. Both environment manifests describe the same images in
+maintenance; production promotion is disabled until #147. A digest becomes a releasable artifact only after all of the following
 checks pass for that exact reference:
 
 1. Docker BuildKit publishes `mode=max` provenance and an SPDX 2.3 SBOM with the image.
@@ -11,14 +14,13 @@ checks pass for that exact reference:
 3. Trivy scans the digest, records its exact version and vulnerability database timestamps, and
    emits the full JSON report and SARIF. Unexcepted `HIGH` or `CRITICAL` findings stop Main CI before the
    digest artifact exists; `LOW` and `MEDIUM` findings remain visible in evidence without blocking.
-4. `scripts/verify_release_security_evidence.py` binds the six digests, source commit, Main CI run
+4. `scripts/verify_release_security_evidence.py` binds the two digests, source commit, Main CI run
    and attempt, attestations, SBOM hashes, scanner identity, counts and any applied exceptions into
    `release-security-evidence.json`.
 
 The compact evidence and its SHA-256 checksum travel with both release manifests. Staging checks
-the original Main CI run identity and both manifests before reading staging credentials. Only a
-successful staging run relays the production manifest and evidence. Production verifies them again
-before the protected `prod` Environment is entered. Full SBOM, attestation verification and Trivy
+the original Main CI run identity and both manifests before reading staging credentials. Staging records successful maintenance smoke without relaying a production promotion artifact.
+The production workflow reports the #147 gate and skips all protected `prod` jobs. Full SBOM, attestation verification and Trivy
 JSON, SARIF and SBOM files stay in the 30-day `release-security-<service>` Actions artifacts; they must not be copied
 to issue comments or logs.
 
@@ -35,7 +37,7 @@ Authenticate `gh` to GitHub and `docker` to GHCR, then use the exact digest from
 manifest. The signer and source restrictions are mandatory:
 
 ```bash
-image='ghcr.io/mattoyuzuru/mnema/auth@sha256:<64 lowercase hex characters>'
+image='ghcr.io/mattoyuzuru/mnema/identity-account@sha256:<64 lowercase hex characters>'
 commit='<40 lowercase hex characters>'
 
 gh attestation verify "oci://${image}" \
@@ -78,7 +80,7 @@ days later:
 ```json
 {
   "finding": "CVE-2026-12345",
-  "image": "ghcr.io/mattoyuzuru/mnema/auth@sha256:<exact digest>",
+  "image": "ghcr.io/mattoyuzuru/mnema/identity-account@sha256:<exact digest>",
   "packages": ["openssl"],
   "rationale": "No fixed package exists; ingress and network policy prevent the vulnerable path.",
   "owner": "@MattoYuzuru",
@@ -97,7 +99,7 @@ ignore entries in that file are rejected by the evidence validator; `.trivyignor
 the release policy. This prevents scanner-native ignores from bypassing the owner, scope and expiry
 contract above.
 
-The frontend runtime keeps its reviewed nginx base digest and pins Alpine `libcrypto3` and
+The retained, non-shipping frontend Dockerfile keeps its reviewed nginx base digest and pins Alpine `libcrypto3` and
 `libssl3` to the first fixed build found by the initial shipping-image baseline. Do not replace
 that repair with a scan exception while the fixed packages remain available.
 

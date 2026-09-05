@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Retired in #143. #146 removes the unreachable legacy bootstrap body.
+printf '%s\n' '[error] Legacy Mnema launcher is retired. Use docker compose with the maintenance shells; see docs/deploy/selfhost-local.md. Historical v1 launchers are in v1-apache-final.' >&2
+exit 64
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="$ROOT_DIR/.mnema"
 ENV_FILE="$ROOT_DIR/.env.local"

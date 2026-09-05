@@ -1,11 +1,87 @@
-# Self-Hosted Local Deployment
+# Local maintenance runtimes
 
-> **License and maintenance boundary:** this runbook remains valid for the
-> current checkout only for private personal use by one natural person on owned
-> or controlled devices. A household, class, team, employer, client or other
-> organization needs a [separate written license](../../COMMERCIAL-LICENSING.md).
-> Self-host compatibility is not a hosted-v2 launch requirement. The broader
-> Apache 2.0 permissions remain available only for `v1-apache-final`.
+Current revisions permit private personal use by one natural person on owned or
+controlled devices. Shared or organizational use needs a
+[separate written license](../../COMMERCIAL-LICENSING.md).
+
+## Current replacement setup — #143
+
+The canonical `docker-compose.yml` starts only PostgreSQL 18, Identity & Account,
+and Learning. Both application shells report `maintenance` / `identity-learning`;
+product UI, login and learning flows belong to their implementation epics.
+
+Docker Engine and the Docker Compose plugin are required. Run commands from the
+repository root. Set a fresh password for this replacement database; a missing or
+empty `MNEMA_LOCAL_POSTGRES_PASSWORD` fails configuration before any container starts.
+
+Bash/zsh:
+
+```bash
+printf 'Fresh replacement database password: '
+read -r -s MNEMA_LOCAL_POSTGRES_PASSWORD
+printf '\n'
+export MNEMA_LOCAL_POSTGRES_PASSWORD
+export COMPOSE_DISABLE_ENV_FILE=true
+export MNEMA_LOCAL_BUILD_ID="$(git rev-parse HEAD)"
+docker compose --project-name mnema-replacement --file docker-compose.yml up -d --build
+```
+
+PowerShell:
+
+```powershell
+$env:MNEMA_LOCAL_POSTGRES_PASSWORD = [System.Net.NetworkCredential]::new('', (Read-Host 'Fresh replacement database password' -AsSecureString)).Password
+$env:COMPOSE_DISABLE_ENV_FILE = 'true'
+$env:MNEMA_LOCAL_BUILD_ID = git rev-parse HEAD
+docker compose --project-name mnema-replacement --file docker-compose.yml up -d --build
+```
+
+These commands disable implicit `.env` loading and fix the project/file explicitly.
+The Compose source consumes only `MNEMA_LOCAL_*` settings, with no old `.env.local`,
+`.env.public`, override files or legacy database volume. Its fresh named volume is
+`mnema-replacement_replacement_postgres_data`. Startup does not migrate, stop or
+remove an existing v1 stack.
+
+| Setting | Default | Purpose |
+|---|---|---|
+| `MNEMA_LOCAL_POSTGRES_PASSWORD` | required | Fresh replacement DB password |
+| `MNEMA_LOCAL_POSTGRES_DB` | `mnema` | Replacement database name |
+| `MNEMA_LOCAL_POSTGRES_USER` | `mnema` | Replacement database user |
+| `MNEMA_LOCAL_POSTGRES_PORT` | `55432` | Loopback PostgreSQL port |
+| `MNEMA_LOCAL_IDENTITY_PORT` | `18081` | Loopback Identity HTTP port |
+| `MNEMA_LOCAL_LEARNING_PORT` | `18080` | Loopback Learning HTTP port |
+| `MNEMA_LOCAL_IDENTITY_ISSUER` | `https://localhost:18081` | HTTPS identity contract |
+| `MNEMA_LOCAL_BUILD_ID` | `dev` | Reported source identity |
+
+The issuer is an HTTPS identifier required by `IssuerContract`. Local actuator
+transport is HTTP on loopback; no TLS listener or authentication flow is provisioned.
+Set the build ID to the checked-out commit for diagnostic correlation and rebuild
+after source changes; this local marker is not hosted release attestation.
+
+```bash
+curl -fsS http://127.0.0.1:18081/api/actuator/health/readiness
+curl -fsS http://127.0.0.1:18081/api/actuator/info
+curl -fsS http://127.0.0.1:18080/api/actuator/health/readiness
+curl -fsS http://127.0.0.1:18080/api/actuator/info
+docker compose --project-name mnema-replacement --file docker-compose.yml stop
+```
+
+Keep the same configuration for later Compose commands. `stop` preserves the new
+volume. Password/DB/user changes after initialization are not PostgreSQL credential
+rotation. Old volumes remain outside this workflow; removal or account/data transfer
+requires its own explicit procedure. PostgreSQL 18 mounts `/var/lib/postgresql`
+according to the [official image contract](https://hub.docker.com/_/postgres).
+The project boundary and loopback publications follow
+[Compose project naming](https://docs.docker.com/reference/compose-file/version-and-name/#name-top-level-element)
+and [port definitions](https://docs.docker.com/reference/compose-file/services/#ports).
+
+## Historical v1 self-host reference
+
+The instructions below describe `v1-apache-final`, not the current checkout.
+Use a separate checkout of that historical tag to consult its matching launcher
+and Compose implementation. Current `mnema-local.sh` / `.ps1` and `mnema-public.sh`
+/ `.ps1` refuse before filesystem or container mutation; #146 owns removal of their
+remaining historical bodies. Hosted replacement requirements do not include v1
+self-host compatibility.
 
 Этот режим предназначен для запуска Mnema на одной машине без внешних облачных сервисов.
 

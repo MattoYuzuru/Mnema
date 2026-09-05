@@ -1,0 +1,26 @@
+# Owner-only: apply AFTER application-route-boundary.yaml and successful
+# scripts/verify-staging-route-boundary.py. Never part of an application release.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: mnema-application-route-deployer
+  namespace: mnema-staging
+rules:
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    resourceNames: ["mnema", "mnema-auth"]
+    verbs: ["get", "patch", "update"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: mnema-application-route-deployer
+  namespace: mnema-staging
+subjects:
+  - kind: ServiceAccount
+    name: mnema-deployer
+    namespace: mnema-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: mnema-application-route-deployer

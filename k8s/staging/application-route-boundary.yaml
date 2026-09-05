@@ -1,0 +1,100 @@
+# Install the application-route policy and prove its negative probes before
+# granting the deployer named Ingress update rights in bootstrap.yaml.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: mnema-staging-application-route-boundary
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    matchPolicy: Exact
+    resourceRules:
+      - apiGroups: ["networking.k8s.io"]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["ingresses"]
+  matchConditions:
+    - name: protected-staging-application-route
+      expression: >-
+        object.metadata.namespace == 'mnema-staging' &&
+        object.metadata.name in ['mnema', 'mnema-auth']
+  variables:
+    - name: pathSignatures
+      expression: >-
+        object.spec.rules[0].http.paths.map(p,
+          (has(p.path) ? p.path : '') + '|' + p.pathType + '|' +
+          (has(p.backend.service) ? p.backend.service.name : '') + '|' +
+          (has(p.backend.service) && has(p.backend.service.port.number)
+            ? string(p.backend.service.port.number) : ''))
+  validations:
+    - expression: >-
+        has(object.metadata.annotations) &&
+        object.metadata.annotations.all(key, key in [
+          'cert-manager.io/cluster-issuer',
+          'kubectl.kubernetes.io/last-applied-configuration']) &&
+        'cert-manager.io/cluster-issuer' in object.metadata.annotations &&
+        object.metadata.annotations['cert-manager.io/cluster-issuer'] == 'letsencrypt-prod'
+      message: "Application route annotations are restricted to the fixed issuer and inert apply metadata"
+    - expression: >-
+        has(object.spec.ingressClassName) &&
+        object.spec.ingressClassName == 'traefik' &&
+        !has(object.spec.defaultBackend)
+      message: "Application routes must use the fixed Traefik class without a default backend"
+    - expression: >-
+        has(object.spec.rules) && object.spec.rules.size() == 1 &&
+        has(object.spec.rules[0].host) && has(object.spec.rules[0].http) &&
+        ((object.metadata.name == 'mnema' &&
+          object.spec.rules[0].host == 'staging.mnema.app') ||
+         (object.metadata.name == 'mnema-auth' &&
+          object.spec.rules[0].host == 'auth.staging.mnema.app'))
+      message: "Application routes must retain their single exact staging host"
+    - expression: >-
+        has(object.spec.tls) && object.spec.tls.size() == 1 &&
+        has(object.spec.tls[0].hosts) && object.spec.tls[0].hosts.size() == 1 &&
+        has(object.spec.tls[0].secretName) &&
+        ((object.metadata.name == 'mnema' &&
+          object.spec.tls[0].hosts[0] == 'staging.mnema.app' &&
+          object.spec.tls[0].secretName == 'staging-mnema-app-tls') ||
+         (object.metadata.name == 'mnema-auth' &&
+          object.spec.tls[0].hosts[0] == 'auth.staging.mnema.app' &&
+          object.spec.tls[0].secretName == 'auth-staging-mnema-app-tls'))
+      message: "Application TLS hosts and Secrets are fixed"
+    - expression: >-
+        request.operation != 'UPDATE' ||
+        (has(oldObject.spec.ingressClassName) &&
+         object.spec.ingressClassName == oldObject.spec.ingressClassName &&
+         has(oldObject.spec.tls) && object.spec.tls == oldObject.spec.tls &&
+         oldObject.spec.rules.size() == 1 &&
+         has(oldObject.spec.rules[0].host) &&
+         object.spec.rules[0].host == oldObject.spec.rules[0].host)
+      message: "Only the exact path/backend topology may change"
+    # The legacy alternatives exist only for restoring the captured previous
+    # staging release. A replacement release never includes mixed/legacy routes.
+    - expression: >-
+        (object.metadata.name == 'mnema' &&
+         (variables.pathSignatures == ['/api|Prefix|mnema-learning|80'] ||
+          (variables.pathSignatures.size() == 5 &&
+           variables.pathSignatures.all(s, s in [
+             '/|Prefix|mnema-frontend|80', '/api/user|Prefix|mnema-user|80',
+             '/api/core|Prefix|mnema-core|80', '/api/media|Prefix|mnema-media|80',
+             '/api/import|Prefix|mnema-import|80']) &&
+           ['/|Prefix|mnema-frontend|80', '/api/user|Prefix|mnema-user|80',
+            '/api/core|Prefix|mnema-core|80', '/api/media|Prefix|mnema-media|80',
+            '/api/import|Prefix|mnema-import|80'].all(s, s in variables.pathSignatures)))) ||
+        (object.metadata.name == 'mnema-auth' &&
+         (variables.pathSignatures == ['/api|Prefix|mnema-identity-account|80'] ||
+          variables.pathSignatures == ['/|Prefix|mnema-auth|80']))
+      message: "Application paths and backends must match one complete allowed topology"
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: mnema-staging-application-route-boundary
+spec:
+  policyName: mnema-staging-application-route-boundary
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: mnema-staging
+        mnema.app/environment: staging

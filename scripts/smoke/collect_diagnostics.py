@@ -11,7 +11,9 @@ from pathlib import Path
 from typing import Any
 
 
-SERVICES = ("frontend", "auth", "user", "core", "media", "import")
+LEGACY_SERVICES = ("frontend", "auth", "user", "core", "media", "import")
+MAINTENANCE_SERVICES = ("identity-account", "learning")
+SERVICES = (*LEGACY_SERVICES, *MAINTENANCE_SERVICES)
 EMAIL_PATTERN = re.compile(r"(?i)\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b")
 UUID_PATTERN = re.compile(
     r"(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b"
@@ -92,13 +94,25 @@ def non_ready_services(namespace: str) -> set[str]:
     return affected
 
 
-def collect(namespace: str, output: Path, failed_service: str | None) -> None:
+def collect(
+    namespace: str,
+    output: Path,
+    failed_service: str | None,
+    release_topology: str | None = None,
+) -> None:
     output.mkdir(parents=True, exist_ok=True)
     output.chmod(0o700)
     write(
         output / "workloads.txt",
-        run(["kubectl", "-n", namespace, "get", "pods,deployments,statefulsets,services,ingresses", "-o", "wide"]),
+        run(["kubectl", "-n", namespace, "get", "pods,deployments,statefulsets,services", "-o", "wide"]),
     )
+    # The staging identity can read only the two application routes by name.
+    # A forbidden Ingress LIST must not discard otherwise available workloads.
+    for name in ("mnema", "mnema-auth"):
+        write(
+            output / f"{name}-ingress.txt",
+            run(["kubectl", "-n", namespace, "get", "ingress", name, "-o", "wide"]),
+        )
     write(
         output / "events.txt",
         run(["kubectl", "-n", namespace, "get", "events", "--sort-by=.lastTimestamp"])[-100_000:],
@@ -123,7 +137,12 @@ def collect(namespace: str, output: Path, failed_service: str | None) -> None:
     write(
         output / "summary.json",
         json.dumps(
-            {"schemaVersion": 1, "namespace": namespace, "affectedServices": sorted(services)},
+            {
+                "schemaVersion": 2,
+                "namespace": namespace,
+                "releaseTopology": release_topology,
+                "affectedServices": sorted(services),
+            },
             indent=2,
             sort_keys=True,
         )
@@ -141,15 +160,19 @@ def main() -> int:
     if not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", args.namespace):
         parser.error("namespace must be a lowercase DNS label")
     failed_service = args.failed_service
-    if failed_service is None and args.smoke_report and args.smoke_report.is_file():
+    release_topology = None
+    if args.smoke_report and args.smoke_report.is_file():
         try:
             report = json.loads(args.smoke_report.read_text(encoding="utf-8"))
             candidate = report.get("failed_service") if isinstance(report, dict) else None
-            if candidate in (*SERVICES, "release"):
+            if failed_service is None and candidate in (*SERVICES, "release"):
                 failed_service = candidate
+            topology = report.get("release_topology") if isinstance(report, dict) else None
+            if topology in ("identity-learning", "legacy-six-service"):
+                release_topology = topology
         except (OSError, json.JSONDecodeError):
             pass
-    collect(args.namespace, args.output, failed_service)
+    collect(args.namespace, args.output, failed_service, release_topology)
     return 0
 
 

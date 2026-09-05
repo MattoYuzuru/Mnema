@@ -17,8 +17,9 @@ production_preflight=$(sed -n '/^  validate-staging-deploy:/,/^  preview-product
 printf '%s\n' "$build_job" | grep -Fq 'attestations: write'
 printf '%s\n' "$build_job" | grep -Fq 'id-token: write'
 printf '%s\n' "$build_job" | grep -Fq 'packages: write'
-test "$(printf '%s\n' "$build_job" | grep -F -c 'provenance: mode=max')" -eq 2
-test "$(printf '%s\n' "$build_job" | grep -F -c 'sbom: true')" -eq 2
+test "$(printf '%s\n' "$build_job" | grep -F -c 'provenance: mode=max')" -eq 1
+test "$(printf '%s\n' "$build_job" | grep -F -c 'sbom: true')" -eq 1
+test "$(printf '%s\n' "$build_job" | grep -E -c '          - name: (identity-account|learning)$')" -eq 2
 test "$(printf '%s\n' "$build_job" | grep -F -c 'actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2')" -eq 2
 test "$(printf '%s\n' "$build_job" | grep -F -c 'aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0')" -eq 1
 # shellcheck disable=SC2016 # GitHub expression is a literal contract marker.
@@ -46,9 +47,15 @@ test "$(printf '%s\n' "$render_job" | grep -F -c '${{ runner.temp }}/release-sec
 test "$(printf '%s\n' "$staging_preflight" | grep -F -c 'verify_release_security_evidence.py verify-release')" -eq 2
 # shellcheck disable=SC2016 # Workflow variable is a literal contract marker.
 printf '%s\n' "$staging_preflight" | grep -Fq -- '--expected-run-id "$UPSTREAM_RUN_ID"'
-test "$(grep -F -c 'production-promotion/release-security-evidence.json' "$STAGING")" -eq 2
-test "$(printf '%s\n' "$production_preflight" | grep -F -c 'verify_release_security_evidence.py verify-release')" -eq 1
-test "$(grep -F -c 'verify_release_security_evidence.py verify-release' "$PRODUCTION")" -eq 3
+if grep -Fq 'policy-id: staging-production-promotion' "$STAGING"; then
+  echo 'Maintenance candidates must not be relayed for production promotion' >&2
+  exit 1
+fi
+printf '%s\n' "$production_preflight" | grep -Fq "production_eligible: 'false'"
+grep -Fq "needs.validate-staging-deploy.outputs.production_eligible == 'true'" "$PRODUCTION"
+# Dormant production verification/Secret protections remain until #147 owns the
+# new production go/no-go; no environment override can open the hard gate.
+test "$(grep -F -c 'verify_release_security_evidence.py verify-release' "$PRODUCTION")" -eq 2
 
 if printf '%s\n%s\n' "$staging_preflight" "$production_preflight" | grep -Fq 'environment:'; then
   echo 'Security evidence preflight must complete before Environment access' >&2

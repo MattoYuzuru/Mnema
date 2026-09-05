@@ -17,6 +17,7 @@ concurrency:
 jobs:
   rollback-drill:
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       actions: read
       contents: read
@@ -52,7 +53,7 @@ jobs:
       - name: Set up kubectl
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
         with:
-          version: v1.36.0
+          version: v1.35.8
 
       - name: Write namespace-scoped staging kubeconfig
         env:
@@ -86,6 +87,8 @@ jobs:
           python3 scripts/smoke/release_state.py create-broken-staging \
             --source-manifest "$ROLLBACK_MANIFEST" \
             --output-manifest "$BROKEN_MANIFEST"
+          # The drill is only valid once a maintenance release is recorded.
+          python3 -c 'import json,sys; r=json.load(open(sys.argv[1])); assert r.get("releaseMode") == "maintenance" and r.get("productionEligible") is False' "$ROLLBACK_RECORD"
           kubectl apply --dry-run=server -f "$BROKEN_MANIFEST" >/dev/null
 
       - name: Apply the deliberately broken staging release
@@ -95,10 +98,10 @@ jobs:
           kubectl apply -f "$BROKEN_MANIFEST"
           echo 'applied=true' >> "$GITHUB_OUTPUT"
 
-      - name: Observe the expected broken frontend rollout
+      - name: Observe the expected broken Identity rollout
         id: broken_rollout
         continue-on-error: true
-        run: kubectl -n "$NS" rollout status deployment/mnema-frontend --timeout=180s
+        run: kubectl -n "$NS" rollout status deployment/mnema-identity-account --timeout=180s
 
       - name: Observe the expected release smoke failure
         id: broken_smoke
@@ -107,11 +110,11 @@ jobs:
         run: |
           python3 scripts/smoke/release_smoke.py \
             --environment staging-broken-drill \
-            --public-url https://staging.mnema.app \
-            --auth-url https://auth.staging.mnema.app \
+            --mode maintenance \
+            --identity-url https://auth.staging.mnema.app \
+            --learning-url https://staging.mnema.app \
             --expected-release-sha "${{ steps.broken.outputs.release_id }}" \
             --timeout-seconds 120 \
-            --identity-only \
             --report "$BROKEN_SMOKE_REPORT"
 
       - name: Collect sanitized broken-release diagnostics
@@ -121,7 +124,7 @@ jobs:
           python3 scripts/smoke/collect_diagnostics.py \
             --namespace "$NS" \
             --output "$DIAGNOSTICS_DIR" \
-            --failed-service frontend \
+            --failed-service identity-account \
             --smoke-report "$BROKEN_SMOKE_REPORT"
 
       - name: Apply the saved complete release
@@ -137,25 +140,18 @@ jobs:
         id: rollback_rollout
         if: ${{ always() && steps.rollback.outcome == 'success' }}
         run: |
-          kubectl -n "$NS" rollout status deployment/mnema-frontend --timeout=600s
-          kubectl -n "$NS" rollout status deployment/mnema-auth --timeout=1200s
-          kubectl -n "$NS" rollout status deployment/mnema-user --timeout=1200s
-          kubectl -n "$NS" rollout status deployment/mnema-core --timeout=1200s
-          kubectl -n "$NS" rollout status deployment/mnema-media --timeout=1800s
-          kubectl -n "$NS" rollout status deployment/mnema-import --timeout=1800s
+          python3 scripts/smoke/release_state.py rollout \
+            --namespace "$NS" --record "$ROLLBACK_RECORD"
 
       - name: Verify complete rollback release
         id: rollback_smoke
         if: ${{ always() && steps.rollback_rollout.outcome == 'success' }}
-        env:
-          SMOKE_LOGIN: ${{ secrets.STAGING_SMOKE_LOGIN }}
-          SMOKE_PASSWORD: ${{ secrets.STAGING_SMOKE_PASSWORD }}
-          SMOKE_TURNSTILE_BYPASS_KEY: ${{ secrets.STAGING_SMOKE_TURNSTILE_BYPASS_KEY }}
         run: |
           python3 scripts/smoke/release_smoke.py \
             --environment staging-rollback-drill \
-            --public-url https://staging.mnema.app \
-            --auth-url https://auth.staging.mnema.app \
+            --mode maintenance \
+            --identity-url https://auth.staging.mnema.app \
+            --learning-url https://staging.mnema.app \
             --expected-release-sha "${{ steps.snapshot.outputs.release_id }}" \
             --timeout-seconds 300 \
             --report "$ROLLBACK_SMOKE_REPORT"

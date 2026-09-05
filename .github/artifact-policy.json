@@ -184,22 +184,6 @@
       "source": "release_state.py record after successful staging verification"
     },
     {
-      "policyId": "staging-production-promotion",
-      "workflow": ".github/workflows/staging-deploy.yaml",
-      "job": "deploy-staging",
-      "name": "production-release-manifest",
-      "paths": [
-        "${{ runner.temp }}/production-promotion/production-release.yaml",
-        "${{ runner.temp }}/production-promotion/production-release.yaml.sha256",
-        "${{ runner.temp }}/production-promotion/release-security-evidence.json",
-        "${{ runner.temp }}/production-promotion/release-security-evidence.json.sha256"
-      ],
-      "retentionDays": 30,
-      "ifNoFilesFound": "error",
-      "classification": "release-manifest",
-      "source": "Main CI production manifest relayed only after successful staging verification"
-    },
-    {
       "policyId": "staging-failure-diagnostics",
       "workflow": ".github/workflows/staging-deploy.yaml",
       "job": "deploy-staging",

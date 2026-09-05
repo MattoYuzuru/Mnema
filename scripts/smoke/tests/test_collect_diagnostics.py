@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import importlib.util
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 MODULE_PATH = Path(__file__).parents[1] / "collect_diagnostics.py"
@@ -15,6 +17,28 @@ SPEC.loader.exec_module(collect_diagnostics)
 
 
 class CollectDiagnosticsTest(unittest.TestCase):
+    def test_workloads_survive_denied_route_read_without_ingress_list_permission(self) -> None:
+        calls = []
+
+        def run(command):
+            calls.append(command)
+            if command[4] == "ingress":
+                return "command_status=failed\n"
+            if command[4] == "pods,deployments,statefulsets,services":
+                return "mnema-learning 1/1\n"
+            return ""
+
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            collect_diagnostics, "run", side_effect=run
+        ), patch.object(collect_diagnostics, "non_ready_services", return_value=set()):
+            output = Path(directory)
+            collect_diagnostics.collect("mnema-staging", output, None)
+            self.assertEqual("mnema-learning 1/1\n", (output / "workloads.txt").read_text())
+            self.assertEqual("command_status=failed\n", (output / "mnema-ingress.txt").read_text())
+            route_reads = [command for command in calls if command[4] == "ingress"]
+            self.assertEqual(["mnema", "mnema-auth"], [command[5] for command in route_reads])
+            self.assertFalse(any("ingresses" in part for command in calls for part in command))
+
     def test_redacts_credentials_and_email_without_removing_operational_context(self) -> None:
         raw = (
             "level=ERROR service=auth email=user@example.com "

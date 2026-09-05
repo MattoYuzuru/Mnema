@@ -40,7 +40,7 @@
 * [Чем Mnema выделяется относительно Anki/Quizlet](#чем-mnema-выделяется-относительно-ankiquizlet)
 * [Технологии](#технологии)
 * [Архитектура](#архитектура)
-* [Self-Hosted Local (one-command)](#self-hosted-local-one-command)
+* [Локальные maintenance runtime](#локальные-maintenance-runtime)
 * [Архивный Self-Hosted Public](#архивный-self-hosted-public)
 * [Локальная разработка](#локальная-разработка)
 * [Системные требования и sizing](#системные-требования-и-sizing)
@@ -153,39 +153,39 @@ Frontend (`frontend`) общается с backend API:
 
 ---
 
-## Self-Hosted Local (one-command)
+## Локальные maintenance runtime
 
-> Текущая лицензия разрешает этот режим только одному физическому лицу для
-> личного частного использования на собственных или контролируемых устройствах.
-> Развёртывание для семьи, класса, команды, работодателя или иной организации
-> требует [отдельной письменной лицензии](COMMERCIAL-LICENSING.md).
+Текущая лицензия разрешает личное частное использование одному физическому лицу
+на собственных или контролируемых устройствах. Организационное или совместное
+использование требует [отдельной письменной лицензии](COMMERCIAL-LICENSING.md).
 
-Для локального self-host режима добавлены bootstrap-скрипты:
+Канонический `docker-compose.yml` поднимает PostgreSQL 18, `identity-account` и
+`learning` в maintenance. Это runtime shells для разработки; UI и продуктовые
+сценарии ещё реализуются в соответствующих задачах. Project `mnema-replacement`
+использует новый volume `replacement_postgres_data` и отдельные `MNEMA_LOCAL_*`
+настройки. Данные и credentials прежнего локального запуска не переносятся.
 
-- Linux/macOS:
+Из корня репозитория, Bash/zsh:
+
 ```bash
-./scripts/mnema-local.sh
+printf 'Fresh replacement database password: '
+read -r -s MNEMA_LOCAL_POSTGRES_PASSWORD
+printf '\n'
+export MNEMA_LOCAL_POSTGRES_PASSWORD
+export COMPOSE_DISABLE_ENV_FILE=true
+export MNEMA_LOCAL_BUILD_ID="$(git rev-parse HEAD)"
+docker compose --project-name mnema-replacement --file docker-compose.yml up -d --build
+curl -fsS http://127.0.0.1:18081/api/actuator/health/readiness
+curl -fsS http://127.0.0.1:18080/api/actuator/health/readiness
 ```
-- Windows (PowerShell):
-```powershell
-.\scripts\mnema-local.ps1
-```
 
-Что делает скрипт:
-- спрашивает минимальные креды (`Postgres`, `MinIO`);
-- интерактивно (стрелками) предлагает выбор GPU для Ollama, primary/secondary text model, vision model, а также optional TTS/STT/image models;
-- поддерживает режимы backend-ов: `ollama` (experimental), `custom`, `none` для audio/image (для audio безопасный дефолт — `none`);
-- проверяет порты (`3005`, `5432`, `6379`, `8083-8088`, `9000`, `9001`, `11434`);
-- если порт занят, автоматически выбирает следующий свободный (`+1`, `+2`, ...), и явно пишет это в консоль;
-- генерирует `.env.local` и `.mnema/compose.ports.yml`;
-- поднимает `ollama + local-ai-gateway`, выполняет pull выбранных моделей, затем поднимает весь стек Mnema;
-- включает профиль `dev,selfhost-local` (в `auth` отключает federated OAuth/Turnstile и обязательную email verification);
-- оставляет разблокированными внешние provider keys (можно использовать и `ollama`, и персональные `OpenAI/Gemini/Qwen/...` ключи в рантайме).
+Оба HTTP endpoint и PostgreSQL (`55432`) опубликованы только на loopback.
+HTTPS issuer `https://localhost:18081` — идентификатор будущего auth-контракта;
+этот локальный Compose не поднимает TLS listener или login flow.
 
-Проверка без старта контейнеров: `MNEMA_DRY_RUN=1 ./scripts/mnema-local.sh`
-
-Подробный runbook и ограничения: [docs/deploy/selfhost-local.md](docs/deploy/selfhost-local.md)
-Матрица локальных AI моделей (включая video/gif): [docs/deploy/model-matrix.md](docs/deploy/model-matrix.md)
+Старые `mnema-local` и `mnema-public` launcher-скрипты прекращают работу до
+изменений файлов и контейнеров. Полные инструкции, PowerShell, настройки портов
+и остановка: [local runbook](docs/deploy/selfhost-local.md).
 
 ---
 
@@ -230,29 +230,21 @@ MNEMA_DRY_RUN=1 ./scripts/mnema-public.sh
 
 ## Локальная разработка
 
-1. Подготовить `.env` (пример ниже).
-2. Поднять сервисы:
-```bash
-docker compose up -d --build
-```
-3. Открыть приложение: [http://localhost:3005](http://localhost:3005)
+Для запуска двух актуальных runtime используйте
+[локальный maintenance Compose](#локальные-maintenance-runtime). Точки проверки:
 
-Локальные порты:
-- frontend: `3005`
-- auth: `8083`
-- user: `8084`
-- core: `8085`
-- media: `8086`
-- import: `8087`
-- ai: `8088`
-- postgres: `${POSTGRES_PORT}`
-- redis: `6379`
+- Identity & Account: `http://127.0.0.1:18081/api/actuator/info`;
+- Learning: `http://127.0.0.1:18080/api/actuator/info`;
+- PostgreSQL: `127.0.0.1:55432`.
+
+Health/info отражают maintenance, topology и runtime identity. Frontend по-прежнему
+проверяется через lint, tests и build; локальный replacement Compose его не публикует.
 
 ---
 
 ## Системные требования и sizing
 
-Оценки для self-host local режима (без внешних SaaS). Фактическое потребление зависит от моделей, числа одновременных задач и лимитов JVM.
+Исторические оценки для v1 self-host local режима (без внешних SaaS); они не описывают текущие два maintenance runtime. Фактическое потребление зависит от моделей, числа одновременных задач и лимитов JVM.
 
 ### Минимум для запуска
 - CPU: 4 vCPU
@@ -289,6 +281,9 @@ du -h -d 1 .
 ---
 
 ## Переменные окружения (.env)
+
+Следующий inventory относится к прежнему v1 runtime. Текущий локальный Compose
+использует только `MNEMA_LOCAL_*` из [local runbook](docs/deploy/selfhost-local.md).
 
 Ниже расширенный перечень того, что реально используется в compose/сервисах. Значения и сам `.env` не меняются этим README.
 
@@ -391,21 +386,20 @@ APP_ENV=dev
 
 ## CI/CD и деплой
 
-Текущий pipeline (`.github/workflows/deploy.yaml`):
+`Main CI` проверяет backend quality/coverage, frontend lint/tests/build и delivery
+contracts. После зелёных gates он публикует только digest-pinned `identity-account`
+и `learning`, с provenance, SBOM и vulnerability evidence, затем формирует
+checksummed manifests с `releaseMode=maintenance` и `productionEligible=false`.
 
-1. `backend-quality`: `./gradlew quality` (компиляция, тесты и coverage baseline).
-2. `frontend-quality`: `npm ci`, lint, unit tests и production build.
-3. `build-and-push`: сборка образов `frontend/auth/user/core/media/import/ai` и пуш SHA/`latest` тегов в GHCR.
-4. `apply-main-manifests` / `apply-ai-manifests`: применение инфраструктурных manifests в двух кластерах.
-5. `deploy-main` / `deploy-ai`: выбор SHA-tagged images и ожидание rollout.
+`Staging Deploy` проверяет точный commit/artifact, сохраняет предыдущий полный
+релиз, предварительно проверяет изменение, применяет два runtime и убирает шесть
+старых приложений. Rollout и smoke проверяют readiness, точный SHA, режим и runtime
+каждого сервиса; неудачный кандидат откатывается к сохранённому staging релизу.
+Production promotion жёстко заблокирован до отдельного go/no-go в #147.
 
-Известные риски release atomicity, rollback/restore и post-deploy smoke зафиксированы в [delivery audit](docs/operations/delivery-audit-2026-08.md).
-
-В k8s используются:
-- namespace `prod` + `observability`;
-- отдельные манифесты на каждый сервис;
-- ingress/bridge для AI-части;
-- секреты через GitHub Environments/Secrets.
+Канонические инструкции: [release verification](docs/operations/release-verification-runbook.md)
+и [staging boundary](docs/operations/staging-runbook.md). Production сохраняет
+ранее применённую топологию; новые maintenance manifests не запускают её cutover.
 
 ---
 
