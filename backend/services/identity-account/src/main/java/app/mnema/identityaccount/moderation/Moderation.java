@@ -36,7 +36,8 @@ public class Moderation {
             var account = accounts.get(target, true);
             switch (action) {
                 case GRANT_ADMIN -> {
-                    if (account.isAdmin() || !account.status().equals("ACTIVE")) throw AccountFailure.forbidden();
+                    if (account.isAdmin() || !account.status().equals("ACTIVE") ||
+                            !account.deletionState().equals("ACTIVE")) throw AccountFailure.forbidden();
                     jdbcClient.sql(
                                     "UPDATE app_identity.account SET is_admin=true,admin_granted_by=:actor,admin_granted_at=statement_timestamp() WHERE account_id=:id")
                             .param("actor", actor.accountId()).param("id", target).update();
@@ -52,14 +53,16 @@ public class Moderation {
                     accounts.revoke(target);
                 }
                 case BAN -> {
-                    if (account.isAdmin() || !account.status().equals("ACTIVE")) throw AccountFailure.forbidden();
+                    if (account.isAdmin() || !account.status().equals("ACTIVE") ||
+                            account.deletionState().equals("PURGED")) throw AccountFailure.forbidden();
                     jdbcClient.sql(
                                     "UPDATE app_identity.account SET status='BANNED',banned_by=:actor,banned_at=statement_timestamp(),ban_reason=:reason WHERE account_id=:id")
                             .param("actor", actor.accountId()).param("id", target).param("reason", reason).update();
                     accounts.revoke(target);
                 }
                 case UNBAN -> {
-                    if (!account.status().equals("BANNED")) throw AccountFailure.forbidden();
+                    if (!account.status().equals("BANNED") || account.deletionState().equals("PURGED"))
+                        throw AccountFailure.forbidden();
                     jdbcClient.sql(
                                     "UPDATE app_identity.account SET status='ACTIVE',banned_by=NULL,banned_at=NULL,ban_reason=NULL WHERE account_id=:id")
                             .param("id", target).update();

@@ -148,6 +148,75 @@ class IdentitySchemaIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void deletionLifecycleDeadlinesManifestAndTombstoneAreConstrained() {
+        UUID accountId = insertAccount(randomEmail(), null);
+        UUID operationId = UUID.randomUUID();
+
+        assertConstraintViolation(() -> updateAccount(accountId, "email=NULL"), "ck_account_email");
+        assertConstraintViolation(() -> updateAccount(accountId, "deletion_state='PURGED'"),
+                "ck_account_email");
+        jdbcClient.sql("UPDATE app_identity.account SET display_name='retained' WHERE account_id=:account")
+                .param("account", accountId).update();
+        assertConstraintViolation(() -> updateAccount(accountId, "email=NULL,deletion_state='PURGED'"),
+                "ck_account_purged_tombstone");
+        jdbcClient.sql("UPDATE app_identity.account SET display_name=NULL WHERE account_id=:account")
+                .param("account", accountId).update();
+        jdbcClient.sql("""
+                        UPDATE app_identity.account
+                        SET deletion_state='PENDING_DELETION',deletion_generation=1
+                        WHERE account_id=:account
+                        """).param("account", accountId).update();
+        UUID mismatchedAccount = insertAccount(randomEmail(), null);
+        jdbcClient.sql("""
+                        UPDATE app_identity.account
+                        SET deletion_state='PENDING_DELETION',deletion_generation=1
+                        WHERE account_id=:account
+                        """).param("account", mismatchedAccount).update();
+        assertConstraintViolation(() -> jdbcClient.sql("""
+                        INSERT INTO app_identity.account_deletion(
+                            account_id,operation_id,generation,deletion_requested_at,recoverable_until,purge_after,
+                            next_attempt_at,confirmation_hash,confirmation_expires_at)
+                        VALUES(:account,:operation,1,transaction_timestamp(),transaction_timestamp()+interval '1 hour',
+                            transaction_timestamp(),transaction_timestamp(),repeat('a',64),
+                            transaction_timestamp()+interval '1 hour')
+                        """).param("account", accountId).param("operation", operationId).update(),
+                "ck_account_deletion_deadlines");
+        jdbcClient.sql("""
+                        INSERT INTO app_identity.account_deletion(
+                            account_id,operation_id,generation,deletion_requested_at,recoverable_until,purge_after,
+                            next_attempt_at,confirmation_hash,confirmation_expires_at)
+                        VALUES(:account,:operation,1,transaction_timestamp(),transaction_timestamp(),
+                            transaction_timestamp(),transaction_timestamp(),repeat('a',64),
+                            transaction_timestamp()+interval '1 hour')
+                        """).param("account", accountId).param("operation", operationId).update();
+        assertConstraintViolation(() -> jdbcClient.sql("""
+                        INSERT INTO app_identity.account_deletion(
+                            account_id,operation_id,generation,deletion_requested_at,recoverable_until,purge_after,
+                            next_attempt_at,confirmation_hash,confirmation_expires_at)
+                        VALUES(:account,:operation,2,transaction_timestamp(),transaction_timestamp(),
+                            transaction_timestamp(),transaction_timestamp(),repeat('b',64),
+                            transaction_timestamp()+interval '1 hour')
+                        """).param("account", mismatchedAccount).param("operation", UUID.randomUUID()).update(),
+                "fk_account_deletion_generation");
+        assertConstraintViolation(() -> jdbcClient.sql("""
+                        INSERT INTO app_identity.account_deletion_avatar(
+                            operation_id,account_id,generation,asset_id,storage_key,source)
+                        VALUES(:operation,:account,1,:asset,'account-avatar/foreign/object','CURRENT')
+                        """).param("operation", operationId).param("account", accountId)
+                .param("asset", UUID.randomUUID()).update(), "ck_account_deletion_avatar_key");
+        UUID foreignAccount = insertAccount(randomEmail(), null);
+        UUID foreignAsset = UUID.randomUUID();
+        assertConstraintViolation(() -> jdbcClient.sql("""
+                        INSERT INTO app_identity.account_deletion_avatar(
+                            operation_id,account_id,generation,asset_id,storage_key,source)
+                        VALUES(:operation,:account,1,:asset,:key,'CURRENT')
+                        """).param("operation", operationId).param("account", foreignAccount)
+                .param("asset", foreignAsset)
+                .param("key", "account-avatar/" + foreignAccount + "/" + foreignAsset).update(),
+                "fk_account_deletion_avatar_operation");
+    }
+
+    @Test
     void concurrentNormalizedEmailAndProviderSubjectCollisionsHaveOneWinner() throws Exception {
         String email = UUID.randomUUID() + "@example.com";
         assertConcurrentConstraintViolation(

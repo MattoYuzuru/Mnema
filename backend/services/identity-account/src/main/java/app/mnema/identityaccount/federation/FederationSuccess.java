@@ -3,6 +3,7 @@ package app.mnema.identityaccount.federation;
 import app.mnema.identityaccount.contract.AccountAccess;
 import app.mnema.identityaccount.contract.AccountFailure;
 import app.mnema.identityaccount.contract.IssuerContract;
+import app.mnema.identityaccount.deletion.AccountDeletions;
 import app.mnema.identityaccount.security.BrowserSessions;
 import app.mnema.identityaccount.security.OwnershipProofs.Purpose;
 
@@ -27,13 +28,15 @@ public class FederationSuccess implements AuthenticationSuccessHandler {
     private final BrowserSessions sessions;
     private final Clock clock;
     private final String origin;
+    private final AccountDeletions deletions;
 
     public FederationSuccess(FederatedAccounts accounts, BrowserSessions sessions, Clock clock,
-                             @Value("${identity.frontend-origin}") String origin) {
+                             AccountDeletions deletions, @Value("${identity.frontend-origin}") String origin) {
         this.accounts = accounts;
         this.sessions = sessions;
         this.clock = clock;
         this.origin = new IssuerContract(URI.create(origin)).issuer();
+        this.deletions = deletions;
     }
 
     @Override
@@ -46,9 +49,26 @@ public class FederationSuccess implements AuthenticationSuccessHandler {
         try {
             AccountAccess link = null;
             if (intent instanceof List<?> values) {
-                if (!provider.equals(values.get(2)) ||
+                if (values.size() != 6 || !provider.equals(values.get(2)) ||
                         clock.instant().getEpochSecond() >= Long.parseLong((String) values.get(3)))
                     throw AccountFailure.forbidden();
+                if ("deletion-recovery".equals(values.get(5))) {
+                    var recovery = accounts.recovery(ProviderUsers.external(provider, oauth.getPrincipal()));
+                    deletions.passwordRecovery(recovery);
+                    sessions.recovery(recovery, deletions.recoverySessionSeconds(), request, response);
+                    response.sendRedirect(origin + "/account-deletion/recovery");
+                    return;
+                }
+                if ("deletion-proof".equals(values.get(5))) {
+                    var proof = accounts.deletionProof(ProviderUsers.external(provider, oauth.getPrincipal()));
+                    sessions.clear(request);
+                    response.setContentType("application/json");
+                    response.setHeader("Cache-Control", "no-store");
+                    response.getWriter()
+                            .write("{\"token\":\"" + proof.token() + "\",\"expiresAt\":\"" +
+                                    proof.expiresAt() + "\"}");
+                    return;
+                }
                 link = new AccountAccess(UUID.fromString((String) values.get(0)),
                         Long.parseLong((String) values.get(1)));
                 if ("proof".equals(values.get(5))) {

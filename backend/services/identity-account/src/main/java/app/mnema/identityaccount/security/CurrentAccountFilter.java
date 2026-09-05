@@ -35,11 +35,20 @@ public final class CurrentAccountFilter extends OncePerRequestFilter {
         if (auth != null && auth.isAuthenticated() && !(auth instanceof AnonymousAuthenticationToken) &&
                 !(auth instanceof OAuth2ClientAuthenticationToken)) {
             try {
-                accounts.require(BrowserSessions.access(auth), false);
+                boolean recovery = auth.getAuthorities().stream()
+                        .anyMatch(authority -> authority.getAuthority().equals("ACCOUNT_RECOVERY"));
+                if (recovery) {
+                    accounts.requireRecovery(BrowserSessions.access(auth), false);
+                    if (!request.getRequestURI().startsWith("/api/accounts/deletion/recovery") &&
+                            !request.getRequestURI().equals("/api/accounts/csrf"))
+                        throw AccountFailure.forbidden();
+                } else {
+                    accounts.require(BrowserSessions.access(auth), false);
+                }
                 if (!(auth instanceof JwtAuthenticationToken)) {
                     var session = request.getSession(false);
-                    if (session == null ||
-                            !(session.getAttribute("identity.session-expires") instanceof Long expires) ||
+                    String expiryAttribute = recovery ? "identity.recovery-expires" : "identity.session-expires";
+                    if (session == null || !(session.getAttribute(expiryAttribute) instanceof Long expires) ||
                             clock.instant().getEpochSecond() >= expires)
                         throw AccountFailure.denied();
                 }
@@ -47,7 +56,8 @@ public final class CurrentAccountFilter extends OncePerRequestFilter {
                 SecurityContextHolder.clearContext();
                 var session = request.getSession(false);
                 if (session != null) session.invalidate();
-                errors.write(response, 401, "authentication_failed");
+                errors.write(response, e.status() == 403 ? 403 : 401,
+                        e.status() == 403 ? "operation_denied" : "authentication_failed");
                 return;
             }
         }

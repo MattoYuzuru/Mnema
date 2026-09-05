@@ -41,9 +41,7 @@ public class FederatedAccounts {
     }
 
     public AccountAccess complete(External external, AccountAccess linking) {
-        if (!Set.of("google", "github", "yandex").contains(external.provider()) || external.subject() == null ||
-                external.subject().isBlank() || external.subject().length() > 255)
-            throw AccountFailure.denied();
+        validate(external);
         return transactions.execute(s -> {
             // Global binding lock also orders link/unlink and account creation against duplicate subject races.
             jdbcClient.sql("SELECT pg_advisory_xact_lock(142002)").query(rs -> {
@@ -87,6 +85,42 @@ public class FederatedAccounts {
         });
     }
 
+    public AccountAccess recovery(External external) {
+        validate(external);
+        return transactions.execute(status -> {
+            jdbcClient.sql("SELECT pg_advisory_xact_lock(142002)").query(result -> {
+                result.next();
+                return 0;
+            });
+            UUID accountId = jdbcClient.sql("""
+                            SELECT account_id FROM app_identity.external_identity
+                            WHERE provider=:provider AND provider_subject=:subject
+                            """).param("provider", external.provider()).param("subject", external.subject())
+                    .query(UUID.class).optional().orElseThrow(AccountFailure::denied);
+            var access = accounts.get(accountId, true).access();
+            accounts.requireRecovery(access, false);
+            return access;
+        });
+    }
+
+    public OwnershipProofs.Proof deletionProof(External external) {
+        validate(external);
+        return transactions.execute(status -> {
+            jdbcClient.sql("SELECT pg_advisory_xact_lock(142002)").query(result -> {
+                result.next();
+                return 0;
+            });
+            UUID accountId = jdbcClient.sql("""
+                            SELECT account_id FROM app_identity.external_identity
+                            WHERE provider=:provider AND provider_subject=:subject
+                            """).param("provider", external.provider()).param("subject", external.subject())
+                    .query(UUID.class).optional().orElseThrow(AccountFailure::denied);
+            var access = accounts.get(accountId, true).access();
+            accounts.requireDeletionOwner(access, false);
+            return proofs.issueDeletion(access);
+        });
+    }
+
     public OwnershipProofs.Proof reauthenticate(External external, AccountAccess access,
                                                 OwnershipProofs.Purpose purpose) {
         return transactions.execute(s -> {
@@ -124,5 +158,11 @@ public class FederatedAccounts {
                     .param("identity", identity).param("id", access.accountId()).update();
             accounts.revoke(access.accountId());
         });
+    }
+
+    private static void validate(External external) {
+        if (!Set.of("google", "github", "yandex").contains(external.provider()) || external.subject() == null ||
+                external.subject().isBlank() || external.subject().length() > 255)
+            throw AccountFailure.denied();
     }
 }

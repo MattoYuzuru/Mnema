@@ -25,7 +25,7 @@ The owner accepts temporary outage and an incomplete product during the rewrite.
 - local Compose already uses PostgreSQL 18, so environments are not aligned;
 - main deployments use one replica;
 - identity is split across `auth.users`, `auth.accounts` and `app_user.users`;
-- account deletion is immediate and has no six-month lifecycle;
+- no recovery duration is a product or legal default; Identity deletion stays disabled until an explicit environment policy is approved;
 - AI jobs already use lease/heartbeat/reclaim with `FOR UPDATE SKIP LOCKED`, while import jobs do not correctly reclaim all stale `processing` work;
 - PostgreSQL integration tests exist, but media tests mainly mock S3; no automated MinIO protocol-level E2E suite was found.
 
@@ -80,9 +80,11 @@ Use an explicit state machine:
 ACTIVE → PENDING_DELETION → PURGING → PURGED
 ```
 
-Store `deletion_requested_at`, `recoverable_until`, `purge_after`, attempts and lease. Immediately revoke tokens/login and hide the profile. The idempotent purge removes the user's logical media/content references; a shared blob survives while another authorized asset references it.
+Identity #157 stores `deletion_requested_at`, immutable `recoverable_until`/`purge_after`, operation/deletion generation, retry state and a fenced lease. It immediately advances the security generation, deletes sessions/grants/proofs and hides the profile. A short account-bound recovery context can only read its own deadline, cancel before the PostgreSQL transaction-time boundary or log out; it cannot enter account, Learning or OAuth/OIDC flows. The bounded purge scanner uses `FOR UPDATE SKIP LOCKED`; expired leases are reclaimed and stale heartbeat/completion writes are rejected by operation/generation/worker/epoch.
 
-The owner's preferred six-month recovery window is not a legal default and must not be hard-coded before review. Define `recoverable_until` per data category and legal basis. Product/profile/content data should use the shortest approved recovery period and then purge/anonymize; fiscal, payment and dispute records may remain longer in an isolated system under a different basis and cannot feed analytics or AI.
+Identity freezes exact owned avatar keys, asset IDs and known storage versions before purge. It enumerates a bounded exact-key version set, verifies ownership metadata on every data version, deletes all versions/delete markers and proves absence before completion. Missing objects are idempotent success, but foreign metadata, truncated/excessive listings, unknown ownership and transport failure stop completion. The Identity tombstone retains the UUID and minimal lifecycle/moderation/integrity evidence while removing email, credentials, provider subject, profile and avatar metadata. Its durable `identity-account` receipt and erasure-ledger handoff do not certify #74–#76 or provider backup deletion; each future owning domain must attach its own operation/generation-bound receipt before any platform-wide claim.
+
+The production recovery window remains unset and must not be hard-coded before explicit policy review. Define `recoverable_until` per data category and legal basis. Product/profile/content data should use the shortest approved recovery period and then purge/anonymize; fiscal, payment and dispute records may remain longer in an isolated system under a different basis and cannot feed analytics or AI.
 
 Backups must expire consistently with the published schedule. A restore consumes an external erasure ledger so purged accounts do not reappear. Exact periods and notices are launch gates in the [Russia legal/payment checklist](../product/russia-legal-launch-checklist-2026.md).
 

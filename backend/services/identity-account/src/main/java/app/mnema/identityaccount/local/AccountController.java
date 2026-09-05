@@ -1,6 +1,8 @@
 package app.mnema.identityaccount.local;
 
 import app.mnema.identityaccount.contract.AccountFailure;
+import app.mnema.identityaccount.deletion.AccountDeletionView;
+import app.mnema.identityaccount.deletion.AccountDeletions;
 import app.mnema.identityaccount.moderation.Moderation;
 import app.mnema.identityaccount.profile.Profiles;
 import app.mnema.identityaccount.security.BrowserSessions;
@@ -59,6 +61,9 @@ public class AccountController {
     public record Ban(@Size(max = 280) String reason) {
     }
 
+    public record DeleteAccount(@NotBlank @Size(max = 128) String proof) {
+    }
+
     private final LocalAccounts local;
     private final BrowserSessions sessions;
     private final Profiles profiles;
@@ -67,10 +72,11 @@ public class AccountController {
     private final RateLimits limits;
     private final Moderation moderation;
     private final ClientAddresses clientAddresses;
+    private final AccountDeletions deletions;
 
     public AccountController(LocalAccounts local, BrowserSessions sessions, Profiles profiles, OwnershipProofs proofs,
                              TransactionTemplate transactions, RateLimits limits, Moderation moderation,
-                             ClientAddresses clientAddresses) {
+                             ClientAddresses clientAddresses, AccountDeletions deletions) {
         this.local = local;
         this.sessions = sessions;
         this.profiles = profiles;
@@ -79,6 +85,7 @@ public class AccountController {
         this.limits = limits;
         this.moderation = moderation;
         this.clientAddresses = clientAddresses;
+        this.deletions = deletions;
     }
 
     @GetMapping("/csrf")
@@ -94,10 +101,15 @@ public class AccountController {
     }
 
     @PostMapping("/login")
-    Profiles.Profile login(@Valid @RequestBody Login r, HttpServletRequest request, HttpServletResponse response) {
-        var access = local.login(r.login(), r.password(), clientAddresses.resolve(request));
-        sessions.login(access, request, response);
-        return profiles.get(access);
+    Object login(@Valid @RequestBody Login r, HttpServletRequest request, HttpServletResponse response) {
+        var authentication = local.authenticate(r.login(), r.password(), clientAddresses.resolve(request));
+        if (authentication.recoveryOnly()) {
+            var view = deletions.recovery(authentication.access(), null);
+            sessions.recovery(authentication.access(), deletions.recoverySessionSeconds(), request, response);
+            return view;
+        }
+        sessions.login(authentication.access(), request, response);
+        return profiles.get(authentication.access());
     }
 
     @PostMapping("/logout")
@@ -141,6 +153,15 @@ public class AccountController {
         });
         sessions.login(access, request, response);
         return proof;
+    }
+
+    @PostMapping("/me/deletion")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    AccountDeletionView delete(Authentication authentication, @Valid @RequestBody DeleteAccount deletion,
+                               HttpServletRequest request) {
+        var view = deletions.request(BrowserSessions.access(authentication), deletion.proof());
+        sessions.clear(request);
+        return view;
     }
 
     @PostMapping("/admin/accounts/{id}/ban")

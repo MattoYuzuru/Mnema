@@ -33,6 +33,11 @@ import static org.assertj.core.api.Assertions.*;
 class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
     static final HttpServer SERVER;
     static final Map<String, byte[]> OBJECTS = new ConcurrentHashMap<>();
+    static final Map<String, Map<String, String>> OBJECT_OWNERS = new ConcurrentHashMap<>();
+    static final Map<String, Set<String>> OBJECT_VERSIONS = new ConcurrentHashMap<>();
+    static final Map<String, Set<String>> DELETE_MARKERS = new ConcurrentHashMap<>();
+    static final Map<String, Map<String, String>> VERSION_OWNERS = new ConcurrentHashMap<>();
+    static final List<String> HEAD_VERSIONS = new CopyOnWriteArrayList<>();
     static final List<Map<String, List<String>>> MAIL_HEADERS = new CopyOnWriteArrayList<>();
     static volatile String delivered;
     static volatile boolean failMail, failPut, failDelete, timeoutMail;
@@ -58,6 +63,10 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
                     MAIL_HEADERS.add(new HashMap<>(exchange.getRequestHeaders()));
                     if (failMail) status = 503;
                     else delivered = new String(body, StandardCharsets.UTF_8);
+                } else if ("GET".equals(exchange.getRequestMethod()) && exchange.getRequestURI().getRawQuery() != null &&
+                        exchange.getRequestURI().getRawQuery().contains("versions")) {
+                    response = versionListing(query(exchange.getRequestURI().getRawQuery(), "prefix"));
+                    exchange.getResponseHeaders().set("Content-Type", "application/xml");
                 } else switch (exchange.getRequestMethod()) {
                     case "PUT" -> {
                         if (failPut) status = 503;
@@ -65,8 +74,26 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
                             if ("aws-chunked".equals(exchange.getRequestHeaders().getFirst("Content-Encoding")))
                                 body = decodeChunks(body);
                             OBJECTS.put(path, body);
+                            OBJECT_OWNERS.put(path, Map.of(
+                                    "account-id", exchange.getRequestHeaders().getFirst("x-amz-meta-account-id"),
+                                    "asset-id", exchange.getRequestHeaders().getFirst("x-amz-meta-asset-id")));
+                            OBJECT_VERSIONS.computeIfAbsent(path, ignored -> ConcurrentHashMap.newKeySet())
+                                    .add("fixture-version");
                             afterPut.run();
                             exchange.getResponseHeaders().set("ETag", "\"synthetic-etag\"");
+                            exchange.getResponseHeaders().set("x-amz-version-id", "fixture-version");
+                        }
+                    }
+                    case "HEAD" -> {
+                        String version = query(exchange.getRequestURI().getRawQuery(), "versionId");
+                        if (version != null) HEAD_VERSIONS.add(version);
+                        if (!OBJECTS.containsKey(path) || version != null &&
+                                !OBJECT_VERSIONS.getOrDefault(path, Set.of()).contains(version)) status = 404;
+                        else {
+                            VERSION_OWNERS.getOrDefault(path + "\u0000" + version,
+                                    OBJECT_OWNERS.getOrDefault(path, Map.of())).forEach((key, value) ->
+                                    exchange.getResponseHeaders().set("x-amz-meta-" + key, value));
+                            if (version != null) exchange.getResponseHeaders().set("x-amz-version-id", version);
                         }
                     }
                     case "GET" -> {
@@ -79,7 +106,26 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
                     case "DELETE" -> {
                         if (failDelete) status = 503;
                         else {
-                            OBJECTS.remove(path);
+                            String version = query(exchange.getRequestURI().getRawQuery(), "versionId");
+                            if (version == null) {
+                                OBJECTS.remove(path);
+                                OBJECT_OWNERS.remove(path);
+                                OBJECT_VERSIONS.remove(path);
+                                DELETE_MARKERS.remove(path);
+                            } else {
+                                Set<String> objects = OBJECT_VERSIONS.get(path);
+                                if (objects != null) objects.remove(version);
+                                Set<String> markers = DELETE_MARKERS.get(path);
+                                if (markers != null) markers.remove(version);
+                                VERSION_OWNERS.remove(path + "\u0000" + version);
+                                if (OBJECT_VERSIONS.getOrDefault(path, Set.of()).isEmpty()) {
+                                    OBJECTS.remove(path);
+                                    OBJECT_OWNERS.remove(path);
+                                    OBJECT_VERSIONS.remove(path);
+                                }
+                                if (DELETE_MARKERS.getOrDefault(path, Set.of()).isEmpty())
+                                    DELETE_MARKERS.remove(path);
+                            }
                             status = 204;
                         }
                     }
@@ -108,6 +154,39 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
             source.readNBytes(2);
         }
         return output.toByteArray();
+    }
+
+    static String query(String input, String name) {
+        if (input == null) return null;
+        for (String part : input.split("&")) {
+            String[] pair = part.split("=", 2);
+            if (URLDecoder.decode(pair[0], StandardCharsets.UTF_8).equals(name))
+                return pair.length == 2 ? URLDecoder.decode(pair[1], StandardCharsets.UTF_8) : "";
+        }
+        return null;
+    }
+
+    static byte[] versionListing(String prefix) {
+        var entries = new StringBuilder();
+        OBJECT_VERSIONS.forEach((path, versions) -> {
+            String key = path.substring("/mnema-avatars/".length());
+            if (prefix != null && key.startsWith(prefix)) versions.forEach(version -> entries.append("<Version><Key>")
+                    .append(key).append("</Key><VersionId>").append(version)
+                    .append("</VersionId><IsLatest>true</IsLatest><LastModified>2026-09-05T00:00:00Z</LastModified>")
+                    .append("<ETag>\"fixture\"</ETag><Size>3</Size><StorageClass>STANDARD</StorageClass></Version>"));
+        });
+        DELETE_MARKERS.forEach((path, versions) -> {
+            String key = path.substring("/mnema-avatars/".length());
+            if (prefix != null && key.startsWith(prefix)) versions.forEach(version -> entries.append("<DeleteMarker><Key>")
+                    .append(key).append("</Key><VersionId>").append(version)
+                    .append("</VersionId><IsLatest>true</IsLatest><LastModified>2026-09-05T00:00:00Z")
+                    .append("</LastModified></DeleteMarker>"));
+        });
+        return ("<?xml version=\"1.0\" encoding=\"UTF-8\"?><ListVersionsResult xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">" +
+                "<Name>mnema-avatars</Name><Prefix>" + (prefix == null ? "" : prefix) +
+                "</Prefix><KeyMarker></KeyMarker><VersionIdMarker></VersionIdMarker><MaxKeys>1000</MaxKeys>" +
+                "<IsTruncated>false</IsTruncated>" + entries + "</ListVersionsResult>")
+                .getBytes(StandardCharsets.UTF_8);
     }
 
     @DynamicPropertySource
@@ -145,6 +224,8 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
     @Autowired
     Avatars avatars;
     @Autowired
+    AvatarStorage avatarStorage;
+    @Autowired
     ObjectMapper json;
     final String password = "correct-horse-battery-42";
 
@@ -161,6 +242,10 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
         timeoutMail = false;
         failPut = false;
         failDelete = false;
+        OBJECT_VERSIONS.clear();
+        DELETE_MARKERS.clear();
+        VERSION_OWNERS.clear();
+        HEAD_VERSIONS.clear();
         afterPut = () -> {
         };
     }
@@ -295,6 +380,44 @@ class AccountBehaviorIntegrationTest extends PostgresIntegrationTest {
         assertThatThrownBy(() -> avatars.read(account.accountId())).isInstanceOf(AccountFailure.class);
         OBJECTS.remove("/mnema-avatars/" + original.storageKey());
         assertThatThrownBy(() -> avatars.read(account.accountId())).isInstanceOf(AccountFailure.class);
+    }
+
+    @Test
+    void exactAvatarErasureVerifiesOwnershipResolvesVersionAndTreatsAbsenceAsSuccess() throws Exception {
+        var account = account();
+        avatars.replace(account, png(3, 3));
+        var owned = avatars.owned(account.accountId()).orElseThrow();
+        var manifest = new OwnedAvatarEraser.Manifest(owned.accountId(), owned.assetId(), owned.storageKey(),
+                owned.storageVersion(), owned.contentSha256());
+        String path = "/mnema-avatars/" + owned.storageKey();
+        OBJECT_VERSIONS.get(path).add("fixture-old-version");
+        DELETE_MARKERS.computeIfAbsent(path, ignored -> ConcurrentHashMap.newKeySet()).add("fixture-delete-marker");
+
+        OBJECT_OWNERS.put(path, Map.of("account-id", UUID.randomUUID().toString(),
+                "asset-id", owned.assetId().toString()));
+        assertThatThrownBy(() -> avatarStorage.deleteOwned(manifest)).isInstanceOf(AccountFailure.class)
+                .hasMessage("avatar_ownership_mismatch");
+        assertThat(OBJECTS).containsKey(path);
+
+        OBJECT_OWNERS.put(path, Map.of("account-id", owned.accountId().toString(),
+                "asset-id", owned.assetId().toString()));
+        VERSION_OWNERS.put(path + "\u0000fixture-old-version", Map.of(
+                "account-id", UUID.randomUUID().toString(), "asset-id", owned.assetId().toString()));
+        assertThatThrownBy(() -> avatarStorage.deleteOwned(manifest)).isInstanceOf(AccountFailure.class)
+                .hasMessage("avatar_ownership_mismatch");
+        assertThat(OBJECT_VERSIONS.get(path)).contains("fixture-version", "fixture-old-version");
+        VERSION_OWNERS.put(path + "\u0000fixture-old-version", OBJECT_OWNERS.get(path));
+        var versionlessReceipt = new OwnedAvatarEraser.Manifest(owned.accountId(), owned.assetId(),
+                owned.storageKey(), null, owned.contentSha256());
+        avatarStorage.deleteOwned(versionlessReceipt);
+        avatarStorage.deleteOwned(versionlessReceipt);
+        assertThat(OBJECTS).doesNotContainKey(path);
+        assertThat(OBJECT_VERSIONS).doesNotContainKey(path);
+        assertThat(DELETE_MARKERS).doesNotContainKey(path);
+        assertThat(HEAD_VERSIONS).contains("fixture-version", "fixture-old-version");
+        assertThatThrownBy(() -> avatarStorage.deleteOwned(new OwnedAvatarEraser.Manifest(owned.accountId(),
+                UUID.randomUUID(), owned.storageKey(), owned.storageVersion(), owned.contentSha256())))
+                .hasMessage("avatar_ownership_mismatch");
     }
 
     @Test

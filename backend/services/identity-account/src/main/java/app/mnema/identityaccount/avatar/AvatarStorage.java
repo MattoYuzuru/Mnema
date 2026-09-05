@@ -11,17 +11,22 @@ import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectVersionsRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
+import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
 @Service
-public class AvatarStorage implements AutoCloseable {
+public class AvatarStorage implements AutoCloseable, OwnedAvatarEraser {
     private final S3Client s3;
     private final String bucket;
     private final boolean configured;
@@ -53,12 +58,12 @@ public class AvatarStorage implements AutoCloseable {
         return configured;
     }
 
-    public void put(String key, UUID account, UUID asset, AvatarImage image) {
+    public String put(String key, UUID account, UUID asset, AvatarImage image) {
         requireConfigured();
         try {
-            s3.putObject(PutObjectRequest.builder().bucket(bucket).key(key).contentType(image.contentType())
+            return s3.putObject(PutObjectRequest.builder().bucket(bucket).key(key).contentType(image.contentType())
                             .metadata(Map.of("account-id", account.toString(), "asset-id", asset.toString())).build(),
-                    RequestBody.fromBytes(image.bytes()));
+                    RequestBody.fromBytes(image.bytes())).versionId();
         } catch (RuntimeException e) {
             throw new AccountFailure(503, "avatar_storage_unavailable");
         }
@@ -80,14 +85,89 @@ public class AvatarStorage implements AutoCloseable {
         }
     }
 
-    public boolean delete(String key) {
-        if (!configured) return false;
+    @Override
+    public void deleteOwned(OwnedAvatarEraser.Manifest manifest) {
+        requireConfigured();
+        String exactKey = "account-avatar/" + manifest.accountId() + "/" + manifest.assetId();
+        if (!exactKey.equals(manifest.storageKey())) throw new AccountFailure(409, "avatar_ownership_mismatch");
         try {
-            s3.deleteObject(DeleteObjectRequest.builder().bucket(bucket).key(key).build());
-            return true;
-        } catch (RuntimeException e) {
-            return false;
+            List<StoredVersion> versions = exactVersions(manifest.storageKey());
+            if (versions.isEmpty()) versions = unversionedObject(manifest);
+            var verified = new ArrayList<StoredVersion>();
+            for (StoredVersion version : versions) {
+                if (version.deleteMarker() || requireOwned(manifest, version.versionId())) verified.add(version);
+            }
+            for (StoredVersion version : verified) deleteVersion(manifest.storageKey(), version.versionId());
+            if (!exactVersions(manifest.storageKey()).isEmpty() || currentObjectExists(manifest.storageKey()))
+                throw new AccountFailure(503, "avatar_storage_unavailable");
+        } catch (S3Exception failure) {
+            throw new AccountFailure(503, "avatar_storage_unavailable");
+        } catch (AccountFailure failure) {
+            throw failure;
+        } catch (RuntimeException failure) {
+            throw new AccountFailure(503, "avatar_storage_unavailable");
         }
+    }
+
+    private List<StoredVersion> exactVersions(String key) {
+        var response = s3.listObjectVersions(ListObjectVersionsRequest.builder().bucket(bucket).prefix(key)
+                .maxKeys(1000).build());
+        if (Boolean.TRUE.equals(response.isTruncated()))
+            throw new AccountFailure(409, "avatar_version_set_too_large");
+        var result = new ArrayList<StoredVersion>();
+        response.versions().stream().filter(version -> key.equals(version.key()))
+                .forEach(version -> result.add(new StoredVersion(version.versionId(), false)));
+        response.deleteMarkers().stream().filter(marker -> key.equals(marker.key()))
+                .forEach(marker -> result.add(new StoredVersion(marker.versionId(), true)));
+        return result;
+    }
+
+    private List<StoredVersion> unversionedObject(OwnedAvatarEraser.Manifest manifest) {
+        return requireOwned(manifest, null) ? List.of(new StoredVersion(null, false)) : List.of();
+    }
+
+    private boolean requireOwned(OwnedAvatarEraser.Manifest manifest, String versionId) {
+        try {
+            var request = HeadObjectRequest.builder().bucket(bucket).key(manifest.storageKey());
+            if (versionId != null && !versionId.isBlank()) request.versionId(versionId);
+            var object = s3.headObject(request.build());
+            if (!manifest.accountId().toString().equals(object.metadata().get("account-id")) ||
+                    !manifest.assetId().toString().equals(object.metadata().get("asset-id")))
+                throw new AccountFailure(409, "avatar_ownership_mismatch");
+            return true;
+        } catch (NoSuchKeyException missing) {
+            return false;
+        } catch (S3Exception missing) {
+            if (missing.statusCode() == 404) return false;
+            throw missing;
+        }
+    }
+
+    private void deleteVersion(String key, String versionId) {
+        try {
+            var request = DeleteObjectRequest.builder().bucket(bucket).key(key);
+            if (versionId != null && !versionId.isBlank()) request.versionId(versionId);
+            s3.deleteObject(request.build());
+        } catch (NoSuchKeyException missing) {
+            // A concurrent/retried exact delete is success.
+        } catch (S3Exception missing) {
+            if (missing.statusCode() != 404) throw missing;
+        }
+    }
+
+    private boolean currentObjectExists(String key) {
+        try {
+            s3.headObject(HeadObjectRequest.builder().bucket(bucket).key(key).build());
+            return true;
+        } catch (NoSuchKeyException missing) {
+            return false;
+        } catch (S3Exception missing) {
+            if (missing.statusCode() == 404) return false;
+            throw missing;
+        }
+    }
+
+    private record StoredVersion(String versionId, boolean deleteMarker) {
     }
 
     private void requireConfigured() {

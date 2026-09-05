@@ -55,6 +55,7 @@ transaction and a token-hash advisory lock; responses are released after commit.
 | `GET /session`, `GET /me` | Current private profile |
 | `PUT /me` | Full `{profileUsername,displayName,bio}` replacement; every field required, empty display/bio clears it |
 | `POST /me/password` | `{currentPassword,newPassword}` → 204 and revoked sessions |
+| `POST /me/deletion` | `{proof}` → 202 fixed operation/deadlines and immediate access revocation |
 | `POST /email-verification/request` | `{email}` → uniform 202 |
 | `POST /email-verification/confirm` | `{token}` → 204, verified email, no session |
 | `POST /password-reset/request` | `{email}` → uniform 202 |
@@ -70,6 +71,13 @@ transaction and a token-hash advisory lock; responses are released after commit.
 | `POST /admin/accounts/{id}/ban` | `{reason}` → 204 |
 | `POST /admin/accounts/{id}/unban` | 204 |
 | `POST`, `DELETE /admin/accounts/{id}/admin` | Grant / revoke → 204 |
+| `GET /deletion/recovery/{operationId}` | Recovery-only status/deadlines; no profile fields |
+| `DELETE /deletion/recovery/{operationId}` | Explicit pre-deadline cancel and recovery-context consumption |
+| `POST /deletion/recovery/logout` | Invalidate only the recovery context → 204 |
+| `POST /deletion/recovery/federated` | Start bound-provider recovery proof without ordinary access |
+| `POST /deletion/proof/password` | Password proof for deletion only; never creates an ordinary session |
+| `POST /deletion/proof/federated` | Start a bound-provider deletion-only proof |
+| `POST /deletion/confirmed` | `{proof}` → 202 for owners without ordinary access, including banned owners |
 
 All paths in the table are below `/api/accounts`. Private profile fields are
 `accountId,email,emailVerified,profileUsername,displayName,bio,admin,status,
@@ -79,8 +87,69 @@ profile usernames allow 3–50 ASCII letters/digits/underscore/dot/hyphen, exclu
 72 UTF-8 bytes. Preserved BCrypt hashes are accepted without transfer-time rehash.
 Unknown, banned and otherwise non-public accounts produce the same public profile
 and avatar 404 contracts.
-No deletion endpoint is provided: deletion/recovery/purge and retention belong to
-#157. `OwnershipProofs` and exact avatar cleanup receipts provide its hooks.
+
+## Account deletion and recovery
+
+Deletion is disabled unless `MNEMA_IDENTITY_DELETION_ENABLED=true`. Enabling it also
+requires an environment-owned `MNEMA_IDENTITY_DELETION_RECOVERY_PERIOD`; the empty
+disabled value is not a production retention decision. A request consumes a
+fresh `DELETE_ACCOUNT` ownership proof, fixes `deletion_requested_at`,
+`recoverable_until` and `purge_after` from PostgreSQL transaction time, advances the
+account security generation and changes `ACTIVE → PENDING_DELETION`. Concurrent
+retries with the same still-unexpired confirmation return the same operation; a
+different or expired proof is rejected and deadlines never move. Existing
+sessions, grants and proofs are deleted; token/profile/avatar acceptance also checks
+the lifecycle state. An already-running read may finish, while mutations recheck the
+locked account before commit.
+
+A banned owner cannot receive `ACCOUNT` authority. Dedicated password/provider proof
+routes instead return only a UUID/generation/purpose-bound `DELETE_ACCOUNT` proof;
+the separate confirmed command consumes it and never creates an ordinary session.
+The same recovery-only flow below becomes available once that request is pending.
+
+A correct password submitted to the normal login endpoint for a pending account, or
+an exact previously linked provider through the dedicated federated start, produces
+only a short `ACCOUNT_RECOVERY` session (five-minute default). Its response contains operation state
+and deadlines but no profile/email. The session is account, purpose, security-
+generation and expiry bound, has a rotated JDBC session ID and CSRF token, and can
+only read its own operation, explicitly cancel before the deadline, or log out.
+Account, Learning and OAuth/OIDC routes reject it. Unknown/wrong credentials retain
+the ordinary `authentication_failed` response. Cancel consumes all recovery sessions,
+advances security generation again and may create one new ordinary session only when
+moderation status remains `ACTIVE`; it never restores a ban or removed admin grants.
+
+The durable purge queue is the account row plus `account_deletion`; `@Scheduled` only
+wakes a bounded scanner. PostgreSQL `FOR UPDATE SKIP LOCKED` claims overdue work.
+Every claim increments a lease epoch, heartbeat/completion/retry updates are fenced by
+operation, deletion generation, worker and epoch, and an expired lease is reclaimable.
+Cancellation and the transition to `PURGING` serialize on the same account row; at or
+after `recoverable_until`, and after `PURGING` begins, cancellation is unavailable.
+External deletion is at-least-once: a stale worker may finish an object request, but
+cannot commit database completion, so exact effects must be idempotent.
+
+Before access is revoked, the transaction freezes current and orphan-cleanup avatar
+rows into an immutable manifest. Each key must equal
+`account-avatar/{accountId}/{assetId}`. Storage performs HEAD against the exact key and
+recorded version and requires matching `account-id`/`asset-id` metadata on every data
+version. The bounded exact-prefix listing rejects truncation, filters to equality,
+preflights every version before mutation, deletes every exact version and delete
+marker, then verifies that neither a version nor a current object remains. Absence is
+success, while mismatch, an excessive version set or transport failure leaves the
+operation in `PURGING` with a bounded backoff and non-sensitive error code. No email,
+unchecked prefix-only or checksum-only deletion exists.
+
+Identity completion removes credentials, provider subjects, profile fields, sessions,
+grants, proofs and avatar metadata, then leaves a tombstone containing only the UUID,
+creation/update and security/deletion generations, moderation status/actor timestamp
+needed for FK integrity, operation timestamps/retry evidence, an aggregate avatar-
+manifest hash and durable erasure receipts. Email becomes `NULL`, so registration may
+reuse it only under a new UUID. The first receipt scope is `identity-account`; future
+domain cleaners acknowledge the same operation/generation idempotently with their own
+receipt UUID. This handoff is not a claim that Learning/Study/media data, provider
+backups or platform-wide erasure completed.
+
+No production policy, notification, backup expiry, deployment or destructive run is
+performed by #157. Those remain explicit launch/change gates.
 
 ## Verification, reset and federation
 
