@@ -42,7 +42,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation")
 
     // S3 Support
-    implementation("software.amazon.awssdk:s3:2.41.1")
+    implementation("software.amazon.awssdk:s3:2.54.10")
 
     // Tests
     testImplementation("org.springframework.boot:spring-boot-starter-test")

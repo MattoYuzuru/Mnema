@@ -50,7 +50,7 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-data-redis")
 
 	// Swagger / OpenAPI
-	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.13")
+	implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.9.0")
 
 	// Тесты
 	testImplementation("org.springframework.boot:spring-boot-starter-test")
