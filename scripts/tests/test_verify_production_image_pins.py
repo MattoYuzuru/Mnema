@@ -23,12 +23,8 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
             Path("frontend/Dockerfile"),
             Path("k8s/postgres.yaml"),
             Path("k8s/redis.yaml"),
-            Path("k8s/frontend-deploy.yaml"),
-            Path("k8s/auth-deploy.yaml"),
-            Path("k8s/user-deploy.yaml"),
-            Path("k8s/core-deploy.yaml"),
-            Path("k8s/media-deploy.yaml"),
-            Path("k8s/import-deploy.yaml"),
+            Path("k8s/identity-account-deploy.yaml"),
+            Path("k8s/learning-deploy.yaml"),
             Path(".github/workflows/production-deploy.yaml"),
             Path(".github/dependabot.yml"),
             Path("scripts/render-release-manifest.sh"),
@@ -86,23 +82,23 @@ class VerifyProductionImagePinsTest(unittest.TestCase):
     def test_previously_declared_internal_stage_is_accepted(self):
         self.replace(
             "backend/Dockerfile",
-            "FROM backend-runtime AS auth-runtime",
-            "FROM backend-runtime AS auth-runtime-copy",
+            "FROM backend-runtime AS identity-account-runtime",
+            "FROM backend-runtime AS identity-account-runtime-copy",
         )
         self.assertEqual([], self.findings())
 
     def test_undefined_internal_stage_is_rejected(self):
         self.replace(
             "backend/Dockerfile",
-            "FROM backend-runtime AS auth-runtime",
-            "FROM unknown-runtime AS auth-runtime",
+            "FROM backend-runtime AS identity-account-runtime",
+            "FROM unknown-runtime AS identity-account-runtime",
         )
         self.assertTrue(any("unknown-runtime" in finding.message for finding in self.findings()))
 
     def test_duplicate_internal_stage_alias_is_rejected(self):
         self.replace(
             "backend/Dockerfile",
-            "FROM backend-runtime AS auth-runtime",
+            "FROM backend-runtime AS identity-account-runtime",
             "FROM backend-runtime AS backend-runtime",
         )
         self.assertTrue(any("alias is duplicated" in finding.message for finding in self.findings()))

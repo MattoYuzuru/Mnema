@@ -9,6 +9,8 @@ STAGING_WORKFLOW="$REPO_ROOT/.github/workflows/staging-deploy.yaml"
 ROLLBACK_DRILL_WORKFLOW="$REPO_ROOT/.github/workflows/staging-rollback-drill.yaml"
 BOOTSTRAP="$REPO_ROOT/k8s/staging/bootstrap.yaml"
 ADMISSION="$REPO_ROOT/k8s/staging/admission.yaml"
+ROUTE_ADMISSION="$REPO_ROOT/k8s/staging/application-route-boundary.yaml"
+ROUTE_ACCESS="$REPO_ROOT/k8s/staging/application-route-access.yaml"
 STAGING_DATA="$REPO_ROOT/k8s/staging/data.yaml"
 STAGING_BUCKET_JOB="$REPO_ROOT/k8s/staging/minio-bucket-job.yaml"
 STAGING_ROUTES="$REPO_ROOT/k8s/staging/routes.yaml"
@@ -21,7 +23,7 @@ if grep -Eq 'discovery\.relabel\.pods\.targets' "$ALLOY_CONFIG"; then
   exit 1
 fi
 
-grep -Fq 'version: v1.36.0' "$STAGING_WORKFLOW"
+grep -Fq 'version: v1.35.8' "$STAGING_WORKFLOW"
 grep -Fq 'workflow_dispatch:' "$MAIN_WORKFLOW"
 grep -Fq 'name: Require exact main branch' "$MAIN_WORKFLOW"
 test "$(grep -c 'needs: validate-main-ref' "$MAIN_WORKFLOW")" -eq 2
@@ -42,14 +44,13 @@ do
   grep -Fq "run: ./scripts/$contract_test" "$REPO_ROOT/.github/workflows/pull-request.yaml"
 done
 
-for workflow in "$PRODUCTION_WORKFLOW" "$STAGING_WORKFLOW"; do
+for workflow in "$PRODUCTION_WORKFLOW"; do
   grep -Fq './scripts/preserve-kubernetes-secret.py snapshot' "$workflow"
   grep -Fq './scripts/preserve-kubernetes-secret.py restore' "$workflow"
   grep -Fq 'id: app-secret-restore' "$workflow"
   grep -Fq "steps.app-secret-restore.outcome == 'success'" "$workflow"
   grep -Fq 'SMOKE_LOGIN,SMOKE_TURNSTILE_BYPASS_KEY' "$workflow"
 done
-grep -Fq 'resourceVersion: \"${APP_SECRET_RESOURCE_VERSION}\"' "$STAGING_WORKFLOW"
 staging_rollback_smoke=$(sed -n '/name: Verify complete staging rollback/,/name: Upload staging failure evidence/p' "$STAGING_WORKFLOW")
 printf '%s\n' "$staging_rollback_smoke" | grep -Fq 'SMOKE_PASSWORD: ${{ secrets.STAGING_SMOKE_PASSWORD }}'
 if printf '%s\n' "$staging_rollback_smoke" | grep -Fq -- '--identity-only'; then
@@ -101,29 +102,34 @@ printf '%s\n' "$production_gate" | grep -Fq 'UPSTREAM_CONCLUSION: ${{ github.eve
 printf '%s\n' "$production_gate" | grep -Fq 'if [ "$UPSTREAM_CONCLUSION" != success ]; then'
 printf '%s\n' "$production_gate" | grep -Fq '[ "$UPSTREAM_EVENT" != workflow_run ]'
 printf '%s\n' "$production_gate" | grep -Fq 'exit 1'
-printf '%s\n' "$production_gate" | grep -Fq 'Verify exact release artifact before production access'
+printf '%s\n' "$production_gate" | grep -Fq 'Block production promotion until issue 147'
 if printf '%s\n%s\n' "$staging_gate" "$production_gate" | grep -Fq 'environment:'; then
   echo 'Untrusted predecessor and artifact validation must run before Environment access' >&2
   exit 1
 fi
 printf '%s\n' "$staging_deploy_header" | grep -Fq 'needs: validate-main-ci'
 printf '%s\n' "$production_preview_header" | grep -Fq 'needs: validate-staging-deploy'
-if printf '%s\n%s\n' "$staging_deploy_header" "$production_preview_header" | grep -Eq '^    if:'; then
+if printf '%s\n' "$staging_deploy_header" | grep -Eq '^    if:'; then
   echo 'Environment jobs must not turn a rejected predecessor into a successful skipped workflow' >&2
   exit 1
 fi
 grep -Fq 'RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}' "$STAGING_WORKFLOW"
 test "$(grep -c 'RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}' "$PRODUCTION_WORKFLOW")" -eq 3
 test "$(grep -c 'run-id: ${{ github.event.workflow_run.id }}' "$STAGING_WORKFLOW")" -eq 4
-test "$(grep -c 'run-id: ${{ github.event.workflow_run.id }}' "$PRODUCTION_WORKFLOW")" -eq 3
+test "$(grep -c 'run-id: ${{ github.event.workflow_run.id }}' "$PRODUCTION_WORKFLOW")" -eq 2
 test "$(grep -c 'github-token: ${{ github.token }}' "$STAGING_WORKFLOW")" -eq 4
-test "$(grep -c 'github-token: ${{ github.token }}' "$PRODUCTION_WORKFLOW")" -eq 3
+test "$(grep -c 'github-token: ${{ github.token }}' "$PRODUCTION_WORKFLOW")" -eq 2
 grep -Fq 'Staging release artifact does not match the tested revision' "$STAGING_WORKFLOW"
-grep -Fq 'name: Relay the staging-approved production release' "$STAGING_WORKFLOW"
+grep -Fq "production_eligible: 'false'" "$PRODUCTION_WORKFLOW"
+grep -Fq "needs.validate-staging-deploy.outputs.production_eligible == 'true'" "$PRODUCTION_WORKFLOW"
+if grep -Fq 'policy-id: staging-production-promotion' "$STAGING_WORKFLOW"; then
+  echo 'Maintenance staging must not publish a production promotion artifact' >&2
+  exit 1
+fi
 grep -Fq '${{ runner.temp }}/production-promotion/production-release.yaml' "$STAGING_WORKFLOW"
 grep -Fq -- '--environment production-promotion' "$STAGING_WORKFLOW"
 grep -Fq 'Production promotion manifest does not match the tested revision' "$STAGING_WORKFLOW"
-test "$(grep -c 'Production release artifact does not match the staging-approved revision' "$PRODUCTION_WORKFLOW")" -eq 3
+test "$(grep -c 'Production release artifact does not match the staging-approved revision' "$PRODUCTION_WORKFLOW")" -eq 2
 test "$(grep -c 'group: production-deploy' "$PRODUCTION_WORKFLOW")" -eq 1
 production_deploy_header=$(sed -n '/^  deploy-production:/,/^    env:/p' "$PRODUCTION_WORKFLOW")
 printf '%s\n' "$production_deploy_header" | grep -Fq 'concurrency:'
@@ -144,11 +150,13 @@ if grep -Eq 'openssl rand|CURRENT_USER_INTERNAL_TOKEN|USER_INTERNAL_TOKEN_VALUE'
   exit 1
 fi
 
-for token in MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN; do
-  grep -Fq "key: $token" "$REPO_ROOT/k8s/core-deploy.yaml" || {
-    echo "Core deployment is missing mandatory $token injection" >&2
+# New runtime configuration cannot depend on legacy service credentials.
+for service in identity-account learning; do
+  template="$REPO_ROOT/k8s/${service}-deploy.yaml"
+  if grep -Eq 'INTERNAL_TOKEN|TURNSTILE|USER_BASE_URL|AUTH_JWT_' "$template"; then
+    echo 'Maintenance shells must not consume legacy application credentials' >&2
     exit 1
-  }
+  fi
 done
 
 for workflow in "$PRODUCTION_WORKFLOW" "$STAGING_WORKFLOW"; do
@@ -165,31 +173,24 @@ for workflow in "$PRODUCTION_WORKFLOW" "$STAGING_WORKFLOW"; do
   fi
 done
 
-grep -Fq -- '--allow-empty' "$STAGING_WORKFLOW"
 grep -Fq "steps.snapshot.outputs.previous_available == 'true'" "$STAGING_WORKFLOW"
-app_secret_restore_step=$(sed -n '/name: Restore the previous staging application Secret/,/name: Roll back failed staging candidate/p' "$STAGING_WORKFLOW")
-printf '%s\n' "$app_secret_restore_step" | grep -Fq "steps.snapshot.outputs.previous_available == 'true'"
-if printf '%s\n' "$app_secret_restore_step" | grep -Fq "steps.snapshot.outputs.previous_available != 'true'"; then
-  echo 'A failed first staging release must keep the initialized data-service Secret' >&2
+grep -Fq -- '--candidate-manifest "$RELEASE_MANIFEST"' "$STAGING_WORKFLOW"
+grep -Fq -- '--replacement' "$STAGING_WORKFLOW"
+if grep -Eq 'preserve-kubernetes-secret|secret_names=|STAGING_SECRET_MANIFEST|delete -f' "$STAGING_WORKFLOW"; then
+  echo 'Replacement staging must leave Secrets/data untouched and use exact application cleanup' >&2
   exit 1
 fi
-grep -Fq 'name: Remove a failed first staging application candidate' "$STAGING_WORKFLOW"
-grep -Fq 'kubectl delete -f "$RELEASE_MANIFEST" --ignore-not-found=true --wait=true' "$STAGING_WORKFLOW"
 if grep -Fq -- '--allow-empty' "$PRODUCTION_WORKFLOW"; then
   echo 'Production must never accept an empty previous release boundary' >&2
   exit 1
 fi
 
-for key in SMOKE_LOGIN SMOKE_TURNSTILE_BYPASS_KEY; do
-  grep -Fq "key: $key" "$REPO_ROOT/k8s/auth-deploy.yaml" || {
-    echo "Auth deployment is missing mandatory $key injection" >&2
-    exit 1
-  }
-done
+grep -Fq -- '--mode maintenance' "$ROLLBACK_DRILL_WORKFLOW"
+grep -Fq 'deployment/mnema-identity-account --timeout=180s' "$ROLLBACK_DRILL_WORKFLOW"
 
 grep -Fq 'RUN_STAGING_ROLLBACK_DRILL' "$ROLLBACK_DRILL_WORKFLOW"
 grep -Fq 'name: staging' "$ROLLBACK_DRILL_WORKFLOW"
-grep -Fq 'version: v1.36.0' "$ROLLBACK_DRILL_WORKFLOW"
+grep -Fq 'version: v1.35.8' "$ROLLBACK_DRILL_WORKFLOW"
 if grep -Eq 'PROD_|namespace:[[:space:]]+prod|NS:[[:space:]]+prod' "$ROLLBACK_DRILL_WORKFLOW"; then
   echo "The destructive rollback drill must remain staging-only" >&2
   exit 1
@@ -235,7 +236,8 @@ if grep -Fq '"type":"kubernetes.io/service-account-token"' \
   exit 1
 fi
 grep -Fq "mnema.app/bootstrap-state: uninitialized" "$BOOTSTRAP"
-grep -Fq "mnema.app/bootstrap-state: initialized" "$STAGING_WORKFLOW"
+grep -Fq 'mnema.app/bootstrap-state' "$STAGING_WORKFLOW"
+grep -Fq '== "initialized"' "$STAGING_WORKFLOW"
 grep -Fq "oldObject.metadata.annotations['mnema.app/bootstrap-state']" "$ADMISSION"
 grep -Fq 'resourceNames: ["mnema-secrets"]' "$BOOTSTRAP"
 grep -Fq 'retry() {' "$STAGING_BUCKET_JOB"
@@ -271,7 +273,7 @@ for quota_key in \
 do
   grep -Fq "$quota_key:" "$BOOTSTRAP"
 done
-deployment_manifests="frontend auth user core media import"
+deployment_manifests="identity-account learning"
 deployment_count=0
 for service in $deployment_manifests; do
   manifest="$REPO_ROOT/k8s/${service}-deploy.yaml"
@@ -297,11 +299,9 @@ grep -Fq 'OnUnitActiveSec=1min' "$REPO_ROOT/deploy/systemd/mnema-staging-host-bo
 grep -Fq 'serviceType: ClusterIP' "$REPO_ROOT/k8s/cluster-issuers.yaml"
 grep -Fq 'staging.mnema.app' "$REPO_ROOT/k8s/cluster-issuers.yaml"
 grep -Fq 'count/secrets: "12"' "$BOOTSTRAP"
-grep -Fq './scripts/verify-kubernetes-bootstrap-secret-values.py' "$STAGING_WORKFLOW"
-grep -Fq 'MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN >/dev/null' "$STAGING_WORKFLOW"
 preview_plan_line=$(grep -n 'name: Preview complete staging plan before mutation' "$STAGING_WORKFLOW" | cut -d: -f1)
 final_stale_line=$(grep -n 'name: Reject a stale release immediately before staging mutation' "$STAGING_WORKFLOW" | cut -d: -f1)
-first_staging_mutation_line=$(grep -n 'name: Apply staged application Secret' "$STAGING_WORKFLOW" | cut -d: -f1)
+first_staging_mutation_line=$(grep -n 'name: Apply complete staging application release once' "$STAGING_WORKFLOW" | cut -d: -f1)
 if [ -z "$preview_plan_line" ] || [ -z "$final_stale_line" ] || \
    [ -z "$first_staging_mutation_line" ] || \
    [ "$preview_plan_line" -ge "$final_stale_line" ] || \
@@ -314,21 +314,16 @@ if printf '%s\n' "$staging_prefix" | grep -Eq 'kubectl (apply|delete)|kubectl .*
   echo 'Staging must not mutate before the complete plan preview and final stale guard' >&2
   exit 1
 fi
-staging_reconcile_step=$(sed -n '/name: Reconcile staging application Secret consumers/,/name: Verify staging service rollouts/p' "$STAGING_WORKFLOW")
-printf '%s\n' "$staging_reconcile_step" | grep -Fq './scripts/reconcile-kubernetes-secret-consumers.sh'
-if printf '%s\n' "$staging_reconcile_step" | grep -Fq 'if: steps.secret-preview.outputs.app_secret_drift'; then
-  echo 'Secret consumers must reconcile on retries even when desired Secret drift is now empty' >&2
-  exit 1
-fi
-for consumer in mnema-auth mnema-user mnema-core mnema-media mnema-import; do
-  printf '%s\n' "$staging_reconcile_step" | grep -Fq "$consumer"
-done
-if printf '%s\n' "$staging_reconcile_step" | grep -Fq 'mnema-frontend'; then
-  echo 'Staging frontend must not restart for a Secret it does not consume' >&2
-  exit 1
-fi
+grep -Fq 'resourceNames: ["mnema", "mnema-auth"]' "$ROUTE_ACCESS"
+grep -Fq 'verbs: ["get", "patch", "update"]' "$ROUTE_ACCESS"
+grep -Fq "object.metadata.name in ['mnema', 'mnema-auth']" "$ROUTE_ADMISSION"
+grep -Fq 'failurePolicy: Fail' "$ROUTE_ADMISSION"
+grep -Fq 'validationActions: [Deny]' "$ROUTE_ADMISSION"
+grep -Fq 'Application routes must retain their single exact staging host' "$ROUTE_ADMISSION"
+grep -Fq 'Application TLS hosts and Secrets are fixed' "$ROUTE_ADMISSION"
+grep -Fq 'Application paths and backends must match one complete allowed topology' "$ROUTE_ADMISSION"
 if grep -Fq 'ingresses' "$BOOTSTRAP"; then
-  echo "Scoped staging CI must not be able to replace shared-ingress host routing" >&2
+  echo 'Route access must be granted separately after the admission probes pass' >&2
   exit 1
 fi
 if grep -Fq 'kind: Ingress' "$STAGING_DATA"; then
@@ -352,5 +347,87 @@ if [ "$image_count" -ne 4 ] || [ "$pinned_image_count" -ne "$image_count" ]; the
   echo "Every staging data image must be pinned by sha256 digest" >&2
   exit 1
 fi
+
+# Validate the executable local contract without starting Docker or reading .env.
+python3 - "$REPO_ROOT" <<'PY_LOCAL_COMPOSE'
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+
+root = Path(sys.argv[1])
+compose = root / "docker-compose.yml"
+command = ["docker", "compose", "--env-file", os.devnull, "-f", str(compose),
+           "config", "--format", "json"]
+environment = {key: value for key, value in os.environ.items()
+               if not key.startswith(("MNEMA_LOCAL_", "COMPOSE_"))}
+# Old credentials must never satisfy the replacement password requirement.
+environment.update(POSTGRES_PASSWORD="legacy-test-value", POSTGRES_USER="legacy-user",
+                   POSTGRES_DB="legacy-db")
+missing = subprocess.run(command, env=environment, capture_output=True, text=True, check=False)
+assert missing.returncode != 0 and "MNEMA_LOCAL_POSTGRES_PASSWORD" in missing.stderr
+
+environment["MNEMA_LOCAL_POSTGRES_PASSWORD"] = "replacement-test-value"
+result = subprocess.run(command, env=environment, capture_output=True, text=True, check=False)
+assert result.returncode == 0, "Replacement Compose config must render successfully"
+config = json.loads(result.stdout)
+assert config["name"] == "mnema-replacement"
+assert set(config["services"]) == {"postgres", "identity-account", "learning"}
+assert set(config["volumes"]) == {"replacement_postgres_data"}
+assert config["volumes"]["replacement_postgres_data"]["name"] == "mnema-replacement_replacement_postgres_data"
+postgres = config["services"]["postgres"]
+assert postgres["environment"]["POSTGRES_DB"] == "mnema"
+assert postgres["environment"]["POSTGRES_USER"] == "mnema"
+assert postgres["environment"]["POSTGRES_PASSWORD"] == "replacement-test-value"
+assert postgres["volumes"][0]["source"] == "replacement_postgres_data"
+assert postgres["volumes"][0]["target"] == "/var/lib/postgresql"
+staging_postgres = re.search(r"image: (postgres:18@sha256:[0-9a-f]{64})",
+                             (root / "k8s/staging/data.yaml").read_text()).group(1)
+assert postgres["image"] == staging_postgres
+for service in config["services"].values():
+    assert all(port["host_ip"] == "127.0.0.1" for port in service.get("ports", []))
+    assert "env_file" not in service
+stages = set(re.findall(r"(?im)^FROM .* AS ([a-z0-9-]+)$",
+                        (root / "backend/Dockerfile").read_text()))
+for name in ("identity-account", "learning"):
+    service = config["services"][name]
+    assert service["build"]["target"] == name + "-runtime"
+    assert service["build"]["target"] in stages
+    assert service["environment"]["SPRING_DATASOURCE_PASSWORD"] == "replacement-test-value"
+assert config["services"]["identity-account"]["environment"]["MNEMA_IDENTITY_ISSUER"] == "https://localhost:18081"
+source = compose.read_text()
+assert all(name.startswith("MNEMA_LOCAL_") for name in re.findall(r"\$\{([A-Z_]+)", source))
+
+# Execute retired Bash entrypoints only in a disposable tree. Any old mkdir or
+# Docker call fails the test; no existing local stack or config can be touched.
+with tempfile.TemporaryDirectory() as directory:
+    sandbox = Path(directory)
+    (sandbox / "scripts").mkdir()
+    (sandbox / "bin").mkdir()
+    docker = sandbox / "bin/docker"
+    docker.write_text("#!/bin/sh\nprintf 'called' > \"$MNEMA_TEST_DOCKER_MARKER\"\nexit 1\n")
+    docker.chmod(0o700)
+    for name in ("mnema-local", "mnema-public"):
+        script = sandbox / "scripts" / (name + ".sh")
+        shutil.copy2(root / "scripts" / script.name, script)
+        child_env = {**environment, "PATH": str(sandbox / "bin") + os.pathsep + os.environ["PATH"],
+                     "MNEMA_TEST_DOCKER_MARKER": str(sandbox / "docker-called")}
+        refused = subprocess.run(["bash", str(script)], cwd=sandbox, env=child_env,
+                                 capture_output=True, text=True, timeout=10, check=False)
+        assert refused.returncode == 64 and "retired" in refused.stderr
+        assert not (sandbox / ".mnema").exists()
+        assert not (sandbox / "docker-called").exists()
+        # PowerShell may not be installed on CI; its refusal must precede all
+        # legacy path resolution, file creation and stack-stop commands.
+        powershell = (root / "scripts" / (name + ".ps1")).read_text()
+        prefix = powershell.split("exit 64", 1)[0]
+        assert "[Console]::Error.WriteLine(" in prefix and "retired" in prefix
+        assert len(prefix.splitlines()) == 2
+print("local_replacement_contract=ok")
+PY_LOCAL_COMPOSE
 
 printf 'deployment_contract=ok\n'

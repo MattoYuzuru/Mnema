@@ -7,6 +7,11 @@
 > before following these instructions. Self-host compatibility is not a
 > hosted-v2 launch requirement.
 
+Current launchers refuse before filesystem or container mutation. These instructions
+require a separate checkout of `v1-apache-final`; obtaining a license does not make
+the old launchers compatible with current maintenance runtimes. For private local
+replacement shells, use the [current local runbook](selfhost-local.md#current-replacement-setup--143).
+
 Этот режим предназначен для собственного домена/сервера, когда к Mnema подключаются пользователи через интернет.
 
 ## Что поднимается

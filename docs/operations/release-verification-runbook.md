@@ -5,11 +5,78 @@ artifact:
   title: "Mnema release smoke, diagnostics and rollback"
   status: current
   created_at: "2026-08-19"
-  updated_at: "2026-08-29"
+  updated_at: "2026-09-05"
   owners: ["project-owner"]
 ---
 
 # Mnema release smoke, diagnostics and rollback
+
+## Current replacement delivery — #143
+
+New Main CI artifacts contain exactly `identity-account` and `learning`, with
+`releaseTopology=identity-learning`, `releaseMode=maintenance`, and
+`productionEligible=false`. They contain no frontend or legacy service image.
+The existing frontend is still linted, tested and built locally/CI, but is not
+published or served by the replacement release. Product flows belong to #74–#77.
+
+Staging consumes the existing PostgreSQL bootstrap and `mnema-secrets` unchanged;
+it neither rotates credentials nor applies/deletes data services, bucket Jobs,
+PVCs, storage objects or backups. An existing verified application baseline is
+required. Missing state/artifact/routes stop the release before mutation; this
+workflow does not initialize a new environment from an empty state.
+
+The owner first installs and proves the named route boundary described in the
+[staging runbook](staging-runbook.md#replacement-route-access). CI can then read,
+update and patch only `Ingress/mnema` and `Ingress/mnema-auth`. It cannot create or
+delete an Ingress, change a host/TLS identity/class, or change the MinIO route.
+
+`release_state.py snapshot` captures the exact previous manifest and record. For
+an older staging artifact that omitted Ingress, it verifies both live route states,
+strips runtime/apply metadata, and appends only those two routes. The augmented
+record retains the original record/checksum and binds the new complete manifest
+checksum. Mixed or drifted routes are never adopted as a rollback baseline.
+
+Before application, `plan-transition` binds source/target checksums and lists every
+exact Deployment/Service removal. `preview-staging-plan.sh --replacement` performs
+server dry-run and sanitized diff; a final current-main check precedes mutation.
+The candidate is applied once, then the six superseded application Deployments and
+Services are removed with foreground cascading and waits. No database, Secret,
+PVC, Ingress or unknown resource is a deletion target. Rollback reapplies the
+saved complete non-production manifest and removes candidate-only applications.
+Schema creation is additive in fresh `app_identity`/`app_learning`; legacy schema
+and data remain untouched until their explicitly excluded cutover work.
+
+Maintenance smoke checks both `/api/actuator/health/readiness` and
+`/api/actuator/info`, requiring the exact full SHA, maintenance/topology metadata and the expected runtime name (`identity-account` or `learning-api`).
+It uses no login, Turnstile, deck, Study, media, import or AI flow. Legacy smoke
+capabilities remain solely to verify a captured cross-topology rollback; they are
+not replacement product fallbacks.
+
+```bash
+python3 scripts/smoke/release_smoke.py \
+  --environment staging-manual --mode maintenance \
+  --identity-url https://auth.staging.mnema.app \
+  --learning-url https://staging.mnema.app \
+  --expected-release-sha '<full merged commit SHA>' \
+  --report /tmp/mnema-staging-maintenance.json
+```
+
+The rollback drill now poisons the Identity image digest and SHA, requires both
+rollout and smoke failure, restores the saved two-runtime release and verifies it.
+It may run only on an already-recorded maintenance release, in staging, with the
+existing exact workflow-dispatch confirmation. Long rollout/job deadlines remain
+bounded; successful command exit alone is never release acceptance.
+
+Production promotion is hard-disabled in `production-deploy.yaml` before any
+`prod` Environment access. Staging does not relay a production promotion artifact.
+Neither an approval nor an Environment variable can enable it. #147 owns removing
+this guard after its separate go/no-go; dormant production code below is reference
+for that future task, not an alternate shipping path.
+
+## Legacy rollback and dormant production reference
+
+The following six-service contracts describe the existing production boundary and
+captured legacy staging releases only. They do not apply to new maintenance candidates.
 
 Every hosted release is accepted as one six-image unit. Staging and production first snapshot the last verified complete manifest and the current application Secret, apply the candidate once, wait for all rollouts, run the black-box smoke from GitHub-hosted infrastructure and only then record the candidate. A failed rollout, smoke or release-state write rejects the candidate and, while automatic rollback is enabled, restores the prior Secret and reapplies the saved complete manifest.
 

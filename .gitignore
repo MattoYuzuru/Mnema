@@ -64,6 +64,7 @@ frontend/node_modules
 !/scripts/reconcile-staging-host-firewall.sh
 !/scripts/test-staging-host-firewall.sh
 !/scripts/verify-staging-tls-boundary.sh
+!/scripts/verify-staging-route-boundary.py
 !/scripts/test-staging-tls-boundary.sh
 !/scripts/apply-staging-bootstrap.sh
 !/scripts/test-apply-staging-bootstrap.sh

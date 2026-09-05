@@ -35,7 +35,6 @@ and [workflow syntax for permissions](https://docs.github.com/en/actions/referen
 | `main-production-release-manifest` | `deploy` / `render-release` | `production-release-manifest` | production manifest/checksum plus aggregate security evidence/checksum | 30 | release manifest | immutable release renderer and evidence aggregator |
 | `main-staging-release-manifest` | `deploy` / `render-release` | `staging-release-manifest` | staging manifest/checksum plus aggregate security evidence/checksum | 30 | release manifest | immutable release renderer and evidence aggregator |
 | `staging-release-record` | `staging-deploy` / `deploy-staging` | `staging-release-record-${{ github.run_id }}` | `RELEASE_RECORD` | 90 | release state | `release_state.py record` after verification |
-| `staging-production-promotion` | `staging-deploy` / `deploy-staging` | `production-release-manifest` | four exact files under runner temp `production-promotion/` | 30 | release manifest | verified Main CI artifact relayed after staging acceptance |
 | `staging-failure-diagnostics` | `staging-deploy` / `deploy-staging` | `staging-release-diagnostics-${{ github.run_id }}` | diagnostics directory, smoke/rollback reports and rollback record | 30 | sanitized diagnostics | bounded diagnostics, smoke and release-state scripts |
 | `production-release-preview` | `production-deploy` / `preview-production` | `production-release-preview-${{ github.run_id }}-${{ github.run_attempt }}` | canonical release diff and bounded preview metadata | 30 | sanitized release preview | `capture-release-diff.sh` with Secret values suppressed |
 | `production-release-record` | `production-deploy` / `deploy-production` | `production-release-record-${{ github.run_id }}` | `RELEASE_RECORD` | 90 | release state | `release_state.py record` after verification |
@@ -79,7 +78,7 @@ All seven workflows declare top-level `permissions: {}`. Every job then declares
 |---|---|---|
 | `contents: read` | all jobs | checkout, immutable source/ref verification |
 | `actions: read` | release render and deploy-gate jobs | download artifacts and inspect the exact predecessor run |
-| `packages: write` | `deploy / build-and-push` only | publish the six GHCR release images |
+| `packages: write` | `deploy / build-and-push` only | publish the two replacement GHCR release images |
 | `id-token: write` | `deploy / build-and-push` only | GitHub OIDC identity for build attestations |
 | `attestations: write` | `deploy / build-and-push` only | publish provenance attestations for exact image digests |
 

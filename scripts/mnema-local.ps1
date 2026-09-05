@@ -1,3 +1,7 @@
+# Retired in #143. #146 removes the unreachable legacy bootstrap body.
+[Console]::Error.WriteLine('Legacy Mnema launcher is retired. Use docker compose with the maintenance shells; see docs/deploy/selfhost-local.md. Historical v1 launchers are in v1-apache-final.')
+exit 64
+
 $ErrorActionPreference = 'Stop'
 
 $RootDir = (Resolve-Path "$PSScriptRoot/..").Path

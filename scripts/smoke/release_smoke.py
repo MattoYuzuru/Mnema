@@ -21,7 +21,10 @@ from urllib.parse import urljoin
 from urllib.request import Request, urlopen
 
 
-SERVICES = ("auth", "user", "core", "media", "import")
+LEGACY_SERVICES = ("auth", "user", "core", "media", "import")
+MAINTENANCE_SERVICES = ("identity-account", "learning")
+MAINTENANCE_TOPOLOGY = "identity-learning"
+MAINTENANCE_MODE = "maintenance"
 SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 MAIN_BUNDLE_PATTERN = re.compile(r"(?:^|/)main\.[0-9a-f]+\.js$")
 READINESS_MAIN_BUNDLE_PATTERN = re.compile(r"(?:^|/)main(?:\.[0-9a-f]+)?\.js$")
@@ -64,6 +67,9 @@ class SmokeConfig:
     force_failure_step: str | None = None
     identity_only: bool = False
     readiness_only: bool = False
+    mode: str = "legacy"
+    identity_url: str = ""
+    learning_url: str = ""
 
     def validate(self) -> None:
         if not SHA_PATTERN.fullmatch(self.expected_release_sha):
@@ -72,6 +78,18 @@ class SmokeConfig:
             raise ValueError("timeout must be between 30 and 900 seconds")
         if self.request_timeout_seconds < 1 or self.request_timeout_seconds > 60:
             raise ValueError("request timeout must be between 1 and 60 seconds")
+        if self.mode not in ("legacy", MAINTENANCE_MODE):
+            raise ValueError("mode must be legacy or maintenance")
+        if self.mode == MAINTENANCE_MODE:
+            if self.identity_only or self.readiness_only:
+                raise ValueError("maintenance mode does not accept legacy smoke selectors")
+            for name, value in (
+                ("identity URL", self.identity_url),
+                ("learning URL", self.learning_url),
+            ):
+                if not value.startswith("https://"):
+                    raise ValueError(f"{name} must use https")
+            return
         for name, value in (("public URL", self.public_url), ("auth URL", self.auth_url)):
             if not value.startswith("https://"):
                 raise ValueError(f"{name} must use https")
@@ -109,6 +127,9 @@ class SmokeReport:
     status: str = "running"
     failed_service: str | None = None
     steps: list[StepResult] = field(default_factory=list)
+    release_topology: str | None = None
+    release_mode: str | None = None
+    production_eligible: bool | None = None
 
     def write(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -176,10 +197,13 @@ class ReleaseSmoke:
         self.config = config
         self.client = client
         self.report = SmokeReport(
-            schema_version=1,
+            schema_version=2 if config.mode == MAINTENANCE_MODE else 1,
             environment=config.environment,
             release_id=config.expected_release_sha,
             started_at=utc_now(),
+            release_topology=MAINTENANCE_TOPOLOGY if config.mode == MAINTENANCE_MODE else None,
+            release_mode=config.mode,
+            production_eligible=False if config.mode == MAINTENANCE_MODE else None,
         )
         self.access_token: str | None = None
         self.template_id: str | None = None
@@ -188,13 +212,46 @@ class ReleaseSmoke:
     def run(self) -> SmokeReport:
         failure: SmokeFailure | None = None
         try:
-            if self.config.readiness_only:
+            if self.config.mode == MAINTENANCE_MODE:
+                self.step(
+                    "identity_account_readiness",
+                    "identity-account",
+                    lambda: self.verify_maintenance_readiness(
+                        "identity-account", self.config.identity_url
+                    ),
+                )
+                self.step(
+                    "identity_account_identity",
+                    "identity-account",
+                    lambda: self.verify_maintenance_identity(
+                        "identity-account", self.config.identity_url
+                    ),
+                )
+                self.step(
+                    "learning_readiness",
+                    "learning",
+                    lambda: self.verify_maintenance_readiness(
+                        "learning", self.config.learning_url
+                    ),
+                )
+                self.step(
+                    "learning_identity",
+                    "learning",
+                    lambda: self.verify_maintenance_identity(
+                        "learning", self.config.learning_url
+                    ),
+                )
+            elif self.config.readiness_only:
                 self.step("public_readiness", "frontend", self.verify_public_readiness)
                 self.step("service_readiness", "release", self.verify_service_readiness)
             else:
                 self.step("public_identity", "frontend", self.verify_public_identity)
                 self.step("service_identities", "release", self.verify_service_identities)
-            if not self.config.identity_only and not self.config.readiness_only:
+            if (
+                self.config.mode == "legacy"
+                and not self.config.identity_only
+                and not self.config.readiness_only
+            ):
                 self.step("authentication", "auth", self.authenticate)
                 self.step("token_renewal", "auth", self.renew_token)
                 self.step("content_and_review", "core", self.exercise_content_and_review)
@@ -282,6 +339,31 @@ class ReleaseSmoke:
             build = payload.get("build")
             if not isinstance(build, dict) or build.get("id") != self.config.expected_release_sha:
                 raise SmokeFailure("service_release_mismatch", service)
+
+    def verify_maintenance_readiness(self, service: str, base_url: str) -> None:
+        self.client.request(
+            "GET",
+            f"{base_url.rstrip('/')}/api/actuator/health/readiness",
+            service=service,
+            max_body_bytes=131_072,
+        )
+
+    def verify_maintenance_identity(self, service: str, base_url: str) -> None:
+        payload = self.client.json(
+            "GET",
+            f"{base_url.rstrip('/')}/api/actuator/info",
+            service=service,
+        )
+        release = payload.get("release")
+        if not isinstance(release, dict) or release.get("id") != self.config.expected_release_sha:
+            raise SmokeFailure("service_release_mismatch", service)
+        if release.get("mode") != MAINTENANCE_MODE:
+            raise SmokeFailure("service_release_mode_mismatch", service)
+        if release.get("topology") != MAINTENANCE_TOPOLOGY:
+            raise SmokeFailure("service_release_topology_mismatch", service)
+        expected_runtime = {"identity-account": "identity-account", "learning": "learning-api"}[service]
+        if release.get("runtime") != expected_runtime:
+            raise SmokeFailure("service_runtime_mismatch", service)
 
     def authenticate(self) -> None:
         try:
@@ -502,8 +584,11 @@ def utc_now() -> str:
 def parse_args() -> SmokeConfig:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--environment", required=True)
-    parser.add_argument("--public-url", required=True)
-    parser.add_argument("--auth-url", required=True)
+    parser.add_argument("--mode", choices=("legacy", MAINTENANCE_MODE), default="legacy")
+    parser.add_argument("--public-url", default="")
+    parser.add_argument("--auth-url", default="")
+    parser.add_argument("--identity-url", default="")
+    parser.add_argument("--learning-url", default="")
     parser.add_argument("--expected-release-sha", required=True)
     parser.add_argument("--report", required=True, type=Path)
     parser.add_argument("--timeout-seconds", type=int, default=300)
@@ -526,6 +611,9 @@ def parse_args() -> SmokeConfig:
         force_failure_step=args.force_failure_step,
         identity_only=args.identity_only,
         readiness_only=args.readiness_only,
+        mode=args.mode,
+        identity_url=args.identity_url,
+        learning_url=args.learning_url,
     )
     config.validate()
     return config

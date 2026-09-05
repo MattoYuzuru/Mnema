@@ -3,85 +3,29 @@
 FROM gradle:8.14.5-jdk21@sha256:94452354d9218922457d82e85a343391bab351e7f518f6f5ab1db996967d238b AS build
 WORKDIR /workspace
 
-# 1. Копируем только gradle-конфиги для кэширования зависимостей
+# The root build still verifies non-shipping modules until their owning epics
+# remove them. Only these two bootJar tasks contribute to release images.
 COPY gradlew settings.gradle.kts build.gradle.kts ./
 COPY gradle ./gradle
-COPY services/auth/build.gradle.kts services/auth/
-COPY services/user/build.gradle.kts services/user/
-COPY services/core/build.gradle.kts services/core/
-COPY services/media/build.gradle.kts services/media/
-COPY services/import/build.gradle.kts services/import/
-COPY services/ai/build.gradle.kts services/ai/
+COPY services ./services
 RUN chmod +x gradlew
 
-# 2. Прогреваем зависимости (используя кеш BuildKit)
 RUN --mount=type=cache,target=/home/gradle/.gradle \
     ./gradlew \
-      :services:auth:dependencies \
-      :services:user:dependencies \
-      :services:core:dependencies \
-      :services:media:dependencies \
-      :services:import:dependencies \
-      :services:ai:dependencies \
-      --no-daemon
-
-# 3. Копируем исходники и собираем все bootJar одним прогоном
-COPY services ./services
-
-RUN --mount=type=cache,target=/home/gradle/.gradle \
-    ./gradlew \
-      :services:auth:bootJar \
-      :services:user:bootJar \
-      :services:core:bootJar \
-      :services:media:bootJar \
-      :services:import:bootJar \
-      :services:ai:bootJar \
+      :services:identity-account:bootJar \
+      :services:learning:bootJar \
       --no-daemon -x test
-
-# 4. Runtime-образы
 
 FROM eclipse-temurin:21.0.12_8-jre-resolute@sha256:097b5c0e8b5c9cc402e871a87a35f20e9413af9159410db2b1bdd8b78dcca7ed AS backend-runtime
 RUN rm -f /usr/bin/pebble
-
-FROM backend-runtime AS auth-runtime
 WORKDIR /app
-COPY --from=build /workspace/services/auth/build/libs/*.jar app.jar
+USER 10001:10001
 EXPOSE 8080
 ENTRYPOINT ["java","-jar","/app/app.jar"]
 
-FROM backend-runtime AS user-runtime
-WORKDIR /app
-COPY --from=build /workspace/services/user/build/libs/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java","-jar","/app/app.jar"]
+FROM backend-runtime AS identity-account-runtime
+ENV PORT=8080
+COPY --from=build /workspace/services/identity-account/build/libs/*.jar app.jar
 
-FROM backend-runtime AS core-runtime
-WORKDIR /app
-COPY --from=build /workspace/services/core/build/libs/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java","-jar","/app/app.jar"]
-
-FROM backend-runtime AS media-runtime
-WORKDIR /app
-COPY --from=build /workspace/services/media/build/libs/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java","-jar","/app/app.jar"]
-
-FROM backend-runtime AS import-runtime
-WORKDIR /app
-COPY --from=build /workspace/services/import/build/libs/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java","-jar","/app/app.jar"]
-
-FROM backend-runtime AS ai-runtime
-WORKDIR /app
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-      ffmpeg \
-      tesseract-ocr \
-      tesseract-ocr-eng \
-      tesseract-ocr-rus \
-    && rm -rf /var/lib/apt/lists/*
-COPY --from=build /workspace/services/ai/build/libs/*.jar app.jar
-EXPOSE 8080
-ENTRYPOINT ["java","-jar","/app/app.jar"]
+FROM backend-runtime AS learning-runtime
+COPY --from=build /workspace/services/learning/build/libs/*.jar app.jar

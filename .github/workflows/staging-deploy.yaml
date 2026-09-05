@@ -117,6 +117,7 @@ jobs:
   deploy-staging:
     needs: validate-main-ci
     runs-on: ubuntu-latest
+    timeout-minutes: 90
     permissions:
       actions: read
       contents: read
@@ -127,12 +128,11 @@ jobs:
       KUBECONFIG: ${{ github.workspace }}/kubeconfig-staging
       NS: mnema-staging
       RELEASE_MANIFEST: ${{ github.workspace }}/staging-release.yaml
-      STAGING_SECRET_MANIFEST: ${{ github.workspace }}/staging-application-secret.yaml
       RELEASE_RECORD: ${{ github.workspace }}/.release-state/staging-release-record.json
       RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
       ROLLBACK_MANIFEST: ${{ github.workspace }}/.release-state/staging-rollback-release.yaml
       ROLLBACK_RECORD: ${{ github.workspace }}/.release-state/staging-rollback-record.json
-      ROLLBACK_APP_SECRET: ${{ github.workspace }}/.release-state/staging-rollback-application-secret.json
+      TRANSITION_PLAN: ${{ github.workspace }}/.release-state/staging-transition-plan.json
       ROLLBACK_SMOKE_REPORT: ${{ github.workspace }}/.release-state/staging-rollback-smoke-report.json
       SMOKE_REPORT: ${{ github.workspace }}/.release-state/staging-smoke-report.json
       DIAGNOSTICS_DIR: ${{ github.workspace }}/.release-state/staging-release-diagnostics
@@ -146,7 +146,7 @@ jobs:
       - name: Set up kubectl
         uses: azure/setup-kubectl@829323503d1be3d00ca8346e5391ca0b07a9ab0d # v5.1.0
         with:
-          version: v1.36.0
+          version: v1.35.8
 
       - name: Download staging release manifest
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
@@ -242,169 +242,25 @@ jobs:
           test "$(kubectl auth can-i create secrets -n "$NS")" = no
           test "$(kubectl auth can-i list secrets -n "$NS")" = no
           test "$(kubectl auth can-i create ingresses.networking.k8s.io -n "$NS")" = no
+          test "$(kubectl auth can-i patch ingress/mnema -n "$NS")" = yes
+          test "$(kubectl auth can-i patch ingress/mnema-auth -n "$NS")" = yes
+          test "$(kubectl auth can-i patch ingress/minio -n "$NS")" = no
           test "$(kubectl auth can-i get secrets -n prod)" = no
           test "$(kubectl auth can-i create namespaces)" = no
           kubectl -n "$NS" get resourcequota mnema-staging-quota >/dev/null
           kubectl -n "$NS" get limitrange mnema-staging-limits >/dev/null
 
-      - name: Validate required staging secrets
-        env:
-          AUTH_ISSUER: ${{ secrets.STAGING_AUTH_ISSUER }}
-          AUTH_ISSUER_URI: ${{ secrets.STAGING_AUTH_ISSUER_URI }}
-          AUTH_JWT_PUBLIC_KEY: ${{ secrets.STAGING_AUTH_JWT_PUBLIC_KEY }}
-          AUTH_JWT_PRIVATE_KEY: ${{ secrets.STAGING_AUTH_JWT_PRIVATE_KEY }}
-          TURNSTILE_SITE_KEY: ${{ secrets.STAGING_TURNSTILE_SITE_KEY }}
-          TURNSTILE_SECRET_KEY: ${{ secrets.STAGING_TURNSTILE_SECRET_KEY }}
-          GOOGLE_CLIENT_ID: ${{ secrets.STAGING_GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.STAGING_GOOGLE_CLIENT_SECRET }}
-          GITHUB_CLIENT_ID: ${{ secrets.STAGING_GH_CLIENT_ID }}
-          GITHUB_CLIENT_SECRET: ${{ secrets.STAGING_GH_CLIENT_SECRET }}
-          YANDEX_CLIENT_ID: ${{ secrets.STAGING_YANDEX_CLIENT_ID }}
-          YANDEX_CLIENT_SECRET: ${{ secrets.STAGING_YANDEX_CLIENT_SECRET }}
-          POSTGRES_DB: ${{ secrets.STAGING_POSTGRES_DB }}
-          POSTGRES_USER: ${{ secrets.STAGING_POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.STAGING_POSTGRES_PASSWORD }}
-          AWS_REGION: ${{ secrets.STAGING_AWS_REGION }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.STAGING_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.STAGING_AWS_SECRET_ACCESS_KEY }}
-          AWS_BUCKET_NAME: ${{ secrets.STAGING_AWS_BUCKET_NAME }}
-          MEDIA_INTERNAL_TOKEN: ${{ secrets.STAGING_MEDIA_INTERNAL_TOKEN }}
-          CORE_INTERNAL_TOKEN: ${{ secrets.STAGING_CORE_INTERNAL_TOKEN }}
-          USER_INTERNAL_TOKEN: ${{ secrets.STAGING_USER_INTERNAL_TOKEN }}
-          SMOKE_LOGIN: ${{ secrets.STAGING_SMOKE_LOGIN }}
-          SMOKE_PASSWORD: ${{ secrets.STAGING_SMOKE_PASSWORD }}
-          SMOKE_TURNSTILE_BYPASS_KEY: ${{ secrets.STAGING_SMOKE_TURNSTILE_BYPASS_KEY }}
+      # The replacement shells consume only the existing staging PostgreSQL
+      # credentials. This release neither rotates Secrets nor mutates data services.
+      - name: Verify existing staging bootstrap and rollback policy
         run: |
-          required_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN SMOKE_LOGIN SMOKE_PASSWORD SMOKE_TURNSTILE_BYPASS_KEY"
-          for name in $required_names; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::Required staging secret ${name} is missing or empty"
-              exit 1
-            fi
-          done
-          if [ "$AUTH_ISSUER" != "https://auth.staging.mnema.app" ] || [ "$AUTH_ISSUER_URI" != "$AUTH_ISSUER" ]; then
-            echo "::error::Staging issuer secrets must identify auth.staging.mnema.app"
-            exit 1
-          fi
-          if [ "$POSTGRES_DB" != mnema ]; then
-            echo "::error::STAGING_POSTGRES_DB must match the release database contract"
-            exit 1
-          fi
           case "$AUTO_ROLLBACK_ENABLED" in
             true | false) ;;
-            *)
-              echo "::error::AUTO_ROLLBACK_ENABLED must be true or false"
-              exit 1
-              ;;
+            *) echo '::error::AUTO_ROLLBACK_ENABLED must be true or false'; exit 1 ;;
           esac
-          if [ "${#SMOKE_TURNSTILE_BYPASS_KEY}" -lt 32 ]; then
-            echo "::error::STAGING_SMOKE_TURNSTILE_BYPASS_KEY must contain at least 32 characters"
-            exit 1
-          fi
-
-      - name: Validate bootstrap values and detect staging Secret drift
-        env:
-          AUTH_ISSUER: ${{ secrets.STAGING_AUTH_ISSUER }}
-          AUTH_ISSUER_URI: ${{ secrets.STAGING_AUTH_ISSUER_URI }}
-          AUTH_JWT_PUBLIC_KEY: ${{ secrets.STAGING_AUTH_JWT_PUBLIC_KEY }}
-          AUTH_JWT_PRIVATE_KEY: ${{ secrets.STAGING_AUTH_JWT_PRIVATE_KEY }}
-          TURNSTILE_SITE_KEY: ${{ secrets.STAGING_TURNSTILE_SITE_KEY }}
-          TURNSTILE_SECRET_KEY: ${{ secrets.STAGING_TURNSTILE_SECRET_KEY }}
-          GOOGLE_CLIENT_ID: ${{ secrets.STAGING_GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.STAGING_GOOGLE_CLIENT_SECRET }}
-          GITHUB_CLIENT_ID: ${{ secrets.STAGING_GH_CLIENT_ID }}
-          GITHUB_CLIENT_SECRET: ${{ secrets.STAGING_GH_CLIENT_SECRET }}
-          YANDEX_CLIENT_ID: ${{ secrets.STAGING_YANDEX_CLIENT_ID }}
-          YANDEX_CLIENT_SECRET: ${{ secrets.STAGING_YANDEX_CLIENT_SECRET }}
-          POSTGRES_DB: ${{ secrets.STAGING_POSTGRES_DB }}
-          POSTGRES_USER: ${{ secrets.STAGING_POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.STAGING_POSTGRES_PASSWORD }}
-          AWS_REGION: ${{ secrets.STAGING_AWS_REGION }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.STAGING_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.STAGING_AWS_SECRET_ACCESS_KEY }}
-          AWS_BUCKET_NAME: ${{ secrets.STAGING_AWS_BUCKET_NAME }}
-          MEDIA_INTERNAL_TOKEN: ${{ secrets.STAGING_MEDIA_INTERNAL_TOKEN }}
-          CORE_INTERNAL_TOKEN: ${{ secrets.STAGING_CORE_INTERNAL_TOKEN }}
-          USER_INTERNAL_TOKEN: ${{ secrets.STAGING_USER_INTERNAL_TOKEN }}
-          SMOKE_LOGIN: ${{ secrets.STAGING_SMOKE_LOGIN }}
-          SMOKE_TURNSTILE_BYPASS_KEY: ${{ secrets.STAGING_SMOKE_TURNSTILE_BYPASS_KEY }}
-        run: |
-          ./scripts/verify-kubernetes-bootstrap-secret-values.py \
-            staging "$NS" mnema-secrets \
-            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
-            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
-            AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
-            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN >/dev/null
-          app_secret_drift=$(./scripts/detect-kubernetes-secret-drift.py \
-            "$NS" mnema-secrets \
-            AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY \
-            TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY \
-            GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
-            GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET \
-            YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET \
-            POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD \
-            AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME \
-            MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN \
-            SMOKE_LOGIN SMOKE_TURNSTILE_BYPASS_KEY)
-          printf 'app_secret_drift=%s\n' "$app_secret_drift" >> "$GITHUB_OUTPUT"
-          printf 'Staging application Secret drift: %s\n' "$app_secret_drift"
-
-      - name: Snapshot the current staging application Secret
-        id: app-secret-snapshot
-        run: |
-          mkdir -p "$(dirname "$ROLLBACK_APP_SECRET")"
-          chmod 700 "$(dirname "$ROLLBACK_APP_SECRET")"
-          ./scripts/preserve-kubernetes-secret.py snapshot \
-            "$NS" mnema-secrets - "$ROLLBACK_APP_SECRET" >> "$GITHUB_OUTPUT"
-
-      - name: Render desired staging application Secret
-        env:
-          APP_SECRET_RESOURCE_VERSION: ${{ steps.app-secret-snapshot.outputs.resource_version }}
-          AUTH_ISSUER: ${{ secrets.STAGING_AUTH_ISSUER }}
-          AUTH_ISSUER_URI: ${{ secrets.STAGING_AUTH_ISSUER_URI }}
-          AUTH_JWT_PUBLIC_KEY: ${{ secrets.STAGING_AUTH_JWT_PUBLIC_KEY }}
-          AUTH_JWT_PRIVATE_KEY: ${{ secrets.STAGING_AUTH_JWT_PRIVATE_KEY }}
-          TURNSTILE_SITE_KEY: ${{ secrets.STAGING_TURNSTILE_SITE_KEY }}
-          TURNSTILE_SECRET_KEY: ${{ secrets.STAGING_TURNSTILE_SECRET_KEY }}
-          GOOGLE_CLIENT_ID: ${{ secrets.STAGING_GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.STAGING_GOOGLE_CLIENT_SECRET }}
-          GITHUB_CLIENT_ID: ${{ secrets.STAGING_GH_CLIENT_ID }}
-          GITHUB_CLIENT_SECRET: ${{ secrets.STAGING_GH_CLIENT_SECRET }}
-          YANDEX_CLIENT_ID: ${{ secrets.STAGING_YANDEX_CLIENT_ID }}
-          YANDEX_CLIENT_SECRET: ${{ secrets.STAGING_YANDEX_CLIENT_SECRET }}
-          POSTGRES_DB: ${{ secrets.STAGING_POSTGRES_DB }}
-          POSTGRES_USER: ${{ secrets.STAGING_POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.STAGING_POSTGRES_PASSWORD }}
-          AWS_REGION: ${{ secrets.STAGING_AWS_REGION }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.STAGING_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.STAGING_AWS_SECRET_ACCESS_KEY }}
-          AWS_BUCKET_NAME: ${{ secrets.STAGING_AWS_BUCKET_NAME }}
-          MEDIA_INTERNAL_TOKEN: ${{ secrets.STAGING_MEDIA_INTERNAL_TOKEN }}
-          CORE_INTERNAL_TOKEN: ${{ secrets.STAGING_CORE_INTERNAL_TOKEN }}
-          USER_INTERNAL_TOKEN: ${{ secrets.STAGING_USER_INTERNAL_TOKEN }}
-          SMOKE_LOGIN: ${{ secrets.STAGING_SMOKE_LOGIN }}
-          SMOKE_TURNSTILE_BYPASS_KEY: ${{ secrets.STAGING_SMOKE_TURNSTILE_BYPASS_KEY }}
-        run: |
-          umask 077
-          secret_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN SMOKE_LOGIN SMOKE_TURNSTILE_BYPASS_KEY"
-          {
-            printf '%s\n' \
-              'apiVersion: v1' \
-              'kind: Secret' \
-              'metadata:' \
-              '  name: mnema-secrets' \
-              "  namespace: ${NS}" \
-              "  resourceVersion: \"${APP_SECRET_RESOURCE_VERSION}\"" \
-              '  annotations:' \
-              '    mnema.app/bootstrap-state: initialized' \
-              'type: Opaque' \
-              'data:'
-            for name in $secret_names; do
-              value=${!name}
-              encoded=$(printf '%s' "$value" | base64 | tr -d '\n')
-              printf '  %s: "%s"\n' "$name" "$encoded"
-            done
-          } > "$STAGING_SECRET_MANIFEST"
+          kubectl -n "$NS" get secret mnema-secrets -o json |
+            python3 -c 'import json,sys; s=json.load(sys.stdin); assert s["metadata"]["annotations"]["mnema.app/bootstrap-state"] == "initialized"; assert all(s.get("data", {}).get(k) for k in ("POSTGRES_DB", "POSTGRES_USER", "POSTGRES_PASSWORD"))'
+          kubectl -n "$NS" rollout status statefulset/postgres --timeout=1200s
 
       - name: Build candidate staging release record
         run: |
@@ -424,16 +280,16 @@ jobs:
             --artifact-name staging-release-manifest \
             --artifact-filename staging-release.yaml \
             --rollback-manifest "$ROLLBACK_MANIFEST" \
-            --rollback-record "$ROLLBACK_RECORD" \
-            --allow-empty
+            --rollback-record "$ROLLBACK_RECORD"
 
       - name: Preview complete staging plan before mutation
         run: |
-          ./scripts/preview-staging-plan.sh \
-            "$STAGING_SECRET_MANIFEST" \
-            k8s/staging/data.yaml \
-            k8s/staging/minio-bucket-job.yaml \
-            "$RELEASE_MANIFEST"
+          python3 scripts/smoke/release_state.py plan-transition \
+            --source-manifest "$ROLLBACK_MANIFEST" \
+            --target-manifest "$RELEASE_MANIFEST" \
+            --plan "$TRANSITION_PLAN"
+          ./scripts/preview-staging-plan.sh --replacement \
+            "$RELEASE_MANIFEST" "$ROLLBACK_MANIFEST" "$TRANSITION_PLAN"
 
       - name: Reject a stale release immediately before staging mutation
         run: |
@@ -447,71 +303,37 @@ jobs:
         id: mutation-start
         run: echo 'attempted=true' >> "$GITHUB_OUTPUT"
 
-      - name: Apply staged application Secret
-        id: app-secret-apply
-        run: kubectl apply -f "$STAGING_SECRET_MANIFEST"
-
-      - name: Apply isolated staging data services
-        run: kubectl apply -f k8s/staging/data.yaml
-
-      - name: Wait for staging data services
-        run: |
-          kubectl -n "$NS" rollout status statefulset/postgres --timeout=600s
-          kubectl -n "$NS" rollout status statefulset/redis --timeout=300s
-          kubectl -n "$NS" rollout status statefulset/minio --timeout=600s
-
-      - name: Create staging object bucket idempotently
-        run: |
-          kubectl -n "$NS" delete job minio-bucket-bootstrap --ignore-not-found=true --wait=true
-          kubectl apply -f k8s/staging/minio-bucket-job.yaml
-          kubectl -n "$NS" wait --for=condition=complete job/minio-bucket-bootstrap --timeout=300s
-
       - name: Apply complete staging application release once
         id: apply
         run: |
           echo 'attempted=true' >> "$GITHUB_OUTPUT"
           kubectl apply -f "$RELEASE_MANIFEST"
+          python3 scripts/smoke/release_state.py apply-removals \
+            --plan "$TRANSITION_PLAN" \
+            --source-manifest "$ROLLBACK_MANIFEST" \
+            --target-manifest "$RELEASE_MANIFEST"
           echo 'applied=true' >> "$GITHUB_OUTPUT"
-
-      - name: Reconcile staging application Secret consumers
-        run: |
-          ./scripts/reconcile-kubernetes-secret-consumers.sh \
-            "$NS" mnema-secrets \
-            mnema-auth mnema-user mnema-core mnema-media mnema-import
 
       - name: Verify staging service rollouts
         id: rollout
         continue-on-error: true
         run: |
-          kubectl -n "$NS" rollout status deployment/mnema-frontend --timeout=600s
-          kubectl -n "$NS" rollout status deployment/mnema-auth --timeout=1200s
-          kubectl -n "$NS" rollout status deployment/mnema-user --timeout=1200s
-          kubectl -n "$NS" rollout status deployment/mnema-core --timeout=1200s
-          kubectl -n "$NS" rollout status deployment/mnema-media --timeout=1800s
-          kubectl -n "$NS" rollout status deployment/mnema-import --timeout=1800s
+          python3 scripts/smoke/release_state.py rollout \
+            --namespace "$NS" --record "$RELEASE_RECORD"
 
       - name: Run staging black-box release smoke
         id: smoke
         if: ${{ steps.rollout.outcome == 'success' }}
         continue-on-error: true
-        env:
-          SMOKE_LOGIN: ${{ secrets.STAGING_SMOKE_LOGIN }}
-          SMOKE_PASSWORD: ${{ secrets.STAGING_SMOKE_PASSWORD }}
-          SMOKE_TURNSTILE_BYPASS_KEY: ${{ secrets.STAGING_SMOKE_TURNSTILE_BYPASS_KEY }}
         run: |
           python3 scripts/smoke/release_smoke.py \
             --environment staging \
-            --public-url https://staging.mnema.app \
-            --auth-url https://auth.staging.mnema.app \
+            --mode maintenance \
+            --identity-url https://auth.staging.mnema.app \
+            --learning-url https://staging.mnema.app \
             --expected-release-sha "$RELEASE_SHA" \
             --timeout-seconds 300 \
             --report "$SMOKE_REPORT"
-          python3 scripts/verify_browser_security_headers.py hosted \
-            --base-url https://staging.mnema.app \
-            --mode staging \
-            --auth-origin https://auth.staging.mnema.app \
-            --storage-origin https://storage.staging.mnema.app
-          ./scripts/verify-hosted-browser-csp.sh https://staging.mnema.app/login
 
       - name: Record successful complete staging release
         id: record
@@ -534,20 +356,9 @@ jobs:
           retention-days: 90
           classification: release-state
 
-      - name: Relay the staging-approved production release
+      - name: Report the production promotion boundary
         if: ${{ steps.record.outcome == 'success' }}
-        uses: ./.github/actions/safe-upload-artifact
-        with:
-          policy-id: staging-production-promotion
-          name: production-release-manifest
-          path: |
-            ${{ runner.temp }}/production-promotion/production-release.yaml
-            ${{ runner.temp }}/production-promotion/production-release.yaml.sha256
-            ${{ runner.temp }}/production-promotion/release-security-evidence.json
-            ${{ runner.temp }}/production-promotion/release-security-evidence.json.sha256
-          if-no-files-found: error
-          retention-days: 30
-          classification: release-manifest
+        run: echo 'release_mode=maintenance production_eligible=false production_cutover_issue=147'
 
       - name: Collect sanitized staging diagnostics
         if: ${{ always() && (failure() || steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') }}
@@ -558,70 +369,36 @@ jobs:
             --output "$DIAGNOSTICS_DIR" \
             --smoke-report "$SMOKE_REPORT"
 
-      - name: Restore the previous staging application Secret
-        id: app-secret-restore
-        if: ${{ always() && steps.app-secret-apply.outcome == 'success' && steps.snapshot.outputs.previous_available == 'true' && env.AUTO_ROLLBACK_ENABLED == 'true' && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') }}
-        env:
-          AUTH_ISSUER: ${{ secrets.STAGING_AUTH_ISSUER }}
-          AUTH_ISSUER_URI: ${{ secrets.STAGING_AUTH_ISSUER_URI }}
-          AUTH_JWT_PUBLIC_KEY: ${{ secrets.STAGING_AUTH_JWT_PUBLIC_KEY }}
-          AUTH_JWT_PRIVATE_KEY: ${{ secrets.STAGING_AUTH_JWT_PRIVATE_KEY }}
-          TURNSTILE_SITE_KEY: ${{ secrets.STAGING_TURNSTILE_SITE_KEY }}
-          TURNSTILE_SECRET_KEY: ${{ secrets.STAGING_TURNSTILE_SECRET_KEY }}
-          GOOGLE_CLIENT_ID: ${{ secrets.STAGING_GOOGLE_CLIENT_ID }}
-          GOOGLE_CLIENT_SECRET: ${{ secrets.STAGING_GOOGLE_CLIENT_SECRET }}
-          GITHUB_CLIENT_ID: ${{ secrets.STAGING_GH_CLIENT_ID }}
-          GITHUB_CLIENT_SECRET: ${{ secrets.STAGING_GH_CLIENT_SECRET }}
-          YANDEX_CLIENT_ID: ${{ secrets.STAGING_YANDEX_CLIENT_ID }}
-          YANDEX_CLIENT_SECRET: ${{ secrets.STAGING_YANDEX_CLIENT_SECRET }}
-          POSTGRES_DB: ${{ secrets.STAGING_POSTGRES_DB }}
-          POSTGRES_USER: ${{ secrets.STAGING_POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.STAGING_POSTGRES_PASSWORD }}
-          AWS_REGION: ${{ secrets.STAGING_AWS_REGION }}
-          AWS_ACCESS_KEY_ID: ${{ secrets.STAGING_AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.STAGING_AWS_SECRET_ACCESS_KEY }}
-          AWS_BUCKET_NAME: ${{ secrets.STAGING_AWS_BUCKET_NAME }}
-          MEDIA_INTERNAL_TOKEN: ${{ secrets.STAGING_MEDIA_INTERNAL_TOKEN }}
-          CORE_INTERNAL_TOKEN: ${{ secrets.STAGING_CORE_INTERNAL_TOKEN }}
-          USER_INTERNAL_TOKEN: ${{ secrets.STAGING_USER_INTERNAL_TOKEN }}
-          SMOKE_LOGIN: ${{ secrets.STAGING_SMOKE_LOGIN }}
-          SMOKE_TURNSTILE_BYPASS_KEY: ${{ secrets.STAGING_SMOKE_TURNSTILE_BYPASS_KEY }}
-        run: |
-          secret_names="AUTH_ISSUER AUTH_ISSUER_URI AUTH_JWT_PUBLIC_KEY AUTH_JWT_PRIVATE_KEY TURNSTILE_SITE_KEY TURNSTILE_SECRET_KEY GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GITHUB_CLIENT_ID GITHUB_CLIENT_SECRET YANDEX_CLIENT_ID YANDEX_CLIENT_SECRET POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD AWS_REGION AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_BUCKET_NAME MEDIA_INTERNAL_TOKEN CORE_INTERNAL_TOKEN USER_INTERNAL_TOKEN SMOKE_LOGIN SMOKE_TURNSTILE_BYPASS_KEY"
-          # shellcheck disable=SC2086 # Intentional expansion into key arguments.
-          ./scripts/preserve-kubernetes-secret.py restore \
-            "$NS" mnema-secrets "$ROLLBACK_APP_SECRET" \
-            SMOKE_LOGIN,SMOKE_TURNSTILE_BYPASS_KEY $secret_names
-
       - name: Roll back failed staging candidate
         id: rollback
-        if: ${{ always() && steps.mutation-start.outputs.attempted == 'true' && steps.snapshot.outputs.previous_available == 'true' && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') && env.AUTO_ROLLBACK_ENABLED == 'true' && (steps.app-secret-apply.outcome != 'success' || steps.app-secret-restore.outcome == 'success') }}
+        if: ${{ always() && steps.mutation-start.outputs.attempted == 'true' && steps.snapshot.outputs.previous_available == 'true' && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') && env.AUTO_ROLLBACK_ENABLED == 'true' }}
         run: |
           python3 scripts/smoke/release_state.py rollback \
             --namespace "$NS" \
             --rollback-manifest "$ROLLBACK_MANIFEST" \
-            --rollback-record "$ROLLBACK_RECORD"
-          ./scripts/reconcile-kubernetes-secret-consumers.sh \
-            "$NS" mnema-secrets \
-            mnema-auth mnema-user mnema-core mnema-media mnema-import
-
-      - name: Remove a failed first staging application candidate
-        id: bootstrap-cleanup
-        if: ${{ always() && steps.mutation-start.outputs.attempted == 'true' && steps.snapshot.outputs.previous_available != 'true' && (steps.rollout.outcome != 'success' || steps.smoke.outcome != 'success' || steps.record.outcome != 'success') }}
-        run: kubectl delete -f "$RELEASE_MANIFEST" --ignore-not-found=true --wait=true
+            --rollback-record "$ROLLBACK_RECORD" \
+            --candidate-manifest "$RELEASE_MANIFEST"
 
       - name: Verify staging rollback rollouts
         if: ${{ always() && steps.rollback.outcome == 'success' }}
         run: |
-          kubectl -n "$NS" rollout status deployment/mnema-frontend --timeout=600s
-          kubectl -n "$NS" rollout status deployment/mnema-auth --timeout=1200s
-          kubectl -n "$NS" rollout status deployment/mnema-user --timeout=1200s
-          kubectl -n "$NS" rollout status deployment/mnema-core --timeout=1200s
-          kubectl -n "$NS" rollout status deployment/mnema-media --timeout=1800s
-          kubectl -n "$NS" rollout status deployment/mnema-import --timeout=1800s
+          python3 scripts/smoke/release_state.py rollout \
+            --namespace "$NS" --record "$ROLLBACK_RECORD"
+
+      - name: Verify maintenance staging rollback
+        if: ${{ always() && steps.rollback.outcome == 'success' && steps.rollback.outputs.release_mode == 'maintenance' }}
+        run: |
+          python3 scripts/smoke/release_smoke.py \
+            --environment staging-rollback \
+            --mode maintenance \
+            --identity-url https://auth.staging.mnema.app \
+            --learning-url https://staging.mnema.app \
+            --expected-release-sha "${{ steps.rollback.outputs.release_id }}" \
+            --timeout-seconds 300 \
+            --report "$ROLLBACK_SMOKE_REPORT"
 
       - name: Verify adopted legacy staging rollback identity
-        if: ${{ always() && steps.rollback.outcome == 'success' && steps.rollback.outputs.authenticated_smoke_supported != 'true' }}
+        if: ${{ always() && steps.rollback.outcome == 'success' && steps.rollback.outputs.release_mode != 'maintenance' && steps.rollback.outputs.authenticated_smoke_supported != 'true' }}
         run: |
           python3 scripts/smoke/release_smoke.py \
             --environment staging-rollback-legacy \
@@ -633,7 +410,7 @@ jobs:
             --report "$ROLLBACK_SMOKE_REPORT"
 
       - name: Verify complete staging rollback
-        if: ${{ always() && steps.rollback.outcome == 'success' && steps.rollback.outputs.authenticated_smoke_supported == 'true' }}
+        if: ${{ always() && steps.rollback.outcome == 'success' && steps.rollback.outputs.release_mode != 'maintenance' && steps.rollback.outputs.authenticated_smoke_supported == 'true' }}
         env:
           SMOKE_LOGIN: ${{ secrets.STAGING_SMOKE_LOGIN }}
           SMOKE_PASSWORD: ${{ secrets.STAGING_SMOKE_PASSWORD }}

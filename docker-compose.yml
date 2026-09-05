@@ -1,205 +1,67 @@
+# Local maintenance shells. Keep the replacement project/data separate from v1.
+name: mnema-replacement
+
 services:
   postgres:
-    networks: [ mnema_net ]
-    image: postgres:18
+    image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    ports: [ "${POSTGRES_PORT}:5432" ]
+      POSTGRES_DB: ${MNEMA_LOCAL_POSTGRES_DB:-mnema}
+      POSTGRES_USER: ${MNEMA_LOCAL_POSTGRES_USER:-mnema}
+      POSTGRES_PASSWORD: ${MNEMA_LOCAL_POSTGRES_PASSWORD:?Set a fresh MNEMA_LOCAL_POSTGRES_PASSWORD for the replacement database}
+    ports:
+      - "127.0.0.1:${MNEMA_LOCAL_POSTGRES_PORT:-55432}:5432"
     volumes:
-      - mnema_postgres_data:/var/lib/postgresql/data
+      - replacement_postgres_data:/var/lib/postgresql
     healthcheck:
-      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 5s
       timeout: 3s
-      retries: 10
+      retries: 20
 
-  redis:
-    networks: [ mnema_net ]
-    image: redis:7-alpine
-    command: [ "redis-server", "--save", "", "--appendonly", "no" ]
-    ports: [ "6379:6379" ]
-    healthcheck:
-      test: [ "CMD", "redis-cli", "ping" ]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  auth:
-    networks: [ mnema_net ]
-    #    dns:
-    #      - 1.1.1.1
-    #      - 8.8.8.8
+  identity-account:
     build:
       context: ./backend
       dockerfile: Dockerfile
-      target: auth-runtime
+      target: identity-account-runtime
     environment:
-      SPRING_PROFILES_ACTIVE: dev
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-      SPRING_FLYWAY_ENABLED: "true"
-      AUTH_ISSUER: http://auth:8080
-      AUTH_LOGIN_PAGE_URL: http://localhost:3005/login
-      USER_BASE_URL: http://user:8080/api/user
-      USER_INTERNAL_TOKEN: ${USER_INTERNAL_TOKEN:-mnema-user-internal-dev}
-      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
-      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET}
-      GITHUB_CLIENT_ID: ${GH_CLIENT_ID}
-      GITHUB_CLIENT_SECRET: ${GH_CLIENT_SECRET}
-      YANDEX_CLIENT_ID: ${YANDEX_CLIENT_ID}
-      YANDEX_CLIENT_SECRET: ${YANDEX_CLIENT_SECRET}
+      PORT: "8080"
+      APP_ENV: local
+      MNEMA_BUILD_ID: ${MNEMA_LOCAL_BUILD_ID:-dev}
+      # Issuer identity requires HTTPS; local actuator transport remains HTTP.
+      MNEMA_IDENTITY_ISSUER: ${MNEMA_LOCAL_IDENTITY_ISSUER:-https://localhost:18081}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${MNEMA_LOCAL_POSTGRES_DB:-mnema}
+      SPRING_DATASOURCE_USERNAME: ${MNEMA_LOCAL_POSTGRES_USER:-mnema}
+      SPRING_DATASOURCE_PASSWORD: ${MNEMA_LOCAL_POSTGRES_PASSWORD:?Set a fresh MNEMA_LOCAL_POSTGRES_PASSWORD for the replacement database}
     depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
-    ports: [ "8083:8080" ]
+      postgres: {condition: service_healthy}
+    ports:
+      - "127.0.0.1:${MNEMA_LOCAL_IDENTITY_PORT:-18081}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,uid=10001,gid=10001
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
 
-  user:
-    networks: [ mnema_net ]
+  learning:
     build:
       context: ./backend
       dockerfile: Dockerfile
-      target: user-runtime
+      target: learning-runtime
     environment:
-      SPRING_PROFILES_ACTIVE: dev
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER}}
-      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD}}
-      SPRING_FLYWAY_ENABLED: "true"
-      AUTH_ISSUER_URI: http://auth:8080
-      CORE_BASE_URL: http://core:8080/api/core
-      MEDIA_BASE_URL: http://media:8080/api/media
-      MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
-      USER_INTERNAL_TOKEN: ${USER_INTERNAL_TOKEN:-mnema-user-internal-dev}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
+      APP_ENV: local
+      MNEMA_BUILD_ID: ${MNEMA_LOCAL_BUILD_ID:-dev}
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${MNEMA_LOCAL_POSTGRES_DB:-mnema}
+      SPRING_DATASOURCE_USERNAME: ${MNEMA_LOCAL_POSTGRES_USER:-mnema}
+      SPRING_DATASOURCE_PASSWORD: ${MNEMA_LOCAL_POSTGRES_PASSWORD:?Set a fresh MNEMA_LOCAL_POSTGRES_PASSWORD for the replacement database}
     depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
-    ports: [ "8084:8080" ]
-
-  core:
-    networks: [ mnema_net ]
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: core-runtime
-    environment:
-      SPRING_PROFILES_ACTIVE: dev
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER}}
-      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD}}
-      SPRING_FLYWAY_ENABLED: "true"
-      AUTH_ISSUER_URI: http://auth:8080
-      USER_BASE_URL: http://user:8080/api/user
-      USER_INTERNAL_TOKEN: ${USER_INTERNAL_TOKEN:-mnema-user-internal-dev}
-      CORE_INTERNAL_TOKEN: ${CORE_INTERNAL_TOKEN:-mnema-core-internal-dev}
-      MEDIA_BASE_URL: http://media:8080/api/media
-      MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-    depends_on:
-      postgres: { condition: service_healthy }
-    ports: [ "8085:8080" ]
-
-  media:
-    networks: [ mnema_net ]
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: media-runtime
-    environment:
-      SPRING_PROFILES_ACTIVE: dev
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER}}
-      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD}}
-      SPRING_FLYWAY_ENABLED: "true"
-      AUTH_ISSUER_URI: http://auth:8080
-      MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      AWS_REGION: ${AWS_REGION}
-      AWS_BUCKET_NAME: ${AWS_BUCKET_NAME}
-      AWS_ENDPOINT: ${AWS_ENDPOINT:-https://storage.yandexcloud.net}
-      AWS_PUBLIC_ENDPOINT: ${AWS_PUBLIC_ENDPOINT:-https://storage.yandexcloud.net}
-      AWS_PATH_STYLE_ACCESS: ${AWS_PATH_STYLE_ACCESS:-false}
-      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
-      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    ports: [ "8086:8080" ]
-
-  import:
-    networks: [ mnema_net ]
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: import-runtime
-    environment:
-      SPRING_PROFILES_ACTIVE: dev
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER}}
-      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD}}
-      SPRING_FLYWAY_ENABLED: "true"
-      AUTH_ISSUER_URI: http://auth:8080
-      CORE_BASE_URL: http://core:8080/api/core
-      MEDIA_BASE_URL: http://media:8080/api/media
-      MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports: [ "8087:8080" ]
-
-  ai:
-    networks: [ mnema_net ]
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-      target: ai-runtime
-    environment:
-      SPRING_PROFILES_ACTIVE: dev
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
-      SPRING_DATASOURCE_USERNAME: ${SPRING_DATASOURCE_USERNAME:-${POSTGRES_USER}}
-      SPRING_DATASOURCE_PASSWORD: ${SPRING_DATASOURCE_PASSWORD:-${POSTGRES_PASSWORD}}
-      SPRING_FLYWAY_ENABLED: "true"
-      AUTH_ISSUER_URI: http://auth:8080
-      CORE_BASE_URL: http://core:8080/api/core
-      CORE_INTERNAL_TOKEN: ${CORE_INTERNAL_TOKEN:-mnema-core-internal-dev}
-      MEDIA_BASE_URL: http://media:8080/api/media
-      MEDIA_INTERNAL_TOKEN: ${MEDIA_INTERNAL_TOKEN}
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      APP_AI_VAULT_MASTER_KEY: ${AI_VAULT_MASTER_KEY}
-      APP_AI_VAULT_KEY_ID: ${AI_VAULT_KEY_ID}
-      AI_PROVIDER: ${AI_PROVIDER}
-    depends_on:
-      postgres: { condition: service_healthy }
-      redis: { condition: service_healthy }
-    ports: [ "8088:8080" ]
-
-
-  frontend:
-    networks: [ mnema_net ]
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    environment:
-      MNEMA_FEATURE_FEDERATED_AUTH_ENABLED: "true"
-      MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING: "true"
-    ports: [ "3005:80" ]
-    restart: unless-stopped
-
-networks:
-  mnema_net:
-    driver: bridge
-    ipam:
-      config:
-        - subnet: 10.222.0.0/16
+      postgres: {condition: service_healthy}
+    ports:
+      - "127.0.0.1:${MNEMA_LOCAL_LEARNING_PORT:-18080}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,uid=10001,gid=10001
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
 
 volumes:
-  mnema_postgres_data:
+  replacement_postgres_data:

@@ -120,6 +120,7 @@ def live_namespaced_resource(kind: str, name: str) -> dict[str, Any]:
 
 
 class FakeKubectl:
+    namespace = "prod"
     def __init__(
         self,
         configmaps: dict[str, dict[str, Any]] | None = None,
@@ -443,7 +444,7 @@ class ReleaseStateTest(unittest.TestCase):
             self.assertIn(f"/{service}@sha256:", images[service])
 
     def test_broken_staging_manifest_requires_deployment_occurrences(self) -> None:
-        with self.assertRaisesRegex(release_state.StateFailure, "broken_drill_frontend_image_incomplete"):
+        with self.assertRaisesRegex(release_state.StateFailure, "broken_drill_application_image_incomplete"):
             release_state.create_broken_staging_manifest(manifest())
 
     def test_first_snapshot_adopts_only_matching_live_artifact(self) -> None:
@@ -545,11 +546,13 @@ class ReleaseStateTest(unittest.TestCase):
             record_path = root / "rollback.json"
             manifest_path.write_text(content)
             record_path.write_text(json.dumps(adopted))
-            release_id, smoke_version = manager.rollback(manifest_path, record_path)
+            release_id, smoke_version, topology, mode = manager.rollback(manifest_path, record_path)
             self.assertEqual("a" * 40, release_id)
             self.assertEqual(release_state.IDENTITY_SMOKE_VERSION, smoke_version)
+            self.assertEqual(release_state.LEGACY_TOPOLOGY, topology)
+            self.assertEqual("legacy", mode)
             record_path.write_text(json.dumps(capable))
-            _, smoke_version = manager.rollback(manifest_path, record_path)
+            _, smoke_version, _, _ = manager.rollback(manifest_path, record_path)
             self.assertEqual(release_state.AUTHENTICATED_SMOKE_VERSION, smoke_version)
 
     def test_non_adopted_record_cannot_downgrade_smoke_capability(self) -> None:

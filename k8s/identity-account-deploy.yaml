@@ -1,0 +1,75 @@
+# Release template: render with scripts/render-release-manifest.sh; do not apply directly.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mnema-identity-account
+  namespace: release-namespace-placeholder
+spec:
+  replicas: 1
+  revisionHistoryLimit: 2
+  selector: { matchLabels: { app: mnema-identity-account } }
+  template:
+    metadata: { labels: { app: mnema-identity-account } }
+    spec:
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: identity-account
+          image: ghcr.io/mattoyuzuru/mnema/identity-account:release-placeholder
+          ports: [ { containerPort: 8080 } ]
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 768Mi }
+          env:
+            - name: PORT
+              value: "8080"
+            - name: MNEMA_BUILD_ID
+              value: "release-placeholder"
+            - name: MNEMA_IDENTITY_ISSUER
+              value: "https://release-auth-host-placeholder"
+            - name: SPRING_DATASOURCE_URL
+              value: jdbc:postgresql://postgres.release-namespace-placeholder.svc.cluster.local:5432/mnema
+            - name: SPRING_DATASOURCE_USERNAME
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_USER } }
+            - name: SPRING_DATASOURCE_PASSWORD
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTGRES_PASSWORD } }
+            - name: APP_ENV
+              value: "release-app-env-placeholder"
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          startupProbe:
+            httpGet: { path: /api/actuator/health/liveness, port: 8080 }
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: { path: /api/actuator/health/readiness, port: 8080 }
+            periodSeconds: 5
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet: { path: /api/actuator/health/liveness, port: 8080 }
+            periodSeconds: 10
+            timeoutSeconds: 5
+      volumes:
+        - name: tmp
+          emptyDir: { sizeLimit: 128Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mnema-identity-account
+  namespace: release-namespace-placeholder
+spec:
+  selector: { app: mnema-identity-account }
+  ports:
+    - port: 80
+      targetPort: 8080

@@ -119,6 +119,8 @@ class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest 
                 "identityBoundary", "unified"
         )).containsEntry("release", Map.of(
                 "id", "test-release",
+                "mode", "maintenance",
+                "topology", "identity-learning",
                 "runtime", "identity-account",
                 "identity-boundary", "unified"
         ));
@@ -131,7 +133,9 @@ class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest 
                 .andExpect(jsonPath("$.status").value("UP"));
         mockMvc.perform(get("/api/actuator/info").contextPath("/api"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.release.runtime").value("identity-account"));
+                .andExpect(jsonPath("$.release.runtime").value("identity-account"))
+                .andExpect(jsonPath("$.release.mode").value("maintenance"))
+                .andExpect(jsonPath("$.release.topology").value("identity-learning"));
     }
 
     @Test

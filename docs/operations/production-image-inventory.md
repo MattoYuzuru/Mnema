@@ -10,9 +10,11 @@ Every external image used to build Mnema or applied by the hosted production wor
 
 - every `FROM` in `backend/Dockerfile` and `frontend/Dockerfile`;
 - `k8s/postgres.yaml`, `k8s/redis.yaml`, and every manifest in `k8s/observability/`;
-- the `frontend`, `auth`, `user`, `core`, `media`, and `import` release templates consumed by `scripts/render-release-manifest.sh`;
+- the `identity-account` and `learning` release templates consumed by `scripts/render-release-manifest.sh`;
 - the exact literal `kubectl apply` surface in the production workflow;
 - Dependabot Docker coverage for `/backend`, `/frontend`, `/k8s`, and `/k8s/observability`.
+
+Since #143, Main CI ships only Identity & Account and Learning in maintenance; production promotion is disabled until #147. The production support image inventory below describes retained deployed infrastructure, not an enabled replacement production rollout.
 
 The application images are the only source placeholders allowed. The renderer replaces each one with the staging-approved GHCR digest and rejects the rendered release if any `image:` is not digest-pinned.
 
@@ -40,7 +42,6 @@ The pinned digest is a multi-platform OCI index. The final column proves that it
 | kube-state-metrics | `k8s/observability/50-kube-state-metrics.yaml` | `registry.k8s.io/kube-state-metrics/kube-state-metrics:v2.13.0` | `sha256:639a1e2da549210adddc0391ff91e270e83f7873014aec53258462812f741e6f` | `sha256:cfef7d6665aab9bfeecd9f738a23565cb57f038a4dfb2fa6b36e2d80a8333a0a` |
 | node-exporter | `k8s/observability/51-node-exporter.yaml` | `prom/node-exporter:v1.8.1` | `sha256:fa7fa12a57eff607176d5c363d8bb08dfbf636b36ac3cb5613a202f3c61a6631` | `sha256:e91be75cf2b242f73fc28a609c4a09f5f0409e03c03456e2bfc224b98730d286` |
 | Tempo | `k8s/observability/60-tempo.yaml` | `grafana/tempo:2.6.0` | `sha256:f55a8a1937fff0af3a760d376b476c8327fb30e432d5e7630d7938b67691e822` | `sha256:535a54902bf029b13795432866666b336a54c8ac3065aeb4002ee648fcc7b3ae` |
-| Migration init containers | `k8s/{auth,user,core,media,import}-deploy.yaml` | `postgres:18` | `sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941` | `sha256:cd78ca58eb75f929698e117a589488ccb2bd45107247fe02400b50ff6c418324` |
 
 ## Intentional exclusions
 

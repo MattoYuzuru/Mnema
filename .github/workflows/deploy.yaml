@@ -187,40 +187,15 @@ jobs:
     strategy:
       matrix:
         include:
-          - name: frontend
-            kind: frontend
-            context: ./frontend
-            dockerfile: ./frontend/Dockerfile
-
-          - name: auth
-            kind: backend
+          - name: identity-account
             context: ./backend
             dockerfile: ./backend/Dockerfile
-            target: auth-runtime
+            target: identity-account-runtime
 
-          - name: user
-            kind: backend
+          - name: learning
             context: ./backend
             dockerfile: ./backend/Dockerfile
-            target: user-runtime
-
-          - name: core
-            kind: backend
-            context: ./backend
-            dockerfile: ./backend/Dockerfile
-            target: core-runtime
-
-          - name: media
-            kind: backend
-            context: ./backend
-            dockerfile: ./backend/Dockerfile
-            target: media-runtime
-
-          - name: import
-            kind: backend
-            context: ./backend
-            dockerfile: ./backend/Dockerfile
-            target: import-runtime
+            target: learning-runtime
 
     steps:
       - name: Checkout
@@ -244,24 +219,7 @@ jobs:
         id: meta
         run: echo "TAG=sha-${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
-      - name: Build & push frontend
-        if: ${{ matrix.kind == 'frontend' }}
-        id: frontend-image
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
-        with:
-          context: ${{ matrix.context }}
-          file: ${{ matrix.dockerfile }}
-          push: true
-          tags: |
-            ghcr.io/${{ steps.repo.outputs.REPO }}/${{ matrix.name }}:${{ steps.meta.outputs.TAG }}
-            ghcr.io/${{ steps.repo.outputs.REPO }}/${{ matrix.name }}:latest
-          cache-from: type=gha,scope=frontend
-          cache-to: type=gha,mode=max,scope=frontend
-          provenance: mode=max
-          sbom: true
-
       - name: Build & push backend ${{ matrix.name }}
-        if: ${{ matrix.kind == 'backend' }}
         id: backend-image
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
         with:
@@ -280,12 +238,11 @@ jobs:
       - name: Record immutable image digest
         id: release-image
         env:
-          FRONTEND_DIGEST: ${{ steps.frontend-image.outputs.digest }}
           BACKEND_DIGEST: ${{ steps.backend-image.outputs.digest }}
           IMAGE_NAME: ghcr.io/${{ steps.repo.outputs.REPO }}/${{ matrix.name }}
           SERVICE: ${{ matrix.name }}
         run: |
-          digest="${FRONTEND_DIGEST:-$BACKEND_DIGEST}"
+          digest="$BACKEND_DIGEST"
           case "$digest" in
             sha256:*) digest_hex=${digest#sha256:} ;;
             *)
@@ -497,7 +454,7 @@ jobs:
           AUTH_HOST: auth.staging.mnema.app
           DIGEST_DIR: ${{ runner.temp }}/release-digests
           IMAGE_BASE: ghcr.io/${{ github.repository }}
-          INCLUDE_INGRESS: "false"
+          INCLUDE_INGRESS: "true"
           OUTPUT: ${{ runner.temp }}/staging-release.yaml
           PUBLIC_HOST: staging.mnema.app
           RELEASE_NAMESPACE: mnema-staging

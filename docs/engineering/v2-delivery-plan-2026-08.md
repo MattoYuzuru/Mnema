@@ -57,12 +57,18 @@ dual read/write, migration adapters и legacy fallback запрещены.
 | 1 | #139 | Зафиксировать greenfield decisions и supersession map | S / 1.5 | owner decisions |
 | 2 | #140 | Создать runtime/PostgreSQL baseline и общий canonical API boundary | M / 3 | #139 |
 | 3 | #141 | Создать unified Identity & Account schema и issuer contract | M / 2.5 | #139–#140 |
-| 4 | #142 | Перенести account/profile/avatar behavior и удалить standalone `user` runtime | M / 3 | #141 |
-| 5 | #143 | Перенастроить CI/CD и manifests под replacement topology и maintenance | S / 2 | #140–#142 |
+| 4 | #143 | Перенастроить CI/CD и manifests под replacement topology и maintenance | S / 2 | #140–#141 |
+| 5 | #142 | Перенести account/profile/avatar behavior и удалить standalone `user` runtime | M / 3 | #141, #143 |
 | 6 | #144 | Реализовать account-only export/import/reconciliation с точным allowlist | M / 3 | #141–#142 |
 | 7 | #145 | Автоматизировать manifest-driven no-snapshot purge preflight и disposable rehearsal | M / 3 | #143–#144, #76 deletion targets |
 | 8 | #146 | Удалить legacy runtime/build wiring после replacement gates | M / 3 | #74–#76 и #145 |
 | 9 | #147 | Выполнить production cutover и необратимое удаление после всех MVP gates | S / 1.5 operational | #139–#146 и минимальные #74–#76 slices |
+
+Owner подтвердил порядок `#143 → #142 → #144` 2026-09-05: старый image/build matrix
+требовал исходники `auth/user`, поэтому их удаление в #142 до изменения delivery
+делало Main CI неработоспособным. #143 публикует только два существующих runtime
+shell в явном maintenance-режиме; product behavior и удаление исходников остаются
+в своих задачах. Это не разрешает production promotion maintenance-релиза.
 
 Задача #147 остаётся Backlog до отдельного go/no-go. Её rollback boundary заканчивается
 перед первой операцией удаления. Успешный exit code недостаточен: нужны account

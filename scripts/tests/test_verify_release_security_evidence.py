@@ -226,7 +226,7 @@ class ReleaseSecurityEvidenceTest(unittest.TestCase):
 
     def test_low_and_medium_findings_are_reported_without_blocking(self) -> None:
         arguments = self.fixture(
-            "frontend",
+            "learning",
             [self.vulnerability("LOW"), {**self.vulnerability("MEDIUM"), "PkgName": "zlib"}],
         )
 
@@ -238,7 +238,7 @@ class ReleaseSecurityEvidenceTest(unittest.TestCase):
         self.assertEqual("passed", evidence["policy"]["outcome"])
 
     def test_unexcepted_high_finding_blocks_release(self) -> None:
-        arguments = self.fixture("auth", [self.vulnerability("HIGH")])
+        arguments = self.fixture("identity-account", [self.vulnerability("HIGH")])
 
         with self.assertRaisesRegex(EvidenceFailure, "blocking vulnerabilities"):
             evaluate(arguments)
@@ -246,8 +246,8 @@ class ReleaseSecurityEvidenceTest(unittest.TestCase):
         self.assertFalse(arguments.output.exists())
 
     def test_exact_time_bounded_exception_allows_named_finding(self) -> None:
-        self.set_exception("auth")
-        arguments = self.fixture("auth", [self.vulnerability("CRITICAL")])
+        self.set_exception("identity-account")
+        arguments = self.fixture("identity-account", [self.vulnerability("CRITICAL")])
 
         evaluate(arguments)
 
@@ -256,73 +256,73 @@ class ReleaseSecurityEvidenceTest(unittest.TestCase):
         self.assertEqual("openssl", evidence["exceptions"][0]["package"])
 
     def test_expired_exception_is_rejected(self) -> None:
-        self.set_exception("auth", expires="2026-08-28")
+        self.set_exception("identity-account", expires="2026-08-28")
 
         with self.assertRaisesRegex(EvidenceFailure, "expired"):
-            evaluate(self.fixture("auth", [self.vulnerability()]))
+            evaluate(self.fixture("identity-account", [self.vulnerability()]))
 
     def test_exception_longer_than_thirty_days_is_rejected(self) -> None:
-        self.set_exception("auth", expires="2026-10-01")
+        self.set_exception("identity-account", expires="2026-10-01")
 
         with self.assertRaisesRegex(EvidenceFailure, "30-day"):
-            evaluate(self.fixture("auth", [self.vulnerability()]))
+            evaluate(self.fixture("identity-account", [self.vulnerability()]))
 
     def test_wildcard_exception_scope_is_rejected(self) -> None:
-        self.set_exception("auth", packages=["open*"])
+        self.set_exception("identity-account", packages=["open*"])
 
         with self.assertRaisesRegex(EvidenceFailure, "without wildcards"):
-            evaluate(self.fixture("auth", [self.vulnerability()]))
+            evaluate(self.fixture("identity-account", [self.vulnerability()]))
 
     def test_unused_exception_scope_is_rejected(self) -> None:
-        self.set_exception("auth")
+        self.set_exception("identity-account")
 
         with self.assertRaisesRegex(EvidenceFailure, "unused exception"):
-            evaluate(self.fixture("auth"))
+            evaluate(self.fixture("identity-account"))
 
     def test_digest_mismatched_scan_is_rejected(self) -> None:
-        arguments = self.fixture("auth")
+        arguments = self.fixture("identity-account")
         report = json.loads(arguments.report.read_text(encoding="utf-8"))
-        report["ArtifactName"] = self.image("user")
-        report["Metadata"]["RepoDigests"] = [self.image("user")]
+        report["ArtifactName"] = self.image("learning")
+        report["Metadata"]["RepoDigests"] = [self.image("learning")]
         self.write_json(arguments.report, report)
 
         with self.assertRaisesRegex(EvidenceFailure, "not bound"):
             evaluate(arguments)
 
     def test_missing_attestation_is_rejected(self) -> None:
-        arguments = self.fixture("media")
+        arguments = self.fixture("learning")
         self.write_json(arguments.provenance_verification, [])
 
         with self.assertRaisesRegex(EvidenceFailure, "no verified attestations"):
             evaluate(arguments)
 
     def test_malformed_sarif_is_rejected(self) -> None:
-        arguments = self.fixture("media")
+        arguments = self.fixture("learning")
         self.write_json(arguments.sarif, {"version": "2.1.0", "runs": []})
 
         with self.assertRaisesRegex(EvidenceFailure, "at least one run"):
             evaluate(arguments)
 
-    def test_aggregate_binds_exactly_six_digests(self) -> None:
+    def test_aggregate_binds_exactly_two_digests(self) -> None:
         self.evaluate_all()
         arguments = self.aggregate_arguments()
 
         aggregate(arguments)
 
         release = json.loads(arguments.output.read_text(encoding="utf-8"))
-        self.assertEqual(6, release["summary"]["imageCount"])
+        self.assertEqual(2, release["summary"]["imageCount"])
         self.assertEqual(COMMIT, release["source"]["commit"])
 
     def test_aggregate_rejects_missing_image_evidence(self) -> None:
         self.evaluate_all()
-        (self.evidence_dir / "import-security-evidence.json").unlink()
+        (self.evidence_dir / "learning-security-evidence.json").unlink()
 
         with self.assertRaisesRegex(EvidenceFailure, "invalid JSON file"):
             aggregate(self.aggregate_arguments())
 
     def test_aggregate_rejects_digest_mismatch(self) -> None:
         self.evaluate_all()
-        (self.digests_dir / "core.digest").write_text("sha256:" + "f" * 64, encoding="utf-8")
+        (self.digests_dir / "learning.digest").write_text("sha256:" + "f" * 64, encoding="utf-8")
 
         with self.assertRaisesRegex(EvidenceFailure, "does not match"):
             aggregate(self.aggregate_arguments())
@@ -349,7 +349,7 @@ class ReleaseSecurityEvidenceTest(unittest.TestCase):
         arguments = self.aggregate_arguments()
         aggregate(arguments)
         manifest = self.manifest()
-        content = manifest.read_text(encoding="utf-8").replace(self.image("frontend"), self.image("auth"), 1)
+        content = manifest.read_text(encoding="utf-8").replace(self.image("learning"), self.image("identity-account"), 1)
         manifest.write_text(content, encoding="utf-8")
 
         with self.assertRaisesRegex(EvidenceFailure, "do not match"):
@@ -390,12 +390,12 @@ class ReleaseSecurityEvidenceTest(unittest.TestCase):
         self.trivy_ignore.write_text("CVE-2026-12345\n", encoding="utf-8")
 
         with self.assertRaisesRegex(EvidenceFailure, "comments only"):
-            evaluate(self.fixture("auth"))
+            evaluate(self.fixture("identity-account"))
 
     def test_expired_exception_is_rechecked_during_promotion(self) -> None:
-        self.set_exception("auth", expires="2026-09-10")
+        self.set_exception("identity-account", expires="2026-09-10")
         for service in SERVICES:
-            vulnerabilities = [self.vulnerability("HIGH")] if service == "auth" else None
+            vulnerabilities = [self.vulnerability("HIGH")] if service == "identity-account" else None
             arguments = self.fixture(service, vulnerabilities)
             evaluate(arguments)
             (self.digests_dir / f"{service}.digest").write_text(

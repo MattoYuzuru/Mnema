@@ -100,6 +100,8 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                 "apiBoundary", "canonical"
         )).containsEntry("release", Map.of(
                 "id", "test-release",
+                "mode", "maintenance",
+                "topology", "identity-learning",
                 "runtime", "learning-api",
                 "api-boundary", "canonical"
         ));
@@ -114,7 +116,9 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.build.runtime").value("learning-api"))
                 .andExpect(jsonPath("$.build.apiBoundary").value("canonical"))
-                .andExpect(jsonPath("$.release.id").value("test-release"));
+                .andExpect(jsonPath("$.release.id").value("test-release"))
+                .andExpect(jsonPath("$.release.mode").value("maintenance"))
+                .andExpect(jsonPath("$.release.topology").value("identity-learning"));
     }
 
     @Test

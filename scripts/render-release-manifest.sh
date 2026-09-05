@@ -22,6 +22,20 @@ S3_PUBLIC_ENDPOINT="${S3_PUBLIC_ENDPOINT:-$S3_ENDPOINT}"
 # Yandex Object Storage supports /<bucket>/<key> URLs on this endpoint.
 S3_PATH_STYLE_ACCESS="${S3_PATH_STYLE_ACCESS:-true}"
 INCLUDE_INGRESS="${INCLUDE_INGRESS:-true}"
+RELEASE_TOPOLOGY="${RELEASE_TOPOLOGY:-identity-learning}"
+RELEASE_MODE="${RELEASE_MODE:-maintenance}"
+PRODUCTION_ELIGIBLE="${PRODUCTION_ELIGIBLE:-false}"
+
+case "$APP_ENV" in
+  staging)
+    PUBLIC_TLS_SECRET="${PUBLIC_TLS_SECRET:-staging-mnema-app-tls}"
+    AUTH_TLS_SECRET="${AUTH_TLS_SECRET:-auth-staging-mnema-app-tls}"
+    ;;
+  *)
+    PUBLIC_TLS_SECRET="${PUBLIC_TLS_SECRET:-mnema-app-tls}"
+    AUTH_TLS_SECRET="${AUTH_TLS_SECRET:-auth-mnema-app-tls}"
+    ;;
+esac
 
 if [ "${#RELEASE_SHA}" -ne 40 ]; then
   echo "RELEASE_SHA must be exactly 40 lowercase hexadecimal characters" >&2
@@ -103,7 +117,35 @@ case "$INCLUDE_INGRESS" in
     ;;
 esac
 
-services="frontend auth user core media import"
+if [ "$RELEASE_TOPOLOGY" != identity-learning ]; then
+  echo "RELEASE_TOPOLOGY must be identity-learning" >&2
+  exit 1
+fi
+if [ "$RELEASE_MODE" != maintenance ]; then
+  echo "RELEASE_MODE must be maintenance" >&2
+  exit 1
+fi
+if [ "$PRODUCTION_ELIGIBLE" != false ]; then
+  echo "PRODUCTION_ELIGIBLE must be false for the maintenance release" >&2
+  exit 1
+fi
+for secret_name in "$PUBLIC_TLS_SECRET" "$AUTH_TLS_SECRET"; do
+  case "$secret_name" in
+    "" | *[!a-z0-9-]* | -* | *-)
+      echo "TLS Secret names must be lowercase DNS labels" >&2
+      exit 1
+      ;;
+  esac
+done
+if [ "$APP_ENV" = staging ] && {
+  [ "$PUBLIC_TLS_SECRET" != staging-mnema-app-tls ] ||
+  [ "$AUTH_TLS_SECRET" != auth-staging-mnema-app-tls ];
+}; then
+  echo "Staging TLS Secret names must match the existing certificate boundary" >&2
+  exit 1
+fi
+
+services="identity-account learning"
 mkdir -p "$(dirname -- "$OUTPUT")"
 tmp_output=$(mktemp "${OUTPUT}.tmp.XXXXXX")
 trap 'rm -f "$tmp_output"' EXIT HUP INT TERM
@@ -148,7 +190,20 @@ render_template() {
     -e "s|release-s3-endpoint-placeholder|$S3_ENDPOINT|g" \
     -e "s|release-s3-public-endpoint-placeholder|$S3_PUBLIC_ENDPOINT|g" \
     -e "s|release-s3-path-style-placeholder|$S3_PATH_STYLE_ACCESS|g" \
+    -e "s|release-public-tls-secret-placeholder|$PUBLIC_TLS_SECRET|g" \
+    -e "s|release-auth-tls-secret-placeholder|$AUTH_TLS_SECRET|g" \
     "$1"
+}
+
+image_key() {
+  case "$1" in
+    identity-account) printf '%s' identityAccountImage ;;
+    learning) printf '%s' learningImage ;;
+    *)
+      echo "Unsupported release service: $1" >&2
+      exit 1
+      ;;
+  esac
 }
 
 {
@@ -160,12 +215,15 @@ render_template() {
     "  namespace: $RELEASE_NAMESPACE" \
     'data:' \
     "  releaseId: \"$RELEASE_SHA\"" \
+    "  releaseTopology: \"$RELEASE_TOPOLOGY\"" \
+    "  releaseMode: \"$RELEASE_MODE\"" \
+    "  productionEligible: \"$PRODUCTION_ELIGIBLE\"" \
     "  publicHost: \"$PUBLIC_HOST\"" \
     "  authHost: \"$AUTH_HOST\""
 
   for service in $services; do
     ref=$(image_ref "$service")
-    printf '  %sImage: "%s"\n' "$service" "$ref"
+    printf '  %s: "%s"\n' "$(image_key "$service")" "$ref"
   done
 
   for service in $services; do
@@ -199,15 +257,15 @@ render_template() {
   fi
 } > "$tmp_output"
 
-if grep -Eq 'release(-[a-z0-9]+)*-placeholder|ghcr\.io/mattoyuzuru/mnema/(frontend|auth|user|core|media|import):latest' "$tmp_output"; then
+if grep -Eq 'release(-[a-z0-9]+)*-placeholder|ghcr\.io/mattoyuzuru/mnema/(frontend|auth|user|core|media|import|ai)(:|@)' "$tmp_output"; then
   echo "Rendered manifest still contains a mutable Mnema image or placeholder" >&2
   exit 1
 fi
 
 image_count=$(grep -E -c '^[[:space:]]+image:' "$tmp_output")
 pinned_image_count=$(grep -E -c '^[[:space:]]+image: [^[:space:]]+@sha256:[0-9a-f]{64}$' "$tmp_output")
-if [ "$image_count" -ne "$pinned_image_count" ]; then
-  echo "Rendered manifest contains an image that is not pinned by sha256 digest" >&2
+if [ "$image_count" -ne 2 ] || [ "$pinned_image_count" -ne 2 ]; then
+  echo "Rendered manifest must contain exactly two sha256-pinned release images" >&2
   exit 1
 fi
 
@@ -218,6 +276,12 @@ for service in $services; do
     exit 1
   fi
 done
+
+if [ "$(grep -E -c '^kind: Deployment$' "$tmp_output")" -ne 2 ] ||
+  [ "$(grep -E -c '^kind: Service$' "$tmp_output")" -ne 2 ]; then
+  echo "Rendered manifest must contain exactly two release Deployments and Services" >&2
+  exit 1
+fi
 
 mv "$tmp_output" "$OUTPUT"
 trap - EXIT HUP INT TERM

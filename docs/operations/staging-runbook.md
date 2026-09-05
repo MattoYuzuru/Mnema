@@ -5,17 +5,24 @@ artifact:
   title: "Mnema staging bootstrap and secret contract"
   status: current
   created_at: "2026-08-18"
-  updated_at: "2026-08-29"
+  updated_at: "2026-09-05"
   owners: ["project-owner"]
 ---
 
 # Mnema staging bootstrap and secret contract
 
-Staging is an isolated namespace on the shared main k3s host. It uses the same digest-pinned Mnema application images as production, but owns separate PostgreSQL, Redis, MinIO, credentials and TLS hosts. It has a default recovery objective of RPO 24 hours / RTO 4 hours. Sharing the host remains a failure-domain limitation, not a claim of production-grade availability.
+Staging is an isolated namespace on the shared main k3s host. Replacement releases ship only the digest-pinned Identity & Account and Learning runtimes in explicit maintenance. Production promotion is disabled until #147; production still has its previously applied topology. Staging owns separate PostgreSQL, Redis, MinIO, credentials and TLS hosts. It has a default recovery objective of RPO 24 hours / RTO 4 hours. Sharing the host remains a failure-domain limitation, not a claim of production-grade availability.
 
 The PostgreSQL 18 PVC is mounted at `/var/lib/postgresql`, matching the official image's version-specific `PGDATA` and volume contract ([PostgreSQL official image](https://hub.docker.com/_/postgres#pgdata)). Do not restore the pre-18 `/var/lib/postgresql/data` mount convention.
 
 ## Owner prerequisites
+
+The replacement workflow requires an existing initialized database/Secret and a
+verified previous release. It does not perform the historical first-deploy Secret
+initialization or data/bucket setup described below. Existing installations must
+not reapply the whole bootstrap to enable route switching; use the narrow procedure
+in the next section. In particular, do not switch routes before capturing the old
+release or overwrite an initialized Secret with the empty bootstrap template.
 
 Create DNS records for `staging.mnema.app`, `auth.staging.mnema.app` and `storage.staging.mnema.app` pointing to the main host. Do not point them at keykomi and do not reuse production data or object-storage credentials.
 
@@ -32,7 +39,7 @@ This creates `mnema-staging`, ResourceQuota, LimitRange, default-deny networking
 
 The Namespace immediately enforces the Pod Security `baseline` profile and audits/warns against `restricted`; initial `latest` labels prevent an unlabeled gap before credential creation. The kubeconfig generator then pins all three policy versions to the actual k3s server minor and refuses to emit the credential unless scoped server-side probes prove that privileged, hostPath and hostNetwork Deployments are rejected specifically by Pod Security. Kubernetes warns that permission to create workloads is an escalation path; baseline enforcement supplies the necessary host boundary while the current images are brought toward the restricted profile ([Pod Security Standards](https://kubernetes.io/docs/concepts/security/pod-security-standards/), [RBAC good practices](https://kubernetes.io/docs/concepts/security/rbac-good-practices/)).
 
-The CI Role also deliberately cannot create or change Ingress objects: Kubernetes RBAC cannot restrict a top-level `create` request by resource name or constrain its host fields, so delegating it on the shared Traefik controller would allow a staging credential to claim a production hostname. Route changes remain an explicit owner bootstrap action. A fail-closed admission policy additionally restricts mutable Services to ClusterIP/headless forms without `externalIPs` or `nodePort`, so K3s ServiceLB cannot turn staging input into host-port listeners. Workloads cannot use the `mnema-deployer` identity and must explicitly disable token automounting. Secret access is limited to update/get/patch of the precreated `mnema-secrets`; admission keeps it Opaque, rejects ServiceAccount-token annotations and rejects undocumented data keys. These controls prevent both non-expiring token Secrets and workload-mounted rotating deployer tokens ([Service](https://kubernetes.io/docs/concepts/services-networking/service/), [K3s ServiceLB](https://docs.k3s.io/networking/networking-services), [ServiceAccount tokens](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/)).
+The base CI Role cannot create or change Ingress objects. #143 adds only a separate named read/update/patch grant after proving a fail-closed route admission policy; see below. Kubernetes RBAC cannot restrict a top-level `create` by resource name, so generic Ingress creation remains forbidden on the shared Traefik controller. A fail-closed admission policy additionally restricts mutable Services to ClusterIP/headless forms without `externalIPs` or `nodePort`, so K3s ServiceLB cannot turn staging input into host-port listeners. Workloads cannot use the `mnema-deployer` identity and must explicitly disable token automounting. Secret access is limited to update/get/patch of the precreated `mnema-secrets`; admission keeps it Opaque, rejects ServiceAccount-token annotations and rejects undocumented data keys. These controls prevent both non-expiring token Secrets and workload-mounted rotating deployer tokens ([Service](https://kubernetes.io/docs/concepts/services-networking/service/), [K3s ServiceLB](https://docs.k3s.io/networking/networking-services), [ServiceAccount tokens](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/)).
 
 Default-deny ingress/egress permits same-namespace traffic, kube-system Traefik ingress, kube-dns and public IPv4/IPv6 egress while excluding private, loopback, link-local, documentation and multicast ranges. This blocks direct staging access to production Pod/Service networks and `169.254.169.254`. Kubernetes deliberately permits Pod traffic to its resident node regardless of NetworkPolicy, so NetworkPolicy alone is not the host boundary ([NetworkPolicy behavior](https://kubernetes.io/docs/concepts/services-networking/network-policies/#network-traffic-filtering)).
 
@@ -81,9 +88,60 @@ Authenticate `sudo` through the owner's protected stdin or interactive mechanism
 
 Record the script's `token_expires_at` value and rotate to a new file/secret before that time; the script deliberately refuses to overwrite an existing credential. The API server may issue a shorter duration than requested. Kubernetes recommends bounded TokenRequest credentials over manually created non-expiring ServiceAccount token Secrets ([ServiceAccount tokens](https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/)). GitHub `staging` and `prod` environments must both keep a custom deployment-branch policy with the single exact branch `main`; `prod` must additionally keep the required reviewer. Read back the environment and branch-policy APIs before uploading any credential. This exact-main policy was installed and read back on 2026-08-19; changing it is a security-sensitive owner action ([GitHub deployment branch policies](https://docs.github.com/en/rest/deployments/branch-policies)).
 
+## Replacement route access
+
+Target: only `mnema-staging` on `yandex`. Protected: `prod`, MinIO's route and data,
+TLS identities, namespace labels, existing workload/Secret permissions, DB/PVCs and
+backups. The existing cluster was read back as `v1.34.3+k3s1` on 2026-09-05; staging
+and drill clients use current `kubectl v1.35.8` within the supported one-minor skew
+([Kubernetes version-skew policy](https://kubernetes.io/releases/version-skew-policy/)).
+Cluster upgrade remains separate shared-host maintenance, not part of #143.
+
+Using the admin context, preview exactly `application-route-boundary.yaml`, apply
+only that policy/binding, and run the read-only positive/negative server probes:
+
+```bash
+kubectl diff -f k8s/staging/application-route-boundary.yaml
+kubectl apply -f k8s/staging/application-route-boundary.yaml
+python3 scripts/verify-staging-route-boundary.py
+kubectl diff -f k8s/staging/application-route-access.yaml
+kubectl apply -f k8s/staging/application-route-access.yaml
+```
+
+Diff exit `1` means reviewed changes; anything above `1` stops the operation.
+Do not apply the access grant unless policy generation/type-checking is current
+and all allowed/forbidden route probes pass. The verifier performs only reads and
+server dry-runs. Read back the resulting Role/RoleBinding and prove named
+get/patch/update on `mnema`/`mnema-auth` are allowed, while create/delete/list,
+`minio`, and every production Ingress operation remain denied. Capture MinIO's
+spec checksum before and after the transition/drill; it must not change.
+
+The policy fixes host, TLS host/Secret, class and cert-manager issuer, rejects
+default backends and routing annotations, and permits only one complete old or new
+path/backend set. Last-applied bookkeeping is permitted but removed from stored
+snapshots. New routes are `/api` → `mnema-learning:80` on `staging.mnema.app` and
+`/api` → `mnema-identity-account:80` on `auth.staging.mnema.app`. No legacy aliases
+exist in the replacement route set. The legacy alternative is only for restoring
+the exact saved previous staging release.
+
+Stop on unexpected route/annotation drift, policy warnings, a wrongly accepted
+negative probe, or unknown resource inventory. Before any app transition, this
+permission-only change can be reversed by removing just RoleBinding
+`mnema-application-route-deployer`; leave the fail-closed policy in place. Never
+remove enforcement while its access grant is active. No application or data is
+deleted by this bootstrap procedure.
+
 ## Environment-owned secret names
 
-Values are never copied to issues, pull requests, logs or repository files. Production and staging deliberately use different prefixes. `Main CI` has no Environment and no deployment secrets. Successful main CI triggers direct `Staging Deploy`; accepted staging then triggers direct `Production Deploy`. Each triggered workflow first runs an unprivileged predecessor/artifact gate: an unsuccessful or invalid predecessor becomes an actual failed workflow, never a successful skipped Environment job. The privileged jobs themselves declare `staging` or `prod`, and no workflow uses `secrets: inherit`, so repository secrets are not passed into either deployment workflow. GitHub documents that `workflow_run` may access secrets and predecessor artifacts; this repository therefore accepts only successful main-branch predecessors, verifies checksums and the exact predecessor SHA, and rejects stale releases before credential access ([workflow_run](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)).
+Current maintenance delivery requires only `STAGING_KUBECONFIG_B64` from GitHub;
+the runtime reads existing `POSTGRES_USER`/`POSTGRES_PASSWORD` by Secret reference.
+The three `STAGING_SMOKE_*` inputs below are used only if a legacy rollback needs
+its previously recorded authenticated smoke. They are not required by new shells.
+The remaining table is the retained legacy/production credential inventory, not a
+list of new replacement dependencies. #142 owns fresh Identity authentication and
+mail configuration; legacy signing/session state must not silently carry over.
+
+Values are never copied to issues, pull requests, logs or repository files. Production and staging deliberately use different prefixes. `Main CI` has no Environment and no deployment secrets. Successful main CI triggers direct `Staging Deploy`; accepted staging triggers the unprivileged `Production Deploy` gate, which keeps all production jobs disabled until #147. Each triggered workflow first runs an unprivileged predecessor/artifact gate: an unsuccessful or invalid predecessor becomes an actual failed workflow, never a successful skipped Environment job. The privileged jobs themselves declare `staging` or `prod`, and no workflow uses `secrets: inherit`, so repository secrets are not passed into either deployment workflow. GitHub documents that `workflow_run` may access secrets and predecessor artifacts; this repository therefore accepts only successful main-branch predecessors, verifies checksums and the exact predecessor SHA, and rejects stale releases before credential access ([workflow_run](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#workflow_run)).
 
 | GitHub environment | Required names |
 |---|---|
@@ -100,15 +158,23 @@ After both environment copies are loaded and verified, remove the superseded unp
 
 ## Promotion and evidence
 
+For current behavior, the [replacement release contract](release-verification-runbook.md#current-replacement-delivery--143)
+supersedes the six-image promotion description below. The two maintenance images
+retain all existing provenance/SBOM/vulnerability/quality gates. Staging leaves
+Secrets and data services unchanged and performs no frontend/product smoke.
+Production validation reports the #147 hard gate and skips every `prod` Environment
+job; no maintenance artifact is promoted. Old production workflow internals remain
+dormant until their owning cutover task.
+
 The hosted release smoke includes the staged Report-Only response contract and headless Chrome inspection defined in the [browser security headers runbook](./browser-security-headers.md). Any missing header, unexpected broad source, Turnstile loading failure, or browser-observed CSP violation rejects the candidate inside the same automatic rollback boundary.
 
 `Main CI` builds each image once, records its registry digest, and renders both environment manifests from those same six digest files. The unprivileged `Staging Deploy` gate downloads both checksummed artifacts by the exact predecessor run ID and proves both embedded release identities before the staging Environment is entered; the direct deployment job repeats those checks. Staging renders its Secret and server-side dry-runs/diffs that Secret, data services, bucket Job and complete release before the first apply/delete/restart, then performs one final stale-main check. It must complete all six rollouts, the behavioral release smoke and release-state recording before it relays the unchanged checksummed production manifest to its own run. The unprivileged `Production Deploy` gate validates only that staging-approved relay and the current SHA before either production approval; non-cancelling concurrency begins only on the mutating job, so obsolete preview approvals do not block a newer safe preview. A fresh staging database has no dedicated smoke identity; after the first expected login `401`, the smoke creates the exact configured email through the normal registration endpoint with the account-bound Turnstile bypass, then retries authentication. Conflicts, wrong credentials and all non-`401` failures stop the rollout. Production's preview artifact binds the application diff, exact desired Secret and smoke inputs, exact live application/Grafana Secret identities/data/resourceVersions, and the reconciliation marker with context-separated keyed HMACs; no values or unkeyed value hashes are exposed. The mutating job repeats all bindings, then conditionally replaces Secrets with the approved `resourceVersion`, so a live A→C change fails instead of being overwritten. Successful application, observability and smoke verification are recorded last; a failed rollout or smoke leaves reconciliation/release state stale and invokes the saved complete-release rollback path. Kubernetes documents that `resourceVersion` on replacement provides optimistic concurrency and rejects stale updates ([API concepts](https://kubernetes.io/docs/reference/using-api/api-concepts/#updates-to-existing-resources)). Release state, sanitized diagnostics, automatic rollback and the mandatory controlled drill are defined in the [release verification runbook](./release-verification-runbook.md).
 
-Before accepting this task, verify:
+For current maintenance acceptance, verify both shell identities with `release_smoke.py --mode maintenance` as described in the release runbook, and inspect:
 
 ```bash
-curl -fsS https://staging.mnema.app/
-curl -fsS https://auth.staging.mnema.app/actuator/health/readiness
+curl -fsS https://staging.mnema.app/api/actuator/health/readiness
+curl -fsS https://auth.staging.mnema.app/api/actuator/health/readiness
 kubectl -n mnema-staging get resourcequota,limitrange,pods,pvc,ingress
 kubectl get namespace mnema-staging --show-labels
 kubectl auth can-i get secrets -n prod --as=system:serviceaccount:mnema-staging:mnema-deployer

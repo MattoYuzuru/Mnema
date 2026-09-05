@@ -37,9 +37,14 @@ grep -Fq 'add_header_inherit merge;' "$REPO_ROOT/frontend/nginx.conf"
 grep -Fq 'include /etc/nginx/conf.d/security-headers.inc;' "$REPO_ROOT/frontend/nginx.conf"
 grep -Fq 'run: ./scripts/test-browser-security-headers.sh' "$REPO_ROOT/.github/workflows/deploy.yaml"
 grep -Fq 'run: ./scripts/test-browser-security-headers.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
-grep -Fq 'python3 scripts/verify_browser_security_headers.py hosted' "$REPO_ROOT/.github/workflows/staging-deploy.yaml"
+# The non-shipping frontend retains its full local nginx/security tests. The
+# maintenance staging release has no frontend and must not probe its old login.
+grep -Fq -- '--mode maintenance' "$REPO_ROOT/.github/workflows/staging-deploy.yaml"
 grep -Fq 'python3 scripts/verify_browser_security_headers.py hosted' "$REPO_ROOT/.github/workflows/production-deploy.yaml"
-grep -Fq './scripts/verify-hosted-browser-csp.sh https://staging.mnema.app/login' "$REPO_ROOT/.github/workflows/staging-deploy.yaml"
+if grep -Fq 'https://staging.mnema.app/login' "$REPO_ROOT/.github/workflows/staging-deploy.yaml"; then
+  echo 'Maintenance staging must not require the non-shipping legacy frontend' >&2
+  exit 1
+fi
 grep -Fq './scripts/verify-hosted-browser-csp.sh https://mnema.app/login' "$REPO_ROOT/.github/workflows/production-deploy.yaml"
 sh -n "$REPO_ROOT/scripts/verify-hosted-browser-csp.sh"
 

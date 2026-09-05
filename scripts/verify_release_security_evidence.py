@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 
-SERVICES = ("frontend", "auth", "user", "core", "media", "import")
+SERVICES = ("identity-account", "learning")
 BLOCKING_SEVERITIES = {"HIGH", "CRITICAL"}
 SEVERITIES = {"UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"}
 MAX_EXCEPTION_DAYS = 30
@@ -22,7 +22,7 @@ SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 DIGEST_PATTERN = re.compile(r"^sha256:[0-9a-f]{64}$")
 IMAGE_PATTERN = re.compile(
     r"^ghcr\.io/(?P<repository>[a-z0-9_.-]+/[a-z0-9_.-]+)/"
-    r"(?P<service>frontend|auth|user|core|media|import)@(?P<digest>sha256:[0-9a-f]{64})$"
+    r"(?P<service>identity-account|learning)@(?P<digest>sha256:[0-9a-f]{64})$"
 )
 OWNER_PATTERN = re.compile(r"^@[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$")
 FINDING_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:+-]{2,127}$")
@@ -678,7 +678,7 @@ def verify_release(args: argparse.Namespace) -> None:
         raise EvidenceFailure("release security policy did not pass")
     images = payload.get("images")
     if not isinstance(images, list) or len(images) != len(SERVICES):
-        raise EvidenceFailure("release security evidence must contain six images")
+        raise EvidenceFailure("release security evidence must contain exactly two replacement images")
     evidence_images: dict[str, str] = {}
     applied_exception_count = 0
     for item in images:
@@ -717,12 +717,12 @@ def verify_release(args: argparse.Namespace) -> None:
         manifest = args.manifest.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError) as error:
         raise EvidenceFailure("release manifest cannot be read") from error
-    manifest_images = {
+    manifest_images = [
         match.group("image")
         for line in manifest.splitlines()
-        if (match := IMAGE_LINE.fullmatch(line)) and IMAGE_PATTERN.fullmatch(match.group("image"))
-    }
-    if manifest_images != set(evidence_images.values()):
+        if (match := IMAGE_LINE.fullmatch(line))
+    ]
+    if len(manifest_images) != len(SERVICES) or set(manifest_images) != set(evidence_images.values()):
         raise EvidenceFailure("release manifest images do not match verified security evidence")
     release_marker = f'releaseId: "{args.expected_commit}"'
     if manifest.count(release_marker) != 1:
