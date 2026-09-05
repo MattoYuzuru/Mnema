@@ -11,7 +11,7 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-oauth2-client")
     implementation("org.springframework.boot:spring-boot-starter-oauth2-resource-server")
-    implementation("org.springframework.security:spring-security-oauth2-authorization-server:1.5.3")
+    implementation("org.springframework.security:spring-security-oauth2-authorization-server:1.5.8")
 
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
 
@@ -22,7 +22,7 @@ dependencies {
     implementation("org.flywaydb:flyway-database-postgresql")
     runtimeOnly("org.postgresql:postgresql")
 
-    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.8.13")
+    implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.9.0")
 
     implementation(kotlin("reflect"))
 
