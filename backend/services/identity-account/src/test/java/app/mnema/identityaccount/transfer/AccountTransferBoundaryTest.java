@@ -66,7 +66,7 @@ class AccountTransferBoundaryTest {
     }
 
     @Test
-    void codecRejectsWrongKeyAndExistingOutput() {
+    void codecRejectsWrongKeyTamperingAndExistingOutput() throws IOException {
         AccountTransferCodec codec = new AccountTransferCodec(new byte[32]);
         AccountTransferArtifact empty = new AccountTransferArtifact(
                 new AccountTransferBundle(1, AccountTransferBundle.KIND, java.util.List.of()), java.util.Map.of());
@@ -77,7 +77,13 @@ class AccountTransferBoundaryTest {
         byte[] otherKey = new byte[32];
         otherKey[0] = 1;
         assertThatThrownBy(() -> new AccountTransferCodec(otherKey).read(artifact))
-                .isInstanceOf(AccountTransferFailure.class);
+                .isInstanceOf(AccountTransferFailure.class).hasMessage("artifact_authentication_failed");
+        byte[] tampered = Files.readAllBytes(artifact);
+        tampered[tampered.length - 1] ^= 1;
+        Path tamperedArtifact = temporary.resolve("tampered.enc");
+        Files.write(tamperedArtifact, tampered);
+        assertThatThrownBy(() -> codec.read(tamperedArtifact))
+                .isInstanceOf(AccountTransferFailure.class).hasMessage("artifact_authentication_failed");
         assertThatThrownBy(() -> new AccountTransferCodec(new byte[31])).hasMessage("invalid_encryption_key");
     }
 

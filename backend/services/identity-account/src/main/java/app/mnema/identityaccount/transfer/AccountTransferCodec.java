@@ -8,10 +8,10 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 
 import javax.crypto.Cipher;
-import javax.crypto.CipherInputStream;
 import javax.crypto.CipherOutputStream;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -23,6 +23,7 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.security.GeneralSecurityException;
 import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
@@ -83,7 +84,6 @@ final class AccountTransferCodec {
             } catch (AtomicMoveNotSupportedException ignored) {
                 Files.move(temporary, absolute);
             }
-            setPrivatePermissions(absolute);
         } catch (AccountTransferFailure failure) {
             if (temporary != null) tryDelete(temporary);
             throw failure;
@@ -104,33 +104,45 @@ final class AccountTransferCodec {
                     "invalid_artifact_header");
             byte[] nonce = inputStream.readNBytes(NONCE_BYTES);
             AccountTransferBundle.require(nonce.length == NONCE_BYTES, "invalid_artifact_header");
-            Cipher cipher = cipher(Cipher.DECRYPT_MODE, nonce);
-            try (CipherInputStream encrypted = new CipherInputStream(inputStream, cipher);
-                 ZipInputStream zip = new ZipInputStream(encrypted)) {
-            for (ZipEntry entry; (entry = zip.getNextEntry()) != null; ) {
-                AccountTransferBundle.require(!entry.isDirectory() && names.add(entry.getName()), "invalid_archive_entry");
-                if (ACCOUNTS_ENTRY.equals(entry.getName())) {
-                    accounts = readBounded(zip, MAX_ACCOUNTS_BYTES, "accounts_too_large");
-                } else {
-                    UUID assetId = parseAvatarEntry(entry.getName());
-                    AccountTransferBundle.require(!avatars.containsKey(assetId), "duplicate_avatar_blob");
-                    avatars.put(assetId, readBounded(zip, MAX_AVATAR_BYTES, "avatar_too_large"));
+            byte[] plaintext = decryptAuthenticated(inputStream, nonce);
+            try {
+                try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(plaintext))) {
+                    for (ZipEntry entry; (entry = zip.getNextEntry()) != null; ) {
+                        AccountTransferBundle.require(!entry.isDirectory() && names.add(entry.getName()),
+                                "invalid_archive_entry");
+                        if (ACCOUNTS_ENTRY.equals(entry.getName())) {
+                            accounts = readBounded(zip, MAX_ACCOUNTS_BYTES, "accounts_too_large");
+                        } else {
+                            UUID assetId = parseAvatarEntry(entry.getName());
+                            AccountTransferBundle.require(!avatars.containsKey(assetId), "duplicate_avatar_blob");
+                            avatars.put(assetId, readBounded(zip, MAX_AVATAR_BYTES, "avatar_too_large"));
+                        }
+                        zip.closeEntry();
+                    }
+                    AccountTransferBundle.require(accounts != null, "missing_accounts_projection");
+                    AccountTransferBundle bundle = json.readValue(accounts, AccountTransferBundle.class);
+                    Set<String> expected = new HashSet<>();
+                    expected.add(ACCOUNTS_ENTRY);
+                    bundle.accounts().stream().filter(account -> account.avatar() != null)
+                            .forEach(account -> expected.add(avatarEntry(account.avatar().assetId())));
+                    AccountTransferBundle.require(names.equals(expected), "archive_entry_mismatch");
+                    return new AccountTransferArtifact(bundle, avatars);
                 }
-                zip.closeEntry();
-            }
-            AccountTransferBundle.require(accounts != null, "missing_accounts_projection");
-            AccountTransferBundle bundle = json.readValue(accounts, AccountTransferBundle.class);
-            Set<String> expected = new HashSet<>();
-            expected.add(ACCOUNTS_ENTRY);
-            bundle.accounts().stream().filter(account -> account.avatar() != null)
-                    .forEach(account -> expected.add(avatarEntry(account.avatar().assetId())));
-            AccountTransferBundle.require(names.equals(expected), "archive_entry_mismatch");
-            return new AccountTransferArtifact(bundle, avatars);
+            } finally {
+                Arrays.fill(plaintext, (byte) 0);
             }
         } catch (AccountTransferFailure failure) {
             throw failure;
         } catch (IOException | RuntimeException exception) {
             throw new AccountTransferFailure("artifact_read_failed", exception);
+        }
+    }
+
+    private byte[] decryptAuthenticated(InputStream input, byte[] nonce) throws IOException {
+        try {
+            return cipher(Cipher.DECRYPT_MODE, nonce).doFinal(input.readAllBytes());
+        } catch (GeneralSecurityException exception) {
+            throw new AccountTransferFailure("artifact_authentication_failed", exception);
         }
     }
 
@@ -207,8 +219,10 @@ final class AccountTransferCodec {
     private static void setPrivatePermissions(Path path) {
         try {
             Files.setPosixFilePermissions(path, PosixFilePermissions.fromString("rw-------"));
-        } catch (UnsupportedOperationException | IOException ignored) {
+        } catch (UnsupportedOperationException ignored) {
             // Windows has no POSIX mode; the parent ACL remains authoritative there.
+        } catch (IOException exception) {
+            throw new AccountTransferFailure("artifact_permissions_failed", exception);
         }
     }
 

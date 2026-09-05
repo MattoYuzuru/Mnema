@@ -188,11 +188,14 @@ the actual blob; import writes the canonical
 
 Artifacts are AES-256-GCM encrypted with the 32-byte base64 key in
 `MNEMA_ACCOUNT_TRANSFER_ENCRYPTION_KEY_B64`, created mode `0600` and never
-overwritten. Keep the key outside the artifact and repository. The decrypted
-projection has a closed JSON schema and closed archive entry set; duplicate,
-missing or unknown fields/entries fail. It contains preserved password hashes and
-PII and must never be attached to GitHub evidence. The separate reconciliation
-JSON contains only counts, byte totals and aggregate SHA-256 values.
+overwritten. Keep the key outside the artifact and repository. Import authenticates
+the complete GCM ciphertext before parsing any ZIP entry; `CipherInputStream` is
+deliberately not used because Java does not propagate all failed integrity checks
+from that stream. The decrypted projection has a closed JSON schema and closed
+archive entry set; duplicate, missing or unknown fields/entries fail. It contains
+preserved password hashes and PII and must never be attached to GitHub evidence. The
+separate reconciliation JSON contains only counts, byte totals and aggregate SHA-256
+values.
 
 With source writes stopped and exact avatar objects staged, run:
 
@@ -232,4 +235,5 @@ Important implementation sources:
 [Postbox HTTPS signing](https://yandex.cloud/en/docs/postbox/operations/send-email#curl),
 [GitHub PKCE](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps),
 [Yandex PKCE](https://yandex.ru/dev/id/doc/en/codes/code-url),
-[Java 21 AES-GCM parameters](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/javax/crypto/spec/GCMParameterSpec.html).
+[Java 21 AES-GCM parameters](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/javax/crypto/spec/GCMParameterSpec.html),
+and [authenticated-stream caveat](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/javax/crypto/CipherInputStream.html).
