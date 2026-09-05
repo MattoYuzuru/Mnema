@@ -72,6 +72,7 @@ class SmokeConfig:
     mode: str = "legacy"
     identity_url: str = ""
     learning_url: str = ""
+    identity_protocol_required: bool = True
 
     def validate(self) -> None:
         if not SHA_PATTERN.fullmatch(self.expected_release_sha):
@@ -92,6 +93,8 @@ class SmokeConfig:
                 if not value.startswith("https://"):
                     raise ValueError(f"{name} must use https")
             return
+        if not self.identity_protocol_required:
+            raise ValueError("identity protocol may be skipped only in maintenance mode")
         for name, value in (("public URL", self.public_url), ("auth URL", self.auth_url)):
             if not value.startswith("https://"):
                 raise ValueError(f"{name} must use https")
@@ -267,11 +270,12 @@ class ReleaseSmoke:
                         "identity-account", self.config.identity_url
                     ),
                 )
-                self.step(
-                    "identity_protocol",
-                    "identity-account",
-                    self.verify_identity_protocol,
-                )
+                if self.config.identity_protocol_required:
+                    self.step(
+                        "identity_protocol",
+                        "identity-account",
+                        self.verify_identity_protocol,
+                    )
                 self.step(
                     "learning_readiness",
                     "learning",
@@ -683,6 +687,7 @@ def parse_args() -> SmokeConfig:
     parser.add_argument("--force-failure-step")
     parser.add_argument("--identity-only", action="store_true")
     parser.add_argument("--readiness-only", action="store_true")
+    parser.add_argument("--skip-identity-protocol", action="store_true")
     args = parser.parse_args()
     config = SmokeConfig(
         environment=args.environment,
@@ -701,6 +706,7 @@ def parse_args() -> SmokeConfig:
         mode=args.mode,
         identity_url=args.identity_url,
         learning_url=args.learning_url,
+        identity_protocol_required=not args.skip_identity_protocol,
     )
     config.validate()
     return config

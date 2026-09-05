@@ -15,14 +15,24 @@ NAMESPACE = "mnema-staging"
 SHA = "b" * 40
 
 
-def routes(maintenance: bool) -> list[dict]:
+def routes(
+    maintenance: bool,
+    maintenance_smoke_version: int = release_state.MAINTENANCE_SMOKE_VERSION,
+) -> list[dict]:
     result = []
     for name, host, tls in (
         ("mnema", "staging.mnema.app", "staging-mnema-app-tls"),
         ("mnema-auth", "auth.staging.mnema.app", "auth-staging-mnema-app-tls"),
     ):
         if maintenance:
-            paths = [("/api", "learning")] if name == "mnema" else [("/", "identity-account")]
+            identity_path = (
+                "/api"
+                if maintenance_smoke_version == release_state.PREVIOUS_MAINTENANCE_SMOKE_VERSION
+                else "/"
+            )
+            paths = [("/api", "learning")] if name == "mnema" else [
+                (identity_path, "identity-account")
+            ]
         elif name == "mnema-auth":
             paths = [("/", "auth")]
         else:
@@ -42,7 +52,12 @@ def routes(maintenance: bool) -> list[dict]:
     return result
 
 
-def manifest(maintenance: bool, *, include_routes: bool = True) -> str:
+def manifest(
+    maintenance: bool,
+    *,
+    include_routes: bool = True,
+    maintenance_smoke_version: int = release_state.MAINTENANCE_SMOKE_VERSION,
+) -> str:
     services = ("identity-account", "learning") if maintenance else (
         "frontend", "auth", "user", "core", "media", "import")
     header = ["apiVersion: v1", "kind: ConfigMap", "metadata:",
@@ -64,20 +79,32 @@ def manifest(maintenance: bool, *, include_routes: bool = True) -> str:
                 }]}}}
             resources.append(resource)
     if include_routes:
-        resources += routes(maintenance)
+        resources += routes(maintenance, maintenance_smoke_version)
     return "\n".join(header) + "\n---\n" + "---\n".join(json.dumps(r) + "\n" for r in resources)
 
 
-def record(content: str) -> dict:
-    return release_state.build_record(content, environment="staging", deployed_at=None, workflow_run_id="123")
+def record(content: str, maintenance_smoke_version: int | None = None) -> dict:
+    result = release_state.build_record(
+        content,
+        environment="staging",
+        deployed_at=None,
+        workflow_run_id="123",
+    )
+    if maintenance_smoke_version is not None:
+        result["maintenanceSmokeVersion"] = maintenance_smoke_version
+    return result
 
 
 class StagingKubectl(FakeKubectl):
     namespace = NAMESPACE
 
-    def __init__(self, maintenance=False):
+    def __init__(
+        self,
+        maintenance: bool = False,
+        maintenance_smoke_version: int = release_state.MAINTENANCE_SMOKE_VERSION,
+    ):
         super().__init__()
-        self.routes = routes(maintenance)
+        self.routes = routes(maintenance, maintenance_smoke_version)
         self.removed = []
 
     def get_resource(self, kind, name):
@@ -96,11 +123,25 @@ class MaintenanceReleaseStateTest(unittest.TestCase):
         self.assertEqual(2, result["schemaVersion"])
         self.assertEqual({"identity-account", "learning"}, set(result["images"]))
         self.assertFalse(result["productionEligible"])
+        self.assertEqual(release_state.MAINTENANCE_SMOKE_VERSION, result["maintenanceSmokeVersion"])
         self.assertNotIn("authenticatedSmokeVersion", result)
         for key, value in (("productionEligible", True), ("releaseMode", "normal"),
                            ("maintenanceSmokeVersion", 0), ("authenticatedSmokeVersion", 1)):
             with self.subTest(key=key), self.assertRaises(release_state.StateFailure):
                 release_state.validate_record(content, {**result, key: value})
+        previous = {
+            **result,
+            "maintenanceSmokeVersion": release_state.PREVIOUS_MAINTENANCE_SMOKE_VERSION,
+        }
+        release_state.validate_record(content, previous)
+        for unsupported in (True, 0, 3):
+            with self.subTest(unsupported=unsupported), self.assertRaises(
+                release_state.StateFailure
+            ):
+                release_state.validate_record(
+                    content,
+                    {**result, "maintenanceSmokeVersion": unsupported},
+                )
 
     def test_maintenance_is_rejected_for_production(self):
         for environment in ("production", "prod"):
@@ -170,6 +211,208 @@ class MaintenanceReleaseStateTest(unittest.TestCase):
             with self.assertRaisesRegex(release_state.StateFailure, "ingress_topology_mismatch"):
                 release_state.ensure_rollback_ingresses(kubectl, content, record(content))
 
+    def test_snapshot_accepts_the_version_one_maintenance_route_only_for_version_one(self):
+        version_one = release_state.PREVIOUS_MAINTENANCE_SMOKE_VERSION
+        content = manifest(
+            True,
+            include_routes=False,
+            maintenance_smoke_version=version_one,
+        )
+        kubectl = StagingKubectl(
+            maintenance=True,
+            maintenance_smoke_version=version_one,
+        )
+
+        augmented, result = release_state.ensure_rollback_ingresses(
+            kubectl,
+            content,
+            record(content, version_one),
+        )
+
+        release_state.validate_record(augmented, result)
+        self.assertIn('"path": "/api"', augmented)
+        with self.assertRaisesRegex(
+            release_state.StateFailure,
+            "ingress_topology_mismatch",
+        ):
+            release_state.ensure_rollback_ingresses(
+                kubectl,
+                manifest(True, include_routes=False),
+                record(manifest(True, include_routes=False)),
+            )
+
+    def test_snapshot_rejects_the_version_one_record_with_the_version_two_route(self):
+        content = manifest(
+            True,
+            include_routes=False,
+            maintenance_smoke_version=release_state.PREVIOUS_MAINTENANCE_SMOKE_VERSION,
+        )
+        with self.assertRaisesRegex(
+            release_state.StateFailure,
+            "ingress_topology_mismatch",
+        ):
+            release_state.ensure_rollback_ingresses(
+                StagingKubectl(maintenance=True),
+                content,
+                record(content, release_state.PREVIOUS_MAINTENANCE_SMOKE_VERSION),
+            )
+
+    def test_snapshot_binds_routes_already_in_the_manifest_to_the_record_version(self):
+        versions = (
+            release_state.PREVIOUS_MAINTENANCE_SMOKE_VERSION,
+            release_state.MAINTENANCE_SMOKE_VERSION,
+        )
+        for record_version, manifest_version in ((versions[0], versions[1]), (versions[1], versions[0])):
+            with self.subTest(
+                record_version=record_version,
+                manifest_version=manifest_version,
+            ):
+                content = manifest(True, maintenance_smoke_version=manifest_version)
+                kubectl = StagingKubectl(
+                    maintenance=True,
+                    maintenance_smoke_version=record_version,
+                )
+                with self.assertRaisesRegex(
+                    release_state.StateFailure,
+                    "ingress_topology_mismatch",
+                ):
+                    release_state.ensure_rollback_ingresses(
+                        kubectl,
+                        content,
+                        record(content, record_version),
+                    )
+
+    def test_snapshot_accepts_matching_routes_already_in_the_manifest(self):
+        for smoke_version in release_state.SUPPORTED_MAINTENANCE_SMOKE_VERSIONS:
+            with self.subTest(smoke_version=smoke_version):
+                content = manifest(True, maintenance_smoke_version=smoke_version)
+                kubectl = StagingKubectl(
+                    maintenance=True,
+                    maintenance_smoke_version=smoke_version,
+                )
+                result = release_state.ensure_rollback_ingresses(
+                    kubectl,
+                    content,
+                    record(content, smoke_version),
+                )
+                self.assertEqual(content, result[0])
+
+    def test_snapshot_rejects_duplicate_saved_ingress(self):
+        content = manifest(True)
+        duplicate = content + "---\n" + json.dumps(routes(True)[1])
+        with self.assertRaisesRegex(
+            release_state.StateFailure,
+            "ingress_manifest_duplicate",
+        ):
+            release_state.ensure_rollback_ingresses(
+                StagingKubectl(maintenance=True),
+                duplicate,
+                record(duplicate),
+            )
+
+    def test_snapshot_rejects_a_yaml_resource_backend_that_only_looks_like_a_service(self):
+        content = manifest(True, include_routes=False) + """---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mnema
+  namespace: mnema-staging
+spec:
+  rules:
+    - host: staging.mnema.app
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              resource:
+                apiGroup: example.mnema.app
+                kind: LearningTarget
+                name: mnema-learning
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mnema-auth
+  namespace: mnema-staging
+spec:
+  rules:
+    - host: auth.staging.mnema.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mnema-identity-account
+                port:
+                  number: 80
+"""
+
+        with self.assertRaisesRegex(
+            release_state.StateFailure,
+            "ingress_manifest_invalid",
+        ):
+            release_state.ensure_rollback_ingresses(
+                StagingKubectl(maintenance=True),
+                content,
+                record(content),
+            )
+
+    def test_snapshot_rejects_a_yaml_resource_backend_with_a_block_scalar_decoy(self):
+        content = manifest(True, include_routes=False) + """---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+spec:
+  rules:
+    - host: staging.mnema.app
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              resource:
+                apiGroup: example.mnema.app
+                kind: LearningTarget
+                name: actual-non-service-backend
+metadata:
+  name: mnema
+  namespace: mnema-staging
+  annotations:
+    parser-decoy: |
+            backend:
+              service:
+                name: mnema-learning
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mnema-auth
+  namespace: mnema-staging
+spec:
+  rules:
+    - host: auth.staging.mnema.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mnema-identity-account
+                port:
+                  number: 80
+"""
+
+        with self.assertRaisesRegex(
+            release_state.StateFailure,
+            "ingress_manifest_invalid",
+        ):
+            release_state.ensure_rollback_ingresses(
+                StagingKubectl(maintenance=True),
+                content,
+                record(content),
+            )
+
     def test_rollback_removes_candidate_only_apps(self):
         kubectl = StagingKubectl()
         with tempfile.TemporaryDirectory() as directory:
@@ -179,9 +422,26 @@ class MaintenanceReleaseStateTest(unittest.TestCase):
             saved.write_text(json.dumps(record(manifest(False))))
             candidate.write_text(manifest(True))
             result = release_state.ReleaseStateManager(kubectl).rollback(previous, saved, candidate)
-            self.assertEqual((SHA, 1, "legacy-six-service", "legacy"), result)
+            self.assertEqual((SHA, 1, "legacy-six-service", "legacy", None), result)
             self.assertEqual([previous], kubectl.applied)
             self.assertEqual([("identity-account", "learning")], kubectl.removed)
+
+    def test_maintenance_rollback_reports_the_exact_smoke_contract_version(self):
+        for smoke_version in release_state.SUPPORTED_MAINTENANCE_SMOKE_VERSIONS:
+            with self.subTest(smoke_version=smoke_version), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                content = manifest(True, maintenance_smoke_version=smoke_version)
+                manifest_path = root / "previous.yaml"
+                record_path = root / "previous.json"
+                manifest_path.write_text(content)
+                record_path.write_text(json.dumps(record(content, smoke_version)))
+
+                result = release_state.ReleaseStateManager(StagingKubectl()).rollback(
+                    manifest_path,
+                    record_path,
+                )
+
+                self.assertEqual(smoke_version, result[4])
 
     def test_kubectl_removal_is_staging_only_and_exact(self):
         with self.assertRaisesRegex(release_state.StateFailure, "requires_staging"):

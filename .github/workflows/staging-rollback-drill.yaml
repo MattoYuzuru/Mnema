@@ -146,7 +146,14 @@ jobs:
       - name: Verify complete rollback release
         id: rollback_smoke
         if: ${{ always() && steps.rollback_rollout.outcome == 'success' }}
+        env:
+          MAINTENANCE_SMOKE_SUPPORTED: ${{ steps.rollback.outputs.maintenance_smoke_supported }}
         run: |
+          case "$MAINTENANCE_SMOKE_SUPPORTED" in
+            true) set -- ;;
+            false) set -- --skip-identity-protocol ;;
+            *) echo '::error::Rollback did not report a known maintenance smoke contract.'; exit 1 ;;
+          esac
           python3 scripts/smoke/release_smoke.py \
             --environment staging-rollback-drill \
             --mode maintenance \
@@ -154,6 +161,7 @@ jobs:
             --learning-url https://staging.mnema.app \
             --expected-release-sha "${{ steps.snapshot.outputs.release_id }}" \
             --timeout-seconds 300 \
+            "$@" \
             --report "$ROLLBACK_SMOKE_REPORT"
 
       - name: Upload complete rollback drill evidence

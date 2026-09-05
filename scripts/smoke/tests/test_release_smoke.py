@@ -514,6 +514,46 @@ class ReleaseSmokeTest(unittest.TestCase):
             self.assertEqual("maintenance", persisted["release_mode"])
             self.assertFalse(persisted["production_eligible"])
 
+    def test_previous_maintenance_smoke_skips_only_the_unavailable_protocol_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory) / "report.json"
+            config = self.config(
+                report,
+                public_url="",
+                auth_url="",
+                login="",
+                password="",
+                turnstile_bypass_key="",
+                mode="maintenance",
+                identity_url="https://auth.staging.mnema.app",
+                learning_url="https://staging.mnema.app",
+                identity_protocol_required=False,
+            )
+            config.validate()
+
+            result = release_smoke.ReleaseSmoke(
+                config,
+                MaintenanceClient(self.release_id),
+            ).run()
+
+            self.assertEqual(
+                [
+                    "identity_account_readiness",
+                    "identity_account_identity",
+                    "learning_readiness",
+                    "learning_identity",
+                ],
+                [step.name for step in result.steps],
+            )
+
+    def test_legacy_smoke_cannot_skip_the_identity_protocol_contract(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "only in maintenance mode"):
+                self.config(
+                    Path(directory) / "report.json",
+                    identity_protocol_required=False,
+                ).validate()
+
     def test_maintenance_smoke_fails_if_one_shell_does_not_bind_the_full_sha(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             config = self.config(

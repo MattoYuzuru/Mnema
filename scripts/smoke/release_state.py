@@ -38,7 +38,11 @@ MAX_CONFIGMAP_PAYLOAD = 900_000
 AUTHENTICATED_SMOKE_VERSION = 1
 IDENTITY_SMOKE_VERSION = 0
 READINESS_SMOKE_VERSION = -1
-MAINTENANCE_SMOKE_VERSION = 1
+PREVIOUS_MAINTENANCE_SMOKE_VERSION = 1
+MAINTENANCE_SMOKE_VERSION = 2
+SUPPORTED_MAINTENANCE_SMOKE_VERSIONS = frozenset(
+    (PREVIOUS_MAINTENANCE_SMOKE_VERSION, MAINTENANCE_SMOKE_VERSION)
+)
 SNAPSHOT_INGRESSES = ("mnema", "mnema-auth")
 SNAPSHOT_AUGMENTATION_MARKER = "# mnema-release-state: captured-live-ingresses"
 LIVE_RESOURCE_ANNOTATIONS_TO_DROP = {
@@ -414,7 +418,7 @@ class ReleaseStateManager:
         record_path: Path,
         candidate_manifest_path: Path | None = None,
         transition_plan_path: Path | None = None,
-    ) -> tuple[str, int, str, str]:
+    ) -> tuple[str, int, str, str, int | None]:
         manifest = manifest_path.read_text(encoding="utf-8")
         record = read_record(record_path)
         validate_record(manifest, record)
@@ -441,6 +445,11 @@ class ReleaseStateManager:
             int(record.get("authenticatedSmokeVersion", READINESS_SMOKE_VERSION)),
             identity.topology,
             identity.release_mode,
+            (
+                int(record["maintenanceSmokeVersion"])
+                if identity.topology == MAINTENANCE_TOPOLOGY
+                else None
+            ),
         )
 
     def _adopt_live(
@@ -718,6 +727,78 @@ def resource_identities(manifest: str) -> set[tuple[str, str, str]]:
     return identities
 
 
+def manifest_ingress_route_pairs(
+    manifest: str,
+    namespace: str,
+) -> dict[str, tuple[tuple[str, str], ...]]:
+    """Read only the bounded path/backend pairs needed to bind rollback routes."""
+    result: dict[str, tuple[tuple[str, str], ...]] = {}
+    expected_names = set(SNAPSHOT_INGRESSES)
+    for document in re.split(r"^---\s*$", manifest, flags=re.MULTILINE):
+        identity = document_resource_identity(document)
+        if (
+            identity is None
+            or identity[0] != "Ingress"
+            or identity[1] not in expected_names
+            or identity[2] != namespace
+        ):
+            continue
+        name = identity[1]
+        if name in result:
+            raise StateFailure("rollback_ingress_manifest_duplicate")
+        stripped = "\n".join(
+            line for line in document.splitlines() if not line.lstrip().startswith("#")
+        ).strip()
+        if stripped.startswith("{"):
+            try:
+                resource = json.loads(stripped)
+            except json.JSONDecodeError:
+                raise StateFailure("rollback_ingress_manifest_invalid") from None
+            pairs = route_pairs(resource)
+        else:
+            path_matches = list(
+                re.finditer(
+                    r"^(?P<indent> *)- +path: *([^#\s]+) *$",
+                    document,
+                    re.MULTILINE,
+                )
+            )
+            pairs_list: list[tuple[str, str]] = []
+            for match in path_matches:
+                path_indent = match.group("indent")
+                segment_end = len(document)
+                for line in re.finditer(r"^( *)(.*)$", document[match.end():], re.MULTILINE):
+                    if not line.group(2).strip() or line.group(2).lstrip().startswith("#"):
+                        continue
+                    if len(line.group(1)) <= len(path_indent):
+                        segment_end = match.end() + line.start()
+                        break
+                segment = document[match.end():segment_end]
+                backend_indent = path_indent + "  "
+                service_indent = backend_indent + "  "
+                name_indent = service_indent + "  "
+                backend_lines = re.findall(
+                    rf"^{re.escape(backend_indent)}backend: *$",
+                    segment,
+                    re.MULTILINE,
+                )
+                services = re.findall(
+                    rf"^{re.escape(backend_indent)}backend: *$\n"
+                    rf"{re.escape(service_indent)}service: *$\n"
+                    rf"{re.escape(name_indent)}name: +mnema-([a-z0-9-]+) *$",
+                    segment,
+                    re.MULTILINE,
+                )
+                if len(backend_lines) != 1 or len(services) != 1:
+                    raise StateFailure("rollback_ingress_manifest_invalid")
+                pairs_list.append((match.group(2), services[0]))
+            pairs = tuple(pairs_list)
+        if not pairs:
+            raise StateFailure("rollback_ingress_manifest_invalid")
+        result[name] = pairs
+    return result
+
+
 def ensure_rollback_ingresses(
     kubectl: Kubectl,
     manifest: str,
@@ -728,14 +809,27 @@ def ensure_rollback_ingresses(
     if kubectl.namespace != "mnema-staging":
         return manifest, record
     topology = parse_manifest_identity(manifest).topology
+    maintenance_smoke_version = (
+        int(record["maintenanceSmokeVersion"])
+        if topology == MAINTENANCE_TOPOLOGY
+        else None
+    )
     captured = [
         sanitize_live_resource(kubectl.get_resource("ingress", name))
         for name in SNAPSHOT_INGRESSES
     ]
-    validate_staging_routes(captured, topology)
-    expected = {("Ingress", name, kubectl.namespace) for name in SNAPSHOT_INGRESSES}
-    present = resource_identities(manifest) & expected
+    validate_staging_routes(captured, topology, maintenance_smoke_version)
+    manifest_routes = manifest_ingress_route_pairs(manifest, kubectl.namespace)
+    present = set(manifest_routes)
+    expected = set(SNAPSHOT_INGRESSES)
     if present == expected:
+        for name in SNAPSHOT_INGRESSES:
+            if manifest_routes[name] != expected_staging_route_pairs(
+                name,
+                topology,
+                maintenance_smoke_version,
+            ):
+                raise StateFailure("rollback_ingress_topology_mismatch")
         return manifest, record
     if present:
         raise StateFailure("rollback_ingress_manifest_incomplete")
@@ -761,7 +855,11 @@ def ensure_rollback_ingresses(
     return augmented_manifest, augmented_record
 
 
-def validate_staging_routes(resources: list[dict[str, Any]], topology: str) -> None:
+def validate_staging_routes(
+    resources: list[dict[str, Any]],
+    topology: str,
+    maintenance_smoke_version: int | None,
+) -> None:
     """Reject drift or mixed routes before blessing a captured rollback baseline."""
     for name, resource in zip(SNAPSHOT_INGRESSES, resources, strict=True):
         host = "staging.mnema.app" if name == "mnema" else "auth.staging.mnema.app"
@@ -771,15 +869,7 @@ def validate_staging_routes(resources: list[dict[str, Any]], topology: str) -> N
         annotations = resource.get("metadata", {}).get("annotations", {})
         if annotations != {"cert-manager.io/cluster-issuer": "letsencrypt-prod"}:
             raise StateFailure("rollback_ingress_annotations_invalid")
-        if topology == MAINTENANCE_TOPOLOGY:
-            paths = [("/api", "learning")] if name == "mnema" else [("/", "identity-account")]
-        elif topology == LEGACY_TOPOLOGY:
-            paths = [("/", "auth")] if name == "mnema-auth" else [
-                ("/", "frontend"), ("/api/user", "user"), ("/api/core", "core"),
-                ("/api/media", "media"), ("/api/import", "import"),
-            ]
-        else:
-            raise StateFailure("manifest_topology_invalid")
+        paths = expected_staging_route_pairs(name, topology, maintenance_smoke_version)
         expected = {
             "ingressClassName": "traefik",
             "tls": [{"hosts": [host], "secretName": tls}],
@@ -791,6 +881,53 @@ def validate_staging_routes(resources: list[dict[str, Any]], topology: str) -> N
         }
         if resource.get("spec") != expected:
             raise StateFailure("rollback_ingress_topology_mismatch")
+
+
+def route_pairs(resource: Any) -> tuple[tuple[str, str], ...]:
+    try:
+        rules = resource["spec"]["rules"]
+        if not isinstance(rules, list) or len(rules) != 1:
+            raise StateFailure("rollback_ingress_manifest_invalid")
+        paths = rules[0]["http"]["paths"]
+        result: list[tuple[str, str]] = []
+        for path in paths:
+            service_name = path["backend"]["service"]["name"]
+            if not isinstance(service_name, str) or not service_name.startswith("mnema-"):
+                raise StateFailure("rollback_ingress_manifest_invalid")
+            result.append((str(path["path"]), service_name.removeprefix("mnema-")))
+        return tuple(result)
+    except (KeyError, TypeError, IndexError):
+        raise StateFailure("rollback_ingress_manifest_invalid") from None
+
+
+def expected_staging_route_pairs(
+    name: str,
+    topology: str,
+    maintenance_smoke_version: int | None,
+) -> tuple[tuple[str, str], ...]:
+    if name not in SNAPSHOT_INGRESSES:
+        raise StateFailure("rollback_ingress_identity_mismatch")
+    if topology == MAINTENANCE_TOPOLOGY:
+        if maintenance_smoke_version == PREVIOUS_MAINTENANCE_SMOKE_VERSION:
+            return (("/api", "learning"),) if name == "mnema" else (
+                ("/api", "identity-account"),
+            )
+        if maintenance_smoke_version == MAINTENANCE_SMOKE_VERSION:
+            return (("/api", "learning"),) if name == "mnema" else (
+                ("/", "identity-account"),
+            )
+        raise StateFailure("rollback_maintenance_smoke_unsupported")
+    if topology == LEGACY_TOPOLOGY:
+        if name == "mnema-auth":
+            return (("/", "auth"),)
+        return (
+            ("/", "frontend"),
+            ("/api/user", "user"),
+            ("/api/core", "core"),
+            ("/api/media", "media"),
+            ("/api/import", "import"),
+        )
+    raise StateFailure("manifest_topology_invalid")
 
 
 def render_live_manifest(
@@ -976,13 +1113,17 @@ def validate_record(manifest: str, record: dict[str, Any]) -> None:
         if smoke_version == READINESS_SMOKE_VERSION and record.get("legacyReadinessOnly") is not True:
             raise StateFailure("record_readiness_capability_invalid")
     else:
+        maintenance_smoke_version = record.get("maintenanceSmokeVersion")
         expected = {
             "releaseTopology": identity.topology,
             "releaseMode": identity.release_mode,
             "productionEligible": identity.production_eligible,
-            "maintenanceSmokeVersion": MAINTENANCE_SMOKE_VERSION,
         }
-        if any(record.get(key) != value for key, value in expected.items()):
+        if (
+            any(record.get(key) != value for key, value in expected.items())
+            or type(maintenance_smoke_version) is not int
+            or maintenance_smoke_version not in SUPPORTED_MAINTENANCE_SMOKE_VERSIONS
+        ):
             raise StateFailure("record_maintenance_contract_invalid")
         if "authenticatedSmokeVersion" in record:
             raise StateFailure("record_maintenance_auth_smoke_invalid")
@@ -1208,11 +1349,13 @@ def record_identity(record: dict[str, Any]) -> tuple[str, str, tuple[str, ...]]:
     elif schema_version == 2:
         topology = record.get("releaseTopology")
         release_mode = record.get("releaseMode")
+        maintenance_smoke_version = record.get("maintenanceSmokeVersion")
         if (
             topology != MAINTENANCE_TOPOLOGY
             or release_mode != MAINTENANCE_MODE
             or record.get("productionEligible") is not False
-            or record.get("maintenanceSmokeVersion") != MAINTENANCE_SMOKE_VERSION
+            or type(maintenance_smoke_version) is not int
+            or maintenance_smoke_version not in SUPPORTED_MAINTENANCE_SMOKE_VERSIONS
         ):
             raise StateFailure("record_maintenance_contract_invalid")
     else:
@@ -1454,7 +1597,13 @@ def main() -> int:
             )
             status = "release_recorded"
         elif args.command == "rollback":
-            release_id, smoke_version, topology, release_mode = manager.rollback(
+            (
+                release_id,
+                smoke_version,
+                topology,
+                release_mode,
+                maintenance_smoke_version,
+            ) = manager.rollback(
                 required(args.rollback_manifest, "rollback_manifest"),
                 required(args.rollback_record, "rollback_record"),
                 args.candidate_manifest,
@@ -1468,7 +1617,7 @@ def main() -> int:
                 smoke_version >= IDENTITY_SMOKE_VERSION,
                 topology,
                 release_mode,
-                release_mode == MAINTENANCE_MODE,
+                maintenance_smoke_version == MAINTENANCE_SMOKE_VERSION,
             )
             return 0
         else:
