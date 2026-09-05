@@ -35,7 +35,11 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+        "identity.deletion.enabled=true",
+        "identity.deletion.recovery-period=PT1H",
+        "identity.deletion.scan-delay=PT24H"
+})
 @AutoConfigureMockMvc(print = MockMvcPrint.NONE)
 @Import(FederationHttpIntegrationTest.Clients.class)
 class FederationHttpIntegrationTest extends PostgresIntegrationTest {
@@ -278,6 +282,47 @@ class FederationHttpIntegrationTest extends PostgresIntegrationTest {
         mvc.perform(get("/api/accounts/me/identities").secure(true).cookie(linked.getResponse().getCookie("SESSION")))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].providerSubject").doesNotExist());
+    }
+
+    @Test
+    void exactBoundProviderCompletesOnlyARecoveryContext() throws Exception {
+        String subject = UUID.randomUUID().toString();
+        String email = UUID.randomUUID() + "@example.test";
+        callback(begin("google", subject, email, null));
+        UUID account = jdbc.sql("""
+                        SELECT account_id FROM app_identity.external_identity
+                        WHERE provider='google' AND provider_subject=:subject
+                        """).param("subject", subject).query(UUID.class).single();
+        jdbc.sql("""
+                        UPDATE app_identity.account
+                        SET status='BANNED',banned_at=transaction_timestamp(),security_generation=security_generation+1
+                        WHERE account_id=:account
+                        """).param("account", account).update();
+
+        var proofStart = mvc.perform(post("/api/accounts/deletion/proof/federated").secure(true).with(csrf())
+                        .contentType("application/json").content("{\"provider\":\"google\"}"))
+                .andExpect(status().isOk()).andReturn();
+        var proofResponse = callback(begin("google", subject, email,
+                proofStart.getResponse().getCookie("SESSION")));
+        String proof = json.readTree(proofResponse.getResponse().getContentAsString()).get("token").asText();
+        var deletion = mvc.perform(post("/api/accounts/deletion/confirmed").secure(true).with(csrf())
+                        .contentType("application/json")
+                        .content(json.writeValueAsString(Map.of("proof", proof))))
+                .andExpect(status().isAccepted()).andReturn();
+        String operation = json.readTree(deletion.getResponse().getContentAsString()).get("operationId").asText();
+
+        var start = mvc.perform(post("/api/accounts/deletion/recovery/federated").secure(true).with(csrf())
+                        .contentType("application/json").content("{\"provider\":\"google\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.authorizationUrl").value("/oauth2/authorization/google")).andReturn();
+        Cookie intentSession = start.getResponse().getCookie("SESSION");
+        var recovered = callback(begin("google", subject, email, intentSession));
+        assertThat(recovered.getResponse().getRedirectedUrl())
+                .isEqualTo("https://mnema.app/account-deletion/recovery");
+        Cookie recovery = recovered.getResponse().getCookie("SESSION");
+        mvc.perform(get("/api/accounts/deletion/recovery/" + operation).secure(true).cookie(recovery))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.context").value("ACCOUNT_RECOVERY"));
+        mvc.perform(get("/api/accounts/me").secure(true).cookie(recovery)).andExpect(status().isForbidden());
     }
 
     static Map<String, String> parameters(String input) {

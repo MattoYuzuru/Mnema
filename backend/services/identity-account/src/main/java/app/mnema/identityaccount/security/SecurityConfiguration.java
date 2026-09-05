@@ -32,6 +32,7 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.access.intercept.AuthorizationFilter;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.context.SecurityContextHolderFilter;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.security.web.csrf.HttpSessionCsrfTokenRepository;
 import org.springframework.security.web.util.matcher.MediaTypeRequestMatcher;
@@ -49,8 +50,9 @@ public class SecurityConfiguration {
     private static AuthorizationDecision scope(Authentication auth, String scope) {
         boolean authenticated =
                 auth != null && auth.isAuthenticated() && !(auth instanceof AnonymousAuthenticationToken);
-        return new AuthorizationDecision(authenticated && (!(auth instanceof JwtAuthenticationToken) ||
-                auth.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("SCOPE_" + scope))));
+        return new AuthorizationDecision(authenticated && (auth instanceof JwtAuthenticationToken
+                ? auth.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("SCOPE_" + scope))
+                : auth.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("ACCOUNT"))));
     }
 
     @Bean
@@ -81,6 +83,7 @@ public class SecurityConfiguration {
         });
         http.securityMatcher(server.getEndpointsMatcher())
                 .with(server, s -> s.oidc(o -> o.logoutEndpoint(l -> l.logoutResponseHandler(oidcLogout))))
+                .addFilterAfter(new RecoveryAuthorizationBoundaryFilter(errors), SecurityContextHolderFilter.class)
                 .addFilterBefore(new GrantTransactionFilter(jdbcClient, transactions), AuthorizationFilter.class)
                 .authorizeHttpRequests(a -> a.anyRequest().authenticated()).cors(Customizer.withDefaults())
                 .exceptionHandling(
@@ -107,7 +110,13 @@ public class SecurityConfiguration {
                                 .requestMatchers(HttpMethod.POST, "/api/accounts/register", "/api/accounts/login",
                                         "/api/accounts/password-reset/request", "/api/accounts/password-reset/confirm",
                                         "/api/accounts/email-verification/request",
-                                        "/api/accounts/email-verification/confirm").permitAll()
+                                        "/api/accounts/email-verification/confirm",
+                                        "/api/accounts/deletion/recovery/federated",
+                                        "/api/accounts/deletion/proof/password",
+                                        "/api/accounts/deletion/proof/federated",
+                                        "/api/accounts/deletion/confirmed").permitAll()
+                                .requestMatchers("/api/accounts/deletion/recovery/**")
+                                .hasAuthority("ACCOUNT_RECOVERY")
                                 .requestMatchers(HttpMethod.GET, "/api/accounts/**")
                                 .access((auth, context) -> scope(auth.get(), "account.read"))
                                 .requestMatchers("/api/accounts/**")

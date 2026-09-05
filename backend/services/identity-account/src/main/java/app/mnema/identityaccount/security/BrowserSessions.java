@@ -48,20 +48,15 @@ public class BrowserSessions {
     public void login(AccountAccess access, HttpServletRequest request, HttpServletResponse response) {
         transactions.executeWithoutResult(s -> {
             accounts.require(access, true);
-            request.getSession();
-            request.changeSessionId();
-            request.getSession().removeAttribute("identity.intent");
-            new HttpSessionCsrfTokenRepository().saveToken(null, request, response);
-            request.getSession()
-                    .setAttribute("identity.session-expires", clock.instant().plusSeconds(28800).getEpochSecond());
-            var authentication = UsernamePasswordAuthenticationToken.authenticated(
-                    User.withUsername(access.accountId().toString()).password("").authorities("ACCOUNT").build(), null,
-                    List.of(new SimpleGrantedAuthority("ACCOUNT")));
-            authentication.setDetails(Long.toString(access.generation()));
-            var context = SecurityContextHolder.createEmptyContext();
-            context.setAuthentication(authentication);
-            SecurityContextHolder.setContext(context);
-            new HttpSessionSecurityContextRepository().saveContext(context, request, response);
+            establish(access, "ACCOUNT", "identity.session-expires", 28800, request, response);
+        });
+    }
+
+    public void recovery(AccountAccess access, long lifetimeSeconds, HttpServletRequest request,
+                         HttpServletResponse response) {
+        transactions.executeWithoutResult(status -> {
+            accounts.requireRecovery(access, true);
+            establish(access, "ACCOUNT_RECOVERY", "identity.recovery-expires", lifetimeSeconds, request, response);
         });
     }
 
@@ -73,5 +68,30 @@ public class BrowserSessions {
         var session = request.getSession(false);
         if (session != null) session.invalidate();
         SecurityContextHolder.clearContext();
+    }
+
+    public void clear(HttpServletRequest request) {
+        var session = request.getSession(false);
+        if (session != null) session.invalidate();
+        SecurityContextHolder.clearContext();
+    }
+
+    private void establish(AccountAccess access, String authority, String expiryAttribute, long lifetimeSeconds,
+                           HttpServletRequest request, HttpServletResponse response) {
+        request.getSession();
+        request.changeSessionId();
+        request.getSession().removeAttribute("identity.intent");
+        request.getSession().removeAttribute("identity.session-expires");
+        request.getSession().removeAttribute("identity.recovery-expires");
+        new HttpSessionCsrfTokenRepository().saveToken(null, request, response);
+        request.getSession().setAttribute(expiryAttribute, clock.instant().plusSeconds(lifetimeSeconds).getEpochSecond());
+        var authentication = UsernamePasswordAuthenticationToken.authenticated(
+                User.withUsername(access.accountId().toString()).password("").authorities(authority).build(), null,
+                List.of(new SimpleGrantedAuthority(authority)));
+        authentication.setDetails(Long.toString(access.generation()));
+        var context = SecurityContextHolder.createEmptyContext();
+        context.setAuthentication(authentication);
+        SecurityContextHolder.setContext(context);
+        new HttpSessionSecurityContextRepository().saveContext(context, request, response);
     }
 }

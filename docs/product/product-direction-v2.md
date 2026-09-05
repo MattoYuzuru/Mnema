@@ -183,7 +183,7 @@ The full capability envelope is in [exercise catalog](./exercise-catalog-v2.md).
 
 ### Data control
 
-- account deletion immediately revokes access and follows the category-specific legally approved retention schedule; six months is only an owner preference until counsel confirms its basis;
+- account deletion immediately revokes access and follows the category-specific legally approved retention schedule; no recovery duration is a default until counsel confirms its basis;
 - public authors cannot see subscriber answers/progress/private notes;
 - public content is not used to improve AI before an explicit grant and provider/privacy policy exists;
 - offline retry and multi-device attempts are idempotent and converge by a documented reducer.
