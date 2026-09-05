@@ -178,8 +178,10 @@ for value in IDENTITY_SIGNING_JWK_SET IDENTITY_SIGNING_ACTIVE_KID POSTBOX_ACCESS
 done
 for identity_policy_guard in \
   'select(.kind == "ValidatingAdmissionPolicy" and .metadata.name == "mnema-staging-secret-boundary")' \
+  'select(.kind == "ValidatingAdmissionPolicyBinding" and .metadata.name == "mnema-staging-secret-boundary")' \
   'kubectl apply --dry-run=server -f "$identity_policy"' \
   'kubectl diff -f "$identity_policy"' \
+  'kubectl diff -f "$identity_binding"' \
   '.status.observedGeneration == .metadata.generation' \
   '.status.typeChecking.expressionWarnings' \
   '.spec.policyName == "mnema-staging-secret-boundary"' \

@@ -145,13 +145,19 @@ file:
 ```bash
 set -eu
 umask 077
+identity_objects=$(mktemp "${TMPDIR:-/tmp}/mnema-identity-secret-objects.XXXXXX.json")
 identity_policy=$(mktemp "${TMPDIR:-/tmp}/mnema-identity-secret-policy.XXXXXX.json")
-trap 'rm -f "$identity_policy"' EXIT HUP INT TERM
+identity_binding=$(mktemp "${TMPDIR:-/tmp}/mnema-identity-secret-binding.XXXXXX.json")
+trap 'rm -f "$identity_objects" "$identity_policy" "$identity_binding"' EXIT HUP INT TERM
 kubectl create --dry-run=client --validate=false \
-  -f k8s/staging/admission.yaml -o json |
-  jq -c 'select(.kind == "ValidatingAdmissionPolicy" and .metadata.name == "mnema-staging-secret-boundary")' \
+  -f k8s/staging/admission.yaml -o json >"$identity_objects"
+jq -c 'select(.kind == "ValidatingAdmissionPolicy" and .metadata.name == "mnema-staging-secret-boundary")' \
+  "$identity_objects" \
   >"$identity_policy"
+jq -c 'select(.kind == "ValidatingAdmissionPolicyBinding" and .metadata.name == "mnema-staging-secret-boundary")' \
+  "$identity_objects" >"$identity_binding"
 test "$(jq -s 'length' "$identity_policy")" -eq 1
+test "$(jq -s 'length' "$identity_binding")" -eq 1
 jq -e '.kind == "ValidatingAdmissionPolicy" and .metadata.name == "mnema-staging-secret-boundary"' \
   "$identity_policy" >/dev/null
 kubectl apply --dry-run=server -f "$identity_policy" >/dev/null
@@ -160,6 +166,7 @@ kubectl diff -f "$identity_policy"
 diff_status=$?
 set -e
 test "$diff_status" -le 1
+kubectl diff -f "$identity_binding"
 ```
 
 After reviewing that exact diff, apply and read it back. A post-apply diff, stale
@@ -168,6 +175,7 @@ generation, CEL warning, missing binding or changed Namespace selector is a no-g
 ```bash
 kubectl apply -f "$identity_policy"
 kubectl diff -f "$identity_policy"
+kubectl diff -f "$identity_binding"
 kubectl get validatingadmissionpolicy mnema-staging-secret-boundary -o json |
   jq -e '.status.observedGeneration == .metadata.generation and
          ((.status.typeChecking.expressionWarnings // []) | length == 0)' >/dev/null
