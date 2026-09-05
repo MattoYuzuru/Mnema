@@ -421,7 +421,7 @@ def postgres_inventory(target: dict[str, Any], target_id: str,
     require(version.isdigit() and int(version) == target["serverVersionNum"], "postgres_version_mismatch")
     ownership = runner.run([
         "psql", "-XAt", "-v", "ON_ERROR_STOP=1", "-c",
-        "SELECT COALESCE(obj_description(oid,'pg_database'),'') FROM pg_database WHERE datname=current_database()",
+        "SELECT COALESCE(shobj_description(oid,'pg_database'),'') FROM pg_database WHERE datname=current_database()",
     ], environment=child).stdout.strip()
     require(ownership == f"mnema-rehearsal:{target_id}", "postgres_ownership_mismatch")
     rows = runner.run([

@@ -55,7 +55,7 @@ class FixtureRunner(purge.Runner):
             sql = command[-1]
             if sql == "SHOW server_version_num":
                 return completed(command, "160000\n")
-            if sql.startswith("SELECT COALESCE(obj_description"):
+            if sql.startswith("SELECT COALESCE(shobj_description"):
                 return completed(command, f"mnema-rehearsal:{TARGET_ID}\n")
             if sql.startswith("SELECT nspname"):
                 rows = "".join(f"{name}|{owner}\n" for name, owner in sorted(self.schemas.items()))
