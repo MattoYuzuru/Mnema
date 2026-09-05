@@ -29,6 +29,8 @@ SHA_PATTERN = re.compile(r"^[0-9a-f]{40}$")
 MAIN_BUNDLE_PATTERN = re.compile(r"(?:^|/)main\.[0-9a-f]+\.js$")
 READINESS_MAIN_BUNDLE_PATTERN = re.compile(r"(?:^|/)main(?:\.[0-9a-f]+)?\.js$")
 SMOKE_EMAIL_PATTERN = re.compile(r"^[^\s@]+@[^\s@]+\.[^\s@]+$")
+TRANSIENT_GATEWAY_STATUSES = frozenset((502, 503, 504))
+RETRY_DELAY_SECONDS = 1.0
 
 
 class SmokeFailure(RuntimeError):
@@ -154,31 +156,68 @@ class HttpClient:
         max_body_bytes: int = 1_048_576,
         service: str,
     ) -> bytes:
-        remaining = self.deadline - time.monotonic()
-        if remaining <= 0:
-            raise SmokeFailure("smoke_timeout", service)
-        timeout = min(float(self.request_timeout_seconds), remaining)
         body = None
         request_headers = {"Accept": "application/json", **(headers or {})}
         if json_body is not None:
             body = json.dumps(json_body, separators=(",", ":")).encode("utf-8")
             request_headers["Content-Type"] = "application/json"
         request = Request(url, data=body, headers=request_headers, method=method)
-        try:
-            with urlopen(request, timeout=timeout) as response:
-                status = response.status
-                if status not in expected_statuses:
-                    raise SmokeFailure("unexpected_http_status", service, f"status={status}")
-                if method == "HEAD":
-                    return b""
-                data = response.read(max_body_bytes + 1)
-        except HTTPError as error:
-            raise SmokeFailure("unexpected_http_status", service, f"status={error.code}") from None
-        except (TimeoutError, URLError):
-            raise SmokeFailure("http_unavailable", service) from None
-        if len(data) > max_body_bytes:
-            raise SmokeFailure("response_too_large", service)
-        return data
+        while True:
+            remaining = self.deadline - time.monotonic()
+            if remaining <= 0:
+                raise SmokeFailure("smoke_timeout", service)
+            timeout = min(float(self.request_timeout_seconds), remaining)
+            try:
+                with urlopen(request, timeout=timeout) as response:
+                    status = response.status
+                    if status not in expected_statuses:
+                        failure = SmokeFailure(
+                            "unexpected_http_status", service, f"status={status}"
+                        )
+                        if self._retry_transient(method, failure):
+                            continue
+                        raise failure
+                    if method == "HEAD":
+                        return b""
+                    data = response.read(max_body_bytes + 1)
+            except HTTPError as error:
+                failure = SmokeFailure(
+                    "unexpected_http_status", service, f"status={error.code}"
+                )
+                if self._retry_transient(method, failure):
+                    continue
+                raise failure from None
+            except (TimeoutError, URLError):
+                failure = SmokeFailure("http_unavailable", service)
+                if self._retry_transient(method, failure):
+                    continue
+                raise failure from None
+            if len(data) > max_body_bytes:
+                raise SmokeFailure("response_too_large", service)
+            return data
+
+    def _retry_transient(self, method: str, failure: SmokeFailure) -> bool:
+        if method not in ("GET", "HEAD"):
+            return False
+        status = failure.safe_detail.removeprefix("status=")
+        transient = failure.code == "http_unavailable" or (
+            failure.code == "unexpected_http_status"
+            and failure.safe_detail.startswith("status=")
+            and status.isdigit()
+            and int(status) in TRANSIENT_GATEWAY_STATUSES
+        )
+        if not transient:
+            return False
+        remaining = self.deadline - time.monotonic()
+        if remaining <= RETRY_DELAY_SECONDS:
+            return False
+        detail = f" detail={failure.safe_detail}" if failure.safe_detail else ""
+        print(
+            f"smoke_retry method={method} service={failure.service} "
+            f"code={failure.code}{detail}"
+        )
+        time.sleep(RETRY_DELAY_SECONDS)
+        return True
 
     def json(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         service = str(kwargs["service"])

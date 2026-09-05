@@ -4,10 +4,13 @@ import importlib.util
 import json
 import sys
 import tempfile
+import time
 import unittest
 import uuid
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
+from urllib.error import HTTPError, URLError
 
 
 MODULE_PATH = Path(__file__).parents[1] / "release_smoke.py"
@@ -16,6 +19,21 @@ assert SPEC and SPEC.loader
 release_smoke = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = release_smoke
 SPEC.loader.exec_module(release_smoke)
+
+
+class StubResponse:
+    def __init__(self, body: bytes = b'{}', status: int = 200) -> None:
+        self.body = body
+        self.status = status
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args: Any) -> None:
+        return None
+
+    def read(self, _: int) -> bytes:
+        return self.body
 
 
 class FakeClient:
@@ -154,6 +172,59 @@ class MaintenanceClient:
 
 class ReleaseSmokeTest(unittest.TestCase):
     release_id = "a" * 40
+
+    def test_safe_request_retries_transient_gateway_and_transport_failures(self) -> None:
+        client = release_smoke.HttpClient(time.monotonic() + 30, 5)
+        failures = [
+            HTTPError("https://mnema.example", 502, "Bad Gateway", {}, None),
+            URLError("endpoint update pending"),
+            StubResponse(b'{"status":"UP"}'),
+        ]
+
+        with (
+            patch.object(release_smoke, "urlopen", side_effect=failures) as urlopen_mock,
+            patch.object(release_smoke.time, "sleep") as sleep_mock,
+        ):
+            result = client.request("GET", "https://mnema.example", service="learning")
+
+        self.assertEqual(b'{"status":"UP"}', result)
+        self.assertEqual(3, urlopen_mock.call_count)
+        self.assertEqual(2, sleep_mock.call_count)
+        failures[0].close()
+
+    def test_safe_request_does_not_retry_non_transient_http_status(self) -> None:
+        client = release_smoke.HttpClient(time.monotonic() + 30, 5)
+        failure = HTTPError("https://mnema.example", 500, "Internal Server Error", {}, None)
+
+        with (
+            patch.object(release_smoke, "urlopen", side_effect=failure) as urlopen_mock,
+            patch.object(release_smoke.time, "sleep") as sleep_mock,
+            self.assertRaises(release_smoke.SmokeFailure) as raised,
+        ):
+            client.request("GET", "https://mnema.example", service="learning")
+
+        self.assertEqual("unexpected_http_status", raised.exception.code)
+        self.assertEqual("status=500", raised.exception.safe_detail)
+        urlopen_mock.assert_called_once()
+        sleep_mock.assert_not_called()
+        failure.close()
+
+    def test_mutating_request_never_retries_transient_http_status(self) -> None:
+        client = release_smoke.HttpClient(time.monotonic() + 30, 5)
+        failure = HTTPError("https://mnema.example", 503, "Service Unavailable", {}, None)
+
+        with (
+            patch.object(release_smoke, "urlopen", side_effect=failure) as urlopen_mock,
+            patch.object(release_smoke.time, "sleep") as sleep_mock,
+            self.assertRaises(release_smoke.SmokeFailure) as raised,
+        ):
+            client.request("POST", "https://mnema.example", service="auth")
+
+        self.assertEqual("unexpected_http_status", raised.exception.code)
+        self.assertEqual("status=503", raised.exception.safe_detail)
+        urlopen_mock.assert_called_once()
+        sleep_mock.assert_not_called()
+        failure.close()
 
     def config(self, report: Path, **overrides: Any):
         values = {
