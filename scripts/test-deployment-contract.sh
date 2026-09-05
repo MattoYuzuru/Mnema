@@ -441,12 +441,12 @@ environment = {key: value for key, value in os.environ.items()
 # Old credentials must never satisfy the replacement password requirement.
 environment.update(POSTGRES_PASSWORD="legacy-test-value", POSTGRES_USER="legacy-user",
                    POSTGRES_DB="legacy-db")
+environment["MNEMA_LOCAL_IDENTITY_SIGNING_ACTIVE_KID"] = "local-test-kid"
+environment["MNEMA_LOCAL_IDENTITY_SIGNING_JWK_SET_FILE"] = os.devnull
 missing = subprocess.run(command, env=environment, capture_output=True, text=True, check=False)
 assert missing.returncode != 0 and "MNEMA_LOCAL_POSTGRES_PASSWORD" in missing.stderr
 
 environment["MNEMA_LOCAL_POSTGRES_PASSWORD"] = "replacement-test-value"
-environment["MNEMA_LOCAL_IDENTITY_SIGNING_ACTIVE_KID"] = "local-test-kid"
-environment["MNEMA_LOCAL_IDENTITY_SIGNING_JWK_SET_FILE"] = os.devnull
 result = subprocess.run(command, env=environment, capture_output=True, text=True, check=False)
 assert result.returncode == 0, "Replacement Compose config must render successfully"
 config = json.loads(result.stdout)
