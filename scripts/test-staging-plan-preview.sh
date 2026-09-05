@@ -20,6 +20,8 @@ cat >"$TEST_ROOT/bin/kubectl" <<'EOF'
 set -eu
 printf '%s\n' "$*" >>"$FAKE_KUBECTL_LOG"
 case "$*" in
+  '-n mnema-staging apply --dry-run=server -f '*) exit "${FAKE_DRY_RUN_STATUS:-0}" ;;
+  '-n mnema-staging diff -f '*) exit "${FAKE_DIFF_STATUS:-1}" ;;
   'apply --dry-run=server -f '*) exit "${FAKE_DRY_RUN_STATUS:-0}" ;;
   'create --dry-run=server -f '*)
     grep -Eq '^  name: minio-bucket-bootstrap-preview-[0-9]+$' "$4" || exit 65
@@ -78,4 +80,49 @@ for failure in dry-run job-create secret-diff job-diff ordinary-diff; do
     exit 1
   fi
 done
+
+# Exercise the actual replacement branch with its exact resource inventory.
+# This mock accepts only flags supported by the workflow's kubectl 1.35.
+PYTHONPATH="$SCRIPT_DIR/smoke/tests" python3 - "$TEST_ROOT" <<'PY'
+import sys
+from pathlib import Path
+from test_maintenance_release_state import manifest
+root = Path(sys.argv[1])
+(root / "source.yaml").write_text(manifest(False))
+(root / "target.yaml").write_text(manifest(True))
+(root / "forbidden.yaml").write_text(manifest(True) + '''\n---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: forbidden
+  namespace: mnema-staging
+''')
+PY
+run_replacement() {
+  PATH="$TEST_ROOT/bin:$PATH" FAKE_KUBECTL_LOG="$TEST_ROOT/kubectl.log" "$PREVIEW" \
+    --replacement "$1" "$TEST_ROOT/source.yaml" "$TEST_ROOT/transition.json"
+}
+: >"$TEST_ROOT/kubectl.log"
+run_replacement "$TEST_ROOT/target.yaml" >/dev/null
+test "$(wc -l <"$TEST_ROOT/kubectl.log" | tr -d ' ')" -eq 2
+grep -Fqx -- "-n mnema-staging apply --dry-run=server -f $TEST_ROOT/target.yaml" "$TEST_ROOT/kubectl.log"
+grep -Fqx -- "-n mnema-staging diff -f $TEST_ROOT/target.yaml" "$TEST_ROOT/kubectl.log"
+for failure in dry-run diff; do
+  case "$failure" in
+    dry-run) setting=FAKE_DRY_RUN_STATUS=1 ;;
+    diff) setting=FAKE_DIFF_STATUS=2 ;;
+  esac
+  if env PATH="$TEST_ROOT/bin:$PATH" FAKE_KUBECTL_LOG="$TEST_ROOT/kubectl.log" "$setting" \
+    "$PREVIEW" --replacement "$TEST_ROOT/target.yaml" "$TEST_ROOT/source.yaml" \
+    "$TEST_ROOT/transition.json" >/dev/null 2>&1; then
+    echo "replacement preview accepted $failure failure" >&2
+    exit 1
+  fi
+done
+: >"$TEST_ROOT/kubectl.log"
+if run_replacement "$TEST_ROOT/forbidden.yaml" >/dev/null 2>&1; then
+  echo 'replacement preview accepted a Secret resource' >&2
+  exit 1
+fi
+test ! -s "$TEST_ROOT/kubectl.log"
 printf 'staging_plan_preview=ok\n'
