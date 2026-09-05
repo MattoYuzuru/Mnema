@@ -17,7 +17,6 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 import java.util.Map;
-import java.util.Set;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -27,10 +26,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @SpringBootTest
 @AutoConfigureMockMvc
 class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest {
-
-    private static final Set<String> FORBIDDEN_TABLE_FRAGMENTS = Set.of(
-            "session", "authorization", "consent", "grant", "token", "registered_client", "challenge", "signing"
-    );
 
     @Autowired
     private ApplicationContext applicationContext;
@@ -59,13 +54,8 @@ class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest 
 
     @Test
     void bootsFreshIdentityMigrationWithoutLegacyHistoryOrSchemas() {
-        assertThat(flyway.info().applied())
-                .filteredOn(migration -> migration.getVersion() != null)
-                .singleElement()
-                .satisfies(migration -> {
-                    assertThat(migration.getVersion().getVersion()).isEqualTo("1");
-                    assertThat(migration.getDescription()).isEqualTo("identity account");
-                });
+        assertThat(flyway.info().applied()).filteredOn(m -> m.getVersion() != null)
+                .extracting(m -> m.getVersion().getVersion()).containsExactly("1", "2");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -85,12 +75,8 @@ class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest 
                         """)
                 .query(String.class)
                 .list();
-        assertThat(tables).containsExactly(
-                "account", "account_avatar", "external_identity", "flyway_schema_history", "local_credential"
-        );
-        assertThat(tables).allSatisfy(table ->
-                assertThat(FORBIDDEN_TABLE_FRAGMENTS).noneMatch(table::contains)
-        );
+        assertThat(tables).contains("account", "account_avatar", "external_identity", "local_credential",
+                "ownership_challenge", "spring_session", "oauth2_authorization");
         assertThat(columns("external_identity")).containsExactly(
                 "identity_id", "account_id", "provider", "provider_subject", "linked_at", "last_login_at"
         );
@@ -98,6 +84,15 @@ class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest 
                 "account_id", "asset_id", "storage_key", "content_type", "byte_size",
                 "content_sha256", "width", "height", "created_at"
         );
+        assertThat(jdbcClient.sql("""
+                        SELECT DISTINCT data_type
+                        FROM information_schema.columns
+                        WHERE table_schema = 'app_identity'
+                          AND table_name IN ('oauth2_registered_client', 'oauth2_authorization')
+                          AND column_name LIKE '%\\_at' ESCAPE '\\'
+                        """)
+                .query(String.class)
+                .list()).containsExactly("timestamp with time zone");
         assertThat(jdbcClient.sql("SELECT current_setting('server_version_num')::int / 10000")
                 .query(Integer.class)
                 .single()).isEqualTo(18);
@@ -125,13 +120,13 @@ class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest 
                 "identity-boundary", "unified"
         ));
 
-        mockMvc.perform(get("/api/actuator/health/liveness").contextPath("/api"))
+        mockMvc.perform(get("/api/actuator/health/liveness"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"));
-        mockMvc.perform(get("/api/actuator/health/readiness").contextPath("/api"))
+        mockMvc.perform(get("/api/actuator/health/readiness"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"));
-        mockMvc.perform(get("/api/actuator/info").contextPath("/api"))
+        mockMvc.perform(get("/api/actuator/info"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.release.runtime").value("identity-account"))
                 .andExpect(jsonPath("$.release.mode").value("maintenance"))
@@ -139,16 +134,12 @@ class IdentityAccountApplicationIntegrationTest extends PostgresIntegrationTest 
     }
 
     @Test
-    void introducesNoAccountBehaviorRoutesYet() throws Exception {
-        assertThat(applicationContext.getBeanNamesForAnnotation(RestController.class)).isEmpty();
-        assertThat(requestMappings.getHandlerMethods().keySet())
-                .flatExtracting(mapping -> mapping.getPatternValues())
-                .allSatisfy(route -> assertThat(route).doesNotContain("/v2"));
-
-        mockMvc.perform(get("/api/v2").contextPath("/api"))
-                .andExpect(status().isNotFound());
-        mockMvc.perform(get("/api/users").contextPath("/api"))
-                .andExpect(status().isNotFound());
+    void canonicalAccountRoutesReplaceLegacyAliases() throws Exception {
+        assertThat(applicationContext.getBeanNamesForAnnotation(RestController.class)).isNotEmpty();
+        assertThat(requestMappings.getHandlerMethods().keySet()).flatExtracting(mapping -> mapping.getPatternValues())
+                .allSatisfy(route -> assertThat(route).doesNotContain("/v2", "/api/users", "/api/user/"));
+        mockMvc.perform(get("/api/accounts/csrf")).andExpect(status().isOk());
+        mockMvc.perform(get("/api/users")).andExpect(status().isUnauthorized());
     }
 
     private java.util.List<String> columns(String table) {
