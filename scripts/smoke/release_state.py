@@ -765,16 +765,22 @@ def manifest_ingress_route_pairs(
             )
             pairs_list: list[tuple[str, str]] = []
             for index, match in enumerate(path_matches):
-                end = path_matches[index + 1].start() if index + 1 < len(path_matches) else len(document)
+                end = (
+                    path_matches[index + 1].start()
+                    if index + 1 < len(path_matches)
+                    else len(document)
+                )
                 segment = document[match.end():end]
                 services = re.findall(
-                    r"^[ \t]+name:[ \t]+mnema-([a-z0-9-]+)[ \t]*$",
+                    r"^(?P<indent> +)backend:[ \t]*$\n"
+                    r"(?P=indent)  service:[ \t]*$\n"
+                    r"(?P=indent)    name:[ \t]+mnema-([a-z0-9-]+)[ \t]*$",
                     segment,
                     re.MULTILINE,
                 )
                 if len(services) != 1:
                     raise StateFailure("rollback_ingress_manifest_invalid")
-                pairs_list.append((match.group(1), services[0]))
+                pairs_list.append((match.group(1), services[0][1]))
             pairs = tuple(pairs_list)
         if not pairs:
             raise StateFailure("rollback_ingress_manifest_invalid")

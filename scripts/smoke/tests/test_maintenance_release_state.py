@@ -310,6 +310,55 @@ class MaintenanceReleaseStateTest(unittest.TestCase):
                 record(duplicate),
             )
 
+    def test_snapshot_rejects_a_yaml_resource_backend_that_only_looks_like_a_service(self):
+        content = manifest(True, include_routes=False) + """---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mnema
+  namespace: mnema-staging
+spec:
+  rules:
+    - host: staging.mnema.app
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              resource:
+                apiGroup: example.mnema.app
+                kind: LearningTarget
+                name: mnema-learning
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mnema-auth
+  namespace: mnema-staging
+spec:
+  rules:
+    - host: auth.staging.mnema.app
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: mnema-identity-account
+                port:
+                  number: 80
+"""
+
+        with self.assertRaisesRegex(
+            release_state.StateFailure,
+            "ingress_manifest_invalid",
+        ):
+            release_state.ensure_rollback_ingresses(
+                StagingKubectl(maintenance=True),
+                content,
+                record(content),
+            )
+
     def test_rollback_removes_candidate_only_apps(self):
         kubectl = StagingKubectl()
         with tempfile.TemporaryDirectory() as directory:
