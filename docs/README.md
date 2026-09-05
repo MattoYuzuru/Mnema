@@ -28,6 +28,7 @@
 - **Current:** [Staging bootstrap and secret contract](./operations/staging-runbook.md) — namespace/RBAC bootstrap, prefixed GitHub Environment keys, promotion and rollback boundary.
 - **Current:** [Release verification runbook](./operations/release-verification-runbook.md) — hosted smoke, safe diagnostics, complete-manifest rollback and staging recovery drill.
 - **Current:** [Database recovery runbook](./operations/database-recovery-runbook.md) — off-host PostgreSQL backup, pre-migration evidence, isolated restore drill and measured RPO/RTO contract.
+- **Current:** [No-snapshot purge rehearsal](./operations/no-snapshot-purge-rehearsal.md) — exact private manifest, fail-closed disposable preflight, one-way purge and absence evidence.
 - **Current:** [Security automation triage](./operations/security-triage.md) — baseline, new-regression blocking and expiring private exceptions for Dependabot, dependency review and CodeQL.
 - **Current:** [CI artifact security boundary](./operations/ci-artifact-security-boundary.md) — exact upload inventory, pre-upload secret classes and least-privilege workflow tokens.
 - **Current:** [Production image inventory](./operations/production-image-inventory.md) — immutable build/runtime pins, production image boundary, update verification and rollback.
@@ -45,7 +46,6 @@ v2. Текущий local runbook разрешён публичной лицен�
 - [Self-Hosted Local Deployment](./deploy/selfhost-local.md)
 - [Self-Hosted Public Deployment](./deploy/selfhost-public.md)
 - [Local AI Model Matrix](./deploy/model-matrix.md)
-- [Scripts catalog](../scripts/README.md)
 
 ## Текущие сервисы
 

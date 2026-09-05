@@ -154,3 +154,6 @@ jobs:
 
       - name: Run PostgreSQL 16 to 18 recovery integration test
         run: ./scripts/test-backup-integration.sh
+
+      - name: Run no-snapshot purge rehearsal integration test
+        run: ./scripts/test-purge-rehearsal-integration.sh

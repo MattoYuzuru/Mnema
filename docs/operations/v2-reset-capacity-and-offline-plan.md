@@ -66,6 +66,12 @@ The policy choice is closed: no complete emergency/legacy snapshot is created or
 
 Rollback exists only while the untouched legacy resources still exist and deletion has not started. The first destructive delete is the point of no return. Afterwards recovery is roll-forward or restore of account-only/new-runtime artifacts; v1 content cannot be restored by design.
 
+The executable private-manifest contract, sanitized evidence boundary and
+disposable verification sequence are defined in
+[`no-snapshot-purge-rehearsal.md`](no-snapshot-purge-rehearsal.md). This tooling
+does not authorize production execution; #147 remains the sole production
+cutover and irreversible-delete boundary.
+
 ## Account deletion and category-specific retention
 
 Use an explicit state machine:
