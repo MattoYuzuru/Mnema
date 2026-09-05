@@ -758,29 +758,40 @@ def manifest_ingress_route_pairs(
         else:
             path_matches = list(
                 re.finditer(
-                    r"^[ \t]*-[ \t]+path:[ \t]*([^#\s]+)[ \t]*$",
+                    r"^(?P<indent> *)- +path: *([^#\s]+) *$",
                     document,
                     re.MULTILINE,
                 )
             )
             pairs_list: list[tuple[str, str]] = []
-            for index, match in enumerate(path_matches):
-                end = (
-                    path_matches[index + 1].start()
-                    if index + 1 < len(path_matches)
-                    else len(document)
-                )
-                segment = document[match.end():end]
-                services = re.findall(
-                    r"^(?P<indent> +)backend:[ \t]*$\n"
-                    r"(?P=indent)  service:[ \t]*$\n"
-                    r"(?P=indent)    name:[ \t]+mnema-([a-z0-9-]+)[ \t]*$",
+            for match in path_matches:
+                path_indent = match.group("indent")
+                segment_end = len(document)
+                for line in re.finditer(r"^( *)(.*)$", document[match.end():], re.MULTILINE):
+                    if not line.group(2).strip() or line.group(2).lstrip().startswith("#"):
+                        continue
+                    if len(line.group(1)) <= len(path_indent):
+                        segment_end = match.end() + line.start()
+                        break
+                segment = document[match.end():segment_end]
+                backend_indent = path_indent + "  "
+                service_indent = backend_indent + "  "
+                name_indent = service_indent + "  "
+                backend_lines = re.findall(
+                    rf"^{re.escape(backend_indent)}backend: *$",
                     segment,
                     re.MULTILINE,
                 )
-                if len(services) != 1:
+                services = re.findall(
+                    rf"^{re.escape(backend_indent)}backend: *$\n"
+                    rf"{re.escape(service_indent)}service: *$\n"
+                    rf"{re.escape(name_indent)}name: +mnema-([a-z0-9-]+) *$",
+                    segment,
+                    re.MULTILINE,
+                )
+                if len(backend_lines) != 1 or len(services) != 1:
                     raise StateFailure("rollback_ingress_manifest_invalid")
-                pairs_list.append((match.group(1), services[0][1]))
+                pairs_list.append((match.group(2), services[0]))
             pairs = tuple(pairs_list)
         if not pairs:
             raise StateFailure("rollback_ingress_manifest_invalid")
