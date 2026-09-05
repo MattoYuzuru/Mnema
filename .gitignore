@@ -34,6 +34,9 @@ backend/.gradle
 frontend/dist
 frontend/node_modules
 /scripts/*
+!/scripts/purge/
+!/scripts/purge/**
+!/scripts/test-purge-rehearsal-integration.sh
 !/scripts/mnema-local.sh
 !/scripts/mnema-local.ps1
 !/scripts/mnema-public.sh
