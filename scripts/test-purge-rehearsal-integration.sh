@@ -78,24 +78,31 @@ AWS=(aws --no-cli-pager --endpoint-url "$MNEMA_PURGE_S3_ENDPOINT" --region us-ea
   --tagging 'TagSet=[{Key=mnema-rehearsal-target-id,Value=00000000-0000-4000-8000-000000000145}]'
 printf 'legacy' >"$TEST_ROOT/legacy"
 printf 'fresh' >"$TEST_ROOT/fresh"
-LEGACY_PUT=$("${AWS[@]}" put-object --bucket "$BUCKET" --key legacy/content --body "$TEST_ROOT/legacy")
-WAL_PUT=$("${AWS[@]}" put-object --bucket "$BUCKET" --key legacy/wal --body "$TEST_ROOT/legacy")
-BACKUP_PUT=$("${AWS[@]}" put-object --bucket "$BUCKET" --key legacy/backup --body "$TEST_ROOT/legacy")
-FRESH_PUT=$("${AWS[@]}" put-object --bucket "$BUCKET" --key fresh/avatar --body "$TEST_ROOT/fresh")
-DELETE_MARKER=$("${AWS[@]}" delete-object --bucket "$BUCKET" --key legacy/deleted)
-MULTIPART=$("${AWS[@]}" create-multipart-upload --bucket "$BUCKET" --key legacy/upload)
+LEGACY_VERSION=$("${AWS[@]}" put-object --bucket "$BUCKET" --key legacy/content \
+  --body "$TEST_ROOT/legacy" --query VersionId --output text)
+WAL_VERSION=$("${AWS[@]}" put-object --bucket "$BUCKET" --key legacy/wal \
+  --body "$TEST_ROOT/legacy" --query VersionId --output text)
+BACKUP_VERSION=$("${AWS[@]}" put-object --bucket "$BUCKET" --key legacy/backup \
+  --body "$TEST_ROOT/legacy" --query VersionId --output text)
+FRESH_VERSION=$("${AWS[@]}" put-object --bucket "$BUCKET" --key fresh/avatar \
+  --body "$TEST_ROOT/fresh" --query VersionId --output text)
+DELETE_MARKER_VERSION=$("${AWS[@]}" delete-object --bucket "$BUCKET" --key legacy/deleted \
+  --query VersionId --output text)
+MULTIPART_ID=$("${AWS[@]}" create-multipart-upload --bucket "$BUCKET" --key legacy/upload \
+  --query UploadId --output text)
+for identity in "$LEGACY_VERSION" "$WAL_VERSION" "$BACKUP_VERSION" "$FRESH_VERSION" \
+  "$DELETE_MARKER_VERSION" "$MULTIPART_ID"
+do
+  case "$identity" in
+    '' | None | null | *[![:print:]]*) echo 'purge_integration_error=s3_identity_unavailable' >&2; exit 1 ;;
+  esac
+done
+LEGACY_ETAG=$(python3 -c 'import hashlib; print(hashlib.md5(b"legacy", usedforsecurity=False).hexdigest())')
+WAL_ETAG=$LEGACY_ETAG
+BACKUP_ETAG=$LEGACY_ETAG
+FRESH_ETAG=$(python3 -c 'import hashlib; print(hashlib.md5(b"fresh", usedforsecurity=False).hexdigest())')
 export LEGACY_VERSION WAL_VERSION BACKUP_VERSION FRESH_VERSION DELETE_MARKER_VERSION MULTIPART_ID
 export LEGACY_ETAG WAL_ETAG BACKUP_ETAG FRESH_ETAG
-LEGACY_VERSION=$(printf '%s' "$LEGACY_PUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["VersionId"])')
-WAL_VERSION=$(printf '%s' "$WAL_PUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["VersionId"])')
-BACKUP_VERSION=$(printf '%s' "$BACKUP_PUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["VersionId"])')
-FRESH_VERSION=$(printf '%s' "$FRESH_PUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["VersionId"])')
-DELETE_MARKER_VERSION=$(printf '%s' "$DELETE_MARKER" | python3 -c 'import json,sys; print(json.load(sys.stdin)["VersionId"])')
-MULTIPART_ID=$(printf '%s' "$MULTIPART" | python3 -c 'import json,sys; print(json.load(sys.stdin)["UploadId"])')
-LEGACY_ETAG=$(printf '%s' "$LEGACY_PUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["ETag"].strip(chr(34)))')
-WAL_ETAG=$(printf '%s' "$WAL_PUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["ETag"].strip(chr(34)))')
-BACKUP_ETAG=$(printf '%s' "$BACKUP_PUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["ETag"].strip(chr(34)))')
-FRESH_ETAG=$(printf '%s' "$FRESH_PUT" | python3 -c 'import json,sys; print(json.load(sys.stdin)["ETag"].strip(chr(34)))')
 
 mkdir -p "$TEST_ROOT/bin"
 cat >"$TEST_ROOT/bin/psql" <<EOF
