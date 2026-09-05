@@ -727,6 +727,61 @@ def resource_identities(manifest: str) -> set[tuple[str, str, str]]:
     return identities
 
 
+def manifest_ingress_route_pairs(
+    manifest: str,
+    namespace: str,
+) -> dict[str, tuple[tuple[str, str], ...]]:
+    """Read only the bounded path/backend pairs needed to bind rollback routes."""
+    result: dict[str, tuple[tuple[str, str], ...]] = {}
+    expected_names = set(SNAPSHOT_INGRESSES)
+    for document in re.split(r"^---\s*$", manifest, flags=re.MULTILINE):
+        identity = document_resource_identity(document)
+        if (
+            identity is None
+            or identity[0] != "Ingress"
+            or identity[1] not in expected_names
+            or identity[2] != namespace
+        ):
+            continue
+        name = identity[1]
+        if name in result:
+            raise StateFailure("rollback_ingress_manifest_duplicate")
+        stripped = "\n".join(
+            line for line in document.splitlines() if not line.lstrip().startswith("#")
+        ).strip()
+        if stripped.startswith("{"):
+            try:
+                resource = json.loads(stripped)
+            except json.JSONDecodeError:
+                raise StateFailure("rollback_ingress_manifest_invalid") from None
+            pairs = route_pairs(resource)
+        else:
+            path_matches = list(
+                re.finditer(
+                    r"^[ \t]*-[ \t]+path:[ \t]*([^#\s]+)[ \t]*$",
+                    document,
+                    re.MULTILINE,
+                )
+            )
+            pairs_list: list[tuple[str, str]] = []
+            for index, match in enumerate(path_matches):
+                end = path_matches[index + 1].start() if index + 1 < len(path_matches) else len(document)
+                segment = document[match.end():end]
+                services = re.findall(
+                    r"^[ \t]+name:[ \t]+mnema-([a-z0-9-]+)[ \t]*$",
+                    segment,
+                    re.MULTILINE,
+                )
+                if len(services) != 1:
+                    raise StateFailure("rollback_ingress_manifest_invalid")
+                pairs_list.append((match.group(1), services[0]))
+            pairs = tuple(pairs_list)
+        if not pairs:
+            raise StateFailure("rollback_ingress_manifest_invalid")
+        result[name] = pairs
+    return result
+
+
 def ensure_rollback_ingresses(
     kubectl: Kubectl,
     manifest: str,
@@ -747,9 +802,17 @@ def ensure_rollback_ingresses(
         for name in SNAPSHOT_INGRESSES
     ]
     validate_staging_routes(captured, topology, maintenance_smoke_version)
-    expected = {("Ingress", name, kubectl.namespace) for name in SNAPSHOT_INGRESSES}
-    present = resource_identities(manifest) & expected
+    manifest_routes = manifest_ingress_route_pairs(manifest, kubectl.namespace)
+    present = set(manifest_routes)
+    expected = set(SNAPSHOT_INGRESSES)
     if present == expected:
+        for name in SNAPSHOT_INGRESSES:
+            if manifest_routes[name] != expected_staging_route_pairs(
+                name,
+                topology,
+                maintenance_smoke_version,
+            ):
+                raise StateFailure("rollback_ingress_topology_mismatch")
         return manifest, record
     if present:
         raise StateFailure("rollback_ingress_manifest_incomplete")
@@ -789,24 +852,7 @@ def validate_staging_routes(
         annotations = resource.get("metadata", {}).get("annotations", {})
         if annotations != {"cert-manager.io/cluster-issuer": "letsencrypt-prod"}:
             raise StateFailure("rollback_ingress_annotations_invalid")
-        if topology == MAINTENANCE_TOPOLOGY:
-            if maintenance_smoke_version == PREVIOUS_MAINTENANCE_SMOKE_VERSION:
-                paths = [("/api", "learning")] if name == "mnema" else [
-                    ("/api", "identity-account")
-                ]
-            elif maintenance_smoke_version == MAINTENANCE_SMOKE_VERSION:
-                paths = [("/api", "learning")] if name == "mnema" else [
-                    ("/", "identity-account")
-                ]
-            else:
-                raise StateFailure("rollback_maintenance_smoke_unsupported")
-        elif topology == LEGACY_TOPOLOGY:
-            paths = [("/", "auth")] if name == "mnema-auth" else [
-                ("/", "frontend"), ("/api/user", "user"), ("/api/core", "core"),
-                ("/api/media", "media"), ("/api/import", "import"),
-            ]
-        else:
-            raise StateFailure("manifest_topology_invalid")
+        paths = expected_staging_route_pairs(name, topology, maintenance_smoke_version)
         expected = {
             "ingressClassName": "traefik",
             "tls": [{"hosts": [host], "secretName": tls}],
@@ -818,6 +864,53 @@ def validate_staging_routes(
         }
         if resource.get("spec") != expected:
             raise StateFailure("rollback_ingress_topology_mismatch")
+
+
+def route_pairs(resource: Any) -> tuple[tuple[str, str], ...]:
+    try:
+        rules = resource["spec"]["rules"]
+        if not isinstance(rules, list) or len(rules) != 1:
+            raise StateFailure("rollback_ingress_manifest_invalid")
+        paths = rules[0]["http"]["paths"]
+        result: list[tuple[str, str]] = []
+        for path in paths:
+            service_name = path["backend"]["service"]["name"]
+            if not isinstance(service_name, str) or not service_name.startswith("mnema-"):
+                raise StateFailure("rollback_ingress_manifest_invalid")
+            result.append((str(path["path"]), service_name.removeprefix("mnema-")))
+        return tuple(result)
+    except (KeyError, TypeError, IndexError):
+        raise StateFailure("rollback_ingress_manifest_invalid") from None
+
+
+def expected_staging_route_pairs(
+    name: str,
+    topology: str,
+    maintenance_smoke_version: int | None,
+) -> tuple[tuple[str, str], ...]:
+    if name not in SNAPSHOT_INGRESSES:
+        raise StateFailure("rollback_ingress_identity_mismatch")
+    if topology == MAINTENANCE_TOPOLOGY:
+        if maintenance_smoke_version == PREVIOUS_MAINTENANCE_SMOKE_VERSION:
+            return (("/api", "learning"),) if name == "mnema" else (
+                ("/api", "identity-account"),
+            )
+        if maintenance_smoke_version == MAINTENANCE_SMOKE_VERSION:
+            return (("/api", "learning"),) if name == "mnema" else (
+                ("/", "identity-account"),
+            )
+        raise StateFailure("rollback_maintenance_smoke_unsupported")
+    if topology == LEGACY_TOPOLOGY:
+        if name == "mnema-auth":
+            return (("/", "auth"),)
+        return (
+            ("/", "frontend"),
+            ("/api/user", "user"),
+            ("/api/core", "core"),
+            ("/api/media", "media"),
+            ("/api/import", "import"),
+        )
+    raise StateFailure("manifest_topology_invalid")
 
 
 def render_live_manifest(

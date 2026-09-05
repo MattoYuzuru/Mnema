@@ -257,6 +257,59 @@ class MaintenanceReleaseStateTest(unittest.TestCase):
                 record(content, release_state.PREVIOUS_MAINTENANCE_SMOKE_VERSION),
             )
 
+    def test_snapshot_binds_routes_already_in_the_manifest_to_the_record_version(self):
+        versions = (
+            release_state.PREVIOUS_MAINTENANCE_SMOKE_VERSION,
+            release_state.MAINTENANCE_SMOKE_VERSION,
+        )
+        for record_version, manifest_version in ((versions[0], versions[1]), (versions[1], versions[0])):
+            with self.subTest(
+                record_version=record_version,
+                manifest_version=manifest_version,
+            ):
+                content = manifest(True, maintenance_smoke_version=manifest_version)
+                kubectl = StagingKubectl(
+                    maintenance=True,
+                    maintenance_smoke_version=record_version,
+                )
+                with self.assertRaisesRegex(
+                    release_state.StateFailure,
+                    "ingress_topology_mismatch",
+                ):
+                    release_state.ensure_rollback_ingresses(
+                        kubectl,
+                        content,
+                        record(content, record_version),
+                    )
+
+    def test_snapshot_accepts_matching_routes_already_in_the_manifest(self):
+        for smoke_version in release_state.SUPPORTED_MAINTENANCE_SMOKE_VERSIONS:
+            with self.subTest(smoke_version=smoke_version):
+                content = manifest(True, maintenance_smoke_version=smoke_version)
+                kubectl = StagingKubectl(
+                    maintenance=True,
+                    maintenance_smoke_version=smoke_version,
+                )
+                result = release_state.ensure_rollback_ingresses(
+                    kubectl,
+                    content,
+                    record(content, smoke_version),
+                )
+                self.assertEqual(content, result[0])
+
+    def test_snapshot_rejects_duplicate_saved_ingress(self):
+        content = manifest(True)
+        duplicate = content + "---\n" + json.dumps(routes(True)[1])
+        with self.assertRaisesRegex(
+            release_state.StateFailure,
+            "ingress_manifest_duplicate",
+        ):
+            release_state.ensure_rollback_ingresses(
+                StagingKubectl(maintenance=True),
+                duplicate,
+                record(duplicate),
+            )
+
     def test_rollback_removes_candidate_only_apps(self):
         kubectl = StagingKubectl()
         with tempfile.TemporaryDirectory() as directory:

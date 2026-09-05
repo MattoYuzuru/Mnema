@@ -227,9 +227,11 @@ The workflow is fixed to the `staging` Environment and `mnema-staging` namespace
 It replaces only the saved Identity Account digest with an impossible SHA-256
 value, confirms both rollout and black-box smoke fail, captures diagnostics,
 reapplies the saved complete manifest, verifies both maintenance rollouts and
-checks the restored readiness, build identity and OIDC surface. It never records
-the broken candidate as current. The run is successful only when the complete
-failure-and-recovery sequence is observed; otherwise treat staging as unavailable
-and investigate before production promotion.
+checks the restored readiness and build identity. A v2 baseline must also restore
+the complete OIDC surface; the transitional v1 baseline uses its exact weaker
+capability and `/api` route without claiming root OIDC. It never records the broken
+candidate as current. The run is successful only when the complete failure-and-
+recovery sequence is observed; otherwise treat staging as unavailable and
+investigate before production promotion.
 
 To remove this mechanism, revert its delivery change. Do not delete either release-state ConfigMap until no deployment or rollback drill is running; deletion removes the directly executable rollback target.

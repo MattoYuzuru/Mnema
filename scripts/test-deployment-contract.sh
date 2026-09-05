@@ -236,6 +236,11 @@ fi
 
 grep -Fq -- '--mode maintenance' "$ROLLBACK_DRILL_WORKFLOW"
 grep -Fq 'deployment/mnema-identity-account --timeout=180s' "$ROLLBACK_DRILL_WORKFLOW"
+rollback_drill_smoke=$(sed -n '/name: Verify complete rollback release/,/name: Upload complete rollback drill evidence/p' "$ROLLBACK_DRILL_WORKFLOW")
+printf '%s\n' "$rollback_drill_smoke" | grep -Fq 'steps.rollback.outputs.maintenance_smoke_supported'
+printf '%s\n' "$rollback_drill_smoke" | grep -Fq -- '--skip-identity-protocol'
+printf '%s\n' "$rollback_drill_smoke" | grep -Fq "true) set --"
+printf '%s\n' "$rollback_drill_smoke" | grep -Fq "false) set -- --skip-identity-protocol"
 
 grep -Fq 'RUN_STAGING_ROLLBACK_DRILL' "$ROLLBACK_DRILL_WORKFLOW"
 grep -Fq 'name: staging' "$ROLLBACK_DRILL_WORKFLOW"
