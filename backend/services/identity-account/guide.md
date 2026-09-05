@@ -172,9 +172,11 @@ configured issuer plus `/login/oauth2/code/{provider}`.
 ## Disposable account-only transfer
 
 The `accountTransfer` Gradle task is an offline rehearsal tool for the accepted
-PostgreSQL 16 → 18 reset. It cannot run when `APP_ENV` is `prod`/`production` and
-requires `MNEMA_ACCOUNT_TRANSFER_DISPOSABLE_TARGET=true`. Production execution and
-direct cloud-object orchestration remain #147 boundaries.
+PostgreSQL 16 → 18 reset. It requires `APP_ENV=rehearsal` (case-insensitive after
+trimming) and `MNEMA_ACCOUNT_TRANSFER_DISPOSABLE_TARGET=true`; missing, development,
+staging and production environment values fail before argument or connection
+processing. Production execution and direct cloud-object orchestration remain #147
+boundaries.
 
 The source database connection is supplied only through
 `MNEMA_ACCOUNT_TRANSFER_SOURCE_{URL,USERNAME,PASSWORD}` and the target through the

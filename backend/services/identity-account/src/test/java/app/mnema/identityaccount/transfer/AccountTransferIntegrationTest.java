@@ -172,12 +172,20 @@ class AccountTransferIntegrationTest {
     }
 
     @Test
-    void rejectsProductionAndRequiresExplicitDisposableTarget() {
-        assertThatThrownBy(() -> AccountTransferCli.execute(new String[]{"export", "--artifact=x"},
-                Map.of("APP_ENV", "production", "MNEMA_ACCOUNT_TRANSFER_DISPOSABLE_TARGET", "true")))
-                .isInstanceOf(AccountTransferFailure.class).hasMessage("production_execution_forbidden");
+    void requiresExactRehearsalEnvironmentAndExplicitDisposableTarget() {
+        assertThatThrownBy(() -> AccountTransferCli.execute(new String[0],
+                Map.of("MNEMA_ACCOUNT_TRANSFER_DISPOSABLE_TARGET", "true")))
+                .isInstanceOf(AccountTransferFailure.class).hasMessage("rehearsal_execution_required");
+        for (String appEnvironment : new String[]{"dev", "staging", "prod", "production"}) {
+            assertThatThrownBy(() -> AccountTransferCli.execute(new String[0],
+                    Map.of("APP_ENV", appEnvironment, "MNEMA_ACCOUNT_TRANSFER_DISPOSABLE_TARGET", "true")))
+                    .isInstanceOf(AccountTransferFailure.class).hasMessage("rehearsal_execution_required");
+        }
         assertThatThrownBy(() -> AccountTransferCli.execute(new String[]{"export", "--artifact=x"}, Map.of()))
                 .isInstanceOf(AccountTransferFailure.class).hasMessage("disposable_target_confirmation_required");
+        assertThatThrownBy(() -> AccountTransferCli.execute(new String[0],
+                Map.of("APP_ENV", " ReHeArSaL ", "MNEMA_ACCOUNT_TRANSFER_DISPOSABLE_TARGET", "true")))
+                .isInstanceOf(AccountTransferFailure.class).hasMessage("invalid_arguments");
     }
 
     @Test

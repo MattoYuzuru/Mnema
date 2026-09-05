@@ -35,8 +35,8 @@ public final class AccountTransferCli {
         AccountTransferBundle.require("true".equals(environment.get("MNEMA_ACCOUNT_TRANSFER_DISPOSABLE_TARGET")),
                 "disposable_target_confirmation_required");
         String appEnvironment = environment.getOrDefault("APP_ENV", "").trim().toLowerCase(java.util.Locale.ROOT);
-        AccountTransferBundle.require(!Set.of("prod", "production").contains(appEnvironment),
-                "production_execution_forbidden");
+        AccountTransferBundle.require("rehearsal".equals(appEnvironment),
+                "rehearsal_execution_required");
         AccountTransferBundle.require(arguments.length >= 2, "invalid_arguments");
         String operation = arguments[0];
         Map<String, Path> paths = parsePaths(Arrays.copyOfRange(arguments, 1, arguments.length));

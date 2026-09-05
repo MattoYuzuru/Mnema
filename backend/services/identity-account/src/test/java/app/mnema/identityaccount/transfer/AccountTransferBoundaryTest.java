@@ -66,6 +66,23 @@ class AccountTransferBoundaryTest {
     }
 
     @Test
+    void directoryStoreRejectsSymlinkAncestorsWithoutExternalMutation() throws IOException {
+        Path root = Files.createDirectory(temporary.resolve("objects"));
+        Path external = Files.createDirectory(temporary.resolve("external"));
+        Files.createSymbolicLink(root.resolve("escape"), external);
+        DirectoryAvatarBlobStore store = new DirectoryAvatarBlobStore(root);
+
+        assertThatThrownBy(() -> store.putExact("escape/created/avatar", new byte[]{1, 2, 3}))
+                .isInstanceOf(AccountTransferFailure.class).hasMessage("invalid_avatar_object_path");
+        assertThat(external.resolve("created")).doesNotExist();
+
+        Path preserved = Files.write(external.resolve("preserved-avatar"), new byte[]{4, 5, 6});
+        assertThatThrownBy(() -> store.deleteExact("escape/preserved-avatar"))
+                .isInstanceOf(AccountTransferFailure.class).hasMessage("invalid_avatar_object_path");
+        assertThat(preserved).exists().hasBinaryContent(new byte[]{4, 5, 6});
+    }
+
+    @Test
     void codecRejectsWrongKeyTamperingAndExistingOutput() throws IOException {
         AccountTransferCodec codec = new AccountTransferCodec(new byte[32]);
         AccountTransferArtifact empty = new AccountTransferArtifact(
