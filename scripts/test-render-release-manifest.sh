@@ -28,7 +28,15 @@ for service in identity-account learning; do
       "          image: ghcr.io/mattoyuzuru/mnema/$service:release-placeholder" \
       '          env:' \
       '            - name: MNEMA_BUILD_ID' \
-      '              value: "release-placeholder"' \
+      '              value: "release-placeholder"'
+    if [ "$service" = identity-account ]; then
+      printf '%s\n' \
+        '            - name: MNEMA_AVATAR_ENDPOINT' \
+        '              value: "release-s3-endpoint-placeholder"' \
+        '            - name: MNEMA_AVATAR_ALLOW_STAGING_MINIO_HTTP' \
+        '              value: "release-avatar-staging-minio-http-placeholder"'
+    fi
+    printf '%s\n' \
       '---' \
       'apiVersion: v1' \
       'kind: Service' \
@@ -117,6 +125,11 @@ test "$(grep -F -c 'namespace: mnema-staging' "$TEST_ROOT/release-staging.yaml")
 test "$(grep -F -c 'kind: Ingress' "$TEST_ROOT/release-staging.yaml")" -eq 2
 test "$(grep -F -c 'secretName: staging-mnema-app-tls' "$TEST_ROOT/release-staging.yaml")" -eq 1
 test "$(grep -F -c 'secretName: auth-staging-mnema-app-tls' "$TEST_ROOT/release-staging.yaml")" -eq 1
+test "$(grep -F -c 'value: "http://minio:9000"' "$TEST_ROOT/release-staging.yaml")" -eq 1
+test "$(sed -n '/name: MNEMA_AVATAR_ALLOW_STAGING_MINIO_HTTP/{n;p;}' \
+  "$TEST_ROOT/release-staging.yaml")" = '              value: "true"'
+test "$(sed -n '/name: MNEMA_AVATAR_ALLOW_STAGING_MINIO_HTTP/{n;p;}' \
+  "$TEST_ROOT/release-a.yaml")" = '              value: "false"'
 grep -E '^[[:space:]]+image: ghcr\.io/mattoyuzuru/mnema/' "$TEST_ROOT/release-a.yaml" > "$TEST_ROOT/production-images.txt"
 grep -E '^[[:space:]]+image: ghcr\.io/mattoyuzuru/mnema/' "$TEST_ROOT/release-staging.yaml" > "$TEST_ROOT/staging-images.txt"
 if ! diff -u "$TEST_ROOT/production-images.txt" "$TEST_ROOT/staging-images.txt" >/dev/null; then
@@ -160,6 +173,29 @@ if DIGEST_DIR="$DIGEST_DIR" MANIFEST_ROOT="$MANIFEST_ROOT" \
   OUTPUT="$TEST_ROOT/invalid-staging-tls.yaml" RELEASE_SHA="$release_sha" IMAGE_BASE="$image_base" \
   APP_ENV=staging PUBLIC_TLS_SECRET=wrong-tls "$SCRIPT_DIR/render-release-manifest.sh" 2>/dev/null; then
   echo "renderer accepted a staging TLS Secret outside the existing certificate boundary" >&2
+  exit 1
+fi
+
+if DIGEST_DIR="$DIGEST_DIR" MANIFEST_ROOT="$MANIFEST_ROOT" \
+  OUTPUT="$TEST_ROOT/invalid-production-http.yaml" RELEASE_SHA="$release_sha" IMAGE_BASE="$image_base" \
+  S3_ENDPOINT=http://minio:9000 "$SCRIPT_DIR/render-release-manifest.sh" 2>/dev/null; then
+  echo "renderer accepted the staging MinIO HTTP endpoint for production" >&2
+  exit 1
+fi
+
+if DIGEST_DIR="$DIGEST_DIR" MANIFEST_ROOT="$MANIFEST_ROOT" \
+  OUTPUT="$TEST_ROOT/invalid-staging-http.yaml" RELEASE_SHA="$release_sha" IMAGE_BASE="$image_base" \
+  APP_ENV=staging S3_ENDPOINT=http://object-store:9000 \
+    "$SCRIPT_DIR/render-release-manifest.sh" 2>/dev/null; then
+  echo "renderer accepted an unapproved staging HTTP endpoint" >&2
+  exit 1
+fi
+
+if DIGEST_DIR="$DIGEST_DIR" MANIFEST_ROOT="$MANIFEST_ROOT" \
+  OUTPUT="$TEST_ROOT/invalid-public-http.yaml" RELEASE_SHA="$release_sha" IMAGE_BASE="$image_base" \
+  APP_ENV=staging S3_ENDPOINT=http://minio:9000 S3_PUBLIC_ENDPOINT=http://minio:9000 \
+    "$SCRIPT_DIR/render-release-manifest.sh" 2>/dev/null; then
+  echo "renderer accepted an HTTP browser-facing S3 endpoint" >&2
   exit 1
 fi
 

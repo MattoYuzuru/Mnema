@@ -16,6 +16,7 @@ STAGING_BUCKET_JOB="$REPO_ROOT/k8s/staging/minio-bucket-job.yaml"
 STAGING_ROUTES="$REPO_ROOT/k8s/staging/routes.yaml"
 ALLOY_CONFIG="$REPO_ROOT/k8s/observability/30-alloy-config.yaml"
 IDENTITY_TEMPLATE="$REPO_ROOT/k8s/identity-account-deploy.yaml"
+IDENTITY_PROPERTIES="$REPO_ROOT/backend/services/identity-account/src/main/resources/application.properties"
 STAGING_RUNBOOK="$REPO_ROOT/docs/operations/staging-runbook.md"
 
 grep -Eq '^[[:space:]]*targets[[:space:]]*=[[:space:]]*discovery\.relabel\.pods\.output[[:space:]]*$' \
@@ -176,12 +177,15 @@ for value in \
   SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID \
   SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_ID \
   SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_YANDEX_CLIENT_ID \
-  MNEMA_AVATAR_BUCKET MNEMA_IDENTITY_TRUSTED_PROXY_CIDRS
+  MNEMA_AVATAR_BUCKET MNEMA_AVATAR_ALLOW_STAGING_MINIO_HTTP \
+  MNEMA_IDENTITY_TRUSTED_PROXY_CIDRS
 do
   grep -Fq "$value" "$IDENTITY_TEMPLATE"
 done
 grep -Fq 'key: IDENTITY_SIGNING_JWK_SET' "$IDENTITY_TEMPLATE"
 grep -Fq 'mountPath: /var/run/secrets/mnema-identity' "$IDENTITY_TEMPLATE"
+grep -Fq 'identity.avatar.allow-staging-minio-http=${MNEMA_AVATAR_ALLOW_STAGING_MINIO_HTTP:false}' \
+  "$IDENTITY_PROPERTIES"
 for value in IDENTITY_SIGNING_JWK_SET IDENTITY_SIGNING_ACTIVE_KID POSTBOX_ACCESS_KEY POSTBOX_SECRET_KEY; do
   test "$(grep -c "'$value'" "$ADMISSION")" -eq 2
 done
