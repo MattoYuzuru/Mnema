@@ -169,6 +169,59 @@ this is not a production HTTP fallback. Federation credentials are optional thro
 missing pairs leave that provider unavailable. Callback URLs are fixed to the
 configured issuer plus `/login/oauth2/code/{provider}`.
 
+## Disposable account-only transfer
+
+The `accountTransfer` Gradle task is an offline rehearsal tool for the accepted
+PostgreSQL 16 → 18 reset. It requires `APP_ENV=rehearsal` (case-insensitive after
+trimming) and `MNEMA_ACCOUNT_TRANSFER_DISPOSABLE_TARGET=true`; missing, development,
+staging and production environment values fail before argument or connection
+processing. Production execution and direct cloud-object orchestration remain #147
+boundaries.
+
+The source database connection is supplied only through
+`MNEMA_ACCOUNT_TRANSFER_SOURCE_{URL,USERNAME,PASSWORD}` and the target through the
+equivalent `TARGET_*` variables. No credential is accepted as a command argument.
+`MNEMA_ACCOUNT_TRANSFER_SOURCE_AVATAR_ROOT` is a private, read-only filesystem
+projection of the legacy bucket where each exact legacy `storage_key` resolves to
+its blob. `MNEMA_ACCOUNT_TRANSFER_TARGET_AVATAR_ROOT` is an empty disposable target
+projection. Export validates ownership, ready state, MIME, size, dimensions and
+the actual blob; import writes the canonical
+`account-avatar/{accountId}/{assetId}` key idempotently.
+
+Artifacts are AES-256-GCM encrypted with the 32-byte base64 key in
+`MNEMA_ACCOUNT_TRANSFER_ENCRYPTION_KEY_B64`, created mode `0600` and never
+overwritten. Keep the key outside the artifact and repository. Import authenticates
+the complete GCM ciphertext before parsing any ZIP entry; `CipherInputStream` is
+deliberately not used because Java does not propagate all failed integrity checks
+from that stream. The decrypted projection has a closed JSON schema and closed
+archive entry set; duplicate, missing or unknown fields/entries fail. It contains
+preserved password hashes and PII and must never be attached to GitHub evidence. The
+separate reconciliation JSON contains only counts, byte totals and aggregate SHA-256
+values.
+
+With source writes stopped and exact avatar objects staged, run:
+
+```text
+./gradlew :services:identity-account:accountTransfer --args="export --artifact=/private/account-transfer.enc"
+./gradlew :services:identity-account:accountTransfer --args="import --artifact=/private/account-transfer.enc --evidence=/private/import-evidence.json"
+./gradlew :services:identity-account:accountTransfer --args="reconcile --artifact=/private/account-transfer.enc --evidence=/private/reconcile-evidence.json"
+```
+
+Export selects only the classified `auth.users`, `auth.accounts`,
+`app_user.users` and conditional avatar fields. It never selects registered
+clients, sessions, authorizations, consents, token values, uploads or application
+data. Import requires a PostgreSQL 18 fresh schema with zero sessions, grants,
+challenges and rate-limit state; registered clients remain configuration. A
+repeated import must resolve to the same accounts, credentials, identities and
+avatars. Any different or additional target row fails reconciliation. Avatar
+receipts and compensating deletion prevent an unsuccessful import from silently
+leaving an unowned blob.
+
+`AccountTransferIntegrationTest` runs the real PostgreSQL 16 → 18 path, includes
+forbidden session/token/grant fixtures, repeats import, validates encrypted archive
+privacy and then smokes restored password login/replacement, federation, profile,
+moderation and avatar behavior.
+
 ## Evidence and references
 
 Run `cd backend && ./gradlew quality`; the identity line-coverage threshold remains
@@ -183,4 +236,6 @@ Important implementation sources:
 [Spring JWT validation](https://docs.spring.io/spring-security/reference/6.5/servlet/oauth2/resource-server/jwt.html),
 [Postbox HTTPS signing](https://yandex.cloud/en/docs/postbox/operations/send-email#curl),
 [GitHub PKCE](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps),
-[Yandex PKCE](https://yandex.ru/dev/id/doc/en/codes/code-url).
+[Yandex PKCE](https://yandex.ru/dev/id/doc/en/codes/code-url),
+[Java 21 AES-GCM parameters](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/javax/crypto/spec/GCMParameterSpec.html),
+and [authenticated-stream caveat](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/javax/crypto/CipherInputStream.html).
