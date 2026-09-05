@@ -44,7 +44,7 @@ public class PasswordRecovery {
         String normalized = email.strip().toLowerCase(Locale.ROOT);
         if (!(limits.allow("reset-address", remote, 20) & limits.allow("reset", normalized, 3))) return;
         var id = jdbcClient.sql(
-                        "SELECT account_id FROM app_identity.account WHERE normalized_email=:email AND email_verified AND status='ACTIVE' AND EXISTS(SELECT 1 FROM app_identity.local_credential l WHERE l.account_id=account.account_id)")
+                        "SELECT account_id FROM app_identity.account WHERE normalized_email=:email AND email_verified AND status='ACTIVE' AND deletion_state='ACTIVE' AND EXISTS(SELECT 1 FROM app_identity.local_credential l WHERE l.account_id=account.account_id)")
                 .param("email", normalized).query(UUID.class).optional();
         if (id.isEmpty()) return;
         var proof = transactions.execute(s -> {
@@ -61,7 +61,7 @@ public class PasswordRecovery {
         String normalized = email.strip().toLowerCase(Locale.ROOT);
         if (!(limits.allow("verify-address", remote, 20) & limits.allow("verify", normalized, 3))) return;
         var accountId = jdbcClient.sql(
-                        "SELECT account_id FROM app_identity.account WHERE normalized_email=:email AND NOT email_verified AND status='ACTIVE'")
+                        "SELECT account_id FROM app_identity.account WHERE normalized_email=:email AND NOT email_verified AND status='ACTIVE' AND deletion_state='ACTIVE'")
                 .param("email", normalized).query(UUID.class).optional();
         if (accountId.isEmpty()) return;
         var proof = transactions.execute(status -> {

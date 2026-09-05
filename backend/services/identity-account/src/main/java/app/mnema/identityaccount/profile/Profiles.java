@@ -39,7 +39,8 @@ public class Profiles {
     }
 
     public PublicProfile publicProfile(UUID id) {
-        var a = accounts.find(id, false).filter(account -> account.status().equals("ACTIVE"))
+        var a = accounts.find(id, false).filter(account -> account.status().equals("ACTIVE") &&
+                        account.deletionState().equals("ACTIVE"))
                 .orElseThrow(() -> new AccountFailure(404, "profile_not_found"));
         return new PublicProfile(id, a.profileUsername(), a.displayName(), a.bio(), exists("account_avatar", id));
     }

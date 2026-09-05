@@ -20,6 +20,9 @@ public class OwnershipProofs {
     public record Proof(String token, Instant expiresAt) {
     }
 
+    public record Confirmation(String secretHash, OffsetDateTime expiresAt) {
+    }
+
     private final JdbcClient jdbcClient;
     private final AccountStore accounts;
     private final Clock clock;
@@ -35,6 +38,15 @@ public class OwnershipProofs {
      */
     public Proof issue(AccountAccess access, Purpose purpose) {
         accounts.require(access, true);
+        return insert(access, purpose);
+    }
+
+    public Proof issueDeletion(AccountAccess access) {
+        accounts.requireDeletionOwner(access, true);
+        return insert(access, Purpose.DELETE_ACCOUNT);
+    }
+
+    private Proof insert(AccountAccess access, Purpose purpose) {
         String token = Secrets.random();
         Instant expiry = clock.instant().plusSeconds(600);
         jdbcClient.sql(
@@ -58,6 +70,21 @@ public class OwnershipProofs {
                 .param("hash", Secrets.hash(token)).param("id", access.accountId()).param("purpose", purpose.name())
                 .param("gen", access.generation()).param("now", OffsetDateTime.now(clock)).update();
         if (count != 1) throw new AccountFailure(400, "invalid_proof");
+    }
+
+    public Confirmation consumeDeletion(AccountAccess access, String token) {
+        accounts.requireDeletionOwner(access, true);
+        String hash = Secrets.hash(token);
+        OffsetDateTime expiry = jdbcClient.sql("""
+                        DELETE FROM app_identity.ownership_challenge
+                        WHERE secret_hash=:hash AND account_id=:id AND purpose='DELETE_ACCOUNT'
+                          AND generation=:generation AND expires_at>transaction_timestamp()
+                        RETURNING expires_at
+                        """).param("hash", hash).param("id", access.accountId())
+                .param("generation", access.generation())
+                .query(OffsetDateTime.class).optional()
+                .orElseThrow(() -> new AccountFailure(400, "invalid_proof"));
+        return new Confirmation(hash, expiry);
     }
 
     public void invalidate(String token) {

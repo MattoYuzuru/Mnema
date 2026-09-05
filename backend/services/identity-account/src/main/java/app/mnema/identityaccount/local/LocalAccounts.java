@@ -18,6 +18,9 @@ import java.util.UUID;
 
 @Service
 public class LocalAccounts {
+    public record Authentication(AccountAccess access, boolean recoveryOnly) {
+    }
+
     private final JdbcClient jdbcClient;
     private final AccountStore accounts;
     private final TransactionTemplate transactions;
@@ -53,6 +56,20 @@ public class LocalAccounts {
     }
 
     public AccountAccess login(String login, String password, String remote) {
+        Authentication authentication = authenticate(login, password, remote);
+        if (authentication.recoveryOnly()) throw AccountFailure.denied();
+        return authentication.access();
+    }
+
+    public Authentication authenticate(String login, String password, String remote) {
+        return authenticate(login, password, remote, false);
+    }
+
+    public AccountAccess proveDeletionOwner(String login, String password, String remote) {
+        return authenticate(login, password, remote, true).access();
+    }
+
+    private Authentication authenticate(String login, String password, String remote, boolean deletionProof) {
         String normalized = login.strip().toLowerCase(Locale.ROOT);
         boolean allowed = limits.allow("login-address", remote, 100) & limits.allow("login", normalized, 20);
         var ids = jdbcClient.sql("""
@@ -64,14 +81,18 @@ public class LocalAccounts {
             throw AccountFailure.denied();
         }
         // Return a rejected result, then throw after commit: failure counters must remain durable.
-        AccountAccess result = transactions.execute(s -> {
+        Authentication result = transactions.execute(s -> {
             var a = accounts.get(ids.getFirst(), true);
             var credential = jdbcClient.sql(
                             "SELECT password_hash,locked_until FROM app_identity.local_credential WHERE account_id=:id")
                     .param("id", a.accountId())
                     .query((r, n) -> new Credential(r.getString(1), r.getObject(2, OffsetDateTime.class))).single();
             boolean matches = passwords.matches(password, credential.hash());
-            if (!matches || !a.status().equals("ACTIVE") ||
+            boolean recoveryOnly = a.deletionState().equals("PENDING_DELETION");
+            boolean lifecycleAllowed = deletionProof ? a.deletionState().equals("ACTIVE") :
+                    a.deletionState().equals("ACTIVE") || recoveryOnly;
+            boolean moderationAllowed = deletionProof || a.status().equals("ACTIVE") || recoveryOnly;
+            if (!matches || !moderationAllowed || !lifecycleAllowed ||
                     credential.lockedUntil() != null && credential.lockedUntil().isAfter(OffsetDateTime.now(clock))) {
                 jdbcClient.sql("""
                                 UPDATE app_identity.local_credential SET failed_login_attempts=LEAST(failed_login_attempts+1,1000000),
@@ -83,9 +104,10 @@ public class LocalAccounts {
             jdbcClient.sql(
                             "UPDATE app_identity.local_credential SET failed_login_attempts=0,locked_until=NULL WHERE account_id=:id")
                     .param("id", a.accountId()).update();
-            jdbcClient.sql("UPDATE app_identity.account SET last_login_at=statement_timestamp() WHERE account_id=:id")
-                    .param("id", a.accountId()).update();
-            return a.access();
+            if (!recoveryOnly && !deletionProof)
+                jdbcClient.sql("UPDATE app_identity.account SET last_login_at=statement_timestamp() WHERE account_id=:id")
+                        .param("id", a.accountId()).update();
+            return new Authentication(a.access(), recoveryOnly);
         });
         if (result == null) throw AccountFailure.denied();
         return result;
