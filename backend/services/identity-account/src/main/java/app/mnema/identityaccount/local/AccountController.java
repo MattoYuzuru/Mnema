@@ -4,6 +4,7 @@ import app.mnema.identityaccount.contract.AccountFailure;
 import app.mnema.identityaccount.moderation.Moderation;
 import app.mnema.identityaccount.profile.Profiles;
 import app.mnema.identityaccount.security.BrowserSessions;
+import app.mnema.identityaccount.security.ClientAddresses;
 import app.mnema.identityaccount.security.OwnershipProofs;
 import app.mnema.identityaccount.security.RateLimits;
 
@@ -21,9 +22,9 @@ import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -44,8 +45,8 @@ public class AccountController {
     public record Login(@NotBlank @Size(max = 320) String login, @NotBlank @Size(max = 128) String password) {
     }
 
-    public record Edit(@Pattern(regexp = "[A-Za-z0-9_.-]{3,50}") String profileUsername,
-                       @Size(max = 200) String displayName, @Size(max = 200) String bio) {
+    public record Edit(@NotNull @Pattern(regexp = "[A-Za-z0-9_.-]{3,50}") String profileUsername,
+                       @NotNull @Size(max = 200) String displayName, @NotNull @Size(max = 200) String bio) {
     }
 
     public record Password(@NotBlank @Size(max = 128) String currentPassword,
@@ -65,9 +66,11 @@ public class AccountController {
     private final TransactionTemplate transactions;
     private final RateLimits limits;
     private final Moderation moderation;
+    private final ClientAddresses clientAddresses;
 
     public AccountController(LocalAccounts local, BrowserSessions sessions, Profiles profiles, OwnershipProofs proofs,
-                             TransactionTemplate transactions, RateLimits limits, Moderation moderation) {
+                             TransactionTemplate transactions, RateLimits limits, Moderation moderation,
+                             ClientAddresses clientAddresses) {
         this.local = local;
         this.sessions = sessions;
         this.profiles = profiles;
@@ -75,6 +78,7 @@ public class AccountController {
         this.transactions = transactions;
         this.limits = limits;
         this.moderation = moderation;
+        this.clientAddresses = clientAddresses;
     }
 
     @GetMapping("/csrf")
@@ -86,12 +90,12 @@ public class AccountController {
     @ResponseStatus(HttpStatus.CREATED)
     Profiles.Profile register(@Valid @RequestBody Registration r, HttpServletRequest request) {
         return profiles.get(
-                local.register(r.email(), r.loginName(), r.password(), r.profileUsername(), request.getRemoteAddr()));
+                local.register(r.email(), r.loginName(), r.password(), r.profileUsername(), clientAddresses.resolve(request)));
     }
 
     @PostMapping("/login")
     Profiles.Profile login(@Valid @RequestBody Login r, HttpServletRequest request, HttpServletResponse response) {
-        var access = local.login(r.login(), r.password(), request.getRemoteAddr());
+        var access = local.login(r.login(), r.password(), clientAddresses.resolve(request));
         sessions.login(access, request, response);
         return profiles.get(access);
     }
@@ -107,7 +111,7 @@ public class AccountController {
         return profiles.get(BrowserSessions.access(authentication));
     }
 
-    @PatchMapping("/me")
+    @PutMapping("/me")
     Profiles.Profile update(Authentication authentication, @Valid @RequestBody Edit edit) {
         return profiles.update(BrowserSessions.access(authentication), edit.profileUsername(), edit.displayName(),
                 edit.bio());

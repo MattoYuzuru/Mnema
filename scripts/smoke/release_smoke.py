@@ -268,6 +268,11 @@ class ReleaseSmoke:
                     ),
                 )
                 self.step(
+                    "identity_protocol",
+                    "identity-account",
+                    self.verify_identity_protocol,
+                )
+                self.step(
                     "learning_readiness",
                     "learning",
                     lambda: self.verify_maintenance_readiness(
@@ -406,6 +411,46 @@ class ReleaseSmoke:
         expected_runtime = {"identity-account": "identity-account", "learning": "learning-api"}[service]
         if release.get("runtime") != expected_runtime:
             raise SmokeFailure("service_runtime_mismatch", service)
+
+    def verify_identity_protocol(self) -> None:
+        base = self.config.identity_url.rstrip("/")
+        metadata = self.client.json(
+            "GET",
+            f"{base}/.well-known/openid-configuration",
+            service="identity-account",
+            retry_transient=True,
+        )
+        expected = {
+            "issuer": base,
+            "authorization_endpoint": f"{base}/oauth2/authorize",
+            "token_endpoint": f"{base}/oauth2/token",
+            "jwks_uri": f"{base}/oauth2/jwks",
+            "userinfo_endpoint": f"{base}/userinfo",
+            "end_session_endpoint": f"{base}/connect/logout",
+        }
+        if any(metadata.get(key) != value for key, value in expected.items()):
+            raise SmokeFailure("identity_discovery_mismatch", "identity-account")
+        methods = metadata.get("code_challenge_methods_supported")
+        if not isinstance(methods, list) or "S256" not in methods:
+            raise SmokeFailure("identity_pkce_s256_missing", "identity-account")
+        jwks = self.client.json(
+            "GET", expected["jwks_uri"], service="identity-account", retry_transient=True
+        )
+        keys = jwks.get("keys")
+        if not isinstance(keys, list) or not keys or any(
+            not isinstance(key, dict) or not key.get("kid") or "d" in key for key in keys
+        ):
+            raise SmokeFailure("identity_jwks_invalid", "identity-account")
+        login = self.client.request(
+            "GET",
+            f"{base}/login",
+            headers={"Accept": "text/html"},
+            service="identity-account",
+            max_body_bytes=131_072,
+            retry_transient=True,
+        )
+        if b"<form" not in login or b"/login/continue" not in login:
+            raise SmokeFailure("identity_login_page_invalid", "identity-account")
 
     def authenticate(self) -> None:
         try:

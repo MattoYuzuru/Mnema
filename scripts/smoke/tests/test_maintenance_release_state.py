@@ -22,7 +22,7 @@ def routes(maintenance: bool) -> list[dict]:
         ("mnema-auth", "auth.staging.mnema.app", "auth-staging-mnema-app-tls"),
     ):
         if maintenance:
-            paths = [("/api", "learning" if name == "mnema" else "identity-account")]
+            paths = [("/api", "learning")] if name == "mnema" else [("/", "identity-account")]
         elif name == "mnema-auth":
             paths = [("/", "auth")]
         else:

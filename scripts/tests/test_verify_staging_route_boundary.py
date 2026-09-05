@@ -124,7 +124,7 @@ class FakeKubectl:
                  ("/api/import", "Prefix", "mnema-import", 80)],
             ]
         else:
-            allowed = [[("/api", "Prefix", "mnema-identity-account", 80)], [("/", "Prefix", "mnema-auth", 80)]]
+            allowed = [[("/", "Prefix", "mnema-identity-account", 80)], [("/", "Prefix", "mnema-auth", 80)]]
         return None if signatures in allowed else verifier.MESSAGES["topology"]
 
 

@@ -6,6 +6,7 @@ import app.mnema.identityaccount.contract.AccountFailure;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -25,10 +26,14 @@ public class AccountStore {
     }
 
     public Account get(UUID id, boolean lock) {
+        return find(id, lock).orElseThrow(AccountFailure::denied);
+    }
+
+    public Optional<Account> find(UUID id, boolean lock) {
         return jdbcClient.sql(
                         "SELECT account_id,email,email_verified,profile_username,display_name,bio,status,is_admin,admin_granted_by,security_generation FROM app_identity.account WHERE account_id=:id" +
                                 (lock ? " FOR UPDATE" : ""))
-                .param("id", id).query(Account.class).optional().orElseThrow(AccountFailure::denied);
+                .param("id", id).query(Account.class).optional();
     }
 
     public Account require(AccountAccess access, boolean lock) {

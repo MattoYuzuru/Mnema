@@ -120,7 +120,9 @@ The policy fixes host, TLS host/Secret, class and cert-manager issuer, rejects
 default backends and routing annotations, and permits only one complete old or new
 path/backend set. Last-applied bookkeeping is permitted but removed from stored
 snapshots. New routes are `/api` → `mnema-learning:80` on `staging.mnema.app` and
-`/api` → `mnema-identity-account:80` on `auth.staging.mnema.app`. No legacy aliases
+`/` → `mnema-identity-account:80` on the dedicated `auth.staging.mnema.app` host,
+so standard root OAuth/OIDC discovery, authorization, login and logout endpoints
+remain reachable. No legacy aliases
 exist in the replacement route set. The legacy alternative is only for restoring
 the exact saved previous staging release.
 
@@ -133,8 +135,13 @@ deleted by this bootstrap procedure.
 
 ## Environment-owned secret names
 
-Current maintenance delivery requires only `STAGING_KUBECONFIG_B64` from GitHub;
-the runtime reads existing `POSTGRES_USER`/`POSTGRES_PASSWORD` by Secret reference.
+Current Identity delivery also requires a fresh
+`STAGING_IDENTITY_SIGNING_JWK_SET`/`STAGING_IDENTITY_SIGNING_ACTIVE_KID` pair.
+The staging workflow validates and server-previews an add-only update to the existing
+`mnema-secrets` object, then initializes it once under `resourceVersion`; matching
+state is idempotent and partial/different state fails into the explicit rotation path.
+The runtime mounts the private set read-only and reads existing database, provider
+and avatar credentials by Secret reference.
 The three `STAGING_SMOKE_*` inputs below are used only if a legacy rollback needs
 its previously recorded authenticated smoke. They are not required by new shells.
 The remaining table is the retained legacy/production credential inventory, not a
@@ -145,7 +152,7 @@ Values are never copied to issues, pull requests, logs or repository files. Prod
 
 | GitHub environment | Required names |
 |---|---|
-| `staging` | `STAGING_KUBECONFIG_B64`, `STAGING_AUTH_ISSUER`, `STAGING_AUTH_ISSUER_URI`, `STAGING_AUTH_JWT_PUBLIC_KEY`, `STAGING_AUTH_JWT_PRIVATE_KEY`, `STAGING_TURNSTILE_SITE_KEY`, `STAGING_TURNSTILE_SECRET_KEY`, `STAGING_GOOGLE_CLIENT_ID`, `STAGING_GOOGLE_CLIENT_SECRET`, `STAGING_GH_CLIENT_ID`, `STAGING_GH_CLIENT_SECRET`, `STAGING_YANDEX_CLIENT_ID`, `STAGING_YANDEX_CLIENT_SECRET`, `STAGING_POSTGRES_DB`, `STAGING_POSTGRES_USER`, `STAGING_POSTGRES_PASSWORD`, `STAGING_AWS_REGION`, `STAGING_AWS_ACCESS_KEY_ID`, `STAGING_AWS_SECRET_ACCESS_KEY`, `STAGING_AWS_BUCKET_NAME`, `STAGING_MEDIA_INTERNAL_TOKEN`, `STAGING_CORE_INTERNAL_TOKEN`, `STAGING_USER_INTERNAL_TOKEN`, `STAGING_SMOKE_LOGIN`, `STAGING_SMOKE_PASSWORD`, `STAGING_SMOKE_TURNSTILE_BYPASS_KEY` |
+| `staging` | `STAGING_KUBECONFIG_B64`, `STAGING_IDENTITY_SIGNING_JWK_SET`, `STAGING_IDENTITY_SIGNING_ACTIVE_KID`, `STAGING_AUTH_ISSUER`, `STAGING_AUTH_ISSUER_URI`, `STAGING_AUTH_JWT_PUBLIC_KEY`, `STAGING_AUTH_JWT_PRIVATE_KEY`, `STAGING_TURNSTILE_SITE_KEY`, `STAGING_TURNSTILE_SECRET_KEY`, `STAGING_GOOGLE_CLIENT_ID`, `STAGING_GOOGLE_CLIENT_SECRET`, `STAGING_GH_CLIENT_ID`, `STAGING_GH_CLIENT_SECRET`, `STAGING_YANDEX_CLIENT_ID`, `STAGING_YANDEX_CLIENT_SECRET`, `STAGING_POSTGRES_DB`, `STAGING_POSTGRES_USER`, `STAGING_POSTGRES_PASSWORD`, `STAGING_AWS_REGION`, `STAGING_AWS_ACCESS_KEY_ID`, `STAGING_AWS_SECRET_ACCESS_KEY`, `STAGING_AWS_BUCKET_NAME`, `STAGING_MEDIA_INTERNAL_TOKEN`, `STAGING_CORE_INTERNAL_TOKEN`, `STAGING_USER_INTERNAL_TOKEN`, `STAGING_SMOKE_LOGIN`, `STAGING_SMOKE_PASSWORD`, `STAGING_SMOKE_TURNSTILE_BYPASS_KEY` |
 | `prod` | `PROD_KUBECONFIG_B64`, `PROD_RELEASE_BINDING_KEY`, `PROD_AUTH_ISSUER`, `PROD_AUTH_ISSUER_URI`, `PROD_AUTH_JWT_PUBLIC_KEY`, `PROD_AUTH_JWT_PRIVATE_KEY`, `PROD_TURNSTILE_SITE_KEY`, `PROD_TURNSTILE_SECRET_KEY`, `PROD_GOOGLE_CLIENT_ID`, `PROD_GOOGLE_CLIENT_SECRET`, `PROD_GH_CLIENT_ID`, `PROD_GH_CLIENT_SECRET`, `PROD_YANDEX_CLIENT_ID`, `PROD_YANDEX_CLIENT_SECRET`, `PROD_POSTGRES_DB`, `PROD_POSTGRES_USER`, `PROD_POSTGRES_PASSWORD`, `PROD_AWS_REGION`, `PROD_AWS_ACCESS_KEY_ID`, `PROD_AWS_SECRET_ACCESS_KEY`, `PROD_AWS_BUCKET_NAME`, `PROD_MEDIA_INTERNAL_TOKEN`, `PROD_CORE_INTERNAL_TOKEN`, `PROD_USER_INTERNAL_TOKEN`, `PROD_GF_SECURITY_ADMIN_USER`, `PROD_GF_SECURITY_ADMIN_PASSWORD`, `PROD_SMOKE_LOGIN`, `PROD_SMOKE_PASSWORD`, `PROD_SMOKE_TURNSTILE_BYPASS_KEY` |
 
 For staging, both issuer values must be `https://auth.staging.mnema.app`; the bucket is namespace-local MinIO and must use a staging-only name. OAuth applications must allow the staging callbacks before federated login is considered verified. Public OAuth client IDs and the public Turnstile site key may intentionally be shared only when the provider configuration requires it; private OAuth/Turnstile secrets, JWT keypair, database/object-storage credentials and all three internal tokens must never equal production values. Empty values fail before any cluster mutation. Missing core/media tokens also fail AI Spring Boot configuration binding through the documented `@Validated` configuration-properties mechanism, rather than silently enabling end-user-token fallback ([Spring Boot external configuration](https://docs.spring.io/spring-boot/3.5/reference/features/external-config.html)).
@@ -158,10 +165,12 @@ After both environment copies are loaded and verified, remove the superseded unp
 
 ## Promotion and evidence
 
-For current behavior, the [replacement release contract](release-verification-runbook.md#current-replacement-delivery--143)
+For current behavior, the [replacement release contract](release-verification-runbook.md#current-replacement-delivery--142)
 supersedes the six-image promotion description below. The two maintenance images
 retain all existing provenance/SBOM/vulnerability/quality gates. Staging leaves
-Secrets and data services unchanged and performs no frontend/product smoke.
+data services and existing Secret values unchanged, initializes only the immutable
+Identity signing pair, and performs no frontend/product smoke beyond the public
+Identity protocol contract.
 Production validation reports the #147 hard gate and skips every `prod` Environment
 job; no maintenance artifact is promoted. Old production workflow internals remain
 dormant until their owning cutover task.

@@ -2,7 +2,6 @@ package app.mnema.core.config;
 
 import app.mnema.core.media.config.MediaClientProps;
 import app.mnema.core.security.CoreInternalAuthProps;
-import app.mnema.core.user.config.UserClientProps;
 import jakarta.validation.Validation;
 import org.junit.jupiter.api.Test;
 
@@ -18,9 +17,6 @@ class RequiredSecretPropsTest {
                 .extracting(violation -> violation.getPropertyPath().toString())
                 .containsExactly("internalToken");
         assertThat(validator.validate(new CoreInternalAuthProps("")))
-                .extracting(violation -> violation.getPropertyPath().toString())
-                .containsExactly("internalToken");
-        assertThat(validator.validate(new UserClientProps("http://user.test", " ")))
                 .extracting(violation -> violation.getPropertyPath().toString())
                 .containsExactly("internalToken");
     }

@@ -772,7 +772,7 @@ def validate_staging_routes(resources: list[dict[str, Any]], topology: str) -> N
         if annotations != {"cert-manager.io/cluster-issuer": "letsencrypt-prod"}:
             raise StateFailure("rollback_ingress_annotations_invalid")
         if topology == MAINTENANCE_TOPOLOGY:
-            paths = [("/api", "learning" if name == "mnema" else "identity-account")]
+            paths = [("/api", "learning")] if name == "mnema" else [("/", "identity-account")]
         elif topology == LEGACY_TOPOLOGY:
             paths = [("/", "auth")] if name == "mnema-auth" else [
                 ("/", "frontend"), ("/api/user", "user"), ("/api/core", "core"),

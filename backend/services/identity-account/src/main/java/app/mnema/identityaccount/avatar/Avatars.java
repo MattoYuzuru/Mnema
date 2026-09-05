@@ -80,7 +80,8 @@ public class Avatars {
     }
 
     public Content read(UUID id) {
-        if (!accounts.get(id, false).status().equals("ACTIVE")) throw new AccountFailure(404, "avatar_not_found");
+        if (accounts.find(id, false).filter(account -> account.status().equals("ACTIVE")).isEmpty())
+            throw new AccountFailure(404, "avatar_not_found");
         var avatar = owned(id).orElseThrow(() -> new AccountFailure(404, "avatar_not_found"));
         byte[] bytes = storage.get(avatar.storageKey());
         if (bytes.length != avatar.byteSize() || !MessageDigest.isEqual(Secrets.digest(bytes), avatar.contentSha256()))

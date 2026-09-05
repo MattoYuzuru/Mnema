@@ -155,9 +155,9 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
         assertThat(jdbc.sql("SELECT count(*) FROM app_identity.spring_session WHERE principal_name=:id")
                 .param("id", account.accountId().toString()).query(Long.class).single()).isEqualTo(1);
         mvc.perform(options("/api/accounts/me").header("Origin", "https://evil.test")
-                .header("Access-Control-Request-Method", "PATCH")).andExpect(status().isForbidden());
+                .header("Access-Control-Request-Method", "PUT")).andExpect(status().isForbidden());
         mvc.perform(options("/api/accounts/me").header("Origin", "https://mnema.app")
-                        .header("Access-Control-Request-Method", "PATCH")).andExpect(status().isOk())
+                        .header("Access-Control-Request-Method", "PUT")).andExpect(status().isOk())
                 .andExpect(header().string("Access-Control-Allow-Origin", "https://mnema.app"));
         mvc.perform(post("/api/accounts/logout").secure(true).cookie(cookie).with(csrf()))
                 .andExpect(status().isNoContent());
@@ -177,7 +177,7 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                 .param("id", a.accountId()).query(Integer.class).single()).isEqualTo(1);
         assertThatThrownBy(() -> local.login("unknown", "wrong", "fixture")).isInstanceOf(AccountFailure.class);
         var cookie = login(a);
-        mvc.perform(patch("/api/accounts/me").secure(true).cookie(cookie).with(csrf()).contentType("application/json")
+        mvc.perform(put("/api/accounts/me").secure(true).cookie(cookie).with(csrf()).contentType("application/json")
                 .content("{\"admin\":true}")).andExpect(status().isBadRequest());
         mvc.perform(get("/api/accounts/profiles/" + a.accountId())).andExpect(status().isOk())
                 .andExpect(jsonPath("$.email").doesNotExist()).andExpect(jsonPath("$.admin").doesNotExist());
@@ -317,7 +317,9 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
         String challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(
                 MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
         var initial = mvc.perform(
-                        get("/oauth2/authorize").secure(true).header("Accept", "text/html").queryParam("response_type", "code")
+                        get("/oauth2/authorize").secure(true).header("Accept", "text/html")
+                                .with(request -> { request.setServerName("attacker.example"); return request; })
+                                .queryParam("response_type", "code")
                                 .queryParam("client_id", "mnema-web")
                                 .queryParam("redirect_uri", "https://mnema.app/auth/callback")
                                 .queryParam("scope", "openid account.read").queryParam("code_challenge", challenge)
@@ -376,10 +378,19 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("account_conflict"));
         mvc.perform(post("/api/accounts/register").with(csrf()).contentType("application/json").content("{}"))
                 .andExpect(status().isBadRequest());
-        mvc.perform(patch("/api/accounts/me").secure(true).cookie(cookie).with(csrf()).contentType("application/json")
+        mvc.perform(put("/api/accounts/me").secure(true).cookie(cookie).with(csrf()).contentType("application/json")
                         .content(body(Map.of("profileUsername", "edited-" + key.substring(0, 8), "displayName", "Edited", "bio",
                                 "A short bio")))).andExpect(status().isOk())
                 .andExpect(jsonPath("$.displayName").value("Edited"));
+        mvc.perform(put("/api/accounts/me").secure(true).cookie(cookie).with(csrf()).contentType("application/json")
+                        .content(body(Map.of("displayName", "Would erase omitted fields"))))
+                .andExpect(status().isBadRequest());
+        mvc.perform(get("/api/accounts/me").secure(true).cookie(cookie))
+                .andExpect(jsonPath("$.profileUsername").value("edited-" + key.substring(0, 8)))
+                .andExpect(jsonPath("$.bio").value("A short bio"));
+        mvc.perform(patch("/api/accounts/me").secure(true).cookie(cookie).with(csrf()).contentType("application/json")
+                        .content(body(Map.of("profileUsername", "wrong-method", "displayName", "Wrong", "bio", "Wrong"))))
+                .andExpect(status().isMethodNotAllowed());
         mvc.perform(
                         post("/api/accounts/me/proofs").secure(true).cookie(cookie).with(csrf()).contentType("application/json")
                                 .content(body(Map.of("password", password, "purpose", "DELETE_ACCOUNT"))))
@@ -392,6 +403,21 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(status().isNoContent());
         mvc.perform(post("/api/accounts/password-reset/confirm").with(csrf()).contentType("application/json")
                 .content(body(Map.of("token", "unknown", "newPassword", password)))).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void publicProfileAndAvatarDoNotRevealHiddenAccountExistence() throws Exception {
+        var hidden = account();
+        jdbc.sql("UPDATE app_identity.account SET status='BANNED',banned_at=statement_timestamp() WHERE account_id=:id")
+                .param("id", hidden.accountId()).update();
+        UUID absent = UUID.randomUUID();
+
+        for (UUID id : List.of(hidden.accountId(), absent)) {
+            mvc.perform(get("/api/accounts/profiles/" + id)).andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value("profile_not_found"));
+            mvc.perform(get("/api/accounts/profiles/" + id + "/avatar")).andExpect(status().isNotFound())
+                    .andExpect(jsonPath("$.code").value("avatar_not_found"));
+        }
     }
 
     @Test

@@ -30,6 +30,5 @@ public abstract class PostgresIntegrationTest {
         registry.add("spring.flyway.password", postgres::getPassword);
         registry.add("app.media.internal-token", () -> "test-media-token");
         registry.add("app.core.internal-token", () -> "test-core-token");
-        registry.add("app.user.internal-token", () -> "test-user-token");
     }
 }

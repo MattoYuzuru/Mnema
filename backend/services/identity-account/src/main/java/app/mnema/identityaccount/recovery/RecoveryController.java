@@ -1,5 +1,7 @@
 package app.mnema.identityaccount.recovery;
 
+import app.mnema.identityaccount.security.ClientAddresses;
+
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Email;
@@ -24,9 +26,11 @@ public class RecoveryController {
     }
 
     private final PasswordRecovery recovery;
+    private final ClientAddresses clientAddresses;
 
-    public RecoveryController(PasswordRecovery recovery) {
+    public RecoveryController(PasswordRecovery recovery, ClientAddresses clientAddresses) {
         this.recovery = recovery;
+        this.clientAddresses = clientAddresses;
     }
 
     @PostMapping("/request")
@@ -34,7 +38,7 @@ public class RecoveryController {
     void request(@Valid @RequestBody Request r, HttpServletRequest request) {
         long deadline = System.nanoTime() + 4_000_000_000L;
         try {
-            recovery.request(r.email(), request.getRemoteAddr());
+            recovery.request(r.email(), clientAddresses.resolve(request));
         } finally {
             awaitPublicDeadline(deadline);
         }

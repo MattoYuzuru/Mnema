@@ -147,7 +147,7 @@ def route(name: str, topology: str, resource_version: str) -> dict:
     host = "staging.mnema.app" if name == "mnema" else "auth.staging.mnema.app"
     secret = "staging-mnema-app-tls" if name == "mnema" else "auth-staging-mnema-app-tls"
     if topology == "replacement":
-        paths = [("/api", "learning" if name == "mnema" else "identity-account")]
+        paths = [("/api", "learning")] if name == "mnema" else [("/", "identity-account")]
     elif name == "mnema-auth":
         paths = [("/", "auth")]
     else:

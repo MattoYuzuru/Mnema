@@ -31,6 +31,12 @@ Browser mutations require `X-CSRF-TOKEN`; fetch its value and header name from
 `GET /api/accounts/csrf` with credentials. CORS permits only the exact configured
 `MNEMA_IDENTITY_FRONTEND_ORIGIN`.
 
+Rate-limit identities use the raw socket peer by default. `X-Forwarded-For` is
+accepted only when that peer belongs to `MNEMA_IDENTITY_TRUSTED_PROXY_CIDRS`, and
+the right-most untrusted address is selected from a bounded chain. Production
+must bind this value to the actual ingress pod CIDRs; public callers cannot choose
+their own bucket by sending forwarding headers directly.
+
 Password change/reset, logout (including authenticated OIDC logout), ban and
 admin/factor revocation advance a separate security generation and invalidate
 sessions, grants and proofs in one transaction. Unban does not restore them.
@@ -47,7 +53,7 @@ transaction and a token-hash advisory lock; responses are released after commit.
 | `POST /login` | `{login,password}` → profile and rotated session |
 | `POST /logout` | 204, revoke all current account access |
 | `GET /session`, `GET /me` | Current private profile |
-| `PATCH /me` | `{profileUsername,displayName,bio}` only |
+| `PUT /me` | Full `{profileUsername,displayName,bio}` replacement; every field required, empty display/bio clears it |
 | `POST /me/password` | `{currentPassword,newPassword}` → 204 and revoked sessions |
 | `POST /email-verification/request` | `{email}` → uniform 202 |
 | `POST /email-verification/confirm` | `{token}` → 204, verified email, no session |
@@ -71,6 +77,8 @@ avatarPresent,hasPassword`. Unknown DTO fields are rejected. Local login and
 profile usernames allow 3–50 ASCII letters/digits/underscore/dot/hyphen, excluding
 `@` to avoid email/login ambiguity. Passwords require 12–128 characters and at most
 72 UTF-8 bytes. Preserved BCrypt hashes are accepted without transfer-time rehash.
+Unknown, banned and otherwise non-public accounts produce the same public profile
+and avatar 404 contracts.
 No deletion endpoint is provided: deletion/recovery/purge and retention belong to
 #157. `OwnershipProofs` and exact avatar cleanup receipts provide its hooks.
 

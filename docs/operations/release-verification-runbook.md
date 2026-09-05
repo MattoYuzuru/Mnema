@@ -11,7 +11,7 @@ artifact:
 
 # Mnema release smoke, diagnostics and rollback
 
-## Current replacement delivery — #143
+## Current replacement delivery — #142
 
 New Main CI artifacts contain exactly `identity-account` and `learning`, with
 `releaseTopology=identity-learning`, `releaseMode=maintenance`, and
@@ -19,11 +19,13 @@ New Main CI artifacts contain exactly `identity-account` and `learning`, with
 The existing frontend is still linted, tested and built locally/CI, but is not
 published or served by the replacement release. Product flows belong to #74–#77.
 
-Staging consumes the existing PostgreSQL bootstrap and `mnema-secrets` unchanged;
-it neither rotates credentials nor applies/deletes data services, bucket Jobs,
-PVCs, storage objects or backups. An existing verified application baseline is
-required. Missing state/artifact/routes stop the release before mutation; this
-workflow does not initialize a new environment from an empty state.
+Staging consumes the existing PostgreSQL bootstrap and adds one fresh immutable
+Identity signing JWKSet/kid pair to `mnema-secrets` under optimistic concurrency.
+Matching state is idempotent; partial or different state requires the explicit
+rotation procedure. It does not rotate existing credentials or apply/delete data
+services, bucket Jobs, PVCs, storage objects or backups. An existing verified
+application baseline is required. Missing state/artifact/routes stop the release
+before mutation; this workflow does not initialize a new environment from an empty state.
 
 The owner first installs and proves the named route boundary described in the
 [staging runbook](staging-runbook.md#replacement-route-access). CI can then read,
@@ -47,8 +49,11 @@ Schema creation is additive in fresh `app_identity`/`app_learning`; legacy schem
 and data remain untouched until their explicitly excluded cutover work.
 
 Maintenance smoke checks both `/api/actuator/health/readiness` and
-`/api/actuator/info`, requiring the exact full SHA, maintenance/topology metadata and the expected runtime name (`identity-account` or `learning-api`).
-It uses no login, Turnstile, deck, Study, media, import or AI flow. Legacy smoke
+`/api/actuator/info`, requiring the exact full SHA, maintenance/topology metadata
+and expected runtime name (`identity-account` or `learning-api`). It also verifies
+the public OIDC discovery, PKCE advertisement, public-only JWKSet and login form on
+the dedicated Identity host. It uses no account login, Turnstile, deck, Study,
+media, import or AI flow. Legacy smoke
 capabilities remain solely to verify a captured cross-topology rollback; they are
 not replacement product fallbacks.
 
