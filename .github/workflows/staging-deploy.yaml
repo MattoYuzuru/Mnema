@@ -398,7 +398,7 @@ jobs:
             --namespace "$NS" --record "$ROLLBACK_RECORD"
 
       - name: Verify maintenance staging rollback
-        if: ${{ always() && steps.rollback.outcome == 'success' && steps.rollback.outputs.release_mode == 'maintenance' }}
+        if: ${{ always() && steps.rollback.outcome == 'success' && steps.rollback.outputs.release_mode == 'maintenance' && steps.rollback.outputs.maintenance_smoke_supported == 'true' }}
         run: |
           python3 scripts/smoke/release_smoke.py \
             --environment staging-rollback \
@@ -407,6 +407,19 @@ jobs:
             --learning-url https://staging.mnema.app \
             --expected-release-sha "${{ steps.rollback.outputs.release_id }}" \
             --timeout-seconds 300 \
+            --report "$ROLLBACK_SMOKE_REPORT"
+
+      - name: Verify previous maintenance staging rollback
+        if: ${{ always() && steps.rollback.outcome == 'success' && steps.rollback.outputs.release_mode == 'maintenance' && steps.rollback.outputs.maintenance_smoke_supported != 'true' }}
+        run: |
+          python3 scripts/smoke/release_smoke.py \
+            --environment staging-rollback-previous-maintenance \
+            --mode maintenance \
+            --identity-url https://auth.staging.mnema.app \
+            --learning-url https://staging.mnema.app \
+            --expected-release-sha "${{ steps.rollback.outputs.release_id }}" \
+            --timeout-seconds 300 \
+            --skip-identity-protocol \
             --report "$ROLLBACK_SMOKE_REPORT"
 
       - name: Verify adopted legacy staging rollback identity

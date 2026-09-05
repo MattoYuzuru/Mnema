@@ -52,7 +52,13 @@ Maintenance smoke checks both `/api/actuator/health/readiness` and
 `/api/actuator/info`, requiring the exact full SHA, maintenance/topology metadata
 and expected runtime name (`identity-account` or `learning-api`). It also verifies
 the public OIDC discovery, PKCE advertisement, public-only JWKSet and login form on
-the dedicated Identity host. It uses no account login, Turnstile, deck, Study,
+the dedicated Identity host. This complete contract is maintenance smoke v2 and
+is bound to the root Identity ingress. The one retained v1 rollback record is
+bound to its former `/api` Identity ingress and verifies both runtime readiness
+and exact build identity without claiming the then-unavailable root OIDC surface;
+route/version mismatches fail before candidate mutation. New records are always
+v2, so the transitional v1 path disappears naturally after the next successful
+release replaces the rollback baseline. It uses no account login, Turnstile, deck, Study,
 media, import or AI flow. Legacy smoke
 capabilities remain solely to verify a captured cross-topology rollback; they are
 not replacement product fallbacks.
@@ -217,6 +223,13 @@ gh workflow run staging-rollback-drill.yaml \
   -f confirmation=RUN_STAGING_ROLLBACK_DRILL
 ```
 
-The workflow is fixed to the `staging` Environment and `mnema-staging` namespace. It replaces only the saved frontend digest with an impossible SHA-256 value, confirms both rollout and black-box smoke fail, captures diagnostics, reapplies the saved complete manifest, verifies all six rollouts and checks the restored identity. It never records the broken candidate as current. The run is successful only when the complete failure-and-recovery sequence is observed; otherwise treat staging as unavailable and investigate before production promotion.
+The workflow is fixed to the `staging` Environment and `mnema-staging` namespace.
+It replaces only the saved Identity Account digest with an impossible SHA-256
+value, confirms both rollout and black-box smoke fail, captures diagnostics,
+reapplies the saved complete manifest, verifies both maintenance rollouts and
+checks the restored readiness, build identity and OIDC surface. It never records
+the broken candidate as current. The run is successful only when the complete
+failure-and-recovery sequence is observed; otherwise treat staging as unavailable
+and investigate before production promotion.
 
 To remove this mechanism, revert its delivery change. Do not delete either release-state ConfigMap until no deployment or rollback drill is running; deletion removes the directly executable rollback target.

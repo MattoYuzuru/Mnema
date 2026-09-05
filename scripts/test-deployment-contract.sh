@@ -60,6 +60,15 @@ if printf '%s\n' "$staging_rollback_smoke" | grep -Fq -- '--identity-only'; then
   exit 1
 fi
 legacy_staging_rollback_smoke=$(sed -n '/name: Verify adopted legacy staging rollback identity/,/name: Verify complete staging rollback/p' "$STAGING_WORKFLOW")
+maintenance_staging_rollback_smoke=$(sed -n '/name: Verify maintenance staging rollback/,/name: Verify previous maintenance staging rollback/p' "$STAGING_WORKFLOW")
+previous_maintenance_staging_rollback_smoke=$(sed -n '/name: Verify previous maintenance staging rollback/,/name: Verify adopted legacy staging rollback identity/p' "$STAGING_WORKFLOW")
+printf '%s\n' "$maintenance_staging_rollback_smoke" | grep -Fq "steps.rollback.outputs.maintenance_smoke_supported == 'true'"
+if printf '%s\n' "$maintenance_staging_rollback_smoke" | grep -Fq -- '--skip-identity-protocol'; then
+  echo 'Current maintenance rollback must verify the complete protocol contract' >&2
+  exit 1
+fi
+printf '%s\n' "$previous_maintenance_staging_rollback_smoke" | grep -Fq "steps.rollback.outputs.maintenance_smoke_supported != 'true'"
+printf '%s\n' "$previous_maintenance_staging_rollback_smoke" | grep -Fq -- '--skip-identity-protocol'
 printf '%s\n' "$legacy_staging_rollback_smoke" | grep -Fq "steps.rollback.outputs.authenticated_smoke_supported != 'true'"
 printf '%s\n' "$legacy_staging_rollback_smoke" | grep -Fq -- '--identity-only'
 printf '%s\n' "$staging_rollback_smoke" | grep -Fq "steps.rollback.outputs.authenticated_smoke_supported == 'true'"

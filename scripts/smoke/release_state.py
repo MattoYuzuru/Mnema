@@ -38,7 +38,11 @@ MAX_CONFIGMAP_PAYLOAD = 900_000
 AUTHENTICATED_SMOKE_VERSION = 1
 IDENTITY_SMOKE_VERSION = 0
 READINESS_SMOKE_VERSION = -1
-MAINTENANCE_SMOKE_VERSION = 1
+PREVIOUS_MAINTENANCE_SMOKE_VERSION = 1
+MAINTENANCE_SMOKE_VERSION = 2
+SUPPORTED_MAINTENANCE_SMOKE_VERSIONS = frozenset(
+    (PREVIOUS_MAINTENANCE_SMOKE_VERSION, MAINTENANCE_SMOKE_VERSION)
+)
 SNAPSHOT_INGRESSES = ("mnema", "mnema-auth")
 SNAPSHOT_AUGMENTATION_MARKER = "# mnema-release-state: captured-live-ingresses"
 LIVE_RESOURCE_ANNOTATIONS_TO_DROP = {
@@ -414,7 +418,7 @@ class ReleaseStateManager:
         record_path: Path,
         candidate_manifest_path: Path | None = None,
         transition_plan_path: Path | None = None,
-    ) -> tuple[str, int, str, str]:
+    ) -> tuple[str, int, str, str, int | None]:
         manifest = manifest_path.read_text(encoding="utf-8")
         record = read_record(record_path)
         validate_record(manifest, record)
@@ -441,6 +445,11 @@ class ReleaseStateManager:
             int(record.get("authenticatedSmokeVersion", READINESS_SMOKE_VERSION)),
             identity.topology,
             identity.release_mode,
+            (
+                int(record["maintenanceSmokeVersion"])
+                if identity.topology == MAINTENANCE_TOPOLOGY
+                else None
+            ),
         )
 
     def _adopt_live(
@@ -728,11 +737,16 @@ def ensure_rollback_ingresses(
     if kubectl.namespace != "mnema-staging":
         return manifest, record
     topology = parse_manifest_identity(manifest).topology
+    maintenance_smoke_version = (
+        int(record["maintenanceSmokeVersion"])
+        if topology == MAINTENANCE_TOPOLOGY
+        else None
+    )
     captured = [
         sanitize_live_resource(kubectl.get_resource("ingress", name))
         for name in SNAPSHOT_INGRESSES
     ]
-    validate_staging_routes(captured, topology)
+    validate_staging_routes(captured, topology, maintenance_smoke_version)
     expected = {("Ingress", name, kubectl.namespace) for name in SNAPSHOT_INGRESSES}
     present = resource_identities(manifest) & expected
     if present == expected:
@@ -761,7 +775,11 @@ def ensure_rollback_ingresses(
     return augmented_manifest, augmented_record
 
 
-def validate_staging_routes(resources: list[dict[str, Any]], topology: str) -> None:
+def validate_staging_routes(
+    resources: list[dict[str, Any]],
+    topology: str,
+    maintenance_smoke_version: int | None,
+) -> None:
     """Reject drift or mixed routes before blessing a captured rollback baseline."""
     for name, resource in zip(SNAPSHOT_INGRESSES, resources, strict=True):
         host = "staging.mnema.app" if name == "mnema" else "auth.staging.mnema.app"
@@ -772,7 +790,16 @@ def validate_staging_routes(resources: list[dict[str, Any]], topology: str) -> N
         if annotations != {"cert-manager.io/cluster-issuer": "letsencrypt-prod"}:
             raise StateFailure("rollback_ingress_annotations_invalid")
         if topology == MAINTENANCE_TOPOLOGY:
-            paths = [("/api", "learning")] if name == "mnema" else [("/", "identity-account")]
+            if maintenance_smoke_version == PREVIOUS_MAINTENANCE_SMOKE_VERSION:
+                paths = [("/api", "learning")] if name == "mnema" else [
+                    ("/api", "identity-account")
+                ]
+            elif maintenance_smoke_version == MAINTENANCE_SMOKE_VERSION:
+                paths = [("/api", "learning")] if name == "mnema" else [
+                    ("/", "identity-account")
+                ]
+            else:
+                raise StateFailure("rollback_maintenance_smoke_unsupported")
         elif topology == LEGACY_TOPOLOGY:
             paths = [("/", "auth")] if name == "mnema-auth" else [
                 ("/", "frontend"), ("/api/user", "user"), ("/api/core", "core"),
@@ -976,13 +1003,17 @@ def validate_record(manifest: str, record: dict[str, Any]) -> None:
         if smoke_version == READINESS_SMOKE_VERSION and record.get("legacyReadinessOnly") is not True:
             raise StateFailure("record_readiness_capability_invalid")
     else:
+        maintenance_smoke_version = record.get("maintenanceSmokeVersion")
         expected = {
             "releaseTopology": identity.topology,
             "releaseMode": identity.release_mode,
             "productionEligible": identity.production_eligible,
-            "maintenanceSmokeVersion": MAINTENANCE_SMOKE_VERSION,
         }
-        if any(record.get(key) != value for key, value in expected.items()):
+        if (
+            any(record.get(key) != value for key, value in expected.items())
+            or type(maintenance_smoke_version) is not int
+            or maintenance_smoke_version not in SUPPORTED_MAINTENANCE_SMOKE_VERSIONS
+        ):
             raise StateFailure("record_maintenance_contract_invalid")
         if "authenticatedSmokeVersion" in record:
             raise StateFailure("record_maintenance_auth_smoke_invalid")
@@ -1208,11 +1239,13 @@ def record_identity(record: dict[str, Any]) -> tuple[str, str, tuple[str, ...]]:
     elif schema_version == 2:
         topology = record.get("releaseTopology")
         release_mode = record.get("releaseMode")
+        maintenance_smoke_version = record.get("maintenanceSmokeVersion")
         if (
             topology != MAINTENANCE_TOPOLOGY
             or release_mode != MAINTENANCE_MODE
             or record.get("productionEligible") is not False
-            or record.get("maintenanceSmokeVersion") != MAINTENANCE_SMOKE_VERSION
+            or type(maintenance_smoke_version) is not int
+            or maintenance_smoke_version not in SUPPORTED_MAINTENANCE_SMOKE_VERSIONS
         ):
             raise StateFailure("record_maintenance_contract_invalid")
     else:
@@ -1454,7 +1487,13 @@ def main() -> int:
             )
             status = "release_recorded"
         elif args.command == "rollback":
-            release_id, smoke_version, topology, release_mode = manager.rollback(
+            (
+                release_id,
+                smoke_version,
+                topology,
+                release_mode,
+                maintenance_smoke_version,
+            ) = manager.rollback(
                 required(args.rollback_manifest, "rollback_manifest"),
                 required(args.rollback_record, "rollback_record"),
                 args.candidate_manifest,
@@ -1468,7 +1507,7 @@ def main() -> int:
                 smoke_version >= IDENTITY_SMOKE_VERSION,
                 topology,
                 release_mode,
-                release_mode == MAINTENANCE_MODE,
+                maintenance_smoke_version == MAINTENANCE_SMOKE_VERSION,
             )
             return 0
         else:
