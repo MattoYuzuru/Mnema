@@ -13,8 +13,10 @@ if [ "${1-}" = --replacement ]; then
     --namespace mnema-staging --source-manifest "$3" --target-manifest "$2" --plan "$4"
   kubectl -n mnema-staging apply --dry-run=server -f "$2" >/dev/null
   set +e
+  # The validated transition inventory excludes Secrets. kubectl 1.35 has no
+  # --show-secrets option; use its supported diff interface for this release.
   KUBECTL_EXTERNAL_DIFF="$script_dir/canonical-kubectl-diff.sh" \
-    kubectl -n mnema-staging diff --show-secrets=false -f "$2"
+    kubectl -n mnema-staging diff -f "$2"
   status=$?
   set -e
   if [ "$status" -gt 1 ]; then
