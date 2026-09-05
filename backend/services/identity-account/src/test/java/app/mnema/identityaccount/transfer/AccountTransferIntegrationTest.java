@@ -1,9 +1,14 @@
 package app.mnema.identityaccount.transfer;
 
 import app.mnema.identityaccount.account.AccountStore;
+import app.mnema.identityaccount.federation.FederatedAccounts;
 import app.mnema.identityaccount.local.LocalAccounts;
+import app.mnema.identityaccount.mail.PostboxMail;
+import app.mnema.identityaccount.recovery.PasswordRecovery;
+import app.mnema.identityaccount.security.OwnershipProofs;
 import app.mnema.identityaccount.security.RateLimits;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,6 +30,7 @@ import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import javax.sql.DataSource;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -127,10 +133,22 @@ class AccountTransferIntegrationTest {
 
         TransactionTemplate transactions = new TransactionTemplate(new DataSourceTransactionManager(target));
         BCryptPasswordEncoder passwords = new BCryptPasswordEncoder(4);
-        LocalAccounts local = new LocalAccounts(jdbc, accounts, transactions, passwords,
-                new RateLimits(jdbc, Clock.systemUTC()), Clock.systemUTC());
+        Clock clock = Clock.systemUTC();
+        RateLimits limits = new RateLimits(jdbc, clock);
+        LocalAccounts local = new LocalAccounts(jdbc, accounts, transactions, passwords, limits, clock);
         assertThat(local.login("student-login", PASSWORD, "192.0.2.1").accountId()).isEqualTo(STUDENT);
-        local.replacePassword(STUDENT, "replacement password value");
+
+        OwnershipProofs proofs = new OwnershipProofs(jdbc, accounts, clock);
+        FederatedAccounts federation = new FederatedAccounts(jdbc, accounts, proofs, transactions);
+        assertThat(federation.complete(new FederatedAccounts.External(
+                "github", "github-subject", "ignored@example.test", false), null).accountId()).isEqualTo(STUDENT);
+
+        PasswordRecovery recovery = new PasswordRecovery(jdbc, accounts, proofs, local, limits,
+                new PostboxMail("", "", URI.create("https://postbox.cloud.yandex.net/v2/email/outbound-emails"),
+                        false, new ObjectMapper()), transactions, "https://mnema.app");
+        OwnershipProofs.Proof reset = transactions.execute(status ->
+                proofs.issue(accounts.get(STUDENT, true).access(), OwnershipProofs.Purpose.RESET_PASSWORD));
+        recovery.confirm(reset.token(), "replacement password value");
         assertThat(local.login("student@example.test", "replacement password value", "192.0.2.2").accountId())
                 .isEqualTo(STUDENT);
     }
