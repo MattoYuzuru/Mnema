@@ -28,7 +28,7 @@ for service in identity-account learning; do
       "          image: ghcr.io/mattoyuzuru/mnema/$service:release-placeholder" \
       '          env:' \
       '            - name: MNEMA_BUILD_ID' \
-      '              value: "release-placeholder" \
+      '              value: "release-placeholder"' \
       '---' \
       'apiVersion: v1' \
       'kind: Service' \
