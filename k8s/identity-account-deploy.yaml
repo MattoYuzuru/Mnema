@@ -64,6 +64,8 @@ spec:
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTBOX_SECRET_KEY, optional: true } }
             - name: MNEMA_AVATAR_ENDPOINT
               value: "release-s3-endpoint-placeholder"
+            - name: MNEMA_AVATAR_ALLOW_STAGING_MINIO_HTTP
+              value: "release-avatar-staging-minio-http-placeholder"
             - name: MNEMA_AVATAR_REGION
               valueFrom: { secretKeyRef: { name: mnema-secrets, key: AWS_REGION } }
             - name: MNEMA_AVATAR_BUCKET

@@ -87,14 +87,29 @@ case "$SPRING_PROFILES" in
     exit 1
     ;;
 esac
-for endpoint in "$S3_ENDPOINT" "$S3_PUBLIC_ENDPOINT"; do
-  case "$endpoint" in
-    http://* | https://*) ;;
-    *)
-      echo "S3 endpoints must use http or https" >&2
+AVATAR_ALLOW_STAGING_MINIO_HTTP=false
+case "$S3_ENDPOINT" in
+  https://*) ;;
+  http://minio:9000)
+    if [ "$APP_ENV" != staging ]; then
+      echo "The internal MinIO HTTP endpoint is restricted to staging" >&2
       exit 1
-      ;;
-  esac
+    fi
+    AVATAR_ALLOW_STAGING_MINIO_HTTP=true
+    ;;
+  *)
+    echo "S3_ENDPOINT must use HTTPS or the exact staging MinIO service endpoint" >&2
+    exit 1
+    ;;
+esac
+case "$S3_PUBLIC_ENDPOINT" in
+  https://*) ;;
+  *)
+    echo "S3_PUBLIC_ENDPOINT must use HTTPS" >&2
+    exit 1
+    ;;
+esac
+for endpoint in "$S3_ENDPOINT" "$S3_PUBLIC_ENDPOINT"; do
   case "$endpoint" in
     *[!a-zA-Z0-9.:/_-]* | *'&'* | *'|'*)
       echo "S3 endpoint contains unsupported characters" >&2
@@ -188,6 +203,7 @@ render_template() {
     -e "s|release-app-env-placeholder|$APP_ENV|g" \
     -e "s|release-spring-profiles-placeholder|$SPRING_PROFILES|g" \
     -e "s|release-s3-endpoint-placeholder|$S3_ENDPOINT|g" \
+    -e "s|release-avatar-staging-minio-http-placeholder|$AVATAR_ALLOW_STAGING_MINIO_HTTP|g" \
     -e "s|release-s3-public-endpoint-placeholder|$S3_PUBLIC_ENDPOINT|g" \
     -e "s|release-s3-path-style-placeholder|$S3_PATH_STYLE_ACCESS|g" \
     -e "s|release-public-tls-secret-placeholder|$PUBLIC_TLS_SECRET|g" \

@@ -31,9 +31,12 @@ public class AvatarStorage implements AutoCloseable {
                          @Value("${identity.avatar.bucket}") String bucket,
                          @Value("${identity.avatar.access-key}") String access,
                          @Value("${identity.avatar.secret-key}") String secret,
-                         @Value("${identity.avatar.allow-loopback-http:false}") boolean loopback) {
-        if (!"https".equals(endpoint.getScheme()) && !(loopback && "http".equals(endpoint.getScheme()) &&
-                Set.of("localhost", "127.0.0.1", "[::1]").contains(endpoint.getHost())))
+                         @Value("${identity.avatar.allow-loopback-http:false}") boolean loopback,
+                         @Value("${identity.avatar.allow-staging-minio-http:false}") boolean stagingMinio) {
+        boolean loopbackHttp = loopback && "http".equals(endpoint.getScheme()) &&
+                Set.of("localhost", "127.0.0.1", "[::1]").contains(endpoint.getHost());
+        boolean stagingMinioHttp = stagingMinio && endpoint.equals(URI.create("http://minio:9000"));
+        if (!"https".equals(endpoint.getScheme()) && !loopbackHttp && !stagingMinioHttp)
             throw new IllegalArgumentException("Avatar endpoint requires HTTPS");
         this.bucket = bucket;
         configured = !access.isBlank() && !secret.isBlank();
