@@ -78,31 +78,16 @@ AWS=(aws --no-cli-pager --endpoint-url "$MNEMA_PURGE_S3_ENDPOINT" --region us-ea
   --tagging 'TagSet=[{Key=mnema-rehearsal-target-id,Value=00000000-0000-4000-8000-000000000145}]'
 printf 'legacy' >"$TEST_ROOT/legacy"
 printf 'fresh' >"$TEST_ROOT/fresh"
-LEGACY_VERSION=$("${AWS[@]}" put-object --bucket "$BUCKET" --key legacy/content \
-  --body "$TEST_ROOT/legacy" --query VersionId --output text)
-WAL_VERSION=$("${AWS[@]}" put-object --bucket "$BUCKET" --key legacy/wal \
-  --body "$TEST_ROOT/legacy" --query VersionId --output text)
-BACKUP_VERSION=$("${AWS[@]}" put-object --bucket "$BUCKET" --key legacy/backup \
-  --body "$TEST_ROOT/legacy" --query VersionId --output text)
-FRESH_VERSION=$("${AWS[@]}" put-object --bucket "$BUCKET" --key fresh/avatar \
-  --body "$TEST_ROOT/fresh" --query VersionId --output text)
-DELETE_MARKER_VERSION=$("${AWS[@]}" delete-object --bucket "$BUCKET" --key legacy/deleted \
-  --query VersionId --output text)
-MULTIPART_ID=$("${AWS[@]}" create-multipart-upload --bucket "$BUCKET" --key legacy/upload \
-  --query UploadId --output text)
-for identity in "$LEGACY_VERSION" "$WAL_VERSION" "$BACKUP_VERSION" "$FRESH_VERSION" \
-  "$DELETE_MARKER_VERSION" "$MULTIPART_ID"
-do
-  case "$identity" in
-    '' | None | null | *[![:print:]]*) echo 'purge_integration_error=s3_identity_unavailable' >&2; exit 1 ;;
-  esac
-done
-LEGACY_ETAG=$(python3 -c 'import hashlib; print(hashlib.md5(b"legacy", usedforsecurity=False).hexdigest())')
-WAL_ETAG=$LEGACY_ETAG
-BACKUP_ETAG=$LEGACY_ETAG
-FRESH_ETAG=$(python3 -c 'import hashlib; print(hashlib.md5(b"fresh", usedforsecurity=False).hexdigest())')
-export LEGACY_VERSION WAL_VERSION BACKUP_VERSION FRESH_VERSION DELETE_MARKER_VERSION MULTIPART_ID
-export LEGACY_ETAG WAL_ETAG BACKUP_ETAG FRESH_ETAG
+"${AWS[@]}" put-object --bucket "$BUCKET" --key legacy/content --body "$TEST_ROOT/legacy" >/dev/null
+"${AWS[@]}" put-object --bucket "$BUCKET" --key legacy/wal --body "$TEST_ROOT/legacy" >/dev/null
+"${AWS[@]}" put-object --bucket "$BUCKET" --key legacy/backup --body "$TEST_ROOT/legacy" >/dev/null
+"${AWS[@]}" put-object --bucket "$BUCKET" --key legacy/deleted --body "$TEST_ROOT/legacy" >/dev/null
+"${AWS[@]}" put-object --bucket "$BUCKET" --key fresh/avatar --body "$TEST_ROOT/fresh" >/dev/null
+"${AWS[@]}" delete-object --bucket "$BUCKET" --key legacy/deleted >/dev/null
+"${AWS[@]}" create-multipart-upload --bucket "$BUCKET" --key legacy/upload >/dev/null
+S3_VERSIONS_JSON=$("${AWS[@]}" list-object-versions --bucket "$BUCKET" --output json)
+S3_UPLOADS_JSON=$("${AWS[@]}" list-multipart-uploads --bucket "$BUCKET" --output json)
+export S3_VERSIONS_JSON S3_UPLOADS_JSON
 
 mkdir -p "$TEST_ROOT/bin"
 cat >"$TEST_ROOT/bin/psql" <<EOF
@@ -121,6 +106,28 @@ python3 - <<'PY'
 import json
 import os
 from pathlib import Path
+
+listed = json.loads(os.environ["S3_VERSIONS_JSON"])
+uploads = json.loads(os.environ["S3_UPLOADS_JSON"])
+
+
+def version(category, key):
+    matches = [item for item in listed.get("Versions", []) if item.get("Key") == key]
+    assert len(matches) == 1
+    item = matches[0]
+    return {
+        "category": category,
+        "key": key,
+        "versionId": item["VersionId"],
+        "size": item["Size"],
+        "etag": item["ETag"].strip('"'),
+    }
+
+
+markers = [item for item in listed.get("DeleteMarkers", []) if item.get("Key") == "legacy/deleted"]
+assert len(markers) == 1
+multipart = [item for item in uploads.get("Uploads", []) if item.get("Key") == "legacy/upload"]
+assert len(multipart) == 1
 
 document = {
     "schemaVersion": 1,
@@ -142,22 +149,11 @@ document = {
     "s3": [{
         "id": "legacy-storage", "endpointEnv": "MNEMA_PURGE_S3_ENDPOINT", "region": "us-east-1",
         "bucket": os.environ["BUCKET"], "requireObjectLockDisabled": True,
-        "deleteVersions": [{
-            "category": "object", "key": "legacy/content", "versionId": os.environ["LEGACY_VERSION"],
-            "size": 6, "etag": os.environ["LEGACY_ETAG"],
-        }, {
-            "category": "wal", "key": "legacy/wal", "versionId": os.environ["WAL_VERSION"],
-            "size": 6, "etag": os.environ["WAL_ETAG"],
-        }, {
-            "category": "backup", "key": "legacy/backup", "versionId": os.environ["BACKUP_VERSION"],
-            "size": 6, "etag": os.environ["BACKUP_ETAG"],
-        }],
-        "deleteMarkers": [{"key": "legacy/deleted", "versionId": os.environ["DELETE_MARKER_VERSION"]}],
-        "multipartUploads": [{"key": "legacy/upload", "uploadId": os.environ["MULTIPART_ID"]}],
-        "preserveVersions": [{
-            "category": "object", "key": "fresh/avatar", "versionId": os.environ["FRESH_VERSION"],
-            "size": 5, "etag": os.environ["FRESH_ETAG"],
-        }],
+        "deleteVersions": [version("object", "legacy/content"), version("wal", "legacy/wal"),
+                           version("backup", "legacy/backup"), version("object", "legacy/deleted")],
+        "deleteMarkers": [{"key": "legacy/deleted", "versionId": markers[0]["VersionId"]}],
+        "multipartUploads": [{"key": "legacy/upload", "uploadId": multipart[0]["UploadId"]}],
+        "preserveVersions": [version("object", "fresh/avatar")],
         "preserveDeleteMarkers": [],
     }],
     "kubernetes": [],
@@ -224,7 +220,7 @@ test "$(docker exec "$REDIS_CONTAINER" redis-cli EXISTS legacy:session)" = 0
 test "$(docker exec "$REDIS_CONTAINER" redis-cli GET fresh:account)" = preserved
 VERSIONS=$("${AWS[@]}" list-object-versions --bucket "$BUCKET")
 UPLOADS=$("${AWS[@]}" list-multipart-uploads --bucket "$BUCKET")
-printf '%s' "$VERSIONS" | python3 -c 'import json,os,sys; value=json.load(sys.stdin); versions=value.get("Versions", []); assert [(v["Key"],v["VersionId"]) for v in versions] == [("fresh/avatar",os.environ["FRESH_VERSION"])]; assert not value.get("DeleteMarkers")'
+printf '%s' "$VERSIONS" | python3 -c 'import json,sys; value=json.load(sys.stdin); versions=value.get("Versions", []); assert len(versions) == 1 and versions[0]["Key"] == "fresh/avatar" and versions[0]["Size"] == 5; assert not value.get("DeleteMarkers")'
 printf '%s' "$UPLOADS" | python3 -c 'import json,sys; assert not json.load(sys.stdin).get("Uploads")'
 
 python3 "$TOOL" preflight --manifest "$MANIFEST" --plan "$TEST_ROOT/rerun-plan.json" \
