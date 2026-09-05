@@ -142,14 +142,28 @@ class DeckCreationFailureClient(FakeClient):
         return super().json(method, url, **kwargs)
 
 
+class ContentReadFailureClient(FakeClient):
+    def __init__(self, release_id: str) -> None:
+        super().__init__(release_id)
+        self.retry_requested = False
+
+    def json(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
+        if method == "GET" and url.endswith(f"/review/decks/{self.deck_id}/next"):
+            self.retry_requested = bool(kwargs.get("retry_transient", False))
+            raise release_smoke.SmokeFailure("http_unavailable", "core")
+        return super().json(method, url, **kwargs)
+
+
 class MaintenanceClient:
     def __init__(self, release_id: str, *, learning_release_id: str | None = None) -> None:
         self.release_id = release_id
         self.learning_release_id = learning_release_id or release_id
         self.requests: list[tuple[str, str, str]] = []
+        self.retry_flags: list[bool] = []
 
     def request(self, method: str, url: str, **kwargs: Any) -> bytes:
         self.requests.append((method, url, str(kwargs["service"])))
+        self.retry_flags.append(bool(kwargs.get("retry_transient", False)))
         if url.endswith("/api/actuator/health/readiness"):
             return b'{"status":"UP"}'
         raise AssertionError(f"unexpected request {method} {url}")
@@ -157,6 +171,7 @@ class MaintenanceClient:
     def json(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
         service = str(kwargs["service"])
         self.requests.append((method, url, service))
+        self.retry_flags.append(bool(kwargs.get("retry_transient", False)))
         if not url.endswith("/api/actuator/info"):
             raise AssertionError(f"unexpected JSON request {method} {url}")
         release_id = self.learning_release_id if service == "learning" else self.release_id
@@ -185,7 +200,12 @@ class ReleaseSmokeTest(unittest.TestCase):
             patch.object(release_smoke, "urlopen", side_effect=failures) as urlopen_mock,
             patch.object(release_smoke.time, "sleep") as sleep_mock,
         ):
-            result = client.request("GET", "https://mnema.example", service="learning")
+            result = client.request(
+                "GET",
+                "https://mnema.example",
+                service="learning",
+                retry_transient=True,
+            )
 
         self.assertEqual(b'{"status":"UP"}', result)
         self.assertEqual(3, urlopen_mock.call_count)
@@ -201,10 +221,32 @@ class ReleaseSmokeTest(unittest.TestCase):
             patch.object(release_smoke.time, "sleep") as sleep_mock,
             self.assertRaises(release_smoke.SmokeFailure) as raised,
         ):
-            client.request("GET", "https://mnema.example", service="learning")
+            client.request(
+                "GET",
+                "https://mnema.example",
+                service="learning",
+                retry_transient=True,
+            )
 
         self.assertEqual("unexpected_http_status", raised.exception.code)
         self.assertEqual("status=500", raised.exception.safe_detail)
+        urlopen_mock.assert_called_once()
+        sleep_mock.assert_not_called()
+        failure.close()
+
+    def test_safe_request_does_not_retry_without_explicit_rollout_retry(self) -> None:
+        client = release_smoke.HttpClient(time.monotonic() + 30, 5)
+        failure = HTTPError("https://mnema.example", 502, "Bad Gateway", {}, None)
+
+        with (
+            patch.object(release_smoke, "urlopen", side_effect=failure) as urlopen_mock,
+            patch.object(release_smoke.time, "sleep") as sleep_mock,
+            self.assertRaises(release_smoke.SmokeFailure) as raised,
+        ):
+            client.request("GET", "https://mnema.example", service="core")
+
+        self.assertEqual("unexpected_http_status", raised.exception.code)
+        self.assertEqual("status=502", raised.exception.safe_detail)
         urlopen_mock.assert_called_once()
         sleep_mock.assert_not_called()
         failure.close()
@@ -218,13 +260,33 @@ class ReleaseSmokeTest(unittest.TestCase):
             patch.object(release_smoke.time, "sleep") as sleep_mock,
             self.assertRaises(release_smoke.SmokeFailure) as raised,
         ):
-            client.request("POST", "https://mnema.example", service="auth")
+            client.request(
+                "POST",
+                "https://mnema.example",
+                service="auth",
+                retry_transient=True,
+            )
 
         self.assertEqual("unexpected_http_status", raised.exception.code)
         self.assertEqual("status=503", raised.exception.safe_detail)
         urlopen_mock.assert_called_once()
         sleep_mock.assert_not_called()
         failure.close()
+
+    def test_content_read_failure_remains_fail_fast_and_allows_fixture_cleanup(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            client = ContentReadFailureClient(self.release_id)
+
+            with self.assertRaises(release_smoke.SmokeFailure) as raised:
+                release_smoke.ReleaseSmoke(
+                    self.config(Path(directory) / "report.json"), client
+                ).run()
+
+            self.assertEqual("http_unavailable", raised.exception.code)
+            self.assertFalse(client.retry_requested)
+            self.assertTrue(client.archived)
+            self.assertTrue(client.hard_deleted)
+            self.assertTrue(client.template_deleted)
 
     def config(self, report: Path, **overrides: Any):
         values = {
@@ -428,6 +490,7 @@ class ReleaseSmokeTest(unittest.TestCase):
                 all(url.endswith(("/api/actuator/health/readiness", "/api/actuator/info"))
                     for _, url, _ in client.requests)
             )
+            self.assertTrue(all(client.retry_flags))
             persisted = json.loads(report.read_text())
             self.assertEqual(2, persisted["schema_version"])
             self.assertEqual("identity-learning", persisted["release_topology"])

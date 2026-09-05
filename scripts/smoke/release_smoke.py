@@ -155,6 +155,7 @@ class HttpClient:
         expected_statuses: tuple[int, ...] = (200,),
         max_body_bytes: int = 1_048_576,
         service: str,
+        retry_transient: bool = False,
     ) -> bytes:
         body = None
         request_headers = {"Accept": "application/json", **(headers or {})}
@@ -174,7 +175,7 @@ class HttpClient:
                         failure = SmokeFailure(
                             "unexpected_http_status", service, f"status={status}"
                         )
-                        if self._retry_transient(method, failure):
+                        if retry_transient and self._retry_transient(method, failure):
                             continue
                         raise failure
                     if method == "HEAD":
@@ -184,12 +185,12 @@ class HttpClient:
                 failure = SmokeFailure(
                     "unexpected_http_status", service, f"status={error.code}"
                 )
-                if self._retry_transient(method, failure):
+                if retry_transient and self._retry_transient(method, failure):
                     continue
                 raise failure from None
             except (TimeoutError, URLError):
                 failure = SmokeFailure("http_unavailable", service)
-                if self._retry_transient(method, failure):
+                if retry_transient and self._retry_transient(method, failure):
                     continue
                 raise failure from None
             if len(data) > max_body_bytes:
@@ -385,6 +386,7 @@ class ReleaseSmoke:
             f"{base_url.rstrip('/')}/api/actuator/health/readiness",
             service=service,
             max_body_bytes=131_072,
+            retry_transient=True,
         )
 
     def verify_maintenance_identity(self, service: str, base_url: str) -> None:
@@ -392,6 +394,7 @@ class ReleaseSmoke:
             "GET",
             f"{base_url.rstrip('/')}/api/actuator/info",
             service=service,
+            retry_transient=True,
         )
         release = payload.get("release")
         if not isinstance(release, dict) or release.get("id") != self.config.expected_release_sha:
