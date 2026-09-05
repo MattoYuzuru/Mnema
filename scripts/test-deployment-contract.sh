@@ -15,6 +15,8 @@ STAGING_DATA="$REPO_ROOT/k8s/staging/data.yaml"
 STAGING_BUCKET_JOB="$REPO_ROOT/k8s/staging/minio-bucket-job.yaml"
 STAGING_ROUTES="$REPO_ROOT/k8s/staging/routes.yaml"
 ALLOY_CONFIG="$REPO_ROOT/k8s/observability/30-alloy-config.yaml"
+IDENTITY_TEMPLATE="$REPO_ROOT/k8s/identity-account-deploy.yaml"
+STAGING_RUNBOOK="$REPO_ROOT/docs/operations/staging-runbook.md"
 
 grep -Eq '^[[:space:]]*targets[[:space:]]*=[[:space:]]*discovery\.relabel\.pods\.output[[:space:]]*$' \
   "$ALLOY_CONFIG"
@@ -159,6 +161,44 @@ for service in identity-account learning; do
   fi
 done
 
+for value in \
+  MNEMA_IDENTITY_SIGNING_JWK_SET_FILE IDENTITY_SIGNING_ACTIVE_KID \
+  MNEMA_IDENTITY_FRONTEND_ORIGIN MNEMA_IDENTITY_REDIRECT_URI \
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID \
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_ID \
+  SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_YANDEX_CLIENT_ID \
+  MNEMA_AVATAR_BUCKET MNEMA_IDENTITY_TRUSTED_PROXY_CIDRS
+do
+  grep -Fq "$value" "$IDENTITY_TEMPLATE"
+done
+grep -Fq 'key: IDENTITY_SIGNING_JWK_SET' "$IDENTITY_TEMPLATE"
+grep -Fq 'mountPath: /var/run/secrets/mnema-identity' "$IDENTITY_TEMPLATE"
+for value in IDENTITY_SIGNING_JWK_SET IDENTITY_SIGNING_ACTIVE_KID POSTBOX_ACCESS_KEY POSTBOX_SECRET_KEY; do
+  test "$(grep -c "'$value'" "$ADMISSION")" -eq 2
+done
+for identity_policy_guard in \
+  'select(.kind == "ValidatingAdmissionPolicy" and .metadata.name == "mnema-staging-secret-boundary")' \
+  'select(.kind == "ValidatingAdmissionPolicyBinding" and .metadata.name == "mnema-staging-secret-boundary")' \
+  'kubectl apply --dry-run=server -f "$identity_policy"' \
+  'kubectl diff -f "$identity_policy"' \
+  'kubectl diff -f "$identity_binding"' \
+  '.status.observedGeneration == .metadata.generation' \
+  '.status.typeChecking.expressionWarnings' \
+  '.spec.policyName == "mnema-staging-secret-boundary"' \
+  '.spec.validationActions == ["Deny"]' \
+  '.spec.matchResources.namespaceSelector.matchLabels["mnema.app/environment"] == "staging"'
+do
+  grep -Fq "$identity_policy_guard" "$STAGING_RUNBOOK"
+done
+grep -Fq 'STAGING_POSTBOX_ACCESS_KEY' "$STAGING_RUNBOOK"
+grep -Fq 'live outbound delivery is not claimed by the maintenance smoke' "$STAGING_RUNBOOK"
+grep -Fq 'path: /' "$REPO_ROOT/k8s/auth-ingress.yaml"
+if grep -R -E 'UserApiClient|USER_BASE_URL|app\.user\.base-url' \
+  "$REPO_ROOT/backend/services/core/src/main" >/dev/null; then
+  echo 'Production sources must not call the deleted standalone user runtime' >&2
+  exit 1
+fi
+
 for workflow in "$PRODUCTION_WORKFLOW" "$STAGING_WORKFLOW"; do
   grep -Fq 'scripts/smoke/release_smoke.py' "$workflow"
   grep -Fq 'scripts/smoke/release_state.py snapshot' "$workflow"
@@ -300,13 +340,15 @@ grep -Fq 'serviceType: ClusterIP' "$REPO_ROOT/k8s/cluster-issuers.yaml"
 grep -Fq 'staging.mnema.app' "$REPO_ROOT/k8s/cluster-issuers.yaml"
 grep -Fq 'count/secrets: "12"' "$BOOTSTRAP"
 preview_plan_line=$(grep -n 'name: Preview complete staging plan before mutation' "$STAGING_WORKFLOW" | cut -d: -f1)
+secret_preview_line=$(grep -n 'name: Preview immutable staging Identity signing bootstrap' "$STAGING_WORKFLOW" | cut -d: -f1)
 final_stale_line=$(grep -n 'name: Reject a stale release immediately before staging mutation' "$STAGING_WORKFLOW" | cut -d: -f1)
-first_staging_mutation_line=$(grep -n 'name: Apply complete staging application release once' "$STAGING_WORKFLOW" | cut -d: -f1)
-if [ -z "$preview_plan_line" ] || [ -z "$final_stale_line" ] || \
+first_staging_mutation_line=$(grep -n 'name: Bootstrap immutable staging Identity signing secret' "$STAGING_WORKFLOW" | cut -d: -f1)
+if [ -z "$preview_plan_line" ] || [ -z "$secret_preview_line" ] || [ -z "$final_stale_line" ] || \
    [ -z "$first_staging_mutation_line" ] || \
-   [ "$preview_plan_line" -ge "$final_stale_line" ] || \
+   [ "$preview_plan_line" -ge "$secret_preview_line" ] || \
+   [ "$secret_preview_line" -ge "$final_stale_line" ] || \
    [ "$final_stale_line" -ge "$first_staging_mutation_line" ]; then
-  echo 'The complete staging plan and final stale guard must precede every mutation' >&2
+  echo 'The complete staging and signing previews plus final stale guard must precede every mutation' >&2
   exit 1
 fi
 staging_prefix=$(sed -n "1,${first_staging_mutation_line}p" "$STAGING_WORKFLOW")
@@ -334,6 +376,19 @@ test "$(grep -c '^kind: Ingress$' "$STAGING_ROUTES")" -eq 3
 for host in staging.mnema.app auth.staging.mnema.app storage.staging.mnema.app; do
   test "$(grep -F -c "host: $host" "$STAGING_ROUTES")" -eq 1
 done
+python3 - "$STAGING_ROUTES" <<'PY_STAGING_ROUTES'
+from pathlib import Path
+import sys
+
+documents = Path(sys.argv[1]).read_text().split("\n---\n")
+learning = next(document for document in documents if "name: mnema\n" in document)
+identity = next(document for document in documents if "name: mnema-auth\n" in document)
+assert "          - path: /api\n" in learning
+assert "name: mnema-learning" in learning
+assert "          - path: /\n" in identity
+assert "          - path: /api\n" not in identity
+assert "name: mnema-identity-account" in identity
+PY_STAGING_ROUTES
 
 image_count=0
 pinned_image_count=0
@@ -372,6 +427,8 @@ missing = subprocess.run(command, env=environment, capture_output=True, text=Tru
 assert missing.returncode != 0 and "MNEMA_LOCAL_POSTGRES_PASSWORD" in missing.stderr
 
 environment["MNEMA_LOCAL_POSTGRES_PASSWORD"] = "replacement-test-value"
+environment["MNEMA_LOCAL_IDENTITY_SIGNING_ACTIVE_KID"] = "local-test-kid"
+environment["MNEMA_LOCAL_IDENTITY_SIGNING_JWK_SET_FILE"] = os.devnull
 result = subprocess.run(command, env=environment, capture_output=True, text=True, check=False)
 assert result.returncode == 0, "Replacement Compose config must render successfully"
 config = json.loads(result.stdout)
@@ -399,6 +456,10 @@ for name in ("identity-account", "learning"):
     assert service["build"]["target"] in stages
     assert service["environment"]["SPRING_DATASOURCE_PASSWORD"] == "replacement-test-value"
 assert config["services"]["identity-account"]["environment"]["MNEMA_IDENTITY_ISSUER"] == "https://localhost:18081"
+identity_mount = config["services"]["identity-account"]["volumes"][0]
+assert identity_mount["source"] == os.devnull
+assert identity_mount["target"] == "/var/run/secrets/mnema-identity/identity-signing-jwk-set.json"
+assert identity_mount["read_only"] is True
 source = compose.read_text()
 assert all(name.startswith("MNEMA_LOCAL_") for name in re.findall(r"\$\{([A-Z_]+)", source))
 

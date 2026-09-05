@@ -14,8 +14,6 @@ pluginManagement {
 
 rootProject.name = "mnema"
 include(
-    "services:auth",
-    "services:user",
     "services:core",
     "services:media",
     "services:import",

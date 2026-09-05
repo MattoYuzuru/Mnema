@@ -147,7 +147,7 @@ def route(name: str, topology: str, resource_version: str) -> dict:
     host = "staging.mnema.app" if name == "mnema" else "auth.staging.mnema.app"
     secret = "staging-mnema-app-tls" if name == "mnema" else "auth-staging-mnema-app-tls"
     if topology == "replacement":
-        paths = [("/api", "learning" if name == "mnema" else "identity-account")]
+        paths = [("/api", "learning")] if name == "mnema" else [("/", "identity-account")]
     elif name == "mnema-auth":
         paths = [("/", "auth")]
     else:
@@ -177,6 +177,10 @@ def probes(name: str, resource_version: str) -> list[Probe]:
     replacement = route(name, "replacement", resource_version)
     legacy = route(name, "legacy", resource_version)
     result = [Probe(f"{name}/replacement", replacement), Probe(f"{name}/legacy", legacy)]
+    if name == "mnema-auth":
+        previous_replacement = deepcopy(replacement)
+        previous_replacement["spec"]["rules"][0]["http"]["paths"][0]["path"] = "/api"
+        result.append(Probe(f"{name}/previous-replacement", previous_replacement))
 
     def changed(label: str, category: str, path: tuple, value: Any, base: dict = replacement) -> None:
         document = deepcopy(base)

@@ -166,23 +166,38 @@ class MaintenanceClient:
         self.retry_flags.append(bool(kwargs.get("retry_transient", False)))
         if url.endswith("/api/actuator/health/readiness"):
             return b'{"status":"UP"}'
+        if url.endswith("/login"):
+            return b'<html><form></form><script>location.href="/login/continue"</script></html>'
         raise AssertionError(f"unexpected request {method} {url}")
 
     def json(self, method: str, url: str, **kwargs: Any) -> dict[str, Any]:
         service = str(kwargs["service"])
         self.requests.append((method, url, service))
         self.retry_flags.append(bool(kwargs.get("retry_transient", False)))
-        if not url.endswith("/api/actuator/info"):
-            raise AssertionError(f"unexpected JSON request {method} {url}")
-        release_id = self.learning_release_id if service == "learning" else self.release_id
-        return {
-            "release": {
-                "id": release_id,
-                "mode": "maintenance",
-                "topology": "identity-learning",
-                "runtime": "learning-api" if service == "learning" else "identity-account",
+        if url.endswith("/api/actuator/info"):
+            release_id = self.learning_release_id if service == "learning" else self.release_id
+            return {
+                "release": {
+                    "id": release_id,
+                    "mode": "maintenance",
+                    "topology": "identity-learning",
+                    "runtime": "learning-api" if service == "learning" else "identity-account",
+                }
             }
-        }
+        if url.endswith("/.well-known/openid-configuration"):
+            base = url.removesuffix("/.well-known/openid-configuration")
+            return {
+                "issuer": base,
+                "authorization_endpoint": base + "/oauth2/authorize",
+                "token_endpoint": base + "/oauth2/token",
+                "jwks_uri": base + "/oauth2/jwks",
+                "userinfo_endpoint": base + "/userinfo",
+                "end_session_endpoint": base + "/connect/logout",
+                "code_challenge_methods_supported": ["S256"],
+            }
+        if url.endswith("/oauth2/jwks"):
+            return {"keys": [{"kid": "staging-key", "kty": "RSA"}]}
+        raise AssertionError(f"unexpected JSON request {method} {url}")
 
 
 class ReleaseSmokeTest(unittest.TestCase):
@@ -481,13 +496,15 @@ class ReleaseSmokeTest(unittest.TestCase):
                 [
                     "identity_account_readiness",
                     "identity_account_identity",
+                    "identity_protocol",
                     "learning_readiness",
                     "learning_identity",
                 ],
                 [step.name for step in result.steps],
             )
             self.assertTrue(
-                all(url.endswith(("/api/actuator/health/readiness", "/api/actuator/info"))
+                all(url.endswith(("/api/actuator/health/readiness", "/api/actuator/info",
+                                  "/.well-known/openid-configuration", "/oauth2/jwks", "/login"))
                     for _, url, _ in client.requests)
             )
             self.assertTrue(all(client.retry_flags))

@@ -250,8 +250,8 @@ jobs:
           kubectl -n "$NS" get resourcequota mnema-staging-quota >/dev/null
           kubectl -n "$NS" get limitrange mnema-staging-limits >/dev/null
 
-      # The replacement shells consume only the existing staging PostgreSQL
-      # credentials. This release neither rotates Secrets nor mutates data services.
+      # The replacement runtime consumes the existing staging PostgreSQL data and
+      # an add-only fresh signing set. Existing or different signing state is never rotated here.
       - name: Verify existing staging bootstrap and rollback policy
         run: |
           case "$AUTO_ROLLBACK_ENABLED" in
@@ -291,6 +291,12 @@ jobs:
           ./scripts/preview-staging-plan.sh --replacement \
             "$RELEASE_MANIFEST" "$ROLLBACK_MANIFEST" "$TRANSITION_PLAN"
 
+      - name: Preview immutable staging Identity signing bootstrap
+        env:
+          IDENTITY_SIGNING_JWK_SET: ${{ secrets.STAGING_IDENTITY_SIGNING_JWK_SET }}
+          IDENTITY_SIGNING_ACTIVE_KID: ${{ secrets.STAGING_IDENTITY_SIGNING_ACTIVE_KID }}
+        run: python3 scripts/bootstrap-staging-identity-signing.py --dry-run
+
       - name: Reject a stale release immediately before staging mutation
         run: |
           current_main=$(git ls-remote --exit-code origin refs/heads/main | awk '{print $1}')
@@ -298,6 +304,12 @@ jobs:
             echo "::error::Refusing stale staging release ${RELEASE_SHA}; current main is ${current_main}"
             exit 1
           fi
+
+      - name: Bootstrap immutable staging Identity signing secret
+        env:
+          IDENTITY_SIGNING_JWK_SET: ${{ secrets.STAGING_IDENTITY_SIGNING_JWK_SET }}
+          IDENTITY_SIGNING_ACTIVE_KID: ${{ secrets.STAGING_IDENTITY_SIGNING_ACTIVE_KID }}
+        run: python3 scripts/bootstrap-staging-identity-signing.py
 
       - name: Mark the candidate mutation boundary
         id: mutation-start

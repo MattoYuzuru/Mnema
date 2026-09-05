@@ -82,7 +82,8 @@ spec:
             '/api/core|Prefix|mnema-core|80', '/api/media|Prefix|mnema-media|80',
             '/api/import|Prefix|mnema-import|80'].all(s, s in variables.pathSignatures)))) ||
         (object.metadata.name == 'mnema-auth' &&
-         (variables.pathSignatures == ['/api|Prefix|mnema-identity-account|80'] ||
+         (variables.pathSignatures == ['/|Prefix|mnema-identity-account|80'] ||
+          variables.pathSignatures == ['/api|Prefix|mnema-identity-account|80'] ||
           variables.pathSignatures == ['/|Prefix|mnema-auth|80']))
       message: "Application paths and backends must match one complete allowed topology"
 ---

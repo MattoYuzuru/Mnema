@@ -36,6 +36,42 @@ spec:
               value: "release-placeholder"
             - name: MNEMA_IDENTITY_ISSUER
               value: "https://release-auth-host-placeholder"
+            - name: MNEMA_IDENTITY_FRONTEND_ORIGIN
+              value: "https://release-public-host-placeholder"
+            - name: MNEMA_IDENTITY_REDIRECT_URI
+              value: "https://release-public-host-placeholder/auth/callback"
+            - name: MNEMA_IDENTITY_TRUSTED_PROXY_CIDRS
+              value: "10.42.0.0/16,fd42::/64"
+            - name: MNEMA_IDENTITY_SIGNING_JWK_SET_FILE
+              value: /var/run/secrets/mnema-identity/identity-signing-jwk-set.json
+            - name: MNEMA_IDENTITY_SIGNING_ACTIVE_KID
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: IDENTITY_SIGNING_ACTIVE_KID } }
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_ID
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: GOOGLE_CLIENT_ID } }
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GOOGLE_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: GOOGLE_CLIENT_SECRET } }
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_ID
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: GITHUB_CLIENT_ID } }
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: GITHUB_CLIENT_SECRET } }
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_YANDEX_CLIENT_ID
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: YANDEX_CLIENT_ID } }
+            - name: SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_YANDEX_CLIENT_SECRET
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: YANDEX_CLIENT_SECRET } }
+            - name: MNEMA_POSTBOX_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTBOX_ACCESS_KEY, optional: true } }
+            - name: MNEMA_POSTBOX_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: POSTBOX_SECRET_KEY, optional: true } }
+            - name: MNEMA_AVATAR_ENDPOINT
+              value: "release-s3-endpoint-placeholder"
+            - name: MNEMA_AVATAR_REGION
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: AWS_REGION } }
+            - name: MNEMA_AVATAR_BUCKET
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: AWS_BUCKET_NAME } }
+            - name: MNEMA_AVATAR_ACCESS_KEY
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: AWS_ACCESS_KEY_ID } }
+            - name: MNEMA_AVATAR_SECRET_KEY
+              valueFrom: { secretKeyRef: { name: mnema-secrets, key: AWS_SECRET_ACCESS_KEY } }
             - name: SPRING_DATASOURCE_URL
               value: jdbc:postgresql://postgres.release-namespace-placeholder.svc.cluster.local:5432/mnema
             - name: SPRING_DATASOURCE_USERNAME
@@ -46,6 +82,7 @@ spec:
               value: "release-app-env-placeholder"
           volumeMounts:
             - { name: tmp, mountPath: /tmp }
+            - { name: identity-signing, mountPath: /var/run/secrets/mnema-identity, readOnly: true }
           startupProbe:
             httpGet: { path: /api/actuator/health/liveness, port: 8080 }
             periodSeconds: 5
@@ -62,6 +99,12 @@ spec:
       volumes:
         - name: tmp
           emptyDir: { sizeLimit: 128Mi }
+        - name: identity-signing
+          secret:
+            secretName: mnema-secrets
+            defaultMode: 0440
+            items:
+              - { key: IDENTITY_SIGNING_JWK_SET, path: identity-signing-jwk-set.json }
 ---
 apiVersion: v1
 kind: Service
