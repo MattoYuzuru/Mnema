@@ -193,6 +193,26 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     @ParameterizedTest
+    @ValueSource(strings = {"cookie", "query", "form", "basic"})
+    void crossSitePostCannotAuthenticateThroughBrowserAmbientCredentials(String channel) throws Exception {
+        String access = token("learning.write", claims -> { });
+        String path = "/_security" + (channel.equals("query") ? "?access_token=" + access : "");
+        var builder = HttpRequest.newBuilder(uri(path)).header("Origin", "https://attacker.example")
+                .header("Content-Type", "application/x-www-form-urlencoded");
+        if (channel.equals("cookie")) {
+            builder.header("Cookie", "access_token=" + access + "; JSESSIONID=not-a-session");
+        }
+        if (channel.equals("basic")) builder.header("Authorization", "Basic dXNlcjpwYXNzd29yZA==");
+        String body = channel.equals("form") ? "access_token=" + access : "action=change";
+        var response = CLIENT.send(builder.POST(HttpRequest.BodyPublishers.ofString(body)).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertProblem(response, 401, "AUTHENTICATION_REQUIRED");
+        assertThat(response.headers().firstValue("set-cookie")).isEmpty();
+        assertThat(CALLS).hasValue(0);
+        assertThat(OPERATIONS).hasValue(0);
+    }
+
+    @ParameterizedTest
     @ValueSource(strings = {"issuer", "audience", "expired", "future", "subject", "generation", "no-exp", "no-iat"})
     void rejectsInvalidClaimsBeforePrivateWork(String invalid) throws Exception {
         String token = token("learning.read", claims -> {

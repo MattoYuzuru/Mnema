@@ -1,5 +1,36 @@
 # Independent Learning authentication security review
 
+## CodeQL CSRF finding validation
+
+PR #177 comment `3944959238`, alert #13 (`java/spring-disabled-csrf-protection`)
+flags the explicit CSRF disable at candidate `1f49cee`. Classification:
+intentional bearer-only behavior, not a demonstrated CSRF vulnerability in this
+Learning chain. Statelessness alone is not the justification: authentication is
+accepted only from an explicit Authorization Bearer header, not browser-ambient
+cookies, Basic credentials, form fields or query parameters. Identity's separate
+browser/session CSRF boundary is unchanged.
+
+Additional real Learning HTTP regressions send cross-site POST requests with a
+valid write token in cookies, query or form, and with Basic authorization. All
+return the stable 401, create no session cookie, call no Identity endpoint and
+execute no private operation. The existing positive POST with a valid Bearer
+header succeeds without a CSRF token. Full Learning tests and coverage pass.
+The first local invocation omitted the required Colima test environment and
+failed container initialization; rerunning with the documented environment passed.
+
+The exact Spring Security 6.5.11 `OAuth2ResourceServerConfigurer` itself exempts
+requests recognized by its Bearer resolver from CSRF checks. Restoring a generic
+CSRF filter is not required to secure the present header-only boundary and would
+change unauthenticated unsafe-request/session behavior. No query exclusion,
+suppression annotation, protection-rule change or cosmetic API rewrite was used.
+
+Residual boundary: adding cookie/session/Basic authentication to this chain, or
+introducing state-changing GET handlers, invalidates this conclusion and requires
+a new security design/review. These HTTP tests are not browser OAuth/TLS or XSS
+verification. See [Spring 6.5 CSRF](https://docs.spring.io/spring-security/reference/6.5/servlet/exploits/csrf.html),
+[exact resource-server source](https://github.com/spring-projects/spring-security/blob/6.5.11/config/src/main/java/org/springframework/security/config/annotation/web/configurers/oauth2/server/resource/OAuth2ResourceServerConfigurer.java)
+and [CodeQL rule](https://codeql.github.com/codeql-query-help/java/java-spring-disabled-csrf-protection/).
+
 ## Follow-up correction to the original review
 
 The original no-findings verdict below applies only to its bounded review at
