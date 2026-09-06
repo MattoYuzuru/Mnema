@@ -5,7 +5,7 @@ artifact:
   title: "Mnema native LearningItem content format"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-08-30"
+  updated_at: "2026-09-06"
   owners: ["project-owner"]
   decision_scope: [content-format, rendering, exercises, media, anki, offline]
 ---
@@ -18,7 +18,11 @@ mechanical reuse of v1 components is required. AI authoring is deferred to #77.
 
 ## Decision
 
-The canonical content of a Mnema learning item should be a **versioned, validated document tree stored as `JSONB`**, not two Markdown strings, arbitrary HTML, or a user-defined set of fields.
+The canonical content of a Mnema learning item is a **versioned, validated document
+tree**, not two Markdown strings, arbitrary HTML, or a user-defined field schema.
+The API exposes that semantic tree; the proposed physical representation is shared
+bounded immutable `JSONB` blocks and persistent manifest pages, not a complete new
+JSONB document for every edit. See [revision storage](./revision-storage-and-runtime-boundaries.md).
 
 Markdown remains a first-class authoring and interchange view for the subset it can represent. `prompt` and `reveal` are projections owned by an exercise, not mandatory halves of the content entity. Imported Anki HTML/CSS is parsed as inert input and compiled to native nodes/exercises; Mnema never ships a legacy renderer.
 
@@ -41,36 +45,40 @@ Anki itself does not use a front/back Markdown contract. A note has fields; card
 
 ```mermaid
 erDiagram
-    LEARNING_ITEM ||--o{ ITEM_REVISION : evolves
-    ITEM_REVISION ||--o{ EXERCISE_DEFINITION : supports
+    DECK ||--o{ LEARNING_ITEM : owns_logical_identity
+    LEARNING_ITEM ||--o{ ITEM_SELECTION : selects_versions
+    ITEM_REVISION ||--o{ ITEM_SELECTION : reused_through_authorized_deck
+    ITEM_REVISION ||--o{ EXERCISE_CONTENT_BINDING : selected_by
+    EXERCISE_REVISION ||--o{ EXERCISE_CONTENT_BINDING : presents
     LEARNING_ITEM ||--o{ MEMORY_OBJECTIVE : teaches
-    MEMORY_OBJECTIVE ||--o{ EXERCISE_DEFINITION : measured_by
+    MEMORY_OBJECTIVE ||--o{ EXERCISE_OBJECTIVE_BINDING : assessed_by
+    EXERCISE_REVISION ||--o{ EXERCISE_OBJECTIVE_BINDING : measures
     ITEM_REVISION ||--o{ CONTENT_MEDIA_REF : contains
     MEDIA_ASSET ||--o{ CONTENT_MEDIA_REF : referenced_by
 
     LEARNING_ITEM {
-        uuid item_id PK
+        uuid deck_id PK
+        uuid member_key PK
         uuid created_by
         timestamptz created_at
     }
     ITEM_REVISION {
         uuid item_revision_id PK
-        uuid item_id FK
         int format_version
-        jsonb document
+        uuid content_root_id
         text content_hash
         text plain_text_projection
         timestamptz created_at
     }
     MEMORY_OBJECTIVE {
         uuid objective_id PK
-        uuid item_id FK
+        uuid deck_id FK
+        uuid member_key
         text objective_key
     }
-    EXERCISE_DEFINITION {
-        uuid exercise_id PK
-        uuid objective_id FK
-        uuid item_revision_id FK
+    EXERCISE_REVISION {
+        uuid exercise_revision_id PK
+        uuid exercise_key
         text exercise_type
         int contract_version
         jsonb prompt_projection
@@ -79,10 +87,10 @@ erDiagram
     }
 ```
 
-- `learning_item` is stable identity: one unit of material in a deck.
-- `item_revision` is immutable content. Publishing an edit creates a revision; it never overwrites history.
-- `memory_objective` names what must be remembered. Forward and reverse recall are separate objectives when they require independent scheduling.
-- `exercise_definition` is an independently versioned way to test an objective. One item may have none, one or many exercises.
+- `learning_item` is stable deck-local identity `(deck_id, member_key)`. Fork reuse does not create cross-deck item links or shared progress.
+- `item_revision` is immutable content selected through a deck manifest; unchanged blocks and media are reused. The diagram describes logical relations, not mandatory eager per-item rows at fork time.
+- `memory_objective` names what must be remembered. Independent directions may use separate objectives; visible progress aggregates at material level, with calibration still required.
+- `exercise_definition` has stable deck-local identity and immutable revisions. Explicit content/objective bindings are M:N: one item may have zero or many exercises; one exercise may use several materials from the same effective personal snapshot.
 - browsing renders the document. It is a mode, not an exercise and does not change study state.
 
 There are no `template`, `field`, mandatory deck language, or card-type entities in the native v2 model. Optional `lang` and `dir` attributes describe rendering of any block or span. They do not assert that a deck has exactly one source and target language.
@@ -129,13 +137,26 @@ The renderer registry owns four contracts for every node type:
 3. editor behaviour and clipboard/import conversion;
 4. compatibility tests for supported historical node versions.
 
-Unknown nodes are retained byte-for-byte and rendered as an explicit “unsupported content” placeholder. They must never be silently dropped on save. A new node type normally requires a new renderer and contract tests, not a database-wide content migration. A node migration is needed only when that node's persisted meaning changes.
+Unknown nodes retain their semantic JSON payload and stable identity and render as
+an explicit “unsupported content” placeholder. They must never be silently dropped
+on save. JSONB does not preserve whitespace, key order or duplicate keys; ingress
+rejects duplicate-key documents and checks number ranges. Do not claim byte-for-byte
+JSON preservation. If exact imported bytes are needed, retain an authorized source
+artifact separately. A new node type normally needs a renderer and contract tests,
+not a database-wide migration; migration is needed when persisted meaning changes.
 
 ProseMirror's schema-governed document tree and transaction model are a useful reference; Tiptap documents storage as JSON or HTML and warns that arbitrary unsupported HTML is not preserved. See the [ProseMirror guide](https://prosemirror.net/docs/guide/), [Tiptap JSON/HTML storage guide](https://tiptap.dev/docs/guides/output-json-html) and [Tiptap FAQ](https://tiptap.dev/docs/guides/faq). Adopting either package requires a small Angular integration prototype and separate permission before changing dependencies.
 
 ## Native block set
 
-### P0 document nodes
+### Target document nodes and launch capability gate
+
+This list is the format's capability envelope, not a requirement to ship every
+editor in #74. Text/structure and image/audio/video are the accepted baseline;
+#76 supplies real media. Ruby/RTL/math/code/Mermaid fixtures probe extensibility
+and rendering safety. Exact initial editable nodes remain an explicit #74 gate;
+Mermaid and richer diagram/source editors can follow later. Unsupported capability
+is visible and preserved, never silently approximated.
 
 - document, section, paragraph, heading, text and inline marks;
 - ordered/unordered lists, quotation, divider and table;
@@ -167,15 +188,34 @@ Markdown is an authoring surface, not the database contract:
 - toolbar and keyboard shortcuts insert native nodes or portable Markdown syntax;
 - media upload inserts an asset reference, never a long-lived public object URL;
 - unsupported rich nodes appear as fenced/directive syntax in source mode and remain editable through their node inspector;
-- long items scroll freely inside a bounded study shell; no arbitrary content-length UI truncation.
+- long materials scroll in Browse/full reveal; compact exercise tiles use explicitly bounded projections, not nested scrolling of an entire document.
 
 Three creation paths share the same document output:
 
 1. full editor;
-2. quick drafts, including batch text and voice capture with optional original audio;
+2. durable quick notes, including batch text and later audio capture; transcription is not a launch dependency;
 3. future AI generation/enhancement only after #77 is explicitly reactivated.
 
 The current block/template builder is not migrated or wrapped. Historical UX findings may inform requirements, but new components and persistence are designed from this contract.
+
+### Drafts, quick notes and exercise projections
+
+[Authoring workflows](../product/authoring-and-study-workflows.md) distinguish
+server `EditingDraft` (recoverable unpublished changes, expiry/limits, CAS for tabs)
+from durable `CaptureNote` (unfinished material, createdAt, no expiry or study state).
+Explicit save publishes a validated item revision for future sessions; it does not
+change an already presented question. Acknowledged drafts use durable storage, not
+Redis TTL as the only copy.
+
+An exercise display spec selects stable node IDs/excerpts or owns custom text/media
+labels, plus an explicit eligible pool. A vocabulary material can retain translations,
+three examples, a video link, an uploaded video and two pronunciations while matching
+shows only one word and its translation/audio. Grammar in the same deck is excluded
+unless the user intentionally authors a compatible binding. Flashcard prompt/reveal
+are two such projections, not two mandatory documents. Compact matching labels start
+with a proposed 80-grapheme text limit; excessive content produces actionable
+validation, not silent truncation or an inaccessible scrolling answer. Deleting a
+referenced node invalidates the affected exercise until repaired.
 
 ## Rendering and security boundary
 
@@ -219,7 +259,12 @@ Perfect Anki visual fidelity, full native editability and lossless APKG round-tr
 
 ## PostgreSQL, not MongoDB
 
-Keep PostgreSQL for relational identities, ACL, deck revisions, subscriptions, collaboration, attempts, payments and jobs. Store only the bounded immutable content document in `JSONB`, with selected relational/generated projections for search and routing.
+Keep PostgreSQL for relational identities, ACL, deck revisions, future sharing,
+attempts and jobs. Store bounded immutable semantic content blocks in `JSONB` with
+root manifests and relational projections for search/routing. Metadata-only deck
+saves reuse membership/exercise roots; item edits reuse unchanged blocks. Compression
+and TOAST are not cross-revision delta storage. Page sizing and exact schemas need
+the storage LLD and its write-amplification/read-bound tests before implementation.
 
 `JSONB` is decomposed for processing and supports indexing according to the official [PostgreSQL JSON types documentation](https://www.postgresql.org/docs/current/datatype-json.html). MongoDB would still require references or multi-document transactions for Mnema's many-to-many graph. MongoDB's own guidance recommends references for high-cardinality and many-to-many data and notes the cost of distributed transactions: [data-modeling practices](https://www.mongodb.com/docs/manual/data-modeling/best-practices/). Adding a second operational database would move, not remove, the difficult invariants.
 
@@ -253,7 +298,9 @@ Offline review is not P0, but the v2 IDs and API must not make it impossible:
 - attempts use client-generated event IDs and idempotent submission;
 - the device keeps an append-only pending attempt log and applies server-confirmed study state;
 - deleted/unavailable source content has tombstones and a retention window;
-- v1 offline scope is browsing and review of downloaded decks, not collaborative editing;
+- the first future native offline scope is browsing and review of downloaded decks, not collaborative editing; current delivery is web-only;
+- iOS/Android share account/progress APIs; a manifest pins content/media hashes and is installed atomically, with bounded downloads and explicit unavailable assets;
+- scheduled attempts and replay/practice keep their server-authorized mode through sync; extra practice cannot become a scheduler update on reconnect;
 - later editing submits a draft against an explicit base revision and receives a normal conflict if stale.
 
 Do not introduce CRDT/Yjs history before real-time or concurrent offline editing is a validated requirement. Tiptap's collaboration documentation notes that serialized JSON alone is not a substitute for Yjs update history; that is a separate storage and operations commitment.
@@ -273,5 +320,5 @@ Do not introduce CRDT/Yjs history before real-time or concurrent offline editing
 
 1. Choose the editor engine only after a spike proves Angular integration, IME/ruby/RTL, mobile selection, large-document performance and accessible preview.
 2. Define the exact P0 node JSON schemas and size/depth limits.
-3. Decide whether a semantic answer change automatically marks an objective for relearning or only warns the user; never silently erase history.
+3. Implement the accepted answer-change rule: preserve state/history, with explicit user-requested learning restart. Select the material-level progress projection with #75; do not reopen automatic revalidation.
 4. Define the first supported Anki compiler pattern set and quarantine TTL after native launch; unsupported content must remain explicit.

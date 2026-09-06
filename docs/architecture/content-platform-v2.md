@@ -5,7 +5,7 @@ artifact:
   title: "Mnema greenfield content and study platform"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-08-30"
+  updated_at: "2026-09-06"
   owners: ["project-owner"]
   source_tasks: ["project architecture and product review"]
   supersedes: []
@@ -18,26 +18,35 @@ artifact:
   unresolved_questions:
     - "Which exercise directions deserve independent memory objectives after the first instrumented cohort?"
     - "What compact/aggregate review retention policy meets product analytics needs before archival is required?"
-    - "After an expected answer/objective change, should one near-term revalidation be scheduled automatically or require confirmation?"
     - "Should multi-target attempts be a P1 feature, or should P0 restrict every scheduler-affecting attempt to one assessed objective?"
   evidence:
     - "backend/services/core schema, services, repositories and tests at 8e0c83d"
     - "official Git and Flyway documentation, accessed 2026-08-15"
+    - "owner product clarification and Learning API runtime guide, 2026-09-06"
+    - "official Git, PostgreSQL, Shopify engineering and GitLab architecture sources, accessed 2026-09-06"
 ---
 
 # Greenfield content and study platform
 
 This document is a design proposal, not an implemented schema. Owner constraints are accepted inputs; relational details remain proposed until their epic is refined. The target directly replaces v1 on canonical routes. It has no `/v2`, dual read/write, legacy adapter, old scheduler fallback or retained full legacy snapshot.
 
+The 2026-09-06 owner clarification accepts personal-deck launch, deck-local items
+and progress, custom exercise presentations, durable authoring drafts, unfinished
+quick notes, and repeat practice with no scheduler writes. Future catalog/forks,
+selective updates (manual pull is recommended), detailed conflict resolution and upstream contributions
+must remain possible. [Revision storage and runtime boundaries](./revision-storage-and-runtime-boundaries.md)
+supersedes earlier physical full-item snapshots, unbounded historical replay and
+cross-fork logical item identity assumptions. Its storage details are proposed.
+
 ## Requirements and workload
 
 The target model must:
 
-1. Reuse shared deck content across subscribers and forks.
-2. Store only changed content in a new deck revision.
-3. Preserve stable identity when text, labels or ordering change.
+1. Start with personal decks and preserve physical sharing for future forks.
+2. Reuse unchanged item blocks, membership and media in a new revision.
+3. Preserve stable deck-local identity when text, labels or ordering change.
 4. Keep personal notes, edits, hides and progress private and sparse.
-5. Make subscribe, fork and export three different operations.
+5. Make future editable fork/clone and streamed export distinct operations; subscription tracking is a future option.
 6. Support pinned/manual updates and explicit conflicts.
 7. Add single- and multi-item exercise types without copying content or coupling every exercise to a card template.
 8. Represent rich multilingual, mathematical, code, diagram and media content without executing user code.
@@ -82,17 +91,30 @@ This makes event retention, compact columns and rollups a more important long-te
 
 | Candidate | Benefits | Costs and failure modes | Decision |
 |---|---|---|---|
-| Immutable item content plus full membership list per release | Simple historical SQL and reads | Still `O(releases × cards)` membership and large commits | Possible transition, not target |
-| Immutable item revisions plus release changes and head projection | `O(head items + item revisions + changes)`, fast current reads, O(1) subscribe and O(1) synchronous fork creation | Fork base traversal/materialization, projection rebuild and conflict semantics must be explicit | **Recommended** |
+| Full immutable item content plus full membership per release | Simple historical SQL and reads | Repeats unchanged document payload and `O(releases × items)` membership | Not the general storage target |
+| Stable-node deltas, head projection and bounded checkpoints | Compact usual edits and simple current SQL | Checkpoint/fork materialization needs budgets; replay depth must be capped | Viable simpler alternative with explicit revised decision |
+| Immutable bounded content blocks and persistent paged manifests | Reuses unchanged document blocks and membership pages; history-independent reads and cheap future fork | Page splitting, ordering, projection parity and GC require dedicated tests | **Proposed target** |
 | Literal Git/JGit/Merkle repository as primary store | Native objects, commits, refs and structural sharing | Poor fit for ACL, SQL search, moderation, transactions and common queries; extra GC/backup/operations | Reject for now |
 
-Git is useful as a semantic model: immutable objects, parented commits and refs. A literal Git repository is not required. Git itself models commits as references to a tree and parent commits; see the official [Git data model](https://git-scm.com/docs/gitdatamodel.html).
+Git is useful as a semantic model: immutable objects, parented commits and refs.
+Logical snapshots do not imply complete physical copies. Git initially stores
+changed blobs and later may delta-compress them in packs; it does not always store
+only changed characters. Mnema's proposed block/page reuse, PostgreSQL caveats and
+bounded-operation contract are in [revision storage](./revision-storage-and-runtime-boundaries.md).
 
 Do not expose hashes as entity identity. Identical text can represent separate learning units, and equality of private content must not become visible across users.
 
 ## Context and components
 
-The current six-deployable topology is not preserved. Identity and User become one Identity & Account deployable; content/library/study begin as modules of one Learning API. Separate media/import/AI workers appear only when their later epic introduces an actual resource, failure or trust boundary. This topology is a source boundary, not an invitation to recreate current remote calls inside one process.
+Identity and User source is already consolidated into Identity & Account. The
+[Learning API runtime shell](../../backend/services/learning/guide.md) exists with
+platform contracts, but its content/library/study product modules are not yet
+implemented. Legacy core/media/import/AI remain replacement input. The selected
+target puts content/library/study in one modular Learning API; separate
+media/import/AI and bulk workers receive independent capacity when their capability
+is introduced. This lets a busy importer scale without multiplying API replicas.
+The distinction, real-project evidence and remaining database/failure boundaries
+are explained in [runtime rationale](./revision-storage-and-runtime-boundaries.md#runtime-decision-and-evidence).
 
 ```mermaid
 flowchart LR
@@ -117,8 +139,8 @@ Workers may write only integration-owned inbox/job tables or call an application
 
 ### Proposed domain modules
 
-- `catalog`: shared decks, structured learning items, publication and public search.
-- `library`: subscriptions, personal overlays, forks and upstream conflicts.
+- `catalog`: personal decks, structured learning items and publication; later shared discovery.
+- `library`: personal ownership and access; later forks, subscriptions and upstream conflicts.
 - `study`: exercise selection, memory state, review events and aggregate progress.
 - `integration`: idempotent commands/inbox for capabilities introduced by later epics.
 - `identity-account` (separate deployable): credentials, issuer, federated identity, account/profile and avatar ownership.
@@ -127,26 +149,29 @@ No Kafka or additional database is required for the first replacement. PostgreSQ
 
 ## Data ownership and contracts
 
-### Shared content and releases
+### Content identity and immutable releases
+
+The following is a conceptual schema. Item/exercise keys are deck-local and may
+be resolved through an inherited immutable manifest without an eager entity row
+for every item at fork time. The physical schema must preserve that distinction.
 
 ```mermaid
 erDiagram
     DECK ||--o{ DECK_REVISION : publishes
-    DECK_REVISION o|--o{ DECK : bases_fork
-    DECK_REVISION ||--o{ DECK_ITEM_CHANGE : contains
-    LEARNING_ITEM ||--o{ ITEM_REVISION : evolves
-    LEARNING_ITEM ||--o{ DECK_ITEM_CHANGE : affected_by
-    ITEM_REVISION o|--o{ DECK_ITEM_CHANGE : selects
-    DECK ||--o{ DECK_HEAD_ITEM : projects
-    LEARNING_ITEM ||--o{ DECK_HEAD_ITEM : appears_as
+    DECK_REVISION }o--|| DECK_MANIFEST : selects
+    DECK_MANIFEST ||--o{ DECK_MEMBER : resolves
+    DECK_MEMBER }o--|| ITEM_REVISION : selects_content
+    ITEM_REVISION }o--|| CONTENT_MANIFEST : selects
+    CONTENT_MANIFEST }o--o{ CONTENT_BLOCK : reuses
+    DECK_REVISION }o--|| EXERCISE_MANIFEST : selects
 
     DECK {
         uuid deck_id PK
         uuid owner_id
         text visibility
         uuid head_revision_id
-        uuid base_deck_id
-        uuid base_revision_id
+        uuid upstream_deck_id
+        uuid upstream_base_revision_id
         bigint row_version
     }
     DECK_REVISION {
@@ -154,128 +179,133 @@ erDiagram
         uuid deck_id FK
         bigint sequence
         uuid parent_revision_id FK
+        uuid membership_root_id FK
+        uuid exercise_root_id FK
         jsonb metadata_snapshot
         uuid command_id UK
     }
-    LEARNING_ITEM {
-        uuid item_id PK
+    DECK_MEMBER {
+        uuid deck_id
+        uuid member_key
+        uuid item_revision_id FK
+        text rank
+        text lifecycle
     }
     ITEM_REVISION {
         uuid item_revision_id PK
-        uuid item_id FK
+        uuid content_root_id FK
         int format_version
-        jsonb content_document
-        text content_hash
-        text plain_text_projection
+        uuid reuse_scope_id
     }
-    DECK_ITEM_CHANGE {
-        uuid change_id PK
-        uuid revision_id FK
-        int ordinal
-        uuid item_id FK
-        text operation
-        uuid item_revision_id FK
-        text rank
-        jsonb contextual_tags
-    }
-    DECK_HEAD_ITEM {
-        uuid deck_id FK
-        uuid item_id FK
-        uuid item_revision_id FK
-        text rank
-        jsonb contextual_tags
+    CONTENT_BLOCK {
+        uuid block_id PK
+        uuid reuse_scope_id
+        jsonb payload
+        text internal_checksum
     }
 ```
 
-Required relational constraints include:
+A logical `LearningItem` has identity `(deck_id, member_key)`. The manifest
+membership binds that item to an immutable content revision. A revision payload
+can be reused by a fork's different logical item; it is not a global knowledge
+identity. API IDs/authorization resolve both deck and member, and all study keys
+remain local to that personal deck. The native document returned by an item read
+is assembled from bounded blocks, with no replay of its prior revisions.
 
-- `DECK_REVISION UNIQUE(deck_id, revision_id)`, `UNIQUE(deck_id, sequence)` and a composite parent FK that keeps a parent revision in the same deck;
-- `CHECK ((base_deck_id IS NULL) = (base_revision_id IS NULL))` plus a composite base FK `(base_deck_id, base_revision_id)` to `deck_revision(deck_id, revision_id)`;
-- `DECK_ITEM_CHANGE` is ordered uniquely within a revision; `ADD`/`UPDATE` select the new item revision and `REMOVE` pins the exact previously selected revision being removed;
-- `DECK_HEAD_ITEM PRIMARY KEY(deck_id, item_id)` and deterministic tie-breaking for equal ranks;
-- `ITEM_REVISION UNIQUE(item_id, item_revision_id)` for composite lineage references.
+Required relational/domain constraints include:
 
-`deck_head_item` is a synchronously updated, rebuildable current-head projection. In v2.0, historical reads may replay the base plus changes and are not promised to have bounded depth. If measured chain depth or read latency crosses a budget, add asynchronous immutable `deck_checkpoint(revision_id, deck_id, status, built_at, item_count, checksum)` plus `deck_checkpoint_item(revision_id, item_id, item_revision_id, rank, contextual_tags)`. Storage then becomes `O(head items + item revisions + changes + checkpoint count × checkpoint size)`; checkpoints are not free.
+- `DECK_REVISION UNIQUE(deck_id, revision_id)`, `UNIQUE(deck_id, sequence)`
+  and a composite primary-parent FK constrained to the same deck;
+- upstream deck/base pointers must both be absent or point to the exact source
+  revision; future merge/provenance edges are separate from the primary parent;
+- membership keys are unique in a manifest and ordered with deterministic rank
+  tie-breaking; every selected revision/block lies in an authorized reuse scope;
+- bindings resolve member/objective/exercise keys through the same deck namespace;
+  a bare physical revision ID cannot grant access or merge progress;
+- a current `deck_head_item` projection, when used, has key
+  `(deck_id, member_key)` and is rebuildable from an immutable root.
 
-Publication is atomic:
+A metadata-only save writes a small deck revision and reuses item/exercise roots.
+A document edit writes changed blocks and affected manifest pages. No publication
+copies every unchanged document or eagerly materializes every membership.
+The change ledger records audit/update semantics; common and historical reads use
+bounded root/page traversal. SQL search/eligibility projections must expose the
+same root generation as the read contract.
 
-1. Lock the deck head or compare-and-set `row_version`.
-2. Deduplicate by `command_id`.
-3. Insert immutable item/deck revisions and changes.
-4. Update the head projection.
-5. Advance `deck.head_revision_id`.
+Publication checks an expected head and command identity, prepares and validates
+bounded content, then atomically inserts the immutable revision, updates/switches
+the ready projection and advances the head with its command receipt. Large edits,
+rebalances and index generations use durable jobs with a short final transaction.
+Detailed budgets, staged-object recovery and read complexity are in
+[revision storage](./revision-storage-and-runtime-boundaries.md#publication-budgets-and-concurrency).
 
-A published revision is never mutated. The current `deck_update_sessions` path violates this invariant because an old operation can update its target version in place ([CardService.java](../../backend/services/core/src/main/java/app/mnema/core/deck/service/CardService.java#L1512)).
+`deck_revision` contains only saved/published revisions. In the personal editor,
+Save makes validated material available to future learning; public catalog
+publication is a separate later permission/discovery operation. Mutable server
+drafts have their own identity, base revision, version and expiry policy. Durable
+quick notes are unfinished material until completed, have `created_at`, and never
+expire through draft/cache TTL. They have no scheduler state. The exact draft
+limits and lifecycle are in [authoring workflows](../product/authoring-and-study-workflows.md).
 
-`deck_revision` contains only fully published releases; it has no mutable lifecycle status. Draft work is separate mutable `deck_draft`/`deck_draft_change` state. Publication consumes a draft and creates an immutable `deck_revision`. Withdrawal or moderation changes deck/release availability without editing revision content.
+### Future forks, selective updates and sparse personal state
 
-### Subscriptions, forks and sparse overlays
+Launch serves a user's own decks. A future editable fork/clone creates one private
+deck namespace and points to existing immutable membership/exercise roots. It
+stores the exact upstream revision and a namespace mapping rule. Reusing inherited
+member keys in the new namespace avoids both logical cross-deck links and an
+`O(N)` synchronous mapping insert. New private edits advance only the fork head;
+progress is independent and initialized lazily. Source deletion cannot invalidate
+reachable fork blocks.
 
-```mermaid
-erDiagram
-    DECK ||--o{ COLLECTION_SUBSCRIPTION : subscribed_to
-    COLLECTION_SUBSCRIPTION ||--o{ ITEM_OVERLAY : customizes
-    COLLECTION_SUBSCRIPTION ||--o{ SUBSCRIPTION_ITEM_ADDITION : adds
-    COLLECTION_SUBSCRIPTION ||--o{ SUBSCRIPTION_ITEM_PIN : keeps_old
-    LEARNING_ITEM ||--o{ ITEM_OVERLAY : overlays
-    ITEM_REVISION ||--o{ ITEM_OVERLAY : based_on
+A future subscription is a separate tracking option, not a launch requirement or
+a mandatory second identity for an owned deck. Private overlays, if exposed later,
+must be resolved into an immutable effective snapshot before study. Export streams
+an interchange artifact; it does not require copying all content inside the DB.
 
-    COLLECTION_SUBSCRIPTION {
-        uuid subscription_id PK
-        uuid user_id
-        uuid source_deck_id FK
-        uuid applied_revision_id FK
-        text tracking_policy
-        text display_name
-    }
-    ITEM_OVERLAY {
-        uuid subscription_id FK
-        uuid item_id FK
-        uuid base_item_revision_id FK
-        jsonb content_patch
-        jsonb tag_override
-        text personal_note
-        boolean hidden
-        text conflict_state
-        bigint row_version
-    }
-    SUBSCRIPTION_ITEM_ADDITION {
-        uuid subscription_id FK
-        uuid item_id FK
-        uuid item_revision_id FK
-        text rank
-        timestamptz created_at
-    }
-    SUBSCRIPTION_ITEM_PIN {
-        uuid subscription_id FK
-        uuid item_id FK
-        uuid item_revision_id FK
-        text reason
-    }
-```
+Manual pull shows separate deck metadata, material and exercise changes. Compare
+the last resolved source base, proposed source and private head; apply only
+approved conflict-free/dependency-valid changes. Keep private content when edits
+conflict. Persist per-unit resolved upstream bases and explicit keep/conflict
+choices, because selective pull cannot be represented by one global pointer.
+The plan binds exact heads and is invalidated by intervening edits. Applying it
+is idempotent and creates a new private revision without duplicate members.
 
-- **Subscribe** creates one subscription pointer and no per-card rows. `deck_revision` admits only published releases, and `FOREIGN KEY (source_deck_id, applied_revision_id) REFERENCES deck_revision(deck_id, revision_id)` guarantees that the applied release belongs to the source deck; `tracking_policy` controls when an updater proposes advancing it.
-- **Fork** synchronously creates a new editable deck identity whose `base_revision_id` is the semantic membership base of its first revision. Effective membership is the base revision plus the fork's own changes, so immutable item revisions are reused without inserting N membership rows. Initial reads may traverse or asynchronously materialize that base. Limit lineage depth or checkpoint/materialize it after a measured threshold.
-- **Clone/export** physically detaches content only when explicitly requested.
-- A custom private item in a subscription is a real `learning_item` referenced by sparse `subscription_item_addition`; it does not mutate the source deck. An alternative product action can explicitly convert the subscription into a private fork.
+Later conflict UI can combine selected parts of own/upstream material. Upstream
+contribution proposals are a desired future target, based on explicit selected
+changes and exact provenance; they are not part of personal-deck launch. The
+earlier statement that forks never submit upstream is superseded.
 
-The same semantic item keeps one `item_id` across fork lineages; a fork selects an explicit immutable item revision through membership. There is never an API for “latest item revision by item ID”. Authorization resolves revision access through an accessible deck/subscription lineage.
-
-Updating a subscription uses a three-way comparison: old applied source, proposed source and the overlay's `base_item_revision_id`. Disjoint stable-node changes can rebase; changes to the same semantic node or exercise answer contract become explicit conflicts. Checksum fallback is not identity. The v2 contract may still apply conflict-free item changes while leaving explicit per-item conflicts pinned to their prior source revisions; the update plan and final mixed state are both durable and visible. A single global pointer is therefore insufficient after a partial update: store the accepted source revision plus sparse `subscription_item_pin` rows for unresolved/kept-old items.
-
-Revisions/item revisions referenced by a subscription, fork base, overlay, moderation record or retention hold cannot be purged. Source deletion cannot break an existing fork. Purge must first archive or rebind dependents according to an explicit policy.
-
-`ITEM_OVERLAY` and `SUBSCRIPTION_ITEM_ADDITION` both use `(subscription_id, item_id)` as their primary key. Their `(item_id, item_revision_id)` references are composite lineage FKs, and a subscription/item addition cannot name an item revision belonging to another semantic item.
+Reachability protects retained history, forks, pull bases, drafts, attempts,
+replay and bounded offline leases. Purge removes only unreachable shared storage
+under a documented policy; a deleted source owner does not imply cascade deletion
+of already-authorized fork content. See the
+[retention contract](./revision-storage-and-runtime-boundaries.md#retention-and-garbage-collection).
 
 ### Visibility, collaboration and publication review
 
-`deck.visibility` is an allowlisted enum: `PUBLIC`, `REQUEST_RESTRICTED`, or `PRIVATE`. Restricted access uses explicit membership/request state, not an unguessable URL as authorization. `deck_collaborator(deck_id, user_id, role, status)` supports owner/editor/reviewer roles with least privilege. Publishing may require an approved `deck_publication_review` bound to the exact immutable draft checksum/base revision; changing the draft invalidates approval.
+Private ownership is the initial behavior. Preserve an extensible visibility
+policy for later `PUBLIC`, `REQUEST_RESTRICTED` and `PRIVATE` decks; restricted
+access requires explicit permission, not an unguessable URL. Catalog, likes,
+recommendations and community onboarding are future product phases, not primary
+navigation requirements for the current frontend.
 
-Catalog and author-profile counts are rebuildable aggregates, not transactional counters trusted for ACL or billing. A public deck may be withdrawn from discovery, but revisions reachable by existing subscriptions remain available according to retention policy. Deleting an author therefore cannot cascade through subscribed content; authorship becomes a tombstoned identity where required. Forks/clones never submit changes upstream in v2.
+Future collaborator roles and publication review bind approval to the exact
+draft/base checksum; changing approved material invalidates that approval.
+Discovery/author counts are rebuildable aggregates, never ACL or entitlement
+authority. Withdrawal from discovery and permission to retain an existing fork
+are distinct operations. Financial limits and downgrade retention belong to
+product/entitlement policy, not the physical deduplication layer.
 
 ### Structured content instead of templates and fields
 
 The owner decision removes user-facing templates, arbitrary fields and mandatory deck language pairs from the native model. An item revision stores a bounded, validated, versioned document tree. A card-like front/reveal view is one exercise projection over stable node IDs rather than the storage shape.
+
+The owner may organize an item as a long note containing a word, translation,
+grammar, examples, links and several media assets. Named sections/node selections
+provide that freedom without imposing one deck-wide field schema. An exercise
+binding can select a small excerpt or own custom compact text/audio/image display.
+Front/reveal recall requires explicitly authored or confirmed sides; the platform
+does not pretend every document naturally has two sides.
 
 The document supports semantic ruby/furigana, bidi metadata, math, code, diagrams, drawings and media through registered nodes. It never executes user JavaScript or arbitrary CSS. Markdown is an authoring/interchange view; Anki HTML/CSS must be compiled into registered native nodes or reported unsupported and is never executed by a legacy renderer. The complete contract, editor behaviour, security boundary, media references and offline envelope are defined in [learning-content-format-v2.md](./learning-content-format-v2.md).
 
@@ -294,13 +324,14 @@ erDiagram
     OBJECTIVE_REVISION ||--o{ EXERCISE_OBJECTIVE_BINDING : evidenced_by
     DECK_REVISION ||--o{ DECK_EXERCISE_POLICY : enables
     EXERCISE_REVISION ||--o{ DECK_EXERCISE_POLICY : selected_by
-    COLLECTION_SUBSCRIPTION ||--o{ STUDY_STATE : owns
+    DECK ||--o{ STUDY_STATE : scopes
     MEMORY_OBJECTIVE ||--o{ STUDY_STATE : scheduled_as
     EXERCISE_ATTEMPT ||--|{ ATTEMPT_EVIDENCE : produces
     OBJECTIVE_REVISION ||--o{ ATTEMPT_EVIDENCE : evaluates
 
     EXERCISE_DEFINITION {
         uuid exercise_definition_id PK
+        uuid deck_id
         text type
     }
     EXERCISE_REVISION {
@@ -313,14 +344,17 @@ erDiagram
     }
     EXERCISE_CONTENT_BINDING {
         uuid exercise_revision_id FK
+        uuid member_key
         uuid item_revision_id FK
         text role
         text node_id
+        jsonb display_spec
         int ordinal
     }
     MEMORY_OBJECTIVE {
         uuid objective_id PK
-        uuid item_id FK
+        uuid deck_id
+        uuid member_key
         text objective_key
     }
     OBJECTIVE_REVISION {
@@ -343,7 +377,8 @@ erDiagram
         jsonb eligibility
     }
     STUDY_STATE {
-        uuid subscription_id FK
+        uuid account_id
+        uuid deck_id FK
         uuid objective_id FK
         text algorithm_id
         text algorithm_version
@@ -355,9 +390,12 @@ erDiagram
     }
     EXERCISE_ATTEMPT {
         uuid attempt_id PK
-        uuid subscription_id FK
+        uuid account_id
+        uuid deck_id FK
         uuid deck_revision_id FK
+        uuid effective_snapshot_id
         uuid exercise_revision_id FK
+        text session_mode
         text payload_hash
         jsonb raw_response
         text evaluator_version
@@ -376,22 +414,59 @@ erDiagram
     }
 ```
 
-Required constraints include `UNIQUE(item_id, objective_key)`, immutable objective/exercise revisions, unique binding ordinals/roles, lineage FKs from every revision to its stable entity, and `STUDY_STATE PRIMARY KEY(subscription_id, objective_id)`. `EXERCISE_ATTEMPT.attempt_id` is a client-generated global idempotency key. Reuse with the same owner and payload hash returns the stored result; conflicting reuse returns an idempotency conflict.
+Required constraints include `UNIQUE(deck_id, member_key, objective_key)`,
+immutable objective/exercise revisions, unique binding ordinals/roles, namespace
+validation for all referenced members, and
+`STUDY_STATE PRIMARY KEY(account_id, deck_id, objective_id)`. Objective/exercise
+keys inherited by a fork resolve in its deck namespace, like member keys.
+`EXERCISE_ATTEMPT.attempt_id` is a client-generated global idempotency key. Reuse
+with the same owner and payload hash returns the stored result; conflicting
+reuse returns an idempotency conflict.
 
-`ExerciseDefinition` is stable identity; `ExerciseRevision` pins prompt, answer and evaluator policy. `ExerciseContentBinding` creates the M:N relation requested by the product and uses allowlisted roles `ASSESSED`, `CUE`, `OPTION`, `CONTEXT`. `ExerciseObjectiveBinding` identifies exactly which objectives may receive evidence. A deck-revision policy enables compatible exercises without copying their definitions.
+`ExerciseDefinition` is stable deck-local identity; `ExerciseRevision` pins prompt,
+answer and evaluator policy. `ExerciseContentBinding` creates the M:N relation and
+uses allowlisted roles `ASSESSED`, `CUE`, `OPTION`, `CONTEXT`. Its versioned display
+spec selects stable node excerpts or custom bounded labels/media. Matching pools
+contain only user-enabled, compatible bindings: a mixed vocabulary/grammar deck
+does not automatically place grammar notes into word matching. Explicitly authored
+compatible labels can include them. Missing/deleted selected nodes invalidate the
+affected configuration until repaired; they never fall back to rendering a whole
+document into a compact tile. UI-specific size limits and accessible validation
+belong to the exercise/content contracts. `ExerciseObjectiveBinding` identifies
+exactly which objectives may receive evidence. A deck-revision policy enables
+compatible exercises without copying their definitions.
 
-Study state is created lazily for a `MemoryObjective`, not for a renderer. Forward/reverse objectives remain independent. Several exercise kinds can emit evidence for one shared state, so a renderer change does not reset memory. In P0 an objective belongs to one `LearningItem`; cross-item objectives remain deferred until a real case cannot be represented as several per-item outcomes.
+Study state is created lazily for a `MemoryObjective`, not for a renderer. If
+independent forward/reverse objectives are enabled, their states remain independent.
+Several exercise kinds can emit evidence for one shared state, so a renderer
+change does not reset memory. In P0 an objective belongs to one `LearningItem`;
+cross-item objectives remain deferred until a real case cannot be represented as
+several per-item outcomes.
+
+Product progress is visible at material level, scoped to its personal deck. The
+numerical indicator is an explainable projection of evidence/state, not a claim
+that a document is permanently “100% learned.” Independent directional objectives
+remain an engineering/calibration choice under the exercise contract, not a new
+cross-deck knowledge entity. Editing a correct answer preserves existing history
+and scheduling state with no automatic reset or revalidation. An explicit user
+restart resets future scheduling for the chosen material, records the action and
+retains previous attempts.
 
 ### Multi-item attempt semantics
 
-- Candidate bindings come only from one pinned deck revision. `OPTION`/`CONTEXT` exposure never changes progress.
+- Candidate bindings come only from one pinned effective personal deck snapshot. `OPTION`/`CONTEXT` exposure never changes progress.
 - A focal matching exercise may pin one `ASSESSED` item plus several options. A group matching submission may return several `ATTEMPT_EVIDENCE` rows, but each row needs an observable response for its own objective.
 - Aggregate `4/4` feedback is not copied to all items. If a mechanic cannot produce valid per-objective evidence, it is feedback-only and rejected as scheduler-affecting.
 - A directional relation updates only its declared direction. Showing or matching one pair does not automatically credit the reverse objective.
 - For P0, prefer one assessed objective per attempt. A later atomic multi-target submission locks study-state rows in deterministic objective-ID order and commits all transitions or none; it never leaves partial progress on failure.
-- The full presented set is immutable for the attempt. A concurrent deck edit affects the next attempt, not the one already started.
+- The full presented set is immutable for the attempt. A concurrent deck edit affects future sessions, not a session already pinned to its effective snapshot.
 
-Do not select neighbors with `ORDER BY random()` over a large head. Start with indexed eligibility by `(deck_revision_id, capability/tag/objective kind, item_id)` and deterministic hash/cursor sampling. Add a rebuildable candidate projection or reservoir only when query plans show it is needed. Semantic distractor quality remains a product validation problem, not something row adjacency proves.
+Do not select neighbors with `ORDER BY random()` or compute/sort a hash for every
+member over a large head. Use explicitly eligible, revision-pinned candidate
+indexes and the bounded seeded ordinal/page traversal in
+[session reads](./revision-storage-and-runtime-boundaries.md#session-reads-and-large-decks).
+If the filtered index is not ready, expose preparation rather than hide an
+unbounded scan. Semantic distractor quality remains a product validation problem.
 
 ### Evidence and scheduler boundary
 
@@ -406,9 +481,20 @@ Browse, cancel, timeout and evaluator failure create no scheduler transition. Re
 
 Use one canonical versioned scheduler-reducer interface over normalized evidence. Do not bind an algorithm to an exercise type: that duplicates memory state and makes cross-exercise learning incoherent. Different algorithms/configs remain possible through a durable assignment and reducer version, so A/B tests compare policies without rewriting content or UI. Record experiment ID/version, assignment unit and reducer/config on every transition. Assignment should be stable at account/deck or account/objective level; avoid changing it mid-history without an explicit migration/analysis boundary.
 
-Track actual first exposure sparsely (for example `study_exposure(subscription_id, objective_id, introduced_at, source_revision_id)`) rather than relying on one reorder-sensitive cursor. A monotonic introduction key may optimize selection, but source insertion/reorder must not silently skip unseen items.
+Track actual scheduled first exposure sparsely (for example
+`study_exposure(account_id, deck_id, objective_id, introduced_at, source_revision_id)`)
+rather than relying on one reorder-sensitive cursor. Practice/replay do not update
+canonical exposure. Source insertion/reorder must not silently skip unseen items.
 
-Each attempt records all item/exercise revisions actually shown, evaluator version, normalized evidence and scheduler/config assignment so the transition remains explainable after content changes. A content change policy classifies presentation-only edits (normally keep state) versus semantic-answer changes (retain history and schedule explicit revalidation by an accepted rule).
+Each attempt records all item/exercise revisions actually shown, evaluator version,
+normalized evidence and scheduler/config assignment so the transition remains
+explainable after content changes. Both presentation and answer edits retain state;
+there is no automatic revalidation. Normal scheduled sessions, today's replay and
+whole-deck practice are one product study experience with different server-enforced
+effects: replay/practice never write canonical scheduler state, due dates, streaks
+or experiment outcomes. They may record separately classified diagnostic events.
+The post-session screen permits leaving, replaying today's completed selection or
+practicing the deck beyond today's selection. Preparation/prefetch stays bounded.
 
 ## API boundaries
 
@@ -416,13 +502,13 @@ The exact URL names are an LLD concern, but the canonical replacement API must p
 
 | Operation | Contract |
 |---|---|
-| Read deck | paginated head/manifest pinned to an explicit `deckRevisionId`; cursor is opaque and stable for that revision |
-| Read item | explicit `itemRevisionId`, document `formatVersion`, exercise revisions and capability set; no implicit “latest by item ID” |
+| Read deck | paginated manifest pinned to an explicit effective personal snapshot; cursor is opaque and stable for that snapshot |
+| Read item | deck namespace + item key + explicit selected `itemRevisionId`, document `formatVersion`, exercise revisions and capability set; no unscoped “latest by item ID” |
 | Save draft | mutable draft + `If-Match`/row version; accepts client-generated command ID and stable node IDs |
 | Publish | command against expected deck head; validates all node/media/exercise references and returns one immutable revision |
-| Plan subscription update | pure three-way diff with summary, safe changes and conflicts; no writes |
-| Apply update | idempotent command referencing the exact plan/source revision and explicit conflict choices/pins |
-| Start study | requires one `subscriptionId/deckId`; returns a bounded prefetch batch pinned to revision/exercise runtime |
+| Plan upstream update (future) | pure three-way diff with summary, safe changes, dependency closure and conflicts; no writes |
+| Apply upstream update (future) | idempotent command referencing the exact compared heads/plan and explicit choices; a new private revision |
+| Start study | requires one personal `deckId` and explicit scheduled/replay/practice mode; returns a bounded batch pinned to effective snapshot/exercise runtime |
 | Submit attempt | client event ID + payload hash; duplicate retry returns the stored outcome, conflicting reuse returns 409 |
 | Media upload | initiate/complete protocol, server-verified hash/MIME/size and logical asset result; object key is not an ACL |
 | Offline sync | opaque per-user cursor, bounded changes/tombstones and idempotent command/attempt batch |
@@ -447,14 +533,19 @@ into a v1 remediation backlog unless a defect blocks the greenfield cutover itse
 
 ### Idempotent review
 
-`REVIEW_EVENT.event_id` is a client-generated idempotency key. Within one transaction:
+`EXERCISE_ATTEMPT.attempt_id` is a client-generated idempotency key. For a scheduled
+attempt, within one transaction:
 
 1. Insert missing study state with `ON CONFLICT DO NOTHING`.
 2. Lock the state row.
-3. If `event_id` already exists for the same user and payload hash, return its stored transition result; if the owner or payload differs, return an idempotency conflict.
-4. Insert the event and update state.
+3. If `attempt_id` already exists for the same account/deck/mode and payload hash,
+   return its stored transition result; if scope or payload differs, return an
+   idempotency conflict.
+4. Insert the attempt/evidence and update state atomically.
 
 This closes the current first-answer race and duplicate retry risk.
+Practice/replay uses its mode-specific receipt path and must not create, lock for
+update or change canonical study-state rows. Mode validation precedes reduction.
 
 ### Later integration commands
 
@@ -472,9 +563,9 @@ Remote service calls are not distributed transactions. When media/import/AI is i
 
 | Signal | Initial action | Scale trigger for a larger mechanism |
 |---|---|---|
-| Deck history | Changes + synchronous head projection | Historical reconstruction p95 or fork-base depth justifies checkpoints/materialization |
+| Deck history | Shared immutable blocks/pages + bounded head projection | Measured page read/write cost guides caches and page sizing; unbounded history replay is never the baseline |
 | Review log | Compact append-only rows + aggregate tables | Measured table/index size and maintenance justify time partitioning/archive |
-| Study state | Partial index on `(subscription_id, next_due) WHERE suspended = false` (include user only if ownership is not derivable) | Hot tenants, lock waits or write IOPS exceed one primary's measured envelope |
+| Study state | Partial index on `(account_id, deck_id, next_due) WHERE suspended = false` | Hot tenants, lock waits or write IOPS exceed one primary's measured envelope |
 | Jobs | PostgreSQL queue with reclaim/idempotency | Sustained queue age cannot recover within SLO after adding bounded workers |
 | Search | Head/current projection only | Measured GIN update/read cost or relevance requires a dedicated engine |
 
@@ -502,13 +593,13 @@ separate from bulky/raw response retention.
 
 Initial hot indexes:
 
-- due pool: partial `(subscription_id, next_due, objective_id)` where not suspended;
-- current deck: `(deck_id, rank, item_id) INCLUDE (item_revision_id)`;
+- due pool: partial `(account_id, deck_id, next_due, objective_id)` where not suspended;
+- current deck: `(deck_id, rank, member_key) INCLUDE (item_revision_id)`;
 - exercise policy/candidates: `(deck_revision_id, enabled, exercise_revision_id)`;
 - bindings: primary keys by revision/binding key plus reverse indexes on
   `item_revision_id` and `objective_revision_id`;
 - idempotency: `exercise_attempt(attempt_id)` primary key;
-- replay/audit: `(subscription_id, objective_id, submitted_at, evidence_id)`.
+- replay/audit: `(account_id, deck_id, objective_id, submitted_at, evidence_id)`.
 
 Start unpartitioned. Prepare monthly partitions for append-only evidence/transition
 history only when measured growth approaches roughly 25–50 million rows or 50 GiB;
@@ -539,7 +630,8 @@ and `v1-apache-final` preserve evidence.
 
 ### Phase 1 — build the replacement
 
-Build Identity & Account and the Learning API from new source/module/schema roots.
+Identity & Account source consolidation and the Learning API foundation exist;
+continue product implementation from their new source/module/schema roots.
 Canonical endpoints have no `/v2` prefix or old aliases. #74 owns Deck/LearningItem
 revision implementation; #75 owns exercise/evidence/scheduler; #76 owns new learning
 media. #77 is absent. The product may remain in maintenance or incomplete while
@@ -562,8 +654,8 @@ No runbook may promise an emergency legacy restore.
 ## Proposed decision sequence
 
 1. Merge owner-decision/document/epic reconciliation; this is the current planning step.
-2. Implement #73 Identity & Account, greenfield runtime and platform contracts in reviewable tasks.
+2. Use the implemented Identity & Account and greenfield runtime/platform foundation; verify remaining #73 delivery gates against its current status.
 3. Accept and implement #74 content, #75 study and #76 media contracts in their own epics.
 4. Rehearse the exact no-snapshot cutover on isolated synthetic targets.
 5. Execute the destructive operational issue only after all gates; #77 is not a dependency.
-6. Measure the replacement before adding checkpoints, partitions, replicas, Kafka or another datastore.
+6. Validate bounded storage/read contracts and measure the replacement before adding optional partitions, replicas, Kafka or another datastore.

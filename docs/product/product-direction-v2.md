@@ -5,7 +5,7 @@ artifact:
   title: "Mnema greenfield product direction"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-08-30"
+  updated_at: "2026-09-06"
   owners: ["project-owner"]
   assumptions:
     - "Approximately ten production accounts must survive; content, media, review and AI data may be reset."
@@ -32,6 +32,12 @@ Mnema — не «ещё один конструктор карточек» и н
 
 Принятые owner inputs находятся в [decision log](../decisions/owner-decisions-2026-08.md); техническая модель — в [content architecture](../architecture/content-platform-v2.md) и [native content format](../architecture/learning-content-format-v2.md).
 
+Уточнение владельца от 6 сентября: первый результат — **свои личные колоды в web**,
+материалы и гибкие упражнения к ним. Каталог сообщества, sharing, forks и native
+offline — следующие продуктовые этапы, не скрытые зависимости первого запуска.
+Подробные сценарии и границы принятого решения:
+[authoring and study workflows](./authoring-and-study-workflows.md).
+
 ## Кому и для чего
 
 ### Launch cohort A — языки
@@ -46,7 +52,7 @@ Job: быстро зафиксировать слово/фразу/пример 
 
 Job: собрать материал без проектирования шаблона и повторять его через typed, cloze, choice, ordering, diagram/code and explanation exercises.
 
-### Supply side — преподаватель/автор
+### Future supply side — преподаватель/автор
 
 Job: совместно поддерживать колоду, выпускать проверенные обновления, видеть текущих подписчиков и делиться публично, по ссылке/запросу или приватно.
 
@@ -60,10 +66,10 @@ Job: совместно поддерживать колоду, выпускат�
 | D-02 | `pursue` | Exercises are separate versioned interactions over stable content and memory objectives. |
 | D-03 | `pursue` | Study is always deck-scoped; no global cross-deck Today queue. Browse remains separate. |
 | D-04 | `defer` | Manual LearningItem/Study MVP has no AI dependency. Managed AI, provider selection and quota economics return only through reactivated #77. |
-| D-05 | `pursue` | Shared content/revisions are reused; subscription and personal changes are sparse, not copied decks. |
-| D-06 | `pursue` | Public, request/link-restricted and private visibility; coauthors and review/approval supported. |
-| D-07 | `pursue` | Automatic safe updates, clear summary, per-item conflicts and opt-out from tracking. |
-| D-08 | `pursue` | Russia launch with Free, one-time 14-day trial without a card and Starter 299 ₽/30 days; Plus is deferred until demand and unit economics justify it. |
+| D-05 | `pursue` | Immutable revisions reuse unchanged blocks/media/manifests; future editable forks have independent deck-local identity and progress. |
+| D-06 | `defer UX; reserve model` | Private decks launch first. Public/restricted sharing, coauthors and publication review follow validated learning. |
+| D-07 | `defer` | Selective upstream updates and later contributions/advanced merges are part of the future model. Manual pull is recommended; automatic tracking is not yet selected. |
+| D-08 | `hypothesis` | Russia-first B2C. Free deck-count limits and subscription expansion are possible; 5 own + 5 copied is an example, not a committed tariff. Earlier AI Starter/trial research is not current pricing. |
 | D-09 | `defer` | Existing self-host is unsupported during v2 rewrite; a sanitized downstream repository may appear later. |
 | D-10 | `defer` | Anki import follows native launch; no APKG round-trip promise. |
 
@@ -74,11 +80,19 @@ Job: совместно поддерживать колоду, выпускат�
 The same native output can be created through:
 
 1. full editor with desktop split preview and mobile editor/preview switch;
-2. quick text/batch draft;
-3. voice capture with transcript and optional retained original audio;
+2. durable quick text/batch notes, provisionally «На потом», without a TTL or study eligibility;
+3. audio capture when the media capability exists; automatic transcription is not a manual-launch dependency;
 4. future AI/import/enhancement only after the manual loop is validated; it is not part of current delivery.
 
 The full editor supports long scrolling rich content, media, ruby, RTL, math, code and diagrams without exposing schema fields. Deck theme controls the initial visual style; arbitrary per-card layout is deferred.
+
+Одна колода может смешивать слова, грамматику и любые конспекты. Пользователь
+выбирает допустимые материалы и короткие представления для каждого упражнения:
+matching не пытается поместить весь конспект в одну ячейку. Две стороны flashcard
+принадлежат упражнению, а не самому материалу. Сохранённый материал может пока не
+иметь упражнений. Незавершённые быстрые заметки не создают memory/study state.
+Рабочие правки восстанавливаются из серверного черновика; обучение использует
+только явно сохранённую версию. Параллельные вкладки не перетирают изменения молча.
 
 ### Study a deck
 
@@ -89,24 +103,42 @@ The full editor supports long scrolling rich content, media, ruby, RTL, math, co
 5. Pause/exit preserves confirmed attempts exactly once.
 6. Completion shows progress and next due time for this deck.
 
+После завершения доступны повтор сегодняшней выборки и практика по всей колоде
+вне сегодняшнего лимита. Их можно запускать снова; оба режима не меняют расписание,
+канонический прогресс, streak или результаты scheduler experiments. Полная практика
+по умолчанию исключает ещё не вводившиеся материалы, допускает shuffle/weak-first
+и ограничение времени; большие колоды подгружаются порциями. Новые due позже в тот
+же день остаются нормальным обучением: запрета «одна сессия в сутки» нет.
+
+Исправление ответа сохраняет историю и текущее расписание. Отдельное действие
+«Учить заново» явно перезапускает выбранные материалы без удаления истории.
+Прогресс показывается на уровне материала внутри колоды, без обещания вечного
+«100% выучено»; способ агрегации underlying objectives ещё требует проверки.
+
 `Смотреть` opens free browse and never updates scheduler state.
 
-### Maintain and subscribe
+### Maintain, fork and update — after personal launch
 
 1. Author/coauthors edit a draft and publish an immutable revision through review/approval when configured.
-2. Subscriber normally receives conflict-free changes automatically plus a compact added/changed/removed summary.
+2. An editable fork reuses immutable content while keeping independent identity, edits, exercises and learning state. Proposed first UX: the user requests a change preview and selects an upstream pull; automatic tracking remains open.
 3. Conflicting items show `мой вариант` and `новый вариант` side by side with highlighted differences.
 4. Subscriber keeps mine, accepts source or explicitly combines supported nodes; unresolved items do not block other safe updates.
 5. Tracking can be disabled. Source withdrawal preserves the last reachable revision for existing subscribers.
-6. A clone/fork becomes independently editable; changes are not proposed upstream.
+6. Later users may combine supported parts of conflicting material and propose selected improvements upstream. This supersedes the earlier permanent “no upstream” restriction; neither contribution UI nor real-time collaboration blocks personal launch.
 
-### Discover and share
+### Discover and share — later community release
 
 - `PUBLIC`: appears in catalog/profile.
 - `REQUEST_RESTRICTED`: accessed by link/class and join approval.
 - `PRIVATE`: owners/coauthors only.
 
 An author profile has visibility settings, public decks, last update and current subscriber/usage count. No creator payouts and no update-notification subscriptions in v2.
+
+Будущий onboarding предлагает создать свою колоду или выбрать качественную колоду
+сообщества. Каталог, рекомендации, likes/quality signals и рейтинг — гипотезы
+community release; обещание готового большого каталога допустимо в маркетинге
+только после появления реального предложения. На текущем макете каталог не
+показывается. Notification mechanics остаются отдельным будущим решением.
 
 ## Roadmap by product evidence
 
@@ -122,19 +154,21 @@ An author profile has visibility settings, public decks, last update and current
 
 - deck-scoped Browse and Study;
 - reveal/behavioral self-check, typed answer, single-blank cloze and single choice;
-- full editor plus quick text/voice draft;
+- full editor, recoverable server editing drafts and durable quick text notes;
 - deterministic evaluator and standard attempt envelope;
 - fully manual/free product with no provider or AI runtime dependency;
-- public/private/restricted deck basics and shared revision storage;
+- own private decks with efficient revision storage; reserve provenance/visibility for later sharing;
+- replay and whole-deck extra practice with no canonical effects; explicit learning restart;
+- Russian paper/antiquity design, accessible and progressively loaded;
 - two 15–20-person concierge cohorts: language and exam/student.
 
 ### P1 — visible differentiation
 
 - multiple select, matching, ordering/assembly, listening dictation, multi-value recall and measured image occlusion/labeling;
 - coauthors + publication review;
-- safe auto-updates and conflict UI;
+- cheap editable forks, selective update previews and conflict UI; automatic tracking only after a separate choice;
 - public author profiles/reputation signals;
-- Russian recurring payment pilot at 299 ₽ and quota/cancellation validation;
+- community catalog/onboarding experiments and a separately specified payment/entitlement pilot;
 - evidence-calibrated exercise policies and targeted interleaving.
 
 ### P2 — segment depth
@@ -142,6 +176,7 @@ An author profile has visibility settings, public decks, last update and current
 - code completion/test runner, pronunciation/oral recall, numeric/symbolic answers;
 - human/self-rubric explanation experiments; AI grading remains outside this roadmap until #77 is reactivated;
 - native Android/iOS offline deck packs and review sync;
+- richer within-material merges and proposals to improve upstream decks;
 - higher-price speaking/tutor experiment only after retention and unit economics.
 
 The full capability envelope is in [exercise catalog](./exercise-catalog-v2.md). Building all exercise types before proving retained learning would be wasteful.
@@ -154,18 +189,22 @@ The full capability envelope is in [exercise catalog](./exercise-catalog-v2.md).
 - desktop editor and preview remain synchronized; mobile switch does not lose selection/draft;
 - ruby has hover, focus and tap behaviour; RTL mixed text, math, code, media and long scroll are accessible;
 - draft/autosave operations are idempotent and never lose the original on failure;
+- acknowledged editing drafts survive navigation/logout; quick notes never expire automatically and cannot enter Study;
+- unrelated material blocks and all item content survive a metadata-only deck edit without physical duplication;
 - unsupported content is shown explicitly and preserved, not silently deleted.
 
 ### Study
 
 - Study launched from deck A never presents an item from deck B;
 - Browse never changes due state;
+- replay/whole-deck practice cannot update canonical state, even with a forged client flag;
+- changed correct answers preserve scheduling until the user explicitly restarts learning;
 - the same attempt ID never produces two outcomes or two scheduler updates;
 - the result explains aliases/normalization/typo tolerance;
 - self/human results are distinguished from deterministic evidence and remain explainable;
 - all primary actions work with keyboard/screen reader/reduced motion and touch.
 
-### Updates and collaboration
+### Future updates and collaboration
 
 - publication is immutable and does not copy every unchanged item;
 - before/after summary counts are correct and retries create no duplicates;
@@ -207,7 +246,7 @@ Do not optimize card count, raw review count, opens or streak in isolation. Segm
 
 ## Packaging and economics
 
-Manual creation/study, public decks and own media are the first product. Existing AI pricing/provider research is retained as future evidence, not as a dependency or committed package. Any paid offer is reconsidered after manual-product validation and the [legal/payment checklist](./russia-legal-launch-checklist-2026.md).
+Manual creation/study with own decks and media are the first product. Existing AI pricing/provider research is future evidence, not a committed package. A later subscription may expand limits on owned/copied decks and possibly native offline. The illustrative 5 + 5 limit is unpriced and unapproved. Expiry never deletes or disables existing decks: only adding beyond the free allowance is blocked until the user reduces holdings or renews. Any paid offer requires entitlement semantics and the [legal/payment checklist](./russia-legal-launch-checklist-2026.md).
 
 The immutable `v1-apache-final` revision permits commercial derivatives and its
 grants remain irrevocable. New official revisions use the accepted personal-use
@@ -232,7 +271,7 @@ safe rich rendering, maintained decks, varied practice, collaboration and reliab
 ## Remaining product experiments
 
 1. Language vs exam/student landing message and activation in accessible cohorts.
-2. Starter quota at fixed 299 ₽ and whether real usage justifies a later Plus tier.
-3. 14-day trial activation at first AI intent and whether no-card trial improves retained activation.
+2. Whether deck-count limits support a fair paid offer; owned/copied accounting, price and free allowance are undecided.
+3. Whether offline belongs in a paid tier; earlier AI trial hypotheses apply only if #77 is reactivated.
 4. Which P1 exercise most improves second-week return for each cohort.
 5. Whether teacher sharing creates a repeatable acquisition loop before paid ads scale.

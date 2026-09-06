@@ -13,6 +13,16 @@ artifact:
 
 # Mnema technical and product review
 
+September 6 supersession: this report retains the August findings and rationale;
+it is not the current implementation specification. New owner inputs select
+personal-deck web launch, shared block/page revisions, preserved state after answer
+edits, non-scheduling replay/practice, future contributions and paper/antiquity UI.
+Use [owner workflows](../product/authoring-and-study-workflows.md),
+[current proposed architecture](../architecture/content-platform-v2.md),
+[design handoff](../frontend/design-and-experience-2026-09.md) and
+[updated delivery sequence](../engineering/v2-delivery-plan-2026-08.md) where the
+older storage, launch sharing, pricing, topology or visual recommendations differ.
+
 ## Outcome
 
 > **Owner resolution update (2026-08-30):** this review's evidence remains valid, but the replacement is now explicitly greenfield: no `/v2` coexistence, compatibility layer, retained legacy snapshot or old visual identity. Downtime is acceptable, Identity and User consolidate, and AI follows the manual learning MVP.
