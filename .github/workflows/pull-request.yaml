@@ -31,6 +31,12 @@ jobs:
         working-directory: backend
         run: ./gradlew quality
 
+      - name: Verify Identity to Learning black-box security
+        timeout-minutes: 15
+        run: |
+          ./backend/gradlew -p backend :services:identity-account:bootJar :services:learning:bootJar
+          python3 scripts/learning-security/run.py
+
       - name: Upload backend coverage report
         uses: ./.github/actions/safe-upload-artifact
         with:

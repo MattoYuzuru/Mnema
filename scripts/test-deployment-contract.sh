@@ -34,6 +34,11 @@ grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$MAIN_WORKFLOW"
 grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
 grep -Fq 'run: ./scripts/test-environment-secret-separation.sh' "$MAIN_WORKFLOW"
 grep -Fq 'run: ./scripts/test-environment-secret-separation.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
+for quality_workflow in "$MAIN_WORKFLOW" "$REPO_ROOT/.github/workflows/pull-request.yaml"; do
+  grep -Fq 'name: Verify Identity to Learning black-box security' "$quality_workflow"
+  grep -Fq './backend/gradlew -p backend :services:identity-account:bootJar :services:learning:bootJar' "$quality_workflow"
+  grep -Fq 'python3 scripts/learning-security/run.py' "$quality_workflow"
+done
 for contract_test in \
   test-staging-host-firewall.sh \
   test-staging-tls-boundary.sh \

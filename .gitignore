@@ -34,6 +34,8 @@ backend/.gradle
 frontend/dist
 frontend/node_modules
 /scripts/*
+!/scripts/learning-security/
+!/scripts/learning-security/**
 !/scripts/purge/
 !/scripts/purge/**
 !/scripts/test-purge-rehearsal-integration.sh
