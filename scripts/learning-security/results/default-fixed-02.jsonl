@@ -1,0 +1,24 @@
+{"fixture_key_source_sha256": "799b1a83d580238d54ecf17325f1f65ffb3d80a21a7287481fa2c69c72e91257", "harness_sha256": "295904c983d5ac498dd1bc8c5d79d77b15846b19efa2a5900f196f4482fee862", "identity_jar_sha256": "e8c36943da1ccaab5a12bb059e229e645adcded5f8b2edec47b335bffa7bdc87", "learning_jar_sha256": "659e2b13308be7d660e61090e86ce48438672f2ca2239b5a0f6c2713c9d8f641", "max_clients": 4, "postgres": "PostgreSQL 18.4 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit", "scenario": "both_real_apps_ready", "started_utc": "2026-09-06T18:45:54.372501+00:00", "state": "passed"}
+{"scenario": "learning_role_denied_identity_schema", "state": "passed"}
+{"anonymous": 401, "authenticated_get": 404, "authenticated_post": 404, "id_token": 401, "identity_account_scope": 403, "scenario": "pkce_real_identity_to_learning", "state": "passed", "tampered": 401}
+{"scenario": "least_privilege_scope_matrix", "state": "passed"}
+{"scenario": "pkce_code_replay_and_wrong_verifier_rejected", "state": "passed"}
+{"clients": 4, "elapsed_ms": 30043.67, "p50_ms": 20.68, "p95_ms": 34.84, "requests": 120, "scenario": "bounded_live_sequence", "state": "passed"}
+{"identity_status": 401, "learning_status": 401, "observation_ms": 43.97, "repeated_denials": 16, "scenario": "real_http_logout", "state": "passed"}
+{"identity_status": 401, "learning_status": 401, "observation_ms": 31.5, "repeated_denials": 16, "scenario": "real_http_password_change", "state": "passed"}
+{"identity_status": 401, "learning_status": 401, "mail_delivery": "not_tested", "observation_ms": 32.02, "repeated_denials": 16, "scenario": "real_http_reset_confirmation_synthetic_challenge", "state": "passed"}
+{"scenario": "reset_proof_replay_rejected", "state": "passed"}
+{"scenario": "real_http_non_admin_moderation_denied", "state": "passed"}
+{"identity_status": 401, "learning_status": 401, "observation_ms": 34.88, "repeated_denials": 16, "scenario": "real_http_admin_ban_synthetic_admin_bootstrap", "state": "passed"}
+{"identity_status": 401, "learning_status": 401, "observation_ms": 37.71, "repeated_denials": 16, "scenario": "real_http_unban_does_not_restore_old_token", "state": "passed"}
+{"identity_status": 401, "learning_status": 401, "observation_ms": 34.42, "repeated_denials": 16, "scenario": "synthetic_generation_bump_grant_retained", "state": "passed"}
+{"identity_status": 401, "learning_status": 401, "observation_ms": 37.78, "repeated_denials": 16, "scenario": "synthetic_grant_removal_generation_unchanged", "state": "passed"}
+{"identity_status": 401, "learning_status": 401, "observation_ms": 31.82, "repeated_denials": 16, "scenario": "real_http_pending_deletion", "state": "passed"}
+{"scenario": "real_http_recovery_login_is_restricted", "state": "passed"}
+{"identity_status": 401, "learning_status": 401, "observation_ms": 28.54, "repeated_denials": 16, "scenario": "real_http_deletion_cancellation_keeps_old_token_revoked", "state": "passed"}
+{"scenario": "real_http_deletion_cancellation_allows_new_pkce_token", "state": "passed"}
+{"learning_status": 503, "observation_ms": 2005.69, "scenario": "real_identity_process_pause_times_out_closed", "state": "passed"}
+{"scenario": "real_identity_resume_restores_still_valid_token", "state": "passed"}
+{"learning_liveness": 200, "learning_status": 503, "scenario": "real_identity_process_outage_fails_closed", "state": "passed"}
+{"elapsed_seconds": 49.1, "scenario": "suite_complete", "scenarios": 23, "state": "passed"}
+{"cleanup": "complete", "private_files_retained": false}

@@ -20,6 +20,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.oauth2.core.DelegatingOAuth2TokenValidator;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtException;
 import org.springframework.security.oauth2.jwt.JwtIssuerValidator;
@@ -51,7 +52,7 @@ public class LearningSecurityConfiguration {
 
     @Bean
     JwtDecoder learningJwtDecoder(IdentityEndpoints endpoints, IdentityHttp http) throws Exception {
-        if (endpoints.base() == null) return token -> { throw new JwtException("Identity is not configured"); };
+        if (endpoints.base() == null) return token -> { throw new BadJwtException("Identity is not configured"); };
         JWKSource<SecurityContext> keys = JWKSourceBuilder.<SecurityContext>create(
                 endpoints.endpoint("/oauth2/jwks").toURL(), url -> {
                     var response = http.get(endpoints.endpoint("/oauth2/jwks"), null, 65_536);
@@ -72,8 +73,14 @@ public class LearningSecurityConfiguration {
                 new JwtTimestampValidator(Duration.ofSeconds(30)), new JwtIssuerValidator(endpoints.issuer()),
                 new LearningTokenValidator()));
         return token -> {
-            if (token.length() > 16_384) throw new JwtException("Invalid access token");
-            return decoder.decode(token);
+            if (token.length() > 16_384) throw new BadJwtException("Invalid access token");
+            try {
+                return decoder.decode(token);
+            } catch (JwtException failure) {
+                // Generic JwtException becomes an AuthenticationServiceException and bypasses
+                // the bearer entry point. Local token/key rejection must use the stable 401 path.
+                throw new BadJwtException("Invalid access token");
+            }
         };
     }
 

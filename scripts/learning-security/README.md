@@ -10,7 +10,9 @@ Prerequisites: Java 21, Python 3 stdlib, running Docker/Colima, locally cached `
 cd backend
 ./gradlew :services:identity-account:bootJar :services:learning:bootJar
 cd ..
+python3 -m unittest discover -s scripts/learning-security/tests -v
 python3 scripts/learning-security/run.py
+python3 scripts/learning-security/verify_cancellation.py
 ```
 
 Default envelope: 4 clients, 120 successful bearer requests paced over 30 seconds, plus bounded protocol/lifecycle checks and 16 repeated Learning denials after each revocation. Limits: 1–8 clients, 1–1000 paced requests, 0–120 seconds. Example longer local check:
@@ -21,7 +23,17 @@ python3 scripts/learning-security/run.py --clients 8 --requests 480 --duration-s
 
 This is a bounded correctness/availability sequence, not a throughput benchmark or production soak. The two host Java processes each have a 384 MiB maximum heap. The PostgreSQL container has 2 CPUs and 512 MiB. All listeners bind literal loopback; ports are selected dynamically. Container names start with `mnema-r74-auth-`. A fresh RSA private JWK and synthetic passwords live only in a mode-0700 temporary directory / process environment.
 
-On success, failure, Ctrl-C or SIGTERM, the runner terminates its own Java processes, removes only its uniquely named container and attached anonymous volume, and deletes its own temporary files. SIGKILL/host failure cannot run cleanup. `--keep-on-failure` retains private diagnostics intentionally; never publish that directory, and remove the exact printed directory after debugging. Standard output contains only sanitized JSON evidence, hashes, statuses and timings; failure messages omit response bodies, tokens, SQL and credentials.
+Cancellation uses an Event to interrupt pacing and cancels queued futures without waiting for their original schedules. SIGINT/SIGTERM trigger cleanup; repeated signals cannot abort it. Both owned Java processes receive termination before a shared 2-second grace; remaining processes are killed/reaped within a 3-second process budget. Docker removal has a 2.5-second command timeout, including uncertain creation acknowledgement. Each cleanup step is failure-isolated. Failed cleanup reports `cleanup: incomplete`, failed steps, exact owned resources and whether private files actually remain; it never silently reports success.
+
+The actual cancellation verifier runs two short cases, each with two clients/two requests scheduled 120 seconds apart, and interrupts after pacing begins. It requires exit and verified cleanup before the first 7.5-second GitHub Actions cancellation grace, and sends a repeated opposite signal during cleanup. The verifier itself handles cancellation: it gives its child up to 4 seconds for graceful cleanup before a scoped process-group/container/directory fallback. The private control file records ownership before startup work and updates container-attempt/app-process/pacing phases; it carries no tokens or keys. GitHub's subsequent termination/kill stages are described in its [workflow cancellation reference](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation).
+
+The developer unit-only unittest command runs 12 isolated stdlib tests and skips two explicitly gated real outer-verifier tests. CI/full-gate invocation must enable the real envelope below: 14 tests, zero skips. The actual outer SIGTERM startup test waits for `app_starting` with an existing container and live JVM; the outer SIGINT case waits for the paced workload:
+
+```sh
+MNEMA_RUN_CANCELLATION_INTEGRATION=1 python3 -m unittest discover -s scripts/learning-security/tests -v
+```
+
+SIGKILL/host failure cannot execute cleanup; an unavailable Docker daemon or filesystem can defeat resource removal, which is reported as incomplete and requires operator action on the exact listed resources. `--keep-on-failure` retains private diagnostics intentionally; never publish that directory, and remove the exact printed directory after debugging. Standard output contains sanitized evidence, hashes, statuses and timings; failure messages omit response bodies, tokens, SQL and credentials. App ports are now selected after Docker binds and after the previous app starts. A small OS bind-release-bind race remains: an unrelated process can claim a released port before Spring binds; startup then fails visibly and cleanup runs, rather than claiming guaranteed collision-free allocation.
 
 ## What is real and what is synthetic
 

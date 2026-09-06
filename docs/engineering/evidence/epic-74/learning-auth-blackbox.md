@@ -2,7 +2,52 @@
 
 Status: **passed in the bounded local envelope** on 2026-09-06. Both real boot JARs composed successfully over HTTP with PostgreSQL, actual browser-session/CSRF handling, S256 PKCE and real Identity-issued bearer tokens. This closes the missing real-service composition evidence; it does not certify browser TLS, external providers, production capacity or the rest of Epic #74.
 
-## Reproduction and exact inputs
+Snapshot boundary: these are measured JAR snapshots, not a claim about the final release candidate. After the executable harness freeze, the lead identified a separate production decoder error-mapping edge (`JwtException` potentially surfacing as 500 instead of 401), owns that fix/JAR rebuild, and will run the fresh exact-candidate full gate. The recorded hashes and successful assertions below remain valid only for their executed inputs.
+
+## Cancellation correction — current executable evidence
+
+Independent review found a real harness defect after the original green runs: its executor context manager waited for sleeping paced workers, potentially delaying signal cleanup for 120 seconds; a repeated signal could then interrupt sequential resource cleanup. The old normal-completion runs below remain valid historical authentication evidence but are **not cancellation evidence**. The cancellation correction began only after the lead confirmed the frozen `4ffaefbb27b00702f75691004a7fc56e2372cceb` full gate had finished; that prior green gate did not waive the finding. No production or dependency files changed in this correction.
+
+The current runner interrupts pacing through an Event, cancels queued futures, and never waits for their scheduled delays during executor shutdown. It terminates all owned app processes before a shared grace/kill budget, shields cleanup against repeated SIGINT/SIGTERM, isolates failures between cleanup operations, and reports incomplete cleanup plus actual retained-file state instead of false success. `pg_isready` has a two-second command timeout. Docker creation attempts are recorded before launch, allowing best-effort exact-name cleanup after uncertain acknowledgement.
+
+The verifier also handles SIGINT/SIGTERM: it allows bounded graceful child cleanup before exact process-group/container/private-directory fallback. Private ownership metadata exists before startup work and is updated for container attempts and each app process. The CI-enabled outer test fixture likewise routes cancellation through bounded, shielded cleanup. Application ports are selected only after Docker binds and after the preceding app starts. The remaining bind-release-bind OS race is explicitly retained as a limitation: an unrelated process can still acquire a released app port before Spring binds, producing visible startup failure and cleanup rather than an allocation guarantee.
+
+Current executable source SHA-256 values:
+
+| Source | SHA-256 |
+| --- | --- |
+| `run.py` | `295904c983d5ac498dd1bc8c5d79d77b15846b19efa2a5900f196f4482fee862` |
+| `verify_cancellation.py` | `92a2a952148516e8073a26f6efdf40a1142c1f71279da19ccce95ca46dbd7ae3` |
+| `tests/test_cancellation.py` | `99758f7c15e92c0d98c2af7208e489230906468227805b5ce3ef99ae74b00e19` |
+| `tests/test_verifier_cancellation.py` | `3f4803641fd0076e08d51e606491605645d09a020ff1d7c0d9af2d80e5dd1591` |
+
+Reproduction uses the existing boot JARs. All commands are bounded local executions; the environment-enabled unittest command is the CI/full-gate version and does not skip the two real outer tests:
+
+```sh
+MNEMA_RUN_CANCELLATION_INTEGRATION=1 python3 -m unittest discover -s scripts/learning-security/tests -v
+python3 scripts/learning-security/verify_cancellation.py
+python3 scripts/learning-security/run.py
+```
+
+The ordinary developer unittest command without the environment flag intentionally runs only 12 stdlib cases and skips the two real-service cases; it is not equivalent to the full invocation. No dependency installation or external service is needed beyond the already-authorized local Docker/PostgreSQL and boot JARs.
+
+On the current runner/verifier hashes, direct cancellation tests used two clients/two requests scheduled across 120 seconds and both real apps. SIGINT plus a repeated SIGTERM completed process/container/private-file cleanup and exited nonzero in **653.38 ms**; SIGTERM plus a repeated SIGINT did so in **670.51 ms**. Both are below GitHub's first 7.5-second cancellation grace. Raw proof: [cancellation-real-03.jsonl](../../../../scripts/learning-security/results/cancellation-real-03.jsonl). The threshold comes from GitHub's documented [workflow cancellation sequence](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-cancellation), not an assumed multi-minute CI cleanup window.
+
+The corrected default run preserved all **23/23** application/protocol assertions, exit 0, in **49.10 seconds**. Its 120 successful requests spanned 30.044 seconds, with local p50/p95 20.68/34.84 ms; the real paused Identity still produced 503 after 2005.69 ms. Raw evidence: [default-fixed-02.jsonl](../../../../scripts/learning-security/results/default-fixed-02.jsonl). Its Identity and Learning JAR hashes match the historical table below exactly. These local timings were collected while other bounded cancellation probes were running, at a combined configured client cap of eight, and are not a production latency benchmark.
+
+The final source-frozen unittest invocation passed **14/14 tests, zero skips**, exit 0, in **11.870 seconds**: 12 stdlib cases plus the two real outer-verifier cases. Outer SIGINT during `paced_wait` completed in **801.66 ms**. Outer SIGTERM during `app_starting` completed in **214.51 ms**; this check explicitly required an already-live app JVM and existing startup ownership, not merely the initial `allocated` marker. Both cases verified removal of the runner process group, recorded app PIDs, exact container and private directory. The final integration log is [cancellation-all-final.log](../../../../scripts/learning-security/results/cancellation-all-final.log).
+
+| Final artifact | SHA-256 |
+| --- | --- |
+| `cancellation-real-03.jsonl` | `f88759168a33c5927163c0ae05013f4fcb940884340914f4d4b437e3dd534e59` |
+| `default-fixed-02.jsonl` | `44c9def8479491f607f27e74a7d7e9ee1a9d9a8272e29f4b69840757167d1eca` |
+| `cancellation-all-final.log` | `2fc13f214460d250fca2bf5183ed6d343fbc063a1770882f2b18d16877960868` |
+
+Each command was captured with `set -o pipefail` and `tee`, preserving its nonzero failure behavior. Post-run exact-prefix container inspection returned no containers and boot-JAR process inspection returned no matches. Intermediate `cancellation-*-01/02`, `cancellation-all-03/04` and `default-fixed-01` artifacts are retained locally only; their older source hashes are not substituted for current executable proof. The original `default-01` / `sustained-01` files and hashes remain untouched below as historical evidence.
+
+The measured healthy local environment satisfies the cancellation grace, but Docker-daemon/host/filesystem failure is not promised recoverable: cleanup commands have deadlines, remaining resources are reported explicitly, and SIGKILL cannot run finally blocks. No production auth defect was found by this correction; the confirmed cancellation defect was in the test harness and was not dismissed as a framework issue.
+
+## Historical normal-completion reproduction and inputs
 
 From the repository root, with the existing Java 21 boot JARs and cached `postgres:18`:
 
@@ -24,7 +69,7 @@ The application source checkpoint was reported by the lead as `cf07444ac2be12c93
 
 Environment: macOS/Colima ARM64, Temurin Java 21.0.11, existing PostgreSQL image reporting 18.4/aarch64/alpine. Both apps use host loopback ports, distinct schema-owning database roles and one uniquely named disposable PostgreSQL container (2 CPUs/512 MiB); each app has a 384 MiB maximum heap. Learning's actual database role was denied `SELECT` on `app_identity.account`. Issuer claim is `https://identity.mnema.test`; Learning's explicit loopback transport exception connects to the real local Identity server.
 
-## Observed behavior
+## Historical observed behavior
 
 The runner emits 23 passing scenario records, followed by cleanup. `/api/_blackbox` is deliberately absent from production: authenticated/scoped requests reach its normal 404; anonymous or rejected tokens never reach it.
 

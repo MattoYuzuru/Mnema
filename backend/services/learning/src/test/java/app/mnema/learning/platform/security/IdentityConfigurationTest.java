@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 
 import java.net.URI;
 import java.time.Duration;
@@ -15,6 +16,23 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class IdentityConfigurationTest {
+    @Test
+    void missingIssuerUsesAnAuthenticationFailureRatherThanAnInternalServiceFailure() throws Exception {
+        try (var http = new IdentityHttp(Duration.ofSeconds(1), 1)) {
+            var decoder = new LearningSecurityConfiguration().learningJwtDecoder(new IdentityEndpoints("", null), http);
+            assertThatThrownBy(() -> decoder.decode("untrusted-token")).isInstanceOf(BadJwtException.class);
+        }
+    }
+
+    @Test
+    void oversizedTokenUsesAnAuthenticationFailureWithoutFetchingKeys() throws Exception {
+        try (var http = new IdentityHttp(Duration.ofSeconds(1), 1)) {
+            var endpoints = IdentityEndpoints.configured("https://identity.invalid", "", false);
+            var decoder = new LearningSecurityConfiguration().learningJwtDecoder(endpoints, http);
+            assertThatThrownBy(() -> decoder.decode("a".repeat(16_385))).isInstanceOf(BadJwtException.class);
+        }
+    }
+
     @Test
     void keepsConfiguredIssuerAndAppendsEndpointsToItsPath() {
         var endpoints = IdentityEndpoints.configured("https://identity.example/issuer/", "", false);

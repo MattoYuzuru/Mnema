@@ -1,0 +1,27 @@
+test_all_processes_terminate_before_any_reap_wait (test_cancellation.CancellationTests.test_all_processes_terminate_before_any_reap_wait) ... {"cleanup": "complete", "private_files_retained": false}
+ok
+test_cleanup_failure_does_not_skip_other_resources_or_report_success (test_cancellation.CancellationTests.test_cleanup_failure_does_not_skip_other_resources_or_report_success) ... ok
+test_cleanup_is_idempotent_and_repeated_signals_cannot_abort_it (test_cancellation.CancellationTests.test_cleanup_is_idempotent_and_repeated_signals_cannot_abort_it) ... ok
+test_failed_directory_removal_reports_actual_retained_files (test_cancellation.CancellationTests.test_failed_directory_removal_reports_actual_retained_files) ... ok
+test_interrupted_executor_never_waits_and_cancels_queued_futures (test_cancellation.CancellationTests.test_interrupted_executor_never_waits_and_cancels_queued_futures) ... {"cleanup": "complete", "private_files_retained": false}
+ok
+test_paced_120_second_wait_stops_when_event_is_cancelled (test_cancellation.CancellationTests.test_paced_120_second_wait_stops_when_event_is_cancelled) ... {"cleanup": "complete", "private_files_retained": false}
+ok
+test_postgres_readiness_command_is_bounded (test_cancellation.CancellationTests.test_postgres_readiness_command_is_bounded) ... {"cleanup": "complete", "private_files_retained": false}
+ok
+test_stubborn_processes_are_killed_after_shared_grace_not_sequential_waits (test_cancellation.CancellationTests.test_stubborn_processes_are_killed_after_shared_grace_not_sequential_waits) ... {"cleanup": "complete", "private_files_retained": false}
+ok
+test_uncertain_docker_run_failure_still_removes_exact_owned_name (test_cancellation.CancellationTests.test_uncertain_docker_run_failure_still_removes_exact_owned_name) ... {"cleanup": "complete", "private_files_retained": false}
+ok
+test_outer_sigint_during_paced_wait (test_verifier_cancellation.ActualOuterVerifierTests.test_outer_sigint_during_paced_wait) ... {"scenario": "outer_SIGINT_paced_wait", "state": "passed", "observed_phase": "paced_wait", "cancellation_to_exit_ms": 801.66, "harness_sha256": "295904c983d5ac498dd1bc8c5d79d77b15846b19efa2a5900f196f4482fee862", "verification_sha256": "92a2a952148516e8073a26f6efdf40a1142c1f71279da19ccce95ca46dbd7ae3", "owned_resources_removed": true}
+ok
+test_outer_sigterm_during_startup (test_verifier_cancellation.ActualOuterVerifierTests.test_outer_sigterm_during_startup) ... {"scenario": "outer_SIGTERM_startup", "state": "passed", "observed_phase": "app_starting", "cancellation_to_exit_ms": 214.51, "harness_sha256": "295904c983d5ac498dd1bc8c5d79d77b15846b19efa2a5900f196f4482fee862", "verification_sha256": "92a2a952148516e8073a26f6efdf40a1142c1f71279da19ccce95ca46dbd7ae3", "owned_resources_removed": true}
+ok
+test_both_outer_signals_raise_once_then_ignore_repeated_interrupt (test_verifier_cancellation.VerifierCleanupTests.test_both_outer_signals_raise_once_then_ignore_repeated_interrupt) ... ok
+test_startup_ownership_and_repeated_signals_allow_child_graceful_cleanup (test_verifier_cancellation.VerifierCleanupTests.test_startup_ownership_and_repeated_signals_allow_child_graceful_cleanup) ... ok
+test_stuck_child_gets_grace_then_scoped_force_and_failure_isolation (test_verifier_cancellation.VerifierCleanupTests.test_stuck_child_gets_grace_then_scoped_force_and_failure_isolation) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 11.870s
+
+OK

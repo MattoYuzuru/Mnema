@@ -20,6 +20,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Import;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -45,9 +46,11 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** Real Learning HTTP/filter chain and PostgreSQL; Identity HTTP is a controlled protocol fixture. */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
+        properties = "server.max-http-request-header-size=32KB")
 @Import(LearningSecurityHttpIntegrationTest.Probe.class)
 class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
     private static final String ISSUER = "https://identity.example.test";
@@ -59,6 +62,7 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
     private static final AtomicInteger OPERATIONS = new AtomicInteger();
     private static final AtomicReference<String> RELAYED = new AtomicReference<>();
     private static volatile int userInfoStatus;
+    private static volatile int keyStatus = 200;
     private static volatile String userInfoBody;
     private static volatile CountDownLatch slowResponse;
     private static volatile CountDownLatch requestStarted;
@@ -71,7 +75,7 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
             IDENTITY.createContext("/oauth2/jwks", exchange -> {
                 byte[] bytes = new JWKSet(KEY.toPublicJWK()).toString().getBytes(StandardCharsets.UTF_8);
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, bytes.length);
+                exchange.sendResponseHeaders(keyStatus, bytes.length);
                 try (var body = exchange.getResponseBody()) { body.write(bytes); }
             });
             IDENTITY.createContext("/userinfo", exchange -> {
@@ -113,6 +117,7 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
 
     @BeforeEach
     void activeIdentity() {
+        keyStatus = 200;
         userInfoStatus = 200;
         userInfoBody = "{\"sub\":\"" + ACTOR + "\"}";
         slowResponse = null;
@@ -126,6 +131,30 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
     static void stopFixture() {
         IDENTITY.stop(0);
         CLIENT.shutdownNow();
+    }
+
+    @Test
+    void oversizedBearerReturnsTheStableAuthenticationProblem() throws Exception {
+        // The larger test connector limit lets this reach the application's independent token limit.
+        assertProblem(request("GET", "/_security", "a".repeat(16_385)), 401, "AUTHENTICATION_REQUIRED");
+        assertThat(CALLS).hasValue(0);
+        assertThat(OPERATIONS).hasValue(0);
+    }
+
+    @Test
+    void coldKeyFetchFailureIsAnAuthenticationFailureWithoutPrivateWork() throws Exception {
+        keyStatus = 503;
+        var endpoints = IdentityEndpoints.configured(ISSUER,
+                "http://127.0.0.1:" + IDENTITY.getAddress().getPort(), true);
+        try (var http = new IdentityHttp(Duration.ofMillis(500), 1)) {
+            var decoder = new LearningSecurityConfiguration().learningJwtDecoder(endpoints, http);
+            String access = token("learning.read", claims -> { });
+            assertThatThrownBy(() -> decoder.decode(access)).isInstanceOf(BadJwtException.class);
+        } finally {
+            keyStatus = 200;
+        }
+        assertThat(CALLS).hasValue(0);
+        assertThat(OPERATIONS).hasValue(0);
     }
 
     @Test

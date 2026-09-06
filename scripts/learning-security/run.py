@@ -7,6 +7,7 @@ Never prints credentials, bearer tokens, session cookies or private JWK material
 import argparse
 import base64
 import concurrent.futures
+import contextlib
 import datetime
 import hashlib
 import http.client
@@ -20,6 +21,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.parse
 from http.cookies import SimpleCookie
@@ -45,6 +47,20 @@ def free_port():
 def require(condition, label):
     if not condition:
         raise AssertionError(label)
+
+
+@contextlib.contextmanager
+def shield_cleanup_signals():
+    """A second cancellation signal must not interrupt release of owned resources."""
+    previous = {}
+    if threading.current_thread() is threading.main_thread():
+        for number in (signal.SIGINT, signal.SIGTERM):
+            previous[number] = signal.signal(number, signal.SIG_IGN)
+    try:
+        yield
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
 
 
 class Client:
@@ -93,7 +109,7 @@ class Client:
 
 
 class Fixture:
-    def __init__(self, args):
+    def __init__(self, args, cancellation=None):
         self.args = args
         temp_parent = Path.home() if sys.platform == "darwin" else Path(os.environ.get("RUNNER_TEMP", tempfile.gettempdir()))
         self.tmp = Path(tempfile.mkdtemp(prefix="mnema-learning-security-", dir=temp_parent))
@@ -101,13 +117,56 @@ class Fixture:
         self.container = "mnema-r74-auth-" + secrets.token_hex(5)
         self.processes = []
         self.logs = []
+        self.cancellation = cancellation if cancellation is not None else threading.Event()
+        self.executors = []
+        self.cleanup_result = None
+        self.container_attempted = False
         self.started_container = False
-        self.identity_port, self.learning_port = free_port(), free_port()
-        while self.identity_port == self.learning_port:
-            self.learning_port = free_port()
         self.results = []
         self.started = time.monotonic()
         self.db_password = secrets.token_urlsafe(24)
+
+    def control(self, phase):
+        """Private, optional synchronization metadata for cancellation regression only."""
+        path = getattr(self.args, "control_file", None)
+        if path is not None:
+            temporary = path.with_suffix(".pending")
+            temporary.write_text(json.dumps({"phase": phase, "container": self.container,
+                                             "runner_pid": os.getpid(),
+                                             "pids": [process.pid for process in self.processes],
+                                             "private_directory": str(self.tmp)}))
+            temporary.replace(path)
+
+    def parallel(self, function, values):
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=self.args.clients)
+        self.executors.append(executor)
+        futures = []
+        try:
+            def guarded(value):
+                if self.cancellation.is_set():
+                    raise concurrent.futures.CancelledError()
+                return function(value)
+            futures = [executor.submit(guarded, value) for value in values]
+            return [future.result() for future in futures]
+        except BaseException:
+            self.cancellation.set()
+            raise
+        finally:
+            # Context-manager shutdown waits for sleeping workers, delaying finally/cleanup.
+            executor.shutdown(wait=False, cancel_futures=True)
+            self.executors.remove(executor)
+
+    def paced_samples(self, token):
+        start = time.monotonic()
+        def request(index):
+            scheduled = start + index * self.args.duration_seconds / max(1, self.args.requests - 1)
+            if index == 1:
+                self.control("paced_wait")
+            if self.cancellation.wait(max(0, scheduled - time.monotonic())):
+                raise concurrent.futures.CancelledError()
+            before = time.monotonic()
+            return self.learning(token), (time.monotonic() - before) * 1000
+        return self.parallel(request, range(self.args.requests))
 
     def record(self, name, **details):
         value = {"scenario": name, "state": "passed", **details}
@@ -146,6 +205,7 @@ class Fixture:
         self.logs.append(log)
         process = subprocess.Popen(arguments, env=environment, stdout=log, stderr=subprocess.STDOUT)
         self.processes.append(process)
+        self.control("app_starting")
         deadline = time.monotonic() + 90
         while time.monotonic() < deadline:
             require(process.poll() is None, f"{module} exited before readiness; use --keep-on-failure for private diagnostics")
@@ -159,9 +219,12 @@ class Fixture:
         raise AssertionError(f"{module} readiness deadline exceeded")
 
     def start(self):
+        self.control("allocated")
         command(["docker", "image", "inspect", "postgres:18"])
         command(["java", str(Path(__file__).with_name("FixtureKey.java")), str(self.tmp / "signing.json")])
         os.chmod(self.tmp / "signing.json", 0o600)
+        self.container_attempted = True  # Docker can create it even if the client fails before acknowledgement.
+        self.control("container_starting")
         command(["docker", "run", "--detach", "--name", self.container, "--cpus", "2", "--memory", "512m",
                  "--publish", "127.0.0.1::5432", "--env", "POSTGRES_PASSWORD=" + self.db_password,
                  "--env", "POSTGRES_DB=fixture", "postgres:18"])
@@ -170,7 +233,7 @@ class Fixture:
         self.jdbc = "jdbc:postgresql://127.0.0.1:" + mapped.rsplit(":", 1)[1] + "/fixture"
         deadline = time.monotonic() + 30
         while subprocess.run(["docker", "exec", self.container, "pg_isready", "-h", "127.0.0.1", "-U", "postgres"],
-                             capture_output=True).returncode:
+                             capture_output=True, timeout=2).returncode:
             require(time.monotonic() < deadline, "PostgreSQL readiness deadline exceeded")
             time.sleep(0.25)
         self.sql(f"""CREATE ROLE identity_fixture LOGIN PASSWORD '{self.db_password}';
@@ -180,7 +243,10 @@ CREATE SCHEMA app_identity AUTHORIZATION identity_fixture;
 CREATE SCHEMA app_learning AUTHORIZATION learning_fixture;
 REVOKE ALL ON SCHEMA app_identity FROM PUBLIC,learning_fixture;
 REVOKE ALL ON SCHEMA app_learning FROM PUBLIC,identity_fixture;""")
+        # Allocate after Docker has bound its port, and after each prior app is listening.
+        self.identity_port = free_port()
         self.identity_process, identity_hash = self.boot("identity-account", self.identity_port, "identity_fixture")
+        self.learning_port = free_port()
         _, learning_hash = self.boot("learning", self.learning_port, "learning_fixture")
         self.record("both_real_apps_ready", identity_jar_sha256=identity_hash, learning_jar_sha256=learning_hash,
                     harness_sha256=hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
@@ -251,8 +317,7 @@ REVOKE ALL ON SCHEMA app_learning FROM PUBLIC,identity_fixture;""")
         start = time.monotonic()
         require(Client(self.identity_port).request("GET", "/userinfo", bearer=token)[0] == 401, name + " userinfo")
         require(self.learning(token) == 401, name + " Learning")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.args.clients) as executor:
-            statuses = list(executor.map(lambda _: self.learning(token), range(16)))
+        statuses = self.parallel(lambda _: self.learning(token), range(16))
         require(set(statuses) == {401}, name + " repeated revoked requests")
         self.record(name, identity_status=401, learning_status=401,
                     repeated_denials=len(statuses),
@@ -288,13 +353,7 @@ REVOKE ALL ON SCHEMA app_learning FROM PUBLIC,identity_fixture;""")
         require(Client(self.identity_port).request("POST", "/oauth2/token", form, form=True)[0] == 400, "wrong PKCE verifier")
         self.record("pkce_code_replay_and_wrong_verifier_rejected")
         start = time.monotonic()
-        def paced_request(index):
-            scheduled = start + index * self.args.duration_seconds / max(1, self.args.requests - 1)
-            time.sleep(max(0, scheduled - time.monotonic()))
-            before = time.monotonic()
-            return self.learning(access), (time.monotonic() - before) * 1000
-        with concurrent.futures.ThreadPoolExecutor(max_workers=self.args.clients) as executor:
-            samples = list(executor.map(paced_request, range(self.args.requests)))
+        samples = self.paced_samples(access)
         require({status for status, _ in samples} == {404}, "bounded repeated real-service requests")
         latencies = sorted(latency for _, latency in samples)
         self.record("bounded_live_sequence", requests=len(samples), clients=self.args.clients,
@@ -395,23 +454,55 @@ FROM app_identity.account WHERE account_id='{account_id}';""")
                     elapsed_seconds=round(time.monotonic() - self.started, 2))
 
     def close(self, failed):
-        for process in reversed(self.processes):
-            if process.poll() is None:
-                process.terminate()
+        if self.cleanup_result is not None:
+            return self.cleanup_result
+        with shield_cleanup_signals():
+            self.cancellation.set()
+            issues = []
+            def attempt(label, operation):
                 try:
-                    process.wait(timeout=10)
-                except subprocess.TimeoutExpired:
-                    process.kill()
-                    process.wait(timeout=5)
-        for log in self.logs:
-            log.close()
-        if self.started_container:
-            command(["docker", "rm", "--force", "--volumes", self.container])
-        if failed and self.args.keep_on_failure:
-            print(json.dumps({"private_diagnostics": str(self.tmp), "warning": "contains disposable secrets; remove after debugging"}), flush=True)
-        else:
-            shutil.rmtree(self.tmp)
-        print(json.dumps({"cleanup": "complete", "private_files_retained": bool(failed and self.args.keep_on_failure)}), flush=True)
+                    operation()
+                except Exception:
+                    issues.append(label)  # Never surface raw process/SQL/credential-bearing exceptions.
+            for executor in self.executors:
+                attempt("executor", lambda: executor.shutdown(wait=False, cancel_futures=True))
+            started = time.monotonic()
+            for process in self.processes:
+                if process.poll() is None:
+                    attempt("process_resume", lambda p=process: p.send_signal(signal.SIGCONT))
+                    attempt("process_terminate", process.terminate)
+            # Terminate all first: two sequential 10-second waits exceed Actions' first grace period.
+            while any(process.poll() is None for process in self.processes) and time.monotonic() - started < 2:
+                time.sleep(0.02)
+            for process in self.processes:
+                if process.poll() is None:
+                    attempt("process_kill", process.kill)
+            for process in self.processes:
+                if process.poll() is None:
+                    attempt("process_reap", lambda p=process: p.wait(timeout=max(0.01, 3 - (time.monotonic() - started))))
+            for log in self.logs:
+                attempt("log_close", log.close)
+            if self.container_attempted:
+                def remove_container():
+                    result = subprocess.run(["docker", "rm", "--force", "--volumes", self.container],
+                                            capture_output=True, timeout=2.5)
+                    if result.returncode and b"No such container" not in result.stderr:
+                        raise RuntimeError("container removal failed")
+                attempt("container_remove", remove_container)
+            retained = bool(failed and self.args.keep_on_failure)
+            if retained:
+                print(json.dumps({"private_diagnostics": str(self.tmp), "warning": "contains disposable secrets; remove after debugging"}), flush=True)
+            else:
+                attempt("private_directory_remove", lambda: shutil.rmtree(self.tmp))
+            retained = self.tmp.exists()
+            self.cleanup_result = not issues
+            result = {"cleanup": "complete" if self.cleanup_result else "incomplete", "private_files_retained": retained}
+            if issues:
+                result.update({"failed_steps": issues, "owned_container": self.container,
+                               "owned_pids": [process.pid for process in self.processes],
+                               "private_directory": str(self.tmp)})
+            print(json.dumps(result), flush=True)
+            return self.cleanup_result
 
 
 def main():
@@ -420,14 +511,19 @@ def main():
     parser.add_argument("--requests", type=int, default=120)
     parser.add_argument("--duration-seconds", type=int, default=30, choices=range(0, 121))
     parser.add_argument("--keep-on-failure", action="store_true", help="keep mode-0700 private logs/keys for local debugging")
+    parser.add_argument("--control-file", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not 1 <= args.requests <= 1000:
         parser.error("requests must be between 1 and 1000")
     os.umask(0o077)
+    cancellation = threading.Event()
     def interrupted(_signal, _frame):
-        raise KeyboardInterrupt()
+        if not cancellation.is_set():
+            cancellation.set()
+            raise KeyboardInterrupt()
+    signal.signal(signal.SIGINT, interrupted)
     signal.signal(signal.SIGTERM, interrupted)
-    fixture = Fixture(args)
+    fixture = Fixture(args, cancellation)
     failed = True
     try:
         fixture.run()
@@ -439,7 +535,8 @@ def main():
         message = str(error) if isinstance(error, AssertionError) else type(error).__name__
         print(json.dumps({"suite": "failed", "reason": message}), flush=True)
     finally:
-        fixture.close(failed)
+        if not fixture.close(failed):
+            failed = True
     raise SystemExit(1 if failed else 0)
 
 

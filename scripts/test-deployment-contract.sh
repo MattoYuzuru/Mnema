@@ -38,6 +38,8 @@ for quality_workflow in "$MAIN_WORKFLOW" "$REPO_ROOT/.github/workflows/pull-requ
   grep -Fq 'name: Verify Identity to Learning black-box security' "$quality_workflow"
   grep -Fq './backend/gradlew -p backend :services:identity-account:bootJar :services:learning:bootJar' "$quality_workflow"
   grep -Fq 'python3 scripts/learning-security/run.py' "$quality_workflow"
+  grep -Fq 'MNEMA_RUN_CANCELLATION_INTEGRATION=1 python3 -m unittest discover -s scripts/learning-security/tests -v' "$quality_workflow"
+  grep -Fq 'python3 scripts/learning-security/verify_cancellation.py' "$quality_workflow"
 done
 for contract_test in \
   test-staging-host-firewall.sh \

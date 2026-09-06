@@ -1,5 +1,26 @@
 # Independent Learning authentication security review
 
+## Follow-up correction to the original review
+
+The original no-findings verdict below applies only to its bounded review at
+`cf07444ac2be12c93704da39f45a89505dcdcf8a`; it was not a final-candidate verdict.
+The lead subsequently reproduced an error-mapping defect with four failure-first
+regressions: absent issuer configuration, an oversized token, and cold JWKS failure
+threw generic `JwtException`; the real oversized HTTP request returned 500.
+Spring Security 6.5.11 converts generic decoder failures to
+`AuthenticationServiceException`, which its bearer failure handler rethrows.
+
+The correction uses sanitized `BadJwtException` for local token/key rejection,
+preserving the documented 401 path. UserInfo availability failures remain 503.
+The four added regressions now pass with the full Learning suite and coverage gate.
+The larger connector header limit exists only in the HTTP test to exercise the
+independent application token limit; production limits did not change.
+Final independent delta review and the full exact-candidate repository gate are
+still required before delivery. Cancellation harness findings are tracked separately
+in [black-box evidence](learning-auth-blackbox.md).
+
+## Original source review
+
 Reviewed `epic-74/learning-auth` commit
 `cf07444ac2be12c93704da39f45a89505dcdcf8a` for #176. The review was read-only for
 production code and tests. It covered the new Learning security package,
