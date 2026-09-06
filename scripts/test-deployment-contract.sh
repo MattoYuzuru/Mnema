@@ -34,6 +34,13 @@ grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$MAIN_WORKFLOW"
 grep -Fq 'run: ./scripts/test-create-staging-kubeconfig.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
 grep -Fq 'run: ./scripts/test-environment-secret-separation.sh' "$MAIN_WORKFLOW"
 grep -Fq 'run: ./scripts/test-environment-secret-separation.sh' "$REPO_ROOT/.github/workflows/pull-request.yaml"
+for quality_workflow in "$MAIN_WORKFLOW" "$REPO_ROOT/.github/workflows/pull-request.yaml"; do
+  grep -Fq 'name: Verify Identity to Learning black-box security' "$quality_workflow"
+  grep -Fq './backend/gradlew -p backend :services:identity-account:bootJar :services:learning:bootJar' "$quality_workflow"
+  grep -Fq 'python3 scripts/learning-security/run.py' "$quality_workflow"
+  grep -Fq 'MNEMA_RUN_CANCELLATION_INTEGRATION=1 python3 -m unittest discover -s scripts/learning-security/tests -v' "$quality_workflow"
+  grep -Fq 'python3 scripts/learning-security/verify_cancellation.py' "$quality_workflow"
+done
 for contract_test in \
   test-staging-host-firewall.sh \
   test-staging-tls-boundary.sh \
@@ -474,6 +481,10 @@ for name in ("identity-account", "learning"):
     assert service["build"]["target"] in stages
     assert service["environment"]["SPRING_DATASOURCE_PASSWORD"] == "replacement-test-value"
 assert config["services"]["identity-account"]["environment"]["MNEMA_IDENTITY_ISSUER"] == "https://localhost:18081"
+assert config["services"]["learning"]["environment"]["MNEMA_IDENTITY_ISSUER"] == "https://localhost:18081"
+for name in ("learning", "identity-account"):
+    template = (root / "k8s" / (name + "-deploy.yaml")).read_text()
+    assert re.search(r'name: MNEMA_IDENTITY_ISSUER\s+value: "https://release-auth-host-placeholder"', template)
 identity_mount = config["services"]["identity-account"]["volumes"][0]
 assert identity_mount["source"] == os.devnull
 assert identity_mount["target"] == "/var/run/secrets/mnema-identity/identity-signing-jwk-set.json"

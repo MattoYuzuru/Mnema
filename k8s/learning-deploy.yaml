@@ -32,6 +32,8 @@ spec:
           env:
             - name: MNEMA_BUILD_ID
               value: "release-placeholder"
+            - name: MNEMA_IDENTITY_ISSUER
+              value: "https://release-auth-host-placeholder"
             - name: SPRING_DATASOURCE_URL
               value: jdbc:postgresql://postgres.release-namespace-placeholder.svc.cluster.local:5432/mnema
             - name: SPRING_DATASOURCE_USERNAME

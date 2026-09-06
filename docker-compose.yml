@@ -73,6 +73,7 @@ services:
     environment:
       APP_ENV: local
       MNEMA_BUILD_ID: ${MNEMA_LOCAL_BUILD_ID:-dev}
+      MNEMA_IDENTITY_ISSUER: ${MNEMA_LOCAL_IDENTITY_ISSUER:-https://localhost:18081}
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${MNEMA_LOCAL_POSTGRES_DB:-mnema}
       SPRING_DATASOURCE_USERNAME: ${MNEMA_LOCAL_POSTGRES_USER:-mnema}
       SPRING_DATASOURCE_PASSWORD: ${MNEMA_LOCAL_POSTGRES_PASSWORD:?Set a fresh MNEMA_LOCAL_POSTGRES_PASSWORD for the replacement database}
