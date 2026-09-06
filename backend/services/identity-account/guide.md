@@ -19,11 +19,22 @@ profile username are separate fields; profile changes do not revoke credentials.
 
 The public `mnema-web` client uses authorization code with S256 PKCE and one exact
 `MNEMA_IDENTITY_REDIRECT_URI`. Its scopes are `openid profile account.read
-account.write`. Public clients receive no refresh token; confidential clients
+account.write learning.read learning.write`. Learning scopes are distinct from
+account permissions; a Learning-only token does not authorize account APIs.
+Public clients receive no refresh token; confidential clients
 require explicit registration. Access tokens use RS256, type `at+jwt`, audience
 `mnema-api`, a five-minute lifetime and a generation claim. Resource acceptance
 requires the current active account generation and an active JDBC grant, plus the
 scope for the requested read/write operation. ID tokens are not API credentials.
+
+The standard `/userinfo` endpoint validates the same current generation and active
+grant on each bearer request and returns the canonical account UUID in `sub`.
+Learning's integration can use this endpoint as a liveness check after local
+signature/type/issuer/audience/expiry and Learning-scope validation. It must compare
+`sub`, fail closed on errors/timeouts, and never cache a successful result as proof
+that a later request remains authorized. The receiving Learning filter and its real
+cross-service tests remain part of #74; this Identity-side contract alone does not
+prove an implemented private Learning API.
 
 Every login rotates the Secure/HttpOnly/SameSite=Lax session cookie and CSRF token.
 Sessions live in PostgreSQL with eight-hour inactivity and absolute limits.

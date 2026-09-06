@@ -288,6 +288,36 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void learningScopesAreSeparateAndUserInfoChecksCurrentGrantAndGeneration() throws Exception {
+        var account = account();
+        var cookie = login(account);
+        String verifier = "synthetic-learning-verifier-0123456789-abcdefghijklmnopqrstuvwxyz";
+        String code = authorize(cookie, verifier, "mnema-web", "openid learning.read learning.write");
+        var result = mvc.perform(post("/oauth2/token").param("grant_type", "authorization_code")
+                        .param("client_id", "mnema-web").param("redirect_uri", "https://mnema.app/auth/callback")
+                        .param("code", code).param("code_verifier", verifier))
+                .andExpect(status().isOk()).andReturn();
+        var tokens = json.readTree(result.getResponse().getContentAsString());
+        String bearer = "Bearer " + tokens.path("access_token").asText();
+
+        assertThat(tokens.path("scope").asText().split(" "))
+                .containsExactlyInAnyOrder("openid", "learning.read", "learning.write");
+        mvc.perform(get("/userinfo").header("Authorization", bearer))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.sub").value(account.accountId().toString()));
+        mvc.perform(get("/api/accounts/me").header("Authorization", bearer))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/userinfo").header("Authorization", "Bearer " + tokens.path("id_token").asText()))
+                .andExpect(status().isUnauthorized());
+
+        tx.executeWithoutResult(status -> {
+            accounts.get(account.accountId(), true);
+            accounts.revoke(account.accountId());
+        });
+        mvc.perform(get("/userinfo").header("Authorization", bearer))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void concurrentCodeExchangeHasExactlyOneSuccess() throws Exception {
         var a = account();
         var cookie = login(a);
@@ -472,12 +502,16 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
     }
 
     String authorize(Cookie cookie, String verifier, String clientId) throws Exception {
+        return authorize(cookie, verifier, clientId, "openid profile account.read account.write");
+    }
+
+    String authorize(Cookie cookie, String verifier, String clientId, String scopes) throws Exception {
         String challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(
                 MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
         var result = mvc.perform(
                         get("/oauth2/authorize").secure(true).cookie(cookie).queryParam("response_type", "code")
                                 .queryParam("client_id", clientId).queryParam("redirect_uri", "https://mnema.app/auth/callback")
-                                .queryParam("scope", "openid profile account.read account.write")
+                                .queryParam("scope", scopes)
                                 .queryParam("state", "fixture-state").queryParam("code_challenge", challenge)
                                 .queryParam("code_challenge_method", "S256")).andExpect(status().is3xxRedirection())
                 .andReturn();
