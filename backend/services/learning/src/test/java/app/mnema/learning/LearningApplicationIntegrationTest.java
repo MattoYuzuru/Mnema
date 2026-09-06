@@ -132,9 +132,9 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                 });
 
         mockMvc.perform(get("/api/v2").contextPath("/api"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
         mockMvc.perform(get("/api/decks").contextPath("/api"))
-                .andExpect(status().isNotFound());
+                .andExpect(status().isUnauthorized());
     }
 
     @Test

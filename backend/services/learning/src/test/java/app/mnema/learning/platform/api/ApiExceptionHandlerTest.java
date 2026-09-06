@@ -2,6 +2,7 @@ package app.mnema.learning.platform.api;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 
@@ -23,6 +24,8 @@ import org.springframework.test.context.ActiveProfiles;
         properties = "server.servlet.context-path="
 )
 @Import(ApiExceptionHandler.class)
+// MVC error-contract unit slice only; full real HTTP security is covered independently.
+@AutoConfigureMockMvc(addFilters = false)
 @ActiveProfiles("api-handler-fixture")
 class ApiExceptionHandlerTest {
 
