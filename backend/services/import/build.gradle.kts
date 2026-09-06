@@ -41,11 +41,11 @@ dependencies {
     implementation("org.reactivestreams:reactive-streams:1.0.4")
 
     // CSV parsing
-    implementation("org.apache.commons:commons-csv:1.12.0")
+    implementation("org.apache.commons:commons-csv:1.14.1")
 
     // SQLite (apkg)
-    implementation("org.xerial:sqlite-jdbc:3.49.1.0")
-    implementation("com.github.luben:zstd-jni:1.5.6-9")
+    implementation("org.xerial:sqlite-jdbc:3.53.4.0")
+    implementation("com.github.luben:zstd-jni:1.5.7-16")
 
     // Tests
     testImplementation("org.springframework.boot:spring-boot-starter-test")
