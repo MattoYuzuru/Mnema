@@ -72,7 +72,7 @@ When you used docs to decide something important, include short references:
 ## 4) UI Direction + UX-by-the-book
 ### 4.1 Visual direction
 - Do not preserve or extend the current Liquid Glass style. It is explicitly rejected for the replacement UI.
-- The final visual system will be chosen in the frontend epic after owner design input. Until then, prefer a minimal, accessible Angular/semantic HTML/CSS baseline without a heavy design library or speculative component system.
+- The owner selected the paper/antiquity/indigo visual direction on 2026-09-06. Follow `docs/frontend/design-and-experience-2026-09.md`; the interactive `design/prototype` is design evidence, not production architecture. Use accessible Angular/semantic HTML/CSS without a heavy design library; preserve the accepted direction, not every prototype implementation detail.
 - Do not treat the current layout, visual identity or component boundaries as compatibility requirements.
 
 ### 4.2 Proactive design fixes

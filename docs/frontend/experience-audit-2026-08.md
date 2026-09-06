@@ -5,7 +5,7 @@ artifact:
   title: "Mnema frontend, UX and exercise audit"
   status: superseded-direction
   created_at: "2026-08-15"
-  updated_at: "2026-08-30"
+  updated_at: "2026-09-06"
   owners: ["project-owner"]
   evidence_revision: "8e0c83d"
   assumptions:
@@ -17,7 +17,7 @@ artifact:
 
 ## Decision
 
-> **Resolution update (2026-08-30):** performance, accessibility and code-structure evidence below remains useful, but the proposed Focused Study Desk/Liquid Glass direction is rejected. Epic #74 owns a full visual reset; until separate owner design input, the baseline is minimal accessible Angular/semantic HTML/CSS. The old UI has no compatibility value.
+> **Resolution update (2026-09-06):** the owner selected paper/antiquity/indigo, recorded in [design handoff](./design-and-experience-2026-09.md). Focused Study Desk/Liquid Glass remains rejected. This is historical audit evidence, not a fresh performance measurement; immutable hashed assets and revalidating index/config were subsequently fixed. Other findings require current-code verification before becoming defects or tasks. The old UI has no compatibility value.
 
 Keep Angular. The slow/fragile behavior is explained by application choices: all feature routes load eagerly, static content waits for APIs, large components combine several responsibilities, modal/focus behavior is reimplemented and production cache headers are incompatible with unhashed bundles.
 
@@ -171,7 +171,10 @@ The persisted JSON contract belongs to Mnema, not to an Angular component. Rende
 
 ## Visual direction
 
-No visual direction from this 2026-08-15 audit remains active. Liquid Glass, Focused Study Desk and preservation of the broad v1 identity are explicitly out. A later #74 design refinement will define the new direction; a plain high-contrast CSS baseline is acceptable meanwhile. The measured concern around global blur/`will-change` remains evidence for deleting the old `.glass` styling rather than tuning it ([global_styles.css](../../frontend/src/global_styles.css#L255)).
+No visual direction from this 2026-08-15 audit remains active. Liquid Glass and
+Focused Study Desk are out. The selected September [paper direction](./design-and-experience-2026-09.md)
+supersedes this section. Global blur/`will-change` remains a source-level risk
+to avoid, not a measured attribution of every observed slowdown.
 
 ## Exercise platform
 

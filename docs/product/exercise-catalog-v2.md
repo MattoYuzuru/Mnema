@@ -5,7 +5,7 @@ artifact:
   title: "Mnema exercise and learning-evidence contracts"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-08-30"
+  updated_at: "2026-09-06"
   owners: ["project-owner"]
 ---
 
@@ -21,12 +21,14 @@ LearningItem → immutable ItemRevision
              → one or more MemoryObjectives
 ExerciseDefinition → immutable ExerciseRevision
 ExerciseRevision → one or more pinned ItemRevisions with explicit roles
-Attempt → per-objective evaluated evidence → versioned scheduler reducer → StudyState
-Browse/exposure ────────────────────────────X no scheduler update
+Scheduled attempt → per-objective evidence → versioned reducer → StudyState
+Browse / replay / extra practice ───────────X no canonical update
 ```
 
-`LearningItem` — канонический термин. Forward/reverse и иные независимо
-проверяемые направления принадлежат разным `MemoryObjective`. Одно упражнение
+`LearningItem` — канонический термин, локальный внутри одной колоды. Forward/reverse
+могут иметь разные `MemoryObjective`, если нужны независимые расписания; это не
+общая межколодная сущность знания. Пользователь видит прогресс материала, а не
+обязан разбираться в objectives. Одно упражнение
 может использовать несколько items, но показанный distractor/context не получает
 progress. Scheduler update разрешён только для objective, по которому есть
 наблюдаемый assessed response.
@@ -62,10 +64,14 @@ revision:
 ```json
 {
   "attemptId": "client-generated-uuid",
+  "sessionId": "server-issued-session-id",
+  "presentationId": "server-issued-question-id",
+  "deckId": "personal-deck-uuid",
   "deckRevisionId": "uuid",
+  "effectiveSnapshotId": "uuid",
   "exerciseRevisionId": "uuid",
   "presentedBindings": [
-    {"itemRevisionId": "uuid", "role": "ASSESSED|CUE|OPTION|CONTEXT"}
+    {"memberKey": "uuid", "itemRevisionId": "uuid", "role": "ASSESSED|CUE|OPTION|CONTEXT"}
   ],
   "response": {},
   "hintsUsed": [],
@@ -92,7 +98,12 @@ per-objective results:
 }
 ```
 
-Versioned scheduler policy отдельно преобразует evidence в transition. Повторная
+Сервер сверяет envelope с сохранённой presentation: клиент не выбирает правильный
+ответ, роли/набор целей или session mode. Effective snapshot фиксирует именно
+личную колоду, включая выбранные private changes, а не только чужую source revision.
+Versioned scheduler policy преобразует evidence в transition только для
+`SCHEDULED`. `REPLAY` и `PRACTICE` возвращают feedback, но не пишут canonical
+study state, introduction/exposure, due, streak или experiment outcome. Повторная
 отправка того же `attemptId` и payload возвращает сохранённый outcome; повторное
 использование ID с другим payload — idempotency conflict. Cancel, navigation away,
 timeout или evaluator failure не становятся incorrect attempt.
@@ -134,7 +145,7 @@ Recognition не бесполезно, но correct choice не означает
 
 ## Multi-item contract
 
-1. Все bindings принадлежат выбранной deck и одной pinned `DeckRevision`.
+1. Все bindings принадлежат выбранной личной deck и одному pinned effective snapshot, содержащему точные item/exercise revisions.
 2. У каждого binding есть роль `ASSESSED`, `CUE`, `OPTION` или `CONTEXT`.
 3. Только `ASSESSED` binding связывается с `MemoryObjective` и scheduler evidence.
 4. Aggregate UI score не копируется всем участвующим items.
@@ -144,16 +155,50 @@ Recognition не бесполезно, но correct choice не означает
    exercise.
 7. Incorrect pair не превращает два независимых objectives в две ошибки без двух
    наблюдаемых assessed responses.
-8. Neighbor, показанный как option/context, получает exposure, но не review.
+8. Neighbor как option/context может иметь diagnostic display event, но не canonical introduction/exposure или review credit.
 9. Набор revision фиксируется до ответа. Concurrent edit/remove не меняет
    начатое упражнение и не создаёт partial scheduler update.
-10. Candidate pool использует semantic/capability eligibility внутри deck;
+10. Candidate pool использует явно включённые пользователем совместимые bindings внутри deck;
     случайная близость по rank сама по себе не делает distractor хорошим.
 
 Пример владельца с четырьмя idioms поддерживается двумя способами: один focal
 objective + три pinned options или четыре independently assessed pair results в
 одном attempt group. Во втором случае каждый result обновляется отдельно; один
 общий `4/4` не раздаёт mastery автоматически.
+
+## Authoring: материал не равен ячейке упражнения
+
+Пользователь свободно смешивает грамматику, слова и конспекты в одной колоде.
+`ExerciseContentBinding.displaySpec` выбирает стабильные узлы/фрагменты либо
+собственный короткий label/asset; это не обязательные поля у каждого материала.
+Matching использует только явно разрешённый совместимый pool. Слово → перевод,
+слово → аудио и пользовательская подпись → подпись допустимы; огромный документ
+не становится подписью по умолчанию. Удалённая ссылка требует исправления,
+а не подстановки полного материала. Начальный предложенный предел matching label —
+80 graphemes; длина и media capabilities валидируются для каждой механики с
+проверкой mobile/zoom. Полный материал остаётся доступен отдельно для чтения.
+
+У flashcard явно настраиваются prompt и reveal; интервальное повторение —
+политика планирования этих и других упражнений, а не особый двухсторонний материал.
+Расширенные настройки раскрываются постепенно; редактор даёт быстрый путь через
+выбор фрагментов и preview, не требует заполнять технический binding JSON.
+
+## Progress, restart and optional practice
+
+Принятые сценарии: [authoring and study workflows](./authoring-and-study-workflows.md).
+Правка правильного ответа сохраняет историю и текущее расписание без автоматической
+revalidation. «Учить заново» — отдельная подтверждённая идемпотентная команда,
+которая перезапускает выбранные материалы, сохраняя старые events. Material progress
+агрегирует objective state внутри колоды; формула/подписи требуют проверки, не
+обещают вечного mastery и не копируют group score всем участникам.
+
+После normal Study пользователь может уйти, повторить сегодняшнюю законченную
+выборку (`REPLAY`) или практиковать всю колоду (`PRACTICE`), многократно. Replay
+использует показанные revisions/questions без прежних ответов. Полная практика
+по умолчанию исключает не введённый материал; seed, cursor, pinned eligibility и
+небольшие batches обеспечивают shuffle/weak-first без полной загрузки колоды.
+Все assessed ответы получают feedback, но только scheduled mode имеет canonical
+effects. Новые due позже в тот же день не блокируются дневным флагом completion.
 
 ## Feedback, confidence и spacing
 
@@ -183,6 +228,7 @@ objective + три pinned options или четыре independently assessed pai
 5. Single choice как recognition/error scaffold.
 6. Common attempt/feedback/evidence/idempotency contract.
 7. Keyboard, screen-reader and touch baseline общего shell.
+8. Server-enforced replay/full-deck practice and explicit restart; durable quick notes are excluded from all study modes.
 
 Multiple select перенесён из P0 в P1: он добавляет partial-scoring semantics, но не
 доказывает новый loop сверх single choice.
@@ -259,9 +305,13 @@ Product hypotheses для проверки на cohorts:
 
 - **AC-STUDY-01:** Study из deck A не показывает items deck B даже как distractors.
 - **AC-STUDY-02:** Browse/reveal без assessed response никогда не меняет due/mastery.
-- **AC-STUDY-03:** Attempt изменяет только objectives с ролью `ASSESSED` и сохраняет объяснимый evidence class/reasons.
+- **AC-STUDY-03:** Scheduled attempt изменяет только objectives с ролью `ASSESSED` и сохраняет объяснимый evidence class/reasons.
 - **AC-STUDY-04:** cancel/timeout/evaluator failure дают `NOT_ASSESSED`, не incorrect.
 - **AC-STUDY-05:** retry одного attempt имеет exactly-once scheduler effect.
+- **AC-STUDY-06:** replay/practice, включая retry/offline sync и подменённый client flag, имеют zero canonical effects.
+- **AC-STUDY-07:** ответ после edit сохраняет state; явный restart сохраняет history и перезапускает только выбранные материалы.
+- **AC-STUDY-08:** full-deck practice не загружает всю колоду, не делает unbounded random scan и не включает quick notes/never-introduced по умолчанию.
+- **AC-AUTHOR-01:** смешанная колода исключает не включённую грамматику из vocabulary matching; custom labels/media меняют представление, не исходный материал.
 - **AC-EVAL-01:** deterministic evaluator имеет приоритет; AI отсутствует.
 - **AC-EVAL-02:** result различает correct, partial, incorrect, unsure, not-assessed and unavailable.
 - **AC-EVAL-03:** feedback раскрывает reference и применённые checking rules.

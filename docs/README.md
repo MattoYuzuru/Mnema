@@ -7,10 +7,13 @@
 - **Current:** [Repository guide](./engineering/repository-guide.md) — карта кода, источники истины, команды и маршруты изменений.
 - **Current:** [Обзор системы](./system-overview.md) — существующая сервисная топология и возможности.
 - **Accepted input:** [Owner decisions](./decisions/owner-decisions-2026-08.md) — зафиксированные ответы, отклонённые варианты и действительно открытые решения.
+- **Accepted input + proposed defaults:** [Authoring and study workflows](./product/authoring-and-study-workflows.md) — уточнения 6 сентября: личные колоды, drafts/«На потом», проекции, три режима занятий, будущие forks/native/подписки.
+- **Reviewed local handoff:** [Refinement report, September 6](./reviews/product-refinement-2026-09.md) — карта результатов, supersession, проверки и оставшиеся engineering gates.
 - **Accepted:** [Source license transition](./decisions/source-license-transition.md) — personal-use source-available для новых ревизий и неизменяемая Apache-граница `v1-apache-final`.
 - **Proposed, owner-updated:** [Итоговое ревью проекта](./reviews/project-review-2026-08.md) — рекомендация, риски и последовательность greenfield-работ.
 - **Proposed:** [Product direction v2](./product/product-direction-v2.md) — deck-scoped learning, hosted business, roadmap и метрики.
 - **Proposed:** [Content and study platform v2](./architecture/content-platform-v2.md) — shared revisions, sparse overlays and study model.
+- **Proposed:** [Revision storage and runtime boundaries](./architecture/revision-storage-and-runtime-boundaries.md) — блоковое переиспользование, bounded reads, дешёвый fork, workers и объяснение Git-like версий.
 - **Proposed:** [Native content format v2](./architecture/learning-content-format-v2.md) — structured AST, Markdown/editor, rendering, Anki, media and offline boundary.
 - **Proposed:** [Exercise catalog v2](./product/exercise-catalog-v2.md) — 30+ mechanics, common attempt contract and P0/P1/P2.
 - **Proposed:** [Russia launch economics](./product/russia-launch-economics-2026.md) — market scenarios, T‑Bank, tiers, providers and AI costs.
@@ -22,7 +25,9 @@
 - **Current:** [Work item standard](./engineering/work-item-standard.md) — единый человеко- и агентопонятный формат epic, задачи, human action и PR.
 - **Current:** [GitHub execution model](./engineering/github-execution-model.md) — Project #4, созданные epics #70–#80, DoR/DoD и commit/PR discipline без новой taxonomy.
 - **Proposed:** [Greenfield delivery plan](./engineering/v2-delivery-plan-2026-08.md) — границы эпиков, reviewable work items и destructive-cutover gate.
+- **Proposed execution slices:** [Подготовка #74](./engineering/epic-74-refinement.md) — два первых spikes, критерии выбора storage/editor, contract gate и parallel content/UI очередь.
 - **Superseded direction / retained evidence:** [Frontend / UX audit](./frontend/experience-audit-2026-08.md) — актуальные performance/a11y findings, но прежняя Liquid Glass/Focused Study Desk рекомендация отменена owner decision.
+- **Selected direction + prototype:** [Paper UI handoff](./frontend/design-and-experience-2026-09.md) — русский B2C лендинг, античность/индиго, редактор и занятия; [попробовать локальный макет](../design/prototype/README.md).
 - **Proposed:** [Delivery audit](./operations/delivery-audit-2026-08.md) — CI/CD, Kubernetes, recovery и безопасный rollout.
 - **Proposed:** [GitHub platform and staging plan](./operations/github-platform-and-staging-plan-2026-08.md) — фактические settings, GitHub Pro/Copilot, test layers, два сервера и P0 delivery epic.
 - **Current:** [Staging bootstrap and secret contract](./operations/staging-runbook.md) — namespace/RBAC bootstrap, prefixed GitHub Environment keys, promotion and rollback boundary.
@@ -47,7 +52,13 @@ v2. Текущий local runbook разрешён публичной лицен�
 - [Self-Hosted Public Deployment](./deploy/selfhost-public.md)
 - [Local AI Model Matrix](./deploy/model-matrix.md)
 
-## Текущие сервисы
+## Runtime guides и исторические service docs
+
+Identity & Account уже объединён в исходниках; Learning API пока foundation shell.
+Это не означает, что content/study из legacy core уже перенесены. Приоритет имеют
+[Identity & Account guide](../backend/services/identity-account/guide.md) и
+[Learning API guide](../backend/services/learning/guide.md). Auth/User и описание
+шестисервисной topology ниже — replacement input, не target architecture.
 
 - [Auth Service](./services/auth-service.md)
 - [User Service](./services/user-service.md)

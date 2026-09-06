@@ -5,7 +5,7 @@ artifact:
   title: "Mnema greenfield reset, capacity and offline plan"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-08-30"
+  updated_at: "2026-09-06"
   owners: ["project-owner"]
 ---
 
@@ -177,6 +177,11 @@ Kubernetes HPA requires correct resource requests/readiness and can scale on cus
 
 ## Offline contract
 
+Current launch is web-only. The first future iOS/Android clients share account and
+progress APIs; a BFF is optional and does not own a second scheduler. #76 reserves
+these contracts without promising native apps or a PWA in its launch acceptance.
+Offline monetization is an open hypothesis, not a current entitlement.
+
 - immutable deck, item and exercise revisions;
 - globally unique client-generated IDs for offline entities, commands and attempts;
 - mutable aggregates use `row_version` and CAS/`If-Match`;
@@ -186,12 +191,30 @@ Kubernetes HPA requires correct resource requests/readiness and can scale on cus
 - media downloads lazily or as an explicit offline pack;
 - editing uses three-way merge over stable node/region IDs, not last-write-wins or Markdown line merge;
 - attempt includes event ID, device ID/sequence, base state version, client/server time and runtime versions;
-- parallel device attempts are retained and a deterministic reducer recalculates canonical schedule;
+- parallel scheduled device attempts are retained; the versioned reducer needs an explicit ordering/rebase policy, including attempts from before a user-requested learning restart; exactly-once transport alone does not settle this;
+- replay/practice mode remains server-authorized through offline sync and never updates canonical state, exposure, streak or scheduler experiment outcomes;
 - an unsupported exercise never executes arbitrary content code.
 
 PostgreSQL 18 can generate UUIDv7 for server-originated IDs, but clients need a cross-platform implementation or may use UUIDv4 initially; do not add an unapproved dependency only for sortability. Relevant references: [PostgreSQL UUID functions](https://www.postgresql.org/docs/18/functions-uuid.html) and [RFC 9562](https://www.rfc-editor.org/rfc/rfc9562). Android's offline-first guidance likewise recommends a local read source and explicit conflict resolution ([Android](https://developer.android.com/topic/architecture/data-layer/offline-first)).
 
-P0 offline scope is browse/review of downloaded decks. Offline collaborative editing and CRDT history are explicitly deferred.
+The first future offline scope is browse/review of downloaded decks, including
+their available media. Manifests pin immutable hashes; partially downloaded updates
+do not replace a usable installed pack. Bounded downloads, expiring retention leases
+and a visible unavailable-content policy avoid indefinite history/media retention.
+Offline collaborative editing and CRDT history are deferred.
+
+## Authoring and large-operation budgets
+
+[Owner workflows](../product/authoring-and-study-workflows.md) distinguish durable
+quick notes from expiring server editing drafts. PostgreSQL is the acknowledged
+draft source; Redis, if later used, is a cache, not the sole copy. Draft TTL must
+not delete unfinished quick notes. Proposed retention/size defaults live there.
+
+[Revision storage](../architecture/revision-storage-and-runtime-boundaries.md)
+defines shared blocks/pages, bounded publication, cheap forks, seeded paged practice
+and GC reachability. Heavy imports/media/bulk publication use independent bounded
+workers. More API replicas do not remove database IOPS, lock, pool, queue or provider
+limits; admission control and measured failover/restore remain necessary.
 
 ## MinIO and reliability harness
 

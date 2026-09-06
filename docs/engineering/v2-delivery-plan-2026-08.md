@@ -5,7 +5,7 @@ artifact:
   title: "Mnema greenfield replacement delivery plan"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-08-30"
+  updated_at: "2026-09-06"
   owners: ["project-owner"]
 ---
 
@@ -13,10 +13,11 @@ artifact:
 
 ## Назначение текущего шага
 
-Сейчас выполняется только refinement: принятые owner decisions фиксируются в
-канонических документах, epic #73 разбивается на reviewable engineering и
-operational issues, а будущие epics #74–#77 получают точные границы. Этот шаг не
-меняет production, базы, S3, runtime code или deployment.
+Текущий refinement фиксирует уточнения владельца от 6 сентября в канонических
+документах и отдельном интерактивном prototype. #73 уже имеет реализованные
+foundation slices; #74–#76 получают обновлённые продуктовые границы. Этот шаг
+не меняет production, базы, S3, product runtime или deployment и не обновляет GitHub
+issues автоматически. Локальный prototype — design evidence, не production UI.
 
 `V2` в названиях старых документов означает поколение продукта, а не API
 namespace. Replacement занимает канонические routes; `/v2`, side-by-side runtime,
@@ -41,9 +42,9 @@ dual read/write, migration adapters и legacy fallback запрещены.
 | Epic | Outcome | Что намеренно остаётся там |
 |---|---|---|
 | #73 Greenfield foundation и account-only cutover | новый runtime skeleton, Identity & Account, canonical API/data foundation, delivery topology, account-only transfer и финальный destructive cutover | не реализует editor, exercise catalogue, media platform или AI |
-| #74 LearningItem content и frontend reset | native content/editor/renderer и полностью новый Angular UI | visual direction уточняется отдельно; Liquid Glass/v1 components не сохраняются |
-| #75 Study и exercise platform | M:N exercises, evidence, scheduler, deck-scoped sessions и эксперименты | все mechanics и learning algorithms проектируются здесь, не в #73 |
-| #76 New media/offline | новая asset/reference/variant модель и offline manifests | learning media строятся с нуля; legacy S3 не мигрирует |
+| #74 LearningItem content и frontend reset | личные Deck/LearningItem, экономные revisions, server drafts/quick notes, native editor/renderer и новый Angular UI | выбрана paper/antiquity direction; каталог/fork UI позже; Liquid Glass/v1 components не сохраняются |
+| #75 Study и exercise platform | M:N projections/pools, evidence, scheduler, material progress, normal/replay/practice и явный restart | mechanics, learning policies и calibration здесь; AI отсутствует |
+| #76 New media/offline boundaries | новая asset/reference/variant модель для image/audio/video и versioned download/sync boundaries | ближайший продукт web-only; native offline позднее; legacy S3 не мигрирует |
 | #77 Deferred managed AI | open-answer evaluation, generation, provider eval и quota/cost boundary | AI не блокирует #73–#76 и не обновляет scheduler напрямую |
 
 ## Reviewable work items epic #73
@@ -86,9 +87,10 @@ keys and secrets восстанавливаются из configuration; sessions
 
 ### Content
 
-`Deck`, `DeckRevision`, `LearningItem` и `ItemRevision` используют global UUID.
-Published revisions immutable; deck publication хранит changes и rebuildable head,
-а не копию всех items. Весь этот domain kernel вместе с rich document nodes,
+`Deck` и revisions имеют opaque UUID; логическая identity материала —
+`(deck_id, member_key)`, включая будущие fork namespaces. Immutable content
+blocks и paged roots переиспользуются; metadata-only save не копирует items.
+Snapshot reads не зависят от длины истории. Весь этот domain kernel вместе с rich document nodes,
 editor/renderer and visual UX принадлежит #74, а не foundation #73.
 
 ### Study
@@ -96,7 +98,8 @@ editor/renderer and visual UX принадлежит #74, а не foundation #73
 #73 резервирует IDs/idempotency/concurrency conventions, но не переносит текущие
 SM2/FSRS/HLR implementations. #75 определяет `MemoryObjective`, M:N exercise
 bindings, normalized evidence, canonical scheduler reducer, experiment assignment
-и attempt history. Browse не создаёт learning evidence.
+и attempt history. Browse, replay и extra practice не изменяют canonical state;
+правка ответа сохраняет scheduling, explicit restart сохраняет старую историю.
 
 ### Media and AI
 
@@ -107,16 +110,43 @@ versioned evaluator contract и возвращает auditable evidence; provide
 
 ## Sequencing и status policy
 
-1. Merge planning/docs and issue refinement.
-2. Поставить в `Ready` только первую #73 task; parent epic не должен оставаться
-   `XL Ready`.
-3. Выполнять tasks 1–6 небольшими PR, сохраняя возможность оставить продукт в
-   maintenance/incomplete state.
-4. Refine #74/#75/#76 into their own sub-issues only при старте соответствующего
-   epic; не маскировать их implementation внутри #73.
-5. Rehearse task 7 на изолированных synthetic resources.
-6. Task 8 выполняется последней и только по exact manifests. После неё возможен
-   лишь roll-forward.
+1. На проверке 2026-09-06 у #73 закрыты #139–#145 и #157; #146/#147 ожидают
+   replacement gates. Identity & Account реализован; Learning API пока platform
+   shell, а не готовые content/study domains. Это не свидетельство production cutover.
+2. Продолжить #74 после storage/API/editor refinement. Фронтенд можно вести
+   параллельно backend по зафиксированным DTO/error/state fixtures; mock не заменяет
+   integration acceptance. Не ждать всей реализации #75 ради landing/editor shell.
+3. Затем #75; media contract из #76 согласовать заранее, а независимые media slices
+   можно делать параллельно после фиксации asset refs/ownership. Не включать native
+   приложения или community release в условие завершения ручного web loop.
+4. Каждому epic — reviewable 1–3-day slices с закрытыми локальными decisions,
+   acceptance и failure tests. Весь epic не переводится в Ready как одна XL task.
+5. После достаточных #74–#76 behavior gates завершить #146 и повторить изолированную
+   rehearsal #145 с актуальными exact targets.
+6. Последняя destructive task — **#147 (порядок 9)**, не #146. Нужен отдельный
+   production go/no-go; после первой deletion остаётся лишь roll-forward.
+
+### Suggested refinement slices, not newly created issues
+
+Следующие два spike-задания, contract gate и порядок content/UI slices подробно
+описаны в [подготовке #74](./epic-74-refinement.md). Они ещё не выполнены и не
+означают, что весь epic готов к параллельному implementation.
+
+- #74: prove block/page storage and cheap fork invariants; define canonical paged
+  read/save/draft/capture contracts; implement private authoring; native render/editor
+  spike; Angular paper shell and accessible connected flows. Exercise display-spec
+  seam согласовать с #75 до persistence, не реализуя все mechanics заранее.
+- #75: projection/pool authoring and validation; common attempt/mode envelope;
+  scheduled reducer + explicit restart; bounded session selection/replay/practice;
+  material aggregate UI and P0 mechanics; then evidence-gated P1 matching/ordering.
+- #76: upload/asset/variant lifecycle; authorization and rendering; bounded media
+  jobs/GC; manifest/hash/sync contract tests. Native download/offline clients later.
+
+Canonical details: [owner workflows](../product/authoring-and-study-workflows.md),
+[storage/runtime](../architecture/revision-storage-and-runtime-boundaries.md),
+[frontend handoff](../frontend/design-and-experience-2026-09.md). Still open before
+specific implementation: page/node limits and tested storage LLD, editor engine,
+exact DTOs, scheduler/aggregate calibration and offline concurrent-event policy.
 
 ## Evidence gates
 
