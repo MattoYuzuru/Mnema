@@ -317,6 +317,35 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
                 .andExpect(status().isUnauthorized());
     }
 
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"grant", "generation"})
+    void userInfoRequiresGrantAndGenerationIndependently(String revokedPart) throws Exception {
+        var account = account();
+        String verifier = "synthetic-independent-verifier-0123456789-abcdefghijklmnopqrstuvwxyz";
+        String code = authorize(login(account), verifier, "mnema-web", "openid learning.read");
+        var result = mvc.perform(post("/oauth2/token").param("grant_type", "authorization_code")
+                        .param("client_id", "mnema-web").param("redirect_uri", "https://mnema.app/auth/callback")
+                        .param("code", code).param("code_verifier", verifier))
+                .andExpect(status().isOk()).andReturn();
+        String accessToken = json.readTree(result.getResponse().getContentAsString()).path("access_token").asText();
+        var grant = authorizations.findByToken(accessToken,
+                org.springframework.security.oauth2.server.authorization.OAuth2TokenType.ACCESS_TOKEN);
+        assertThat(grant).isNotNull();
+        mvc.perform(get("/userinfo").header("Authorization", "Bearer " + accessToken)).andExpect(status().isOk());
+
+        if (revokedPart.equals("grant")) {
+            authorizations.remove(grant);
+            accounts.require(account, false);
+        } else {
+            jdbc.sql("UPDATE app_identity.account SET security_generation=security_generation+1 WHERE account_id=:id")
+                    .param("id", account.accountId()).update();
+            assertThat(jdbc.sql("SELECT count(*) FROM app_identity.oauth2_authorization WHERE id=:id")
+                    .param("id", grant.getId()).query(Long.class).single()).isEqualTo(1);
+        }
+        mvc.perform(get("/userinfo").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isUnauthorized());
+    }
+
     @Test
     void concurrentCodeExchangeHasExactlyOneSuccess() throws Exception {
         var a = account();
