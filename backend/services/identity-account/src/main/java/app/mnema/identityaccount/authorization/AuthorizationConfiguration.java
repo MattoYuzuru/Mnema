@@ -69,6 +69,7 @@ public class AuthorizationConfiguration {
                 .clientAuthenticationMethod(ClientAuthenticationMethod.NONE)
                 .authorizationGrantType(AuthorizationGrantType.AUTHORIZATION_CODE).redirectUri(redirect)
                 .scope(OidcScopes.OPENID).scope(OidcScopes.PROFILE).scope("account.read").scope("account.write")
+                .scope("learning.read").scope("learning.write")
                 .clientSettings(
                         ClientSettings.builder().requireProofKey(true).requireAuthorizationConsent(false).build())
                 .tokenSettings(TokenSettings.builder().accessTokenTimeToLive(Duration.ofMinutes(5))

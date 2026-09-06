@@ -288,6 +288,65 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void learningScopesAreSeparateAndUserInfoChecksCurrentGrantAndGeneration() throws Exception {
+        var account = account();
+        var cookie = login(account);
+        String verifier = "synthetic-learning-verifier-0123456789-abcdefghijklmnopqrstuvwxyz";
+        String code = authorize(cookie, verifier, "mnema-web", "openid learning.read learning.write");
+        var result = mvc.perform(post("/oauth2/token").param("grant_type", "authorization_code")
+                        .param("client_id", "mnema-web").param("redirect_uri", "https://mnema.app/auth/callback")
+                        .param("code", code).param("code_verifier", verifier))
+                .andExpect(status().isOk()).andReturn();
+        var tokens = json.readTree(result.getResponse().getContentAsString());
+        String bearer = "Bearer " + tokens.path("access_token").asText();
+
+        assertThat(tokens.path("scope").asText().split(" "))
+                .containsExactlyInAnyOrder("openid", "learning.read", "learning.write");
+        mvc.perform(get("/userinfo").header("Authorization", bearer))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.sub").value(account.accountId().toString()));
+        mvc.perform(get("/api/accounts/me").header("Authorization", bearer))
+                .andExpect(status().isForbidden());
+        mvc.perform(get("/userinfo").header("Authorization", "Bearer " + tokens.path("id_token").asText()))
+                .andExpect(status().isUnauthorized());
+
+        tx.executeWithoutResult(status -> {
+            accounts.get(account.accountId(), true);
+            accounts.revoke(account.accountId());
+        });
+        mvc.perform(get("/userinfo").header("Authorization", bearer))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {"grant", "generation"})
+    void userInfoRequiresGrantAndGenerationIndependently(String revokedPart) throws Exception {
+        var account = account();
+        String verifier = "synthetic-independent-verifier-0123456789-abcdefghijklmnopqrstuvwxyz";
+        String code = authorize(login(account), verifier, "mnema-web", "openid learning.read");
+        var result = mvc.perform(post("/oauth2/token").param("grant_type", "authorization_code")
+                        .param("client_id", "mnema-web").param("redirect_uri", "https://mnema.app/auth/callback")
+                        .param("code", code).param("code_verifier", verifier))
+                .andExpect(status().isOk()).andReturn();
+        String accessToken = json.readTree(result.getResponse().getContentAsString()).path("access_token").asText();
+        var grant = authorizations.findByToken(accessToken,
+                org.springframework.security.oauth2.server.authorization.OAuth2TokenType.ACCESS_TOKEN);
+        assertThat(grant).isNotNull();
+        mvc.perform(get("/userinfo").header("Authorization", "Bearer " + accessToken)).andExpect(status().isOk());
+
+        if (revokedPart.equals("grant")) {
+            authorizations.remove(grant);
+            accounts.require(account, false);
+        } else {
+            jdbc.sql("UPDATE app_identity.account SET security_generation=security_generation+1 WHERE account_id=:id")
+                    .param("id", account.accountId()).update();
+            assertThat(jdbc.sql("SELECT count(*) FROM app_identity.oauth2_authorization WHERE id=:id")
+                    .param("id", grant.getId()).query(Long.class).single()).isEqualTo(1);
+        }
+        mvc.perform(get("/userinfo").header("Authorization", "Bearer " + accessToken))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void concurrentCodeExchangeHasExactlyOneSuccess() throws Exception {
         var a = account();
         var cookie = login(a);
@@ -472,12 +531,16 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
     }
 
     String authorize(Cookie cookie, String verifier, String clientId) throws Exception {
+        return authorize(cookie, verifier, clientId, "openid profile account.read account.write");
+    }
+
+    String authorize(Cookie cookie, String verifier, String clientId, String scopes) throws Exception {
         String challenge = Base64.getUrlEncoder().withoutPadding().encodeToString(
                 MessageDigest.getInstance("SHA-256").digest(verifier.getBytes(StandardCharsets.US_ASCII)));
         var result = mvc.perform(
                         get("/oauth2/authorize").secure(true).cookie(cookie).queryParam("response_type", "code")
                                 .queryParam("client_id", clientId).queryParam("redirect_uri", "https://mnema.app/auth/callback")
-                                .queryParam("scope", "openid profile account.read account.write")
+                                .queryParam("scope", scopes)
                                 .queryParam("state", "fixture-state").queryParam("code_challenge", challenge)
                                 .queryParam("code_challenge_method", "S256")).andExpect(status().is3xxRedirection())
                 .andReturn();
