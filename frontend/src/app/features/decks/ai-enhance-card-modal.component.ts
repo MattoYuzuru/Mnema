@@ -1,5 +1,5 @@
-import { Component, EventEmitter, Input, OnInit, Output, Injector, WritableSignal, computed, effect, inject, signal } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { Component, EventEmitter, Input, OnInit, Output, Injector, WritableSignal, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormsModule } from '@angular/forms';
 import { AiApiService } from '../../core/services/ai-api.service';
 import { CardApiService } from '../../core/services/card-api.service';
@@ -39,8 +39,7 @@ type FieldMapping = { sourceField: string; targetField: string };
 
 @Component({
     selector: 'app-ai-enhance-card-modal',
-    standalone: true,
-    imports: [NgIf, NgFor, FormsModule, ButtonComponent, TranslatePipe, AiPreflightPanelComponent],
+    imports: [FormsModule, ButtonComponent, TranslatePipe, AiPreflightPanelComponent],
     template: `
     <div class="modal-overlay" (click)="close()">
       <div class="modal-content ai-modal" (click)="$event.stopPropagation()">
@@ -61,15 +60,19 @@ type FieldMapping = { sourceField: string; targetField: string };
                 [ngModel]="selectedCredentialId()"
                 (ngModelChange)="onProviderChange($event)"
                 [disabled]="loadingProviders() || providerKeys().length === 0"
-              >
+                >
                 <option [ngValue]="''">{{ 'cardEnhance.selectKey' | translate }}</option>
-                <option *ngFor="let key of providerKeys(); trackBy: trackProvider" [ngValue]="key.id">
-                  {{ key.provider }}{{ key.alias ? ' · ' + key.alias : '' }}
-                </option>
+                @for (key of providerKeys(); track trackProvider($index, key)) {
+                  <option [ngValue]="key.id">
+                    {{ key.provider }}{{ key.alias ? ' · ' + key.alias : '' }}
+                  </option>
+                }
               </select>
-              <p *ngIf="!loadingProviders() && providerKeys().length === 0" class="field-hint">
-                {{ 'cardEnhance.noKeys' | translate }}
-              </p>
+              @if (!loadingProviders() && providerKeys().length === 0) {
+                <p class="field-hint">
+                  {{ 'cardEnhance.noKeys' | translate }}
+                </p>
+              }
             </div>
             <div class="form-field">
               <label for="ai-card-text-model">Text model</label>
@@ -78,272 +81,323 @@ type FieldMapping = { sourceField: string; targetField: string };
                 class="glass-select"
                 [ngModel]="modelChoice('text', modelName())"
                 (ngModelChange)="onModelChoiceChange('text', $event)"
-              >
-                <option *ngFor="let model of textModelOptions()" [ngValue]="model.value">
-                  {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
-                </option>
+                >
+                @for (model of textModelOptions(); track model) {
+                  <option [ngValue]="model.value">
+                    {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
+                  </option>
+                }
               </select>
-              <input
-                *ngIf="isCustomModel('text', modelName())"
-                type="text"
-                [ngModel]="modelName()"
-                (ngModelChange)="onModelChange($event)"
-                [placeholder]="modelPlaceholder()"
-              />
+              @if (isCustomModel('text', modelName())) {
+                <input
+                  type="text"
+                  [ngModel]="modelName()"
+                  (ngModelChange)="onModelChange($event)"
+                  [placeholder]="modelPlaceholder()"
+                  />
+              }
               <p class="field-hint">{{ modelHint('text', modelName()) }}</p>
             </div>
           </div>
 
-          <div class="missing-panel" *ngIf="missingFields().length > 0">
-            <label class="grid-label">{{ 'cardEnhance.missingFields' | translate }}</label>
-            <div class="missing-toggles">
-              <label class="checkbox-label glass-checkbox">
-                <input
-                  type="checkbox"
-                  [checked]="ttsEnabled()"
-                  (change)="onTtsEnabledChange($any($event.target).checked)"
-                  [disabled]="!ttsSupported() || missingAudioFields().length === 0"
-                />
-                <span>Generate audio</span>
-              </label>
-              <label class="checkbox-label glass-checkbox">
-                <input
-                  type="checkbox"
-                  [checked]="imageEnabled()"
-                  (change)="onImageEnabledChange($any($event.target).checked)"
-                  [disabled]="!imageSupported() || missingImageFields().length === 0"
-                />
-                <span>Generate images</span>
-              </label>
-              <label class="checkbox-label glass-checkbox">
-                <input
-                  type="checkbox"
-                  [checked]="videoEnabled()"
-                  (change)="onVideoEnabledChange($any($event.target).checked)"
-                  [disabled]="!videoSupported() || missingVideoFields().length === 0"
-                />
-                <span>Generate video / GIF</span>
-              </label>
-            </div>
-            <div *ngIf="missingAudioFields().length > 0 && !ttsSupported()" class="field-hint">
-              {{ 'cardEnhance.audioUnavailable' | translate }}
-            </div>
-            <div class="missing-list mn-scrollbar">
-              <div class="missing-row" *ngFor="let field of missingFields(); trackBy: trackField">
-                <span class="missing-label">{{ field.label || field.name }}</span>
-                <span class="missing-type">{{ fieldTypeLabel(field.fieldType) }}</span>
+          @if (missingFields().length > 0) {
+            <div class="missing-panel">
+              <label class="grid-label">{{ 'cardEnhance.missingFields' | translate }}</label>
+              <div class="missing-toggles">
+                <label class="checkbox-label glass-checkbox">
+                  <input
+                    type="checkbox"
+                    [checked]="ttsEnabled()"
+                    (change)="onTtsEnabledChange($any($event.target).checked)"
+                    [disabled]="!ttsSupported() || missingAudioFields().length === 0"
+                    />
+                  <span>Generate audio</span>
+                </label>
+                <label class="checkbox-label glass-checkbox">
+                  <input
+                    type="checkbox"
+                    [checked]="imageEnabled()"
+                    (change)="onImageEnabledChange($any($event.target).checked)"
+                    [disabled]="!imageSupported() || missingImageFields().length === 0"
+                    />
+                  <span>Generate images</span>
+                </label>
+                <label class="checkbox-label glass-checkbox">
+                  <input
+                    type="checkbox"
+                    [checked]="videoEnabled()"
+                    (change)="onVideoEnabledChange($any($event.target).checked)"
+                    [disabled]="!videoSupported() || missingVideoFields().length === 0"
+                    />
+                  <span>Generate video / GIF</span>
+                </label>
               </div>
-            </div>
-            <div class="scope-toggle">
-              <label class="checkbox-label glass-checkbox">
-                <input
-                  type="checkbox"
-                  [checked]="updateScope() === 'global'"
-                  (change)="onUpdateScopeChange($any($event.target).checked)"
-                />
-                <span>Apply globally (new public version)</span>
-              </label>
-              <div *ngIf="updateScope() === 'global'" class="field-hint">
-                Global updates are available for deck authors only.
+              @if (missingAudioFields().length > 0 && !ttsSupported()) {
+                <div class="field-hint">
+                  {{ 'cardEnhance.audioUnavailable' | translate }}
+                </div>
+              }
+              <div class="missing-list mn-scrollbar">
+                @for (field of missingFields(); track trackField($index, field)) {
+                  <div class="missing-row">
+                    <span class="missing-label">{{ field.label || field.name }}</span>
+                    <span class="missing-type">{{ fieldTypeLabel(field.fieldType) }}</span>
+                  </div>
+                }
               </div>
-            </div>
-            <div *ngIf="missingAudioFields().length > 0 && ttsEnabled() && ttsSupported()" class="form-grid tts-form">
-              <div class="form-field">
-                <label for="ai-card-tts-model">TTS model (optional)</label>
-                <select
-                  id="ai-card-tts-model"
-                  class="glass-select"
-                  [ngModel]="modelChoice('tts', ttsModel())"
-                  (ngModelChange)="onModelChoiceChange('tts', $event)"
-                >
-                  <option *ngFor="let model of ttsModelOptions()" [ngValue]="model.value">
-                    {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
-                  </option>
-                </select>
-                <input
-                  *ngIf="isCustomModel('tts', ttsModel())"
-                  type="text"
-                  [ngModel]="ttsModel()"
-                  (ngModelChange)="onTtsModelChange($event)"
-                  [placeholder]="ttsModelPlaceholder()"
-                />
-                <p class="field-hint">{{ modelHint('tts', ttsModel()) }}</p>
+              <div class="scope-toggle">
+                <label class="checkbox-label glass-checkbox">
+                  <input
+                    type="checkbox"
+                    [checked]="updateScope() === 'global'"
+                    (change)="onUpdateScopeChange($any($event.target).checked)"
+                    />
+                  <span>Apply globally (new public version)</span>
+                </label>
+                @if (updateScope() === 'global') {
+                  <div class="field-hint">
+                    Global updates are available for deck authors only.
+                  </div>
+                }
               </div>
-              <div class="form-field">
-                <label for="ai-card-voice">{{ 'cardEnhance.voice' | translate }}</label>
-                <select
-                  id="ai-card-voice"
-                  class="glass-select"
-                  [ngModel]="ttsVoicePreset()"
-                  (ngModelChange)="onTtsVoicePresetChange($event)"
-                >
-                  <option *ngFor="let voice of voiceOptions()" [ngValue]="voice">{{ voiceLabel(voice) }}</option>
-                </select>
-              </div>
-              <div class="form-field" *ngIf="ttsVoicePreset() === 'custom'">
-                <label for="ai-card-voice-custom">{{ 'cardEnhance.customVoice' | translate }}</label>
-                <input
-                  id="ai-card-voice-custom"
-                  type="text"
-                  [ngModel]="ttsVoiceCustom()"
-                  (ngModelChange)="onTtsVoiceCustomChange($event)"
-                  placeholder="voice-name"
-                />
-              </div>
-              <div class="mapping-panel">
-                <label>Audio source mapping</label>
-                <div class="mapping-list">
-                  <div *ngFor="let mapping of ttsMappings(); let i = index" class="mapping-row">
+              @if (missingAudioFields().length > 0 && ttsEnabled() && ttsSupported()) {
+                <div class="form-grid tts-form">
+                  <div class="form-field">
+                    <label for="ai-card-tts-model">TTS model (optional)</label>
                     <select
+                      id="ai-card-tts-model"
                       class="glass-select"
-                      [ngModel]="mapping.sourceField"
-                      (ngModelChange)="onTtsSourceChange(i, $event)"
-                    >
-                      <option *ngFor="let field of textFields(); trackBy: trackField" [ngValue]="field.name">
-                        {{ field.label || field.name }}
-                      </option>
+                      [ngModel]="modelChoice('tts', ttsModel())"
+                      (ngModelChange)="onModelChoiceChange('tts', $event)"
+                      >
+                      @for (model of ttsModelOptions(); track model) {
+                        <option [ngValue]="model.value">
+                          {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
+                        </option>
+                      }
                     </select>
-                    <span class="mapping-arrow">→</span>
+                    @if (isCustomModel('tts', ttsModel())) {
+                      <input
+                        type="text"
+                        [ngModel]="ttsModel()"
+                        (ngModelChange)="onTtsModelChange($event)"
+                        [placeholder]="ttsModelPlaceholder()"
+                        />
+                    }
+                    <p class="field-hint">{{ modelHint('tts', ttsModel()) }}</p>
+                  </div>
+                  <div class="form-field">
+                    <label for="ai-card-voice">{{ 'cardEnhance.voice' | translate }}</label>
                     <select
+                      id="ai-card-voice"
                       class="glass-select"
-                      [ngModel]="mapping.targetField"
-                      (ngModelChange)="onTtsTargetChange(i, $event)"
-                    >
-                      <option *ngFor="let field of missingAudioFields(); trackBy: trackField" [ngValue]="field.name">
-                        {{ field.label || field.name }}
-                      </option>
+                      [ngModel]="ttsVoicePreset()"
+                      (ngModelChange)="onTtsVoicePresetChange($event)"
+                      >
+                      @for (voice of voiceOptions(); track voice) {
+                        <option [ngValue]="voice">{{ voiceLabel(voice) }}</option>
+                      }
                     </select>
-                    <button type="button" class="remove-mapping" (click)="removeTtsMapping(i)" aria-label="Remove audio mapping">×</button>
+                  </div>
+                  @if (ttsVoicePreset() === 'custom') {
+                    <div class="form-field">
+                      <label for="ai-card-voice-custom">{{ 'cardEnhance.customVoice' | translate }}</label>
+                      <input
+                        id="ai-card-voice-custom"
+                        type="text"
+                        [ngModel]="ttsVoiceCustom()"
+                        (ngModelChange)="onTtsVoiceCustomChange($event)"
+                        placeholder="voice-name"
+                        />
+                    </div>
+                  }
+                  <div class="mapping-panel">
+                    <label>Audio source mapping</label>
+                    <div class="mapping-list">
+                      @for (mapping of ttsMappings(); track mapping; let i = $index) {
+                        <div class="mapping-row">
+                          <select
+                            class="glass-select"
+                            [ngModel]="mapping.sourceField"
+                            (ngModelChange)="onTtsSourceChange(i, $event)"
+                            >
+                            @for (field of textFields(); track trackField($index, field)) {
+                              <option [ngValue]="field.name">
+                                {{ field.label || field.name }}
+                              </option>
+                            }
+                          </select>
+                          <span class="mapping-arrow">→</span>
+                          <select
+                            class="glass-select"
+                            [ngModel]="mapping.targetField"
+                            (ngModelChange)="onTtsTargetChange(i, $event)"
+                            >
+                            @for (field of missingAudioFields(); track trackField($index, field)) {
+                              <option [ngValue]="field.name">
+                                {{ field.label || field.name }}
+                              </option>
+                            }
+                          </select>
+                          <button type="button" class="remove-mapping" (click)="removeTtsMapping(i)" aria-label="Remove audio mapping">×</button>
+                        </div>
+                      }
+                    </div>
+                    <button type="button" class="add-mapping" (click)="addTtsMapping()">Add audio mapping</button>
                   </div>
                 </div>
-                <button type="button" class="add-mapping" (click)="addTtsMapping()">Add audio mapping</button>
-              </div>
-            </div>
-            <div *ngIf="missingImageFields().length > 0 && imageEnabled() && imageSupported()" class="form-grid tts-form">
-              <div class="form-field">
-                <label for="ai-card-image-model">Image model</label>
-                <select
-                  id="ai-card-image-model"
-                  class="glass-select"
-                  [ngModel]="imageModel()"
-                  (ngModelChange)="onImageModelChange($event)"
-                >
-                  <option *ngFor="let model of imageModelOptions()" [ngValue]="model">
-                    {{ model === 'custom' ? 'Custom' : model }}
-                  </option>
-                </select>
-                <input
-                  *ngIf="imageModel() === 'custom'"
-                  type="text"
-                  [ngModel]="imageModelCustom()"
-                  (ngModelChange)="onImageModelCustomChange($event)"
-                  placeholder="custom-image-model"
-                />
-              </div>
-              <div class="form-field">
-                <label for="ai-card-image-size">Size</label>
-                <input
-                  id="ai-card-image-size"
-                  type="text"
-                  [ngModel]="imageSize()"
-                  (ngModelChange)="onImageSizeChange($event)"
-                  placeholder="1024x1024"
-                />
-              </div>
-              <div class="mapping-panel">
-                <label>Image source mapping</label>
-                <div class="mapping-list">
-                  <div *ngFor="let mapping of imageMappings(); let i = index" class="mapping-row">
+              }
+              @if (missingImageFields().length > 0 && imageEnabled() && imageSupported()) {
+                <div class="form-grid tts-form">
+                  <div class="form-field">
+                    <label for="ai-card-image-model">Image model</label>
                     <select
+                      id="ai-card-image-model"
                       class="glass-select"
-                      [ngModel]="mapping.sourceField"
-                      (ngModelChange)="onImageSourceChange(i, $event)"
-                    >
-                      <option *ngFor="let field of textFields(); trackBy: trackField" [ngValue]="field.name">
-                        {{ field.label || field.name }}
-                      </option>
+                      [ngModel]="imageModel()"
+                      (ngModelChange)="onImageModelChange($event)"
+                      >
+                      @for (model of imageModelOptions(); track model) {
+                        <option [ngValue]="model">
+                          {{ model === 'custom' ? 'Custom' : model }}
+                        </option>
+                      }
                     </select>
-                    <span class="mapping-arrow">→</span>
-                    <select
-                      class="glass-select"
-                      [ngModel]="mapping.targetField"
-                      (ngModelChange)="onImageTargetChange(i, $event)"
-                    >
-                      <option *ngFor="let field of missingImageFields(); trackBy: trackField" [ngValue]="field.name">
-                        {{ field.label || field.name }}
-                      </option>
-                    </select>
-                    <button type="button" class="remove-mapping" (click)="removeImageMapping(i)" aria-label="Remove image mapping">×</button>
+                    @if (imageModel() === 'custom') {
+                      <input
+                        type="text"
+                        [ngModel]="imageModelCustom()"
+                        (ngModelChange)="onImageModelCustomChange($event)"
+                        placeholder="custom-image-model"
+                        />
+                    }
+                  </div>
+                  <div class="form-field">
+                    <label for="ai-card-image-size">Size</label>
+                    <input
+                      id="ai-card-image-size"
+                      type="text"
+                      [ngModel]="imageSize()"
+                      (ngModelChange)="onImageSizeChange($event)"
+                      placeholder="1024x1024"
+                      />
+                  </div>
+                  <div class="mapping-panel">
+                    <label>Image source mapping</label>
+                    <div class="mapping-list">
+                      @for (mapping of imageMappings(); track mapping; let i = $index) {
+                        <div class="mapping-row">
+                          <select
+                            class="glass-select"
+                            [ngModel]="mapping.sourceField"
+                            (ngModelChange)="onImageSourceChange(i, $event)"
+                            >
+                            @for (field of textFields(); track trackField($index, field)) {
+                              <option [ngValue]="field.name">
+                                {{ field.label || field.name }}
+                              </option>
+                            }
+                          </select>
+                          <span class="mapping-arrow">→</span>
+                          <select
+                            class="glass-select"
+                            [ngModel]="mapping.targetField"
+                            (ngModelChange)="onImageTargetChange(i, $event)"
+                            >
+                            @for (field of missingImageFields(); track trackField($index, field)) {
+                              <option [ngValue]="field.name">
+                                {{ field.label || field.name }}
+                              </option>
+                            }
+                          </select>
+                          <button type="button" class="remove-mapping" (click)="removeImageMapping(i)" aria-label="Remove image mapping">×</button>
+                        </div>
+                      }
+                    </div>
+                    <button type="button" class="add-mapping" (click)="addImageMapping()">Add image mapping</button>
                   </div>
                 </div>
-                <button type="button" class="add-mapping" (click)="addImageMapping()">Add image mapping</button>
-              </div>
-            </div>
-            <div *ngIf="missingVideoFields().length > 0 && videoEnabled() && videoSupported()" class="form-grid tts-form">
-              <div class="form-field">
-                <label for="ai-card-video-model">Video model</label>
-                <select
-                  id="ai-card-video-model"
-                  class="glass-select"
-                  [ngModel]="videoModel()"
-                  (ngModelChange)="onVideoModelChange($event)"
-                >
-                  <option *ngFor="let model of videoModelOptions()" [ngValue]="model">
-                    {{ model === 'custom' ? 'Custom' : model }}
-                  </option>
-                </select>
-                <input
-                  *ngIf="videoModel() === 'custom'"
-                  type="text"
-                  [ngModel]="videoModelCustom()"
-                  (ngModelChange)="onVideoModelCustomChange($event)"
-                  placeholder="custom-video-model"
-                />
-              </div>
-              <div class="mapping-panel">
-                <label>Video source mapping</label>
-                <div class="mapping-list">
-                  <div *ngFor="let mapping of videoMappings(); let i = index" class="mapping-row">
+              }
+              @if (missingVideoFields().length > 0 && videoEnabled() && videoSupported()) {
+                <div class="form-grid tts-form">
+                  <div class="form-field">
+                    <label for="ai-card-video-model">Video model</label>
                     <select
+                      id="ai-card-video-model"
                       class="glass-select"
-                      [ngModel]="mapping.sourceField"
-                      (ngModelChange)="onVideoSourceChange(i, $event)"
-                    >
-                      <option *ngFor="let field of textFields(); trackBy: trackField" [ngValue]="field.name">
-                        {{ field.label || field.name }}
-                      </option>
+                      [ngModel]="videoModel()"
+                      (ngModelChange)="onVideoModelChange($event)"
+                      >
+                      @for (model of videoModelOptions(); track model) {
+                        <option [ngValue]="model">
+                          {{ model === 'custom' ? 'Custom' : model }}
+                        </option>
+                      }
                     </select>
-                    <span class="mapping-arrow">→</span>
-                    <select
-                      class="glass-select"
-                      [ngModel]="mapping.targetField"
-                      (ngModelChange)="onVideoTargetChange(i, $event)"
-                    >
-                      <option *ngFor="let field of missingVideoFields(); trackBy: trackField" [ngValue]="field.name">
-                        {{ field.label || field.name }}
-                      </option>
-                    </select>
-                    <button type="button" class="remove-mapping" (click)="removeVideoMapping(i)" aria-label="Remove video mapping">×</button>
+                    @if (videoModel() === 'custom') {
+                      <input
+                        type="text"
+                        [ngModel]="videoModelCustom()"
+                        (ngModelChange)="onVideoModelCustomChange($event)"
+                        placeholder="custom-video-model"
+                        />
+                    }
+                  </div>
+                  <div class="mapping-panel">
+                    <label>Video source mapping</label>
+                    <div class="mapping-list">
+                      @for (mapping of videoMappings(); track mapping; let i = $index) {
+                        <div class="mapping-row">
+                          <select
+                            class="glass-select"
+                            [ngModel]="mapping.sourceField"
+                            (ngModelChange)="onVideoSourceChange(i, $event)"
+                            >
+                            @for (field of textFields(); track trackField($index, field)) {
+                              <option [ngValue]="field.name">
+                                {{ field.label || field.name }}
+                              </option>
+                            }
+                          </select>
+                          <span class="mapping-arrow">→</span>
+                          <select
+                            class="glass-select"
+                            [ngModel]="mapping.targetField"
+                            (ngModelChange)="onVideoTargetChange(i, $event)"
+                            >
+                            @for (field of missingVideoFields(); track trackField($index, field)) {
+                              <option [ngValue]="field.name">
+                                {{ field.label || field.name }}
+                              </option>
+                            }
+                          </select>
+                          <button type="button" class="remove-mapping" (click)="removeVideoMapping(i)" aria-label="Remove video mapping">×</button>
+                        </div>
+                      }
+                    </div>
+                    <button type="button" class="add-mapping" (click)="addVideoMapping()">Add video mapping</button>
                   </div>
                 </div>
-                <button type="button" class="add-mapping" (click)="addVideoMapping()">Add video mapping</button>
-              </div>
+              }
+              <app-button
+                variant="secondary"
+                size="sm"
+                (click)="runFillMissingFields()"
+                [disabled]="runningFill() || !selectedCredentialId()"
+                >
+                {{ fillButtonLabel() }}
+              </app-button>
+              @if (fillPreflightError()) {
+                <div class="field-hint error-text">{{ fillPreflightError() }}</div>
+              }
+              @if (fillPreflight()) {
+                <app-ai-preflight-panel
+                  [preflight]="fillPreflight()"
+                  title="Review card update plan"
+                  />
+              }
             </div>
-            <app-button
-              variant="secondary"
-              size="sm"
-              (click)="runFillMissingFields()"
-              [disabled]="runningFill() || !selectedCredentialId()"
-            >
-              {{ fillButtonLabel() }}
-            </app-button>
-            <div *ngIf="fillPreflightError()" class="field-hint error-text">{{ fillPreflightError() }}</div>
-            <app-ai-preflight-panel
-              *ngIf="fillPreflight()"
-              [preflight]="fillPreflight()"
-              title="Review card update plan"
-            />
-          </div>
+          }
 
           <div class="audit-panel">
             <label class="grid-label">{{ 'cardEnhance.auditTitle' | translate }}</label>
@@ -352,31 +406,48 @@ type FieldMapping = { sourceField: string; targetField: string };
               size="sm"
               (click)="runAudit()"
               [disabled]="runningAudit() || !selectedCredentialId()"
-            >
+              >
               {{ auditButtonLabel() }}
             </app-button>
-            <div *ngIf="auditUpdatedAt()" class="field-hint">
-              {{ 'cardEnhance.lastAudit' | translate }} {{ auditUpdatedAt() }}
-            </div>
-            <div *ngIf="auditError()" class="error-state" role="alert">
-              {{ auditError() }}
-            </div>
-            <div *ngIf="auditPreflightError()" class="field-hint error-text">
-              {{ auditPreflightError() }}
-            </div>
-            <app-ai-preflight-panel
-              *ngIf="auditPreflight()"
-              [preflight]="auditPreflight()"
-              title="Review audit plan"
-            />
-            <div *ngIf="auditSummary()" class="audit-results">
-              <p class="audit-summary" *ngIf="auditSummary()?.summary">{{ auditSummary()?.summary }}</p>
-              <div class="audit-item" *ngFor="let item of auditSummary()?.items || []">
-                <div class="audit-field" *ngIf="item.field">{{ item.field }}</div>
-                <div class="audit-message">{{ item.message }}</div>
-                <div class="audit-suggestion" *ngIf="item.suggestion">{{ item.suggestion }}</div>
+            @if (auditUpdatedAt()) {
+              <div class="field-hint">
+                {{ 'cardEnhance.lastAudit' | translate }} {{ auditUpdatedAt() }}
               </div>
-            </div>
+            }
+            @if (auditError()) {
+              <div class="error-state" role="alert">
+                {{ auditError() }}
+              </div>
+            }
+            @if (auditPreflightError()) {
+              <div class="field-hint error-text">
+                {{ auditPreflightError() }}
+              </div>
+            }
+            @if (auditPreflight()) {
+              <app-ai-preflight-panel
+                [preflight]="auditPreflight()"
+                title="Review audit plan"
+                />
+            }
+            @if (auditSummary()) {
+              <div class="audit-results">
+                @if (auditSummary()?.summary) {
+                  <p class="audit-summary">{{ auditSummary()?.summary }}</p>
+                }
+                @for (item of auditSummary()?.items || []; track item) {
+                  <div class="audit-item">
+                    @if (item.field) {
+                      <div class="audit-field">{{ item.field }}</div>
+                    }
+                    <div class="audit-message">{{ item.message }}</div>
+                    @if (item.suggestion) {
+                      <div class="audit-suggestion">{{ item.suggestion }}</div>
+                    }
+                  </div>
+                }
+              </div>
+            }
           </div>
         </div>
 
@@ -386,6 +457,7 @@ type FieldMapping = { sourceField: string; targetField: string };
       </div>
     </div>
     `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .modal-overlay {
         position: fixed;
@@ -651,6 +723,9 @@ type FieldMapping = { sourceField: string; targetField: string };
     `]
 })
 export class AiEnhanceCardModalComponent implements OnInit {
+    private aiApi = inject(AiApiService);
+    private cardApi = inject(CardApiService);
+
     @Input() userDeckId = '';
     @Input() deckName = '';
     @Input() deckDescription = '';
@@ -846,8 +921,6 @@ export class AiEnhanceCardModalComponent implements OnInit {
         'Rocky',
         'Kiki'
     ];
-
-    constructor(private aiApi: AiApiService, private cardApi: CardApiService) {}
 
     ngOnInit(): void {
         this.storageKey = this.card?.userCardId

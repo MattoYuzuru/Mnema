@@ -1,6 +1,6 @@
-import { Component, OnInit, computed, signal } from '@angular/core';
+import { Component, OnInit, computed, signal, inject, ChangeDetectionStrategy } from '@angular/core';
 import { Router } from '@angular/router';
-import { DatePipe, NgFor, NgIf } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { ThemeService } from '../../core/services/theme.service';
 import { I18nService, Language } from '../../core/services/i18n.service';
@@ -19,8 +19,7 @@ import { appConfig } from '../../app.config';
 
 @Component({
     selector: 'app-settings',
-    standalone: true,
-    imports: [NgFor, NgIf, FormsModule, ButtonComponent, ConfirmationDialogComponent, TranslatePipe, DatePipe],
+    imports: [FormsModule, ButtonComponent, ConfirmationDialogComponent, TranslatePipe, DatePipe],
     template: `
     <div class="settings-page">
       <h1>{{ 'settings.title' | translate }}</h1>
@@ -36,14 +35,14 @@ import { appConfig } from '../../app.config';
                 class="option-btn"
                 [class.active]="theme.mode() === 'light'"
                 (click)="theme.setMode('light')"
-              >
+                >
                 {{ 'theme.light' | translate }}
               </button>
               <button
                 class="option-btn"
                 [class.active]="theme.mode() === 'dark'"
                 (click)="theme.setMode('dark')"
-              >
+                >
                 {{ 'theme.dark' | translate }}
               </button>
             </div>
@@ -56,14 +55,14 @@ import { appConfig } from '../../app.config';
                 class="option-btn"
                 [class.active]="theme.accent() === 'neo'"
                 (click)="theme.setAccent('neo')"
-              >
+                >
                 Neo
               </button>
               <button
                 class="option-btn"
                 [class.active]="theme.accent() === 'vintage'"
                 (click)="theme.setAccent('vintage')"
-              >
+                >
                 Vintage
               </button>
             </div>
@@ -80,14 +79,14 @@ import { appConfig } from '../../app.config';
               class="option-btn"
               [class.active]="i18n.currentLanguage === 'en'"
               (click)="i18n.setLanguage('en')"
-            >
+              >
               {{ 'language.english' | translate }}
             </button>
             <button
               class="option-btn"
               [class.active]="i18n.currentLanguage === 'ru'"
               (click)="i18n.setLanguage('ru')"
-            >
+              >
               {{ 'language.russian' | translate }}
             </button>
           </div>
@@ -103,7 +102,7 @@ import { appConfig } from '../../app.config';
               type="checkbox"
               [checked]="preferences.hideFieldLabels"
               (change)="preferences.setHideFieldLabels($any($event.target).checked)"
-            />
+              />
             <span>{{ 'settings.hideFieldLabels' | translate }}</span>
           </label>
           <label class="checkbox-label glass-checkbox">
@@ -111,7 +110,7 @@ import { appConfig } from '../../app.config';
               type="checkbox"
               [checked]="preferences.showFrontSideAfterFlip"
               (change)="preferences.setShowFrontSideAfterFlip($any($event.target).checked)"
-            />
+              />
             <span>{{ 'settings.showFrontSideAfterFlip' | translate }}</span>
           </label>
           <label class="checkbox-label glass-checkbox">
@@ -119,7 +118,7 @@ import { appConfig } from '../../app.config';
               type="checkbox"
               [checked]="preferences.autoPlayCardAudioSequence"
               (change)="preferences.setAutoPlayCardAudioSequence($any($event.target).checked)"
-            />
+              />
             <span>{{ 'settings.autoPlayCardAudioSequence' | translate }}</span>
           </label>
         </div>
@@ -135,217 +134,245 @@ import { appConfig } from '../../app.config';
                 class="option-btn"
                 [class.active]="preferences.mobileReviewButtonsMode === 'swipe-column'"
                 (click)="preferences.setMobileReviewButtonsMode('swipe-column')"
-              >
+                >
                 {{ 'settings.mobileReviewButtonsLayoutSwipe' | translate }}
               </button>
               <button
                 class="option-btn"
                 [class.active]="preferences.mobileReviewButtonsMode === 'classic'"
                 (click)="preferences.setMobileReviewButtonsMode('classic')"
-              >
+                >
                 {{ 'settings.mobileReviewButtonsLayoutClassic' | translate }}
               </button>
             </div>
           </div>
 
-          <div class="control-group" *ngIf="preferences.mobileReviewButtonsMode === 'swipe-column'">
-            <label class="control-label">{{ 'settings.mobileReviewButtonsSide' | translate }}</label>
-            <div class="button-group">
-              <button
-                class="option-btn"
-                [class.active]="preferences.mobileReviewButtonsSide === 'left'"
-                (click)="preferences.setMobileReviewButtonsSide('left')"
-              >
-                {{ 'settings.mobileReviewButtonsLeft' | translate }}
-              </button>
-              <button
-                class="option-btn"
-                [class.active]="preferences.mobileReviewButtonsSide === 'right'"
-                (click)="preferences.setMobileReviewButtonsSide('right')"
-              >
-                {{ 'settings.mobileReviewButtonsRight' | translate }}
-              </button>
+          @if (preferences.mobileReviewButtonsMode === 'swipe-column') {
+            <div class="control-group">
+              <label class="control-label">{{ 'settings.mobileReviewButtonsSide' | translate }}</label>
+              <div class="button-group">
+                <button
+                  class="option-btn"
+                  [class.active]="preferences.mobileReviewButtonsSide === 'left'"
+                  (click)="preferences.setMobileReviewButtonsSide('left')"
+                  >
+                  {{ 'settings.mobileReviewButtonsLeft' | translate }}
+                </button>
+                <button
+                  class="option-btn"
+                  [class.active]="preferences.mobileReviewButtonsSide === 'right'"
+                  (click)="preferences.setMobileReviewButtonsSide('right')"
+                  >
+                  {{ 'settings.mobileReviewButtonsRight' | translate }}
+                </button>
+              </div>
             </div>
-          </div>
+          }
         </div>
       </section>
 
-      <section *ngIf="aiEnabled" class="settings-section ai-settings">
-        <div class="section-heading-with-help">
-          <h2>{{ 'settings.aiProviderKeysTitle' | translate }}</h2>
-          <a
-            class="help-link"
-            href="https://github.com/MattoYuzuru/Mnema/wiki/AI-provider-keys-security-and-supported-models"
-            target="_blank"
-            rel="noopener noreferrer"
-            [attr.aria-label]="'settings.aiProviderKeysGuideAria' | translate"
-          >?</a>
-        </div>
-        <p class="section-description">
-          {{ 'settings.aiProviderKeysDescription' | translate }}
-        </p>
-        <p *ngIf="aiSystemProviderEnabled" class="section-description">
-          System provider {{ aiSystemProviderName }} is enabled for local runtime. You can still add personal provider keys and switch per request.
-        </p>
-
-        <div class="ai-settings-grid">
-          <div class="ai-keys-panel" [attr.aria-busy]="providersLoading()">
-            <div class="ai-panel-header">
-              <h3>{{ 'settings.aiProviderKeysSavedTitle' | translate }}</h3>
-              <app-button variant="ghost" size="sm" (click)="loadProviders()" [disabled]="providersLoading()">
-                {{ 'settings.aiProviderKeysRefresh' | translate }}
-              </app-button>
-            </div>
-
-            <div *ngIf="providersLoading()" class="loading-state">{{ 'settings.aiProviderKeysLoading' | translate }}</div>
-            <div *ngIf="!providersLoading() && providerError()" class="error-state" role="alert">
-              {{ (providerError() || '') | translate }}
-            </div>
-            <div *ngIf="!providersLoading() && !providerError() && providerKeys().length === 0" class="empty-state">
-              {{ 'settings.aiProviderKeysEmpty' | translate }}
-            </div>
-
-            <div *ngIf="!providersLoading() && providerKeys().length > 0" class="ai-keys-list">
-              <div *ngFor="let key of providerKeys(); trackBy: trackProvider" class="ai-key-row">
-                <div class="ai-key-main">
-                  <div class="ai-key-title">
-                    <span class="ai-key-provider">{{ key.provider }}</span>
-                    <span *ngIf="key.alias" class="ai-key-alias">- {{ key.alias }}</span>
-                  </div>
-                  <div class="ai-key-meta">
-                    <span class="ai-key-secret" [attr.aria-label]="'settings.aiProviderKeysSecretStored' | translate">
-                      {{ maskedSecret() }}
-                    </span>
-                    <span class="ai-key-status" [class.active]="key.status === 'active'" [class.inactive]="key.status !== 'active'">
-                      {{ formatStatus(key.status) }}
-                    </span>
-                    <span class="ai-key-last-used">
-                      {{ 'settings.aiProviderKeysLastUsed' | translate }}
-                      <span *ngIf="key.lastUsedAt; else neverUsed">{{ key.lastUsedAt | date:'medium' }}</span>
-                      <ng-template #neverUsed>{{ 'settings.aiProviderKeysNever' | translate }}</ng-template>
-                    </span>
-                  </div>
-                </div>
-                <div class="ai-key-actions">
-                  <app-button
-                    variant="ghost"
-                    size="sm"
-                    tone="danger"
-                    (click)="openDeleteProvider(key)"
-                    [disabled]="deleteInFlight() || isSystemProviderKey(key)"
-                  >
-                    {{ 'settings.aiProviderKeysDelete' | translate }}
-                  </app-button>
-                </div>
-              </div>
-            </div>
+      @if (aiEnabled) {
+        <section class="settings-section ai-settings">
+          <div class="section-heading-with-help">
+            <h2>{{ 'settings.aiProviderKeysTitle' | translate }}</h2>
+            <a
+              class="help-link"
+              href="https://github.com/MattoYuzuru/Mnema/wiki/AI-provider-keys-security-and-supported-models"
+              target="_blank"
+              rel="noopener noreferrer"
+              [attr.aria-label]="'settings.aiProviderKeysGuideAria' | translate"
+            >?</a>
           </div>
-
-          <div class="ai-form-panel">
-            <h3>{{ 'settings.aiProviderKeysAddTitle' | translate }}</h3>
-            <p class="form-help">{{ 'settings.aiProviderKeysAddHelp' | translate }}</p>
-            <form (ngSubmit)="createProvider()" class="ai-form">
-              <div class="form-field">
-                <label for="ai-provider">{{ 'settings.aiProviderKeysProviderLabel' | translate }}</label>
-                <select
-                  id="ai-provider"
-                  name="provider"
-                  [ngModel]="providerPreset()"
-                  (ngModelChange)="onProviderPresetChange($event)"
-                >
-                  <option *ngFor="let opt of providerOptions" [ngValue]="opt.value">
-                    {{ opt.label }}
-                  </option>
-                </select>
-                <input
-                  *ngIf="providerPreset() === 'custom'"
-                  name="providerCustom"
-                  type="text"
-                  [ngModel]="providerName()"
-                  (ngModelChange)="providerName.set($event)"
-                  [placeholder]="'settings.aiProviderKeysCustomPlaceholder' | translate"
-                  autocomplete="organization"
-                />
-              </div>
-
-              <div class="form-field">
-                <label for="ai-alias">{{ 'settings.aiProviderKeysAliasLabel' | translate }}</label>
-                <input
-                  id="ai-alias"
-                  name="alias"
-                  type="text"
-                  [ngModel]="providerAlias()"
-                  (ngModelChange)="providerAlias.set($event)"
-                  [placeholder]="'settings.aiProviderKeysAliasPlaceholder' | translate"
-                  autocomplete="off"
-                />
-              </div>
-
-              <div class="form-field">
-                <label for="ai-secret">{{ 'settings.aiProviderKeysSecretLabel' | translate }}</label>
-                <input
-                  id="ai-secret"
-                  name="secret"
-                  type="password"
-                  [ngModel]="providerSecret()"
-                  (ngModelChange)="providerSecret.set($event)"
-                  [placeholder]="'settings.aiProviderKeysSecretPlaceholder' | translate"
-                  required
-                  autocomplete="new-password"
-                />
-                <p class="field-hint">{{ 'settings.aiProviderKeysSecretHint' | translate }}</p>
-              </div>
-
-              <div class="form-actions">
-                <app-button
-                  type="submit"
-                  variant="primary"
-                  [disabled]="!canCreateProvider()"
-                >
-                  {{ creatingProvider() ? ('settings.aiProviderKeysSaving' | translate) : ('settings.aiProviderKeysSave' | translate) }}
+          <p class="section-description">
+            {{ 'settings.aiProviderKeysDescription' | translate }}
+          </p>
+          @if (aiSystemProviderEnabled) {
+            <p class="section-description">
+              System provider {{ aiSystemProviderName }} is enabled for local runtime. You can still add personal provider keys and switch per request.
+            </p>
+          }
+          <div class="ai-settings-grid">
+            <div class="ai-keys-panel" [attr.aria-busy]="providersLoading()">
+              <div class="ai-panel-header">
+                <h3>{{ 'settings.aiProviderKeysSavedTitle' | translate }}</h3>
+                <app-button variant="ghost" size="sm" (click)="loadProviders()" [disabled]="providersLoading()">
+                  {{ 'settings.aiProviderKeysRefresh' | translate }}
                 </app-button>
               </div>
-
-              <div *ngIf="createSuccess()" class="success-state" role="status" aria-live="polite">
-                {{ (createSuccess() || '') | translate }}
-              </div>
-              <div *ngIf="createError()" class="error-state" role="alert">
-                {{ (createError() || '') | translate }}
-              </div>
-            </form>
+              @if (providersLoading()) {
+                <div class="loading-state">{{ 'settings.aiProviderKeysLoading' | translate }}</div>
+              }
+              @if (!providersLoading() && providerError()) {
+                <div class="error-state" role="alert">
+                  {{ (providerError() || '') | translate }}
+                </div>
+              }
+              @if (!providersLoading() && !providerError() && providerKeys().length === 0) {
+                <div class="empty-state">
+                  {{ 'settings.aiProviderKeysEmpty' | translate }}
+                </div>
+              }
+              @if (!providersLoading() && providerKeys().length > 0) {
+                <div class="ai-keys-list">
+                  @for (key of providerKeys(); track trackProvider($index, key)) {
+                    <div class="ai-key-row">
+                      <div class="ai-key-main">
+                        <div class="ai-key-title">
+                          <span class="ai-key-provider">{{ key.provider }}</span>
+                          @if (key.alias) {
+                            <span class="ai-key-alias">- {{ key.alias }}</span>
+                          }
+                        </div>
+                        <div class="ai-key-meta">
+                          <span class="ai-key-secret" [attr.aria-label]="'settings.aiProviderKeysSecretStored' | translate">
+                            {{ maskedSecret() }}
+                          </span>
+                          <span class="ai-key-status" [class.active]="key.status === 'active'" [class.inactive]="key.status !== 'active'">
+                            {{ formatStatus(key.status) }}
+                          </span>
+                          <span class="ai-key-last-used">
+                            {{ 'settings.aiProviderKeysLastUsed' | translate }}
+                            @if (key.lastUsedAt) {
+                              <span>{{ key.lastUsedAt | date:'medium' }}</span>
+                            } @else {
+                              {{ 'settings.aiProviderKeysNever' | translate }}
+                            }
+                          </span>
+                        </div>
+                      </div>
+                      <div class="ai-key-actions">
+                        <app-button
+                          variant="ghost"
+                          size="sm"
+                          tone="danger"
+                          (click)="openDeleteProvider(key)"
+                          [disabled]="deleteInFlight() || isSystemProviderKey(key)"
+                          >
+                          {{ 'settings.aiProviderKeysDelete' | translate }}
+                        </app-button>
+                      </div>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+            <div class="ai-form-panel">
+              <h3>{{ 'settings.aiProviderKeysAddTitle' | translate }}</h3>
+              <p class="form-help">{{ 'settings.aiProviderKeysAddHelp' | translate }}</p>
+              <form (ngSubmit)="createProvider()" class="ai-form">
+                <div class="form-field">
+                  <label for="ai-provider">{{ 'settings.aiProviderKeysProviderLabel' | translate }}</label>
+                  <select
+                    id="ai-provider"
+                    name="provider"
+                    [ngModel]="providerPreset()"
+                    (ngModelChange)="onProviderPresetChange($event)"
+                    >
+                    @for (opt of providerOptions; track opt) {
+                      <option [ngValue]="opt.value">
+                        {{ opt.label }}
+                      </option>
+                    }
+                  </select>
+                  @if (providerPreset() === 'custom') {
+                    <input
+                      name="providerCustom"
+                      type="text"
+                      [ngModel]="providerName()"
+                      (ngModelChange)="providerName.set($event)"
+                      [placeholder]="'settings.aiProviderKeysCustomPlaceholder' | translate"
+                      autocomplete="organization"
+                      />
+                  }
+                </div>
+                <div class="form-field">
+                  <label for="ai-alias">{{ 'settings.aiProviderKeysAliasLabel' | translate }}</label>
+                  <input
+                    id="ai-alias"
+                    name="alias"
+                    type="text"
+                    [ngModel]="providerAlias()"
+                    (ngModelChange)="providerAlias.set($event)"
+                    [placeholder]="'settings.aiProviderKeysAliasPlaceholder' | translate"
+                    autocomplete="off"
+                    />
+                </div>
+                <div class="form-field">
+                  <label for="ai-secret">{{ 'settings.aiProviderKeysSecretLabel' | translate }}</label>
+                  <input
+                    id="ai-secret"
+                    name="secret"
+                    type="password"
+                    [ngModel]="providerSecret()"
+                    (ngModelChange)="providerSecret.set($event)"
+                    [placeholder]="'settings.aiProviderKeysSecretPlaceholder' | translate"
+                    required
+                    autocomplete="new-password"
+                    />
+                  <p class="field-hint">{{ 'settings.aiProviderKeysSecretHint' | translate }}</p>
+                </div>
+                <div class="form-actions">
+                  <app-button
+                    type="submit"
+                    variant="primary"
+                    [disabled]="!canCreateProvider()"
+                    >
+                    {{ creatingProvider() ? ('settings.aiProviderKeysSaving' | translate) : ('settings.aiProviderKeysSave' | translate) }}
+                  </app-button>
+                </div>
+                @if (createSuccess()) {
+                  <div class="success-state" role="status" aria-live="polite">
+                    {{ (createSuccess() || '') | translate }}
+                  </div>
+                }
+                @if (createError()) {
+                  <div class="error-state" role="alert">
+                    {{ (createError() || '') | translate }}
+                  </div>
+                }
+              </form>
+            </div>
           </div>
-        </div>
-      </section>
+        </section>
+      }
 
       <section class="settings-section">
         <h2>{{ 'settings.archive' | translate }}</h2>
         <p class="section-description">{{ 'settings.archiveDescription' | translate }}</p>
 
-        <div *ngIf="loadingArchive" class="loading-state">{{ 'settings.archiveLoading' | translate }}</div>
+        @if (loadingArchive) {
+          <div class="loading-state">{{ 'settings.archiveLoading' | translate }}</div>
+        }
 
-        <div *ngIf="!loadingArchive && archivedDecks.length === 0" class="empty-state">
-          {{ 'publicDecks.noArchivedDecks' | translate }}
-        </div>
-
-        <div *ngIf="!loadingArchive && archivedDecks.length > 0" class="archive-list">
-          <div *ngFor="let deck of archivedDecks" class="archive-item">
-            <div class="archive-item-content">
-              <h3>{{ deck.displayName }}</h3>
-              <p>{{ deck.displayDescription }}</p>
-            </div>
-            <div class="archive-item-actions">
-              <app-button variant="ghost" size="sm" (click)="openDeck(deck.userDeckId)">
-                {{ 'settings.open' | translate }}
-              </app-button>
-              <app-button variant="secondary" size="sm" (click)="restoreDeck(deck.userDeckId)">
-                {{ 'settings.restore' | translate }}
-              </app-button>
-              <app-button variant="ghost" size="sm" tone="danger" (click)="openHardDeleteConfirm(deck.userDeckId)">
-                {{ 'settings.deletePermanently' | translate }}
-              </app-button>
-            </div>
+        @if (!loadingArchive && archivedDecks.length === 0) {
+          <div class="empty-state">
+            {{ 'publicDecks.noArchivedDecks' | translate }}
           </div>
-        </div>
+        }
+
+        @if (!loadingArchive && archivedDecks.length > 0) {
+          <div class="archive-list">
+            @for (deck of archivedDecks; track deck) {
+              <div class="archive-item">
+                <div class="archive-item-content">
+                  <h3>{{ deck.displayName }}</h3>
+                  <p>{{ deck.displayDescription }}</p>
+                </div>
+                <div class="archive-item-actions">
+                  <app-button variant="ghost" size="sm" (click)="openDeck(deck.userDeckId)">
+                    {{ 'settings.open' | translate }}
+                  </app-button>
+                  <app-button variant="secondary" size="sm" (click)="restoreDeck(deck.userDeckId)">
+                    {{ 'settings.restore' | translate }}
+                  </app-button>
+                  <app-button variant="ghost" size="sm" tone="danger" (click)="openHardDeleteConfirm(deck.userDeckId)">
+                    {{ 'settings.deletePermanently' | translate }}
+                  </app-button>
+                </div>
+              </div>
+            }
+          </div>
+        }
       </section>
 
       <section class="settings-section danger-zone">
@@ -358,61 +385,66 @@ import { appConfig } from '../../app.config';
       </section>
     </div>
 
-      <div *ngIf="showDeleteConfirmation" class="modal-overlay" (click)="showDeleteConfirmation = false; deleteAccountUsername = ''">
-      <div class="modal-content delete-account-modal" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h2>{{ 'settings.deleteAccountTitle' | translate }}</h2>
-          <button class="close-btn" (click)="showDeleteConfirmation = false; deleteAccountUsername = ''">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p class="warning-text">{{ 'settings.deleteAccountConfirmMessage' | translate }}</p>
-          <p>{{ 'settings.deleteAccountConfirmPrompt' | translate }} <strong>{{ currentUsername }}</strong></p>
-          <input
-            type="text"
-            [(ngModel)]="deleteAccountUsername"
-            [placeholder]="currentUsername"
-            class="delete-confirm-input"
-          />
-        </div>
-        <div class="modal-footer">
-          <app-button variant="ghost" (click)="showDeleteConfirmation = false; deleteAccountUsername = ''">
-            {{ 'settings.cancel' | translate }}
-          </app-button>
-          <app-button
-            variant="primary"
-            tone="danger"
-            [disabled]="deleteAccountUsername !== currentUsername"
-            (click)="deleteAccount()"
-          >
-            Delete Account
-          </app-button>
+    @if (showDeleteConfirmation) {
+      <div class="modal-overlay" (click)="showDeleteConfirmation = false; deleteAccountUsername = ''">
+        <div class="modal-content delete-account-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h2>{{ 'settings.deleteAccountTitle' | translate }}</h2>
+            <button class="close-btn" (click)="showDeleteConfirmation = false; deleteAccountUsername = ''">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p class="warning-text">{{ 'settings.deleteAccountConfirmMessage' | translate }}</p>
+            <p>{{ 'settings.deleteAccountConfirmPrompt' | translate }} <strong>{{ currentUsername }}</strong></p>
+            <input
+              type="text"
+              [(ngModel)]="deleteAccountUsername"
+              [placeholder]="currentUsername"
+              class="delete-confirm-input"
+              />
+          </div>
+          <div class="modal-footer">
+            <app-button variant="ghost" (click)="showDeleteConfirmation = false; deleteAccountUsername = ''">
+              {{ 'settings.cancel' | translate }}
+            </app-button>
+            <app-button
+              variant="primary"
+              tone="danger"
+              [disabled]="deleteAccountUsername !== currentUsername"
+              (click)="deleteAccount()"
+              >
+              Delete Account
+            </app-button>
+          </div>
         </div>
       </div>
-    </div>
+    }
 
-    <app-confirmation-dialog
-      *ngIf="showHardDeleteConfirmation"
-      [open]="showHardDeleteConfirmation"
-      [title]="'settings.deleteDeckPermanentTitle' | translate"
-      [message]="'settings.deleteDeckPermanentMessage' | translate"
-      [confirmText]="'settings.deletePermanently' | translate"
-      [cancelText]="'settings.cancel' | translate"
-      (confirmed)="confirmHardDelete()"
-      (cancelled)="closeHardDeleteConfirm()"
-    ></app-confirmation-dialog>
+    @if (showHardDeleteConfirmation) {
+      <app-confirmation-dialog
+        [open]="showHardDeleteConfirmation"
+        [title]="'settings.deleteDeckPermanentTitle' | translate"
+        [message]="'settings.deleteDeckPermanentMessage' | translate"
+        [confirmText]="'settings.deletePermanently' | translate"
+        [cancelText]="'settings.cancel' | translate"
+        (confirmed)="confirmHardDelete()"
+        (cancelled)="closeHardDeleteConfirm()"
+      ></app-confirmation-dialog>
+    }
 
-    <app-confirmation-dialog
-      *ngIf="deleteProviderTarget()"
-      [open]="!!deleteProviderTarget()"
-      [title]="'settings.aiProviderKeysDeleteTitle' | translate"
-      [message]="'settings.aiProviderKeysDeleteMessage' | translate"
-      [confirmText]="'settings.aiProviderKeysDeleteConfirm' | translate"
-      [cancelText]="'settings.aiProviderKeysDeleteCancel' | translate"
-      confirmVariant="ghost"
-      (confirmed)="confirmDeleteProvider()"
-      (cancelled)="closeDeleteProvider()"
-    ></app-confirmation-dialog>
-  `,
+    @if (deleteProviderTarget()) {
+      <app-confirmation-dialog
+        [open]="!!deleteProviderTarget()"
+        [title]="'settings.aiProviderKeysDeleteTitle' | translate"
+        [message]="'settings.aiProviderKeysDeleteMessage' | translate"
+        [confirmText]="'settings.aiProviderKeysDeleteConfirm' | translate"
+        [cancelText]="'settings.aiProviderKeysDeleteCancel' | translate"
+        confirmVariant="ghost"
+        (confirmed)="confirmDeleteProvider()"
+        (cancelled)="closeDeleteProvider()"
+      ></app-confirmation-dialog>
+    }
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .settings-page {
         max-width: 56rem;
@@ -905,6 +937,16 @@ import { appConfig } from '../../app.config';
     `]
 })
 export class SettingsComponent implements OnInit {
+    theme = inject(ThemeService);
+    i18n = inject(I18nService);
+    preferences = inject(PreferencesService);
+    private deckApi = inject(DeckApiService);
+    private aiApi = inject(AiApiService);
+    private userApi = inject(UserApiService);
+    private auth = inject(AuthService);
+    private router = inject(Router);
+    private toast = inject(ToastService);
+
     private static readonly SYSTEM_PROVIDER_ID = '00000000-0000-0000-0000-000000000001';
     archivedDecks: UserDeckDTO[] = [];
     loadingArchive = false;
@@ -945,18 +987,6 @@ export class SettingsComponent implements OnInit {
     readonly aiEnabled = appConfig.features.aiEnabled;
     readonly aiSystemProviderEnabled = appConfig.features.aiSystemProviderEnabled;
     readonly aiSystemProviderName = appConfig.features.aiSystemProviderName;
-
-    constructor(
-        public theme: ThemeService,
-        public i18n: I18nService,
-        public preferences: PreferencesService,
-        private deckApi: DeckApiService,
-        private aiApi: AiApiService,
-        private userApi: UserApiService,
-        private auth: AuthService,
-        private router: Router,
-        private toast: ToastService
-    ) {}
 
     ngOnInit(): void {
         this.loadArchivedDecks();

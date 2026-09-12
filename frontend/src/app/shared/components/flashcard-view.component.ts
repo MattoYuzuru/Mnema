@@ -1,5 +1,5 @@
-import { Component, ElementRef, HostListener, Input, OnChanges, OnDestroy, Renderer2, SimpleChanges } from '@angular/core';
-import { NgFor, NgIf, NgClass } from '@angular/common';
+import { Component, ElementRef, HostListener, Input, OnChanges, OnDestroy, Renderer2, SimpleChanges, inject, ChangeDetectionStrategy } from '@angular/core';
+import { NgClass } from '@angular/common';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
 import { CardContentValue } from '../../core/models/user-card.models';
 import { MediaApiService } from '../../core/services/media-api.service';
@@ -22,59 +22,69 @@ interface AnkiPayload {
 
 @Component({
     selector: 'app-flashcard-view',
-    standalone: true,
-    imports: [NgFor, NgIf, NgClass],
+    imports: [NgClass],
     template: `
     <div class="flashcard-view">
-      <ng-container *ngIf="ankiMode; else fieldView">
+      @if (ankiMode) {
         <div class="anki-card card card1" [ngClass]="ankiScopeClass" (click)="handleAnkiClick($event)">
           <div class="anki-html" [innerHTML]="side === 'front' ? ankiFrontHtml : ankiBackHtml"></div>
         </div>
-      </ng-container>
-
-      <ng-template #fieldView>
-        <div *ngIf="side === 'front'" class="card-side front">
-          <div *ngFor="let rf of frontFields" class="field-block">
-            <div *ngIf="!hideLabels" class="field-label">{{ rf.field.label }}</div>
-            <div class="field-value" [ngClass]="'field-type-' + rf.field.fieldType">
-              <ng-container *ngIf="rf.field.fieldType === 'image' && rf.value">
-                <img [src]="rf.value" [alt]="rf.field.label" class="field-image" />
-              </ng-container>
-              <ng-container *ngIf="rf.field.fieldType === 'audio' && rf.value">
-                <audio controls [src]="rf.value"></audio>
-              </ng-container>
-              <ng-container *ngIf="rf.field.fieldType === 'video' && rf.value">
-                <video controls [src]="rf.value" class="field-video"></video>
-              </ng-container>
-              <ng-container *ngIf="rf.field.fieldType !== 'image' && rf.field.fieldType !== 'audio' && rf.field.fieldType !== 'video'">
-                <div [innerHTML]="formatValue(rf.value, rf.field.fieldType)"></div>
-              </ng-container>
-            </div>
+      } @else {
+        @if (side === 'front') {
+          <div class="card-side front">
+            @for (rf of frontFields; track rf) {
+              <div class="field-block">
+                @if (!hideLabels) {
+                  <div class="field-label">{{ rf.field.label }}</div>
+                }
+                <div class="field-value" [ngClass]="'field-type-' + rf.field.fieldType">
+                  @if (rf.field.fieldType === 'image' && rf.value) {
+                    <img [src]="rf.value" [alt]="rf.field.label" class="field-image" />
+                  }
+                  @if (rf.field.fieldType === 'audio' && rf.value) {
+                    <audio controls [src]="rf.value"></audio>
+                  }
+                  @if (rf.field.fieldType === 'video' && rf.value) {
+                    <video controls [src]="rf.value" class="field-video"></video>
+                  }
+                  @if (rf.field.fieldType !== 'image' && rf.field.fieldType !== 'audio' && rf.field.fieldType !== 'video') {
+                    <div [innerHTML]="formatValue(rf.value, rf.field.fieldType)"></div>
+                  }
+                </div>
+              </div>
+            }
           </div>
-        </div>
-
-        <div *ngIf="side === 'back'" class="card-side back">
-          <div *ngFor="let rf of backFields" class="field-block">
-            <div *ngIf="!hideLabels" class="field-label">{{ rf.field.label }}</div>
-            <div class="field-value" [ngClass]="'field-type-' + rf.field.fieldType">
-              <ng-container *ngIf="rf.field.fieldType === 'image' && rf.value">
-                <img [src]="rf.value" [alt]="rf.field.label" class="field-image" />
-              </ng-container>
-              <ng-container *ngIf="rf.field.fieldType === 'audio' && rf.value">
-                <audio controls [src]="rf.value"></audio>
-              </ng-container>
-              <ng-container *ngIf="rf.field.fieldType === 'video' && rf.value">
-                <video controls [src]="rf.value" class="field-video"></video>
-              </ng-container>
-              <ng-container *ngIf="rf.field.fieldType !== 'image' && rf.field.fieldType !== 'audio' && rf.field.fieldType !== 'video'">
-                <div [innerHTML]="formatValue(rf.value, rf.field.fieldType)"></div>
-              </ng-container>
-            </div>
+        }
+        @if (side === 'back') {
+          <div class="card-side back">
+            @for (rf of backFields; track rf) {
+              <div class="field-block">
+                @if (!hideLabels) {
+                  <div class="field-label">{{ rf.field.label }}</div>
+                }
+                <div class="field-value" [ngClass]="'field-type-' + rf.field.fieldType">
+                  @if (rf.field.fieldType === 'image' && rf.value) {
+                    <img [src]="rf.value" [alt]="rf.field.label" class="field-image" />
+                  }
+                  @if (rf.field.fieldType === 'audio' && rf.value) {
+                    <audio controls [src]="rf.value"></audio>
+                  }
+                  @if (rf.field.fieldType === 'video' && rf.value) {
+                    <video controls [src]="rf.value" class="field-video"></video>
+                  }
+                  @if (rf.field.fieldType !== 'image' && rf.field.fieldType !== 'audio' && rf.field.fieldType !== 'video') {
+                    <div [innerHTML]="formatValue(rf.value, rf.field.fieldType)"></div>
+                  }
+                </div>
+              </div>
+            }
           </div>
-        </div>
-      </ng-template>
+        }
+      }
+
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       :host {
@@ -153,6 +163,10 @@ interface AnkiPayload {
     ]
 })
 export class FlashcardViewComponent implements OnChanges, OnDestroy {
+    private mediaApi = inject(MediaApiService);
+    private host = inject<ElementRef<HTMLElement>>(ElementRef);
+    private renderer = inject(Renderer2);
+
     private static nextAnkiScopeId = 0;
 
     @Input() template!: CardTemplateDTO;
@@ -174,12 +188,6 @@ export class FlashcardViewComponent implements OnChanges, OnDestroy {
     private autoPlayDelayHandle: ReturnType<typeof setTimeout> | null = null;
     private autoPlayRunId = 0;
     private lastAutoPlayToken: string | null = null;
-
-    constructor(
-        private mediaApi: MediaApiService,
-        private host: ElementRef<HTMLElement>,
-        private renderer: Renderer2
-    ) {}
 
     ngOnChanges(changes: SimpleChanges): void {
         if (changes['template'] || changes['content'] || changes['side'] || changes['autoPlayAudioSequence'] || changes['autoPlaySequenceToken']) {

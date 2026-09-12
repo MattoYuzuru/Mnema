@@ -1,6 +1,6 @@
-import { Component, HostListener, OnDestroy, OnInit, signal } from '@angular/core';
+import { Component, HostListener, OnDestroy, OnInit, signal, inject, ChangeDetectionStrategy } from '@angular/core';
 import { NavigationEnd, Router, RouterLink, RouterOutlet } from '@angular/router';
-import { NgIf } from '@angular/common';
+
 import { Subscription, firstValueFrom } from 'rxjs';
 import { filter } from 'rxjs/operators';
 import { AuthService, AuthStatus } from '../../auth.service';
@@ -14,8 +14,7 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
 
 @Component({
     selector: 'app-shell',
-    standalone: true,
-    imports: [RouterOutlet, RouterLink, NgIf, ButtonComponent, TranslatePipe, ToastStackComponent],
+    imports: [RouterOutlet, RouterLink, ButtonComponent, TranslatePipe, ToastStackComponent],
     template: `
     <div class="app-shell">
       <header class="header desktop-header glass-strong">
@@ -34,7 +33,7 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
             [attr.aria-label]="'publicDecks.searchPlaceholder' | translate"
             (input)="onGlobalSearchInput($event)"
             (keydown.enter)="submitGlobalSearch()"
-          />
+            />
         </div>
 
         <div class="header-right">
@@ -42,7 +41,7 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
             variant="ghost"
             size="sm"
             routerLink="/my-study"
-          >
+            >
             {{ 'nav.myStudy' | translate }}
           </app-button>
 
@@ -50,53 +49,60 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
             variant="ghost"
             size="sm"
             routerLink="/create-deck"
-          >
+            >
             {{ 'nav.createDeck' | translate }}
           </app-button>
 
-          <div *ngIf="auth.status() === 'authenticated'; else loginBlock" class="user-menu">
-            <button class="user-menu-trigger" type="button" (click)="toggleUserMenu()" [attr.aria-expanded]="userMenuOpen()">
-              <img *ngIf="userProfile()?.avatarUrl" [src]="userProfile()!.avatarUrl" [alt]="userProfile()!.username" class="user-avatar" />
-              <div *ngIf="!userProfile()?.avatarUrl" class="user-initials">
-                {{ getUserInitials() }}
-              </div>
-              <span class="user-name">{{ userProfile()?.username || auth.user()?.email }}</span>
-            </button>
-
-            <div *ngIf="userMenuOpen()" class="user-menu-dropdown">
-              <a routerLink="/profile" class="menu-item" (click)="closeUserMenu()">
-                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                  <circle cx="12" cy="7" r="4"/>
-                </svg>
-                {{ 'nav.profile' | translate }}
-              </a>
-              <a routerLink="/settings" class="menu-item" (click)="closeUserMenu()">
-                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <circle cx="12" cy="12" r="3"/>
-                  <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"/>
-                </svg>
-                {{ 'nav.settings' | translate }}
-              </a>
-              <a *ngIf="userProfile()?.admin" routerLink="/admin" class="menu-item" (click)="closeUserMenu()">
-                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path d="M12 3l7 4v5c0 5-3.5 7.74-7 9-3.5-1.26-7-4-7-9V7l7-4z"/>
-                  <path d="M9.5 12.5l1.5 1.5 3.5-4"/>
-                </svg>
-                {{ 'nav.admin' | translate }}
-              </a>
-              <button class="menu-item" type="button" (click)="logout()">
-                <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
-                  <polyline points="16 17 21 12 16 7"/>
-                  <line x1="21" y1="12" x2="9" y2="12"/>
-                </svg>
-                {{ 'nav.logout' | translate }}
+          @if (auth.status() === 'authenticated') {
+            <div class="user-menu">
+              <button class="user-menu-trigger" type="button" (click)="toggleUserMenu()" [attr.aria-expanded]="userMenuOpen()">
+                @if (userProfile()?.avatarUrl) {
+                  <img [src]="userProfile()!.avatarUrl" [alt]="userProfile()!.username" class="user-avatar" />
+                }
+                @if (!userProfile()?.avatarUrl) {
+                  <div class="user-initials">
+                    {{ getUserInitials() }}
+                  </div>
+                }
+                <span class="user-name">{{ userProfile()?.username || auth.user()?.email }}</span>
               </button>
+              @if (userMenuOpen()) {
+                <div class="user-menu-dropdown">
+                  <a routerLink="/profile" class="menu-item" (click)="closeUserMenu()">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                      <circle cx="12" cy="7" r="4"/>
+                    </svg>
+                    {{ 'nav.profile' | translate }}
+                  </a>
+                  <a routerLink="/settings" class="menu-item" (click)="closeUserMenu()">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <circle cx="12" cy="12" r="3"/>
+                      <path d="M12 1v6m0 6v6M5.64 5.64l4.24 4.24m4.24 4.24l4.24 4.24M1 12h6m6 0h6M5.64 18.36l4.24-4.24m4.24-4.24l4.24-4.24"/>
+                    </svg>
+                    {{ 'nav.settings' | translate }}
+                  </a>
+                  @if (userProfile()?.admin) {
+                    <a routerLink="/admin" class="menu-item" (click)="closeUserMenu()">
+                      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M12 3l7 4v5c0 5-3.5 7.74-7 9-3.5-1.26-7-4-7-9V7l7-4z"/>
+                        <path d="M9.5 12.5l1.5 1.5 3.5-4"/>
+                      </svg>
+                      {{ 'nav.admin' | translate }}
+                    </a>
+                  }
+                  <button class="menu-item" type="button" (click)="logout()">
+                    <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                      <polyline points="16 17 21 12 16 7"/>
+                      <line x1="21" y1="12" x2="9" y2="12"/>
+                    </svg>
+                    {{ 'nav.logout' | translate }}
+                  </button>
+                </div>
+              }
             </div>
-          </div>
-
-          <ng-template #loginBlock>
+          } @else {
             <div class="language-menu">
               <button class="language-trigger" type="button" (click)="toggleLanguageMenu()" [attr.aria-expanded]="languageMenuOpen()">
                 <svg class="language-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
@@ -107,25 +113,28 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
                 </svg>
                 <span class="language-current">{{ currentLanguageCode() }}</span>
               </button>
-              <div *ngIf="languageMenuOpen()" class="language-dropdown">
-                <button class="language-option" type="button" (click)="setLanguage('en')">
-                  <span class="language-code">EN</span>
-                  <span class="language-name">{{ 'language.english' | translate }}</span>
-                </button>
-                <button class="language-option" type="button" (click)="setLanguage('ru')">
-                  <span class="language-code">RU</span>
-                  <span class="language-name">{{ 'language.russian' | translate }}</span>
-                </button>
-              </div>
+              @if (languageMenuOpen()) {
+                <div class="language-dropdown">
+                  <button class="language-option" type="button" (click)="setLanguage('en')">
+                    <span class="language-code">EN</span>
+                    <span class="language-name">{{ 'language.english' | translate }}</span>
+                  </button>
+                  <button class="language-option" type="button" (click)="setLanguage('ru')">
+                    <span class="language-code">RU</span>
+                    <span class="language-name">{{ 'language.russian' | translate }}</span>
+                  </button>
+                </div>
+              }
             </div>
             <app-button
               variant="primary"
               size="sm"
               (click)="login()"
-            >
+              >
               {{ 'nav.login' | translate }}
             </app-button>
-          </ng-template>
+          }
+
         </div>
       </header>
 
@@ -137,7 +146,7 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
           aria-controls="mobile-drawer"
           [attr.aria-label]="'nav.openMenu' | translate"
           (click)="toggleMobileMenu()"
-        >
+          >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="3" y1="6" x2="21" y2="6"></line>
             <line x1="3" y1="12" x2="21" y2="12"></line>
@@ -154,7 +163,7 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
           type="button"
           [attr.aria-label]="auth.status() === 'authenticated' ? ('nav.studyNow' | translate) : ('nav.login' | translate)"
           (click)="onMobilePrimaryAction()"
-        >
+          >
           {{ auth.status() === 'authenticated' ? ('nav.studyNow' | translate) : ('nav.login' | translate) }}
         </button>
       </header>
@@ -168,7 +177,7 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
         role="dialog"
         aria-modal="true"
         [attr.aria-hidden]="!mobileMenuOpen()"
-      >
+        >
         <div class="mobile-drawer-head">
           <div class="mobile-drawer-brand">
             <span class="drawer-title">{{ 'app.name' | translate }}</span>
@@ -193,7 +202,7 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
               [attr.aria-label]="'publicDecks.searchPlaceholder' | translate"
               (input)="onGlobalSearchInput($event)"
               (keydown.enter)="submitGlobalSearchAndClose()"
-            />
+              />
             <button type="button" class="search-go" (click)="submitGlobalSearchAndClose()" [attr.aria-label]="'home.searchButton' | translate">↗</button>
           </div>
         </div>
@@ -202,13 +211,27 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
           <a routerLink="/" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.home' | translate }}</a>
           <a routerLink="/public-decks" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.catalog' | translate }}</a>
 
-          <a *ngIf="auth.status() === 'authenticated'" routerLink="/my-study" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.myStudy' | translate }}</a>
-          <a *ngIf="auth.status() === 'authenticated'" routerLink="/decks" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.decks' | translate }}</a>
-          <a *ngIf="auth.status() === 'authenticated'" routerLink="/create-deck" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.createDeck' | translate }}</a>
-          <a *ngIf="auth.status() === 'authenticated'" routerLink="/templates" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.templates' | translate }}</a>
-          <a *ngIf="auth.status() === 'authenticated'" routerLink="/profile" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.profile' | translate }}</a>
-          <a *ngIf="auth.status() === 'authenticated'" routerLink="/settings" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.settings' | translate }}</a>
-          <a *ngIf="auth.status() === 'authenticated' && userProfile()?.admin" routerLink="/admin" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.admin' | translate }}</a>
+          @if (auth.status() === 'authenticated') {
+            <a routerLink="/my-study" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.myStudy' | translate }}</a>
+          }
+          @if (auth.status() === 'authenticated') {
+            <a routerLink="/decks" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.decks' | translate }}</a>
+          }
+          @if (auth.status() === 'authenticated') {
+            <a routerLink="/create-deck" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.createDeck' | translate }}</a>
+          }
+          @if (auth.status() === 'authenticated') {
+            <a routerLink="/templates" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.templates' | translate }}</a>
+          }
+          @if (auth.status() === 'authenticated') {
+            <a routerLink="/profile" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.profile' | translate }}</a>
+          }
+          @if (auth.status() === 'authenticated') {
+            <a routerLink="/settings" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.settings' | translate }}</a>
+          }
+          @if (auth.status() === 'authenticated' && userProfile()?.admin) {
+            <a routerLink="/admin" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.admin' | translate }}</a>
+          }
 
           <a routerLink="/privacy" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.privacy' | translate }}</a>
           <a routerLink="/terms" class="mobile-nav-item" (click)="navigateFromMobileMenu()">{{ 'nav.terms' | translate }}</a>
@@ -233,7 +256,7 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
                   [attr.aria-label]="'theme.light' | translate"
                   [attr.title]="'theme.light' | translate"
                   (click)="themeService.setMode('light')"
-                >
+                  >
                   ☀
                 </button>
                 <button
@@ -243,7 +266,7 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
                   [attr.aria-label]="'theme.dark' | translate"
                   [attr.title]="'theme.dark' | translate"
                   (click)="themeService.setMode('dark')"
-                >
+                  >
                   ☾
                 </button>
                 <button
@@ -251,7 +274,7 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
                   type="button"
                   [class.active]="themeService.accent() === 'neo'"
                   (click)="themeService.setAccent('neo')"
-                >
+                  >
                   {{ 'theme.neo' | translate }}
                 </button>
                 <button
@@ -259,28 +282,28 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
                   type="button"
                   [class.active]="themeService.accent() === 'vintage'"
                   (click)="themeService.setAccent('vintage')"
-                >
+                  >
                   {{ 'theme.vintage' | translate }}
                 </button>
               </div>
             </div>
           </div>
 
-          <app-button
-            *ngIf="auth.status() === 'authenticated'; else mobileLoginAction"
-            variant="ghost"
-            tone="danger"
-            [fullWidth]="true"
-            (click)="logoutFromMobileMenu()"
-          >
-            {{ 'nav.logout' | translate }}
-          </app-button>
-
-          <ng-template #mobileLoginAction>
+          @if (auth.status() === 'authenticated') {
+            <app-button
+              variant="ghost"
+              tone="danger"
+              [fullWidth]="true"
+              (click)="logoutFromMobileMenu()"
+              >
+              {{ 'nav.logout' | translate }}
+            </app-button>
+          } @else {
             <app-button variant="primary" [fullWidth]="true" (click)="loginFromMobileMenu()">
               {{ 'nav.login' | translate }}
             </app-button>
-          </ng-template>
+          }
+
         </div>
       </aside>
 
@@ -305,7 +328,8 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
 
       <app-toast-stack></app-toast-stack>
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .app-shell {
@@ -929,6 +953,13 @@ import { ToastStackComponent } from '../../shared/components/toast-stack.compone
     ]
 })
 export class AppShellComponent implements OnInit, OnDestroy {
+    auth = inject(AuthService);
+    themeService = inject(ThemeService);
+    private router = inject(Router);
+    private userApi = inject(UserApiService);
+    private mediaApi = inject(MediaApiService);
+    i18n = inject(I18nService);
+
     currentYear = new Date().getFullYear();
     userMenuOpen = signal(false);
     languageMenuOpen = signal(false);
@@ -938,15 +969,6 @@ export class AppShellComponent implements OnInit, OnDestroy {
     private authSubscription?: Subscription;
     private profileSubscription?: Subscription;
     private routerSubscription?: Subscription;
-
-    constructor(
-        public auth: AuthService,
-        public themeService: ThemeService,
-        private router: Router,
-        private userApi: UserApiService,
-        private mediaApi: MediaApiService,
-        public i18n: I18nService
-    ) {}
 
     ngOnInit(): void {
         this.auth.initFromUrlAndStorage();

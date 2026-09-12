@@ -1,5 +1,5 @@
-import { Component, Input, Output, EventEmitter, OnInit } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { Component, Input, Output, EventEmitter, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
@@ -19,8 +19,7 @@ interface PendingCard {
 
 @Component({
     selector: 'app-add-cards-modal',
-    standalone: true,
-    imports: [ReactiveFormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, TranslatePipe],
+    imports: [ReactiveFormsModule, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, TranslatePipe],
     template: `
     <div class="modal-overlay" (click)="onCancel()">
       <div class="modal-content" (click)="$event.stopPropagation()">
@@ -29,55 +28,64 @@ interface PendingCard {
           <button class="close-btn" (click)="onCancel()">&times;</button>
         </div>
 
-        <div *ngIf="loading" class="loading-section">{{ 'addCards.loadingTemplate' | translate }}</div>
+        @if (loading) {
+          <div class="loading-section">{{ 'addCards.loadingTemplate' | translate }}</div>
+        }
 
-        <div *ngIf="!loading && template" class="modal-body">
-          <form [formGroup]="cardForm" class="card-form">
-            <div *ngFor="let field of template.fields" class="field-group">
-              <app-media-upload
-                *ngIf="isMediaField(field)"
-                [label]="field.label + (field.isRequired ? ' *' : '')"
-                [fieldType]="getMediaFieldType(field)"
-                [value]="getMediaValue(field.name)"
-                (valueChange)="onMediaChange(field.name, $event)"
-              ></app-media-upload>
-
-              <app-input
-                *ngIf="field.fieldType === 'text'"
-                [label]="field.label + (field.isRequired ? ' *' : '')"
-                type="text"
-                [formControlName]="field.name"
-                [placeholder]="field.helpText || 'Enter ' + field.label"
-                [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
-                [errorMessage]="'wizard.required' | translate"
-              ></app-input>
-
-              <app-textarea
-                *ngIf="field.fieldType === 'rich_text' || field.fieldType === 'markdown'"
-                [label]="field.label + (field.isRequired ? ' *' : '')"
-                [formControlName]="field.name"
-                [placeholder]="field.helpText || (field.fieldType === 'markdown' ? 'Use **bold**, *italic*, inline code' : 'Enter ' + field.label)"
-                [rows]="4"
-              ></app-textarea>
-            </div>
-
-            <div class="form-actions">
-              <app-button variant="secondary" type="button" [disabled]="cardForm.invalid" (click)="addCard()">
-                {{ 'addCards.addToList' | translate }} ({{ pendingCards.length }})
-              </app-button>
-            </div>
-          </form>
-
-          <div *ngIf="pendingCards.length > 0" class="pending-cards">
-            <h3>{{ 'addCards.cardsToAdd' | translate }} ({{ pendingCards.length }})</h3>
-            <div class="card-list">
-              <div *ngFor="let card of pendingCards; let i = index" class="card-item">
-                <span class="card-preview">{{ getCardPreview(card) }}</span>
-                <button class="remove-btn" (click)="removeCard(i)">&times;</button>
+        @if (!loading && template) {
+          <div class="modal-body">
+            <form [formGroup]="cardForm" class="card-form">
+              @for (field of template.fields; track field) {
+                <div class="field-group">
+                  @if (isMediaField(field)) {
+                    <app-media-upload
+                      [label]="field.label + (field.isRequired ? ' *' : '')"
+                      [fieldType]="getMediaFieldType(field)"
+                      [value]="getMediaValue(field.name)"
+                      (valueChange)="onMediaChange(field.name, $event)"
+                    ></app-media-upload>
+                  }
+                  @if (field.fieldType === 'text') {
+                    <app-input
+                      [label]="field.label + (field.isRequired ? ' *' : '')"
+                      type="text"
+                      [formControlName]="field.name"
+                      [placeholder]="field.helpText || 'Enter ' + field.label"
+                      [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
+                      [errorMessage]="'wizard.required' | translate"
+                    ></app-input>
+                  }
+                  @if (field.fieldType === 'rich_text' || field.fieldType === 'markdown') {
+                    <app-textarea
+                      [label]="field.label + (field.isRequired ? ' *' : '')"
+                      [formControlName]="field.name"
+                      [placeholder]="field.helpText || (field.fieldType === 'markdown' ? 'Use **bold**, *italic*, inline code' : 'Enter ' + field.label)"
+                      [rows]="4"
+                    ></app-textarea>
+                  }
+                </div>
+              }
+              <div class="form-actions">
+                <app-button variant="secondary" type="button" [disabled]="cardForm.invalid" (click)="addCard()">
+                  {{ 'addCards.addToList' | translate }} ({{ pendingCards.length }})
+                </app-button>
               </div>
-            </div>
+            </form>
+            @if (pendingCards.length > 0) {
+              <div class="pending-cards">
+                <h3>{{ 'addCards.cardsToAdd' | translate }} ({{ pendingCards.length }})</h3>
+                <div class="card-list">
+                  @for (card of pendingCards; track card; let i = $index) {
+                    <div class="card-item">
+                      <span class="card-preview">{{ getCardPreview(card) }}</span>
+                      <button class="remove-btn" (click)="removeCard(i)">&times;</button>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
           </div>
-        </div>
+        }
 
         <div class="modal-footer">
           <app-button variant="ghost" (click)="onCancel()" [disabled]="saving">{{ 'addCards.cancel' | translate }}</app-button>
@@ -87,7 +95,8 @@ interface PendingCard {
         </div>
       </div>
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(8, 12, 22, 0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(12px) saturate(140%); }
       .modal-content { background: var(--color-surface-solid); border-radius: var(--border-radius-lg); max-width: 800px; width: 90%; max-height: 90vh; display: flex; flex-direction: column; border: 1px solid var(--glass-border); box-shadow: var(--shadow-lg); }
@@ -114,6 +123,11 @@ interface PendingCard {
     `]
 })
 export class AddCardsModalComponent implements OnInit {
+    private fb = inject(FormBuilder);
+    private publicDeckApi = inject(PublicDeckApiService);
+    private templateApi = inject(TemplateApiService);
+    private cardApi = inject(CardApiService);
+
     @Input() userDeckId = '';
     @Input() publicDeckId = '';
     @Input() templateVersion: number | null = null;
@@ -125,13 +139,6 @@ export class AddCardsModalComponent implements OnInit {
     template: CardTemplateDTO | null = null;
     cardForm!: FormGroup;
     pendingCards: PendingCard[] = [];
-
-    constructor(
-        private fb: FormBuilder,
-        private publicDeckApi: PublicDeckApiService,
-        private templateApi: TemplateApiService,
-        private cardApi: CardApiService
-    ) {}
 
     ngOnInit(): void {
         this.loadTemplate();

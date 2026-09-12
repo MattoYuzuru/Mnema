@@ -1,34 +1,35 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
-import { NgIf } from '@angular/common';
+import { Component, Input, Output, EventEmitter, ChangeDetectionStrategy } from '@angular/core';
+
 import { ButtonComponent } from './button.component';
 
 @Component({
     selector: 'app-confirmation-dialog',
-    standalone: true,
-    imports: [NgIf, ButtonComponent],
+    imports: [ButtonComponent],
     template: `
-    <div *ngIf="open" class="dialog-backdrop" (click)="onCancel()">
-      <div class="dialog-content" (click)="$event.stopPropagation()">
-        <h3 class="dialog-title">{{ title }}</h3>
-        <p class="dialog-message">{{ message }}</p>
-
-        <div class="dialog-actions">
-          <app-button
-            variant="ghost"
-            (click)="onCancel()"
-          >
-            {{ cancelText }}
-          </app-button>
-          <app-button
-            [variant]="confirmVariant"
-            (click)="onConfirm()"
-          >
-            {{ confirmText }}
-          </app-button>
+    @if (open) {
+      <div class="dialog-backdrop" (click)="onCancel()">
+        <div class="dialog-content" (click)="$event.stopPropagation()">
+          <h3 class="dialog-title">{{ title }}</h3>
+          <p class="dialog-message">{{ message }}</p>
+          <div class="dialog-actions">
+            <app-button
+              variant="ghost"
+              (click)="onCancel()"
+              >
+              {{ cancelText }}
+            </app-button>
+            <app-button
+              [variant]="confirmVariant"
+              (click)="onConfirm()"
+              >
+              {{ confirmText }}
+            </app-button>
+          </div>
         </div>
       </div>
-    </div>
-  `,
+    }
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .dialog-backdrop {

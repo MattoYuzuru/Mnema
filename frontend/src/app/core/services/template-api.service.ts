@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Page } from '../models/page.models';
@@ -7,9 +7,9 @@ import { appConfig } from '../../app.config';
 
 @Injectable({ providedIn: 'root' })
 export class TemplateApiService {
-    private readonly baseUrl = `${appConfig.coreApiBaseUrl}/templates`;
+    private http = inject(HttpClient);
 
-    constructor(private http: HttpClient) {}
+    private readonly baseUrl = `${appConfig.coreApiBaseUrl}/templates`;
 
     getTemplates(page: number, limit: number, scope: 'public' | 'mine' | 'all' = 'public'): Observable<Page<CardTemplateDTO>> {
         let params = new HttpParams()

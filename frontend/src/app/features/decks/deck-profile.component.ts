@@ -1,6 +1,6 @@
-import { Component, OnInit, OnDestroy, ElementRef, ViewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, ElementRef, ViewChild, inject, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { DatePipe, NgIf, NgFor } from '@angular/common';
+
 import { ReactiveFormsModule, FormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { map, switchMap } from 'rxjs/operators';
@@ -51,710 +51,888 @@ import { appConfig } from '../../app.config';
 
 @Component({
     selector: 'app-deck-profile',
-    standalone: true,
-    imports: [NgIf, NgFor, DatePipe, ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, AiAddCardsModalComponent, AiEnhanceDeckModalComponent, AiImportModalComponent, ConfirmationDialogComponent, InputComponent, TagChipComponent, ImportDeckModalComponent, TranslatePipe, ReviewStatsPanelComponent],
+    imports: [ReactiveFormsModule, FormsModule, MemoryTipLoaderComponent, ButtonComponent, AddCardsModalComponent, AiAddCardsModalComponent, AiEnhanceDeckModalComponent, AiImportModalComponent, ConfirmationDialogComponent, InputComponent, TagChipComponent, ImportDeckModalComponent, TranslatePipe, ReviewStatsPanelComponent],
     template: `
-    <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
+    @if (loading) {
+      <app-memory-tip-loader></app-memory-tip-loader>
+    }
 
-    <div *ngIf="!loading && deck" class="deck-profile">
-      <header class="deck-header">
-        <h1>{{ deck.displayName }}</h1>
-        <div class="deck-description" [innerHTML]="formatDescription(deck.displayDescription)"></div>
-        <div *ngIf="publicDeck?.tags?.length" class="deck-tags">
-          <app-tag-chip *ngFor="let tag of publicDeck!.tags" [text]="tag"></app-tag-chip>
-        </div>
-      </header>
-
-      <div class="deck-meta">
-        <div class="meta-item meta-item-primary">
-          <span class="meta-label">{{ 'deckProfile.algorithm' | translate }}</span>
-          <span class="meta-value">{{ formatAlgorithmId(deck.algorithmId) }}</span>
-        </div>
-        <div class="meta-item" [class.meta-item-on]="deck.autoUpdate">
-          <span class="meta-label">{{ 'deckProfile.autoUpdate' | translate }}</span>
-          <span class="meta-value">{{ deck.autoUpdate ? ('deckProfile.yes' | translate) : ('deckProfile.no' | translate) }}</span>
-        </div>
-        <div class="meta-item" *ngIf="deck.publicDeckId">
-          <span class="meta-label">{{ 'deckProfile.version' | translate }}</span>
-          <span class="meta-value">{{ deck.currentVersion }}<span *ngIf="latestPublicVersion !== null"> / {{ latestPublicVersion }}</span></span>
-        </div>
-        <div class="meta-item" *ngIf="deck.templateVersion !== null && deck.templateVersion !== undefined">
-          <span class="meta-label">{{ 'deckProfile.templateVersion' | translate }}</span>
-          <span class="meta-value">{{ deck.templateVersion }}<span *ngIf="latestTemplateVersion !== null"> / {{ latestTemplateVersion }}</span></span>
-        </div>
-        <div class="meta-item" *ngIf="!deck.publicDeckId">
-          <span class="meta-label">{{ 'deckProfile.version' | translate }}</span>
-          <span class="meta-value">{{ deck.currentVersion }}</span>
-        </div>
-        <div class="meta-item">
-          <span class="meta-label">{{ 'deckProfile.createdAt' | translate }}</span>
-          <span class="meta-value">{{ formatMetaDate(deck.createdAt) }}</span>
-        </div>
-        <div class="meta-item" *ngIf="deck.lastSyncedAt">
-          <span class="meta-label">{{ 'deckProfile.lastSyncedAt' | translate }}</span>
-          <span class="meta-value">{{ formatMetaDate(deck.lastSyncedAt) }}</span>
-        </div>
-        <div class="meta-item" *ngIf="publicDeck?.language">
-          <span class="meta-label">{{ 'deckProfile.language' | translate }}</span>
-          <span class="meta-value">{{ formatLanguageCode(publicDeck?.language) }}</span>
-        </div>
-        <div class="meta-item" *ngIf="publicDeck">
-          <span class="meta-label">{{ 'deckProfile.isPublic' | translate }}</span>
-          <span class="meta-value">{{ publicDeck.isPublic ? ('deckProfile.yes' | translate) : ('deckProfile.no' | translate) }}</span>
-        </div>
-        <div class="meta-item" *ngIf="publicDeck">
-          <span class="meta-label">{{ 'deckProfile.isListed' | translate }}</span>
-          <span class="meta-value">{{ publicDeck.isListed ? ('deckProfile.yes' | translate) : ('deckProfile.no' | translate) }}</span>
-        </div>
-        <div class="meta-item" *ngIf="publicDeck?.publishedAt">
-          <span class="meta-label">{{ 'deckProfile.publishedAt' | translate }}</span>
-          <span class="meta-value">{{ formatMetaDate(publicDeck?.publishedAt) }}</span>
-        </div>
-        <div class="meta-item" *ngIf="publicDeck?.updatedAt">
-          <span class="meta-label">{{ 'deckProfile.updatedAt' | translate }}</span>
-          <span class="meta-value">{{ formatMetaDate(publicDeck?.updatedAt) }}</span>
-        </div>
-        <div class="meta-item" *ngIf="publicDeck?.forkedFromDeck">
-          <span class="meta-label">{{ 'deckProfile.forkedFrom' | translate }}</span>
-          <span class="meta-value">{{ publicDeck?.forkedFromDeck }}</span>
-        </div>
-      </div>
-
-      <div class="deck-actions">
-        <app-button variant="primary" size="md" (click)="learn()">
-          {{ 'deckProfile.learn' | translate }}
-        </app-button>
-        <app-button variant="secondary" size="md" (click)="browse()">
-          {{ 'deckProfile.browseCards' | translate }}
-        </app-button>
-        <app-button variant="secondary" (click)="openAddCardsChoice()">
-          {{ 'deckProfile.addCards' | translate }}
-        </app-button>
-        <app-button *ngIf="aiEnabled" variant="secondary" (click)="openAiEnhanceModal()">
-          ✨ {{ 'deckProfile.aiEnhanceButton' | translate }}
-        </app-button>
-        <app-button variant="secondary" (click)="openExportConfirm()" [disabled]="exporting">
-          {{ exporting ? ('deckProfile.exporting' | translate) : ('deckProfile.export' | translate) }}
-        </app-button>
-        <app-button variant="ghost" (click)="sync()" *ngIf="needsUpdate()">
-          {{ 'deckProfile.sync' | translate }}
-        </app-button>
-        <app-button variant="ghost" (click)="syncTemplate()" *ngIf="needsTemplateUpdate()">
-          {{ 'deckProfile.syncTemplate' | translate }}
-        </app-button>
-        <app-button variant="secondary" (click)="openEditModal()">
-          {{ 'deckProfile.edit' | translate }}
-        </app-button>
-        <app-button variant="ghost" (click)="openDeleteConfirm()">
-          {{ 'deckProfile.delete' | translate }}
-        </app-button>
-      </div>
-
-      <div class="deck-stats-block">
-        <app-review-stats-panel [userDeckId]="deck.userDeckId" titleKey="stats.deckTitle" [flat]="true"></app-review-stats-panel>
-      </div>
-
-      <p *ngIf="exportStatusKey" class="export-status">{{ exportStatusKey | translate }}</p>
-
-      <section *ngIf="aiEnabled" class="ai-jobs-section">
-        <div class="ai-jobs-header">
-          <div>
-            <h2>{{ 'deckProfile.aiJobsTitle' | translate }}</h2>
-            <p>{{ 'deckProfile.aiJobsDescription' | translate }}</p>
+    @if (!loading && deck) {
+      <div class="deck-profile">
+        <header class="deck-header">
+          <h1>{{ deck.displayName }}</h1>
+          <div class="deck-description" [innerHTML]="formatDescription(deck.displayDescription)"></div>
+          @if (publicDeck?.tags?.length) {
+            <div class="deck-tags">
+              @for (tag of publicDeck!.tags; track tag) {
+                <app-tag-chip [text]="tag"></app-tag-chip>
+              }
+            </div>
+          }
+        </header>
+        <div class="deck-meta">
+          <div class="meta-item meta-item-primary">
+            <span class="meta-label">{{ 'deckProfile.algorithm' | translate }}</span>
+            <span class="meta-value">{{ formatAlgorithmId(deck.algorithmId) }}</span>
           </div>
-          <div class="ai-jobs-actions">
-            <app-button variant="ghost" size="sm" (click)="toggleAiJobsVisibility()" [disabled]="aiJobs.length === 0">
-              {{ (showOnlyLatestAiJob ? 'deckProfile.aiJobsShowAll' : 'deckProfile.aiJobsShowLatest') | translate }}
-            </app-button>
-            <app-button variant="ghost" size="sm" (click)="refreshAiJobs()" [disabled]="aiJobsLoading">
-              {{ 'deckProfile.aiJobsRefresh' | translate }}
-            </app-button>
+          <div class="meta-item" [class.meta-item-on]="deck.autoUpdate">
+            <span class="meta-label">{{ 'deckProfile.autoUpdate' | translate }}</span>
+            <span class="meta-value">{{ deck.autoUpdate ? ('deckProfile.yes' | translate) : ('deckProfile.no' | translate) }}</span>
           </div>
+          @if (deck.publicDeckId) {
+            <div class="meta-item">
+              <span class="meta-label">{{ 'deckProfile.version' | translate }}</span>
+              <span class="meta-value">{{ deck.currentVersion }}@if (latestPublicVersion !== null) {
+                <span> / {{ latestPublicVersion }}</span>
+              }</span>
+            </div>
+          }
+          @if (deck.templateVersion !== null && deck.templateVersion !== undefined) {
+            <div class="meta-item">
+              <span class="meta-label">{{ 'deckProfile.templateVersion' | translate }}</span>
+              <span class="meta-value">{{ deck.templateVersion }}@if (latestTemplateVersion !== null) {
+                <span> / {{ latestTemplateVersion }}</span>
+              }</span>
+            </div>
+          }
+          @if (!deck.publicDeckId) {
+            <div class="meta-item">
+              <span class="meta-label">{{ 'deckProfile.version' | translate }}</span>
+              <span class="meta-value">{{ deck.currentVersion }}</span>
+            </div>
+          }
+          <div class="meta-item">
+            <span class="meta-label">{{ 'deckProfile.createdAt' | translate }}</span>
+            <span class="meta-value">{{ formatMetaDate(deck.createdAt) }}</span>
+          </div>
+          @if (deck.lastSyncedAt) {
+            <div class="meta-item">
+              <span class="meta-label">{{ 'deckProfile.lastSyncedAt' | translate }}</span>
+              <span class="meta-value">{{ formatMetaDate(deck.lastSyncedAt) }}</span>
+            </div>
+          }
+          @if (publicDeck?.language) {
+            <div class="meta-item">
+              <span class="meta-label">{{ 'deckProfile.language' | translate }}</span>
+              <span class="meta-value">{{ formatLanguageCode(publicDeck.language) }}</span>
+            </div>
+          }
+          @if (publicDeck) {
+            <div class="meta-item">
+              <span class="meta-label">{{ 'deckProfile.isPublic' | translate }}</span>
+              <span class="meta-value">{{ publicDeck.isPublic ? ('deckProfile.yes' | translate) : ('deckProfile.no' | translate) }}</span>
+            </div>
+          }
+          @if (publicDeck) {
+            <div class="meta-item">
+              <span class="meta-label">{{ 'deckProfile.isListed' | translate }}</span>
+              <span class="meta-value">{{ publicDeck.isListed ? ('deckProfile.yes' | translate) : ('deckProfile.no' | translate) }}</span>
+            </div>
+          }
+          @if (publicDeck?.publishedAt) {
+            <div class="meta-item">
+              <span class="meta-label">{{ 'deckProfile.publishedAt' | translate }}</span>
+              <span class="meta-value">{{ formatMetaDate(publicDeck.publishedAt) }}</span>
+            </div>
+          }
+          @if (publicDeck?.updatedAt) {
+            <div class="meta-item">
+              <span class="meta-label">{{ 'deckProfile.updatedAt' | translate }}</span>
+              <span class="meta-value">{{ formatMetaDate(publicDeck.updatedAt) }}</span>
+            </div>
+          }
+          @if (publicDeck?.forkedFromDeck) {
+            <div class="meta-item">
+              <span class="meta-label">{{ 'deckProfile.forkedFrom' | translate }}</span>
+              <span class="meta-value">{{ publicDeck.forkedFromDeck }}</span>
+            </div>
+          }
         </div>
-
-        <div *ngIf="aiJobsLoading" class="loading-state">{{ 'deckProfile.aiJobsLoading' | translate }}</div>
-        <div *ngIf="!aiJobsLoading && aiJobsError" class="error-state" role="alert">
-          {{ aiJobsError | translate }}
+        <div class="deck-actions">
+          <app-button variant="primary" size="md" (click)="learn()">
+            {{ 'deckProfile.learn' | translate }}
+          </app-button>
+          <app-button variant="secondary" size="md" (click)="browse()">
+            {{ 'deckProfile.browseCards' | translate }}
+          </app-button>
+          <app-button variant="secondary" (click)="openAddCardsChoice()">
+            {{ 'deckProfile.addCards' | translate }}
+          </app-button>
+          @if (aiEnabled) {
+            <app-button variant="secondary" (click)="openAiEnhanceModal()">
+              ✨ {{ 'deckProfile.aiEnhanceButton' | translate }}
+            </app-button>
+          }
+          <app-button variant="secondary" (click)="openExportConfirm()" [disabled]="exporting">
+            {{ exporting ? ('deckProfile.exporting' | translate) : ('deckProfile.export' | translate) }}
+          </app-button>
+          @if (needsUpdate()) {
+            <app-button variant="ghost" (click)="sync()">
+              {{ 'deckProfile.sync' | translate }}
+            </app-button>
+          }
+          @if (needsTemplateUpdate()) {
+            <app-button variant="ghost" (click)="syncTemplate()">
+              {{ 'deckProfile.syncTemplate' | translate }}
+            </app-button>
+          }
+          <app-button variant="secondary" (click)="openEditModal()">
+            {{ 'deckProfile.edit' | translate }}
+          </app-button>
+          <app-button variant="ghost" (click)="openDeleteConfirm()">
+            {{ 'deckProfile.delete' | translate }}
+          </app-button>
         </div>
-        <div *ngIf="!aiJobsLoading && !aiJobsError && aiJobs.length === 0" class="empty-state">
-          {{ 'deckProfile.aiJobsEmpty' | translate }}
+        <div class="deck-stats-block">
+          <app-review-stats-panel [userDeckId]="deck.userDeckId" titleKey="stats.deckTitle" [flat]="true"></app-review-stats-panel>
         </div>
-
-        <div *ngIf="visibleAiJobs.length > 0" class="ai-job-list" aria-live="polite">
-          <div *ngFor="let entry of visibleAiJobs; trackBy: trackAiJob" class="ai-job-card">
-            <div class="ai-job-header">
+        @if (exportStatusKey) {
+          <p class="export-status">{{ exportStatusKey | translate }}</p>
+        }
+        @if (aiEnabled) {
+          <section class="ai-jobs-section">
+            <div class="ai-jobs-header">
               <div>
-                <div class="ai-job-title">{{ formatAiJobType(entry.job.type) }}</div>
-                <div class="ai-job-meta">
-                  <span class="ai-job-status-pill"
-                        [class.completed]="entry.job.status === 'completed'"
-                        [class.partial]="entry.job.status === 'partial_success'"
-                        [class.failed]="entry.job.status === 'failed'"
-                        [class.canceled]="entry.job.status === 'canceled'">
-                    {{ formatAiJobStatus(entry.job.status) }}
-                  </span>
-                  <span class="ai-job-date">{{ formatMetaDateTime(entry.job.createdAt) }}</span>
-                  <span *ngIf="formatAiJobProvider(entry.job)" class="ai-job-key">{{ formatAiJobProvider(entry.job) }}</span>
-                  <span *ngIf="entry.job.model" class="ai-job-model">{{ entry.job.model }}</span>
-                </div>
+                <h2>{{ 'deckProfile.aiJobsTitle' | translate }}</h2>
+                <p>{{ 'deckProfile.aiJobsDescription' | translate }}</p>
               </div>
-              <div class="ai-job-actions">
-                <app-button
-                  *ngIf="canRetryAiJob(entry)"
-                  variant="ghost"
-                  size="sm"
-                  [disabled]="retryingAiJobs.has(entry.job.jobId)"
-                  (click)="retryFailedAiJob(entry)"
-                >
-                  {{ retryingAiJobs.has(entry.job.jobId)
-                    ? ('deckProfile.aiJobsRetrying' | translate)
-                    : ('deckProfile.aiJobsRetryFailed' | translate:{ count: countRetryableAiItems(entry.resultSummary) }) }}
+              <div class="ai-jobs-actions">
+                <app-button variant="ghost" size="sm" (click)="toggleAiJobsVisibility()" [disabled]="aiJobs.length === 0">
+                  {{ (showOnlyLatestAiJob ? 'deckProfile.aiJobsShowAll' : 'deckProfile.aiJobsShowLatest') | translate }}
                 </app-button>
-                <app-button
-                  variant="ghost"
-                  size="sm"
-                  tone="danger"
-                  [disabled]="!canCancelAiJob(entry.job.status) || cancelingAiJobs.has(entry.job.jobId)"
-                  (click)="cancelAiJob(entry.job.jobId)"
-                >
-                  {{ cancelingAiJobs.has(entry.job.jobId) ? ('deckProfile.aiJobsCanceling' | translate) : ('deckProfile.aiJobsCancel' | translate) }}
+                <app-button variant="ghost" size="sm" (click)="refreshAiJobs()" [disabled]="aiJobsLoading">
+                  {{ 'deckProfile.aiJobsRefresh' | translate }}
                 </app-button>
               </div>
             </div>
-
-            <div class="ai-job-status-row">
-              <span class="ai-job-progress-text">{{ entry.job.progress }}%</span>
-              <div class="ai-job-progress" role="progressbar" [attr.aria-valuenow]="entry.job.progress" aria-valuemin="0" aria-valuemax="100">
-                <div class="ai-job-progress-bar" [style.width.%]="entry.job.progress"></div>
+            @if (aiJobsLoading) {
+              <div class="loading-state">{{ 'deckProfile.aiJobsLoading' | translate }}</div>
+            }
+            @if (!aiJobsLoading && aiJobsError) {
+              <div class="error-state" role="alert">
+                {{ aiJobsError | translate }}
               </div>
-            </div>
-
-            <div *ngIf="entry.job.currentStep || entry.job.totalSteps || hasAiEta(entry.job)" class="ai-job-step-row">
-              <span *ngIf="entry.job.currentStep" class="ai-job-step-pill">{{ formatAiStepName(entry.job.currentStep) }}</span>
-              <span *ngIf="entry.job.totalSteps" class="ai-job-step-count">
-                {{ entry.job.completedSteps || 0 }}/{{ entry.job.totalSteps }}
-              </span>
-              <span *ngIf="formatAiEtaLabel(entry.job)" class="ai-job-eta-pill">
-                {{ formatAiEtaLabel(entry.job) }}
-              </span>
-              <span *ngIf="formatAiQueueHint(entry.job)" class="ai-job-queue-hint">
-                {{ formatAiQueueHint(entry.job) }}
-              </span>
-            </div>
-
-            <div *ngIf="formatAiUsageLabel(entry.job) || formatAiCostLabel(entry.job)" class="ai-job-cost-row">
-              <span *ngIf="formatAiUsageLabel(entry.job)" class="ai-job-cost-pill">{{ formatAiUsageLabel(entry.job) }}</span>
-              <span *ngIf="formatAiCostLabel(entry.job)" class="ai-job-cost-pill">{{ formatAiCostLabel(entry.job) }}</span>
-            </div>
-
-            <div *ngIf="entry.job.status === 'failed'" class="ai-job-error" role="alert">
-              {{ 'deckProfile.aiJobsFailed' | translate }}
-              <span *ngIf="entry.job.errorMessage"> {{ entry.job.errorMessage }}</span>
-            </div>
-
-            <div class="ai-job-result">
-              <div *ngIf="entry.resultLoading" class="loading-state">{{ 'deckProfile.aiJobsResultLoading' | translate }}</div>
-              <ng-container *ngIf="!entry.resultLoading && entry.resultSummary as result">
-                <div *ngIf="isAuditResult(result)" class="ai-audit-report">
-                  <div class="ai-audit-header">
-                    <div>
-                      <div class="ai-audit-title">Audit report</div>
-                      <div class="ai-audit-sub">{{ $any(result).aiSummary?.summary || 'Quality review summary' }}</div>
-                    </div>
-                  </div>
-
-                  <div class="ai-audit-grid">
-                    <div class="ai-audit-card">
-                      <div class="ai-audit-card-title">Key stats</div>
-                      <div class="ai-audit-stats">
-                        <div class="ai-audit-stat">
-                          <span>Sampled cards</span>
-                          <strong>{{ $any(result).auditStats?.sampledCards ?? $any(result).auditStats?.totalCards ?? '—' }}</strong>
-                        </div>
-                        <div class="ai-audit-stat">
-                          <span>Weak cards</span>
-                          <strong>{{ $any(result).auditStats?.weakCards ?? '—' }}</strong>
-                        </div>
-                        <div class="ai-audit-stat">
-                          <span>Identical pairs</span>
-                          <strong>{{ $any(result).auditStats?.identicalPairs ?? '—' }}</strong>
+            }
+            @if (!aiJobsLoading && !aiJobsError && aiJobs.length === 0) {
+              <div class="empty-state">
+                {{ 'deckProfile.aiJobsEmpty' | translate }}
+              </div>
+            }
+            @if (visibleAiJobs.length > 0) {
+              <div class="ai-job-list" aria-live="polite">
+                @for (entry of visibleAiJobs; track trackAiJob($index, entry)) {
+                  <div class="ai-job-card">
+                    <div class="ai-job-header">
+                      <div>
+                        <div class="ai-job-title">{{ formatAiJobType(entry.job.type) }}</div>
+                        <div class="ai-job-meta">
+                          <span class="ai-job-status-pill"
+                            [class.completed]="entry.job.status === 'completed'"
+                            [class.partial]="entry.job.status === 'partial_success'"
+                            [class.failed]="entry.job.status === 'failed'"
+                            [class.canceled]="entry.job.status === 'canceled'">
+                            {{ formatAiJobStatus(entry.job.status) }}
+                          </span>
+                          <span class="ai-job-date">{{ formatMetaDateTime(entry.job.createdAt) }}</span>
+                          @if (formatAiJobProvider(entry.job)) {
+                            <span class="ai-job-key">{{ formatAiJobProvider(entry.job) }}</span>
+                          }
+                          @if (entry.job.model) {
+                            <span class="ai-job-model">{{ entry.job.model }}</span>
+                          }
                         </div>
                       </div>
-                    </div>
-
-                    <div class="ai-audit-card">
-                      <div class="ai-audit-card-title">Recommendations</div>
-                      <div class="ai-audit-list">
-                        <div *ngFor="let rec of ($any(result).aiSummary?.recommendations || []); let i = index" class="ai-audit-item">
-                          <span class="ai-audit-index">{{ i + 1 }}</span>
-                          <span>{{ rec }}</span>
-                        </div>
-                        <div *ngIf="($any(result).aiSummary?.recommendations || []).length === 0" class="field-hint">No recommendations provided.</div>
+                      <div class="ai-job-actions">
+                        @if (canRetryAiJob(entry)) {
+                          <app-button
+                            variant="ghost"
+                            size="sm"
+                            [disabled]="retryingAiJobs.has(entry.job.jobId)"
+                            (click)="retryFailedAiJob(entry)"
+                            >
+                            {{ retryingAiJobs.has(entry.job.jobId)
+                            ? ('deckProfile.aiJobsRetrying' | translate)
+                            : ('deckProfile.aiJobsRetryFailed' | translate:{ count: countRetryableAiItems(entry.resultSummary) }) }}
+                          </app-button>
+                        }
+                        <app-button
+                          variant="ghost"
+                          size="sm"
+                          tone="danger"
+                          [disabled]="!canCancelAiJob(entry.job.status) || cancelingAiJobs.has(entry.job.jobId)"
+                          (click)="cancelAiJob(entry.job.jobId)"
+                          >
+                          {{ cancelingAiJobs.has(entry.job.jobId) ? ('deckProfile.aiJobsCanceling' | translate) : ('deckProfile.aiJobsCancel' | translate) }}
+                        </app-button>
                       </div>
                     </div>
-                  </div>
-
-                  <div class="ai-audit-card">
-                    <div class="ai-audit-card-title">Issues to review</div>
-                    <div class="ai-audit-issues">
-                      <div *ngFor="let issue of ($any(result).aiSummary?.issues || []); let i = index" class="ai-audit-issue">
-                        <span class="ai-audit-index">{{ i + 1 }}</span>
-                        <span>{{ issue }}</span>
-                      </div>
-                      <div *ngIf="($any(result).aiSummary?.issues || []).length === 0" class="field-hint">No critical issues detected.</div>
-                    </div>
-                  </div>
-
-                  <div class="ai-audit-card">
-                    <div class="ai-audit-card-title">Next actions</div>
-                    <div class="ai-audit-list">
-                      <div *ngFor="let next of ($any(result).aiSummary?.nextActions || []); let i = index" class="ai-audit-item">
-                        <span class="ai-audit-index">{{ i + 1 }}</span>
-                        <span>{{ next }}</span>
-                      </div>
-                      <div *ngIf="($any(result).aiSummary?.nextActions || []).length === 0" class="field-hint">No next actions suggested.</div>
-                    </div>
-                  </div>
-                </div>
-                <div *ngIf="!isAuditResult(result) && hasStructuredAiResult(result)" class="ai-job-summary">
-                  <div class="ai-job-summary-grid">
-                    <div *ngFor="let metric of summarizeAiResult(result)" class="ai-job-metric">
-                      <span>{{ metric.label }}</span>
-                      <strong>{{ metric.value }}</strong>
-                    </div>
-                  </div>
-
-                  <div *ngIf="getAiResultQualityGate(result) as quality" class="ai-job-panel">
-                    <div class="ai-job-items-header">
-                      <div class="ai-job-items-title">Quality gate</div>
-                      <div *ngIf="quality.model" class="ai-job-items-count">{{ quality.model }}</div>
-                    </div>
-                    <div class="ai-job-summary-grid">
-                      <div class="ai-job-metric">
-                        <span>Audited</span>
-                        <strong>{{ quality.auditedDrafts ?? 0 }}</strong>
-                      </div>
-                      <div class="ai-job-metric">
-                        <span>Flagged</span>
-                        <strong>{{ quality.flaggedDrafts ?? 0 }}</strong>
-                      </div>
-                      <div class="ai-job-metric">
-                        <span>Repaired</span>
-                        <strong>{{ quality.repairedDrafts ?? 0 }}</strong>
-                      </div>
-                      <div class="ai-job-metric">
-                        <span>Residual</span>
-                        <strong>{{ quality.finalFlaggedDrafts ?? 0 }}</strong>
-                      </div>
-                      <div class="ai-job-metric">
-                        <span>Score</span>
-                        <strong>{{ quality.qualityScore ?? 0 }}/100</strong>
+                    <div class="ai-job-status-row">
+                      <span class="ai-job-progress-text">{{ entry.job.progress }}%</span>
+                      <div class="ai-job-progress" role="progressbar" [attr.aria-valuenow]="entry.job.progress" aria-valuemin="0" aria-valuemax="100">
+                        <div class="ai-job-progress-bar" [style.width.%]="entry.job.progress"></div>
                       </div>
                     </div>
-                    <div *ngIf="quality.warning" class="ai-job-warning">{{ quality.warning }}</div>
-                    <div *ngIf="getAiQualityReviewItems(result).length > 0" class="ai-job-quality-list">
-                      <div *ngFor="let item of getAiQualityReviewItems(result)" class="ai-job-quality-item">
-                        <div class="ai-job-item-main">
-                          <div class="ai-job-item-title">{{ item.summary || ('Draft #' + ((item.draftIndex ?? 0) + 1)) }}</div>
-                          <div class="ai-job-item-meta">
-                            <span class="ai-job-status-pill"
-                                  [class.completed]="item.decision === 'accept'"
-                                  [class.partial]="item.decision === 'repair'"
-                                  [class.failed]="item.decision === 'reject'">
-                              {{ formatAiQualityDecision(item.decision) }}
-                            </span>
-                            <span *ngIf="item.focusFields?.length" class="ai-job-key">{{ item.focusFields?.join(', ') }}</span>
-                          </div>
-                        </div>
-                        <div *ngIf="item.issues?.length" class="ai-job-item-errors">
-                          <div *ngFor="let issue of item.issues">{{ issue }}</div>
-                        </div>
+                    @if (entry.job.currentStep || entry.job.totalSteps || hasAiEta(entry.job)) {
+                      <div class="ai-job-step-row">
+                        @if (entry.job.currentStep) {
+                          <span class="ai-job-step-pill">{{ formatAiStepName(entry.job.currentStep) }}</span>
+                        }
+                        @if (entry.job.totalSteps) {
+                          <span class="ai-job-step-count">
+                            {{ entry.job.completedSteps || 0 }}/{{ entry.job.totalSteps }}
+                          </span>
+                        }
+                        @if (formatAiEtaLabel(entry.job)) {
+                          <span class="ai-job-eta-pill">
+                            {{ formatAiEtaLabel(entry.job) }}
+                          </span>
+                        }
+                        @if (formatAiQueueHint(entry.job)) {
+                          <span class="ai-job-queue-hint">
+                            {{ formatAiQueueHint(entry.job) }}
+                          </span>
+                        }
                       </div>
-                    </div>
-                  </div>
-
-                  <div *ngIf="getAiResultSourceCoverage(result) as coverage" class="ai-job-panel">
-                    <div class="ai-job-items-header">
-                      <div class="ai-job-items-title">Source coverage</div>
-                    </div>
-                    <div class="ai-job-summary-grid">
-                      <div class="ai-job-metric">
-                        <span>Source items</span>
-                        <strong>{{ coverage.sourceItemsTotal ?? 0 }}</strong>
+                    }
+                    @if (formatAiUsageLabel(entry.job) || formatAiCostLabel(entry.job)) {
+                      <div class="ai-job-cost-row">
+                        @if (formatAiUsageLabel(entry.job)) {
+                          <span class="ai-job-cost-pill">{{ formatAiUsageLabel(entry.job) }}</span>
+                        }
+                        @if (formatAiCostLabel(entry.job)) {
+                          <span class="ai-job-cost-pill">{{ formatAiCostLabel(entry.job) }}</span>
+                        }
                       </div>
-                      <div class="ai-job-metric">
-                        <span>Used</span>
-                        <strong>{{ coverage.sourceItemsUsed ?? 0 }}</strong>
+                    }
+                    @if (entry.job.status === 'failed') {
+                      <div class="ai-job-error" role="alert">
+                        {{ 'deckProfile.aiJobsFailed' | translate }}
+                        @if (entry.job.errorMessage) {
+                          <span> {{ entry.job.errorMessage }}</span>
+                        }
                       </div>
-                      <div class="ai-job-metric">
-                        <span>Altered</span>
-                        <strong>{{ coverage.alteredSourceItems ?? 0 }}</strong>
-                      </div>
-                    </div>
-                    <div *ngIf="(coverage.missingSourceIndexes?.length || 0) > 0" class="ai-job-inline-list">
-                      <span class="ai-job-inline-label">Missing source indexes</span>
-                      <span class="ai-job-stage-chip">{{ coverage.missingSourceIndexes?.join(', ') }}</span>
-                    </div>
-                    <div *ngIf="(coverage.missingNumberedItems?.length || 0) > 0" class="ai-job-inline-list">
-                      <span class="ai-job-inline-label">Missing numbered items</span>
-                      <span class="ai-job-stage-chip">{{ coverage.missingNumberedItems?.join(', ') }}</span>
-                    </div>
-                  </div>
-
-                  <div *ngIf="getAiResultSourceNormalization(result) as normalization" class="ai-job-panel">
-                    <div class="ai-job-items-header">
-                      <div class="ai-job-items-title">Source normalization</div>
-                      <div *ngIf="normalization.model" class="ai-job-items-count">{{ normalization.model }}</div>
-                    </div>
-                    <div class="ai-job-summary-grid">
-                      <div class="ai-job-metric">
-                        <span>Reviewed</span>
-                        <strong>{{ normalization.reviewedItems ?? 0 }}</strong>
-                      </div>
-                      <div class="ai-job-metric">
-                        <span>Normalized</span>
-                        <strong>{{ normalization.normalizedItems ?? 0 }}</strong>
-                      </div>
-                      <div class="ai-job-metric" *ngIf="normalization.extraction">
-                        <span>Extraction</span>
-                        <strong>{{ normalization.extraction }}</strong>
-                      </div>
-                    </div>
-                    <div *ngIf="normalization.warning" class="ai-job-warning">{{ normalization.warning }}</div>
-                  </div>
-
-                  <ng-container *ngIf="getAiResultUsageStages(result) as usageStages">
-                    <div *ngIf="usageStages.length > 0" class="ai-job-panel">
-                      <div class="ai-job-items-header">
-                        <div class="ai-job-items-title">Usage breakdown</div>
-                      </div>
-                      <div class="ai-job-usage-list">
-                        <div *ngFor="let stage of usageStages" class="ai-job-usage-card">
-                          <div class="ai-job-item-main">
-                            <div class="ai-job-item-title">{{ stage.label }}</div>
-                            <div class="ai-job-item-meta">
-                              <span *ngIf="stage.summary.model" class="ai-job-key">{{ stage.summary.model }}</span>
-                              <span *ngIf="stage.summary.requests" class="ai-job-stage-chip">{{ stage.summary.requests }} req</span>
+                    }
+                    <div class="ai-job-result">
+                      @if (entry.resultLoading) {
+                        <div class="loading-state">{{ 'deckProfile.aiJobsResultLoading' | translate }}</div>
+                      }
+                      @if (!entry.resultLoading && entry.resultSummary; as result) {
+                        @if (isAuditResult(result)) {
+                          <div class="ai-audit-report">
+                            <div class="ai-audit-header">
+                              <div>
+                                <div class="ai-audit-title">Audit report</div>
+                                <div class="ai-audit-sub">{{ $any(result).aiSummary?.summary || 'Quality review summary' }}</div>
+                              </div>
+                            </div>
+                            <div class="ai-audit-grid">
+                              <div class="ai-audit-card">
+                                <div class="ai-audit-card-title">Key stats</div>
+                                <div class="ai-audit-stats">
+                                  <div class="ai-audit-stat">
+                                    <span>Sampled cards</span>
+                                    <strong>{{ $any(result).auditStats?.sampledCards ?? $any(result).auditStats?.totalCards ?? '—' }}</strong>
+                                  </div>
+                                  <div class="ai-audit-stat">
+                                    <span>Weak cards</span>
+                                    <strong>{{ $any(result).auditStats?.weakCards ?? '—' }}</strong>
+                                  </div>
+                                  <div class="ai-audit-stat">
+                                    <span>Identical pairs</span>
+                                    <strong>{{ $any(result).auditStats?.identicalPairs ?? '—' }}</strong>
+                                  </div>
+                                </div>
+                              </div>
+                              <div class="ai-audit-card">
+                                <div class="ai-audit-card-title">Recommendations</div>
+                                <div class="ai-audit-list">
+                                  @for (rec of ($any(result).aiSummary?.recommendations || []); track rec; let i = $index) {
+                                    <div class="ai-audit-item">
+                                      <span class="ai-audit-index">{{ i + 1 }}</span>
+                                      <span>{{ rec }}</span>
+                                    </div>
+                                  }
+                                  @if (($any(result).aiSummary?.recommendations || []).length === 0) {
+                                    <div class="field-hint">No recommendations provided.</div>
+                                  }
+                                </div>
+                              </div>
+                            </div>
+                            <div class="ai-audit-card">
+                              <div class="ai-audit-card-title">Issues to review</div>
+                              <div class="ai-audit-issues">
+                                @for (issue of ($any(result).aiSummary?.issues || []); track issue; let i = $index) {
+                                  <div class="ai-audit-issue">
+                                    <span class="ai-audit-index">{{ i + 1 }}</span>
+                                    <span>{{ issue }}</span>
+                                  </div>
+                                }
+                                @if (($any(result).aiSummary?.issues || []).length === 0) {
+                                  <div class="field-hint">No critical issues detected.</div>
+                                }
+                              </div>
+                            </div>
+                            <div class="ai-audit-card">
+                              <div class="ai-audit-card-title">Next actions</div>
+                              <div class="ai-audit-list">
+                                @for (next of ($any(result).aiSummary?.nextActions || []); track next; let i = $index) {
+                                  <div class="ai-audit-item">
+                                    <span class="ai-audit-index">{{ i + 1 }}</span>
+                                    <span>{{ next }}</span>
+                                  </div>
+                                }
+                                @if (($any(result).aiSummary?.nextActions || []).length === 0) {
+                                  <div class="field-hint">No next actions suggested.</div>
+                                }
+                              </div>
                             </div>
                           </div>
-                          <div class="ai-job-usage-stats">
-                            <span *ngIf="hasUsageValue(stage.summary.inputTokens)">In {{ formatCompactNumber(stage.summary.inputTokens || 0) }}</span>
-                            <span *ngIf="hasUsageValue(stage.summary.outputTokens)">Out {{ formatCompactNumber(stage.summary.outputTokens || 0) }}</span>
-                            <span *ngIf="hasUsageValue(resolveUsageCachedTokens(stage.summary))">Cached {{ formatCompactNumber(resolveUsageCachedTokens(stage.summary)) }}</span>
-                            <span *ngIf="hasUsageValue(resolveUsageReasoningTokens(stage.summary))">Reasoning {{ formatCompactNumber(resolveUsageReasoningTokens(stage.summary)) }}</span>
-                            <span *ngIf="hasUsageValue(stage.summary.charsGenerated)">Chars {{ formatCompactNumber(stage.summary.charsGenerated || 0) }}</span>
-                            <span *ngIf="hasUsageValue(stage.summary.imagesGenerated)">Images {{ stage.summary.imagesGenerated }}</span>
-                            <span *ngIf="hasUsageValue(stage.summary.videosGenerated)">Videos {{ stage.summary.videosGenerated }}</span>
-                            <span *ngIf="hasUsageValue(resolveUsageDurationMs(stage.summary))">Time {{ formatUsageDuration(resolveUsageDurationMs(stage.summary)) }}</span>
+                        }
+                        @if (!isAuditResult(result) && hasStructuredAiResult(result)) {
+                          <div class="ai-job-summary">
+                            <div class="ai-job-summary-grid">
+                              @for (metric of summarizeAiResult(result); track metric) {
+                                <div class="ai-job-metric">
+                                  <span>{{ metric.label }}</span>
+                                  <strong>{{ metric.value }}</strong>
+                                </div>
+                              }
+                            </div>
+                            @if (getAiResultQualityGate(result); as quality) {
+                              <div class="ai-job-panel">
+                                <div class="ai-job-items-header">
+                                  <div class="ai-job-items-title">Quality gate</div>
+                                  @if (quality.model) {
+                                    <div class="ai-job-items-count">{{ quality.model }}</div>
+                                  }
+                                </div>
+                                <div class="ai-job-summary-grid">
+                                  <div class="ai-job-metric">
+                                    <span>Audited</span>
+                                    <strong>{{ quality.auditedDrafts ?? 0 }}</strong>
+                                  </div>
+                                  <div class="ai-job-metric">
+                                    <span>Flagged</span>
+                                    <strong>{{ quality.flaggedDrafts ?? 0 }}</strong>
+                                  </div>
+                                  <div class="ai-job-metric">
+                                    <span>Repaired</span>
+                                    <strong>{{ quality.repairedDrafts ?? 0 }}</strong>
+                                  </div>
+                                  <div class="ai-job-metric">
+                                    <span>Residual</span>
+                                    <strong>{{ quality.finalFlaggedDrafts ?? 0 }}</strong>
+                                  </div>
+                                  <div class="ai-job-metric">
+                                    <span>Score</span>
+                                    <strong>{{ quality.qualityScore ?? 0 }}/100</strong>
+                                  </div>
+                                </div>
+                                @if (quality.warning) {
+                                  <div class="ai-job-warning">{{ quality.warning }}</div>
+                                }
+                                @if (getAiQualityReviewItems(result).length > 0) {
+                                  <div class="ai-job-quality-list">
+                                    @for (item of getAiQualityReviewItems(result); track item) {
+                                      <div class="ai-job-quality-item">
+                                        <div class="ai-job-item-main">
+                                          <div class="ai-job-item-title">{{ item.summary || ('Draft #' + ((item.draftIndex ?? 0) + 1)) }}</div>
+                                          <div class="ai-job-item-meta">
+                                            <span class="ai-job-status-pill"
+                                              [class.completed]="item.decision === 'accept'"
+                                              [class.partial]="item.decision === 'repair'"
+                                              [class.failed]="item.decision === 'reject'">
+                                              {{ formatAiQualityDecision(item.decision) }}
+                                            </span>
+                                            @if (item.focusFields?.length) {
+                                              <span class="ai-job-key">{{ item.focusFields.join(', ') }}</span>
+                                            }
+                                          </div>
+                                        </div>
+                                        @if (item.issues?.length) {
+                                          <div class="ai-job-item-errors">
+                                            @for (issue of item.issues; track issue) {
+                                              <div>{{ issue }}</div>
+                                            }
+                                          </div>
+                                        }
+                                      </div>
+                                    }
+                                  </div>
+                                }
+                              </div>
+                            }
+                            @if (getAiResultSourceCoverage(result); as coverage) {
+                              <div class="ai-job-panel">
+                                <div class="ai-job-items-header">
+                                  <div class="ai-job-items-title">Source coverage</div>
+                                </div>
+                                <div class="ai-job-summary-grid">
+                                  <div class="ai-job-metric">
+                                    <span>Source items</span>
+                                    <strong>{{ coverage.sourceItemsTotal ?? 0 }}</strong>
+                                  </div>
+                                  <div class="ai-job-metric">
+                                    <span>Used</span>
+                                    <strong>{{ coverage.sourceItemsUsed ?? 0 }}</strong>
+                                  </div>
+                                  <div class="ai-job-metric">
+                                    <span>Altered</span>
+                                    <strong>{{ coverage.alteredSourceItems ?? 0 }}</strong>
+                                  </div>
+                                </div>
+                                @if ((coverage.missingSourceIndexes?.length || 0) > 0) {
+                                  <div class="ai-job-inline-list">
+                                    <span class="ai-job-inline-label">Missing source indexes</span>
+                                    <span class="ai-job-stage-chip">{{ coverage.missingSourceIndexes?.join(', ') }}</span>
+                                  </div>
+                                }
+                                @if ((coverage.missingNumberedItems?.length || 0) > 0) {
+                                  <div class="ai-job-inline-list">
+                                    <span class="ai-job-inline-label">Missing numbered items</span>
+                                    <span class="ai-job-stage-chip">{{ coverage.missingNumberedItems?.join(', ') }}</span>
+                                  </div>
+                                }
+                              </div>
+                            }
+                            @if (getAiResultSourceNormalization(result); as normalization) {
+                              <div class="ai-job-panel">
+                                <div class="ai-job-items-header">
+                                  <div class="ai-job-items-title">Source normalization</div>
+                                  @if (normalization.model) {
+                                    <div class="ai-job-items-count">{{ normalization.model }}</div>
+                                  }
+                                </div>
+                                <div class="ai-job-summary-grid">
+                                  <div class="ai-job-metric">
+                                    <span>Reviewed</span>
+                                    <strong>{{ normalization.reviewedItems ?? 0 }}</strong>
+                                  </div>
+                                  <div class="ai-job-metric">
+                                    <span>Normalized</span>
+                                    <strong>{{ normalization.normalizedItems ?? 0 }}</strong>
+                                  </div>
+                                  @if (normalization.extraction) {
+                                    <div class="ai-job-metric">
+                                      <span>Extraction</span>
+                                      <strong>{{ normalization.extraction }}</strong>
+                                    </div>
+                                  }
+                                </div>
+                                @if (normalization.warning) {
+                                  <div class="ai-job-warning">{{ normalization.warning }}</div>
+                                }
+                              </div>
+                            }
+                            @if (getAiResultUsageStages(result); as usageStages) {
+                              @if (usageStages.length > 0) {
+                                <div class="ai-job-panel">
+                                  <div class="ai-job-items-header">
+                                    <div class="ai-job-items-title">Usage breakdown</div>
+                                  </div>
+                                  <div class="ai-job-usage-list">
+                                    @for (stage of usageStages; track stage) {
+                                      <div class="ai-job-usage-card">
+                                        <div class="ai-job-item-main">
+                                          <div class="ai-job-item-title">{{ stage.label }}</div>
+                                          <div class="ai-job-item-meta">
+                                            @if (stage.summary.model) {
+                                              <span class="ai-job-key">{{ stage.summary.model }}</span>
+                                            }
+                                            @if (stage.summary.requests) {
+                                              <span class="ai-job-stage-chip">{{ stage.summary.requests }} req</span>
+                                            }
+                                          </div>
+                                        </div>
+                                        <div class="ai-job-usage-stats">
+                                          @if (hasUsageValue(stage.summary.inputTokens)) {
+                                            <span>In {{ formatCompactNumber(stage.summary.inputTokens || 0) }}</span>
+                                          }
+                                          @if (hasUsageValue(stage.summary.outputTokens)) {
+                                            <span>Out {{ formatCompactNumber(stage.summary.outputTokens || 0) }}</span>
+                                          }
+                                          @if (hasUsageValue(resolveUsageCachedTokens(stage.summary))) {
+                                            <span>Cached {{ formatCompactNumber(resolveUsageCachedTokens(stage.summary)) }}</span>
+                                          }
+                                          @if (hasUsageValue(resolveUsageReasoningTokens(stage.summary))) {
+                                            <span>Reasoning {{ formatCompactNumber(resolveUsageReasoningTokens(stage.summary)) }}</span>
+                                          }
+                                          @if (hasUsageValue(stage.summary.charsGenerated)) {
+                                            <span>Chars {{ formatCompactNumber(stage.summary.charsGenerated || 0) }}</span>
+                                          }
+                                          @if (hasUsageValue(stage.summary.imagesGenerated)) {
+                                            <span>Images {{ stage.summary.imagesGenerated }}</span>
+                                          }
+                                          @if (hasUsageValue(stage.summary.videosGenerated)) {
+                                            <span>Videos {{ stage.summary.videosGenerated }}</span>
+                                          }
+                                          @if (hasUsageValue(resolveUsageDurationMs(stage.summary))) {
+                                            <span>Time {{ formatUsageDuration(resolveUsageDurationMs(stage.summary)) }}</span>
+                                          }
+                                        </div>
+                                      </div>
+                                    }
+                                  </div>
+                                </div>
+                              }
+                            }
+                            @if (getAiResultItems(result).length > 0) {
+                              <div class="ai-job-items">
+                                <div class="ai-job-items-header">
+                                  <div class="ai-job-items-title">Cards</div>
+                                  <div class="ai-job-items-count">{{ getAiResultItems(result).length }}</div>
+                                </div>
+                                <div class="ai-job-items-list">
+                                  @for (item of getAiResultItems(result); track item) {
+                                    <div class="ai-job-item">
+                                      <div class="ai-job-item-main">
+                                        <div class="ai-job-item-title">{{ item.preview || item.cardId }}</div>
+                                        <div class="ai-job-item-meta">
+                                          <span class="ai-job-status-pill"
+                                            [class.completed]="item.status === 'completed'"
+                                            [class.partial]="item.status === 'partial_success'"
+                                            [class.failed]="item.status === 'failed'"
+                                            [class.canceled]="item.status === 'skipped'">
+                                            {{ formatAiJobStatus(item.status) }}
+                                          </span>
+                                          @if (item.cardId) {
+                                            <span class="ai-job-key">{{ shortId(item.cardId) }}</span>
+                                          }
+                                        </div>
+                                      </div>
+                                      @if (item.completedStages?.length) {
+                                        <div class="ai-job-stage-list">
+                                          @for (stage of item.completedStages; track stage) {
+                                            <span class="ai-job-stage-chip">
+                                              {{ formatAiStepName(stage) }}
+                                            </span>
+                                          }
+                                        </div>
+                                      }
+                                      @if (item.errors?.length) {
+                                        <div class="ai-job-item-errors">
+                                          @for (error of item.errors; track error) {
+                                            <div>{{ error }}</div>
+                                          }
+                                        </div>
+                                      }
+                                    </div>
+                                  }
+                                </div>
+                              </div>
+                            }
+                            @if (entry.resultSteps.length > 0) {
+                              <div class="ai-job-steps">
+                                <div class="ai-job-items-header">
+                                  <div class="ai-job-items-title">Execution steps</div>
+                                </div>
+                                <div class="ai-job-stage-list">
+                                  @for (step of entry.resultSteps; track step) {
+                                    <span
+                                      class="ai-job-stage-chip"
+                                      [class.failed]="step.status === 'failed'"
+                                      [attr.title]="step.errorSummary || null"
+                                      >
+                                      {{ formatAiStepName(step.stepName) }} · {{ formatAiJobStatus(step.status) }}
+                                      @if (step.errorSummary) {
+                                        <span> · {{ step.errorSummary }}</span>
+                                      }
+                                    </span>
+                                  }
+                                </div>
+                              </div>
+                            }
                           </div>
+                        }
+                        @if (!isAuditResult(result) && !hasStructuredAiResult(result)) {
+                          <pre class="ai-job-result-json">{{ formatJson(result) }}</pre>
+                        }
+                      }
+                      @if (!entry.resultLoading && !entry.resultSummary && !isTerminalAiJob(entry.job.status)) {
+                        <div class="empty-state">
+                          {{ 'deckProfile.aiJobsResultPending' | translate }}
                         </div>
-                      </div>
-                    </div>
-                  </ng-container>
-
-                  <div *ngIf="getAiResultItems(result).length > 0" class="ai-job-items">
-                    <div class="ai-job-items-header">
-                      <div class="ai-job-items-title">Cards</div>
-                      <div class="ai-job-items-count">{{ getAiResultItems(result).length }}</div>
-                    </div>
-                    <div class="ai-job-items-list">
-                      <div *ngFor="let item of getAiResultItems(result)" class="ai-job-item">
-                        <div class="ai-job-item-main">
-                          <div class="ai-job-item-title">{{ item.preview || item.cardId }}</div>
-                          <div class="ai-job-item-meta">
-                            <span class="ai-job-status-pill"
-                                  [class.completed]="item.status === 'completed'"
-                                  [class.partial]="item.status === 'partial_success'"
-                                  [class.failed]="item.status === 'failed'"
-                                  [class.canceled]="item.status === 'skipped'">
-                              {{ formatAiJobStatus(item.status) }}
-                            </span>
-                            <span *ngIf="item.cardId" class="ai-job-key">{{ shortId(item.cardId) }}</span>
-                          </div>
-                        </div>
-                        <div *ngIf="item.completedStages?.length" class="ai-job-stage-list">
-                          <span *ngFor="let stage of item.completedStages" class="ai-job-stage-chip">
-                            {{ formatAiStepName(stage) }}
-                          </span>
-                        </div>
-                        <div *ngIf="item.errors?.length" class="ai-job-item-errors">
-                          <div *ngFor="let error of item.errors">{{ error }}</div>
-                        </div>
-                      </div>
+                      }
                     </div>
                   </div>
-
-                  <div *ngIf="entry.resultSteps.length > 0" class="ai-job-steps">
-                    <div class="ai-job-items-header">
-                      <div class="ai-job-items-title">Execution steps</div>
-                    </div>
-                    <div class="ai-job-stage-list">
-                      <span
-                        *ngFor="let step of entry.resultSteps"
-                        class="ai-job-stage-chip"
-                        [class.failed]="step.status === 'failed'"
-                        [attr.title]="step.errorSummary || null"
-                      >
-                        {{ formatAiStepName(step.stepName) }} · {{ formatAiJobStatus(step.status) }}
-                        <span *ngIf="step.errorSummary"> · {{ step.errorSummary }}</span>
-                      </span>
-                    </div>
-                  </div>
-                </div>
-                <pre *ngIf="!isAuditResult(result) && !hasStructuredAiResult(result)" class="ai-job-result-json">{{ formatJson(result) }}</pre>
-              </ng-container>
-              <div *ngIf="!entry.resultLoading && !entry.resultSummary && !isTerminalAiJob(entry.job.status)" class="empty-state">
-                {{ 'deckProfile.aiJobsResultPending' | translate }}
+                }
               </div>
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
+            }
+          </section>
+        }
+      </div>
+    }
 
-    <div *ngIf="showAddCardsChoice" class="modal-overlay" (click)="closeAddCardsChoice()">
-      <div class="modal-content add-choice-modal" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h2>{{ 'deckProfile.addCardsChoiceTitle' | translate }}</h2>
-          <button class="close-btn" (click)="closeAddCardsChoice()">&times;</button>
-        </div>
-        <div class="modal-body">
-          <div class="choice-grid">
-            <div class="choice-card" (click)="startManualAdd()">
-              <div class="choice-icon">✍️</div>
-              <h3>{{ 'deckProfile.addCardsManual' | translate }}</h3>
-              <p>{{ 'deckProfile.addCardsManualDesc' | translate }}</p>
-            </div>
-            <div class="choice-card" (click)="startImportMerge()">
-              <div class="choice-icon">⬆️</div>
-              <h3>{{ 'deckProfile.addCardsImport' | translate }}</h3>
-              <p>{{ 'deckProfile.addCardsImportDesc' | translate }}</p>
-            </div>
-            <div *ngIf="aiEnabled" class="choice-card ai-choice" (click)="startAiAdd()">
-              <div class="choice-icon">✨</div>
-              <h3>{{ 'deckProfile.aiAddCardsTitle' | translate }}</h3>
-              <p>{{ 'deckProfile.aiAddCardsDescription' | translate }}</p>
-            </div>
-            <div *ngIf="aiEnabled" class="choice-card ai-choice" (click)="startAiImport()">
-              <div class="choice-icon">📂</div>
-              <h3>{{ 'deckProfile.aiImportTitle' | translate }}</h3>
-              <p>{{ 'deckProfile.aiImportDescription' | translate }}</p>
+    @if (showAddCardsChoice) {
+      <div class="modal-overlay" (click)="closeAddCardsChoice()">
+        <div class="modal-content add-choice-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h2>{{ 'deckProfile.addCardsChoiceTitle' | translate }}</h2>
+            <button class="close-btn" (click)="closeAddCardsChoice()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="choice-grid">
+              <div class="choice-card" (click)="startManualAdd()">
+                <div class="choice-icon">✍️</div>
+                <h3>{{ 'deckProfile.addCardsManual' | translate }}</h3>
+                <p>{{ 'deckProfile.addCardsManualDesc' | translate }}</p>
+              </div>
+              <div class="choice-card" (click)="startImportMerge()">
+                <div class="choice-icon">⬆️</div>
+                <h3>{{ 'deckProfile.addCardsImport' | translate }}</h3>
+                <p>{{ 'deckProfile.addCardsImportDesc' | translate }}</p>
+              </div>
+              @if (aiEnabled) {
+                <div class="choice-card ai-choice" (click)="startAiAdd()">
+                  <div class="choice-icon">✨</div>
+                  <h3>{{ 'deckProfile.aiAddCardsTitle' | translate }}</h3>
+                  <p>{{ 'deckProfile.aiAddCardsDescription' | translate }}</p>
+                </div>
+              }
+              @if (aiEnabled) {
+                <div class="choice-card ai-choice" (click)="startAiImport()">
+                  <div class="choice-icon">📂</div>
+                  <h3>{{ 'deckProfile.aiImportTitle' | translate }}</h3>
+                  <p>{{ 'deckProfile.aiImportDescription' | translate }}</p>
+                </div>
+              }
             </div>
           </div>
         </div>
       </div>
-    </div>
+    }
 
-    <app-add-cards-modal
-      *ngIf="showAddCards && deck"
-      [userDeckId]="deck.userDeckId"
-      [publicDeckId]="deck.publicDeckId"
-      [templateVersion]="deck.templateVersion || null"
-      (saved)="onCardsSaved()"
-      (cancelled)="closeAddCards()"
-    ></app-add-cards-modal>
+    @if (showAddCards && deck) {
+      <app-add-cards-modal
+        [userDeckId]="deck.userDeckId"
+        [publicDeckId]="deck.publicDeckId"
+        [templateVersion]="deck.templateVersion || null"
+        (saved)="onCardsSaved()"
+        (cancelled)="closeAddCards()"
+      ></app-add-cards-modal>
+    }
 
-    <app-import-deck-modal
-      *ngIf="showImportModal && deck"
-      mode="merge"
-      [targetDeckId]="deck.userDeckId"
-      (closed)="closeImportModal()"
-    ></app-import-deck-modal>
+    @if (showImportModal && deck) {
+      <app-import-deck-modal
+        mode="merge"
+        [targetDeckId]="deck.userDeckId"
+        (closed)="closeImportModal()"
+      ></app-import-deck-modal>
+    }
 
-    <app-ai-add-cards-modal
-      *ngIf="aiEnabled && showAiAddModal && deck"
-      [userDeckId]="deck.userDeckId"
-      [deckName]="deck.displayName"
-      [templateId]="publicDeck?.templateId || ''"
-      [templateVersion]="deck.templateVersion || null"
-      (jobCreated)="onAiJobCreated($event)"
-      (closed)="closeAiAddModal()"
-    ></app-ai-add-cards-modal>
+    @if (aiEnabled && showAiAddModal && deck) {
+      <app-ai-add-cards-modal
+        [userDeckId]="deck.userDeckId"
+        [deckName]="deck.displayName"
+        [templateId]="publicDeck?.templateId || ''"
+        [templateVersion]="deck.templateVersion || null"
+        (jobCreated)="onAiJobCreated($event)"
+        (closed)="closeAiAddModal()"
+      ></app-ai-add-cards-modal>
+    }
 
-    <app-ai-enhance-deck-modal
-      *ngIf="aiEnabled && showAiEnhanceModal && deck"
-      [userDeckId]="deck.userDeckId"
-      [deckName]="deck.displayName"
-      [templateId]="publicDeck?.templateId || ''"
-      [templateVersion]="deck.templateVersion || null"
-      [canApplyGlobal]="isAuthor"
-      (jobCreated)="onAiJobCreated($event)"
-      (closed)="closeAiEnhanceModal()"
-    ></app-ai-enhance-deck-modal>
+    @if (aiEnabled && showAiEnhanceModal && deck) {
+      <app-ai-enhance-deck-modal
+        [userDeckId]="deck.userDeckId"
+        [deckName]="deck.displayName"
+        [templateId]="publicDeck?.templateId || ''"
+        [templateVersion]="deck.templateVersion || null"
+        [canApplyGlobal]="isAuthor"
+        (jobCreated)="onAiJobCreated($event)"
+        (closed)="closeAiEnhanceModal()"
+      ></app-ai-enhance-deck-modal>
+    }
 
-    <app-ai-import-modal
-      *ngIf="aiEnabled && showAiImportModal && deck"
-      [userDeckId]="deck.userDeckId"
-      [deckName]="deck.displayName"
-      [templateId]="publicDeck?.templateId || ''"
-      [templateVersion]="deck.templateVersion || null"
-      (jobCreated)="onAiJobCreated($event)"
-      (closed)="closeAiImportModal()"
-    ></app-ai-import-modal>
+    @if (aiEnabled && showAiImportModal && deck) {
+      <app-ai-import-modal
+        [userDeckId]="deck.userDeckId"
+        [deckName]="deck.displayName"
+        [templateId]="publicDeck?.templateId || ''"
+        [templateVersion]="deck.templateVersion || null"
+        (jobCreated)="onAiJobCreated($event)"
+        (closed)="closeAiImportModal()"
+      ></app-ai-import-modal>
+    }
 
-    <div *ngIf="showEditModal && deck" class="modal-overlay" (click)="closeEditModal()">
-      <div class="modal-content edit-deck-modal" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h2>{{ 'deckProfile.editDeck' | translate }}</h2>
-          <button class="close-btn" (click)="closeEditModal()">&times;</button>
-        </div>
-        <div class="modal-body">
-          <form [formGroup]="editForm" class="edit-form">
-            <h3 class="section-title">{{ 'deckProfile.yourDeckSettings' | translate }}</h3>
-            <app-input
-              [label]="('deckProfile.displayName' | translate) + ' *'"
-              formControlName="displayName"
-              [hasError]="editForm.get('displayName')?.invalid && editForm.get('displayName')?.touched || false"
-              [errorMessage]="displayNameErrorMessage()"
-              [maxLength]="maxDeckName"
-            ></app-input>
-            <div class="markdown-field">
-              <label class="markdown-label">{{ 'deckProfile.description' | translate }}</label>
-              <div class="markdown-toolbar">
-                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '**', '**')" [attr.title]="'wizard.markdownBold' | translate" [attr.aria-label]="'wizard.markdownBold' | translate">B</button>
-                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '*', '*')" [attr.title]="'wizard.markdownItalic' | translate" [attr.aria-label]="'wizard.markdownItalic' | translate">I</button>
-                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', codeMarker, codeMarker)" [attr.title]="'wizard.markdownCode' | translate" [attr.aria-label]="'wizard.markdownCode' | translate">code</button>
-                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '## ', '')" [attr.title]="'wizard.markdownHeading' | translate" [attr.aria-label]="'wizard.markdownHeading' | translate">H2</button>
-                <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '- ', '')" [attr.title]="'wizard.markdownList' | translate" [attr.aria-label]="'wizard.markdownList' | translate">-</button>
-              </div>
-              <textarea
-                #displayDescriptionInput
-                formControlName="displayDescription"
-                class="textarea"
-                rows="4"
-                [attr.maxlength]="maxDeckDescription"
-              ></textarea>
-              <div *ngIf="editForm.get('displayDescription')?.invalid && editForm.get('displayDescription')?.touched" class="error-message">
-                {{ displayDescriptionErrorMessage() }}
-              </div>
-            </div>
-            <div class="checkbox-group">
-              <label class="glass-checkbox">
-                <input type="checkbox" formControlName="autoUpdate" />
-                <span>{{ 'deckProfile.autoUpdateLabel' | translate }}</span>
-              </label>
-            </div>
-
-            <div *ngIf="isAuthor" class="public-deck-section">
-              <h3 class="section-title">{{ 'deckProfile.publicDeckSettings' | translate }}</h3>
+    @if (showEditModal && deck) {
+      <div class="modal-overlay" (click)="closeEditModal()">
+        <div class="modal-content edit-deck-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h2>{{ 'deckProfile.editDeck' | translate }}</h2>
+            <button class="close-btn" (click)="closeEditModal()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <form [formGroup]="editForm" class="edit-form">
+              <h3 class="section-title">{{ 'deckProfile.yourDeckSettings' | translate }}</h3>
               <app-input
-                [label]="('deckProfile.publicDeckName' | translate) + ' *'"
-                formControlName="publicName"
-                [hasError]="editForm.get('publicName')?.invalid && editForm.get('publicName')?.touched || false"
-                [errorMessage]="publicNameErrorMessage()"
+                [label]="('deckProfile.displayName' | translate) + ' *'"
+                formControlName="displayName"
+                [hasError]="editForm.get('displayName')?.invalid && editForm.get('displayName')?.touched || false"
+                [errorMessage]="displayNameErrorMessage()"
                 [maxLength]="maxDeckName"
               ></app-input>
               <div class="markdown-field">
-                <label class="markdown-label">{{ 'deckProfile.publicDescription' | translate }}</label>
+                <label class="markdown-label">{{ 'deckProfile.description' | translate }}</label>
                 <div class="markdown-toolbar">
-                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '**', '**')" [attr.title]="'wizard.markdownBold' | translate" [attr.aria-label]="'wizard.markdownBold' | translate">B</button>
-                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '*', '*')" [attr.title]="'wizard.markdownItalic' | translate" [attr.aria-label]="'wizard.markdownItalic' | translate">I</button>
-                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', codeMarker, codeMarker)" [attr.title]="'wizard.markdownCode' | translate" [attr.aria-label]="'wizard.markdownCode' | translate">code</button>
-                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '## ', '')" [attr.title]="'wizard.markdownHeading' | translate" [attr.aria-label]="'wizard.markdownHeading' | translate">H2</button>
-                  <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '- ', '')" [attr.title]="'wizard.markdownList' | translate" [attr.aria-label]="'wizard.markdownList' | translate">-</button>
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '**', '**')" [attr.title]="'wizard.markdownBold' | translate" [attr.aria-label]="'wizard.markdownBold' | translate">B</button>
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '*', '*')" [attr.title]="'wizard.markdownItalic' | translate" [attr.aria-label]="'wizard.markdownItalic' | translate">I</button>
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', codeMarker, codeMarker)" [attr.title]="'wizard.markdownCode' | translate" [attr.aria-label]="'wizard.markdownCode' | translate">code</button>
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '## ', '')" [attr.title]="'wizard.markdownHeading' | translate" [attr.aria-label]="'wizard.markdownHeading' | translate">H2</button>
+                  <button type="button" class="toolbar-button" (click)="applyMarkdown('displayDescription', '- ', '')" [attr.title]="'wizard.markdownList' | translate" [attr.aria-label]="'wizard.markdownList' | translate">-</button>
                 </div>
                 <textarea
-                  #publicDescriptionInput
-                  formControlName="publicDescription"
+                  #displayDescriptionInput
+                  formControlName="displayDescription"
                   class="textarea"
                   rows="4"
                   [attr.maxlength]="maxDeckDescription"
                 ></textarea>
-                <div *ngIf="editForm.get('publicDescription')?.invalid && editForm.get('publicDescription')?.touched" class="error-message">
-                  {{ publicDescriptionErrorMessage() }}
-                </div>
-              </div>
-              <div class="form-group">
-                <label>{{ 'deckProfile.language' | translate }}</label>
-                <select formControlName="language" class="language-select">
-                  <option *ngFor="let option of deckLanguageOptions" [value]="option.code">
-                    {{ option.labelKey | translate }}
-                  </option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>{{ 'deckProfile.tags' | translate }}</label>
-                <input
-                  type="text"
-                  class="tag-input"
-                  [(ngModel)]="tagInput"
-                  [ngModelOptions]="{standalone: true}"
-                  (keydown.enter)="addTag($event)"
-                  [placeholder]="'deckProfile.tagsPlaceholder' | translate"
-                  [attr.maxlength]="maxTagLength"
-                />
-                <div *ngIf="tags.length > 0" class="tags-list">
-                  <span *ngFor="let tag of tags; let i = index" class="tag-chip">{{ tag }} <button type="button" (click)="removeTag(i)">×</button></span>
-                </div>
-                <p *ngIf="tagError" class="error-message">{{ tagError }}</p>
+                @if (editForm.get('displayDescription')?.invalid && editForm.get('displayDescription')?.touched) {
+                  <div class="error-message">
+                    {{ displayDescriptionErrorMessage() }}
+                  </div>
+                }
               </div>
               <div class="checkbox-group">
                 <label class="glass-checkbox">
-                  <input type="checkbox" formControlName="isPublic" />
-                  <span>{{ 'deckProfile.makePublic' | translate }}</span>
+                  <input type="checkbox" formControlName="autoUpdate" />
+                  <span>{{ 'deckProfile.autoUpdateLabel' | translate }}</span>
                 </label>
               </div>
-              <div class="checkbox-group">
-                <label class="glass-checkbox">
-                  <input type="checkbox" formControlName="isListed" />
-                  <span>{{ 'deckProfile.listInCatalog' | translate }}</span>
-                </label>
-              </div>
-            </div>
-
-            <div class="review-preferences-section">
-              <h3 class="section-title">{{ 'deckProfile.reviewPreferences' | translate }}</h3>
-              <div class="form-group">
-                <div class="label-with-help">
-                  <label>{{ 'deckProfile.schedulerAlgorithm' | translate }}</label>
-                  <a
-                    class="help-link"
-                    href="https://github.com/MattoYuzuru/Mnema/wiki/what-are-scheduling-algorithms"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label="Scheduling algorithms guide"
-                  >?</a>
+              @if (isAuthor) {
+                <div class="public-deck-section">
+                  <h3 class="section-title">{{ 'deckProfile.publicDeckSettings' | translate }}</h3>
+                  <app-input
+                    [label]="('deckProfile.publicDeckName' | translate) + ' *'"
+                    formControlName="publicName"
+                    [hasError]="editForm.get('publicName')?.invalid && editForm.get('publicName')?.touched || false"
+                    [errorMessage]="publicNameErrorMessage()"
+                    [maxLength]="maxDeckName"
+                  ></app-input>
+                  <div class="markdown-field">
+                    <label class="markdown-label">{{ 'deckProfile.publicDescription' | translate }}</label>
+                    <div class="markdown-toolbar">
+                      <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '**', '**')" [attr.title]="'wizard.markdownBold' | translate" [attr.aria-label]="'wizard.markdownBold' | translate">B</button>
+                      <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '*', '*')" [attr.title]="'wizard.markdownItalic' | translate" [attr.aria-label]="'wizard.markdownItalic' | translate">I</button>
+                      <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', codeMarker, codeMarker)" [attr.title]="'wizard.markdownCode' | translate" [attr.aria-label]="'wizard.markdownCode' | translate">code</button>
+                      <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '## ', '')" [attr.title]="'wizard.markdownHeading' | translate" [attr.aria-label]="'wizard.markdownHeading' | translate">H2</button>
+                      <button type="button" class="toolbar-button" (click)="applyMarkdown('publicDescription', '- ', '')" [attr.title]="'wizard.markdownList' | translate" [attr.aria-label]="'wizard.markdownList' | translate">-</button>
+                    </div>
+                    <textarea
+                      #publicDescriptionInput
+                      formControlName="publicDescription"
+                      class="textarea"
+                      rows="4"
+                      [attr.maxlength]="maxDeckDescription"
+                    ></textarea>
+                    @if (editForm.get('publicDescription')?.invalid && editForm.get('publicDescription')?.touched) {
+                      <div class="error-message">
+                        {{ publicDescriptionErrorMessage() }}
+                      </div>
+                    }
+                  </div>
+                  <div class="form-group">
+                    <label>{{ 'deckProfile.language' | translate }}</label>
+                    <select formControlName="language" class="language-select">
+                      @for (option of deckLanguageOptions; track option) {
+                        <option [value]="option.code">
+                          {{ option.labelKey | translate }}
+                        </option>
+                      }
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label>{{ 'deckProfile.tags' | translate }}</label>
+                    <input
+                      type="text"
+                      class="tag-input"
+                      [(ngModel)]="tagInput"
+                      [ngModelOptions]="{standalone: true}"
+                      (keydown.enter)="addTag($event)"
+                      [placeholder]="'deckProfile.tagsPlaceholder' | translate"
+                      [attr.maxlength]="maxTagLength"
+                      />
+                    @if (tags.length > 0) {
+                      <div class="tags-list">
+                        @for (tag of tags; track tag; let i = $index) {
+                          <span class="tag-chip">{{ tag }} <button type="button" (click)="removeTag(i)">×</button></span>
+                        }
+                      </div>
+                    }
+                    @if (tagError) {
+                      <p class="error-message">{{ tagError }}</p>
+                    }
+                  </div>
+                  <div class="checkbox-group">
+                    <label class="glass-checkbox">
+                      <input type="checkbox" formControlName="isPublic" />
+                      <span>{{ 'deckProfile.makePublic' | translate }}</span>
+                    </label>
+                  </div>
+                  <div class="checkbox-group">
+                    <label class="glass-checkbox">
+                      <input type="checkbox" formControlName="isListed" />
+                      <span>{{ 'deckProfile.listInCatalog' | translate }}</span>
+                    </label>
+                  </div>
                 </div>
-                <select formControlName="algorithmId" class="algorithm-select">
-                  <option value="sm2">{{ 'algorithm.sm2' | translate }}</option>
-                  <option value="fsrs_v6">{{ 'algorithm.fsrs_v6' | translate }}</option>
-                  <option value="hlr">{{ 'algorithm.hlr' | translate }}</option>
-                </select>
-                <p *ngIf="currentAlgorithm && currentAlgorithm.pendingMigrationCards > 0" class="migration-info">
-                  {{ currentAlgorithm.pendingMigrationCards }} {{ 'deckProfile.pendingMigrationText' | translate }}
-                </p>
+              }
+              <div class="review-preferences-section">
+                <h3 class="section-title">{{ 'deckProfile.reviewPreferences' | translate }}</h3>
+                <div class="form-group">
+                  <div class="label-with-help">
+                    <label>{{ 'deckProfile.schedulerAlgorithm' | translate }}</label>
+                    <a
+                      class="help-link"
+                      href="https://github.com/MattoYuzuru/Mnema/wiki/what-are-scheduling-algorithms"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label="Scheduling algorithms guide"
+                    >?</a>
+                  </div>
+                  <select formControlName="algorithmId" class="algorithm-select">
+                    <option value="sm2">{{ 'algorithm.sm2' | translate }}</option>
+                    <option value="fsrs_v6">{{ 'algorithm.fsrs_v6' | translate }}</option>
+                    <option value="hlr">{{ 'algorithm.hlr' | translate }}</option>
+                  </select>
+                  @if (currentAlgorithm && currentAlgorithm.pendingMigrationCards > 0) {
+                    <p class="migration-info">
+                      {{ currentAlgorithm.pendingMigrationCards }} {{ 'deckProfile.pendingMigrationText' | translate }}
+                    </p>
+                  }
+                </div>
+                <div class="form-group">
+                  <label>{{ 'deckProfile.dailyNewLimit' | translate }}</label>
+                  <input type="number" formControlName="dailyNewLimit" class="number-input" min="0" />
+                  <p class="field-help">{{ 'deckProfile.dailyNewLimitHelp' | translate }}</p>
+                </div>
+                <div class="form-group">
+                  <label>{{ 'deckProfile.learningHorizonHours' | translate }}</label>
+                  <input type="number" formControlName="learningHorizonHours" class="number-input" min="1" max="168" />
+                  <p class="field-help">{{ 'deckProfile.learningHorizonHelp' | translate }}</p>
+                </div>
+                <div class="form-group">
+                  <label>{{ 'deckProfile.maxReviewPerDay' | translate }}</label>
+                  <input type="number" formControlName="maxReviewPerDay" class="number-input" min="0" />
+                  <p class="field-help">{{ 'deckProfile.maxReviewPerDayHelp' | translate }}</p>
+                </div>
+                <div class="form-group">
+                  <label>{{ 'deckProfile.dayCutoffHour' | translate }}</label>
+                  <input type="number" formControlName="dayCutoffHour" class="number-input" min="0" max="23" />
+                  <p class="field-help">{{ 'deckProfile.dayCutoffHelp' | translate }}</p>
+                </div>
               </div>
-              <div class="form-group">
-                <label>{{ 'deckProfile.dailyNewLimit' | translate }}</label>
-                <input type="number" formControlName="dailyNewLimit" class="number-input" min="0" />
-                <p class="field-help">{{ 'deckProfile.dailyNewLimitHelp' | translate }}</p>
-              </div>
-              <div class="form-group">
-                <label>{{ 'deckProfile.learningHorizonHours' | translate }}</label>
-                <input type="number" formControlName="learningHorizonHours" class="number-input" min="1" max="168" />
-                <p class="field-help">{{ 'deckProfile.learningHorizonHelp' | translate }}</p>
-              </div>
-              <div class="form-group">
-                <label>{{ 'deckProfile.maxReviewPerDay' | translate }}</label>
-                <input type="number" formControlName="maxReviewPerDay" class="number-input" min="0" />
-                <p class="field-help">{{ 'deckProfile.maxReviewPerDayHelp' | translate }}</p>
-              </div>
-              <div class="form-group">
-                <label>{{ 'deckProfile.dayCutoffHour' | translate }}</label>
-                <input type="number" formControlName="dayCutoffHour" class="number-input" min="0" max="23" />
-                <p class="field-help">{{ 'deckProfile.dayCutoffHelp' | translate }}</p>
-              </div>
-            </div>
-          </form>
-        </div>
-        <div class="modal-footer">
-          <app-button variant="ghost" (click)="closeEditModal()" [disabled]="saving">{{ 'deckProfile.cancel' | translate }}</app-button>
-          <app-button variant="primary" (click)="saveEdit()" [disabled]="editForm.invalid || saving">
-            {{ saving ? ('deckProfile.saving' | translate) : ('deckProfile.save' | translate) }}
-          </app-button>
+            </form>
+          </div>
+          <div class="modal-footer">
+            <app-button variant="ghost" (click)="closeEditModal()" [disabled]="saving">{{ 'deckProfile.cancel' | translate }}</app-button>
+            <app-button variant="primary" (click)="saveEdit()" [disabled]="editForm.invalid || saving">
+              {{ saving ? ('deckProfile.saving' | translate) : ('deckProfile.save' | translate) }}
+            </app-button>
+          </div>
         </div>
       </div>
-    </div>
+    }
 
     <app-confirmation-dialog
       [open]="showDeleteConfirm"
@@ -766,30 +944,33 @@ import { appConfig } from '../../app.config';
       (cancelled)="closeDeleteConfirm()"
     ></app-confirmation-dialog>
 
-    <div *ngIf="showExportChoice" class="modal-overlay" (click)="closeExportChoice()">
-      <div class="modal-content export-choice-modal" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h2>{{ 'deckProfile.exportTitle' | translate }}</h2>
-          <button class="close-btn" (click)="closeExportChoice()">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p class="modal-hint">{{ 'deckProfile.exportMessage' | translate }}</p>
-          <div class="choice-grid">
-            <div class="choice-card" (click)="confirmExport('csv')">
-              <div class="choice-icon">CSV</div>
-              <h3>{{ 'deckProfile.exportCsvTitle' | translate }}</h3>
-              <p>{{ 'deckProfile.exportCsvDesc' | translate }}</p>
-            </div>
-            <div class="choice-card" (click)="confirmExport('mnpkg')">
-              <div class="choice-icon">📦</div>
-              <h3>{{ 'deckProfile.exportMnemaTitle' | translate }}</h3>
-              <p>{{ 'deckProfile.exportMnemaDesc' | translate }}</p>
+    @if (showExportChoice) {
+      <div class="modal-overlay" (click)="closeExportChoice()">
+        <div class="modal-content export-choice-modal" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h2>{{ 'deckProfile.exportTitle' | translate }}</h2>
+            <button class="close-btn" (click)="closeExportChoice()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p class="modal-hint">{{ 'deckProfile.exportMessage' | translate }}</p>
+            <div class="choice-grid">
+              <div class="choice-card" (click)="confirmExport('csv')">
+                <div class="choice-icon">CSV</div>
+                <h3>{{ 'deckProfile.exportCsvTitle' | translate }}</h3>
+                <p>{{ 'deckProfile.exportCsvDesc' | translate }}</p>
+              </div>
+              <div class="choice-card" (click)="confirmExport('mnpkg')">
+                <div class="choice-icon">📦</div>
+                <h3>{{ 'deckProfile.exportMnemaTitle' | translate }}</h3>
+                <p>{{ 'deckProfile.exportMnemaDesc' | translate }}</p>
+              </div>
             </div>
           </div>
         </div>
       </div>
-    </div>
-  `,
+    }
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .deck-profile {
         max-width: 56rem;
@@ -1804,6 +1985,20 @@ import { appConfig } from '../../app.config';
     `]
 })
 export class DeckProfileComponent implements OnInit, OnDestroy {
+    private route = inject(ActivatedRoute);
+    private router = inject(Router);
+    private deckApi = inject(DeckApiService);
+    private publicDeckApi = inject(PublicDeckApiService);
+    private templateApi = inject(TemplateApiService);
+    private reviewApi = inject(ReviewApiService);
+    private userApi = inject(UserApiService);
+    private fb = inject(FormBuilder);
+    private importApi = inject(ImportApiService);
+    private mediaApi = inject(MediaApiService);
+    private aiApi = inject(AiApiService);
+    private i18n = inject(I18nService);
+    private toast = inject(ToastService);
+
     private static readonly MAX_DECK_NAME = 50;
     private static readonly MAX_DECK_DESCRIPTION = 200;
     private static readonly MAX_TAGS = 5;
@@ -1903,22 +2098,6 @@ export class DeckProfileComponent implements OnInit, OnDestroy {
     private exportPollHandle: ReturnType<typeof setInterval> | null = null;
     private aiJobPollers = new Map<string, number>();
     private notifiedAiJobs = new Set<string>();
-
-    constructor(
-        private route: ActivatedRoute,
-        private router: Router,
-        private deckApi: DeckApiService,
-        private publicDeckApi: PublicDeckApiService,
-        private templateApi: TemplateApiService,
-        private reviewApi: ReviewApiService,
-        private userApi: UserApiService,
-        private fb: FormBuilder,
-        private importApi: ImportApiService,
-        private mediaApi: MediaApiService,
-        private aiApi: AiApiService,
-        private i18n: I18nService,
-        private toast: ToastService
-    ) {}
 
     ngOnInit(): void {
         this.userDeckId = this.route.snapshot.paramMap.get('userDeckId') || '';

@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Page } from '../models/page.models';
@@ -8,9 +8,9 @@ import { appConfig } from '../../app.config';
 
 @Injectable({ providedIn: 'root' })
 export class DeckApiService {
-    private readonly baseUrl = `${appConfig.coreApiBaseUrl}/decks`;
+    private http = inject(HttpClient);
 
-    constructor(private http: HttpClient) {}
+    private readonly baseUrl = `${appConfig.coreApiBaseUrl}/decks`;
 
     getMyDecks(page: number, limit: number): Observable<Page<UserDeckDTO>> {
         const params = new HttpParams()

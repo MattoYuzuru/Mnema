@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { appConfig } from '../../app.config';
@@ -14,9 +14,9 @@ import {
 
 @Injectable({ providedIn: 'root' })
 export class ImportApiService {
-    private readonly baseUrl = appConfig.importApiBaseUrl;
+    private http = inject(HttpClient);
 
-    constructor(private http: HttpClient) {}
+    private readonly baseUrl = appConfig.importApiBaseUrl;
 
     uploadSource(file: File, sourceType?: ImportSourceType): Observable<UploadImportSourceResponse> {
         const formData = new FormData();

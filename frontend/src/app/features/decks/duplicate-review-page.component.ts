@@ -1,5 +1,5 @@
-import { Component, computed, signal } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { Component, computed, signal, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { ActivatedRoute, Router } from '@angular/router';
 import { forkJoin, firstValueFrom } from 'rxjs';
 import { ButtonComponent } from '../../shared/components/button.component';
@@ -15,8 +15,7 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-duplicate-review-page',
-    standalone: true,
-    imports: [NgIf, NgFor, ButtonComponent, TranslatePipe],
+    imports: [ButtonComponent, TranslatePipe],
     template: `
     <div class="dupe-page">
       <header class="dupe-header glass">
@@ -27,71 +26,86 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
         <app-button variant="ghost" (click)="goBack()">{{ 'duplicateReview.backToDeck' | translate }}</app-button>
       </header>
 
-      <div *ngIf="loading()" class="state-card glass">{{ 'duplicateReview.loading' | translate }}</div>
-      <div *ngIf="!loading() && error()" class="state-card glass error">{{ error() }}</div>
-      <div *ngIf="!loading() && !error() && groups().length === 0" class="state-card glass">{{ 'duplicateReview.empty' | translate }}</div>
+      @if (loading()) {
+        <div class="state-card glass">{{ 'duplicateReview.loading' | translate }}</div>
+      }
+      @if (!loading() && error()) {
+        <div class="state-card glass error">{{ error() }}</div>
+      }
+      @if (!loading() && !error() && groups().length === 0) {
+        <div class="state-card glass">{{ 'duplicateReview.empty' | translate }}</div>
+      }
 
-      <div *ngIf="!loading() && groups().length > 0" class="dupe-layout">
-        <aside class="groups-panel glass">
-          <div class="groups-title">{{ 'duplicateReview.groupsTitle' | translate }}</div>
-          <button
-            type="button"
-            class="group-row"
-            *ngFor="let group of groups(); let i = index"
-            [class.active]="i === currentGroupIndex()"
-            (click)="selectGroup(i)"
-          >
-            <span>{{ 'duplicateReview.group' | translate }} {{ i + 1 }}</span>
-            <small>{{ matchTypeLabel(group.matchType) }} · {{ group.size }} {{ 'duplicateReview.cards' | translate }}</small>
-          </button>
-        </aside>
-
-        <section class="group-cards glass-strong" *ngIf="currentGroup() as group">
-          <div class="cards-header">
-            <div>
-              <h2>{{ 'duplicateReview.group' | translate }} {{ currentGroupIndex() + 1 }}</h2>
-              <p>{{ matchTypeLabel(group.matchType) }} · {{ 'duplicateReview.confidence' | translate }} {{ formatConfidence(group.confidence, group.matchType) }}</p>
-            </div>
-          </div>
-
-          <div class="cards-strip">
-            <article class="dupe-card" *ngFor="let card of group.cards">
-              <div class="dupe-card-header">
-                <strong>{{ card.userCardId.slice(0, 8) }}</strong>
-                <button class="toggle-delete" type="button" (click)="toggleDelete(card.userCardId)">
-                  {{ isMarked(card.userCardId) ? ('duplicateReview.undoDelete' | translate) : ('duplicateReview.deleteCard' | translate) }}
-                </button>
-              </div>
-              <div class="dupe-fields">
-                <div class="dupe-field" *ngFor="let field of displayFields()">
-                  <span class="dupe-label">{{ fieldLabel(field) }}</span>
-                  <span class="dupe-value">{{ readField(card, field) }}</span>
+      @if (!loading() && groups().length > 0) {
+        <div class="dupe-layout">
+          <aside class="groups-panel glass">
+            <div class="groups-title">{{ 'duplicateReview.groupsTitle' | translate }}</div>
+            @for (group of groups(); track group; let i = $index) {
+              <button
+                type="button"
+                class="group-row"
+                [class.active]="i === currentGroupIndex()"
+                (click)="selectGroup(i)"
+                >
+                <span>{{ 'duplicateReview.group' | translate }} {{ i + 1 }}</span>
+                <small>{{ matchTypeLabel(group.matchType) }} · {{ group.size }} {{ 'duplicateReview.cards' | translate }}</small>
+              </button>
+            }
+          </aside>
+          @if (currentGroup(); as group) {
+            <section class="group-cards glass-strong">
+              <div class="cards-header">
+                <div>
+                  <h2>{{ 'duplicateReview.group' | translate }} {{ currentGroupIndex() + 1 }}</h2>
+                  <p>{{ matchTypeLabel(group.matchType) }} · {{ 'duplicateReview.confidence' | translate }} {{ formatConfidence(group.confidence, group.matchType) }}</p>
                 </div>
               </div>
-            </article>
-          </div>
+              <div class="cards-strip">
+                @for (card of group.cards; track card) {
+                  <article class="dupe-card">
+                    <div class="dupe-card-header">
+                      <strong>{{ card.userCardId.slice(0, 8) }}</strong>
+                      <button class="toggle-delete" type="button" (click)="toggleDelete(card.userCardId)">
+                        {{ isMarked(card.userCardId) ? ('duplicateReview.undoDelete' | translate) : ('duplicateReview.deleteCard' | translate) }}
+                      </button>
+                    </div>
+                    <div class="dupe-fields">
+                      @for (field of displayFields(); track field) {
+                        <div class="dupe-field">
+                          <span class="dupe-label">{{ fieldLabel(field) }}</span>
+                          <span class="dupe-value">{{ readField(card, field) }}</span>
+                        </div>
+                      }
+                    </div>
+                  </article>
+                }
+              </div>
+              <div class="footer-actions">
+                <app-button variant="secondary" (click)="nextGroup()" [disabled]="!hasNextGroup()">{{ 'duplicateReview.nextGroup' | translate }}</app-button>
+                <app-button variant="primary" (click)="finishDeletion()" [disabled]="saving() || pendingDelete().size === 0">
+                  {{ saving() ? ('duplicateReview.applying' | translate) : ('duplicateReview.finishDeletion' | translate) }}
+                </app-button>
+              </div>
+            </section>
+          }
+        </div>
+      }
 
-          <div class="footer-actions">
-            <app-button variant="secondary" (click)="nextGroup()" [disabled]="!hasNextGroup()">{{ 'duplicateReview.nextGroup' | translate }}</app-button>
-            <app-button variant="primary" (click)="finishDeletion()" [disabled]="saving() || pendingDelete().size === 0">
-              {{ saving() ? ('duplicateReview.applying' | translate) : ('duplicateReview.finishDeletion' | translate) }}
-            </app-button>
-          </div>
-        </section>
-      </div>
-
-      <div *ngIf="showScopePrompt()" class="modal-overlay" (click)="showScopePrompt.set(false)">
-        <div class="modal-content" (click)="$event.stopPropagation()">
-          <h3>{{ 'duplicateReview.scopeTitle' | translate }}</h3>
-          <p>{{ 'duplicateReview.scopeMessage' | translate }}</p>
-          <div class="scope-actions">
-            <app-button variant="secondary" (click)="confirmScope('local')" [disabled]="saving()">{{ 'duplicateReview.scopeLocal' | translate }}</app-button>
-            <app-button variant="primary" (click)="confirmScope('global')" [disabled]="saving()">{{ 'duplicateReview.scopeGlobal' | translate }}</app-button>
+      @if (showScopePrompt()) {
+        <div class="modal-overlay" (click)="showScopePrompt.set(false)">
+          <div class="modal-content" (click)="$event.stopPropagation()">
+            <h3>{{ 'duplicateReview.scopeTitle' | translate }}</h3>
+            <p>{{ 'duplicateReview.scopeMessage' | translate }}</p>
+            <div class="scope-actions">
+              <app-button variant="secondary" (click)="confirmScope('local')" [disabled]="saving()">{{ 'duplicateReview.scopeLocal' | translate }}</app-button>
+              <app-button variant="primary" (click)="confirmScope('global')" [disabled]="saving()">{{ 'duplicateReview.scopeGlobal' | translate }}</app-button>
+            </div>
           </div>
         </div>
-      </div>
+      }
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .dupe-page { max-width: 92rem; margin: 0 auto; display: grid; gap: var(--spacing-lg); }
       .dupe-header { display: flex; justify-content: space-between; align-items: center; padding: var(--spacing-lg); border-radius: var(--border-radius-lg); border: 1px solid var(--glass-border); }
@@ -165,6 +179,15 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
     `]
 })
 export class DuplicateReviewPageComponent {
+    private route = inject(ActivatedRoute);
+    private router = inject(Router);
+    private cardApi = inject(CardApiService);
+    private deckApi = inject(DeckApiService);
+    private publicDeckApi = inject(PublicDeckApiService);
+    private templateApi = inject(TemplateApiService);
+    private userApi = inject(UserApiService);
+    private i18n = inject(I18nService);
+
     userDeckId = '';
     loading = signal(true);
     saving = signal(false);
@@ -179,16 +202,7 @@ export class DuplicateReviewPageComponent {
 
     currentGroup = computed(() => this.groups()[this.currentGroupIndex()] ?? null);
 
-    constructor(
-        private route: ActivatedRoute,
-        private router: Router,
-        private cardApi: CardApiService,
-        private deckApi: DeckApiService,
-        private publicDeckApi: PublicDeckApiService,
-        private templateApi: TemplateApiService,
-        private userApi: UserApiService,
-        private i18n: I18nService
-    ) {
+    constructor() {
         this.bootstrap();
     }
 

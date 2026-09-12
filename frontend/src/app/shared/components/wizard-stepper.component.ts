@@ -1,5 +1,5 @@
-import { Component, Input } from '@angular/core';
-import { NgFor, NgClass, NgIf } from '@angular/common';
+import { Component, Input, ChangeDetectionStrategy } from '@angular/core';
+import { NgClass } from '@angular/common';
 
 export interface WizardStep {
     label: string;
@@ -8,8 +8,7 @@ export interface WizardStep {
 
 @Component({
     selector: 'app-wizard-stepper',
-    standalone: true,
-    imports: [NgFor, NgClass, NgIf],
+    imports: [NgClass],
     template: `
     <div class="wizard-stepper">
       <div class="stepper-progress">
@@ -20,23 +19,29 @@ export interface WizardStep {
       </div>
 
       <div class="stepper-steps">
-        <div
-          *ngFor="let step of steps; let i = index"
-          class="stepper-step"
+        @for (step of steps; track step; let i = $index) {
+          <div
+            class="stepper-step"
           [ngClass]="{
             'stepper-step-active': i === currentStep,
             'stepper-step-completed': step.completed
           }"
-        >
-          <div class="stepper-step-marker">
-            <span *ngIf="!step.completed" class="step-number">{{ i + 1 }}</span>
-            <span *ngIf="step.completed" class="step-checkmark">✓</span>
+            >
+            <div class="stepper-step-marker">
+              @if (!step.completed) {
+                <span class="step-number">{{ i + 1 }}</span>
+              }
+              @if (step.completed) {
+                <span class="step-checkmark">✓</span>
+              }
+            </div>
+            <div class="stepper-step-label">{{ step.label }}</div>
           </div>
-          <div class="stepper-step-label">{{ step.label }}</div>
-        </div>
+        }
       </div>
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .wizard-stepper {

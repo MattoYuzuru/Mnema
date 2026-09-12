@@ -11,7 +11,8 @@ MINIO_CONTAINER="mnema-purge-minio-$SUFFIX"
 NETWORK="mnema-purge-$SUFFIX"
 POSTGRES_IMAGE='postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777'
 REDIS_IMAGE='redis:7.4.11-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf'
-MINIO_IMAGE='minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e'
+# Official vendor registry, same immutable fixture bytes; Docker Hub denies fresh pulls.
+MINIO_IMAGE='quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e'
 
 cleanup() {
   docker rm -f "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" "$MINIO_CONTAINER" >/dev/null 2>&1 || true
