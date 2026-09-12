@@ -11,7 +11,7 @@ grep -Fq 'cancel-in-progress: false' "$DEPLOY"
 grep -Fq 'name: prod' "$DEPLOY"
 grep -Fq 'deployment: false' "$DEPLOY"
 grep -Fq 'needs: preview-production' "$DEPLOY"
-grep -Fq "if: needs.preview-production.outputs.has_release_changes == 'true'" "$DEPLOY"
+grep -Fq "false && (needs.preview-production.outputs.has_release_changes == 'true')" "$DEPLOY"
 # shellcheck disable=SC2016 # GitHub expressions are literal contract markers.
 grep -Fq 'production-release-preview-${{ github.run_id }}-${{ github.run_attempt }}' "$DEPLOY"
 grep -Fq 'approved_diff_sha256=' "$DEPLOY"
