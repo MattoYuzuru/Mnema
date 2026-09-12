@@ -24,6 +24,10 @@
 
 ---
 
+> Hosted Mnema is currently unavailable. Development continues locally with checked
+> PRs and protected merges; deployments are paused. See
+> [current delivery mode](docs/operations/local-development-delivery.md).
+
 > [!IMPORTANT]
 > **Source-available licensing:** current Mnema revisions permit private local
 > use by one natural person. Organizational, shared, hosted, commercial, and

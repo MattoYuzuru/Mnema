@@ -11,6 +11,10 @@ artifact:
 
 # Mnema staging bootstrap and secret contract
 
+> Paused since 2026-09-12: the server is unavailable. Follow
+> [local development delivery](local-development-delivery.md); the procedures below
+> are restoration reference, not instructions to contact the former host.
+
 Staging is an isolated namespace on the shared main k3s host. Replacement releases ship only the digest-pinned Identity & Account and Learning runtimes in explicit maintenance. Production promotion is disabled until #147; production still has its previously applied topology. Staging owns separate PostgreSQL, Redis, MinIO, credentials and TLS hosts. It has a default recovery objective of RPO 24 hours / RTO 4 hours. Sharing the host remains a failure-domain limitation, not a claim of production-grade availability.
 
 The PostgreSQL 18 PVC is mounted at `/var/lib/postgresql`, matching the official image's version-specific `PGDATA` and volume contract ([PostgreSQL official image](https://hub.docker.com/_/postgres#pgdata)). Do not restore the pre-18 `/var/lib/postgresql/data` mount convention.
