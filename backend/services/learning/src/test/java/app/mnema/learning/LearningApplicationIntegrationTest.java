@@ -62,11 +62,9 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
     void bootsFreshMigrationHistoryWithoutLegacySchemas() {
         assertThat(flyway.info().applied())
                 .filteredOn(migration -> migration.getVersion() != null)
-                .singleElement()
-                .satisfies(migration -> {
-                    assertThat(migration.getVersion().getVersion()).isEqualTo("1");
-                    assertThat(migration.getDescription()).isEqualTo("platform foundation");
-                });
+                .extracting(migration -> migration.getVersion().getVersion() + ":" + migration.getDescription()
+                        + ":" + migration.getState().name())
+                .containsExactly("1:platform foundation:SUCCESS", "2:immutable storage kernel:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
