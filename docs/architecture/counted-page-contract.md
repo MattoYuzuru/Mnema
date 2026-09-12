@@ -49,6 +49,12 @@ preserve UUID spelling, opaque/optional content and unchanged fragments. Update
 preorder entries and parent child counts. Reject root move, descendant-cycle move
 and a resulting document inconsistent with the command.
 
+Storage acceptance is not an editing capability. Future document roots are
+read-only. Insert/destination parents and source-parent ancestry must be supported
+version1 containers; known-looking nodes beneath opaque ancestors are not editable.
+An intact opaque subtree may move or be deleted through supported parents without
+interpreting or changing its contents.
+
 Full-body native planning remains O(nodes + bytes); physical writes are
 O(changed entries × height) plus changed records/fragments. A large subtree move
 counts all its entries as changed: optimal range cut/join is not promised here.
