@@ -149,6 +149,17 @@ lane's artifact ownership.
 
 ## Residual verification and integration work
 
+### Component visual follow-up
+
+The lead checked the original #183 screenshot acceptance before merge. An isolated
+production Angular component harness now supplies [five real Chrome captures and
+reproduction sources](./visual/README.md):320/390/1440, keyboard focus and invalid
+state. All viewport/semantic/overflow assertions passed; the lead inspected the
+images and matched production source hashes. An initial focus harness also called
+`.focus()` and was rejected as confounded keyboard evidence. That hook was removed
+and all captures rerun: one real CDP Tab alone focuses the exact anchor. No production
+route was added; route screenshots, physical devices, real AT and IME remain separate.
+
 Independent rereview after the fixes: no confirmed blockers for this renderer-only
 slice. A separate reviewer ran the 22 renderer tests on Node 22.23.2 / Chrome 153,
 port 9877, with exit 0, and confirmed the exact whitespace, list, URL and scaling
