@@ -38,6 +38,10 @@ and updates ancestor counts. Return only reachable new objects in postorder;
 old roots/objects are unchanged. A move stages neither its intermediate delete
 root nor unreachable intermediate pages. Fork-of-fork may select the same root;
 this creates no shared logical item identity or authorization.
+The ordinal tree alone is not a global logical-key index. A bounded insertion
+requires the caller to establish key uniqueness: the native adapter uses its
+validated final document; future membership publication needs its domain lookup
+or projection. Do not hide a full-tree key scan behind an O(height) edit claim.
 
 The native structural adapter checks explicit insert/delete/move-subtree intent
 against a validated resulting document. Match records by UUID value, not ordinal;
