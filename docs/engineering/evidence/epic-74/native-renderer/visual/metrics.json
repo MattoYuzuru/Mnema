@@ -1,0 +1,197 @@
+[
+  {
+    "name": "renderer-ready-320",
+    "requestedWidth": 320,
+    "state": "ready",
+    "focus": false,
+    "contentSize": {
+      "x": 0,
+      "y": 0,
+      "width": 320,
+      "height": 1421
+    },
+    "url": "http://127.0.0.1:43183/?",
+    "title": "Mnema",
+    "viewport": {
+      "width": 320,
+      "height": 900,
+      "devicePixelRatio": 1
+    },
+    "layout": {
+      "documentScrollWidth": 320,
+      "documentScrollHeight": 1421,
+      "bodyScrollWidth": 320,
+      "bodyScrollHeight": 1421
+    },
+    "renderState": "ready",
+    "article": true,
+    "rubyText": "漢字(かんじ)",
+    "rtlDirection": "rtl",
+    "href": "https://example.test/source",
+    "unsupportedBlocks": 2,
+    "unsupportedInline": 1,
+    "rendererExecutableElements": 0,
+    "activeElement": {
+      "tagName": "BODY",
+      "className": "",
+      "href": null
+    },
+    "horizontalOverflow": false
+  },
+  {
+    "name": "renderer-ready-390",
+    "requestedWidth": 390,
+    "state": "ready",
+    "focus": false,
+    "contentSize": {
+      "x": 0,
+      "y": 0,
+      "width": 390,
+      "height": 1171
+    },
+    "url": "http://127.0.0.1:43183/?",
+    "title": "Mnema",
+    "viewport": {
+      "width": 390,
+      "height": 900,
+      "devicePixelRatio": 1
+    },
+    "layout": {
+      "documentScrollWidth": 390,
+      "documentScrollHeight": 1171,
+      "bodyScrollWidth": 390,
+      "bodyScrollHeight": 1171
+    },
+    "renderState": "ready",
+    "article": true,
+    "rubyText": "漢字(かんじ)",
+    "rtlDirection": "rtl",
+    "href": "https://example.test/source",
+    "unsupportedBlocks": 2,
+    "unsupportedInline": 1,
+    "rendererExecutableElements": 0,
+    "activeElement": {
+      "tagName": "BODY",
+      "className": "",
+      "href": null
+    },
+    "horizontalOverflow": false
+  },
+  {
+    "name": "renderer-ready-1440",
+    "requestedWidth": 1440,
+    "state": "ready",
+    "focus": false,
+    "contentSize": {
+      "x": 0,
+      "y": 0,
+      "width": 1440,
+      "height": 1128
+    },
+    "url": "http://127.0.0.1:43183/?",
+    "title": "Mnema",
+    "viewport": {
+      "width": 1440,
+      "height": 900,
+      "devicePixelRatio": 1
+    },
+    "layout": {
+      "documentScrollWidth": 1440,
+      "documentScrollHeight": 1128,
+      "bodyScrollWidth": 1440,
+      "bodyScrollHeight": 1128
+    },
+    "renderState": "ready",
+    "article": true,
+    "rubyText": "漢字(かんじ)",
+    "rtlDirection": "rtl",
+    "href": "https://example.test/source",
+    "unsupportedBlocks": 2,
+    "unsupportedInline": 1,
+    "rendererExecutableElements": 0,
+    "activeElement": {
+      "tagName": "BODY",
+      "className": "",
+      "href": null
+    },
+    "horizontalOverflow": false
+  },
+  {
+    "name": "renderer-link-focus-390",
+    "requestedWidth": 390,
+    "state": "ready",
+    "focus": true,
+    "contentSize": {
+      "x": 0,
+      "y": 0,
+      "width": 390,
+      "height": 1171
+    },
+    "url": "http://127.0.0.1:43183/?",
+    "title": "Mnema",
+    "viewport": {
+      "width": 390,
+      "height": 900,
+      "devicePixelRatio": 1
+    },
+    "layout": {
+      "documentScrollWidth": 390,
+      "documentScrollHeight": 1171,
+      "bodyScrollWidth": 390,
+      "bodyScrollHeight": 1171
+    },
+    "renderState": "ready",
+    "article": true,
+    "rubyText": "漢字(かんじ)",
+    "rtlDirection": "rtl",
+    "href": "https://example.test/source",
+    "unsupportedBlocks": 2,
+    "unsupportedInline": 1,
+    "rendererExecutableElements": 0,
+    "activeElement": {
+      "tagName": "A",
+      "className": "native-link",
+      "href": "https://example.test/source"
+    },
+    "horizontalOverflow": false
+  },
+  {
+    "name": "renderer-invalid-390",
+    "requestedWidth": 390,
+    "state": "invalid",
+    "focus": false,
+    "contentSize": {
+      "x": 0,
+      "y": 0,
+      "width": 390,
+      "height": 900
+    },
+    "url": "http://127.0.0.1:43183/?state=invalid",
+    "title": "Mnema",
+    "viewport": {
+      "width": 390,
+      "height": 900,
+      "devicePixelRatio": 1
+    },
+    "layout": {
+      "documentScrollWidth": 390,
+      "documentScrollHeight": 900,
+      "bodyScrollWidth": 390,
+      "bodyScrollHeight": 900
+    },
+    "renderState": "invalid",
+    "article": false,
+    "rubyText": null,
+    "rtlDirection": null,
+    "href": null,
+    "unsupportedBlocks": 0,
+    "unsupportedInline": 0,
+    "rendererExecutableElements": 0,
+    "activeElement": {
+      "tagName": "BODY",
+      "className": "",
+      "href": null
+    },
+    "horizontalOverflow": false
+  }
+]
