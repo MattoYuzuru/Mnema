@@ -1,0 +1,197 @@
+@if (renderState(); as state) {
+  @switch (state.status) {
+    @case ('ready') {
+      <article
+        class="native-document"
+        [attr.lang]="state.root.lang ?? null"
+        [attr.dir]="state.root.dir ?? null"
+        data-native-render-state="ready"
+      >
+        @for (node of state.root.content; track node.id) {
+          <ng-container
+            [ngTemplateOutlet]="blockNode"
+            [ngTemplateOutletContext]="{ $implicit: node }"
+          />
+        }
+      </article>
+    }
+    @case ('unsupported-document') {
+      <div class="native-message native-message--unsupported" role="note" data-native-render-state="unsupported">
+        Этот материал создан в более новой версии и пока не поддерживается для просмотра.
+      </div>
+    }
+    @case ('invalid') {
+      <div class="native-message native-message--error" role="alert" data-native-render-state="invalid">
+        Не удалось показать материал: данные повреждены или превышают безопасный размер.
+      </div>
+    }
+  }
+}
+
+<ng-template #blockNode let-node>
+  @switch (node.kind) {
+    @case ('paragraph') {
+      <p class="native-paragraph" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+        @for (child of node.content; track child.id) {
+          <ng-container
+            [ngTemplateOutlet]="inlineNode"
+            [ngTemplateOutletContext]="{ $implicit: child }"
+          />
+        }
+      </p>
+    }
+    @case ('heading') {
+      @switch (node.level) {
+        @case (1) {
+          <h2 class="native-heading native-heading--1" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+            <ng-container [ngTemplateOutlet]="inlineChildren" [ngTemplateOutletContext]="{ $implicit: node.content }" />
+          </h2>
+        }
+        @case (2) {
+          <h3 class="native-heading native-heading--2" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+            <ng-container [ngTemplateOutlet]="inlineChildren" [ngTemplateOutletContext]="{ $implicit: node.content }" />
+          </h3>
+        }
+        @case (3) {
+          <h4 class="native-heading native-heading--3" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+            <ng-container [ngTemplateOutlet]="inlineChildren" [ngTemplateOutletContext]="{ $implicit: node.content }" />
+          </h4>
+        }
+        @case (4) {
+          <h5 class="native-heading native-heading--4" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+            <ng-container [ngTemplateOutlet]="inlineChildren" [ngTemplateOutletContext]="{ $implicit: node.content }" />
+          </h5>
+        }
+        @case (5) {
+          <h6 class="native-heading native-heading--5" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+            <ng-container [ngTemplateOutlet]="inlineChildren" [ngTemplateOutletContext]="{ $implicit: node.content }" />
+          </h6>
+        }
+        @case (6) {
+          <div
+            class="native-heading native-heading--6"
+            role="heading"
+            aria-level="7"
+            [attr.lang]="node.lang ?? null"
+            [attr.dir]="node.dir ?? null"
+          >
+            <ng-container [ngTemplateOutlet]="inlineChildren" [ngTemplateOutletContext]="{ $implicit: node.content }" />
+          </div>
+        }
+      }
+    }
+    @case ('blockquote') {
+      <blockquote class="native-quote" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+        @for (child of node.content; track child.id) {
+          <ng-container
+            [ngTemplateOutlet]="blockNode"
+            [ngTemplateOutletContext]="{ $implicit: child }"
+          />
+        }
+      </blockquote>
+    }
+    @case ('bullet-list') {
+      <ul class="native-list" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+        @for (child of node.content; track child.id) {
+          <ng-container
+            [ngTemplateOutlet]="blockNode"
+            [ngTemplateOutletContext]="{ $implicit: child }"
+          />
+        }
+      </ul>
+    }
+    @case ('ordered-list') {
+      <ol
+        class="native-list"
+        [attr.start]="node.order ?? null"
+        [attr.lang]="node.lang ?? null"
+        [attr.dir]="node.dir ?? null"
+      >
+        @for (child of node.content; track child.id) {
+          <ng-container
+            [ngTemplateOutlet]="blockNode"
+            [ngTemplateOutletContext]="{ $implicit: child }"
+          />
+        }
+      </ol>
+    }
+    @case ('list-item') {
+      <li class="native-list-item" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
+        @for (child of node.content; track child.id) {
+          <ng-container
+            [ngTemplateOutlet]="blockNode"
+            [ngTemplateOutletContext]="{ $implicit: child }"
+          />
+        }
+      </li>
+    }
+    @case ('divider') {
+      <hr class="native-divider" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null" />
+    }
+    @case ('opaque') {
+      @if (node.display === 'list-item') {
+        <li class="native-list-item native-unsupported native-unsupported--list-item">Этот пункт пока не поддерживается.</li>
+      } @else {
+        <div class="native-unsupported" role="note">Этот фрагмент пока не поддерживается.</div>
+      }
+    }
+  }
+</ng-template>
+
+<ng-template #inlineChildren let-children>
+  @for (child of children; track child.id) {
+    <ng-container
+      [ngTemplateOutlet]="inlineNode"
+      [ngTemplateOutletContext]="{ $implicit: child }"
+    />
+  }
+</ng-template>
+
+<ng-template #inlineNode let-node>
+  @switch (node.kind) {
+    @case ('text') {
+      <span [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null"><ng-container [ngTemplateOutlet]="markedText" [ngTemplateOutletContext]="{ $implicit: node.markedText }" /></span>
+    }
+    @case ('ruby') {
+      <ruby class="native-ruby" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">{{ node.base }}<rp>(</rp><rt>{{ node.reading }}</rt><rp>)</rp></ruby>
+    }
+    @case ('link') {
+      <a
+        class="native-link"
+        [attr.href]="node.href"
+        [attr.lang]="node.lang ?? null"
+        [attr.dir]="node.dir ?? null"
+      >
+        @for (child of node.content; track child.id) {
+          <ng-container
+            [ngTemplateOutlet]="inlineNode"
+            [ngTemplateOutletContext]="{ $implicit: child }"
+          />
+        }
+      </a>
+    }
+    @case ('opaque') {
+      <span class="native-unsupported native-unsupported--inline" role="note" aria-label="Неподдерживаемый фрагмент">
+        [неподдерживаемый фрагмент]
+      </span>
+    }
+  }
+</ng-template>
+
+<ng-template #markedText let-marked>
+  @if (marked.kind === 'value') {
+    <ng-container>{{ marked.value }}</ng-container>
+  } @else {
+    @switch (marked.mark) {
+      @case ('strong') {
+        <strong><ng-container [ngTemplateOutlet]="markedText" [ngTemplateOutletContext]="{ $implicit: marked.child }" /></strong>
+      }
+      @case ('em') {
+        <em><ng-container [ngTemplateOutlet]="markedText" [ngTemplateOutletContext]="{ $implicit: marked.child }" /></em>
+      }
+      @case ('code') {
+        <code><ng-container [ngTemplateOutlet]="markedText" [ngTemplateOutletContext]="{ $implicit: marked.child }" /></code>
+      }
+    }
+  }
+</ng-template>
