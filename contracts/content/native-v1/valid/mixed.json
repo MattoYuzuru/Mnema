@@ -1,0 +1,366 @@
+{
+  "formatVersion": 1,
+  "root": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "type": "doc",
+    "version": 1,
+    "attrs": {},
+    "content": [
+      {
+        "id": "00000000-0000-4000-8000-000000000002",
+        "type": "heading",
+        "version": 1,
+        "attrs": {
+          "level": 2,
+          "lang": "ru",
+          "dir": "ltr"
+        },
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000003",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "Память, письмо и проверяемые знания",
+              "marks": [
+                "strong"
+              ]
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000004",
+        "type": "paragraph",
+        "version": 1,
+        "attrs": {
+          "lang": "ru",
+          "dir": "auto"
+        },
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000005",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "Длинный русский фрагмент сохраняет идентичность при правке: ",
+              "marks": []
+            },
+            "content": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000006",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "смысл важнее формы",
+              "marks": [
+                "em"
+              ]
+            },
+            "content": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000007",
+            "type": "ruby",
+            "version": 1,
+            "attrs": {
+              "base": "漢字",
+              "reading": "かんじ"
+            },
+            "content": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000008",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": ".",
+              "marks": []
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000009",
+        "type": "paragraph",
+        "version": 1,
+        "attrs": {
+          "lang": "ar",
+          "dir": "rtl"
+        },
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-00000000000a",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "العِلْمُ نورٌ — ",
+              "marks": []
+            },
+            "content": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-00000000000b",
+            "type": "link",
+            "version": 1,
+            "attrs": {
+              "href": "https://example.test/source"
+            },
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-00000000000c",
+                "type": "text",
+                "version": 1,
+                "attrs": {
+                  "text": "مصدر آمن",
+                  "marks": []
+                },
+                "content": []
+              },
+              {
+                "id": "00000000-0000-4000-8000-000000000020",
+                "type": "text",
+                "version": 1,
+                "attrs": {
+                  "text": " ومتابعة",
+                  "marks": [
+                    "em"
+                  ]
+                },
+                "content": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-00000000000d",
+        "type": "paragraph",
+        "version": 1,
+        "attrs": {
+          "lang": "en",
+          "dir": "ltr"
+        },
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-00000000000e",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "Mixed direction keeps ",
+              "marks": []
+            },
+            "content": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-00000000000f",
+            "type": "future_formula",
+            "version": 3,
+            "attrs": {
+              "source": "<img src=x onerror=globalThis.pwned=1>",
+              "engine": "future"
+            },
+            "content": []
+          },
+          {
+            "id": "00000000-0000-4000-8000-000000000010",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": " surrounding text.",
+              "marks": []
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000011",
+        "type": "heading",
+        "version": 2,
+        "attrs": {
+          "level": 2,
+          "futureFlag": {
+            "unsafeLooking": "<script>globalThis.pwned=2</script>"
+          }
+        },
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000012",
+            "type": "text",
+            "version": 1,
+            "attrs": {
+              "text": "Future heading remains opaque",
+              "marks": []
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000013",
+        "type": "table",
+        "version": 7,
+        "attrs": {
+          "layout": "future-grid",
+          "payload": {
+            "nested": true
+          }
+        },
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000014",
+            "type": "future_row",
+            "version": 1,
+            "attrs": {
+              "position": 1
+            },
+            "content": []
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000015",
+        "type": "blockquote",
+        "version": 1,
+        "attrs": {
+          "lang": "ru",
+          "dir": "auto"
+        },
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000016",
+            "type": "paragraph",
+            "version": 1,
+            "attrs": {
+              "lang": "ru",
+              "dir": "auto"
+            },
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-000000000017",
+                "type": "text",
+                "version": 1,
+                "attrs": {
+                  "text": "Цитата проверяет вложенный блок.",
+                  "marks": []
+                },
+                "content": []
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000018",
+        "type": "bullet_list",
+        "version": 1,
+        "attrs": {},
+        "content": [
+          {
+            "id": "00000000-0000-4000-8000-000000000019",
+            "type": "list_item",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-00000000001a",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {
+                  "lang": "ru",
+                  "dir": "auto"
+                },
+                "content": [
+                  {
+                    "id": "00000000-0000-4000-8000-00000000001b",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "Первый пункт",
+                      "marks": []
+                    },
+                    "content": []
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "id": "00000000-0000-4000-8000-00000000001c",
+            "type": "list_item",
+            "version": 1,
+            "attrs": {},
+            "content": [
+              {
+                "id": "00000000-0000-4000-8000-00000000001d",
+                "type": "paragraph",
+                "version": 1,
+                "attrs": {
+                  "lang": "ru",
+                  "dir": "auto"
+                },
+                "content": [
+                  {
+                    "id": "00000000-0000-4000-8000-00000000001e",
+                    "type": "text",
+                    "version": 1,
+                    "attrs": {
+                      "text": "Второй пункт",
+                      "marks": [
+                        "code"
+                      ]
+                    },
+                    "content": []
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "00000000-0000-4000-8000-00000000001f",
+        "type": "divider",
+        "version": 1,
+        "attrs": {},
+        "content": []
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000021",
+        "type": "code_block",
+        "version": 1,
+        "attrs": {
+          "language": "kotlin",
+          "source": "println(\"данные, не выполнение\")",
+          "wrap": true
+        },
+        "content": []
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000022",
+        "type": "math_block",
+        "version": 1,
+        "attrs": {
+          "source": "E = mc^2",
+          "notation": "tex"
+        },
+        "content": []
+      },
+      {
+        "id": "00000000-0000-4000-8000-000000000023",
+        "type": "media_reference",
+        "version": 1,
+        "attrs": {
+          "assetId": "00000000-0000-4000-8000-000000002328",
+          "kind": "image",
+          "alt": "Безопасная ссылка на закрытый ресурс"
+        },
+        "content": []
+      }
+    ]
+  }
+}
