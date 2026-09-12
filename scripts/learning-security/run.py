@@ -24,6 +24,7 @@ import tempfile
 import threading
 import time
 import urllib.parse
+import uuid
 from http.cookies import SimpleCookie
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -68,7 +69,7 @@ class Client:
         self.port = port
         self.cookies = {}
 
-    def request(self, method, path, payload=None, bearer=None, form=False):
+    def request(self, method, path, payload=None, bearer=None, form=False, extra_headers=None):
         headers = {}
         if self.cookies:
             # Explicit local fixture transport; Secure cookie behavior is NOT a browser test.
@@ -85,6 +86,7 @@ class Client:
             require(status == 200, "csrf request failed")
             headers[csrf["headerName"]] = csrf["token"]
             headers["Cookie"] = "; ".join(f"{k}={v}" for k, v in self.cookies.items())
+        headers.update(extra_headers or {})
         connection = http.client.HTTPConnection("127.0.0.1", self.port, timeout=6)
         try:
             connection.request(method, path, body, headers)
@@ -317,11 +319,64 @@ REVOKE ALL ON SCHEMA app_learning FROM PUBLIC,identity_fixture;""")
         start = time.monotonic()
         require(Client(self.identity_port).request("GET", "/userinfo", bearer=token)[0] == 401, name + " userinfo")
         require(self.learning(token) == 401, name + " Learning")
+        if getattr(self, "private_deck_id", None):
+            require(Client(self.learning_port).request("GET", "/api/decks/" + self.private_deck_id, bearer=token)[0] == 401,
+                    name + " private Deck route")
         statuses = self.parallel(lambda _: self.learning(token), range(16))
         require(set(statuses) == {401}, name + " repeated revoked requests")
         self.record(name, identity_status=401, learning_status=401,
                     repeated_denials=len(statuses),
                     observation_ms=round((time.monotonic() - start) * 1000, 2), **details)
+
+    def private_deck_round_trip(self, browser, access):
+        """Real product route with actual Identity grants; only synthetic accounts/data."""
+        client = Client(self.learning_port)
+        create = {"commandId": str(uuid.uuid4()), "metadata": {"title": "日本語 — заметки", "description": "  строка\n🌿  "}}
+        status, headers, acknowledgement = client.request("POST", "/api/decks", create, bearer=access)
+        require(status == 201, "private Deck create")
+        deck = acknowledgement["deck"]
+        self.private_deck_id = deck["deckId"]
+        path = "/api/decks/" + self.private_deck_id
+        require({k.lower(): v for k, v in headers.items()}.get("etag") == '"0"', "create version validator")
+        require(deck["metadata"] == create["metadata"] and deck["rowVersion"] == "0", "lossless initial Deck metadata")
+        status, headers, read = Client(self.learning_port).request("GET", path, bearer=access)
+        require(status == 200 and read == deck, "fresh HTTP read restores created Deck")
+        require({k.lower(): v for k, v in headers.items()}.get("cache-control") == "private, no-store", "private Deck cache boundary")
+        require(client.request("GET", "/api/decks?limit=1", bearer=access)[2]["items"] == [deck], "own Deck list")
+        status, headers, retry = client.request("POST", "/api/decks", create, bearer=access)
+        lower = {k.lower(): v for k, v in headers.items()}
+        require(status == 201 and retry == acknowledgement and "etag" not in lower
+                and lower.get("idempotency-replayed") == "true", "create exact retry acknowledgement")
+        other_browser, _ = self.account("fixture_deck_other")
+        other = self.token(other_browser)["access_token"]
+        require(client.request("GET", path, bearer=other)[0] == 404, "foreign direct Deck read")
+        require(client.request("GET", "/api/decks", bearer=other)[2]["items"] == [], "foreign own-list isolation")
+        read_only = self.token(browser, "openid learning.read")["access_token"]
+        write_only = self.token(browser, "openid learning.write")["access_token"]
+        require(client.request("POST", "/api/decks", create, bearer=read_only)[0] == 403, "read grant cannot create Deck")
+        require(client.request("GET", path, bearer=write_only)[0] == 403, "write grant cannot read Deck")
+        change = {"commandId": str(uuid.uuid4()), "metadata": {"title": "  Обновлено  ", "description": "новая строка"}}
+        require(client.request("PATCH", path, change, bearer=access)[0] == 428, "Deck save requires precondition")
+        status, headers, saved = client.request("PATCH", path, change, bearer=access, extra_headers={"If-Match": '"0"'})
+        require(status == 200 and saved["deck"]["rowVersion"] == "1" and saved["deck"]["metadata"] == change["metadata"],
+                "conditional metadata publication")
+        stale = {**change, "commandId": str(uuid.uuid4())}
+        require(client.request("PATCH", path, stale, bearer=access, extra_headers={"If-Match": '"0"'})[0] == 412, "stale save rejected")
+        require(client.request("PATCH", path, change, bearer=other, extra_headers={"If-Match": '"0"'})[0] == 404, "receipt does not bypass current owner")
+        require(client.request("PATCH", path, change, bearer=access, extra_headers={"If-Match": '"1"'})[0] == 409, "receipt includes expected version")
+        def competing(number):
+            command_body = {"commandId": str(uuid.uuid4()), "metadata": {"title": "writer " + str(number), "description": ""}}
+            return Client(self.learning_port).request("PATCH", path, command_body, bearer=access,
+                                                     extra_headers={"If-Match": '"1"'})[0]
+        require(sorted(self.parallel(competing, range(2))) == [200, 412], "two real HTTP writers have one winner")
+        status, headers, old = client.request("PATCH", path, change, bearer=access, extra_headers={"If-Match": '"0"'})
+        lower = {k.lower(): v for k, v in headers.items()}
+        require(status == 200 and old == saved and "etag" not in lower and lower.get("idempotency-replayed") == "true",
+                "old exact save receipt is not current representation")
+        require(client.request("GET", path, bearer=access)[2]["rowVersion"] == "2", "retry does not roll back current metadata")
+        self.record("private_deck_real_http_create_read_save_retry_conflict_acl", versions=["0", "1", "2"],
+                    concurrent_statuses=[200, 412], foreign_read=404, foreign_retry=404, stale=412,
+                    missing_precondition=428, schema_storage="real_postgresql", browser_transport="not_tested")
 
     def run(self):
         self.start()
@@ -352,6 +407,7 @@ REVOKE ALL ON SCHEMA app_learning FROM PUBLIC,identity_fixture;""")
         form["code_verifier"] = secrets.token_urlsafe(48)
         require(Client(self.identity_port).request("POST", "/oauth2/token", form, form=True)[0] == 400, "wrong PKCE verifier")
         self.record("pkce_code_replay_and_wrong_verifier_rejected")
+        self.private_deck_round_trip(browser, access)
         start = time.monotonic()
         samples = self.paced_samples(access)
         require({status for status, _ in samples} == {404}, "bounded repeated real-service requests")
