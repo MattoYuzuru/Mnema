@@ -108,8 +108,8 @@ assert_secret_prefix "$ROLLBACK_DRILL_WORKFLOW" STAGING_
 
 # No-infrastructure mode disconnects the automatic chain; dormant job bodies
 # retain their predecessor/artifact/security contracts for reviewed restoration.
-grep -Fq 'workflow_dispatch:' "$STAGING_WORKFLOW"
-grep -Fq 'workflow_dispatch:' "$PRODUCTION_WORKFLOW"
+grep -Fq 'workflow_call:' "$STAGING_WORKFLOW"
+grep -Fq 'workflow_call:' "$PRODUCTION_WORKFLOW"
 staging_gate=$(sed -n '/^  validate-main-ci:/,/^  deploy-staging:/p' "$STAGING_WORKFLOW")
 production_gate=$(sed -n '/^  validate-staging-deploy:/,/^  preview-production:/p' "$PRODUCTION_WORKFLOW")
 staging_deploy_header=$(sed -n '/^  deploy-staging:/,/^    steps:/p' "$STAGING_WORKFLOW")
@@ -152,9 +152,8 @@ test "$(grep -c 'group: production-deploy' "$PRODUCTION_WORKFLOW")" -eq 1
 production_deploy_header=$(sed -n '/^  deploy-production:/,/^    env:/p' "$PRODUCTION_WORKFLOW")
 printf '%s\n' "$production_deploy_header" | grep -Fq 'concurrency:'
 printf '%s\n' "$production_deploy_header" | grep -Fq 'cancel-in-progress: false'
-if grep -Fq 'workflow_call:' "$STAGING_WORKFLOW" "$PRODUCTION_WORKFLOW" || \
-   grep -Fq 'uses: ./.github/workflows/' "$MAIN_WORKFLOW"; then
-  echo "Environment deployment jobs must run directly, not behind workflow_call" >&2
+if grep -Eq '^    uses:' "$MAIN_WORKFLOW" "$STAGING_WORKFLOW" "$PRODUCTION_WORKFLOW"; then
+  echo "Local-only delivery must not call dormant operational workflows" >&2
   exit 1
 fi
 

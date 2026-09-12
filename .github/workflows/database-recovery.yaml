@@ -1,17 +1,8 @@
 name: Database Recovery
 
 on:
-  workflow_dispatch:
-    inputs:
-      backup_id:
-        description: Restore exact UTC backup ID or latest
-        required: true
-        default: latest
-        type: string
-      confirmation:
-        description: Type RESTORE_IN_ISOLATED_NAMESPACE
-        required: true
-        type: string
+  # Inert restoration blueprint: no callers or standalone trigger.
+  workflow_call:
 
 permissions: {}
 
@@ -26,7 +17,7 @@ concurrency:
 
 jobs:
   database-recovery:
-    # No infrastructure: even a manual dispatch must not enter prod.
+    # No infrastructure: even an accidental caller must not enter prod.
     if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 210
@@ -53,8 +44,9 @@ jobs:
 
       - name: Validate operation confirmation
         env:
-          BACKUP_ID: ${{ inputs.backup_id }}
-          CONFIRMATION: ${{ inputs.confirmation }}
+          # Bind reviewed inputs only as part of infrastructure reactivation.
+          BACKUP_ID: ''
+          CONFIRMATION: ''
         run: |
           if [ "$CONFIRMATION" != RESTORE_IN_ISOLATED_NAMESPACE ]; then
             echo "::error::Exact isolated-restore confirmation is required"
@@ -124,7 +116,7 @@ jobs:
 
       - name: Create isolated restore drill resources
         env:
-          BACKUP_ID: ${{ inputs.backup_id }}
+          BACKUP_ID: ''
           AWS_ENDPOINT_URL: ${{ secrets.PROD_BACKUP_S3_ENDPOINT }}
           AWS_REGION: ${{ secrets.PROD_BACKUP_S3_REGION }}
           AWS_ACCESS_KEY_ID: ${{ secrets.PROD_BACKUP_S3_ACCESS_KEY_ID }}

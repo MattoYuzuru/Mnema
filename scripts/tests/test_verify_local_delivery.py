@@ -45,9 +45,14 @@ def verify(contents):
             header = content.partition('on:\n')[2]
             header = re.split(r'^\S', header, maxsplit=1, flags=re.M)[0]
             triggers = re.findall(r'^  ([a-z_]+):', header, re.M)
-            if triggers != ['workflow_dispatch']:
-                errors.append(f'{filename}: operational trigger must be manual-only')
+            if triggers != ['workflow_call']:
+                errors.append(f'{filename}: operational blueprint cannot have a standalone trigger')
+            if any(line.strip() and not line.lstrip().startswith('#')
+                   and line != '  workflow_call:' for line in header.splitlines()):
+                errors.append(f'{filename}: dormant workflow_call must have no configuration')
         for name, block in jobs.items():
+            if any(re.match(r'^    uses:', line) for line in block):
+                errors.append(f'{filename}/{name}: workflow callers are disabled in local-only mode')
             guards = [line for line in block if line.startswith('    if:')]
             if name in expected:
                 if guards != [expected[name]]:
@@ -82,10 +87,10 @@ class LocalDeliveryContractTest(unittest.TestCase):
 
     def test_automatic_trigger_cannot_return(self):
         for file in DORMANT:
-            for trigger in ('workflow_run', 'push', 'schedule', 'workflow_call'):
+            for trigger in ('workflow_run', 'push', 'schedule', 'workflow_dispatch', 'repository_dispatch'):
                 with self.subTest(file=file, trigger=trigger):
                     changed = dict(self.contents)
-                    changed[file] = changed[file].replace('  workflow_dispatch:', f'  {trigger}:', 1)
+                    changed[file] = changed[file].replace('  workflow_call:', f'  {trigger}:', 1)
                     self.assertTrue(verify(changed))
 
     def test_new_unguarded_job_or_workflow_cannot_escape_inventory(self):
@@ -108,6 +113,28 @@ class LocalDeliveryContractTest(unittest.TestCase):
         changed = dict(self.contents)
         changed['staging-deploy.yaml'] = changed['staging-deploy.yaml'].replace(FALSE, "    if: ${{ vars.ENABLE_DEPLOY == 'true' }}")
         self.assertTrue(verify(changed))
+
+    def test_existing_jobs_cannot_become_workflow_callers(self):
+        for file, content in self.contents.items():
+            for job in _job_blocks(content):
+                for prefix in ('./', '$/', 'MattoYuzuru/Mnema/'):
+                    with self.subTest(file=file, job=job, prefix=prefix):
+                        changed = dict(self.contents)
+                        reference = f'{prefix}.github/workflows/staging-deploy.yaml'
+                        if prefix == 'MattoYuzuru/Mnema/':
+                            reference += '@main'
+                        changed[file] = content.replace(
+                            f'  {job}:\n', f'  {job}:\n    uses: {reference}\n', 1)
+                        self.assertTrue(verify(changed))
+
+    def test_dormant_definitions_cannot_gain_inputs_or_secrets(self):
+        for file in DORMANT:
+            for config in ('    inputs: {}', '    secrets: {}'):
+                with self.subTest(file=file, config=config):
+                    changed = dict(self.contents)
+                    changed[file] = changed[file].replace(
+                        '  workflow_call:', f'  workflow_call:\n{config}', 1)
+                    self.assertTrue(verify(changed))
 
 
 if __name__ == '__main__':

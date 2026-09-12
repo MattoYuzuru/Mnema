@@ -20,12 +20,20 @@ published without its image-security gate. Application builds and the existing
 release/security/recovery contract tests still run. No image-level vulnerability
 result is claimed for a release image that was not built.
 
-Staging and production have no workflow_run trigger. Their jobs, rollback drill
-and hosted database recovery have literal false job guards, including manual
-dispatches; these do not allocate runners or enter Environments. There is no
-repository variable, input or secret that opens them. The existing job bodies are
-restoration blueprints, not an executable local deployment path. Main CI can show
-two skipped release jobs; no runner is allocated to either.
+Staging, production, rollback drill and hosted database recovery have only empty
+workflow_call definitions with no callers, automatic events or manual Run buttons.
+Every operational job also has a literal false guard: even an accidental caller
+cannot allocate its runner or enter an Environment. Repository tests reject callers,
+standalone triggers and removal of any guard. No variable, input or secret opens
+them. Their existing job bodies are restoration blueprints, not an executable
+local deployment path. Main CI can show two skipped release jobs without runners.
+
+Do not replace the dormant trigger with workflow_dispatch: besides exposing an
+unneeded entry point, it changes the old workflow_run cache trust boundary. CodeQL
+detected that change in the initial candidate's artifact preflight. Removing the
+standalone entry point addresses it without suppressing alerts or relaxing scans.
+workflow_call is not inherently read-only: cache permissions depend on its caller.
+Nor does the lack of declared secrets replace guards against Environment access.
 
 Never rerun an older operational workflow: reruns use the older workflow revision.
 Do not dispatch an old branch's operational workflows. This source change does not
@@ -43,6 +51,7 @@ changed by this mode switch.
    Do not just switch the SSH alias and reuse old credentials.
 4. Re-enable image publication and its provenance/SBOM/vulnerability gates
    together; restore the validated predecessor triggers and job conditions.
+   Restore reviewed recovery/rollback confirmation inputs before those operations.
    In particular hosted recovery previously used always() to finish bounded cleanup.
 5. Prove fresh staging rollout, actual API smoke, rollback and data restoration.
    Production still requires the separate #147 product/security/data cutover gate.
@@ -54,3 +63,7 @@ state until the exact new target and rollback plan are approved.
 Sources: GitHub [workflow triggers](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows)
 and [job conditions](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-jobs-with-conditions)
 define the removal of automatic workflow_run chaining and job-level false guards.
+[Reusable workflow definitions](https://docs.github.com/en/actions/how-tos/reuse-automations/reuse-workflows)
+have no standalone trigger; the additional false guards remain essential.
+[CodeQL cache trust guidance](https://codeql.github.com/codeql-query-help/actions/actions-cache-poisoning-poisonable-step/)
+explains why an unnecessary manual trigger is not a neutral replacement.

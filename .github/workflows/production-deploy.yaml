@@ -1,8 +1,8 @@
 name: Production Deploy
 
 on:
-  # Inert restoration blueprint; #147 remains a separate cutover gate.
-  workflow_dispatch:
+  # No callers or standalone trigger; #147 remains a separate cutover gate.
+  workflow_call:
 
 permissions: {}
 
