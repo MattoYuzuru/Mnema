@@ -1,6 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
 import { Router } from '@angular/router';
-import { NgIf, NgFor } from '@angular/common';
+
 import { from, of } from 'rxjs';
 import { catchError, mergeMap } from 'rxjs/operators';
 import { DeckApiService } from '../../core/services/deck-api.service';
@@ -16,55 +16,62 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-decks-list',
-    standalone: true,
-    imports: [NgIf, NgFor, DeckCardComponent, MemoryTipLoaderComponent, EmptyStateComponent, ButtonComponent, TranslatePipe],
+    imports: [DeckCardComponent, MemoryTipLoaderComponent, EmptyStateComponent, ButtonComponent, TranslatePipe],
     template: `
-    <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
+    @if (loading) {
+      <app-memory-tip-loader></app-memory-tip-loader>
+    }
 
-    <div *ngIf="!loading" class="decks-list-page">
-      <header class="page-header">
-        <h1>{{ 'decks.title' | translate }}</h1>
-        <app-button variant="primary" (click)="createDeck()">
-          {{ 'decks.createDeck' | translate }}
-        </app-button>
-      </header>
-
-      <div *ngIf="decks.length > 0" class="decks-list">
-        <app-deck-card
-          *ngFor="let deck of decks"
-          [userDeck]="deck"
-          [iconUrl]="getDeckIconUrl(deck)"
-          [showLearn]="true"
-          [showBrowse]="true"
-          [showUpdate]="needsUpdate(deck)"
-          [stats]="getDeckStats(deck)"
-          (open)="openDeck(deck.userDeckId)"
-          (learn)="learnDeck(deck.userDeckId)"
-          (browse)="browseDeck(deck.userDeckId)"
-          (update)="syncDeck(deck.userDeckId)"
-        ></app-deck-card>
+    @if (!loading) {
+      <div class="decks-list-page">
+        <header class="page-header">
+          <h1>{{ 'decks.title' | translate }}</h1>
+          <app-button variant="primary" (click)="createDeck()">
+            {{ 'decks.createDeck' | translate }}
+          </app-button>
+        </header>
+        @if (decks.length > 0) {
+          <div class="decks-list">
+            @for (deck of decks; track deck) {
+              <app-deck-card
+                [userDeck]="deck"
+                [iconUrl]="getDeckIconUrl(deck)"
+                [showLearn]="true"
+                [showBrowse]="true"
+                [showUpdate]="needsUpdate(deck)"
+                [stats]="getDeckStats(deck)"
+                (open)="openDeck(deck.userDeckId)"
+                (learn)="learnDeck(deck.userDeckId)"
+                (browse)="browseDeck(deck.userDeckId)"
+                (update)="syncDeck(deck.userDeckId)"
+              ></app-deck-card>
+            }
+          </div>
+        }
+        @if (decks.length > 0 && hasMore) {
+          <div class="load-more-container">
+            <app-button
+              variant="secondary"
+              [disabled]="loadingMore"
+              (click)="loadMore()"
+              >
+              {{ (loadingMore ? 'decks.loading' : 'decks.loadMore') | translate }}
+            </app-button>
+          </div>
+        }
+        @if (decks.length === 0) {
+          <app-empty-state
+            icon="📚"
+            [title]="'decks.noDecks' | translate"
+            [description]="'decks.noDecksDescription' | translate"
+            [actionText]="'home.browsePublicDecks' | translate"
+            (action)="goToPublicDecks()"
+          ></app-empty-state>
+        }
       </div>
-
-      <div *ngIf="decks.length > 0 && hasMore" class="load-more-container">
-        <app-button
-          variant="secondary"
-          [disabled]="loadingMore"
-          (click)="loadMore()"
-        >
-          {{ (loadingMore ? 'decks.loading' : 'decks.loadMore') | translate }}
-        </app-button>
-      </div>
-
-      <app-empty-state
-        *ngIf="decks.length === 0"
-        icon="📚"
-        [title]="'decks.noDecks' | translate"
-        [description]="'decks.noDecksDescription' | translate"
-        [actionText]="'home.browsePublicDecks' | translate"
-        (action)="goToPublicDecks()"
-      ></app-empty-state>
-    </div>
-  `,
+    }
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .decks-list-page {
@@ -127,6 +134,12 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
     ]
 })
 export class DecksListComponent implements OnInit {
+    private deckApi = inject(DeckApiService);
+    private publicDeckApi = inject(PublicDeckApiService);
+    private mediaApi = inject(MediaApiService);
+    private userApi = inject(UserApiService);
+    private router = inject(Router);
+
     loading = true;
     loadingMore = false;
     decks: UserDeckDTO[] = [];
@@ -143,14 +156,6 @@ export class DecksListComponent implements OnInit {
     private deckIconMediaIds: Map<string, string> = new Map();
     private deckIcons: Map<string, string> = new Map();
     private currentUserId: string | null = null;
-
-    constructor(
-        private deckApi: DeckApiService,
-        private publicDeckApi: PublicDeckApiService,
-        private mediaApi: MediaApiService,
-        private userApi: UserApiService,
-        private router: Router
-    ) {}
 
     ngOnInit(): void {
         this.userApi.getMe().subscribe({

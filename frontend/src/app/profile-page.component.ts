@@ -1,5 +1,5 @@
-import { Component, OnInit, ViewChild, ElementRef } from '@angular/core';
-import { NgIf } from '@angular/common';
+import { Component, OnInit, ViewChild, ElementRef, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { AbstractControl, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
@@ -17,135 +17,142 @@ import { ToastService } from './core/services/toast.service';
 import { appConfig } from './app.config';
 
 @Component({
-    standalone: true,
     selector: 'app-profile-page',
-    imports: [NgIf, ReactiveFormsModule, RouterLink, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe, ReviewStatsPanelComponent],
+    imports: [ReactiveFormsModule, RouterLink, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe, ReviewStatsPanelComponent],
     template: `
-    <section *ngIf="auth.status() === 'authenticated'; else notAuth" class="profile-page">
-      <div class="profile-container">
-        <h1>{{ 'profile.title' | translate }}</h1>
-
-        <div *ngIf="loading" class="loading">{{ 'profile.loadingProfile' | translate }}</div>
-
-        <div *ngIf="!loading && profile" class="profile-content">
-          <div *ngIf="config.features.showEmailVerificationWarning && auth.user()?.emailVerified === false" class="verification-warning">
-            <h3>{{ 'profile.unverifiedTitle' | translate }}</h3>
-            <p>{{ 'profile.unverifiedText' | translate }}</p>
-          </div>
-          <div class="profile-header">
-            <div class="avatar-section">
-              <div class="avatar-container" (click)="triggerAvatarUpload()">
-                <img *ngIf="avatarDisplayUrl" [src]="avatarDisplayUrl" [alt]="profile.username" class="avatar" />
-                <div *ngIf="!avatarDisplayUrl" class="avatar-placeholder">
-                  {{ profile.username.charAt(0).toUpperCase() }}
+    @if (auth.status() === 'authenticated') {
+      <section class="profile-page">
+        <div class="profile-container">
+          <h1>{{ 'profile.title' | translate }}</h1>
+          @if (loading) {
+            <div class="loading">{{ 'profile.loadingProfile' | translate }}</div>
+          }
+          @if (!loading && profile) {
+            <div class="profile-content">
+              @if (config.features.showEmailVerificationWarning && auth.user()?.emailVerified === false) {
+                <div class="verification-warning">
+                  <h3>{{ 'profile.unverifiedTitle' | translate }}</h3>
+                  <p>{{ 'profile.unverifiedText' | translate }}</p>
                 </div>
-                <div class="avatar-overlay" [class.uploading]="uploading">
-                  <span *ngIf="!uploading" class="edit-icon">✎</span>
-                  <span *ngIf="uploading" class="uploading-text">Uploading... {{ uploadProgress }}%</span>
+              }
+              <div class="profile-header">
+                <div class="avatar-section">
+                  <div class="avatar-container" (click)="triggerAvatarUpload()">
+                    @if (avatarDisplayUrl) {
+                      <img [src]="avatarDisplayUrl" [alt]="profile.username" class="avatar" />
+                    }
+                    @if (!avatarDisplayUrl) {
+                      <div class="avatar-placeholder">
+                        {{ profile.username.charAt(0).toUpperCase() }}
+                      </div>
+                    }
+                    <div class="avatar-overlay" [class.uploading]="uploading">
+                      @if (!uploading) {
+                        <span class="edit-icon">✎</span>
+                      }
+                      @if (uploading) {
+                        <span class="uploading-text">Uploading... {{ uploadProgress }}%</span>
+                      }
+                    </div>
+                  </div>
+                  <input
+                    #avatarInput
+                    type="file"
+                    accept="image/*"
+                    (change)="onAvatarSelected($event)"
+                    style="display: none;"
+                    />
+                </div>
+                <div class="profile-info">
+                  <h2>{{ profile.username }}</h2>
+                  <p class="email">{{ profile.email }}</p>
+                  <p class="member-since">{{ 'profile.memberSince' | translate }} {{ formatDate(profile.createdAt) }}</p>
+                  @if (profile.admin) {
+                    <span class="admin-badge">{{ 'profile.admin' | translate }}</span>
+                  }
                 </div>
               </div>
-              <input
-                #avatarInput
-                type="file"
-                accept="image/*"
-                (change)="onAvatarSelected($event)"
-                style="display: none;"
-              />
+              <app-review-stats-panel titleKey="stats.accountTitle"></app-review-stats-panel>
+              <form [formGroup]="form" (ngSubmit)="save()" class="edit-form">
+                <h3>{{ 'profile.editProfile' | translate }}</h3>
+                <app-input
+                  [label]="'profile.username' | translate"
+                  type="text"
+                  formControlName="username"
+                  [placeholder]="'profile.enterUsername' | translate"
+                  [hasError]="form.get('username')?.invalid && form.get('username')?.touched || false"
+                  [errorMessage]="usernameErrorMessage() | translate"
+                  [maxLength]="maxUsernameLength"
+                ></app-input>
+                <app-textarea
+                  [label]="'profile.bio' | translate"
+                  formControlName="bio"
+                  [placeholder]="'profile.enterBio' | translate"
+                  [rows]="4"
+                  [hasError]="form.get('bio')?.invalid && form.get('bio')?.touched || false"
+                  [errorMessage]="bioErrorMessage() | translate"
+                  [maxLength]="maxBioLength"
+                ></app-textarea>
+                <div class="form-actions">
+                  <app-button
+                    type="submit"
+                    variant="primary"
+                    [disabled]="form.invalid || saving"
+                    >
+                    {{ (saving ? 'profile.saving' : 'profile.saveChanges') | translate }}
+                  </app-button>
+                </div>
+              </form>
+              @if (passwordStatus) {
+                <div class="password-panel">
+                  <h3>{{ 'profile.passwordTitle' | translate }}</h3>
+                  <p class="password-description">
+                    {{ (passwordStatus.hasPassword ? 'profile.passwordChangeHint' : 'profile.passwordSetHint') | translate }}
+                  </p>
+                  <form [formGroup]="passwordForm" (ngSubmit)="savePassword()" class="password-form">
+                    @if (passwordStatus.hasPassword) {
+                      <app-input
+                        [label]="'profile.passwordCurrent' | translate"
+                        type="password"
+                        formControlName="currentPassword"
+                        [placeholder]="'profile.passwordCurrentPlaceholder' | translate"
+                        [hasError]="passwordForm.get('currentPassword')?.invalid && passwordForm.get('currentPassword')?.touched || false"
+                        [errorMessage]="'profile.passwordRequired' | translate"
+                      ></app-input>
+                    }
+                    <app-input
+                      [label]="'profile.passwordNew' | translate"
+                      type="password"
+                      formControlName="newPassword"
+                      [placeholder]="'profile.passwordNewPlaceholder' | translate"
+                      [hasError]="passwordForm.get('newPassword')?.invalid && passwordForm.get('newPassword')?.touched || false"
+                      [errorMessage]="passwordErrorMessage('newPassword') | translate"
+                    ></app-input>
+                    <app-input
+                      [label]="'profile.passwordConfirm' | translate"
+                      type="password"
+                      formControlName="confirmPassword"
+                      [placeholder]="'profile.passwordConfirmPlaceholder' | translate"
+                      [hasError]="passwordForm.hasError('passwordMismatch') && passwordForm.get('confirmPassword')?.touched || false"
+                      [errorMessage]="'profile.passwordMismatch' | translate"
+                    ></app-input>
+                    <div class="form-actions">
+                      <app-button
+                        type="submit"
+                        variant="primary"
+                        [disabled]="passwordForm.invalid || passwordSaving"
+                        >
+                        {{ (passwordSaving ? 'profile.passwordSaving' : 'profile.passwordSave') | translate }}
+                      </app-button>
+                    </div>
+                  </form>
+                </div>
+              }
             </div>
-            <div class="profile-info">
-              <h2>{{ profile.username }}</h2>
-              <p class="email">{{ profile.email }}</p>
-              <p class="member-since">{{ 'profile.memberSince' | translate }} {{ formatDate(profile.createdAt) }}</p>
-              <span *ngIf="profile.admin" class="admin-badge">{{ 'profile.admin' | translate }}</span>
-            </div>
-          </div>
-
-          <app-review-stats-panel titleKey="stats.accountTitle"></app-review-stats-panel>
-
-          <form [formGroup]="form" (ngSubmit)="save()" class="edit-form">
-            <h3>{{ 'profile.editProfile' | translate }}</h3>
-
-            <app-input
-              [label]="'profile.username' | translate"
-              type="text"
-              formControlName="username"
-              [placeholder]="'profile.enterUsername' | translate"
-              [hasError]="form.get('username')?.invalid && form.get('username')?.touched || false"
-              [errorMessage]="usernameErrorMessage() | translate"
-              [maxLength]="maxUsernameLength"
-            ></app-input>
-
-            <app-textarea
-              [label]="'profile.bio' | translate"
-              formControlName="bio"
-              [placeholder]="'profile.enterBio' | translate"
-              [rows]="4"
-              [hasError]="form.get('bio')?.invalid && form.get('bio')?.touched || false"
-              [errorMessage]="bioErrorMessage() | translate"
-              [maxLength]="maxBioLength"
-            ></app-textarea>
-
-            <div class="form-actions">
-              <app-button
-                type="submit"
-                variant="primary"
-                [disabled]="form.invalid || saving"
-              >
-                {{ (saving ? 'profile.saving' : 'profile.saveChanges') | translate }}
-              </app-button>
-            </div>
-          </form>
-
-          <div *ngIf="passwordStatus" class="password-panel">
-            <h3>{{ 'profile.passwordTitle' | translate }}</h3>
-            <p class="password-description">
-              {{ (passwordStatus.hasPassword ? 'profile.passwordChangeHint' : 'profile.passwordSetHint') | translate }}
-            </p>
-            <form [formGroup]="passwordForm" (ngSubmit)="savePassword()" class="password-form">
-              <app-input
-                *ngIf="passwordStatus.hasPassword"
-                [label]="'profile.passwordCurrent' | translate"
-                type="password"
-                formControlName="currentPassword"
-                [placeholder]="'profile.passwordCurrentPlaceholder' | translate"
-                [hasError]="passwordForm.get('currentPassword')?.invalid && passwordForm.get('currentPassword')?.touched || false"
-                [errorMessage]="'profile.passwordRequired' | translate"
-              ></app-input>
-
-              <app-input
-                [label]="'profile.passwordNew' | translate"
-                type="password"
-                formControlName="newPassword"
-                [placeholder]="'profile.passwordNewPlaceholder' | translate"
-                [hasError]="passwordForm.get('newPassword')?.invalid && passwordForm.get('newPassword')?.touched || false"
-                [errorMessage]="passwordErrorMessage('newPassword') | translate"
-              ></app-input>
-
-              <app-input
-                [label]="'profile.passwordConfirm' | translate"
-                type="password"
-                formControlName="confirmPassword"
-                [placeholder]="'profile.passwordConfirmPlaceholder' | translate"
-                [hasError]="passwordForm.hasError('passwordMismatch') && passwordForm.get('confirmPassword')?.touched || false"
-                [errorMessage]="'profile.passwordMismatch' | translate"
-              ></app-input>
-
-              <div class="form-actions">
-                <app-button
-                  type="submit"
-                  variant="primary"
-                  [disabled]="passwordForm.invalid || passwordSaving"
-                >
-                  {{ (passwordSaving ? 'profile.passwordSaving' : 'profile.passwordSave') | translate }}
-                </app-button>
-              </div>
-            </form>
-          </div>
+          }
         </div>
-      </div>
-    </section>
-
-    <ng-template #notAuth>
+      </section>
+    } @else {
       <section class="profile-page">
         <div class="profile-container">
           <h1>{{ 'profile.title' | translate }}</h1>
@@ -155,8 +162,10 @@ import { appConfig } from './app.config';
           </a>
         </div>
       </section>
-    </ng-template>
-  `,
+    }
+
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .profile-page {
@@ -403,6 +412,13 @@ import { appConfig } from './app.config';
     ]
 })
 export class ProfilePageComponent implements OnInit {
+    auth = inject(AuthService);
+    private api = inject(UserApiService);
+    private mediaApi = inject(MediaApiService);
+    private fb = inject(FormBuilder);
+    private i18n = inject(I18nService);
+    private toast = inject(ToastService);
+
     private static readonly MAX_USERNAME_LENGTH = 50;
     private static readonly MAX_BIO_LENGTH = 200;
     readonly maxUsernameLength = ProfilePageComponent.MAX_USERNAME_LENGTH;
@@ -421,14 +437,7 @@ export class ProfilePageComponent implements OnInit {
     passwordStatus: PasswordStatus | null = null;
     passwordSaving = false;
 
-    constructor(
-        public auth: AuthService,
-        private api: UserApiService,
-        private mediaApi: MediaApiService,
-        private fb: FormBuilder,
-        private i18n: I18nService,
-        private toast: ToastService
-    ) {
+    constructor() {
         this.form = this.fb.group({
             username: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(ProfilePageComponent.MAX_USERNAME_LENGTH)]],
             bio: ['', [Validators.maxLength(ProfilePageComponent.MAX_BIO_LENGTH)]]

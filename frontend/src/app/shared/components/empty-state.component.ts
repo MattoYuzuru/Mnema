@@ -1,25 +1,28 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
-import { NgIf } from '@angular/common';
+import { Component, Input, Output, EventEmitter, ChangeDetectionStrategy } from '@angular/core';
+
 import { ButtonComponent } from './button.component';
 
 @Component({
     selector: 'app-empty-state',
-    standalone: true,
-    imports: [NgIf, ButtonComponent],
+    imports: [ButtonComponent],
     template: `
     <div class="empty-state">
       <div class="empty-icon">{{ icon }}</div>
       <h3 class="empty-title">{{ title }}</h3>
-      <p *ngIf="description" class="empty-description">{{ description }}</p>
-      <app-button
-        *ngIf="actionText"
-        [variant]="actionVariant"
-        (click)="action.emit()"
-      >
-        {{ actionText }}
-      </app-button>
+      @if (description) {
+        <p class="empty-description">{{ description }}</p>
+      }
+      @if (actionText) {
+        <app-button
+          [variant]="actionVariant"
+          (click)="action.emit()"
+          >
+          {{ actionText }}
+        </app-button>
+      }
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .empty-state {

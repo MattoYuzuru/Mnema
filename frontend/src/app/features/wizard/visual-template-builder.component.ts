@@ -1,5 +1,5 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { DragDropModule, CdkDragDrop, CdkDragEnter, CdkDragExit, moveItemInArray } from '@angular/cdk/drag-drop';
@@ -40,8 +40,7 @@ interface BuilderState {
 
 @Component({
     selector: 'app-visual-template-builder',
-    standalone: true,
-    imports: [NgFor, NgIf, FormsModule, DragDropModule, ButtonComponent, TranslatePipe],
+    imports: [FormsModule, DragDropModule, ButtonComponent, TranslatePipe],
     template: `
     <div class="builder-page">
       <div class="builder-header glass-strong">
@@ -66,44 +65,51 @@ interface BuilderState {
           <div class="palette-column">
             <h3>{{ 'visualBuilder.fieldTypes' | translate }}</h3>
             <div class="palette-list" cdkDropList [cdkDropListData]="paletteFields" [cdkDropListConnectedTo]="['cardDropZone']" [cdkDropListSortingDisabled]="true">
-              <div
-                *ngFor="let field of paletteFields"
-                class="palette-item"
-                [class.disabled]="field.inDev"
-                cdkDrag
-                [cdkDragData]="field"
-                [cdkDragDisabled]="field.inDev"
-              >
-                <span class="palette-icon">{{ field.icon }}</span>
-                <span class="palette-label">{{ field.label }}</span>
-                <span *ngIf="field.inDev" class="in-dev-badge">{{ 'visualBuilder.inDev' | translate }}</span>
-              </div>
+              @for (field of paletteFields; track field) {
+                <div
+                  class="palette-item"
+                  [class.disabled]="field.inDev"
+                  cdkDrag
+                  [cdkDragData]="field"
+                  [cdkDragDisabled]="field.inDev"
+                  >
+                  <span class="palette-icon">{{ field.icon }}</span>
+                  <span class="palette-label">{{ field.label }}</span>
+                  @if (field.inDev) {
+                    <span class="in-dev-badge">{{ 'visualBuilder.inDev' | translate }}</span>
+                  }
+                </div>
+              }
             </div>
           </div>
 
           <div class="config-column">
             <h3>{{ 'visualBuilder.fieldConfiguration' | translate }}</h3>
-            <div *ngIf="selectedField" class="config-panel">
-              <div class="form-group">
-                <label>{{ 'visualBuilder.fieldLabel' | translate }}</label>
-              <input type="text" [(ngModel)]="selectedField.label" (ngModelChange)="saveDraft()" class="form-input" [attr.maxlength]="maxFieldLabel" />
-            </div>
-            <div class="form-group">
-              <label>{{ 'visualBuilder.fieldHelpText' | translate }}</label>
-              <input type="text" [(ngModel)]="selectedField.helpText" (ngModelChange)="saveDraft()" class="form-input" [attr.maxlength]="maxFieldHelpText" />
-            </div>
-              <div class="form-group">
-                <label>{{ 'visualBuilder.fieldRequired' | translate }}</label>
-                <div class="toggle-container" (click)="toggleRequired()">
-                  <div class="toggle-switch" [class.active]="selectedField.required">
-                    <div class="toggle-slider"></div>
+            @if (selectedField) {
+              <div class="config-panel">
+                <div class="form-group">
+                  <label>{{ 'visualBuilder.fieldLabel' | translate }}</label>
+                  <input type="text" [(ngModel)]="selectedField.label" (ngModelChange)="saveDraft()" class="form-input" [attr.maxlength]="maxFieldLabel" />
+                </div>
+                <div class="form-group">
+                  <label>{{ 'visualBuilder.fieldHelpText' | translate }}</label>
+                  <input type="text" [(ngModel)]="selectedField.helpText" (ngModelChange)="saveDraft()" class="form-input" [attr.maxlength]="maxFieldHelpText" />
+                </div>
+                <div class="form-group">
+                  <label>{{ 'visualBuilder.fieldRequired' | translate }}</label>
+                  <div class="toggle-container" (click)="toggleRequired()">
+                    <div class="toggle-switch" [class.active]="selectedField.required">
+                      <div class="toggle-slider"></div>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-            <div *ngIf="!selectedField" class="config-empty">
-              <p>{{ 'visualBuilder.selectFieldToConfig' | translate }}</p>
-            </div>
+            }
+            @if (!selectedField) {
+              <div class="config-empty">
+                <p>{{ 'visualBuilder.selectFieldToConfig' | translate }}</p>
+              </div>
+            }
           </div>
         </div>
 
@@ -124,7 +130,7 @@ interface BuilderState {
             (click)="flipSide()"
             [attr.title]="('visualBuilder.flipTo' | translate) + ' ' + ((currentSide === 'front' ? 'visualBuilder.back' : 'visualBuilder.front') | translate)"
             [attr.aria-label]="('visualBuilder.flipTo' | translate) + ' ' + ((currentSide === 'front' ? 'visualBuilder.back' : 'visualBuilder.front') | translate)"
-          >
+            >
             <span class="flip-icon" aria-hidden="true">🔄</span>
           </button>
 
@@ -140,52 +146,59 @@ interface BuilderState {
               (cdkDropListEntered)="onCardDropEntered($event)"
               (cdkDropListExited)="onCardDropExited($event)"
               (cdkDropListDropped)="onDrop($event)"
-            >
-              <div *ngIf="currentFields.length === 0 && !isPaletteDragOverCard" class="card-empty">
-                {{ 'visualBuilder.dragFieldsHere' | translate }}
-              </div>
-
-              <div
-                *ngFor="let field of currentFields; let i = index"
-                class="field-row"
-                [class.selected]="selectedFieldId === field.tempId"
-                (click)="selectField(field.tempId)"
-                cdkDrag
               >
-                <div class="field-row-content">
-                  <span *ngIf="showLabels" class="field-label">{{ getFieldDisplayLabel(field) }}</span>
-                  <div class="field-preview">{{ getFieldPreview(field) }}</div>
+              @if (currentFields.length === 0 && !isPaletteDragOverCard) {
+                <div class="card-empty">
+                  {{ 'visualBuilder.dragFieldsHere' | translate }}
                 </div>
-                <div class="field-row-actions">
-                  <button
-                    type="button"
-                    class="icon-button"
-                    [disabled]="i === 0"
-                    [attr.title]="'visualBuilder.moveUp' | translate"
-                    [attr.aria-label]="'visualBuilder.moveUp' | translate"
-                    (click)="moveFieldUp(i); $event.stopPropagation()"
-                  >↑</button>
-                  <button
-                    type="button"
-                    class="icon-button"
-                    [disabled]="i === currentFields.length - 1"
-                    [attr.title]="'visualBuilder.moveDown' | translate"
-                    [attr.aria-label]="'visualBuilder.moveDown' | translate"
-                    (click)="moveFieldDown(i); $event.stopPropagation()"
-                  >↓</button>
-                  <button
-                    type="button"
-                    class="icon-button delete"
-                    [attr.title]="'visualBuilder.removeField' | translate"
-                    [attr.aria-label]="'visualBuilder.removeField' | translate"
-                    (click)="removeField(i); $event.stopPropagation()"
-                  >×</button>
-                </div>
-              </div>
+              }
 
-              <div *ngIf="currentFields.length >= 10" class="max-fields-warning">
-                {{ 'visualBuilder.maxFieldsWarning' | translate }}
-              </div>
+              @for (field of currentFields; track field; let i = $index) {
+                <div
+                  class="field-row"
+                  [class.selected]="selectedFieldId === field.tempId"
+                  (click)="selectField(field.tempId)"
+                  cdkDrag
+                  >
+                  <div class="field-row-content">
+                    @if (showLabels) {
+                      <span class="field-label">{{ getFieldDisplayLabel(field) }}</span>
+                    }
+                    <div class="field-preview">{{ getFieldPreview(field) }}</div>
+                  </div>
+                  <div class="field-row-actions">
+                    <button
+                      type="button"
+                      class="icon-button"
+                      [disabled]="i === 0"
+                      [attr.title]="'visualBuilder.moveUp' | translate"
+                      [attr.aria-label]="'visualBuilder.moveUp' | translate"
+                      (click)="moveFieldUp(i); $event.stopPropagation()"
+                    >↑</button>
+                    <button
+                      type="button"
+                      class="icon-button"
+                      [disabled]="i === currentFields.length - 1"
+                      [attr.title]="'visualBuilder.moveDown' | translate"
+                      [attr.aria-label]="'visualBuilder.moveDown' | translate"
+                      (click)="moveFieldDown(i); $event.stopPropagation()"
+                    >↓</button>
+                    <button
+                      type="button"
+                      class="icon-button delete"
+                      [attr.title]="'visualBuilder.removeField' | translate"
+                      [attr.aria-label]="'visualBuilder.removeField' | translate"
+                      (click)="removeField(i); $event.stopPropagation()"
+                    >×</button>
+                  </div>
+                </div>
+              }
+
+              @if (currentFields.length >= 10) {
+                <div class="max-fields-warning">
+                  {{ 'visualBuilder.maxFieldsWarning' | translate }}
+                </div>
+              }
             </div>
           </div>
 
@@ -203,25 +216,28 @@ interface BuilderState {
       </div>
     </div>
 
-    <div *ngIf="showSaveDialog" class="modal-overlay" (click)="closeSaveDialog()">
-      <div class="modal-dialog" (click)="$event.stopPropagation()">
-        <h2>{{ 'visualBuilder.createDialogTitle' | translate }}</h2>
-        <p>{{ 'visualBuilder.createDialogMessage' | translate }}</p>
-        <div class="modal-checkbox">
-          <label class="checkbox-label glass-checkbox">
-            <input type="checkbox" [(ngModel)]="makePublic" />
-            <span>{{ 'visualBuilder.makePublic' | translate }}</span>
-          </label>
-        </div>
-        <div class="modal-actions">
-          <app-button variant="ghost" (click)="closeSaveDialog()">{{ 'visualBuilder.cancel' | translate }}</app-button>
-          <app-button variant="primary" [disabled]="saving" (click)="saveTemplate()">
-            {{ saving ? ('visualBuilder.creating' | translate) : ('visualBuilder.createTemplate' | translate) }}
-          </app-button>
+    @if (showSaveDialog) {
+      <div class="modal-overlay" (click)="closeSaveDialog()">
+        <div class="modal-dialog" (click)="$event.stopPropagation()">
+          <h2>{{ 'visualBuilder.createDialogTitle' | translate }}</h2>
+          <p>{{ 'visualBuilder.createDialogMessage' | translate }}</p>
+          <div class="modal-checkbox">
+            <label class="checkbox-label glass-checkbox">
+              <input type="checkbox" [(ngModel)]="makePublic" />
+              <span>{{ 'visualBuilder.makePublic' | translate }}</span>
+            </label>
+          </div>
+          <div class="modal-actions">
+            <app-button variant="ghost" (click)="closeSaveDialog()">{{ 'visualBuilder.cancel' | translate }}</app-button>
+            <app-button variant="primary" [disabled]="saving" (click)="saveTemplate()">
+              {{ saving ? ('visualBuilder.creating' | translate) : ('visualBuilder.createTemplate' | translate) }}
+            </app-button>
+          </div>
         </div>
       </div>
-    </div>
-  `,
+    }
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .builder-page {
         display: flex;
@@ -843,6 +859,11 @@ interface BuilderState {
     `]
 })
 export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
+    private router = inject(Router);
+    private templateApi = inject(TemplateApiService);
+    private wizardState = inject(DeckWizardStateService);
+    i18n = inject(I18nService);
+
     private static readonly MAX_TEMPLATE_NAME = 50;
     private static readonly MAX_TEMPLATE_DESCRIPTION = 200;
     private static readonly MAX_FIELD_LABEL = 50;
@@ -871,12 +892,7 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     readonly maxFieldLabel = VisualTemplateBuilderComponent.MAX_FIELD_LABEL;
     readonly maxFieldHelpText = VisualTemplateBuilderComponent.MAX_FIELD_HELP_TEXT;
 
-    constructor(
-        private router: Router,
-        private templateApi: TemplateApiService,
-        private wizardState: DeckWizardStateService,
-        public i18n: I18nService
-    ) {
+    constructor() {
         this.paletteFields = [
             { type: 'text', icon: '📝', label: this.i18n.translate('visualBuilder.fieldTypeText'), inDev: false },
             { type: 'markdown', icon: '📄', label: this.i18n.translate('visualBuilder.fieldTypeMarkdown'), inDev: false },

@@ -1,5 +1,5 @@
-import { Component, EventEmitter, Input, OnDestroy, Output } from '@angular/core';
-import { NgFor, NgIf, NgClass } from '@angular/common';
+import { Component, EventEmitter, Input, OnDestroy, Output, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormsModule } from '@angular/forms';
 import { ImportApiService } from '../../core/services/import-api.service';
 import { ReviewApiService } from '../../core/services/review-api.service';
@@ -21,8 +21,7 @@ type ImportFieldTypeOption = { value: string; labelKey: string };
 
 @Component({
     selector: 'app-import-deck-modal',
-    standalone: true,
-    imports: [NgIf, NgFor, NgClass, FormsModule, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe],
+    imports: [FormsModule, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe],
     template: `
     <div class="modal-overlay" (click)="close()">
       <div class="modal-content" (click)="$event.stopPropagation()">
@@ -31,8 +30,8 @@ type ImportFieldTypeOption = { value: string; labelKey: string };
             <h2>{{ mode === 'merge' ? ('import.mergeTitle' | translate) : ('import.newTitle' | translate) }}</h2>
             <p class="subtitle">
               {{ mode === 'merge'
-                ? ('import.mergeSubtitle' | translate)
-                : ('import.newSubtitle' | translate)
+              ? ('import.mergeSubtitle' | translate)
+              : ('import.newSubtitle' | translate)
               }}
             </p>
           </div>
@@ -46,8 +45,12 @@ type ImportFieldTypeOption = { value: string; labelKey: string };
               <li>{{ 'import.howItWorksFormats' | translate }}</li>
               <li>{{ 'import.howItWorksFields' | translate }}</li>
               <li>{{ 'import.howItWorksMedia' | translate }}</li>
-              <li *ngIf="mode === 'merge'">{{ 'import.howItWorksMerge' | translate }}</li>
-              <li *ngIf="mode === 'create'">{{ 'import.howItWorksPrivate' | translate }}</li>
+              @if (mode === 'merge') {
+                <li>{{ 'import.howItWorksMerge' | translate }}</li>
+              }
+              @if (mode === 'create') {
+                <li>{{ 'import.howItWorksPrivate' | translate }}</li>
+              }
             </ul>
           </section>
 
@@ -59,7 +62,7 @@ type ImportFieldTypeOption = { value: string; labelKey: string };
               (dragover)="onDragOver($event)"
               (dragleave)="onDragLeave($event)"
               (drop)="onDrop($event)"
-            >
+              >
               <input type="file" accept=".apkg,.mnema,.mnpkg,.csv,.tsv,.txt" (change)="onFileChange($event)" hidden #fileInput />
               <div class="dropzone-content">
                 <span class="dropzone-icon">⬆️</span>
@@ -72,171 +75,217 @@ type ImportFieldTypeOption = { value: string; labelKey: string };
               </div>
             </div>
 
-            <div *ngIf="uploading" class="status-line">{{ 'import.uploading' | translate }}</div>
-            <div *ngIf="previewing" class="status-line">{{ 'import.previewing' | translate }}</div>
-            <div *ngIf="fileInfo && !uploading" class="file-info">
-              <span class="file-name">{{ fileInfo.fileName }}</span>
-              <span class="file-size">{{ formatBytes(fileInfo.sizeBytes) }}</span>
-              <span class="file-type">{{ fileInfo.sourceType.toUpperCase() }}</span>
-            </div>
-          </section>
-
-          <section *ngIf="mode === 'create'" class="deck-name-block">
-            <app-input
-              [label]="'import.deckNameLabel' | translate"
-              [placeholder]="'import.deckNamePlaceholder' | translate"
-              [(ngModel)]="deckName"
-              [hasError]="deckNameTooLong"
-              [errorMessage]="'validation.maxLength50' | translate"
-              [maxLength]="maxDeckName"
-            ></app-input>
-            <app-textarea
-              [label]="'import.deckDescriptionLabel' | translate"
-              [placeholder]="'import.deckDescriptionPlaceholder' | translate"
-              [(ngModel)]="deckDescription"
-              [rows]="3"
-              [hasError]="deckDescriptionTooLong"
-              [errorMessage]="'validation.maxLength200' | translate"
-              [maxLength]="maxDeckDescription"
-            ></app-textarea>
-            <div class="form-group">
-              <label>{{ 'import.languageLabel' | translate }}</label>
-              <select [(ngModel)]="language" class="language-select">
-                <option *ngFor="let option of deckLanguageOptions" [value]="option.code">
-                  {{ option.labelKey | translate }}
-                </option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>{{ 'import.tagsLabel' | translate }}</label>
-              <input type="text" class="tag-input" [(ngModel)]="tagInput" (keydown.enter)="addTag($event)" [placeholder]="'import.tagsPlaceholder' | translate" [attr.maxlength]="maxTagLength" />
-              <div *ngIf="tags.length > 0" class="tags-list">
-                <span *ngFor="let tag of tags; let i = index" class="tag-chip">{{ tag }} <button type="button" (click)="removeTag(i)">×</button></span>
+            @if (uploading) {
+              <div class="status-line">{{ 'import.uploading' | translate }}</div>
+            }
+            @if (previewing) {
+              <div class="status-line">{{ 'import.previewing' | translate }}</div>
+            }
+            @if (fileInfo && !uploading) {
+              <div class="file-info">
+                <span class="file-name">{{ fileInfo.fileName }}</span>
+                <span class="file-size">{{ formatBytes(fileInfo.sizeBytes) }}</span>
+                <span class="file-type">{{ fileInfo.sourceType.toUpperCase() }}</span>
               </div>
-              <p *ngIf="tagError" class="error-text">{{ tagError | translate }}</p>
-            </div>
-            <div class="checkbox-group">
-              <label class="checkbox-label glass-checkbox">
-                <input type="checkbox" [(ngModel)]="isPublic" (change)="onPublicChange()" />
-                <span>{{ 'import.makePublic' | translate }}</span>
-              </label>
-            </div>
-            <div class="checkbox-group">
-              <label class="checkbox-label glass-checkbox" [class.disabled]="!isPublic">
-                <input type="checkbox" [(ngModel)]="isListed" [disabled]="!isPublic" />
-                <span>{{ 'import.listInCatalog' | translate }}</span>
-              </label>
-            </div>
+            }
           </section>
 
-          <section *ngIf="preview" class="preview-block">
-            <h3>{{ 'import.previewTitle' | translate }}</h3>
-            <p class="mapping-subtitle">{{ 'import.fieldsToggleHint' | translate }}</p>
-            <div class="field-config-list">
-              <div
-                *ngFor="let field of preview.sourceFields"
-                class="field-config-row"
-                [class.inactive]="!isSourceFieldActive(field.name)"
-              >
-                <button
-                  type="button"
-                  class="field-chip field-chip-toggle"
-                  [class.inactive]="!isSourceFieldActive(field.name)"
-                  (click)="toggleSourceField(field.name)"
-                >
-                  <span>{{ field.name }}</span>
-                  <span class="chip-toggle">×</span>
-                </button>
-                <div *ngIf="mode === 'create'" class="field-type-picker">
-                  <label class="field-type-label">{{ 'templateProfile.fieldType' | translate }}</label>
-                  <select
-                    class="mapping-select field-type-select"
-                    [ngModel]="sourceFieldTypes[field.name] || field.fieldType || 'text'"
-                    (ngModelChange)="onSourceFieldTypeChange(field.name, $event)"
-                    [disabled]="!isSourceFieldActive(field.name)"
-                  >
-                    <option *ngFor="let option of createFieldTypeOptions" [value]="option.value">
+          @if (mode === 'create') {
+            <section class="deck-name-block">
+              <app-input
+                [label]="'import.deckNameLabel' | translate"
+                [placeholder]="'import.deckNamePlaceholder' | translate"
+                [(ngModel)]="deckName"
+                [hasError]="deckNameTooLong"
+                [errorMessage]="'validation.maxLength50' | translate"
+                [maxLength]="maxDeckName"
+              ></app-input>
+              <app-textarea
+                [label]="'import.deckDescriptionLabel' | translate"
+                [placeholder]="'import.deckDescriptionPlaceholder' | translate"
+                [(ngModel)]="deckDescription"
+                [rows]="3"
+                [hasError]="deckDescriptionTooLong"
+                [errorMessage]="'validation.maxLength200' | translate"
+                [maxLength]="maxDeckDescription"
+              ></app-textarea>
+              <div class="form-group">
+                <label>{{ 'import.languageLabel' | translate }}</label>
+                <select [(ngModel)]="language" class="language-select">
+                  @for (option of deckLanguageOptions; track option) {
+                    <option [value]="option.code">
                       {{ option.labelKey | translate }}
                     </option>
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div class="sample-card" *ngIf="sampleEntries.length > 0">
-              <h4>{{ 'import.sampleTitle' | translate }}</h4>
-              <div *ngFor="let entry of sampleEntries" class="sample-row" [class.inactive]="!isSourceFieldActive(entry[0])">
-                <span class="sample-label">{{ entry[0] }}</span>
-                <span class="sample-value">{{ entry[1] || ('import.emptyValue' | translate) }}</span>
-              </div>
-            </div>
-          </section>
-
-          <section *ngIf="mode === 'merge' && preview" class="mapping-block">
-            <h3>{{ 'import.mappingTitle' | translate }}</h3>
-            <p class="mapping-subtitle">{{ 'import.mappingSubtitle' | translate }}</p>
-            <div class="mapping-grid">
-              <div *ngFor="let field of preview.targetFields" class="mapping-row">
-                <div class="mapping-target">
-                  <span class="target-name">{{ field.name }}</span>
-                  <span class="target-type">{{ field.fieldType || 'text' }}</span>
-                </div>
-                <select
-                  class="mapping-select"
-                  [value]="mapping[field.name] || ''"
-                  (change)="onMappingChange(field.name, $any($event.target).value)"
-                >
-                  <option value="">{{ 'import.mappingSkip' | translate }}</option>
-                  <option *ngFor="let source of activeSourceFieldsList" [value]="source">
-                    {{ source }}
-                  </option>
+                  }
                 </select>
               </div>
-            </div>
-          </section>
+              <div class="form-group">
+                <label>{{ 'import.tagsLabel' | translate }}</label>
+                <input type="text" class="tag-input" [(ngModel)]="tagInput" (keydown.enter)="addTag($event)" [placeholder]="'import.tagsPlaceholder' | translate" [attr.maxlength]="maxTagLength" />
+                @if (tags.length > 0) {
+                  <div class="tags-list">
+                    @for (tag of tags; track tag; let i = $index) {
+                      <span class="tag-chip">{{ tag }} <button type="button" (click)="removeTag(i)">×</button></span>
+                    }
+                  </div>
+                }
+                @if (tagError) {
+                  <p class="error-text">{{ tagError | translate }}</p>
+                }
+              </div>
+              <div class="checkbox-group">
+                <label class="checkbox-label glass-checkbox">
+                  <input type="checkbox" [(ngModel)]="isPublic" (change)="onPublicChange()" />
+                  <span>{{ 'import.makePublic' | translate }}</span>
+                </label>
+              </div>
+              <div class="checkbox-group">
+                <label class="checkbox-label glass-checkbox" [class.disabled]="!isPublic">
+                  <input type="checkbox" [(ngModel)]="isListed" [disabled]="!isPublic" />
+                  <span>{{ 'import.listInCatalog' | translate }}</span>
+                </label>
+              </div>
+            </section>
+          }
 
-          <section *ngIf="job" class="job-block">
-            <h3>{{ 'import.statusTitle' | translate }}</h3>
-            <div class="status-card">
-              <div class="status-row">
-                <span>{{ 'import.statusLabel' | translate }}</span>
-                <span>{{ statusLabel(job.status) | translate }}</span>
+          @if (preview) {
+            <section class="preview-block">
+              <h3>{{ 'import.previewTitle' | translate }}</h3>
+              <p class="mapping-subtitle">{{ 'import.fieldsToggleHint' | translate }}</p>
+              <div class="field-config-list">
+                @for (field of preview.sourceFields; track field) {
+                  <div
+                    class="field-config-row"
+                    [class.inactive]="!isSourceFieldActive(field.name)"
+                    >
+                    <button
+                      type="button"
+                      class="field-chip field-chip-toggle"
+                      [class.inactive]="!isSourceFieldActive(field.name)"
+                      (click)="toggleSourceField(field.name)"
+                      >
+                      <span>{{ field.name }}</span>
+                      <span class="chip-toggle">×</span>
+                    </button>
+                    @if (mode === 'create') {
+                      <div class="field-type-picker">
+                        <label class="field-type-label">{{ 'templateProfile.fieldType' | translate }}</label>
+                        <select
+                          class="mapping-select field-type-select"
+                          [ngModel]="sourceFieldTypes[field.name] || field.fieldType || 'text'"
+                          (ngModelChange)="onSourceFieldTypeChange(field.name, $event)"
+                          [disabled]="!isSourceFieldActive(field.name)"
+                          >
+                          @for (option of createFieldTypeOptions; track option) {
+                            <option [value]="option.value">
+                              {{ option.labelKey | translate }}
+                            </option>
+                          }
+                        </select>
+                      </div>
+                    }
+                  </div>
+                }
               </div>
-              <div class="status-row" *ngIf="job.totalItems">
-                <span>{{ 'import.progressLabel' | translate }}</span>
-                <span>{{ job.processedItems || 0 }}/{{ job.totalItems }}</span>
-              </div>
-              <div class="progress-bar" *ngIf="progressPercent !== null">
-                <div class="progress-fill" [style.width.%]="progressPercent"></div>
-              </div>
-              <p *ngIf="job.status === 'completed'" class="status-message">{{ 'import.completed' | translate }}</p>
-              <p *ngIf="job.status === 'failed'" class="status-message error">{{ job.errorMessage || ('import.failed' | translate) }}</p>
-            </div>
-          </section>
+              @if (sampleEntries.length > 0) {
+                <div class="sample-card">
+                  <h4>{{ 'import.sampleTitle' | translate }}</h4>
+                  @for (entry of sampleEntries; track entry) {
+                    <div class="sample-row" [class.inactive]="!isSourceFieldActive(entry[0])">
+                      <span class="sample-label">{{ entry[0] }}</span>
+                      <span class="sample-value">{{ entry[1] || ('import.emptyValue' | translate) }}</span>
+                    </div>
+                  }
+                </div>
+              }
+            </section>
+          }
 
-          <p *ngIf="errorMessage" class="error-text">{{ errorMessage | translate }}</p>
+          @if (mode === 'merge' && preview) {
+            <section class="mapping-block">
+              <h3>{{ 'import.mappingTitle' | translate }}</h3>
+              <p class="mapping-subtitle">{{ 'import.mappingSubtitle' | translate }}</p>
+              <div class="mapping-grid">
+                @for (field of preview.targetFields; track field) {
+                  <div class="mapping-row">
+                    <div class="mapping-target">
+                      <span class="target-name">{{ field.name }}</span>
+                      <span class="target-type">{{ field.fieldType || 'text' }}</span>
+                    </div>
+                    <select
+                      class="mapping-select"
+                      [value]="mapping[field.name] || ''"
+                      (change)="onMappingChange(field.name, $any($event.target).value)"
+                      >
+                      <option value="">{{ 'import.mappingSkip' | translate }}</option>
+                      @for (source of activeSourceFieldsList; track source) {
+                        <option [value]="source">
+                          {{ source }}
+                        </option>
+                      }
+                    </select>
+                  </div>
+                }
+              </div>
+            </section>
+          }
+
+          @if (job) {
+            <section class="job-block">
+              <h3>{{ 'import.statusTitle' | translate }}</h3>
+              <div class="status-card">
+                <div class="status-row">
+                  <span>{{ 'import.statusLabel' | translate }}</span>
+                  <span>{{ statusLabel(job.status) | translate }}</span>
+                </div>
+                @if (job.totalItems) {
+                  <div class="status-row">
+                    <span>{{ 'import.progressLabel' | translate }}</span>
+                    <span>{{ job.processedItems || 0 }}/{{ job.totalItems }}</span>
+                  </div>
+                }
+                @if (progressPercent !== null) {
+                  <div class="progress-bar">
+                    <div class="progress-fill" [style.width.%]="progressPercent"></div>
+                  </div>
+                }
+                @if (job.status === 'completed') {
+                  <p class="status-message">{{ 'import.completed' | translate }}</p>
+                }
+                @if (job.status === 'failed') {
+                  <p class="status-message error">{{ job.errorMessage || ('import.failed' | translate) }}</p>
+                }
+              </div>
+            </section>
+          }
+
+          @if (errorMessage) {
+            <p class="error-text">{{ errorMessage | translate }}</p>
+          }
         </div>
 
         <div class="modal-footer">
           <app-button variant="ghost" (click)="close()">{{ 'import.close' | translate }}</app-button>
-          <app-button
-            *ngIf="showProfileAction && job && (job.status === 'processing' || job.status === 'completed')"
-            variant="secondary"
-            (click)="goProfile.emit()"
-          >
-            {{ 'import.goToDecks' | translate }}
-          </app-button>
+          @if (showProfileAction && job && (job.status === 'processing' || job.status === 'completed')) {
+            <app-button
+              variant="secondary"
+              (click)="goProfile.emit()"
+              >
+              {{ 'import.goToDecks' | translate }}
+            </app-button>
+          }
           <app-button
             variant="primary"
             (click)="startImport()"
             [disabled]="!canStartImport || starting"
-          >
+            >
             {{ starting ? ('import.starting' | translate) : ('import.start' | translate) }}
           </app-button>
         </div>
       </div>
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .modal-overlay { position: fixed; inset: 0; background: rgba(8, 12, 22, 0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(12px) saturate(140%); padding: var(--spacing-md); overflow: hidden; }
       .modal-content { width: min(920px, calc(100vw - (2 * var(--spacing-md)))); max-height: calc(100dvh - (2 * var(--spacing-md))); margin: 0 auto; background: var(--color-surface-solid); border-radius: var(--border-radius-lg); border: 1px solid var(--glass-border); box-shadow: var(--shadow-lg); display: flex; flex-direction: column; overflow: hidden; }
@@ -313,6 +362,9 @@ type ImportFieldTypeOption = { value: string; labelKey: string };
     `]
 })
 export class ImportDeckModalComponent implements OnDestroy {
+    private importApi = inject(ImportApiService);
+    private reviewApi = inject(ReviewApiService);
+
     private static readonly MAX_DECK_NAME = 50;
     private static readonly MAX_DECK_DESCRIPTION = 200;
     private static readonly MAX_TAGS = 5;
@@ -360,11 +412,6 @@ export class ImportDeckModalComponent implements OnDestroy {
 
     private pollHandle: ReturnType<typeof setInterval> | null = null;
     private timeZoneApplied = false;
-
-    constructor(
-        private importApi: ImportApiService,
-        private reviewApi: ReviewApiService
-    ) {}
 
     get canStartImport(): boolean {
         if (!this.fileInfo || !this.preview || this.starting || this.uploading || this.previewing) {

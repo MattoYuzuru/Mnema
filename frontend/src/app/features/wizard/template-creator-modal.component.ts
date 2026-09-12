@@ -1,5 +1,5 @@
-import { Component, Output, EventEmitter } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { Component, Output, EventEmitter, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { ReactiveFormsModule, FormBuilder, FormGroup, FormArray, Validators } from '@angular/forms';
 import { TemplateApiService } from '../../core/services/template-api.service';
 import { CardTemplateDTO, CreateFieldTemplateRequest, CreateTemplateRequest } from '../../core/models/template.models';
@@ -21,8 +21,7 @@ interface FieldFormValue {
 
 @Component({
     selector: 'app-template-creator-modal',
-    standalone: true,
-    imports: [ReactiveFormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe],
+    imports: [ReactiveFormsModule, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe],
     template: `
     <div class="modal-overlay" (click)="onCancel()">
       <div class="modal-content" (click)="$event.stopPropagation()">
@@ -58,45 +57,47 @@ interface FieldFormValue {
             </div>
 
             <div formArrayName="fields" class="fields-list">
-              <div *ngFor="let fieldForm of fieldsArray.controls; let i = index" [formGroupName]="i" class="field-item">
-                <div class="field-number">{{ i + 1 }}</div>
-                <div class="field-inputs">
-                  <app-input
-                    [label]="'templateCreator.label' | translate"
-                    type="text"
-                    formControlName="label"
-                    [placeholder]="'templateCreator.labelPlaceholder' | translate"
-                    [hasError]="fieldForm.get('label')?.invalid && fieldForm.get('label')?.touched || false"
-                    [errorMessage]="fieldLabelErrorMessage($any(fieldForm))"
-                    [maxLength]="maxFieldLabel"
-                  ></app-input>
-                  <div class="field-row">
-                    <div class="select-group">
-                      <label>{{ 'templateCreator.type' | translate }}</label>
-                      <select formControlName="fieldType" class="field-select">
-                        <option value="text">{{ 'templateCreator.typeText' | translate }}</option>
-                        <option value="rich_text">{{ 'templateCreator.typeLongText' | translate }}</option>
-                        <option value="markdown">{{ 'templateCreator.typeMarkdown' | translate }}</option>
-                        <option value="image">{{ 'templateCreator.typeImage' | translate }}</option>
-                        <option value="audio">{{ 'templateCreator.typeAudio' | translate }}</option>
-                        <option value="video">{{ 'templateCreator.typeVideo' | translate }}</option>
-                      </select>
+              @for (fieldForm of fieldsArray.controls; track fieldForm; let i = $index) {
+                <div [formGroupName]="i" class="field-item">
+                  <div class="field-number">{{ i + 1 }}</div>
+                  <div class="field-inputs">
+                    <app-input
+                      [label]="'templateCreator.label' | translate"
+                      type="text"
+                      formControlName="label"
+                      [placeholder]="'templateCreator.labelPlaceholder' | translate"
+                      [hasError]="fieldForm.get('label')?.invalid && fieldForm.get('label')?.touched || false"
+                      [errorMessage]="fieldLabelErrorMessage($any(fieldForm))"
+                      [maxLength]="maxFieldLabel"
+                    ></app-input>
+                    <div class="field-row">
+                      <div class="select-group">
+                        <label>{{ 'templateCreator.type' | translate }}</label>
+                        <select formControlName="fieldType" class="field-select">
+                          <option value="text">{{ 'templateCreator.typeText' | translate }}</option>
+                          <option value="rich_text">{{ 'templateCreator.typeLongText' | translate }}</option>
+                          <option value="markdown">{{ 'templateCreator.typeMarkdown' | translate }}</option>
+                          <option value="image">{{ 'templateCreator.typeImage' | translate }}</option>
+                          <option value="audio">{{ 'templateCreator.typeAudio' | translate }}</option>
+                          <option value="video">{{ 'templateCreator.typeVideo' | translate }}</option>
+                        </select>
+                      </div>
+                      <label class="checkbox-label glass-checkbox"><input type="checkbox" formControlName="isOnFront" /> {{ 'templateCreator.showOnFront' | translate }}</label>
+                      <label class="checkbox-label glass-checkbox"><input type="checkbox" formControlName="isRequired" /> {{ 'templateCreator.required' | translate }}</label>
                     </div>
-                    <label class="checkbox-label glass-checkbox"><input type="checkbox" formControlName="isOnFront" /> {{ 'templateCreator.showOnFront' | translate }}</label>
-                    <label class="checkbox-label glass-checkbox"><input type="checkbox" formControlName="isRequired" /> {{ 'templateCreator.required' | translate }}</label>
+                    <app-input
+                      [label]="'templateCreator.helpText' | translate"
+                      type="text"
+                      formControlName="helpText"
+                      [placeholder]="'templateCreator.helpTextPlaceholder' | translate"
+                      [hasError]="fieldForm.get('helpText')?.invalid && fieldForm.get('helpText')?.touched || false"
+                      [errorMessage]="fieldHelpTextErrorMessage($any(fieldForm))"
+                      [maxLength]="maxFieldHelpText"
+                    ></app-input>
                   </div>
-                  <app-input
-                    [label]="'templateCreator.helpText' | translate"
-                    type="text"
-                    formControlName="helpText"
-                    [placeholder]="'templateCreator.helpTextPlaceholder' | translate"
-                    [hasError]="fieldForm.get('helpText')?.invalid && fieldForm.get('helpText')?.touched || false"
-                    [errorMessage]="fieldHelpTextErrorMessage($any(fieldForm))"
-                    [maxLength]="maxFieldHelpText"
-                  ></app-input>
+                  <app-button variant="ghost" size="sm" type="button" (click)="removeField(i)">{{ 'templateCreator.remove' | translate }}</app-button>
                 </div>
-                <app-button variant="ghost" size="sm" type="button" (click)="removeField(i)">{{ 'templateCreator.remove' | translate }}</app-button>
-              </div>
+              }
             </div>
           </div>
 
@@ -105,9 +106,11 @@ interface FieldFormValue {
             {{ 'templateCreator.makePublic' | translate }}
           </label>
 
-          <div *ngIf="validationMessage" class="validation-message">
-            {{ validationMessage }}
-          </div>
+          @if (validationMessage) {
+            <div class="validation-message">
+              {{ validationMessage }}
+            </div>
+          }
         </form>
 
         <div class="modal-actions">
@@ -116,7 +119,8 @@ interface FieldFormValue {
         </div>
       </div>
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(8, 12, 22, 0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(12px) saturate(140%); }
       .modal-content { background: var(--color-surface-solid); border-radius: var(--border-radius-lg); max-width: 700px; width: 90%; max-height: 90vh; overflow-y: auto; border: 1px solid var(--glass-border); box-shadow: var(--shadow-lg); scrollbar-width: thin; scrollbar-color: var(--glass-border-strong) transparent; }
@@ -172,6 +176,10 @@ interface FieldFormValue {
     `]
 })
 export class TemplateCreatorModalComponent {
+    private fb = inject(FormBuilder);
+    private templateApi = inject(TemplateApiService);
+    private i18n = inject(I18nService);
+
     private static readonly MAX_TEMPLATE_NAME = 50;
     private static readonly MAX_TEMPLATE_DESCRIPTION = 200;
     private static readonly MAX_FIELD_LABEL = 50;
@@ -188,7 +196,7 @@ export class TemplateCreatorModalComponent {
     validationMessage = '';
     private readonly draftKey = 'mnema_template_creator_draft';
 
-    constructor(private fb: FormBuilder, private templateApi: TemplateApiService, private i18n: I18nService) {
+    constructor() {
         this.form = this.fb.group({
             name: ['', [Validators.required, Validators.maxLength(TemplateCreatorModalComponent.MAX_TEMPLATE_NAME)]],
             description: ['', [Validators.maxLength(TemplateCreatorModalComponent.MAX_TEMPLATE_DESCRIPTION)]],
