@@ -183,6 +183,8 @@ jobs:
         run: ./scripts/test-purge-rehearsal-integration.sh
 
   build-and-push:
+    # No infrastructure: restore only through a reviewed reactivation PR.
+    if: ${{ false }}
     needs:
       - backend-quality
       - frontend-quality
@@ -407,6 +409,7 @@ jobs:
           classification: release-identifier
 
   render-release:
+    if: ${{ false }}
     needs: build-and-push
     runs-on: ubuntu-latest
     permissions:

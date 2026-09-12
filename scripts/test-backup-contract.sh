@@ -155,10 +155,9 @@ grep -Fq 'name: Refuse a busy restore boundary' "$RECOVERY_WORKFLOW"
 grep -Fq 'get configmap mnema-restore-boundary' "$RECOVERY_WORKFLOW"
 grep -Fq 'get configmap kube-root-ca.crt' "$RECOVERY_WORKFLOW"
 grep -Fq 'timeout-minutes: 210' "$RECOVERY_WORKFLOW"
-if ! grep -Eq '^    if: \$\{\{ always\(\) \}\}$' "$RECOVERY_WORKFLOW"; then
-  echo 'Recovery job must survive cancellation long enough to evaluate bounded cleanup' >&2
-  exit 1
-fi
+# Hosted recovery is inert while the server is unavailable. Its cleanup steps
+# remain tested below; restore the cancellation-safe job guard on reactivation.
+grep -Fq 'if: ${{ false }}' "$RECOVERY_WORKFLOW"
 grep -A2 -F 'name: Wait for restore and validate reconciliation evidence' "$RECOVERY_WORKFLOW" | \
   grep -Fq 'if: ${{ success() && !cancelled() }}'
 grep -Fq 'restore_deadline_epoch=$(($(date -u +%s) + 7200))' "$RECOVERY_WORKFLOW"
