@@ -1,6 +1,6 @@
-import { Component, Output, EventEmitter, OnInit, ElementRef, ViewChild } from '@angular/core';
+import { Component, Output, EventEmitter, OnInit, ElementRef, ViewChild, inject, ChangeDetectionStrategy } from '@angular/core';
 import { ReactiveFormsModule, FormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
-import { NgFor, NgIf } from '@angular/common';
+
 import { DeckApiService } from '../../../core/services/deck-api.service';
 import { DeckWizardStateService } from '../deck-wizard-state.service';
 import { MediaApiService } from '../../../core/services/media-api.service';
@@ -15,8 +15,7 @@ import { I18nService } from '../../../core/services/i18n.service';
 
 @Component({
     selector: 'app-deck-metadata-step',
-    standalone: true,
-    imports: [ReactiveFormsModule, FormsModule, NgFor, NgIf, ButtonComponent, InputComponent, MediaUploadComponent, TranslatePipe],
+    imports: [ReactiveFormsModule, FormsModule, ButtonComponent, InputComponent, MediaUploadComponent, TranslatePipe],
     template: `
     <div class="step">
       <h2>{{ 'wizard.deckInformation' | translate }}</h2>
@@ -47,9 +46,11 @@ import { I18nService } from '../../../core/services/i18n.service';
             rows="4"
             [attr.maxlength]="maxDescriptionLength"
           ></textarea>
-          <div *ngIf="form.get('description')?.invalid && form.get('description')?.touched" class="error-message">
-            {{ descriptionErrorMessage() }}
-          </div>
+          @if (form.get('description')?.invalid && form.get('description')?.touched) {
+            <div class="error-message">
+              {{ descriptionErrorMessage() }}
+            </div>
+          }
         </div>
         <app-media-upload
           [label]="'wizard.deckIcon' | translate"
@@ -60,9 +61,11 @@ import { I18nService } from '../../../core/services/i18n.service';
         <div class="form-group">
           <label>{{ 'wizard.language' | translate }}</label>
           <select formControlName="language" class="language-select">
-            <option *ngFor="let option of deckLanguageOptions" [value]="option.code">
-              {{ option.labelKey | translate }}
-            </option>
+            @for (option of deckLanguageOptions; track option) {
+              <option [value]="option.code">
+                {{ option.labelKey | translate }}
+              </option>
+            }
           </select>
         </div>
         <div class="form-group">
@@ -75,11 +78,17 @@ import { I18nService } from '../../../core/services/i18n.service';
             (keydown.enter)="addTag($event)"
             [placeholder]="'wizard.tagPlaceholder' | translate"
             [attr.maxlength]="maxTagLength"
-          />
-          <div *ngIf="tags.length > 0" class="tags-list">
-            <span *ngFor="let tag of tags; let i = index" class="tag-chip">{{ tag }} <button type="button" (click)="removeTag(i)">×</button></span>
-          </div>
-          <p *ngIf="tagError" class="error-message">{{ tagError }}</p>
+            />
+          @if (tags.length > 0) {
+            <div class="tags-list">
+              @for (tag of tags; track tag; let i = $index) {
+                <span class="tag-chip">{{ tag }} <button type="button" (click)="removeTag(i)">×</button></span>
+              }
+            </div>
+          }
+          @if (tagError) {
+            <p class="error-message">{{ tagError }}</p>
+          }
         </div>
         <label class="checkbox-label glass-checkbox">
           <input type="checkbox" formControlName="isPublic" />
@@ -95,7 +104,8 @@ import { I18nService } from '../../../core/services/i18n.service';
         <app-button variant="primary" [disabled]="form.invalid || saving" (click)="onNext()">{{ saving ? ('wizard.creating' | translate) : ('wizard.nextAddContent' | translate) }}</app-button>
       </div>
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .step { display: flex; flex-direction: column; gap: var(--spacing-lg); min-width: 0; }
       .form { display: flex; flex-direction: column; gap: var(--spacing-lg); }
@@ -148,6 +158,13 @@ import { I18nService } from '../../../core/services/i18n.service';
     `]
 })
 export class DeckMetadataStepComponent implements OnInit {
+    private fb = inject(FormBuilder);
+    private deckApi = inject(DeckApiService);
+    private wizardState = inject(DeckWizardStateService);
+    private mediaApi = inject(MediaApiService);
+    private i18n = inject(I18nService);
+    private reviewApi = inject(ReviewApiService);
+
     @Output() next = new EventEmitter<void>();
     @Output() back = new EventEmitter<void>();
     @ViewChild('descriptionInput') descriptionInput?: ElementRef<HTMLTextAreaElement>;
@@ -167,14 +184,7 @@ export class DeckMetadataStepComponent implements OnInit {
     saving = false;
     iconValue: CardContentValue | null = null;
 
-    constructor(
-        private fb: FormBuilder,
-        private deckApi: DeckApiService,
-        private wizardState: DeckWizardStateService,
-        private mediaApi: MediaApiService,
-        private i18n: I18nService,
-        private reviewApi: ReviewApiService
-    ) {
+    constructor() {
         this.form = this.fb.group({
             name: ['', [Validators.required, Validators.maxLength(DeckMetadataStepComponent.MAX_NAME_LENGTH)]],
             description: ['', [Validators.maxLength(DeckMetadataStepComponent.MAX_DESCRIPTION_LENGTH)]],

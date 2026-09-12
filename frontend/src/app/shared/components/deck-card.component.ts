@@ -1,5 +1,5 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
-import { NgIf, NgFor } from '@angular/common';
+import { Component, Input, Output, EventEmitter, ChangeDetectionStrategy } from '@angular/core';
+
 import { PublicDeckDTO } from '../../core/models/public-deck.models';
 import { UserDeckDTO } from '../../core/models/user-deck.models';
 import { TagChipComponent } from './tag-chip.component';
@@ -8,14 +8,17 @@ import { TranslatePipe } from '../pipes/translate.pipe';
 
 @Component({
     selector: 'app-deck-card',
-    standalone: true,
-    imports: [NgIf, NgFor, TagChipComponent, ButtonComponent, TranslatePipe],
+    imports: [TagChipComponent, ButtonComponent, TranslatePipe],
     template: `
     <div class="deck-card glass">
       <div class="deck-card-header">
         <div class="deck-card-icon clickable" (click)="open.emit()">
-          <img *ngIf="iconUrl" [src]="iconUrl" alt="Deck icon" class="deck-icon-image" />
-          <span *ngIf="!iconUrl" class="deck-icon-placeholder">📚</span>
+          @if (iconUrl) {
+            <img [src]="iconUrl" alt="Deck icon" class="deck-icon-image" />
+          }
+          @if (!iconUrl) {
+            <span class="deck-icon-placeholder">📚</span>
+          }
         </div>
         <h3 class="deck-name clickable" (click)="open.emit()">{{ displayName }}</h3>
       </div>
@@ -23,58 +26,70 @@ import { TranslatePipe } from '../pipes/translate.pipe';
       <div class="deck-card-body">
         <p class="deck-description">{{ formatDescription(displayDescription) }}</p>
 
-        <div *ngIf="tags.length > 0" class="deck-tags">
-          <app-tag-chip
-            *ngFor="let tag of tags"
-            [text]="tag"
-          ></app-tag-chip>
-        </div>
+        @if (tags.length > 0) {
+          <div class="deck-tags">
+            @for (tag of tags; track tag) {
+              <app-tag-chip
+                [text]="tag"
+              ></app-tag-chip>
+            }
+          </div>
+        }
 
-        <div *ngIf="stats" class="deck-stats">
-          <span class="stat">{{ stats.cardCount || 0 }} {{ 'deckCard.cards' | translate }}</span>
-          <span *ngIf="stats.dueToday" class="stat stat-due">{{ stats.dueToday }} {{ 'deckCard.dueToday' | translate }}</span>
-        </div>
+        @if (stats) {
+          <div class="deck-stats">
+            <span class="stat">{{ stats.cardCount || 0 }} {{ 'deckCard.cards' | translate }}</span>
+            @if (stats.dueToday) {
+              <span class="stat stat-due">{{ stats.dueToday }} {{ 'deckCard.dueToday' | translate }}</span>
+            }
+          </div>
+        }
       </div>
 
       <div class="deck-card-actions">
-        <app-button
-          *ngIf="showFork"
-          variant="secondary"
-          size="md"
-          (click)="fork.emit()"
-        >
-          {{ 'button.fork' | translate }}
-        </app-button>
+        @if (showFork) {
+          <app-button
+            variant="secondary"
+            size="md"
+            (click)="fork.emit()"
+            >
+            {{ 'button.fork' | translate }}
+          </app-button>
+        }
 
-        <app-button
-          *ngIf="showUpdate"
-          variant="secondary"
-          size="md"
-          (click)="update.emit()"
-        >
-          {{ 'button.update' | translate }}
-        </app-button>
+        @if (showUpdate) {
+          <app-button
+            variant="secondary"
+            size="md"
+            (click)="update.emit()"
+            >
+            {{ 'button.update' | translate }}
+          </app-button>
+        }
 
-        <app-button
-          *ngIf="showLearn"
-          variant="primary"
-          size="md"
-          (click)="learn.emit()"
-        >
-          {{ 'button.learn' | translate }}
-        </app-button>
+        @if (showLearn) {
+          <app-button
+            variant="primary"
+            size="md"
+            (click)="learn.emit()"
+            >
+            {{ 'button.learn' | translate }}
+          </app-button>
+        }
 
-        <app-button
-          *ngIf="showBrowse"
-          variant="ghost"
-          size="md"
-          (click)="browse.emit()"
-        >
-          {{ 'button.browse' | translate }}
-        </app-button>
+        @if (showBrowse) {
+          <app-button
+            variant="ghost"
+            size="md"
+            (click)="browse.emit()"
+            >
+            {{ 'button.browse' | translate }}
+          </app-button>
+        }
       </div>
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .deck-card {

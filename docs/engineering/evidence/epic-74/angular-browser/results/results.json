@@ -1,0 +1,54 @@
+{
+  "browser": "153.0.8010.36",
+  "mode": "built Angular22; mocked API/external assets; no real Identity or device/AT claim",
+  "results": [
+    {
+      "width": 1440,
+      "initialChunks": [
+        "/app-config.js",
+        "/chunk-CQePdCvi.js",
+        "/polyfills-LVNOU2XZ.js",
+        "/main-EHNCGIPY.js"
+      ],
+      "lazyAdditionalChunks": [
+        "/chunk-DLlskz0G.js"
+      ],
+      "authRedirect": true,
+      "identifierInput": true,
+      "focused": {
+        "tag": "INPUT",
+        "type": "password"
+      },
+      "publicRoute": true,
+      "errors": [],
+      "layout": {
+        "width": 1440,
+        "scroll": 1584
+      }
+    },
+    {
+      "width": 390,
+      "initialChunks": [
+        "/app-config.js",
+        "/chunk-CQePdCvi.js",
+        "/polyfills-LVNOU2XZ.js",
+        "/main-EHNCGIPY.js"
+      ],
+      "lazyAdditionalChunks": [
+        "/chunk-DLlskz0G.js"
+      ],
+      "authRedirect": true,
+      "identifierInput": true,
+      "focused": {
+        "tag": "INPUT",
+        "type": "password"
+      },
+      "publicRoute": true,
+      "errors": [],
+      "layout": {
+        "width": 390,
+        "scroll": 390
+      }
+    }
+  ]
+}

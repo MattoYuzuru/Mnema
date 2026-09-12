@@ -1,4 +1,5 @@
 import { ChangeDetectorRef } from '@angular/core';
+import { TestBed } from '@angular/core/testing';
 
 import { I18nService } from '../../core/services/i18n.service';
 import { TranslatePipe } from './translate.pipe';
@@ -12,7 +13,13 @@ describe('TranslatePipe', () => {
         localStorage.removeItem('mnema_language');
         i18n = new I18nService();
         cdr = jasmine.createSpyObj<ChangeDetectorRef>('ChangeDetectorRef', ['markForCheck']);
-        pipe = new TranslatePipe(i18n, cdr);
+        TestBed.configureTestingModule({
+            providers: [
+                { provide: I18nService, useValue: i18n },
+                { provide: ChangeDetectorRef, useValue: cdr }
+            ]
+        });
+        pipe = TestBed.runInInjectionContext(() => new TranslatePipe());
     });
 
     it('interpolates params and keeps them after language changes', () => {

@@ -1,46 +1,92 @@
 import { Routes } from '@angular/router';
 import { HomePageComponent } from './home-page.component';
 import { LoginPageComponent } from './login-page.component';
-import { ProfilePageComponent } from './profile-page.component';
 import { PrivacyPageComponent } from './privacy-page.component';
 import { TermsPageComponent } from './terms-page.component';
-import { MyStudyComponent } from './features/my-study/my-study.component';
-import { DecksListComponent } from './features/decks/decks-list.component';
-import { DeckProfileComponent } from './features/decks/deck-profile.component';
-import { CardBrowserComponent } from './features/decks/card-browser.component';
-import { ReviewSessionComponent } from './features/decks/review-session.component';
-import { DuplicateReviewPageComponent } from './features/decks/duplicate-review-page.component';
-import { PublicDecksCatalogComponent } from './features/public-decks/public-decks-catalog.component';
-import { PublicCardBrowserComponent } from './features/public-decks/public-card-browser.component';
-import { TemplatesListComponent } from './features/templates/templates-list.component';
-import { PublicTemplatesComponent } from './features/templates/public-templates.component';
-import { TemplateProfileComponent } from './features/templates/template-profile.component';
-import { DeckWizardComponent } from './features/wizard/deck-wizard.component';
-import { VisualTemplateBuilderComponent } from './features/wizard/visual-template-builder.component';
-import { SettingsComponent } from './features/settings/settings.component';
-import { AdminPanelComponent } from './features/admin/admin-panel.component';
 import { authGuard } from './core/guards/auth.guard';
 
 export const appRoutes: Routes = [
     { path: '', component: HomePageComponent },
     { path: 'login', component: LoginPageComponent },
     { path: 'register', component: LoginPageComponent },
-    { path: 'profile', component: ProfilePageComponent, canActivate: [authGuard] },
-    { path: 'my-study', component: MyStudyComponent, canActivate: [authGuard] },
-    { path: 'decks', component: DecksListComponent, canActivate: [authGuard] },
-    { path: 'decks/:userDeckId', component: DeckProfileComponent, canActivate: [authGuard] },
-    { path: 'decks/:userDeckId/browse', component: CardBrowserComponent, canActivate: [authGuard] },
-    { path: 'decks/:userDeckId/duplicates-review', component: DuplicateReviewPageComponent, canActivate: [authGuard] },
-    { path: 'decks/:userDeckId/review', component: ReviewSessionComponent, canActivate: [authGuard] },
-    { path: 'create-deck', component: DeckWizardComponent, canActivate: [authGuard] },
-    { path: 'wizard/visual-template-builder', component: VisualTemplateBuilderComponent, canActivate: [authGuard] },
-    { path: 'public-decks', component: PublicDecksCatalogComponent },
-    { path: 'public-decks/:deckId/browse', component: PublicCardBrowserComponent },
-    { path: 'templates/:templateId', component: TemplateProfileComponent, canActivate: [authGuard] },
-    { path: 'templates', component: TemplatesListComponent, canActivate: [authGuard] },
-    { path: 'public-templates', component: PublicTemplatesComponent, canActivate: [authGuard] },
-    { path: 'settings', component: SettingsComponent, canActivate: [authGuard] },
-    { path: 'admin', component: AdminPanelComponent, canActivate: [authGuard] },
+    {
+        path: 'profile',
+        loadComponent: () => import('./profile-page.component').then(module => module.ProfilePageComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'my-study',
+        loadComponent: () => import('./features/my-study/my-study.component').then(module => module.MyStudyComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'decks',
+        loadComponent: () => import('./features/decks/decks-list.component').then(module => module.DecksListComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'decks/:userDeckId',
+        loadComponent: () => import('./features/decks/deck-profile.component').then(module => module.DeckProfileComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'decks/:userDeckId/browse',
+        loadComponent: () => import('./features/decks/card-browser.component').then(module => module.CardBrowserComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'decks/:userDeckId/duplicates-review',
+        loadComponent: () => import('./features/decks/duplicate-review-page.component').then(module => module.DuplicateReviewPageComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'decks/:userDeckId/review',
+        loadComponent: () => import('./features/decks/review-session.component').then(module => module.ReviewSessionComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'create-deck',
+        loadComponent: () => import('./features/wizard/deck-wizard.component').then(module => module.DeckWizardComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'wizard/visual-template-builder',
+        loadComponent: () => import('./features/wizard/visual-template-builder.component').then(module => module.VisualTemplateBuilderComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'public-decks',
+        loadComponent: () => import('./features/public-decks/public-decks-catalog.component').then(module => module.PublicDecksCatalogComponent)
+    },
+    {
+        path: 'public-decks/:deckId/browse',
+        loadComponent: () => import('./features/public-decks/public-card-browser.component').then(module => module.PublicCardBrowserComponent)
+    },
+    {
+        path: 'templates/:templateId',
+        loadComponent: () => import('./features/templates/template-profile.component').then(module => module.TemplateProfileComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'templates',
+        loadComponent: () => import('./features/templates/templates-list.component').then(module => module.TemplatesListComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'public-templates',
+        loadComponent: () => import('./features/templates/public-templates.component').then(module => module.PublicTemplatesComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'settings',
+        loadComponent: () => import('./features/settings/settings.component').then(module => module.SettingsComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'admin',
+        loadComponent: () => import('./features/admin/admin-panel.component').then(module => module.AdminPanelComponent),
+        canActivate: [authGuard]
+    },
     { path: 'privacy', component: PrivacyPageComponent },
     { path: 'terms', component: TermsPageComponent },
     { path: '**', redirectTo: '' }

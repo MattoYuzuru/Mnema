@@ -1,7 +1,15 @@
+import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { of } from 'rxjs';
 
+import { AuthService } from '../../auth.service';
+import { UserApiService } from '../../user-api.service';
+import { AiApiService } from '../../core/services/ai-api.service';
+import { DeckApiService } from '../../core/services/deck-api.service';
 import { SettingsComponent } from './settings.component';
 import { I18nService } from '../../core/services/i18n.service';
+import { PreferencesService } from '../../core/services/preferences.service';
+import { ThemeService } from '../../core/services/theme.service';
 import { ToastService } from '../../core/services/toast.service';
 
 describe('SettingsComponent', () => {
@@ -13,17 +21,20 @@ describe('SettingsComponent', () => {
         deckApi = jasmine.createSpyObj('DeckApiService', ['patchDeck', 'getDeletedDecks', 'hardDeleteDeck']);
         toast = jasmine.createSpyObj<ToastService>('ToastService', ['success', 'error', 'info', 'warning', 'show', 'dismiss']);
 
-        component = new SettingsComponent(
-            {} as any,
-            new I18nService(),
-            {} as any,
-            deckApi,
-            jasmine.createSpyObj('AiApiService', ['listProviders', 'createProvider', 'deleteProvider']),
-            jasmine.createSpyObj('UserApiService', ['getMe', 'deleteMe']),
-            jasmine.createSpyObj('AuthService', ['logout']),
-            jasmine.createSpyObj('Router', ['navigate']),
-            toast
-        );
+        TestBed.configureTestingModule({
+            providers: [
+                { provide: ThemeService, useValue: {} },
+                { provide: I18nService, useValue: new I18nService() },
+                { provide: PreferencesService, useValue: {} },
+                { provide: DeckApiService, useValue: deckApi },
+                { provide: AiApiService, useValue: jasmine.createSpyObj('AiApiService', ['listProviders', 'createProvider', 'deleteProvider']) },
+                { provide: UserApiService, useValue: jasmine.createSpyObj('UserApiService', ['getMe', 'deleteMe']) },
+                { provide: AuthService, useValue: jasmine.createSpyObj('AuthService', ['logout']) },
+                { provide: Router, useValue: jasmine.createSpyObj('Router', ['navigate']) },
+                { provide: ToastService, useValue: toast }
+            ]
+        });
+        component = TestBed.runInInjectionContext(() => new SettingsComponent());
     });
 
     it('shows a toast after restoring an archived deck', () => {

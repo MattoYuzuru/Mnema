@@ -1,5 +1,5 @@
-import { Component, DestroyRef, Input, OnChanges, OnInit, SimpleChanges, computed, inject, signal } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { Component, DestroyRef, Input, OnChanges, OnInit, SimpleChanges, computed, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ReviewApiService } from '../../core/services/review-api.service';
 import {
@@ -26,8 +26,7 @@ interface ChartBarPoint {
 
 @Component({
     selector: 'app-review-stats-panel',
-    standalone: true,
-    imports: [NgIf, NgFor, TranslatePipe],
+    imports: [TranslatePipe],
     template: `
     <section class="stats-panel" [class.compact]="compact" [class.flat]="flat">
       <header class="stats-header">
@@ -77,10 +76,14 @@ interface ChartBarPoint {
         <button type="button" class="apply-btn" (click)="reload()">{{ 'stats.apply' | translate }}</button>
       </div>
 
-      <div *ngIf="loading()" class="loading">{{ 'stats.loading' | translate }}</div>
-      <div *ngIf="error()" class="error" role="alert">{{ error()! | translate }}</div>
+      @if (loading()) {
+        <div class="loading">{{ 'stats.loading' | translate }}</div>
+      }
+      @if (error()) {
+        <div class="error" role="alert">{{ error()! | translate }}</div>
+      }
 
-      <ng-container *ngIf="!loading() && stats() as data">
+      @if (!loading() && stats(); as data) {
         <article class="streak-card">
           <div class="streak-badge" aria-hidden="true">🔥</div>
           <div class="streak-content">
@@ -101,7 +104,6 @@ interface ChartBarPoint {
             </div>
           </div>
         </article>
-
         <div class="kpi-grid">
           <article class="kpi-card">
             <span class="kpi-label">{{ 'stats.kpiReviews' | translate }}</span>
@@ -129,39 +131,38 @@ interface ChartBarPoint {
             <small>{{ 'stats.kpiTodayReviews' | translate }} {{ todayReviewCount() }}</small>
           </article>
         </div>
-
         <article class="chart-card">
           <div class="chart-header">
             <h3>{{ 'stats.dailyTrend' | translate }}</h3>
             <p>{{ (metric() === 'reviews' ? 'stats.dailyTrendReviews' : 'stats.dailyTrendTime') | translate }}</p>
           </div>
           <div class="chart-scroll"
-               [class.dragging]="isDragging('daily')"
-               (pointerdown)="onScrollPointerDown($event, 'daily')"
-               (pointermove)="onScrollPointerMove($event, 'daily')"
-               (pointerup)="onScrollPointerUp($event, 'daily')"
-               (pointercancel)="onScrollPointerUp($event, 'daily')"
-               (pointerleave)="onScrollPointerUp($event, 'daily')">
+            [class.dragging]="isDragging('daily')"
+            (pointerdown)="onScrollPointerDown($event, 'daily')"
+            (pointermove)="onScrollPointerMove($event, 'daily')"
+            (pointerup)="onScrollPointerUp($event, 'daily')"
+            (pointercancel)="onScrollPointerUp($event, 'daily')"
+            (pointerleave)="onScrollPointerUp($event, 'daily')">
             <div class="bar-chart daily" [style.--daily-cols]="dailyBars().length">
-              <button
-                type="button"
-                class="bar-item"
-                *ngFor="let point of dailyBars(); let i = index; trackBy: trackByLabel"
-                [style.height.%]="heightPercent(point.value, dailyMax())"
-                [attr.aria-label]="point.tooltip"
-                [class.active]="hoverDailyIndex() === i"
-                (mouseenter)="hoverDailyIndex.set(i)"
-                (focus)="hoverDailyIndex.set(i)"
-                (mouseleave)="hoverDailyIndex.set(-1)"
-                (blur)="hoverDailyIndex.set(-1)"
-              >
-                <span class="bar-label">{{ point.secondaryLabel || '' }}</span>
-              </button>
+              @for (point of dailyBars(); track trackByLabel(i, point); let i = $index) {
+                <button
+                  type="button"
+                  class="bar-item"
+                  [style.height.%]="heightPercent(point.value, dailyMax())"
+                  [attr.aria-label]="point.tooltip"
+                  [class.active]="hoverDailyIndex() === i"
+                  (mouseenter)="hoverDailyIndex.set(i)"
+                  (focus)="hoverDailyIndex.set(i)"
+                  (mouseleave)="hoverDailyIndex.set(-1)"
+                  (blur)="hoverDailyIndex.set(-1)"
+                  >
+                  <span class="bar-label">{{ point.secondaryLabel || '' }}</span>
+                </button>
+              }
             </div>
           </div>
           <p class="chart-footnote" [class.muted]="!dailyHoverPoint()">{{ dailyFootnote() }}</p>
         </article>
-
         <div class="chart-grid">
           <article class="chart-card">
             <div class="chart-header">
@@ -169,111 +170,119 @@ interface ChartBarPoint {
               <p>{{ 'stats.hourlyLoadHint' | translate }}</p>
             </div>
             <div class="chart-scroll"
-                 [class.dragging]="isDragging('hourly')"
-                 (pointerdown)="onScrollPointerDown($event, 'hourly')"
-                 (pointermove)="onScrollPointerMove($event, 'hourly')"
-                 (pointerup)="onScrollPointerUp($event, 'hourly')"
-                 (pointercancel)="onScrollPointerUp($event, 'hourly')"
-                 (pointerleave)="onScrollPointerUp($event, 'hourly')">
+              [class.dragging]="isDragging('hourly')"
+              (pointerdown)="onScrollPointerDown($event, 'hourly')"
+              (pointermove)="onScrollPointerMove($event, 'hourly')"
+              (pointerup)="onScrollPointerUp($event, 'hourly')"
+              (pointercancel)="onScrollPointerUp($event, 'hourly')"
+              (pointerleave)="onScrollPointerUp($event, 'hourly')">
               <div class="bar-chart hourly" [style.--hourly-cols]="hourlyBars().length">
-                <button
-                  type="button"
-                  class="bar-item"
-                  *ngFor="let point of hourlyBars(); let i = index; trackBy: trackByLabel"
-                  [style.height.%]="heightPercent(point.value, hourlyMax())"
-                  [class.active]="hoverHourlyIndex() === i"
-                  [attr.aria-label]="point.tooltip"
-                  (mouseenter)="hoverHourlyIndex.set(i)"
-                  (focus)="hoverHourlyIndex.set(i)"
-                  (mouseleave)="hoverHourlyIndex.set(-1)"
-                  (blur)="hoverHourlyIndex.set(-1)"
-                >
-                  <span class="bar-label">{{ point.secondaryLabel || '' }}</span>
-                </button>
+                @for (point of hourlyBars(); track trackByLabel(i, point); let i = $index) {
+                  <button
+                    type="button"
+                    class="bar-item"
+                    [style.height.%]="heightPercent(point.value, hourlyMax())"
+                    [class.active]="hoverHourlyIndex() === i"
+                    [attr.aria-label]="point.tooltip"
+                    (mouseenter)="hoverHourlyIndex.set(i)"
+                    (focus)="hoverHourlyIndex.set(i)"
+                    (mouseleave)="hoverHourlyIndex.set(-1)"
+                    (blur)="hoverHourlyIndex.set(-1)"
+                    >
+                    <span class="bar-label">{{ point.secondaryLabel || '' }}</span>
+                  </button>
+                }
               </div>
             </div>
             <p class="chart-footnote" [class.muted]="!hourlyHoverPoint()">{{ hourlyFootnote() }}</p>
           </article>
-
           <article class="chart-card">
             <div class="chart-header">
               <h3>{{ 'stats.dueForecast' | translate }}</h3>
               <p>{{ 'stats.dueForecastHint' | translate }}</p>
             </div>
             <div class="chart-scroll"
-                 [class.dragging]="isDragging('forecast')"
-                 (pointerdown)="onScrollPointerDown($event, 'forecast')"
-                 (pointermove)="onScrollPointerMove($event, 'forecast')"
-                 (pointerup)="onScrollPointerUp($event, 'forecast')"
-                 (pointercancel)="onScrollPointerUp($event, 'forecast')"
-                 (pointerleave)="onScrollPointerUp($event, 'forecast')">
+              [class.dragging]="isDragging('forecast')"
+              (pointerdown)="onScrollPointerDown($event, 'forecast')"
+              (pointermove)="onScrollPointerMove($event, 'forecast')"
+              (pointerup)="onScrollPointerUp($event, 'forecast')"
+              (pointercancel)="onScrollPointerUp($event, 'forecast')"
+              (pointerleave)="onScrollPointerUp($event, 'forecast')">
               <div class="bar-chart forecast" [style.--forecast-cols]="forecastBars().length">
-                <button
-                  type="button"
-                  class="bar-item"
-                  *ngFor="let point of forecastBars(); let i = index; trackBy: trackByLabel"
-                  [style.height.%]="heightPercent(point.value, forecastMax())"
-                  [class.active]="hoverForecastIndex() === i"
-                  [attr.aria-label]="point.tooltip"
-                  (mouseenter)="hoverForecastIndex.set(i)"
-                  (focus)="hoverForecastIndex.set(i)"
-                  (mouseleave)="hoverForecastIndex.set(-1)"
-                  (blur)="hoverForecastIndex.set(-1)"
-                >
-                  <span class="bar-label">{{ point.secondaryLabel || '' }}</span>
-                </button>
+                @for (point of forecastBars(); track trackByLabel(i, point); let i = $index) {
+                  <button
+                    type="button"
+                    class="bar-item"
+                    [style.height.%]="heightPercent(point.value, forecastMax())"
+                    [class.active]="hoverForecastIndex() === i"
+                    [attr.aria-label]="point.tooltip"
+                    (mouseenter)="hoverForecastIndex.set(i)"
+                    (focus)="hoverForecastIndex.set(i)"
+                    (mouseleave)="hoverForecastIndex.set(-1)"
+                    (blur)="hoverForecastIndex.set(-1)"
+                    >
+                    <span class="bar-label">{{ point.secondaryLabel || '' }}</span>
+                  </button>
+                }
               </div>
             </div>
             <p class="chart-footnote" [class.muted]="!forecastHoverPoint()">{{ forecastFootnote() }}</p>
           </article>
         </div>
-
         <div class="breakdown-grid">
           <article class="breakdown-card">
             <h3>{{ 'stats.answerButtons' | translate }}</h3>
             <ul>
-              <li *ngFor="let point of data.ratings; trackBy: trackByRating">
-                <span class="label">{{ point.rating }}</span>
-                <span class="value">{{ point.reviewCount }} ({{ point.ratioPercent }}%)</span>
-              </li>
+              @for (point of data.ratings; track trackByRating($index, point)) {
+                <li>
+                  <span class="label">{{ point.rating }}</span>
+                  <span class="value">{{ point.reviewCount }} ({{ point.ratioPercent }}%)</span>
+                </li>
+              }
             </ul>
           </article>
           <article class="breakdown-card">
             <h3>{{ 'stats.sources' | translate }}</h3>
             <ul>
-              <li *ngFor="let point of data.sources; trackBy: trackBySource">
-                <span class="label">{{ point.source }}</span>
-                <span class="value">{{ point.reviewCount }} ({{ point.ratioPercent }}%)</span>
-              </li>
+              @for (point of data.sources; track trackBySource($index, point)) {
+                <li>
+                  <span class="label">{{ point.source }}</span>
+                  <span class="value">{{ point.reviewCount }} ({{ point.ratioPercent }}%)</span>
+                </li>
+              }
             </ul>
           </article>
           <article class="breakdown-card sessions-card">
             <h3>{{ 'stats.todaySessionsTitle' | translate }}</h3>
             <p class="sessions-hint">{{ 'stats.todaySessionsHint' | translate }}</p>
-            <table *ngIf="data.todaySessions.length > 0; else emptyTodaySessions" class="sessions-table">
-              <thead>
-                <tr>
-                  <th>{{ 'stats.tableSession' | translate }}</th>
-                  <th>{{ 'stats.tableDuration' | translate }}</th>
-                  <th>{{ 'stats.tableReviews' | translate }}</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr *ngFor="let session of data.todaySessions; let i = index; trackBy: trackBySession">
-                  <td>{{ formatSessionRange(session) }}</td>
-                  <td>{{ humanizeMinutes(session.durationMinutes) }}</td>
-                  <td>{{ session.reviewCount }}</td>
-                </tr>
-              </tbody>
-            </table>
-            <ng-template #emptyTodaySessions>
+            @if (data.todaySessions.length > 0) {
+              <table class="sessions-table">
+                <thead>
+                  <tr>
+                    <th>{{ 'stats.tableSession' | translate }}</th>
+                    <th>{{ 'stats.tableDuration' | translate }}</th>
+                    <th>{{ 'stats.tableReviews' | translate }}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (session of data.todaySessions; track trackBySession(i, session); let i = $index) {
+                    <tr>
+                      <td>{{ formatSessionRange(session) }}</td>
+                      <td>{{ humanizeMinutes(session.durationMinutes) }}</td>
+                      <td>{{ session.reviewCount }}</td>
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            } @else {
               <p class="sessions-empty">{{ 'stats.todaySessionsEmpty' | translate }}</p>
-            </ng-template>
+            }
           </article>
         </div>
-      </ng-container>
+      }
     </section>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       :host {

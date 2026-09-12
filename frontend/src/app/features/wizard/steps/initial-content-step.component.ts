@@ -1,5 +1,5 @@
-import { Component, Output, EventEmitter, OnInit } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { Component, Output, EventEmitter, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
 import { TemplateApiService } from '../../../core/services/template-api.service';
 import { CardApiService } from '../../../core/services/card-api.service';
@@ -15,59 +15,70 @@ import { I18nService } from '../../../core/services/i18n.service';
 
 @Component({
     selector: 'app-initial-content-step',
-    standalone: true,
-    imports: [ReactiveFormsModule, NgFor, NgIf, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, TranslatePipe],
+    imports: [ReactiveFormsModule, ButtonComponent, InputComponent, TextareaComponent, MediaUploadComponent, TranslatePipe],
     template: `
     <div class="step">
       <h2>{{ 'wizard.addCards' | translate }}</h2>
       <p class="subtitle">{{ 'wizard.addCardsSubtitle' | translate }}</p>
-      <div *ngIf="loading">{{ 'wizard.loadingTemplate' | translate }}</div>
-      <div *ngIf="!loading">
-        <form [formGroup]="cardForm" class="card-form">
-          <ng-container *ngFor="let field of template?.fields">
-            <app-media-upload
-              *ngIf="isMediaField(field)"
-              [label]="field.label + (field.isRequired ? ' *' : '')"
-              [fieldType]="getMediaFieldType(field)"
-              [value]="getMediaValue(field.name)"
-              (valueChange)="onMediaChange(field.name, $event)"
-            ></app-media-upload>
-            <app-input
-              *ngIf="!isMediaField(field) && field.fieldType !== 'rich_text' && field.fieldType !== 'markdown'"
-              [label]="field.label + (field.isRequired ? ' *' : '')"
-              type="text"
-              [formControlName]="field.name"
-              [placeholder]="field.helpText || ''"
-              [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
-              [errorMessage]="'wizard.required' | translate"
-            ></app-input>
-            <app-textarea
-              *ngIf="!isMediaField(field) && (field.fieldType === 'rich_text' || field.fieldType === 'markdown')"
-              [label]="field.label + (field.isRequired ? ' *' : '')"
-              [formControlName]="field.name"
-              [placeholder]="field.helpText || ''"
-              [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
-              [errorMessage]="'wizard.required' | translate"
-            ></app-textarea>
-          </ng-container>
-          <div class="button-container">
-            <app-button variant="secondary" [disabled]="cardForm.invalid" (click)="addCard()">{{ 'wizard.addCard' | translate }}</app-button>
-          </div>
-        </form>
-        <div *ngIf="pendingCards.length > 0" class="pending-cards">
-          <h4>{{ 'wizard.pendingCards' | translate }} ({{ pendingCards.length }})</h4>
-          <div *ngFor="let card of pendingCards; let i = index" class="card-item">
-            <span>{{ getCardPreview(card) }}</span>
-            <app-button variant="ghost" size="sm" (click)="removeCard(i)">{{ 'wizard.remove' | translate }}</app-button>
-          </div>
+      @if (loading) {
+        <div>{{ 'wizard.loadingTemplate' | translate }}</div>
+      }
+      @if (!loading) {
+        <div>
+          <form [formGroup]="cardForm" class="card-form">
+            @for (field of template?.fields; track field) {
+              @if (isMediaField(field)) {
+                <app-media-upload
+                  [label]="field.label + (field.isRequired ? ' *' : '')"
+                  [fieldType]="getMediaFieldType(field)"
+                  [value]="getMediaValue(field.name)"
+                  (valueChange)="onMediaChange(field.name, $event)"
+                ></app-media-upload>
+              }
+              @if (!isMediaField(field) && field.fieldType !== 'rich_text' && field.fieldType !== 'markdown') {
+                <app-input
+                  [label]="field.label + (field.isRequired ? ' *' : '')"
+                  type="text"
+                  [formControlName]="field.name"
+                  [placeholder]="field.helpText || ''"
+                  [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
+                  [errorMessage]="'wizard.required' | translate"
+                ></app-input>
+              }
+              @if (!isMediaField(field) && (field.fieldType === 'rich_text' || field.fieldType === 'markdown')) {
+                <app-textarea
+                  [label]="field.label + (field.isRequired ? ' *' : '')"
+                  [formControlName]="field.name"
+                  [placeholder]="field.helpText || ''"
+                  [hasError]="cardForm.get(field.name)?.invalid && cardForm.get(field.name)?.touched || false"
+                  [errorMessage]="'wizard.required' | translate"
+                ></app-textarea>
+              }
+            }
+            <div class="button-container">
+              <app-button variant="secondary" [disabled]="cardForm.invalid" (click)="addCard()">{{ 'wizard.addCard' | translate }}</app-button>
+            </div>
+          </form>
+          @if (pendingCards.length > 0) {
+            <div class="pending-cards">
+              <h4>{{ 'wizard.pendingCards' | translate }} ({{ pendingCards.length }})</h4>
+              @for (card of pendingCards; track card; let i = $index) {
+                <div class="card-item">
+                  <span>{{ getCardPreview(card) }}</span>
+                  <app-button variant="ghost" size="sm" (click)="removeCard(i)">{{ 'wizard.remove' | translate }}</app-button>
+                </div>
+              }
+            </div>
+          }
         </div>
-      </div>
+      }
       <div class="step-actions">
         <app-button variant="ghost" (click)="onBack()">{{ 'wizard.back' | translate }}</app-button>
         <app-button variant="primary" [disabled]="saving" (click)="onNext()">{{ saving ? ('wizard.saving' | translate) : ('wizard.nextReview' | translate) }}</app-button>
       </div>
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .step { display: flex; flex-direction: column; gap: var(--spacing-lg); min-width: 0; }
       .card-form { display: flex; flex-direction: column; gap: var(--spacing-md); }
@@ -100,6 +111,12 @@ import { I18nService } from '../../../core/services/i18n.service';
     `]
 })
 export class InitialContentStepComponent implements OnInit {
+    private fb = inject(FormBuilder);
+    private templateApi = inject(TemplateApiService);
+    private cardApi = inject(CardApiService);
+    private wizardState = inject(DeckWizardStateService);
+    private i18n = inject(I18nService);
+
     @Output() next = new EventEmitter<void>();
     @Output() back = new EventEmitter<void>();
     loading = true;
@@ -108,13 +125,7 @@ export class InitialContentStepComponent implements OnInit {
     cardForm: FormGroup;
     pendingCards: PendingCard[] = [];
 
-    constructor(
-        private fb: FormBuilder,
-        private templateApi: TemplateApiService,
-        private cardApi: CardApiService,
-        private wizardState: DeckWizardStateService,
-        private i18n: I18nService
-    ) {
+    constructor() {
         this.cardForm = this.fb.group({});
     }
 

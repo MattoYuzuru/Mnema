@@ -1,6 +1,6 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectionStrategy } from '@angular/core';
 import { Router } from '@angular/router';
-import { NgIf, NgSwitch, NgSwitchCase } from '@angular/common';
+
 import { Subscription } from 'rxjs';
 import { DeckWizardStateService, DeckWizardState } from './deck-wizard-state.service';
 import { WizardStepperComponent } from '../../shared/components/wizard-stepper.component';
@@ -13,22 +13,32 @@ import { I18nService } from '../../core/services/i18n.service';
 
 @Component({
     selector: 'app-deck-wizard',
-    standalone: true,
-    imports: [NgIf, NgSwitch, NgSwitchCase, WizardStepperComponent, TemplateSelectionStepComponent, DeckMetadataStepComponent, InitialContentStepComponent, ReviewStepComponent, TranslatePipe],
+    imports: [WizardStepperComponent, TemplateSelectionStepComponent, DeckMetadataStepComponent, InitialContentStepComponent, ReviewStepComponent, TranslatePipe],
     template: `
     <div class="deck-wizard">
       <header class="wizard-header">
         <h1>{{ 'wizard.createNewDeck' | translate }}</h1>
         <app-wizard-stepper [steps]="steps" [currentStep]="state.currentStep - 1"></app-wizard-stepper>
       </header>
-      <div class="deck-wizard-content" [ngSwitch]="state.currentStep">
-        <app-template-selection-step *ngSwitchCase="1" (next)="wizardState.nextStep()"></app-template-selection-step>
-        <app-deck-metadata-step *ngSwitchCase="2" (next)="wizardState.nextStep()" (back)="wizardState.previousStep()"></app-deck-metadata-step>
-        <app-initial-content-step *ngSwitchCase="3" (next)="wizardState.nextStep()" (back)="wizardState.previousStep()"></app-initial-content-step>
-        <app-review-step *ngSwitchCase="4" (finish)="onFinish($event)" (back)="wizardState.previousStep()"></app-review-step>
+      <div class="deck-wizard-content">
+        @switch (state.currentStep) {
+          @case (1) {
+            <app-template-selection-step (next)="wizardState.nextStep()"></app-template-selection-step>
+          }
+          @case (2) {
+            <app-deck-metadata-step (next)="wizardState.nextStep()" (back)="wizardState.previousStep()"></app-deck-metadata-step>
+          }
+          @case (3) {
+            <app-initial-content-step (next)="wizardState.nextStep()" (back)="wizardState.previousStep()"></app-initial-content-step>
+          }
+          @case (4) {
+            <app-review-step (finishRequested)="onFinish($event)" (back)="wizardState.previousStep()"></app-review-step>
+          }
+        }
       </div>
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .deck-wizard { width: min(56rem, 100%); max-width: 56rem; margin: 0 auto; padding: var(--spacing-xl); }
       .wizard-header { margin-bottom: var(--spacing-xl); }
@@ -62,6 +72,10 @@ import { I18nService } from '../../core/services/i18n.service';
     `]
 })
 export class DeckWizardComponent implements OnInit, OnDestroy {
+    wizardState = inject(DeckWizardStateService);
+    private router = inject(Router);
+    private i18n = inject(I18nService);
+
     state: DeckWizardState;
     private subscription?: Subscription;
 
@@ -75,7 +89,7 @@ export class DeckWizardComponent implements OnInit, OnDestroy {
         ];
     }
 
-    constructor(public wizardState: DeckWizardStateService, private router: Router, private i18n: I18nService) {
+    constructor() {
         this.state = this.wizardState.getCurrentState();
     }
 

@@ -9,11 +9,12 @@ import hashlib
 import re
 import sys
 from dataclasses import dataclass
-from html.parser import HTMLParser
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.parse import urljoin, urlparse
 from urllib.request import Request, urlopen
+
+from frontend_release_assets import hashed_assets
 
 
 JSON_LD_HASH = "sha256-VR45d+4Tpmsv5J0dHbmYAic5u7F3Ttjk763rpC0sZHI="
@@ -30,18 +31,6 @@ COMMON_HEADERS = {
 
 class ContractError(RuntimeError):
     pass
-
-
-class ScriptCollector(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__()
-        self.sources: list[str] = []
-
-    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag == "script":
-            source = dict(attrs).get("src")
-            if source:
-                self.sources.append(source)
 
 
 @dataclass(frozen=True)
@@ -226,22 +215,22 @@ def verify_hosted(args: argparse.Namespace) -> None:
         raise ContractError("public index was not checked")
     index_html = index_response.body.decode("utf-8")
     verify_index(index_html, args.base_url)
-    collector = ScriptCollector()
-    collector.feed(index_html)
-    main_sources = [source for source in collector.sources if re.search(r"(?:^|/)main\.[0-9a-f]+\.js$", source)]
-    if len(main_sources) != 1:
-        raise ContractError(f"{args.base_url}: hashed main bundle was not found")
-    asset_url = urljoin(args.base_url.rstrip("/") + "/", main_sources[0])
-    asset_response = fetch(asset_url, 200)
-    verify_header_values(
-        asset_response.headers,
-        mode=mode,
-        auth_origin=args.auth_origin,
-        storage_origin=args.storage_origin,
-        context=asset_url,
-    )
-    if "public, immutable" not in asset_response.headers.get("cache-control", ""):
-        raise ContractError(f"{asset_url}: hashed asset is not immutable")
+    try:
+        assets = hashed_assets(index_html)
+    except ValueError as error:
+        raise ContractError(f"{args.base_url}: {error}") from error
+    for asset in assets:
+        asset_url = urljoin(args.base_url.rstrip("/") + "/", asset)
+        asset_response = fetch(asset_url, 200)
+        verify_header_values(
+            asset_response.headers,
+            mode=mode,
+            auth_origin=args.auth_origin,
+            storage_origin=args.storage_origin,
+            context=asset_url,
+        )
+        if "public, immutable" not in asset_response.headers.get("cache-control", ""):
+            raise ContractError(f"{asset_url}: hashed asset is not immutable")
 
 
 def parser() -> argparse.ArgumentParser:

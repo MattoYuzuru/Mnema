@@ -1,6 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
 import { Router, RouterLink } from '@angular/router';
-import { NgIf, NgFor } from '@angular/common';
+
 import { forkJoin } from 'rxjs';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { TemplateApiService } from '../../core/services/template-api.service';
@@ -14,80 +14,84 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-my-study',
-    standalone: true,
     imports: [
-        NgIf,
-        NgFor,
-        RouterLink,
-        DeckCardComponent,
-        TemplateCardComponent,
-        MemoryTipLoaderComponent,
-        EmptyStateComponent,
-        TranslatePipe
-    ],
+    RouterLink,
+    DeckCardComponent,
+    TemplateCardComponent,
+    MemoryTipLoaderComponent,
+    EmptyStateComponent,
+    TranslatePipe
+],
     template: `
-    <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
+    @if (loading) {
+      <app-memory-tip-loader></app-memory-tip-loader>
+    }
 
-    <div *ngIf="!loading" class="my-study">
-      <header class="page-header">
-        <h1>{{ 'myStudy.title' | translate }}</h1>
-      </header>
-
-      <section class="summary-section">
-        <div class="section-header">
-          <h2>{{ 'myStudy.myDecks' | translate }}</h2>
-          <a routerLink="/decks" class="section-link">{{ 'myStudy.viewAllDecks' | translate }} -></a>
-        </div>
-
-        <div *ngIf="decks.length > 0" class="decks-grid">
-          <app-deck-card
-            *ngFor="let deck of decks"
-            [userDeck]="deck"
-            [showLearn]="true"
-            [showBrowse]="true"
-            (open)="openDeck(deck.userDeckId)"
-            (learn)="learnDeck(deck.userDeckId)"
-            (browse)="browseDeck(deck.userDeckId)"
-          ></app-deck-card>
-        </div>
-
-        <app-empty-state
-          *ngIf="decks.length === 0"
-          icon="D"
-          [title]="'decks.noDecks' | translate"
-          [description]="'decks.noDecksDescription' | translate"
-          [actionText]="'home.browsePublicDecks' | translate"
-          (action)="goToPublicDecks()"
-        ></app-empty-state>
-      </section>
-
-      <section class="summary-section">
-        <div class="section-header">
-          <h2>{{ 'myStudy.myTemplates' | translate }}</h2>
-          <a routerLink="/templates" class="section-link">{{ 'myStudy.viewAllTemplates' | translate }} -></a>
-        </div>
-
-        <div *ngIf="templates.length > 0" class="templates-grid">
-          <app-template-card
-            *ngFor="let template of templates"
-            [template]="template"
-            [showActions]="false"
-            [showVisibility]="true"
-            [publicLabel]="'templates.public' | translate"
-            [privateLabel]="'templates.private' | translate"
-            (click)="openTemplate(template.templateId)"
-          ></app-template-card>
-        </div>
-
-        <app-empty-state
-          *ngIf="templates.length === 0"
-          icon="T"
-          [title]="'templates.noTemplates' | translate"
-          [description]="'templates.noTemplatesDescription' | translate"
-        ></app-empty-state>
-      </section>
-    </div>
-  `,
+    @if (!loading) {
+      <div class="my-study">
+        <header class="page-header">
+          <h1>{{ 'myStudy.title' | translate }}</h1>
+        </header>
+        <section class="summary-section">
+          <div class="section-header">
+            <h2>{{ 'myStudy.myDecks' | translate }}</h2>
+            <a routerLink="/decks" class="section-link">{{ 'myStudy.viewAllDecks' | translate }} -></a>
+          </div>
+          @if (decks.length > 0) {
+            <div class="decks-grid">
+              @for (deck of decks; track deck) {
+                <app-deck-card
+                  [userDeck]="deck"
+                  [showLearn]="true"
+                  [showBrowse]="true"
+                  (open)="openDeck(deck.userDeckId)"
+                  (learn)="learnDeck(deck.userDeckId)"
+                  (browse)="browseDeck(deck.userDeckId)"
+                ></app-deck-card>
+              }
+            </div>
+          }
+          @if (decks.length === 0) {
+            <app-empty-state
+              icon="D"
+              [title]="'decks.noDecks' | translate"
+              [description]="'decks.noDecksDescription' | translate"
+              [actionText]="'home.browsePublicDecks' | translate"
+              (action)="goToPublicDecks()"
+            ></app-empty-state>
+          }
+        </section>
+        <section class="summary-section">
+          <div class="section-header">
+            <h2>{{ 'myStudy.myTemplates' | translate }}</h2>
+            <a routerLink="/templates" class="section-link">{{ 'myStudy.viewAllTemplates' | translate }} -></a>
+          </div>
+          @if (templates.length > 0) {
+            <div class="templates-grid">
+              @for (template of templates; track template) {
+                <app-template-card
+                  [template]="template"
+                  [showActions]="false"
+                  [showVisibility]="true"
+                  [publicLabel]="'templates.public' | translate"
+                  [privateLabel]="'templates.private' | translate"
+                  (click)="openTemplate(template.templateId)"
+                ></app-template-card>
+              }
+            </div>
+          }
+          @if (templates.length === 0) {
+            <app-empty-state
+              icon="T"
+              [title]="'templates.noTemplates' | translate"
+              [description]="'templates.noTemplatesDescription' | translate"
+            ></app-empty-state>
+          }
+        </section>
+      </div>
+    }
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .my-study {
         max-width: 72rem;
@@ -182,18 +186,16 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
     `]
 })
 export class MyStudyComponent implements OnInit {
+    private deckApi = inject(DeckApiService);
+    private templateApi = inject(TemplateApiService);
+    private router = inject(Router);
+
     private static readonly DECKS_PREVIEW_LIMIT = 6;
     private static readonly TEMPLATES_PREVIEW_LIMIT = 4;
 
     loading = true;
     decks: UserDeckDTO[] = [];
     templates: CardTemplateDTO[] = [];
-
-    constructor(
-        private deckApi: DeckApiService,
-        private templateApi: TemplateApiService,
-        private router: Router
-    ) {}
 
     ngOnInit(): void {
         forkJoin({

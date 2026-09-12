@@ -1,10 +1,8 @@
 name: Staging Deploy
 
 on:
-  workflow_run:
-    workflows: [Main CI]
-    types: [completed]
-    branches: [main]
+  # Inert restoration blueprint: no callers or standalone trigger.
+  workflow_call:
 
 permissions: {}
 
@@ -14,6 +12,7 @@ concurrency:
 
 jobs:
   validate-main-ci:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -115,6 +114,7 @@ jobs:
           fi
 
   deploy-staging:
+    if: ${{ false }}
     needs: validate-main-ci
     runs-on: ubuntu-latest
     timeout-minutes: 90

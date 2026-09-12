@@ -1,7 +1,17 @@
 import { FormBuilder } from '@angular/forms';
+import { TestBed } from '@angular/core/testing';
+import { ActivatedRoute, Router } from '@angular/router';
 import { of } from 'rxjs';
 
+import { UserApiService } from '../../user-api.service';
+import { AiApiService } from '../../core/services/ai-api.service';
+import { DeckApiService } from '../../core/services/deck-api.service';
 import { I18nService } from '../../core/services/i18n.service';
+import { ImportApiService } from '../../core/services/import-api.service';
+import { MediaApiService } from '../../core/services/media-api.service';
+import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
+import { ReviewApiService } from '../../core/services/review-api.service';
+import { TemplateApiService } from '../../core/services/template-api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { DeckProfileComponent } from './deck-profile.component';
 
@@ -20,21 +30,24 @@ describe('DeckProfileComponent', () => {
         toast = jasmine.createSpyObj<ToastService>('ToastService', ['success', 'error', 'info', 'warning', 'show', 'dismiss']);
         i18n = new I18nService();
 
-        component = new DeckProfileComponent(
-            { snapshot: { paramMap: { get: () => '' } } } as any,
-            jasmine.createSpyObj('Router', ['navigate']),
-            deckApi,
-            jasmine.createSpyObj('PublicDeckApiService', ['patchPublicDeck', 'getPublicDeck', 'deletePublicDeck']),
-            jasmine.createSpyObj('TemplateApiService', ['getTemplate']),
-            reviewApi,
-            jasmine.createSpyObj('UserApiService', ['getMe']),
-            new FormBuilder(),
-            jasmine.createSpyObj('ImportApiService', ['createExportJob', 'getJob']),
-            jasmine.createSpyObj('MediaApiService', ['resolve']),
-            jasmine.createSpyObj('AiApiService', ['listJobs', 'getJob', 'getJobResult', 'cancelJob']),
-            i18n,
-            toast
-        );
+        TestBed.configureTestingModule({
+            providers: [
+                { provide: ActivatedRoute, useValue: { snapshot: { paramMap: { get: () => '' } } } },
+                { provide: Router, useValue: jasmine.createSpyObj('Router', ['navigate']) },
+                { provide: DeckApiService, useValue: deckApi },
+                { provide: PublicDeckApiService, useValue: jasmine.createSpyObj('PublicDeckApiService', ['patchPublicDeck', 'getPublicDeck', 'deletePublicDeck']) },
+                { provide: TemplateApiService, useValue: jasmine.createSpyObj('TemplateApiService', ['getTemplate']) },
+                { provide: ReviewApiService, useValue: reviewApi },
+                { provide: UserApiService, useValue: jasmine.createSpyObj('UserApiService', ['getMe']) },
+                { provide: FormBuilder, useValue: new FormBuilder() },
+                { provide: ImportApiService, useValue: jasmine.createSpyObj('ImportApiService', ['createExportJob', 'getJob']) },
+                { provide: MediaApiService, useValue: jasmine.createSpyObj('MediaApiService', ['resolve']) },
+                { provide: AiApiService, useValue: jasmine.createSpyObj('AiApiService', ['listJobs', 'getJob', 'getJobResult', 'cancelJob']) },
+                { provide: I18nService, useValue: i18n },
+                { provide: ToastService, useValue: toast }
+            ]
+        });
+        component = TestBed.runInInjectionContext(() => new DeckProfileComponent());
     });
 
     it('shows a success toast after saving deck changes', () => {
