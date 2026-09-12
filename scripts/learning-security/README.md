@@ -1,6 +1,6 @@
 # Identity → Learning black-box fixture
 
-Runs both real Spring Boot applications against one disposable PostgreSQL 18 instance, with separate database roles/schemas. The only Learning target is the intentionally nonexistent `/api/_blackbox`: 404 with an authorized bearer proves the request passed authentication/authorization; the same request without a bearer returns 401. No production test endpoint is installed.
+Runs both real Spring Boot applications against one disposable PostgreSQL 18 instance, with separate database roles/schemas. Authentication-only probes use intentionally nonexistent `/api/_blackbox`: 404 with an authorized bearer proves authentication/authorization; anonymous returns401. The #188 product sequence also exercises real private `/api/decks`: create/read/list, exact retry, conditional metadata save, stale/missing versions, concurrent writers and cross-owner isolation. Revocation additionally probes the real Deck read route. No production test endpoint is installed.
 
 ## Run
 
