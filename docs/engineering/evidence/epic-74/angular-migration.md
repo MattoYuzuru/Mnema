@@ -378,3 +378,32 @@ Actual Identity flows, physical mobile devices, IME and screen-reader testing ar
 not claimed by this mocked smoke. The new paper/authoring UI and connected E2E
 remain separate #74 work. The first entry transfer estimate falls from the Angular18
 baseline 289.59 kB to 160.76 kB; it is a bundle estimate, not measured user latency.
+
+## Hosted CI fixture registry failure
+
+PR180's first hosted frontend job passed lint,52tests,build and all release/header
+checks, but its final disposable purge rehearsal failed downloading the existing
+MinIO fixture from Docker Hub (`pull access denied`, exit125). Local33-step prepush
+and premerge runs on `eccfd49` passed because that exact image was already cached.
+
+Only the test's registry changes to `quay.io/minio/minio`; the immutable index digest
+`sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e`
+is unchanged. Host HTTPS fetch plus SHA256 verification confirms the exact index,
+whose arm64 and amd64 descriptors resolve on Quay. The vendor's
+[version-specific README](https://github.com/minio/minio/blob/RELEASE.2025-09-07T16-13-09Z/README.md)
+names that registry. No image version/license, app dependency, production registry,
+CI gate or fixture behavior changes. This preserves a historical test fixture;
+it is not a new recommendation to deploy the now-archived MinIO community server.
+
+The local Colima daemon cannot reach Quay (TCP timeout), although host HTTPS can.
+Task-scoped host download/OCI import must validate every manifest/config/layer digest
+and size before local execution; no global network/proxy change or unverified image
+substitution is acceptable. Corrected-candidate local and hosted gates are required
+again; the earlier green local runs do not make the failed hosted job green.
+
+The host-only recovery verified the original 969-byte index, the 2081-byte arm64
+manifest `sha256:9966a92a734f9411e32f4f41d7d9d826fcdc0f68c4e20b70295bd4e7c11f8a2f`,
+config and all 9 layer digests/sizes. A 57,579,520-byte partial-platform OCI archive
+preserved the original index. `docker image load --platform linux/arm64` and an
+exact Quay RepoDigest inspection passed. The inert `minio --version` reports
+`RELEASE.2025-09-07T16-13-09Z`, AGPLv3. No shared container or network setting changed.
