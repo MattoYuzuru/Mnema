@@ -16,6 +16,7 @@ concurrency:
 
 jobs:
   rollback-drill:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:

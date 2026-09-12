@@ -106,8 +106,10 @@ assert_secret_prefix "$PRODUCTION_WORKFLOW" PROD_
 assert_secret_prefix "$STAGING_WORKFLOW" STAGING_
 assert_secret_prefix "$ROLLBACK_DRILL_WORKFLOW" STAGING_
 
-grep -Fq 'workflows: [Main CI]' "$STAGING_WORKFLOW"
-grep -Fq 'workflows: [Staging Deploy]' "$PRODUCTION_WORKFLOW"
+# No-infrastructure mode disconnects the automatic chain; dormant job bodies
+# retain their predecessor/artifact/security contracts for reviewed restoration.
+grep -Fq 'workflow_dispatch:' "$STAGING_WORKFLOW"
+grep -Fq 'workflow_dispatch:' "$PRODUCTION_WORKFLOW"
 staging_gate=$(sed -n '/^  validate-main-ci:/,/^  deploy-staging:/p' "$STAGING_WORKFLOW")
 production_gate=$(sed -n '/^  validate-staging-deploy:/,/^  preview-production:/p' "$PRODUCTION_WORKFLOW")
 staging_deploy_header=$(sed -n '/^  deploy-staging:/,/^    steps:/p' "$STAGING_WORKFLOW")
@@ -128,10 +130,7 @@ if printf '%s\n%s\n' "$staging_gate" "$production_gate" | grep -Fq 'environment:
 fi
 printf '%s\n' "$staging_deploy_header" | grep -Fq 'needs: validate-main-ci'
 printf '%s\n' "$production_preview_header" | grep -Fq 'needs: validate-staging-deploy'
-if printf '%s\n' "$staging_deploy_header" | grep -Eq '^    if:'; then
-  echo 'Environment jobs must not turn a rejected predecessor into a successful skipped workflow' >&2
-  exit 1
-fi
+printf '%s\n' "$staging_deploy_header" | grep -Fq 'if: ${{ false }}'
 grep -Fq 'RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}' "$STAGING_WORKFLOW"
 test "$(grep -c 'RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}' "$PRODUCTION_WORKFLOW")" -eq 3
 test "$(grep -c 'run-id: ${{ github.event.workflow_run.id }}' "$STAGING_WORKFLOW")" -eq 4
