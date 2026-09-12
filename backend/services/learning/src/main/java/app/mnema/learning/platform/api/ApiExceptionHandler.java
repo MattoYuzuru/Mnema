@@ -24,6 +24,16 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
 
     private static final Logger log = LoggerFactory.getLogger(ApiExceptionHandler.class);
 
+    @ExceptionHandler(InvalidRequestException.class)
+    ResponseEntity<Object> handleInvalidRequest(InvalidRequestException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.INVALID_REQUEST, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(ResourceNotFoundException.class)
+    ResponseEntity<Object> handleResourceNotFound(ResourceNotFoundException exception, HttpServletRequest request) {
+        return response(ApiErrorCode.RESOURCE_NOT_FOUND, request.getRequestURI(), new HttpHeaders());
+    }
+
     @ExceptionHandler(IdempotencyConflictException.class)
     ResponseEntity<Object> handleIdempotencyConflict(
             IdempotencyConflictException exception,
@@ -96,6 +106,7 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         HttpHeaders responseHeaders = new HttpHeaders();
         responseHeaders.putAll(headers);
         responseHeaders.setContentType(MediaType.APPLICATION_PROBLEM_JSON);
+        responseHeaders.setCacheControl("private, no-store");
         return new ResponseEntity<>(problem, responseHeaders, responseStatus);
     }
 }

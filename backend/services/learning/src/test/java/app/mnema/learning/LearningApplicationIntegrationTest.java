@@ -29,7 +29,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
 
     private static final Set<String> LEGACY_ROUTE_PREFIXES = Set.of(
-            "/auth", "/users", "/me", "/admin", "/decks", "/templates", "/review",
+            "/auth", "/users", "/me", "/admin", "/templates", "/review",
             "/search", "/uploads", "/imports", "/providers", "/jobs", "/internal"
     );
 
@@ -64,7 +64,8 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                 .filteredOn(migration -> migration.getVersion() != null)
                 .extracting(migration -> migration.getVersion().getVersion() + ":" + migration.getDescription()
                         + ":" + migration.getState().name())
-                .containsExactly("1:platform foundation:SUCCESS", "2:immutable storage kernel:SUCCESS");
+                .containsExactly("1:platform foundation:SUCCESS", "2:immutable storage kernel:SUCCESS",
+                        "3:private deck revisions:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -121,7 +122,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
 
     @Test
     void routeInventoryHasNoVersionOrLegacyAliases() throws Exception {
-        assertThat(applicationContext.getBeanNamesForAnnotation(RestController.class)).isEmpty();
+        assertThat(applicationContext.getBeanNamesForAnnotation(RestController.class)).containsExactly("deckController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
                 .allSatisfy(route -> {
