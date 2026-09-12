@@ -182,6 +182,13 @@ When implementing:
 
 ### Task-scoped autonomy and merge boundary
 
+- Current owner-approved delivery mode (2026-09-12): the shared server is unavailable.
+  Follow [local development delivery](docs/operations/local-development-delivery.md).
+  Keep full local/hosted quality gates and protected squash; do not require staging,
+  SSH or deployment to complete local implementation. Do not run or wait for
+  operational workflows, including historical reruns. Reactivation is a separate
+  reviewed infrastructure task; no deployment or data recovery is claimed.
+
 - An explicit request to deliver an issue, epic, or change end to end authorizes the ordinary in-scope workflow: create a feature branch, edit, test, commit, push that branch, open or update its pull request, monitor CI, fix failures, and push follow-up commits. If the request also says to merge, auto-merge, or ship the result, it authorizes squash-merging that pull request after every required gate passes. Do not pause for repeated approval as the branch, PR number, or head SHA becomes known, and do not restate the authorization in routine updates.
 - Treat that authorization as one finite task mandate, not standing permission for unrelated work. Ask only when a product or architecture choice would materially change the outcome, required credentials or permissions are missing, the scope or external effect expands, or another actor changes the pull request beyond the approved task.
 - Before merge, re-read the current PR head and rules, require an up-to-date branch, resolved review threads, green `backend-quality` and `frontend-quality`, and the full repository quality gate required above on the exact commit. Merge only through the protected pull request with squash; never push directly to `main`, bypass protection, force-push, or weaken/delete the ruleset.

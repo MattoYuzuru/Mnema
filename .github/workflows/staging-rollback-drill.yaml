@@ -1,12 +1,8 @@
 name: Staging Rollback Drill
 
 on:
-  workflow_dispatch:
-    inputs:
-      confirmation:
-        description: Type RUN_STAGING_ROLLBACK_DRILL to apply a deliberately broken staging release
-        required: true
-        type: string
+  # Inert restoration blueprint: no callers or standalone trigger.
+  workflow_call:
 
 permissions: {}
 
@@ -16,6 +12,7 @@ concurrency:
 
 jobs:
   rollback-drill:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     permissions:
@@ -36,7 +33,8 @@ jobs:
     steps:
       - name: Validate explicit staging-only confirmation
         env:
-          CONFIRMATION: ${{ inputs.confirmation }}
+          # Bind a reviewed input only as part of infrastructure reactivation.
+          CONFIRMATION: ''
         run: |
           if [ "$GITHUB_REF" != refs/heads/main ]; then
             echo '::error::The rollback drill may run only from main.'
