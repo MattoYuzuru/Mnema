@@ -1,6 +1,6 @@
-import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy } from '@angular/core';
+import { Component, OnInit, ViewChild, ElementRef, AfterViewInit, OnDestroy, inject, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { NgIf, NgFor } from '@angular/common';
+
 import { catchError } from 'rxjs/operators';
 import { forkJoin, of, firstValueFrom, Subscription } from 'rxjs';
 import { AuthService } from '../../auth.service';
@@ -17,40 +17,48 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-public-decks-catalog',
-    standalone: true,
-    imports: [NgIf, NgFor, DeckCardComponent, MemoryTipLoaderComponent, EmptyStateComponent, TranslatePipe],
+    imports: [DeckCardComponent, MemoryTipLoaderComponent, EmptyStateComponent, TranslatePipe],
     template: `
-    <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
+    @if (loading) {
+      <app-memory-tip-loader></app-memory-tip-loader>
+    }
 
-    <div *ngIf="!loading" class="public-decks-catalog">
-      <header class="page-header">
-        <h1>{{ 'publicDecks.title' | translate }}</h1>
-        <p class="subtitle">{{ 'publicDecks.subtitle' | translate }}</p>
-      </header>
-
-      <div *ngIf="decks.length > 0" class="decks-list">
-        <app-deck-card
-          *ngFor="let deck of filteredDecks"
-          [publicDeck]="deck"
-          [iconUrl]="deckIcons.get(deck.deckId) || null"
-          [showFork]="canForkDeck(deck)"
-          [showBrowse]="true"
-          (open)="openDeck(deck.deckId)"
-          (fork)="forkDeck(deck.deckId)"
-          (browse)="browseDeck(deck.deckId)"
-        ></app-deck-card>
-        <div #sentinel class="sentinel"></div>
-        <div *ngIf="loadingMore" class="loading-more">Loading more...</div>
+    @if (!loading) {
+      <div class="public-decks-catalog">
+        <header class="page-header">
+          <h1>{{ 'publicDecks.title' | translate }}</h1>
+          <p class="subtitle">{{ 'publicDecks.subtitle' | translate }}</p>
+        </header>
+        @if (decks.length > 0) {
+          <div class="decks-list">
+            @for (deck of filteredDecks; track deck) {
+              <app-deck-card
+                [publicDeck]="deck"
+                [iconUrl]="deckIcons.get(deck.deckId) || null"
+                [showFork]="canForkDeck(deck)"
+                [showBrowse]="true"
+                (open)="openDeck(deck.deckId)"
+                (fork)="forkDeck(deck.deckId)"
+                (browse)="browseDeck(deck.deckId)"
+              ></app-deck-card>
+            }
+            <div #sentinel class="sentinel"></div>
+            @if (loadingMore) {
+              <div class="loading-more">Loading more...</div>
+            }
+          </div>
+        }
+        @if (filteredDecks.length === 0) {
+          <app-empty-state
+            icon="🌐"
+            [title]="searchQuery ? ('publicDecks.noResults' | translate) : ('home.noPublicDecks' | translate)"
+            [description]="searchQuery ? ('publicDecks.noResultsDescription' | translate) : ('home.noPublicDecksDescription' | translate)"
+          ></app-empty-state>
+        }
       </div>
-
-      <app-empty-state
-        *ngIf="filteredDecks.length === 0"
-        icon="🌐"
-        [title]="searchQuery ? ('publicDecks.noResults' | translate) : ('home.noPublicDecks' | translate)"
-        [description]="searchQuery ? ('publicDecks.noResultsDescription' | translate) : ('home.noPublicDecksDescription' | translate)"
-      ></app-empty-state>
-    </div>
-  `,
+    }
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .public-decks-catalog {
         max-width: 72rem;
@@ -125,6 +133,15 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
     `]
 })
 export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDestroy {
+    auth = inject(AuthService);
+    private userApi = inject(UserApiService);
+    private deckApi = inject(DeckApiService);
+    private publicDeckApi = inject(PublicDeckApiService);
+    private reviewApi = inject(ReviewApiService);
+    private mediaApi = inject(MediaApiService);
+    private router = inject(Router);
+    private route = inject(ActivatedRoute);
+
     @ViewChild('sentinel') set sentinelRef(ref: ElementRef<HTMLDivElement> | undefined) {
         if (ref) {
             this.sentinel = ref;
@@ -150,17 +167,6 @@ export class PublicDecksCatalogComponent implements OnInit, AfterViewInit, OnDes
     private authSubscription?: Subscription;
     private userPublicDeckIdsLoading = false;
     private routeSubscription?: Subscription;
-
-    constructor(
-        public auth: AuthService,
-        private userApi: UserApiService,
-        private deckApi: DeckApiService,
-        private publicDeckApi: PublicDeckApiService,
-        private reviewApi: ReviewApiService,
-        private mediaApi: MediaApiService,
-        private router: Router,
-        private route: ActivatedRoute
-    ) {}
 
     ngOnInit(): void {
         this.bindAuth();

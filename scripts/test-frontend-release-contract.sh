@@ -13,18 +13,10 @@ if [ ! -f "$INDEX_HTML" ]; then
   exit 1
 fi
 
-assert_hashed_entry() {
-  asset="$1"
-  extension="$2"
-  if ! grep -Eq "${asset}\\.[0-9a-f]{16}\\.${extension}" "$INDEX_HTML"; then
-    echo "Frontend entry asset is not content-hashed: ${asset}.${extension}" >&2
-    exit 1
-  fi
-}
-
-assert_hashed_entry main js
-assert_hashed_entry runtime js
-assert_hashed_entry styles css
+# The application builder emits name-HASH assets and folds runtime into its module
+# graph. Check actual script/stylesheet/preload references, not a webpack filename.
+python3 -m unittest discover -s "$SCRIPT_DIR/tests" -p test_frontend_release_assets.py
+python3 "$SCRIPT_DIR/frontend_release_assets.py" "$FRONTEND_DIST"
 
 nginx_config="$REPO_ROOT/frontend/nginx.conf"
 index_location=$(awk '/location = \/index.html \{/{capture=1} capture{print} capture && /^  }$/{exit}' "$nginx_config")

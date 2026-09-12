@@ -1,5 +1,5 @@
-import { Component, EventEmitter, Injector, Input, OnInit, Output, computed, effect, inject, signal } from '@angular/core';
-import { NgFor, NgIf, NgClass } from '@angular/common';
+import { Component, EventEmitter, Injector, Input, OnInit, Output, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormsModule } from '@angular/forms';
 import { AiApiService } from '../../core/services/ai-api.service';
 import { MediaApiService } from '../../core/services/media-api.service';
@@ -15,7 +15,6 @@ import {
 import { FieldTemplateDTO } from '../../core/models/template.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { AiPreflightPanelComponent } from '../../shared/components/ai-preflight-panel.component';
-import { InputComponent } from '../../shared/components/input.component';
 import { TextareaComponent } from '../../shared/components/textarea.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 import {
@@ -89,8 +88,7 @@ interface EncodingOption {
 
 @Component({
     selector: 'app-ai-import-modal',
-    standalone: true,
-    imports: [NgIf, NgFor, NgClass, FormsModule, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe, AiPreflightPanelComponent],
+    imports: [FormsModule, ButtonComponent, TextareaComponent, TranslatePipe, AiPreflightPanelComponent],
     template: `
     <div class="modal-overlay" (click)="close(false)">
       <div class="modal-content ai-modal" (click)="$event.stopPropagation()">
@@ -124,30 +122,40 @@ interface EncodingOption {
                   [ngModel]="selectedCredentialId()"
                   (ngModelChange)="onProviderChange($event)"
                   [disabled]="loadingProviders() || providerKeys().length === 0"
-                >
+                  >
                   <option [ngValue]="''">{{ 'aiImport.providerPlaceholder' | translate }}</option>
-                  <option *ngFor="let key of providerKeys(); trackBy: trackProvider" [ngValue]="key.id">
-                    {{ key.provider }}{{ key.alias ? ' - ' + key.alias : '' }}
-                  </option>
+                  @for (key of providerKeys(); track trackProvider($index, key)) {
+                    <option [ngValue]="key.id">
+                      {{ key.provider }}{{ key.alias ? ' - ' + key.alias : '' }}
+                    </option>
+                  }
                 </select>
-                <p *ngIf="!loadingProviders() && providerKeys().length === 0" class="field-hint">
-                  {{ 'aiImport.noKeys' | translate }}
-                </p>
-                <p *ngIf="selectedCredentialId() && !importSupported()" class="field-hint">
-                  {{ 'aiImport.providerUnsupported' | translate }}
-                </p>
+                @if (!loadingProviders() && providerKeys().length === 0) {
+                  <p class="field-hint">
+                    {{ 'aiImport.noKeys' | translate }}
+                  </p>
+                }
+                @if (selectedCredentialId() && !importSupported()) {
+                  <p class="field-hint">
+                    {{ 'aiImport.providerUnsupported' | translate }}
+                  </p>
+                }
               </div>
-              <div class="form-field" *ngIf="showEncoding()">
-                <label for="ai-import-encoding">{{ 'aiImport.encodingLabel' | translate }}</label>
-                <select
-                  id="ai-import-encoding"
-                  class="glass-select"
-                  [ngModel]="encoding()"
-                  (ngModelChange)="encoding.set($event)"
-                >
-                  <option *ngFor="let opt of encodingOptions" [ngValue]="opt.value">{{ opt.label }}</option>
-                </select>
-              </div>
+              @if (showEncoding()) {
+                <div class="form-field">
+                  <label for="ai-import-encoding">{{ 'aiImport.encodingLabel' | translate }}</label>
+                  <select
+                    id="ai-import-encoding"
+                    class="glass-select"
+                    [ngModel]="encoding()"
+                    (ngModelChange)="encoding.set($event)"
+                    >
+                    @for (opt of encodingOptions; track opt) {
+                      <option [ngValue]="opt.value">{{ opt.label }}</option>
+                    }
+                  </select>
+                </div>
+              }
               <div class="form-field">
                 <label for="ai-import-model">{{ 'aiImport.modelLabel' | translate }}</label>
                 <select
@@ -155,18 +163,21 @@ interface EncodingOption {
                   class="glass-select"
                   [ngModel]="modelChoice('text', modelName())"
                   (ngModelChange)="onModelChoiceChange('text', $event)"
-                >
-                  <option *ngFor="let model of textModelOptions()" [ngValue]="model.value">
-                    {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
-                  </option>
+                  >
+                  @for (model of textModelOptions(); track model) {
+                    <option [ngValue]="model.value">
+                      {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
+                    </option>
+                  }
                 </select>
-                <input
-                  *ngIf="isCustomModel('text', modelName())"
-                  type="text"
-                  [ngModel]="modelName()"
-                  (ngModelChange)="onModelChange($event)"
-                  [placeholder]="modelPlaceholder()"
-                />
+                @if (isCustomModel('text', modelName())) {
+                  <input
+                    type="text"
+                    [ngModel]="modelName()"
+                    (ngModelChange)="onModelChange($event)"
+                    [placeholder]="modelPlaceholder()"
+                    />
+                }
                 <p class="field-hint">{{ modelHint('text', modelName()) }}</p>
               </div>
             </div>
@@ -180,7 +191,7 @@ interface EncodingOption {
               (dragover)="onDragOver($event)"
               (dragleave)="onDragLeave($event)"
               (drop)="onDrop($event)"
-            >
+              >
               <input type="file" accept=".txt,.pdf,.docx,.png,.jpg,.jpeg,.webp,.mp3,.wav,.ogg,.m4a,.flac,.webm,text/plain,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,image/*,audio/*" (change)="onFileChange($event)" hidden #fileInput />
               <div class="dropzone-content">
                 <span class="dropzone-icon">⬆️</span>
@@ -193,19 +204,27 @@ interface EncodingOption {
               </div>
             </div>
 
-            <div *ngIf="uploading()" class="status-line">
-              {{ 'aiImport.uploading' | translate }} {{ uploadProgress() }}%
-            </div>
-            <div *ngIf="fileInfo() && !uploading()" class="file-info">
-              <span class="file-name">{{ fileInfo()?.fileName }}</span>
-              <span class="file-size">{{ formatBytes(fileInfo()?.sizeBytes || 0) }}</span>
-              <span class="file-type">{{ sourceTypeLabel(fileInfo()?.sourceType) | translate }}</span>
-              <span *ngIf="fileInfo()?.durationSeconds" class="file-duration">
-                {{ formatDuration(fileInfo()?.durationSeconds || 0) }}
-              </span>
-            </div>
+            @if (uploading()) {
+              <div class="status-line">
+                {{ 'aiImport.uploading' | translate }} {{ uploadProgress() }}%
+              </div>
+            }
+            @if (fileInfo() && !uploading()) {
+              <div class="file-info">
+                <span class="file-name">{{ fileInfo()?.fileName }}</span>
+                <span class="file-size">{{ formatBytes(fileInfo()?.sizeBytes || 0) }}</span>
+                <span class="file-type">{{ sourceTypeLabel($safeNavigationMigration(fileInfo()?.sourceType)) | translate }}</span>
+                @if (fileInfo()?.durationSeconds) {
+                  <span class="file-duration">
+                    {{ formatDuration(fileInfo()?.durationSeconds || 0) }}
+                  </span>
+                }
+              </div>
+            }
             <p class="field-hint">{{ 'aiImport.sizeHint' | translate }}</p>
-            <p *ngIf="isAudioSource()" class="field-hint">{{ 'aiImport.audioLimitHint' | translate }}</p>
+            @if (isAudioSource()) {
+              <p class="field-hint">{{ 'aiImport.audioLimitHint' | translate }}</p>
+            }
 
             <div class="record-panel">
               <div class="record-info">
@@ -221,37 +240,48 @@ interface EncodingOption {
                 </button>
               </div>
             </div>
-            <div *ngIf="!recordingSupported()" class="field-hint">{{ 'aiImport.recordUnavailable' | translate }}</div>
-            <div *ngIf="recording()" class="status-line">
-              {{ 'aiImport.recording' | translate }} {{ formatDuration(recordingSeconds()) }}
-            </div>
-            <div *ngIf="recordingError()" class="error-state" role="alert">{{ recordingError() }}</div>
+            @if (!recordingSupported()) {
+              <div class="field-hint">{{ 'aiImport.recordUnavailable' | translate }}</div>
+            }
+            @if (recording()) {
+              <div class="status-line">
+                {{ 'aiImport.recording' | translate }} {{ formatDuration(recordingSeconds()) }}
+              </div>
+            }
+            @if (recordingError()) {
+              <div class="error-state" role="alert">{{ recordingError() }}</div>
+            }
 
-            <div *ngIf="isAudioSource()" class="stt-panel">
-              <div class="form-grid">
-                <div class="form-field">
-                  <label for="ai-stt-model">{{ 'aiImport.sttModelLabel' | translate }}</label>
-                  <select
-                    id="ai-stt-model"
-                    class="glass-select"
-                    [ngModel]="modelChoice('stt', sttModel())"
-                    (ngModelChange)="onModelChoiceChange('stt', $event)"
-                  >
-                    <option *ngFor="let model of sttModelOptions()" [ngValue]="model.value">
-                      {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
-                    </option>
-                  </select>
-                  <input
-                    *ngIf="isCustomModel('stt', sttModel())"
-                    type="text"
-                    [ngModel]="sttModel()"
-                    (ngModelChange)="onSttModelChange($event)"
-                    [placeholder]="sttModelPlaceholder()"
-                  />
-                  <p class="field-hint">{{ modelHint('stt', sttModel()) }}</p>
+            @if (isAudioSource()) {
+              <div class="stt-panel">
+                <div class="form-grid">
+                  <div class="form-field">
+                    <label for="ai-stt-model">{{ 'aiImport.sttModelLabel' | translate }}</label>
+                    <select
+                      id="ai-stt-model"
+                      class="glass-select"
+                      [ngModel]="modelChoice('stt', sttModel())"
+                      (ngModelChange)="onModelChoiceChange('stt', $event)"
+                      >
+                      @for (model of sttModelOptions(); track model) {
+                        <option [ngValue]="model.value">
+                          {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
+                        </option>
+                      }
+                    </select>
+                    @if (isCustomModel('stt', sttModel())) {
+                      <input
+                        type="text"
+                        [ngModel]="sttModel()"
+                        (ngModelChange)="onSttModelChange($event)"
+                        [placeholder]="sttModelPlaceholder()"
+                        />
+                    }
+                    <p class="field-hint">{{ modelHint('stt', sttModel()) }}</p>
+                  </div>
                 </div>
               </div>
-            </div>
+            }
           </section>
 
           <section class="section-card">
@@ -262,292 +292,353 @@ interface EncodingOption {
                 size="sm"
                 (click)="runPreview()"
                 [disabled]="!canPreview()"
-              >
+                >
                 {{ previewing() ? ('aiImport.previewing' | translate) : ('aiImport.previewButton' | translate) }}
               </app-button>
             </div>
-            <div *ngIf="previewError()" class="error-state" role="alert">
-              {{ previewError() }}
-            </div>
-            <div *ngIf="previewSummary()" class="preview-summary">
-              <p class="summary-text">{{ previewSummary()?.summary }}</p>
-              <div class="summary-meta">
-                <span>{{ 'aiImport.cardsToCreate' | translate }}</span>
-                <input
-                  type="number"
-                  class="count-input"
-                  [ngModel]="estimatedCount()"
-                  (ngModelChange)="onCountChange($event)"
-                  [min]="1"
-                  [max]="maxCards"
-                />
-                <span class="meta-hint">/ {{ maxCards }}</span>
+            @if (previewError()) {
+              <div class="error-state" role="alert">
+                {{ previewError() }}
               </div>
-              <div *ngIf="previewSummary()?.sourceType" class="field-hint">
-                {{ 'aiImport.sourceTypeLabel' | translate }} {{ sourceTypeLabel(previewSummary()?.sourceType) | translate }}
+            }
+            @if (previewSummary()) {
+              <div class="preview-summary">
+                <p class="summary-text">{{ previewSummary()?.summary }}</p>
+                <div class="summary-meta">
+                  <span>{{ 'aiImport.cardsToCreate' | translate }}</span>
+                  <input
+                    type="number"
+                    class="count-input"
+                    [ngModel]="estimatedCount()"
+                    (ngModelChange)="onCountChange($event)"
+                    [min]="1"
+                    [max]="maxCards"
+                    />
+                  <span class="meta-hint">/ {{ maxCards }}</span>
+                </div>
+                @if (previewSummary()?.sourceType) {
+                  <div class="field-hint">
+                    {{ 'aiImport.sourceTypeLabel' | translate }} {{ sourceTypeLabel($safeNavigationMigration(previewSummary()?.sourceType)) | translate }}
+                  </div>
+                }
+                @if (previewSummary()?.extraction === 'ocr') {
+                  <div class="field-hint">
+                    {{ 'aiImport.ocrApplied' | translate }}
+                    @if (previewSummary()?.ocrPages) {
+                      <span>({{ previewSummary()?.ocrPages }}/{{ previewSummary()?.sourcePages || previewSummary()?.ocrPages }})</span>
+                    }
+                  </div>
+                }
+                @if (previewSummary()?.audioDurationSeconds) {
+                  <div class="field-hint">
+                    {{ 'aiImport.audioDuration' | translate }} {{ formatDuration(previewSummary()?.audioDurationSeconds || 0) }}
+                    @if (previewSummary()?.audioChunks) {
+                      <span>· {{ previewSummary()?.audioChunks }} {{ 'aiImport.audioChunks' | translate }}</span>
+                    }
+                  </div>
+                }
+                <div class="field-hint">
+                  {{ 'aiImport.aiEstimate' | translate }} {{ previewSummary()?.estimatedCount }}
+                </div>
+                @if (isLargeEstimate()) {
+                  <div class="field-hint warning-hint">
+                    <span>{{ 'aiImport.tooLargeHint' | translate }}</span>
+                    <span class="hint-number">{{ previewSummary()?.estimatedCount }}</span>
+                    <span>{{ 'aiImport.tooLargeHintTail' | translate }}</span>
+                    <span class="hint-number">{{ maxCards }}</span>
+                    <span>{{ 'aiImport.tooLargeHintTail2' | translate }}</span>
+                  </div>
+                }
+                @if (previewSummary()?.truncated) {
+                  <div class="field-hint">
+                    {{ 'aiImport.truncatedHint' | translate }}
+                  </div>
+                }
+                @if (requiresConfirmation()) {
+                  <label class="confirmation-line">
+                    <input type="checkbox" [ngModel]="confirmLarge()" (ngModelChange)="confirmLarge.set($event)" />
+                    <span>{{ 'aiImport.confirmLarge' | translate }}</span>
+                  </label>
+                }
               </div>
-              <div *ngIf="previewSummary()?.extraction === 'ocr'" class="field-hint">
-                {{ 'aiImport.ocrApplied' | translate }}
-                <span *ngIf="previewSummary()?.ocrPages">({{ previewSummary()?.ocrPages }}/{{ previewSummary()?.sourcePages || previewSummary()?.ocrPages }})</span>
-              </div>
-              <div *ngIf="previewSummary()?.audioDurationSeconds" class="field-hint">
-                {{ 'aiImport.audioDuration' | translate }} {{ formatDuration(previewSummary()?.audioDurationSeconds || 0) }}
-                <span *ngIf="previewSummary()?.audioChunks">· {{ previewSummary()?.audioChunks }} {{ 'aiImport.audioChunks' | translate }}</span>
-              </div>
-              <div class="field-hint">
-                {{ 'aiImport.aiEstimate' | translate }} {{ previewSummary()?.estimatedCount }}
-              </div>
-              <div *ngIf="isLargeEstimate()" class="field-hint warning-hint">
-                <span>{{ 'aiImport.tooLargeHint' | translate }}</span>
-                <span class="hint-number">{{ previewSummary()?.estimatedCount }}</span>
-                <span>{{ 'aiImport.tooLargeHintTail' | translate }}</span>
-                <span class="hint-number">{{ maxCards }}</span>
-                <span>{{ 'aiImport.tooLargeHintTail2' | translate }}</span>
-              </div>
-              <div *ngIf="previewSummary()?.truncated" class="field-hint">
-                {{ 'aiImport.truncatedHint' | translate }}
-              </div>
-              <label *ngIf="requiresConfirmation()" class="confirmation-line">
-                <input type="checkbox" [ngModel]="confirmLarge()" (ngModelChange)="confirmLarge.set($event)" />
-                <span>{{ 'aiImport.confirmLarge' | translate }}</span>
-              </label>
-            </div>
+            }
           </section>
 
           <section class="section-card">
             <h3>{{ 'aiImport.fieldsTitle' | translate }}</h3>
             <p class="field-hint">{{ 'aiImport.fieldsHint' | translate }}</p>
             <div class="field-grid">
-              <label
-                *ngFor="let option of fieldOptions(); trackBy: trackField"
-                class="field-option"
-                [class.disabled]="!option.enabled"
-                [class.required]="option.required"
-              >
-                <input
-                  class="field-checkbox"
-                  type="checkbox"
-                  [disabled]="!option.enabled || option.required"
-                  [checked]="selectedFields().has(option.key)"
-                  (change)="toggleField(option)"
-                />
-                <span class="field-label">{{ option.label }}</span>
-                <span *ngIf="option.required" class="field-required">{{ 'aiImport.requiredLabel' | translate }}</span>
-              </label>
+              @for (option of fieldOptions(); track trackField($index, option)) {
+                <label
+                  class="field-option"
+                  [class.disabled]="!option.enabled"
+                  [class.required]="option.required"
+                  >
+                  <input
+                    class="field-checkbox"
+                    type="checkbox"
+                    [disabled]="!option.enabled || option.required"
+                    [checked]="selectedFields().has(option.key)"
+                    (change)="toggleField(option)"
+                    />
+                  <span class="field-label">{{ option.label }}</span>
+                  @if (option.required) {
+                    <span class="field-required">{{ 'aiImport.requiredLabel' | translate }}</span>
+                  }
+                </label>
+              }
             </div>
 
-            <div *ngIf="hasAudioFields()" class="tts-section">
-              <label class="tts-toggle">{{ 'aiImport.audioTitle' | translate }}</label>
-              <div *ngIf="!ttsSupported()" class="field-hint">{{ 'aiImport.audioUnavailable' | translate }}</div>
-              <div *ngIf="ttsSupported() && ttsEnabled()" class="tts-panel">
-                <div class="form-grid">
-                  <div class="form-field">
-                    <label for="ai-tts-model">{{ 'aiImport.ttsModelLabel' | translate }}</label>
-                    <select
-                      id="ai-tts-model"
-                      class="glass-select"
-                      [ngModel]="modelChoice('tts', ttsModel())"
-                      (ngModelChange)="onModelChoiceChange('tts', $event)"
-                    >
-                      <option *ngFor="let model of ttsModelOptions()" [ngValue]="model.value">
-                        {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
-                      </option>
-                    </select>
-                    <input
-                      *ngIf="isCustomModel('tts', ttsModel())"
-                      type="text"
-                      [ngModel]="ttsModel()"
-                      (ngModelChange)="onTtsModelChange($event)"
-                      [placeholder]="ttsModelPlaceholder()"
-                    />
-                    <p class="field-hint">{{ modelHint('tts', ttsModel()) }}</p>
+            @if (hasAudioFields()) {
+              <div class="tts-section">
+                <label class="tts-toggle">{{ 'aiImport.audioTitle' | translate }}</label>
+                @if (!ttsSupported()) {
+                  <div class="field-hint">{{ 'aiImport.audioUnavailable' | translate }}</div>
+                }
+                @if (ttsSupported() && ttsEnabled()) {
+                  <div class="tts-panel">
+                    <div class="form-grid">
+                      <div class="form-field">
+                        <label for="ai-tts-model">{{ 'aiImport.ttsModelLabel' | translate }}</label>
+                        <select
+                          id="ai-tts-model"
+                          class="glass-select"
+                          [ngModel]="modelChoice('tts', ttsModel())"
+                          (ngModelChange)="onModelChoiceChange('tts', $event)"
+                          >
+                          @for (model of ttsModelOptions(); track model) {
+                            <option [ngValue]="model.value">
+                              {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
+                            </option>
+                          }
+                        </select>
+                        @if (isCustomModel('tts', ttsModel())) {
+                          <input
+                            type="text"
+                            [ngModel]="ttsModel()"
+                            (ngModelChange)="onTtsModelChange($event)"
+                            [placeholder]="ttsModelPlaceholder()"
+                            />
+                        }
+                        <p class="field-hint">{{ modelHint('tts', ttsModel()) }}</p>
+                      </div>
+                      <div class="form-field">
+                        <label for="ai-tts-voice">{{ 'aiImport.ttsVoiceLabel' | translate }}</label>
+                        <select
+                          id="ai-tts-voice"
+                          class="glass-select"
+                          [ngModel]="ttsVoicePreset()"
+                          (ngModelChange)="onTtsVoicePresetChange($event)"
+                          >
+                          @for (voice of voiceOptions(); track voice) {
+                            <option [ngValue]="voice">{{ voiceLabel(voice) }}</option>
+                          }
+                        </select>
+                        @if (ttsVoicePreset() === 'custom') {
+                          <input
+                            type="text"
+                            [ngModel]="ttsVoiceCustom()"
+                            (ngModelChange)="onTtsVoiceCustomChange($event)"
+                            placeholder="custom-voice"
+                            />
+                        }
+                      </div>
+                      <div class="form-field">
+                        <label for="ai-tts-format">{{ 'aiImport.ttsFormatLabel' | translate }}</label>
+                        <select
+                          id="ai-tts-format"
+                          class="glass-select"
+                          [ngModel]="ttsFormat()"
+                          (ngModelChange)="onTtsFormatChange($event)"
+                          >
+                          @for (format of ttsFormatOptions(); track format) {
+                            <option [ngValue]="format">{{ format }}</option>
+                          }
+                        </select>
+                      </div>
+                      <div class="form-field">
+                        <label for="ai-tts-max-chars">{{ 'aiImport.ttsMaxCharsLabel' | translate }}</label>
+                        <input
+                          id="ai-tts-max-chars"
+                          type="number"
+                          [ngModel]="ttsMaxChars()"
+                          (ngModelChange)="onTtsMaxCharsChange($event)"
+                          min="50"
+                          max="1000"
+                          />
+                      </div>
+                    </div>
+                    <div class="tts-mapping">
+                      @for (mapping of ttsMappings(); track mapping; let i = $index) {
+                        <div class="mapping-row">
+                          <select
+                            class="glass-select"
+                            [ngModel]="mapping.sourceField"
+                            (ngModelChange)="onTtsSourceChange(i, $event)"
+                            >
+                            @for (field of textFields(); track field) {
+                              <option [ngValue]="field.name">
+                                {{ field.label || field.name }}
+                              </option>
+                            }
+                          </select>
+                          <span class="mapping-arrow">→</span>
+                          <select
+                            class="glass-select"
+                            [ngModel]="mapping.targetField"
+                            (ngModelChange)="onTtsTargetChange(i, $event)"
+                            >
+                            @for (field of audioFields(); track field) {
+                              <option [ngValue]="field.name">
+                                {{ field.label || field.name }}
+                              </option>
+                            }
+                          </select>
+                          <button type="button" class="remove-mapping" (click)="removeTtsMapping(i)" [disabled]="ttsMappings().length <= 1">
+                            ×
+                          </button>
+                        </div>
+                      }
+                      <button type="button" class="add-mapping" (click)="addTtsMapping()">
+                        {{ 'aiImport.addMapping' | translate }}
+                      </button>
+                    </div>
                   </div>
-                  <div class="form-field">
-                  <label for="ai-tts-voice">{{ 'aiImport.ttsVoiceLabel' | translate }}</label>
-                  <select
-                    id="ai-tts-voice"
-                    class="glass-select"
-                    [ngModel]="ttsVoicePreset()"
-                    (ngModelChange)="onTtsVoicePresetChange($event)"
-                  >
-                    <option *ngFor="let voice of voiceOptions()" [ngValue]="voice">{{ voiceLabel(voice) }}</option>
-                  </select>
-                    <input
-                      *ngIf="ttsVoicePreset() === 'custom'"
-                      type="text"
-                      [ngModel]="ttsVoiceCustom()"
-                      (ngModelChange)="onTtsVoiceCustomChange($event)"
-                      placeholder="custom-voice"
-                    />
-                  </div>
-                  <div class="form-field">
-                  <label for="ai-tts-format">{{ 'aiImport.ttsFormatLabel' | translate }}</label>
-                  <select
-                    id="ai-tts-format"
-                    class="glass-select"
-                    [ngModel]="ttsFormat()"
-                    (ngModelChange)="onTtsFormatChange($event)"
-                  >
-                    <option *ngFor="let format of ttsFormatOptions()" [ngValue]="format">{{ format }}</option>
-                  </select>
-                  </div>
-                  <div class="form-field">
-                    <label for="ai-tts-max-chars">{{ 'aiImport.ttsMaxCharsLabel' | translate }}</label>
-                    <input
-                      id="ai-tts-max-chars"
-                      type="number"
-                      [ngModel]="ttsMaxChars()"
-                      (ngModelChange)="onTtsMaxCharsChange($event)"
-                      min="50"
-                      max="1000"
-                    />
-                  </div>
-                </div>
-                <div class="tts-mapping">
-                  <div *ngFor="let mapping of ttsMappings(); let i = index" class="mapping-row">
-                    <select
-                      class="glass-select"
-                      [ngModel]="mapping.sourceField"
-                      (ngModelChange)="onTtsSourceChange(i, $event)"
-                    >
-                      <option *ngFor="let field of textFields()" [ngValue]="field.name">
-                        {{ field.label || field.name }}
-                      </option>
-                    </select>
-                    <span class="mapping-arrow">→</span>
-                    <select
-                      class="glass-select"
-                      [ngModel]="mapping.targetField"
-                      (ngModelChange)="onTtsTargetChange(i, $event)"
-                    >
-                      <option *ngFor="let field of audioFields()" [ngValue]="field.name">
-                        {{ field.label || field.name }}
-                      </option>
-                    </select>
-                    <button type="button" class="remove-mapping" (click)="removeTtsMapping(i)" [disabled]="ttsMappings().length <= 1">
-                      ×
-                    </button>
-                  </div>
-                  <button type="button" class="add-mapping" (click)="addTtsMapping()">
-                    {{ 'aiImport.addMapping' | translate }}
-                  </button>
-                </div>
+                }
               </div>
-            </div>
+            }
 
-            <div *ngIf="selectedImageFields().length > 0" class="tts-section">
-              <label class="tts-toggle">{{ 'aiImport.imageTitle' | translate }}</label>
-              <div *ngIf="!imageSupported()" class="field-hint">{{ 'aiImport.imageUnavailable' | translate }}</div>
-              <div *ngIf="imageSupported()" class="tts-panel">
-                <div class="form-grid">
-                  <div class="form-field">
-                  <label for="ai-image-model">{{ 'aiImport.imageModelLabel' | translate }}</label>
-                  <select
-                    id="ai-image-model"
-                    class="glass-select"
-                    [ngModel]="imageModel()"
-                    (ngModelChange)="onImageModelChange($event)"
-                  >
-                    <option *ngFor="let model of imageModelOptions()" [ngValue]="model">
-                      {{ model === 'custom' ? 'Custom' : model }}
-                      </option>
-                    </select>
-                    <input
-                      *ngIf="imageModel() === 'custom'"
-                      type="text"
-                      [ngModel]="imageModelCustom()"
-                      (ngModelChange)="onImageModelCustomChange($event)"
-                      placeholder="custom-image-model"
-                    />
+            @if (selectedImageFields().length > 0) {
+              <div class="tts-section">
+                <label class="tts-toggle">{{ 'aiImport.imageTitle' | translate }}</label>
+                @if (!imageSupported()) {
+                  <div class="field-hint">{{ 'aiImport.imageUnavailable' | translate }}</div>
+                }
+                @if (imageSupported()) {
+                  <div class="tts-panel">
+                    <div class="form-grid">
+                      <div class="form-field">
+                        <label for="ai-image-model">{{ 'aiImport.imageModelLabel' | translate }}</label>
+                        <select
+                          id="ai-image-model"
+                          class="glass-select"
+                          [ngModel]="imageModel()"
+                          (ngModelChange)="onImageModelChange($event)"
+                          >
+                          @for (model of imageModelOptions(); track model) {
+                            <option [ngValue]="model">
+                              {{ model === 'custom' ? 'Custom' : model }}
+                            </option>
+                          }
+                        </select>
+                        @if (imageModel() === 'custom') {
+                          <input
+                            type="text"
+                            [ngModel]="imageModelCustom()"
+                            (ngModelChange)="onImageModelCustomChange($event)"
+                            placeholder="custom-image-model"
+                            />
+                        }
+                      </div>
+                      <div class="form-field">
+                        <label for="ai-image-size">{{ 'aiImport.imageSizeLabel' | translate }}</label>
+                        <input
+                          id="ai-image-size"
+                          type="text"
+                          [ngModel]="imageSize()"
+                          (ngModelChange)="onImageSizeChange($event)"
+                          placeholder="1024x1024"
+                          />
+                      </div>
+                      <div class="form-field">
+                        <label for="ai-image-format">{{ 'aiImport.imageFormatLabel' | translate }}</label>
+                        <select
+                          id="ai-image-format"
+                          class="glass-select"
+                          [ngModel]="imageFormat()"
+                          (ngModelChange)="onImageFormatChange($event)"
+                          >
+                          <option [ngValue]="'png'">png</option>
+                          <option [ngValue]="'jpg'">jpg</option>
+                          <option [ngValue]="'webp'">webp</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
-                  <div class="form-field">
-                    <label for="ai-image-size">{{ 'aiImport.imageSizeLabel' | translate }}</label>
-                    <input
-                      id="ai-image-size"
-                      type="text"
-                      [ngModel]="imageSize()"
-                      (ngModelChange)="onImageSizeChange($event)"
-                      placeholder="1024x1024"
-                    />
-                  </div>
-                  <div class="form-field">
-                  <label for="ai-image-format">{{ 'aiImport.imageFormatLabel' | translate }}</label>
-                  <select
-                    id="ai-image-format"
-                    class="glass-select"
-                    [ngModel]="imageFormat()"
-                    (ngModelChange)="onImageFormatChange($event)"
-                  >
-                    <option [ngValue]="'png'">png</option>
-                    <option [ngValue]="'jpg'">jpg</option>
-                      <option [ngValue]="'webp'">webp</option>
-                    </select>
-                  </div>
-                </div>
+                }
               </div>
-            </div>
+            }
 
-            <div *ngIf="selectedVideoFields().length > 0" class="tts-section">
-              <label class="tts-toggle">{{ 'aiImport.videoTitle' | translate }}</label>
-              <div *ngIf="!videoSupported()" class="field-hint">{{ 'aiImport.videoUnavailable' | translate }}</div>
-              <div *ngIf="videoSupported()" class="tts-panel">
-                <div class="form-grid">
-                  <div class="form-field">
-                  <label for="ai-video-model">{{ 'aiImport.videoModelLabel' | translate }}</label>
-                  <select
-                    id="ai-video-model"
-                    class="glass-select"
-                    [ngModel]="videoModel()"
-                    (ngModelChange)="onVideoModelChange($event)"
-                  >
-                    <option *ngFor="let model of videoModelOptions()" [ngValue]="model">
-                      {{ model === 'custom' ? 'Custom' : model }}
-                      </option>
-                    </select>
-                    <input
-                      *ngIf="videoModel() === 'custom'"
-                      type="text"
-                      [ngModel]="videoModelCustom()"
-                      (ngModelChange)="onVideoModelCustomChange($event)"
-                      placeholder="custom-video-model"
-                    />
+            @if (selectedVideoFields().length > 0) {
+              <div class="tts-section">
+                <label class="tts-toggle">{{ 'aiImport.videoTitle' | translate }}</label>
+                @if (!videoSupported()) {
+                  <div class="field-hint">{{ 'aiImport.videoUnavailable' | translate }}</div>
+                }
+                @if (videoSupported()) {
+                  <div class="tts-panel">
+                    <div class="form-grid">
+                      <div class="form-field">
+                        <label for="ai-video-model">{{ 'aiImport.videoModelLabel' | translate }}</label>
+                        <select
+                          id="ai-video-model"
+                          class="glass-select"
+                          [ngModel]="videoModel()"
+                          (ngModelChange)="onVideoModelChange($event)"
+                          >
+                          @for (model of videoModelOptions(); track model) {
+                            <option [ngValue]="model">
+                              {{ model === 'custom' ? 'Custom' : model }}
+                            </option>
+                          }
+                        </select>
+                        @if (videoModel() === 'custom') {
+                          <input
+                            type="text"
+                            [ngModel]="videoModelCustom()"
+                            (ngModelChange)="onVideoModelCustomChange($event)"
+                            placeholder="custom-video-model"
+                            />
+                        }
+                      </div>
+                      <div class="form-field">
+                        <label for="ai-video-duration">{{ 'aiImport.videoDurationLabel' | translate }}</label>
+                        <input
+                          id="ai-video-duration"
+                          type="number"
+                          [ngModel]="videoDurationSeconds()"
+                          (ngModelChange)="onVideoDurationChange($event)"
+                          min="2"
+                          max="10"
+                          />
+                      </div>
+                      <div class="form-field">
+                        <label for="ai-video-resolution">{{ 'aiImport.videoResolutionLabel' | translate }}</label>
+                        <input
+                          id="ai-video-resolution"
+                          type="text"
+                          [ngModel]="videoResolution()"
+                          (ngModelChange)="onVideoResolutionChange($event)"
+                          placeholder="720p"
+                          />
+                      </div>
+                      <div class="form-field">
+                        <label for="ai-video-format">{{ 'aiImport.videoFormatLabel' | translate }}</label>
+                        <select
+                          id="ai-video-format"
+                          class="glass-select"
+                          [ngModel]="videoFormat()"
+                          (ngModelChange)="onVideoFormatChange($event)"
+                          >
+                          <option [ngValue]="'mp4'">mp4</option>
+                          <option [ngValue]="'gif'">gif</option>
+                        </select>
+                      </div>
+                    </div>
                   </div>
-                  <div class="form-field">
-                    <label for="ai-video-duration">{{ 'aiImport.videoDurationLabel' | translate }}</label>
-                    <input
-                      id="ai-video-duration"
-                      type="number"
-                      [ngModel]="videoDurationSeconds()"
-                      (ngModelChange)="onVideoDurationChange($event)"
-                      min="2"
-                      max="10"
-                    />
-                  </div>
-                  <div class="form-field">
-                    <label for="ai-video-resolution">{{ 'aiImport.videoResolutionLabel' | translate }}</label>
-                    <input
-                      id="ai-video-resolution"
-                      type="text"
-                      [ngModel]="videoResolution()"
-                      (ngModelChange)="onVideoResolutionChange($event)"
-                      placeholder="720p"
-                    />
-                  </div>
-                  <div class="form-field">
-                  <label for="ai-video-format">{{ 'aiImport.videoFormatLabel' | translate }}</label>
-                  <select
-                    id="ai-video-format"
-                    class="glass-select"
-                    [ngModel]="videoFormat()"
-                    (ngModelChange)="onVideoFormatChange($event)"
-                  >
-                    <option [ngValue]="'mp4'">mp4</option>
-                    <option [ngValue]="'gif'">gif</option>
-                    </select>
-                  </div>
-                </div>
+                }
               </div>
-            </div>
+            }
           </section>
 
           <section class="section-card">
@@ -561,13 +652,18 @@ interface EncodingOption {
             ></app-textarea>
           </section>
 
-          <p *ngIf="createError()" class="error-state" role="alert">{{ createError() }}</p>
-          <p *ngIf="preflightError()" class="error-state" role="alert">{{ preflightError() }}</p>
-          <app-ai-preflight-panel
-            *ngIf="preflight()"
-            [preflight]="preflight()"
-            title="Review import plan"
-          />
+          @if (createError()) {
+            <p class="error-state" role="alert">{{ createError() }}</p>
+          }
+          @if (preflightError()) {
+            <p class="error-state" role="alert">{{ preflightError() }}</p>
+          }
+          @if (preflight()) {
+            <app-ai-preflight-panel
+              [preflight]="preflight()"
+              title="Review import plan"
+              />
+          }
         </div>
 
         <div class="modal-footer">
@@ -576,13 +672,14 @@ interface EncodingOption {
             variant="primary"
             (click)="createCards()"
             [disabled]="!canCreate()"
-          >
+            >
             {{ submitLabel() }}
           </app-button>
         </div>
       </div>
     </div>
     `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .modal-overlay {
         position: fixed;
@@ -941,6 +1038,10 @@ interface EncodingOption {
     `]
 })
 export class AiImportModalComponent implements OnInit {
+    private aiApi = inject(AiApiService);
+    private mediaApi = inject(MediaApiService);
+    private templateApi = inject(TemplateApiService);
+
     private static readonly MAX_CARDS = 500;
     private static readonly MAX_AUDIO_SECONDS = 300;
     private static readonly CONFIRM_AUDIO_SECONDS = 120;
@@ -1172,12 +1273,6 @@ export class AiImportModalComponent implements OnInit {
     private mediaRecorder: MediaRecorder | null = null;
     private recordingChunks: BlobPart[] = [];
     private recordingTimer: number | null = null;
-
-    constructor(
-        private aiApi: AiApiService,
-        private mediaApi: MediaApiService,
-        private templateApi: TemplateApiService
-    ) {}
 
     ngOnInit(): void {
         this.storageKey = `mnema_ai_import:${this.userDeckId || 'default'}`;

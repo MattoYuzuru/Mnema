@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable, of } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -50,12 +50,12 @@ export interface ResolvedMedia {
 
 @Injectable({ providedIn: 'root' })
 export class MediaApiService {
+    private http = inject(HttpClient);
+
     private readonly baseUrl = appConfig.mediaApiBaseUrl;
     private static readonly CACHE_SAFETY_MS = 30_000;
     private static readonly MAX_CACHE_ENTRIES = 500;
     private readonly mediaCache = new Map<string, { item: ResolvedMedia; expiresAtMs: number }>();
-
-    constructor(private http: HttpClient) {}
 
     createUpload(request: CreateUploadRequest): Observable<CreateUploadResponse> {
         return this.http.post<CreateUploadResponse>(`${this.baseUrl}/uploads`, request);

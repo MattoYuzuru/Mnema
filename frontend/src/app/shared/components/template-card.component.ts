@@ -1,19 +1,22 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
-import { NgIf } from '@angular/common';
+import { Component, Input, Output, EventEmitter, ChangeDetectionStrategy } from '@angular/core';
+
 import { CardTemplateDTO } from '../../core/models/template.models';
 import { ButtonComponent } from './button.component';
 import { TranslatePipe } from '../pipes/translate.pipe';
 
 @Component({
     selector: 'app-template-card',
-    standalone: true,
-    imports: [NgIf, ButtonComponent, TranslatePipe],
+    imports: [ButtonComponent, TranslatePipe],
     template: `
     <div class="template-card glass" [class.template-card-selected]="selected">
       <div class="template-card-header">
         <div class="template-icon">
-          <img *ngIf="template.iconUrl" [src]="template.iconUrl" [alt]="template.name" />
-          <span *ngIf="!template.iconUrl" class="template-icon-placeholder">T</span>
+          @if (template.iconUrl) {
+            <img [src]="template.iconUrl" [alt]="template.name" />
+          }
+          @if (!template.iconUrl) {
+            <span class="template-icon-placeholder">T</span>
+          }
         </div>
         <div class="template-info">
           <h4 class="template-name">{{ template.name }}</h4>
@@ -21,35 +24,42 @@ import { TranslatePipe } from '../pipes/translate.pipe';
         </div>
       </div>
 
-    <div class="template-meta">
+      <div class="template-meta">
         <span class="template-field-count">
           {{ template.fields?.length || 0 }} {{ 'templates.fields' | translate }}
         </span>
-        <span *ngIf="showVisibility" class="template-visibility" [class.public]="template.isPublic">
-          {{ template.isPublic ? publicLabel : privateLabel }}
-        </span>
+        @if (showVisibility) {
+          <span class="template-visibility" [class.public]="template.isPublic">
+            {{ template.isPublic ? publicLabel : privateLabel }}
+          </span>
+        }
       </div>
 
-      <div *ngIf="showActions" class="template-actions">
-        <app-button
-          *ngIf="showViewButton"
-          variant="ghost"
-          size="sm"
-          (click)="onView($event)"
-        >
-          {{ viewLabel }}
-        </app-button>
-        <app-button
-          *ngIf="showSelectButton"
-          variant="secondary"
-          size="sm"
-          (click)="onSelect($event)"
-        >
-          {{ selected ? selectedLabel : selectLabel }}
-        </app-button>
-      </div>
+      @if (showActions) {
+        <div class="template-actions">
+          @if (showViewButton) {
+            <app-button
+              variant="ghost"
+              size="sm"
+              (click)="onView($event)"
+              >
+              {{ viewLabel }}
+            </app-button>
+          }
+          @if (showSelectButton) {
+            <app-button
+              variant="secondary"
+              size="sm"
+              (click)="onSelect($event)"
+              >
+              {{ selected ? selectedLabel : selectLabel }}
+            </app-button>
+          }
+        </div>
+      }
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .template-card {
@@ -184,12 +194,12 @@ export class TemplateCardComponent {
     @Input() viewLabel = 'View';
     @Input() publicLabel = 'Public';
     @Input() privateLabel = 'Private';
-    @Output() select = new EventEmitter<void>();
+    @Output() selectRequested = new EventEmitter<void>();
     @Output() view = new EventEmitter<void>();
 
     onSelect(event: Event): void {
         event.stopPropagation();
-        this.select.emit();
+        this.selectRequested.emit();
     }
 
     onView(event: Event): void {

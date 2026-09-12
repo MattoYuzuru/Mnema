@@ -1,5 +1,5 @@
-import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from './button.component';
 import { TranslatePipe } from '../pipes/translate.pipe';
@@ -13,62 +13,64 @@ interface ReasonOption {
 
 @Component({
     selector: 'app-report-content-modal',
-    standalone: true,
-    imports: [NgIf, NgFor, FormsModule, ButtonComponent, TranslatePipe],
+    imports: [FormsModule, ButtonComponent, TranslatePipe],
     template: `
-      <div *ngIf="visible" class="modal-overlay" (click)="dismiss()">
-        <div class="modal-shell glass-strong" (click)="$event.stopPropagation()" role="dialog" aria-modal="true">
-          <div class="modal-head">
-            <div>
-              <div class="eyebrow">{{ 'reports.modalEyebrow' | translate }}</div>
-              <h2>{{ 'reports.modalTitle' | translate }}</h2>
-              <p>{{ subject }}</p>
+      @if (visible) {
+        <div class="modal-overlay" (click)="dismiss()">
+          <div class="modal-shell glass-strong" (click)="$event.stopPropagation()" role="dialog" aria-modal="true">
+            <div class="modal-head">
+              <div>
+                <div class="eyebrow">{{ 'reports.modalEyebrow' | translate }}</div>
+                <h2>{{ 'reports.modalTitle' | translate }}</h2>
+                <p>{{ subject }}</p>
+              </div>
+              <button class="close-btn" type="button" (click)="dismiss()" [attr.aria-label]="'reports.cancel' | translate">×</button>
             </div>
-            <button class="close-btn" type="button" (click)="dismiss()" [attr.aria-label]="'reports.cancel' | translate">×</button>
-          </div>
-
-          <div class="modal-body mn-scrollbar">
-            <p class="modal-hint">{{ 'reports.modalHint' | translate }}</p>
-
-            <div class="reason-grid">
-              <button
-                *ngFor="let reason of reasonOptions"
-                type="button"
-                class="reason-card"
-                [class.active]="selectedReason === reason.value"
-                (click)="selectReason(reason.value)"
-              >
-                <span class="reason-check" aria-hidden="true">{{ selectedReason === reason.value ? '!' : '' }}</span>
-                <span class="reason-copy">
-                  <strong>{{ reason.titleKey | translate }}</strong>
-                  <small>{{ reason.descriptionKey | translate }}</small>
-                </span>
-              </button>
+            <div class="modal-body mn-scrollbar">
+              <p class="modal-hint">{{ 'reports.modalHint' | translate }}</p>
+              <div class="reason-grid">
+                @for (reason of reasonOptions; track reason) {
+                  <button
+                    type="button"
+                    class="reason-card"
+                    [class.active]="selectedReason === reason.value"
+                    (click)="selectReason(reason.value)"
+                    >
+                    <span class="reason-check" aria-hidden="true">{{ selectedReason === reason.value ? '!' : '' }}</span>
+                    <span class="reason-copy">
+                      <strong>{{ reason.titleKey | translate }}</strong>
+                      <small>{{ reason.descriptionKey | translate }}</small>
+                    </span>
+                  </button>
+                }
+              </div>
+              @if (selectedReason === 'OTHER' || details) {
+                <label class="details-block">
+                  <span>{{ 'reports.detailsLabel' | translate }}</span>
+                  <textarea
+                    class="mn-scrollbar"
+                    [(ngModel)]="details"
+                    rows="4"
+                    [placeholder]="'reports.detailsPlaceholder' | translate"
+                    [attr.maxlength]="maxDetailsLength"
+                  ></textarea>
+                </label>
+              }
+              @if (errorKey) {
+                <p class="error-text">{{ errorKey | translate }}</p>
+              }
             </div>
-
-            <label class="details-block" *ngIf="selectedReason === 'OTHER' || details">
-              <span>{{ 'reports.detailsLabel' | translate }}</span>
-              <textarea
-                class="mn-scrollbar"
-                [(ngModel)]="details"
-                rows="4"
-                [placeholder]="'reports.detailsPlaceholder' | translate"
-                [attr.maxlength]="maxDetailsLength"
-              ></textarea>
-            </label>
-
-            <p *ngIf="errorKey" class="error-text">{{ errorKey | translate }}</p>
-          </div>
-
-          <div class="modal-actions">
-            <app-button variant="ghost" (click)="dismiss()">{{ 'reports.cancel' | translate }}</app-button>
-            <app-button variant="primary" [disabled]="submitting" (click)="submit()">
-              {{ submitting ? ('reports.submitting' | translate) : ('reports.submit' | translate) }}
-            </app-button>
+            <div class="modal-actions">
+              <app-button variant="ghost" (click)="dismiss()">{{ 'reports.cancel' | translate }}</app-button>
+              <app-button variant="primary" [disabled]="submitting" (click)="submit()">
+                {{ submitting ? ('reports.submitting' | translate) : ('reports.submit' | translate) }}
+              </app-button>
+            </div>
           </div>
         </div>
-      </div>
-    `,
+      }
+      `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .modal-overlay {
         position: fixed;
@@ -249,7 +251,7 @@ export class ReportContentModalComponent implements OnChanges {
     @Input() visible = false;
     @Input() subject = '';
     @Input() submitting = false;
-    @Output() close = new EventEmitter<void>();
+    @Output() closed = new EventEmitter<void>();
     @Output() submitted = new EventEmitter<{ reason: ReportReason; details: string | null }>();
 
     readonly maxDetailsLength = 500;
@@ -314,7 +316,7 @@ export class ReportContentModalComponent implements OnChanges {
         if (this.submitting) {
             return;
         }
-        this.close.emit();
+        this.closed.emit();
     }
 
     submit(): void {

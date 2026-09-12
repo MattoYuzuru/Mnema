@@ -1,11 +1,10 @@
-import { Component, Input, forwardRef } from '@angular/core';
+import { Component, Input, forwardRef, ChangeDetectionStrategy } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
-import { NgIf, NgClass } from '@angular/common';
+import { NgClass } from '@angular/common';
 
 @Component({
     selector: 'app-input',
-    standalone: true,
-    imports: [NgIf, NgClass],
+    imports: [NgClass],
     providers: [
         {
             provide: NG_VALUE_ACCESSOR,
@@ -15,7 +14,9 @@ import { NgIf, NgClass } from '@angular/common';
     ],
     template: `
     <div class="input-wrapper">
-      <label *ngIf="label" [for]="id" class="input-label">{{ label }}</label>
+      @if (label) {
+        <label [for]="id" class="input-label">{{ label }}</label>
+      }
       <input
         [id]="id"
         [type]="type"
@@ -29,12 +30,15 @@ import { NgIf, NgClass } from '@angular/common';
         [value]="value"
         (input)="onInput($event)"
         (blur)="onTouched()"
-      />
-      <div *ngIf="hasError && errorMessage" class="error-message">
-        {{ errorMessage }}
-      </div>
+        />
+      @if (hasError && errorMessage) {
+        <div class="error-message">
+          {{ errorMessage }}
+        </div>
+      }
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .input-wrapper {

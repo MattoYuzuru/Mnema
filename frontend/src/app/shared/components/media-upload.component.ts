@@ -1,16 +1,17 @@
-import { Component, Input, Output, EventEmitter, HostListener, ViewChild, ElementRef } from '@angular/core';
-import { NgIf, NgClass } from '@angular/common';
+import { Component, Input, Output, EventEmitter, HostListener, ViewChild, ElementRef, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { MediaApiService, MediaKind } from '../../core/services/media-api.service';
 import { CardContentValue } from '../../core/models/user-card.models';
 import { ButtonComponent } from './button.component';
 
 @Component({
     selector: 'app-media-upload',
-    standalone: true,
-    imports: [NgIf, NgClass, ButtonComponent],
+    imports: [ButtonComponent],
     template: `
     <div class="media-upload">
-      <label *ngIf="label" class="field-label">{{ label }}</label>
+      @if (label) {
+        <label class="field-label">{{ label }}</label>
+      }
 
       <div
         class="upload-area"
@@ -20,26 +21,40 @@ import { ButtonComponent } from './button.component';
         (dragover)="onDragOver($event)"
         (dragleave)="onDragLeave($event)"
         (drop)="onDrop($event)"
-      >
-        <div *ngIf="!hasMedia && !uploading" class="upload-prompt">
-          <span class="upload-icon">{{ getIcon() }}</span>
-          <p class="upload-text">Drag & drop or click to select {{ fieldType }}</p>
-          <p class="upload-hint">{{ getAcceptedFormats() }}</p>
-        </div>
-
-        <div *ngIf="uploading" class="upload-progress">
-          <div class="progress-bar">
-            <div class="progress-fill" [style.width.%]="uploadProgress"></div>
+        >
+        @if (!hasMedia && !uploading) {
+          <div class="upload-prompt">
+            <span class="upload-icon">{{ getIcon() }}</span>
+            <p class="upload-text">Drag & drop or click to select {{ fieldType }}</p>
+            <p class="upload-hint">{{ getAcceptedFormats() }}</p>
           </div>
-          <p>Uploading... {{ uploadProgress }}%</p>
-        </div>
+        }
 
-        <div *ngIf="hasMedia && !uploading" class="media-preview">
-          <img *ngIf="fieldType === 'image' && mediaUrl" [src]="mediaUrl" alt="Preview" class="preview-image" />
-          <audio *ngIf="fieldType === 'audio' && mediaUrl" [src]="mediaUrl" controls class="preview-audio"></audio>
-          <video *ngIf="fieldType === 'video' && mediaUrl" [src]="mediaUrl" controls class="preview-video"></video>
-          <p *ngIf="!mediaUrl" class="media-id-label">Media ID: {{ getMediaId() }}</p>
-        </div>
+        @if (uploading) {
+          <div class="upload-progress">
+            <div class="progress-bar">
+              <div class="progress-fill" [style.width.%]="uploadProgress"></div>
+            </div>
+            <p>Uploading... {{ uploadProgress }}%</p>
+          </div>
+        }
+
+        @if (hasMedia && !uploading) {
+          <div class="media-preview">
+            @if (fieldType === 'image' && mediaUrl) {
+              <img [src]="mediaUrl" alt="Preview" class="preview-image" />
+            }
+            @if (fieldType === 'audio' && mediaUrl) {
+              <audio [src]="mediaUrl" controls class="preview-audio"></audio>
+            }
+            @if (fieldType === 'video' && mediaUrl) {
+              <video [src]="mediaUrl" controls class="preview-video"></video>
+            }
+            @if (!mediaUrl) {
+              <p class="media-id-label">Media ID: {{ getMediaId() }}</p>
+            }
+          </div>
+        }
 
         <input
           #fileInput
@@ -47,17 +62,22 @@ import { ButtonComponent } from './button.component';
           [accept]="getAcceptString()"
           (change)="onFileSelected($event)"
           style="display: none;"
-        />
+          />
       </div>
 
-      <div *ngIf="hasMedia" class="media-actions">
-        <app-button variant="ghost" size="sm" (click)="exportMedia(); $event.stopPropagation()">Export</app-button>
-        <app-button variant="ghost" size="sm" (click)="clearMedia(); $event.stopPropagation()">Remove</app-button>
-      </div>
+      @if (hasMedia) {
+        <div class="media-actions">
+          <app-button variant="ghost" size="sm" (click)="exportMedia(); $event.stopPropagation()">Export</app-button>
+          <app-button variant="ghost" size="sm" (click)="clearMedia(); $event.stopPropagation()">Remove</app-button>
+        </div>
+      }
 
-      <p *ngIf="error" class="error-message">{{ error }}</p>
+      @if (error) {
+        <p class="error-message">{{ error }}</p>
+      }
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .media-upload { display: flex; flex-direction: column; gap: var(--spacing-xs); }
       .field-label { font-size: 0.875rem; font-weight: 500; color: var(--color-text-primary); }
@@ -93,6 +113,8 @@ import { ButtonComponent } from './button.component';
     `]
 })
 export class MediaUploadComponent {
+    private mediaApi = inject(MediaApiService);
+
     @Input() value: CardContentValue | null = null;
     @Input() fieldType: 'image' | 'audio' | 'video' = 'image';
     @Input() label: string = '';
@@ -104,8 +126,6 @@ export class MediaUploadComponent {
     uploading = false;
     uploadProgress = 0;
     error: string | null = null;
-
-    constructor(private mediaApi: MediaApiService) {}
 
     get hasMedia(): boolean {
         if (!this.value) return false;

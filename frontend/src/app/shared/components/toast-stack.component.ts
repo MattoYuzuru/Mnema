@@ -1,36 +1,37 @@
-import { Component } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { Component, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { TranslatePipe } from '../pipes/translate.pipe';
 import { ToastItem, ToastService } from '../../core/services/toast.service';
 
 @Component({
     selector: 'app-toast-stack',
-    standalone: true,
-    imports: [NgFor, NgIf, TranslatePipe],
+    imports: [TranslatePipe],
     template: `
     <section class="toast-layer" aria-live="polite" aria-atomic="true">
-      <article
-        *ngFor="let toast of toastService.items(); trackBy: trackById"
-        class="toast-card"
-        [class.toast-info]="toast.tone === 'info'"
-        [class.toast-success]="toast.tone === 'success'"
-        [class.toast-warning]="toast.tone === 'warning'"
-        [class.toast-error]="toast.tone === 'error'"
-        role="status"
-      >
-        <div class="toast-mark" aria-hidden="true"></div>
-        <p class="toast-message">{{ toast.messageKey | translate }}</p>
-        <button
-          type="button"
-          class="toast-close"
-          (click)="toastService.dismiss(toast.id)"
-          [attr.aria-label]="'toast.close' | translate"
-        >
-          ×
-        </button>
-      </article>
+      @for (toast of toastService.items(); track trackById($index, toast)) {
+        <article
+          class="toast-card"
+          [class.toast-info]="toast.tone === 'info'"
+          [class.toast-success]="toast.tone === 'success'"
+          [class.toast-warning]="toast.tone === 'warning'"
+          [class.toast-error]="toast.tone === 'error'"
+          role="status"
+          >
+          <div class="toast-mark" aria-hidden="true"></div>
+          <p class="toast-message">{{ toast.messageKey | translate }}</p>
+          <button
+            type="button"
+            class="toast-close"
+            (click)="toastService.dismiss(toast.id)"
+            [attr.aria-label]="'toast.close' | translate"
+            >
+            ×
+          </button>
+        </article>
+      }
     </section>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .toast-layer {
@@ -136,7 +137,8 @@ import { ToastItem, ToastService } from '../../core/services/toast.service';
     ]
 })
 export class ToastStackComponent {
-    constructor(public readonly toastService: ToastService) {}
+    readonly toastService = inject(ToastService);
+
 
     trackById(_: number, item: ToastItem): number {
         return item.id;

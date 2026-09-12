@@ -1,6 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
 import { Router } from '@angular/router';
-import { NgIf, NgFor } from '@angular/common';
+
 import { TemplateApiService } from '../../core/services/template-api.service';
 import { CardTemplateDTO } from '../../core/models/template.models';
 import { TemplateCardComponent } from '../../shared/components/template-card.component';
@@ -11,59 +11,66 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 
 @Component({
     selector: 'app-templates-list',
-    standalone: true,
-    imports: [NgIf, NgFor, TemplateCardComponent, MemoryTipLoaderComponent, EmptyStateComponent, ButtonComponent, TranslatePipe],
+    imports: [TemplateCardComponent, MemoryTipLoaderComponent, EmptyStateComponent, ButtonComponent, TranslatePipe],
     template: `
-    <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
+    @if (loading) {
+      <app-memory-tip-loader></app-memory-tip-loader>
+    }
 
-    <div *ngIf="!loading" class="templates-list-page">
-      <header class="page-header">
-        <div class="title-row">
-          <h1>{{ 'templates.title' | translate }}</h1>
-          <a
-            class="help-link"
-            href="https://github.com/MattoYuzuru/Mnema/wiki#templates"
-            target="_blank"
-            rel="noopener noreferrer"
-            aria-label="Templates guide"
-          >?</a>
-        </div>
-      </header>
-
-      <div *ngIf="templates.length > 0" class="templates-grid">
-        <app-template-card
-          *ngFor="let template of templates"
-          [template]="template"
-          [showActions]="true"
-          [showViewButton]="true"
-          [showSelectButton]="false"
-          [showVisibility]="true"
-          [viewLabel]="'templates.view' | translate"
-          [publicLabel]="'templates.public' | translate"
-          [privateLabel]="'templates.private' | translate"
-          (view)="openTemplate(template.templateId)"
-          (click)="openTemplate(template.templateId)"
-        ></app-template-card>
+    @if (!loading) {
+      <div class="templates-list-page">
+        <header class="page-header">
+          <div class="title-row">
+            <h1>{{ 'templates.title' | translate }}</h1>
+            <a
+              class="help-link"
+              href="https://github.com/MattoYuzuru/Mnema/wiki#templates"
+              target="_blank"
+              rel="noopener noreferrer"
+              aria-label="Templates guide"
+            >?</a>
+          </div>
+        </header>
+        @if (templates.length > 0) {
+          <div class="templates-grid">
+            @for (template of templates; track template) {
+              <app-template-card
+                [template]="template"
+                [showActions]="true"
+                [showViewButton]="true"
+                [showSelectButton]="false"
+                [showVisibility]="true"
+                [viewLabel]="'templates.view' | translate"
+                [publicLabel]="'templates.public' | translate"
+                [privateLabel]="'templates.private' | translate"
+                (view)="openTemplate(template.templateId)"
+                (click)="openTemplate(template.templateId)"
+              ></app-template-card>
+            }
+          </div>
+        }
+        @if (templates.length > 0 && hasMore) {
+          <div class="load-more-container">
+            <app-button
+              variant="secondary"
+              [disabled]="loadingMore"
+              (click)="loadMore()"
+              >
+              {{ (loadingMore ? 'templates.loading' : 'templates.loadMore') | translate }}
+            </app-button>
+          </div>
+        }
+        @if (templates.length === 0) {
+          <app-empty-state
+            icon="T"
+            [title]="'templates.noTemplates' | translate"
+            [description]="'templates.noTemplatesDescription' | translate"
+          ></app-empty-state>
+        }
       </div>
-
-      <div *ngIf="templates.length > 0 && hasMore" class="load-more-container">
-        <app-button
-          variant="secondary"
-          [disabled]="loadingMore"
-          (click)="loadMore()"
-        >
-          {{ (loadingMore ? 'templates.loading' : 'templates.loadMore') | translate }}
-        </app-button>
-      </div>
-
-      <app-empty-state
-        *ngIf="templates.length === 0"
-        icon="T"
-        [title]="'templates.noTemplates' | translate"
-        [description]="'templates.noTemplatesDescription' | translate"
-      ></app-empty-state>
-    </div>
-  `,
+    }
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .templates-list-page {
         max-width: 72rem;
@@ -141,14 +148,15 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
     `]
 })
 export class TemplatesListComponent implements OnInit {
+    private templateApi = inject(TemplateApiService);
+    private router = inject(Router);
+
     loading = true;
     loadingMore = false;
     templates: CardTemplateDTO[] = [];
     page = 1;
     pageSize = 12;
     hasMore = false;
-
-    constructor(private templateApi: TemplateApiService, private router: Router) {}
 
     ngOnInit(): void {
         this.loadTemplates();

@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { appConfig } from './app.config';
 import { BehaviorSubject, Observable } from 'rxjs';
@@ -30,10 +30,10 @@ export interface MeUpdateRequest {
 
 @Injectable({ providedIn: 'root' })
 export class UserApiService {
+    private http = inject(HttpClient);
+
     private profileSubject = new BehaviorSubject<UserProfile | null>(null);
     profile$ = this.profileSubject.asObservable();
-
-    constructor(private http: HttpClient) {}
 
     getMe(): Observable<UserProfile> {
         return this.http.get<UserProfileApiResponse>(`${appConfig.apiBaseUrl}/me`).pipe(

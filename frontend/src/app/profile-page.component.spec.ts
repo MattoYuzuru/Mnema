@@ -1,4 +1,5 @@
 import { FormBuilder } from '@angular/forms';
+import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 
 import { AuthService, PasswordStatus } from './auth.service';
@@ -33,14 +34,17 @@ describe('ProfilePageComponent', () => {
         api = jasmine.createSpyObj<UserApiService>('UserApiService', ['updateMe', 'getMe']);
         toast = jasmine.createSpyObj<ToastService>('ToastService', ['success', 'error', 'info', 'warning', 'show', 'dismiss']);
 
-        component = new ProfilePageComponent(
-            auth,
-            api,
-            jasmine.createSpyObj<MediaApiService>('MediaApiService', ['resolve', 'uploadFile']),
-            new FormBuilder(),
-            new I18nService(),
-            toast
-        );
+        TestBed.configureTestingModule({
+            providers: [
+                { provide: AuthService, useValue: auth },
+                { provide: UserApiService, useValue: api },
+                { provide: MediaApiService, useValue: jasmine.createSpyObj<MediaApiService>('MediaApiService', ['resolve', 'uploadFile']) },
+                { provide: FormBuilder, useValue: new FormBuilder() },
+                { provide: I18nService, useValue: new I18nService() },
+                { provide: ToastService, useValue: toast }
+            ]
+        });
+        component = TestBed.runInInjectionContext(() => new ProfilePageComponent());
     });
 
     it('shows a toast after saving profile changes', async () => {

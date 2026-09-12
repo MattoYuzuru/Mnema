@@ -1,5 +1,5 @@
-import { Component, OnInit, OnDestroy } from '@angular/core';
-import { NgIf, NgFor } from '@angular/common';
+import { Component, OnInit, OnDestroy, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { Router, RouterLink } from '@angular/router';
 import { forkJoin, of, Subscription, from } from 'rxjs';
 import { catchError, distinctUntilChanged, filter, mergeMap, skip } from 'rxjs/operators';
@@ -19,305 +19,331 @@ import { EmptyStateComponent } from './shared/components/empty-state.component';
 import { TranslatePipe } from './shared/pipes/translate.pipe';
 
 @Component({
-    standalone: true,
     selector: 'app-home-page',
-    imports: [NgIf, NgFor, RouterLink, DeckCardComponent, MemoryTipLoaderComponent, ButtonComponent, EmptyStateComponent, TranslatePipe],
+    imports: [RouterLink, DeckCardComponent, MemoryTipLoaderComponent, ButtonComponent, EmptyStateComponent, TranslatePipe],
     template: `
-    <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
+    @if (loading) {
+      <app-memory-tip-loader></app-memory-tip-loader>
+    }
 
-    <div *ngIf="!loading" class="home-page">
-      <section *ngIf="auth.status() !== 'authenticated'" class="hero">
-        <div class="container hero-grid">
-          <div class="hero-content">
-            <span class="hero-badge">{{ 'home.heroBadge' | translate }}</span>
-            <h1 class="hero-title">{{ 'home.heroTitle' | translate }}</h1>
-            <p class="hero-subtitle">{{ 'home.heroSubtitle' | translate }}</p>
-
-            <div class="hero-actions">
-              <app-button variant="primary" size="lg" routerLink="/register">
-                {{ 'home.heroPrimaryCta' | translate }}
-              </app-button>
-              <app-button variant="secondary" size="lg" routerLink="/public-decks">
-                {{ 'home.heroSecondaryCta' | translate }}
-              </app-button>
-            </div>
-
-            <div class="hero-search glass-strong">
-              <label class="search-label" for="hero-search">
-                {{ 'home.heroSearchLabel' | translate }}
-              </label>
-              <div class="search-row">
-                <div class="search-input" [class.has-value]="heroSearchQuery">
-                  <span class="search-icon">🔍</span>
-                  <input
-                    id="hero-search"
-                    type="search"
-                    [value]="heroSearchQuery"
-                    autocomplete="off"
-                    [attr.aria-label]="'home.heroSearchLabel' | translate"
-                    (input)="onHeroSearchInput($event)"
-                    (keydown.enter)="submitHeroSearch()"
-                  />
-                  <span *ngIf="!heroSearchQuery" class="typing-placeholder">{{ typedPlaceholder }}</span>
+    @if (!loading) {
+      <div class="home-page">
+        @if (auth.status() !== 'authenticated') {
+          <section class="hero">
+            <div class="container hero-grid">
+              <div class="hero-content">
+                <span class="hero-badge">{{ 'home.heroBadge' | translate }}</span>
+                <h1 class="hero-title">{{ 'home.heroTitle' | translate }}</h1>
+                <p class="hero-subtitle">{{ 'home.heroSubtitle' | translate }}</p>
+                <div class="hero-actions">
+                  <app-button variant="primary" size="lg" routerLink="/register">
+                    {{ 'home.heroPrimaryCta' | translate }}
+                  </app-button>
+                  <app-button variant="secondary" size="lg" routerLink="/public-decks">
+                    {{ 'home.heroSecondaryCta' | translate }}
+                  </app-button>
                 </div>
-                <app-button variant="primary" size="lg" (click)="submitHeroSearch()">
-                  {{ 'home.heroSearchButton' | translate }}
+                <div class="hero-search glass-strong">
+                  <label class="search-label" for="hero-search">
+                    {{ 'home.heroSearchLabel' | translate }}
+                  </label>
+                  <div class="search-row">
+                    <div class="search-input" [class.has-value]="heroSearchQuery">
+                      <span class="search-icon">🔍</span>
+                      <input
+                        id="hero-search"
+                        type="search"
+                        [value]="heroSearchQuery"
+                        autocomplete="off"
+                        [attr.aria-label]="'home.heroSearchLabel' | translate"
+                        (input)="onHeroSearchInput($event)"
+                        (keydown.enter)="submitHeroSearch()"
+                        />
+                      @if (!heroSearchQuery) {
+                        <span class="typing-placeholder">{{ typedPlaceholder }}</span>
+                      }
+                    </div>
+                    <app-button variant="primary" size="lg" (click)="submitHeroSearch()">
+                      {{ 'home.heroSearchButton' | translate }}
+                    </app-button>
+                  </div>
+                  <div class="search-hints">
+                    @for (topic of popularTopics; track topic) {
+                      <button
+                        type="button"
+                        class="chip"
+                        (click)="applyHeroTopic(topic)"
+                        >
+                        {{ topic }}
+                      </button>
+                    }
+                  </div>
+                </div>
+                <div class="hero-pillars">
+                  @for (pillar of heroPillars; track pillar) {
+                    <div class="pillar">
+                      <div class="pillar-dot"></div>
+                      <div>
+                        <h3>{{ pillar.titleKey | translate }}</h3>
+                        <p>{{ pillar.descriptionKey | translate }}</p>
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+              <div class="hero-visual">
+                <div class="hero-card glass">
+                  <div class="hero-card-top">
+                    <span class="hero-chip">{{ 'home.heroCardToday' | translate }}</span>
+                    <span class="hero-time">6 {{ 'home.heroCardMinutes' | translate }}</span>
+                  </div>
+                  <h3>{{ 'home.heroCardTitle' | translate }}</h3>
+                  <p>{{ 'home.heroCardSubtitle' | translate }}</p>
+                  <div class="hero-progress">
+                    <span>{{ 'home.heroCardProgress' | translate }}</span>
+                    <div class="progress-track">
+                      <span class="progress-fill"></span>
+                    </div>
+                  </div>
+                </div>
+                <div class="hero-card glass-strong">
+                  <div class="hero-card-top">
+                    <span class="hero-chip">{{ 'home.heroCardNext' | translate }}</span>
+                    <span class="hero-time">{{ 'home.heroCardEstimate' | translate }}</span>
+                  </div>
+                  <h3>{{ 'home.heroCardFocusTitle' | translate }}</h3>
+                  <p>{{ 'home.heroCardFocusSubtitle' | translate }}</p>
+                  <div class="hero-tags">
+                    <span class="hero-tag">C1</span>
+                    <span class="hero-tag">{{ 'home.heroCardTag1' | translate }}</span>
+                    <span class="hero-tag">{{ 'home.heroCardTag2' | translate }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        }
+        @if (auth.status() !== 'authenticated') {
+          <section class="section how-it-works">
+            <div class="container">
+              <div class="section-heading">
+                <h2>{{ 'home.howTitle' | translate }}</h2>
+                <p>{{ 'home.howSubtitle' | translate }}</p>
+              </div>
+              <div class="how-grid">
+                @for (step of howSteps; track step; let i = $index) {
+                  <div class="how-card glass">
+                    <div class="how-step">{{ i + 1 }}</div>
+                    <h3>{{ step.titleKey | translate }}</h3>
+                    <p>{{ step.descriptionKey | translate }}</p>
+                  </div>
+                }
+              </div>
+            </div>
+          </section>
+        }
+        @if (auth.status() !== 'authenticated') {
+          <section class="section value-props">
+            <div class="container">
+              <div class="section-heading">
+                <h2>{{ 'home.valueTitle' | translate }}</h2>
+                <p>{{ 'home.valueSubtitle' | translate }}</p>
+              </div>
+              <div class="value-grid">
+                @for (value of valueProps; track value) {
+                  <div class="value-card glass">
+                    <div class="value-icon">{{ value.icon }}</div>
+                    <div>
+                      <h3>{{ value.titleKey | translate }}</h3>
+                      <p>{{ value.descriptionKey | translate }}</p>
+                    </div>
+                  </div>
+                }
+              </div>
+            </div>
+          </section>
+        }
+        @if (auth.status() !== 'authenticated') {
+          <section class="section deck-search">
+            <div class="container">
+              <div class="deck-search-card glass-strong">
+                <div class="deck-search-copy">
+                  <h2>{{ 'home.searchTitle' | translate }}</h2>
+                  <p>{{ 'home.searchSubtitle' | translate }}</p>
+                </div>
+                <div class="deck-search-form">
+                  <div class="search-input" [class.has-value]="catalogSearchQuery">
+                    <span class="search-icon">⌕</span>
+                    <input
+                      type="search"
+                      [value]="catalogSearchQuery"
+                      autocomplete="off"
+                      [attr.aria-label]="'home.searchTitle' | translate"
+                      (input)="onCatalogSearchInput($event)"
+                      (keydown.enter)="submitCatalogSearch()"
+                      />
+                    @if (!catalogSearchQuery) {
+                      <span class="typing-placeholder static">{{ 'home.searchPlaceholder' | translate }}</span>
+                    }
+                  </div>
+                  <app-button variant="primary" size="lg" (click)="submitCatalogSearch()">
+                    {{ 'home.searchButton' | translate }}
+                  </app-button>
+                </div>
+                <div class="search-hints">
+                  @for (topic of popularTopics; track topic) {
+                    <button
+                      type="button"
+                      class="chip"
+                      (click)="applyCatalogTopic(topic)"
+                      >
+                      {{ topic }}
+                    </button>
+                  }
+                </div>
+              </div>
+            </div>
+          </section>
+        }
+        @if (auth.status() !== 'authenticated') {
+          <section class="section starter-decks">
+            <div class="container">
+              <div class="section-heading">
+                <h2>{{ 'home.starterTitle' | translate }}</h2>
+                <p>{{ 'home.starterSubtitle' | translate }}</p>
+              </div>
+              <div class="starter-grid">
+                @for (deck of starterDecks; track deck) {
+                  <a
+                    class="starter-card glass"
+                    [attr.href]="deck.href"
+                    >
+                    <div class="starter-card-top">
+                      <h3>{{ deck.titleKey | translate }}</h3>
+                      <span class="starter-badge" [class.popular]="deck.badge === 'popular'">
+                        {{ deck.badge === 'popular' ? ('home.starterBadgePopular' | translate) : ('home.starterBadgeNew' | translate) }}
+                      </span>
+                    </div>
+                    <p>{{ deck.descriptionKey | translate }}</p>
+                    <span class="starter-link">{{ 'home.starterAction' | translate }} →</span>
+                  </a>
+                }
+              </div>
+            </div>
+          </section>
+        }
+        @if (auth.status() !== 'authenticated') {
+          <section class="section community-decks">
+            <div class="container">
+              <div class="section-heading">
+                <h2>{{ 'home.communityTitle' | translate }}</h2>
+                <p>{{ 'home.communitySubtitle' | translate }}</p>
+              </div>
+              @if (publicDecks.length > 0) {
+                <div class="deck-grid">
+                  @for (deck of publicDecks; track deck) {
+                    <app-deck-card
+                      [publicDeck]="deck"
+                      [iconUrl]="getPublicDeckIconUrl(deck)"
+                      [showFork]="canForkDeck(deck)"
+                      [showBrowse]="true"
+                      (open)="openPublicDeck(deck.deckId)"
+                      (fork)="forkDeck(deck.deckId)"
+                      (browse)="browsePublicDeck(deck.deckId)"
+                    ></app-deck-card>
+                  }
+                </div>
+              }
+              @if (publicDecks.length === 0) {
+                <app-empty-state
+                  icon="🌐"
+                  [title]="'home.noPublicDecks' | translate"
+                  [description]="'home.noPublicDecksDescription' | translate"
+                ></app-empty-state>
+              }
+              <div class="section-cta">
+                <app-button variant="primary" size="lg" routerLink="/public-decks">
+                  {{ 'home.communityCta' | translate }}
                 </app-button>
               </div>
-              <div class="search-hints">
-                <button
-                  type="button"
-                  class="chip"
-                  *ngFor="let topic of popularTopics"
-                  (click)="applyHeroTopic(topic)"
-                >
-                  {{ topic }}
-                </button>
+            </div>
+          </section>
+        }
+        @if (auth.status() === 'authenticated') {
+          <section class="study-today glass container">
+            <h2>{{ 'home.studyToday' | translate }}</h2>
+            <div class="study-summary">
+              <div class="study-info">
+                <p class="study-message">{{ todayStats.due }} {{ 'home.cardsDue' | translate }} · {{ todayStats.new }} {{ 'home.new' | translate }}</p>
+                <app-button variant="primary" size="lg" routerLink="/my-study">
+                  {{ 'home.continueLearn' | translate }}
+                </app-button>
               </div>
             </div>
-
-            <div class="hero-pillars">
-              <div class="pillar" *ngFor="let pillar of heroPillars">
-                <div class="pillar-dot"></div>
-                <div>
-                  <h3>{{ pillar.titleKey | translate }}</h3>
-                  <p>{{ pillar.descriptionKey | translate }}</p>
+            @if (userDecks.length > 0) {
+              <div class="recent-decks">
+                <h3>{{ 'home.yourDecks' | translate }}</h3>
+                <div class="deck-grid">
+                  @for (deck of userDecks; track deck) {
+                    <app-deck-card
+                      [userDeck]="deck"
+                      [iconUrl]="getUserDeckIconUrl(deck)"
+                      [showLearn]="true"
+                      [showBrowse]="true"
+                      [stats]="getDeckStats(deck)"
+                      (open)="openUserDeck(deck.userDeckId)"
+                      (learn)="learnDeck(deck.userDeckId)"
+                      (browse)="browseDeck(deck.userDeckId)"
+                    ></app-deck-card>
+                  }
                 </div>
               </div>
+            }
+            @if (userDecks.length === 0) {
+              <app-empty-state
+                icon="📚"
+                [title]="'home.noDecksYet' | translate"
+                [description]="'home.noDecksDescription' | translate"
+                [actionText]="'home.browsePublicDecks' | translate"
+                (action)="goToPublicDecks()"
+              ></app-empty-state>
+            }
+          </section>
+        }
+        @if (auth.status() === 'authenticated') {
+          <section class="public-decks container">
+            <div class="section-header">
+              <h2>{{ 'home.topPublicDecks' | translate }}</h2>
+              <a routerLink="/public-decks" class="view-all">{{ 'home.viewAll' | translate }} →</a>
             </div>
-          </div>
-
-          <div class="hero-visual">
-            <div class="hero-card glass">
-              <div class="hero-card-top">
-                <span class="hero-chip">{{ 'home.heroCardToday' | translate }}</span>
-                <span class="hero-time">6 {{ 'home.heroCardMinutes' | translate }}</span>
+            @if (publicDecks.length > 0) {
+              <div class="deck-list">
+                @for (deck of publicDecks; track deck) {
+                  <app-deck-card
+                    [publicDeck]="deck"
+                    [iconUrl]="getPublicDeckIconUrl(deck)"
+                    [showFork]="canForkDeck(deck)"
+                    [showBrowse]="true"
+                    (open)="openPublicDeck(deck.deckId)"
+                    (fork)="forkDeck(deck.deckId)"
+                    (browse)="browsePublicDeck(deck.deckId)"
+                  ></app-deck-card>
+                }
               </div>
-              <h3>{{ 'home.heroCardTitle' | translate }}</h3>
-              <p>{{ 'home.heroCardSubtitle' | translate }}</p>
-              <div class="hero-progress">
-                <span>{{ 'home.heroCardProgress' | translate }}</span>
-                <div class="progress-track">
-                  <span class="progress-fill"></span>
-                </div>
-              </div>
-            </div>
-
-            <div class="hero-card glass-strong">
-              <div class="hero-card-top">
-                <span class="hero-chip">{{ 'home.heroCardNext' | translate }}</span>
-                <span class="hero-time">{{ 'home.heroCardEstimate' | translate }}</span>
-              </div>
-              <h3>{{ 'home.heroCardFocusTitle' | translate }}</h3>
-              <p>{{ 'home.heroCardFocusSubtitle' | translate }}</p>
-              <div class="hero-tags">
-                <span class="hero-tag">C1</span>
-                <span class="hero-tag">{{ 'home.heroCardTag1' | translate }}</span>
-                <span class="hero-tag">{{ 'home.heroCardTag2' | translate }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section *ngIf="auth.status() !== 'authenticated'" class="section how-it-works">
-        <div class="container">
-          <div class="section-heading">
-            <h2>{{ 'home.howTitle' | translate }}</h2>
-            <p>{{ 'home.howSubtitle' | translate }}</p>
-          </div>
-          <div class="how-grid">
-            <div class="how-card glass" *ngFor="let step of howSteps; let i = index">
-              <div class="how-step">{{ i + 1 }}</div>
-              <h3>{{ step.titleKey | translate }}</h3>
-              <p>{{ step.descriptionKey | translate }}</p>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section *ngIf="auth.status() !== 'authenticated'" class="section value-props">
-        <div class="container">
-          <div class="section-heading">
-            <h2>{{ 'home.valueTitle' | translate }}</h2>
-            <p>{{ 'home.valueSubtitle' | translate }}</p>
-          </div>
-          <div class="value-grid">
-            <div class="value-card glass" *ngFor="let value of valueProps">
-              <div class="value-icon">{{ value.icon }}</div>
-              <div>
-                <h3>{{ value.titleKey | translate }}</h3>
-                <p>{{ value.descriptionKey | translate }}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section *ngIf="auth.status() !== 'authenticated'" class="section deck-search">
-        <div class="container">
-          <div class="deck-search-card glass-strong">
-            <div class="deck-search-copy">
-              <h2>{{ 'home.searchTitle' | translate }}</h2>
-              <p>{{ 'home.searchSubtitle' | translate }}</p>
-            </div>
-            <div class="deck-search-form">
-              <div class="search-input" [class.has-value]="catalogSearchQuery">
-                <span class="search-icon">⌕</span>
-                <input
-                  type="search"
-                  [value]="catalogSearchQuery"
-                  autocomplete="off"
-                  [attr.aria-label]="'home.searchTitle' | translate"
-                  (input)="onCatalogSearchInput($event)"
-                  (keydown.enter)="submitCatalogSearch()"
-                />
-                <span *ngIf="!catalogSearchQuery" class="typing-placeholder static">{{ 'home.searchPlaceholder' | translate }}</span>
-              </div>
-              <app-button variant="primary" size="lg" (click)="submitCatalogSearch()">
-                {{ 'home.searchButton' | translate }}
-              </app-button>
-            </div>
-            <div class="search-hints">
-              <button
-                type="button"
-                class="chip"
-                *ngFor="let topic of popularTopics"
-                (click)="applyCatalogTopic(topic)"
-              >
-                {{ topic }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section *ngIf="auth.status() !== 'authenticated'" class="section starter-decks">
-        <div class="container">
-          <div class="section-heading">
-            <h2>{{ 'home.starterTitle' | translate }}</h2>
-            <p>{{ 'home.starterSubtitle' | translate }}</p>
-          </div>
-          <div class="starter-grid">
-            <a
-              *ngFor="let deck of starterDecks"
-              class="starter-card glass"
-              [attr.href]="deck.href"
-            >
-              <div class="starter-card-top">
-                <h3>{{ deck.titleKey | translate }}</h3>
-                <span class="starter-badge" [class.popular]="deck.badge === 'popular'">
-                  {{ deck.badge === 'popular' ? ('home.starterBadgePopular' | translate) : ('home.starterBadgeNew' | translate) }}
-                </span>
-              </div>
-              <p>{{ deck.descriptionKey | translate }}</p>
-              <span class="starter-link">{{ 'home.starterAction' | translate }} →</span>
-            </a>
-          </div>
-        </div>
-      </section>
-
-      <section *ngIf="auth.status() !== 'authenticated'" class="section community-decks">
-        <div class="container">
-          <div class="section-heading">
-            <h2>{{ 'home.communityTitle' | translate }}</h2>
-            <p>{{ 'home.communitySubtitle' | translate }}</p>
-          </div>
-
-          <div *ngIf="publicDecks.length > 0" class="deck-grid">
-            <app-deck-card
-              *ngFor="let deck of publicDecks"
-              [publicDeck]="deck"
-              [iconUrl]="getPublicDeckIconUrl(deck)"
-              [showFork]="canForkDeck(deck)"
-              [showBrowse]="true"
-              (open)="openPublicDeck(deck.deckId)"
-              (fork)="forkDeck(deck.deckId)"
-              (browse)="browsePublicDeck(deck.deckId)"
-            ></app-deck-card>
-          </div>
-
-          <app-empty-state
-            *ngIf="publicDecks.length === 0"
-            icon="🌐"
-            [title]="'home.noPublicDecks' | translate"
-            [description]="'home.noPublicDecksDescription' | translate"
-          ></app-empty-state>
-
-          <div class="section-cta">
-            <app-button variant="primary" size="lg" routerLink="/public-decks">
-              {{ 'home.communityCta' | translate }}
-            </app-button>
-          </div>
-        </div>
-      </section>
-
-      <section *ngIf="auth.status() === 'authenticated'" class="study-today glass container">
-        <h2>{{ 'home.studyToday' | translate }}</h2>
-        <div class="study-summary">
-          <div class="study-info">
-            <p class="study-message">{{ todayStats.due }} {{ 'home.cardsDue' | translate }} · {{ todayStats.new }} {{ 'home.new' | translate }}</p>
-            <app-button variant="primary" size="lg" routerLink="/my-study">
-              {{ 'home.continueLearn' | translate }}
-            </app-button>
-          </div>
-        </div>
-
-        <div *ngIf="userDecks.length > 0" class="recent-decks">
-          <h3>{{ 'home.yourDecks' | translate }}</h3>
-          <div class="deck-grid">
-            <app-deck-card
-              *ngFor="let deck of userDecks"
-              [userDeck]="deck"
-              [iconUrl]="getUserDeckIconUrl(deck)"
-              [showLearn]="true"
-              [showBrowse]="true"
-              [stats]="getDeckStats(deck)"
-              (open)="openUserDeck(deck.userDeckId)"
-              (learn)="learnDeck(deck.userDeckId)"
-              (browse)="browseDeck(deck.userDeckId)"
-            ></app-deck-card>
-          </div>
-        </div>
-
-        <app-empty-state
-          *ngIf="userDecks.length === 0"
-          icon="📚"
-          [title]="'home.noDecksYet' | translate"
-          [description]="'home.noDecksDescription' | translate"
-          [actionText]="'home.browsePublicDecks' | translate"
-          (action)="goToPublicDecks()"
-        ></app-empty-state>
-      </section>
-
-      <section *ngIf="auth.status() === 'authenticated'" class="public-decks container">
-        <div class="section-header">
-          <h2>{{ 'home.topPublicDecks' | translate }}</h2>
-          <a routerLink="/public-decks" class="view-all">{{ 'home.viewAll' | translate }} →</a>
-        </div>
-
-        <div *ngIf="publicDecks.length > 0" class="deck-list">
-          <app-deck-card
-            *ngFor="let deck of publicDecks"
-            [publicDeck]="deck"
-            [iconUrl]="getPublicDeckIconUrl(deck)"
-            [showFork]="canForkDeck(deck)"
-            [showBrowse]="true"
-            (open)="openPublicDeck(deck.deckId)"
-            (fork)="forkDeck(deck.deckId)"
-            (browse)="browsePublicDeck(deck.deckId)"
-          ></app-deck-card>
-        </div>
-
-        <app-empty-state
-          *ngIf="publicDecks.length === 0"
-          icon="🌐"
-          [title]="'home.noPublicDecks' | translate"
-          [description]="'home.noPublicDecksDescription' | translate"
-        ></app-empty-state>
-      </section>
-    </div>
-  `,
+            }
+            @if (publicDecks.length === 0) {
+              <app-empty-state
+                icon="🌐"
+                [title]="'home.noPublicDecks' | translate"
+                [description]="'home.noPublicDecksDescription' | translate"
+              ></app-empty-state>
+            }
+          </section>
+        }
+      </div>
+    }
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .home-page {
@@ -947,6 +973,15 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
     ]
 })
 export class HomePageComponent implements OnInit, OnDestroy {
+    auth = inject(AuthService);
+    private i18n = inject(I18nService);
+    private userApi = inject(UserApiService);
+    private publicDeckApi = inject(PublicDeckApiService);
+    private deckApi = inject(DeckApiService);
+    private reviewApi = inject(ReviewApiService);
+    private mediaApi = inject(MediaApiService);
+    private router = inject(Router);
+
     loading = true;
     publicDecks: PublicDeckDTO[] = [];
     userDecks: UserDeckDTO[] = [];
@@ -1018,17 +1053,6 @@ export class HomePageComponent implements OnInit, OnDestroy {
     private static deckIconMediaCache: Map<string, string> = new Map();
     private static deckIconUrlCache: Map<string, string> = new Map();
     private deckIcons: Map<string, string> = new Map();
-
-    constructor(
-        public auth: AuthService,
-        private i18n: I18nService,
-        private userApi: UserApiService,
-        private publicDeckApi: PublicDeckApiService,
-        private deckApi: DeckApiService,
-        private reviewApi: ReviewApiService,
-        private mediaApi: MediaApiService,
-        private router: Router
-    ) {}
 
     ngOnInit(): void {
         this.syncLandingCopy();

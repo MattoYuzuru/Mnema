@@ -1,23 +1,25 @@
-import { Component, Input, OnInit } from '@angular/core';
-import { NgIf } from '@angular/common';
+import { Component, Input, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { MemoryTipsService } from '../../core/services/memory-tips.service';
 import { MemoryTip } from '../../core/models/theme.models';
 
 @Component({
     selector: 'app-memory-tip-loader',
-    standalone: true,
-    imports: [NgIf],
+    imports: [],
     template: `
     <div class="memory-tip-loader">
       <div class="loader-content">
         <div class="spinner"></div>
-        <div *ngIf="tip" class="tip-content">
-          <p class="tip-category">{{ tip.category }}</p>
-          <p class="tip-text">{{ tip.content }}</p>
-        </div>
+        @if (tip) {
+          <div class="tip-content">
+            <p class="tip-category">{{ tip.category }}</p>
+            <p class="tip-text">{{ tip.content }}</p>
+          </div>
+        }
       </div>
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .memory-tip-loader {
@@ -84,10 +86,10 @@ import { MemoryTip } from '../../core/models/theme.models';
     ]
 })
 export class MemoryTipLoaderComponent implements OnInit {
+    private memoryTipsService = inject(MemoryTipsService);
+
     @Input() themeId?: string;
     tip: MemoryTip | null = null;
-
-    constructor(private memoryTipsService: MemoryTipsService) {}
 
     ngOnInit(): void {
         this.tip = this.memoryTipsService.getRandomTip();
