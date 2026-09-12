@@ -1,6 +1,6 @@
-import { Component, OnInit, OnDestroy, HostListener } from '@angular/core';
+import { Component, OnInit, OnDestroy, HostListener, inject, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { NgFor, NgIf } from '@angular/common';
+
 import { forkJoin } from 'rxjs';
 import { DeckApiService } from '../../core/services/deck-api.service';
 import { PublicDeckApiService } from '../../core/services/public-deck-api.service';
@@ -25,153 +25,172 @@ interface ReviewAnswerOption {
 
 @Component({
     selector: 'app-review-session',
-    standalone: true,
-    imports: [NgIf, NgFor, ButtonComponent, FlashcardViewComponent, TranslatePipe],
+    imports: [ButtonComponent, FlashcardViewComponent, TranslatePipe],
     template: `
     <div class="review-session" [class.mobile-swipe-enabled]="isMobileSwipeColumnMode()">
-      <div *ngIf="sessionComplete" class="session-complete">
-        <article class="complete-message" [class.celebration]="isFirstCompletionToday()">
-          <p class="complete-kicker">
-            {{ (isFirstCompletionToday() ? 'review.sessionFirstTodayTitle' : 'review.sessionGreatWork') | translate }}
-          </p>
-          <h2>{{ 'review.sessionComplete' | translate }}</h2>
-          <p class="complete-subtitle">
-            {{ (isFirstCompletionToday() ? 'review.sessionFirstTodayHint' : 'review.allCardsReviewed') | translate }}
-          </p>
-
-          <div *ngIf="completion?.streak as streak" class="streak-progress" [class.celebration]="isFirstCompletionToday()">
-            <div class="streak-values">
-              <span *ngIf="isFirstCompletionToday()" class="streak-before">{{ streak.previousStreakDays }}</span>
-              <span *ngIf="isFirstCompletionToday()" class="streak-arrow">→</span>
-              <span class="streak-after">{{ animatedStreakValue }}</span>
-            </div>
-            <span class="streak-caption">{{ 'stats.streakDays' | translate }}</span>
-          </div>
-
-          <div class="completion-stats">
-            <article class="completion-stat">
-              <span>{{ 'review.sessionDuration' | translate }}</span>
-              <strong>{{ completionSessionDuration() }}</strong>
-            </article>
-            <article class="completion-stat">
-              <span>{{ 'review.sessionReviewsDone' | translate }}</span>
-              <strong>{{ completionSessionReviews() }}</strong>
-            </article>
-            <article class="completion-stat">
-              <span>{{ 'review.sessionDoneToday' | translate }}</span>
-              <strong>{{ completion?.completionIndexToday ?? 1 }}</strong>
-            </article>
-            <article class="completion-stat">
-              <span>{{ 'review.sessionBestStreak' | translate }}</span>
-              <strong>{{ completion?.streak?.longestStreakDays ?? animatedStreakValue }}</strong>
-            </article>
-          </div>
-
-          <div class="complete-actions">
-            <app-button variant="primary" size="lg" (click)="backToDeck()">
-              {{ 'review.backToDeck' | translate }}
-            </app-button>
-          </div>
-        </article>
-      </div>
-
-      <div *ngIf="!sessionComplete && currentCard">
-        <header class="review-header">
-          <h2 *ngIf="deck">{{ deck.displayName }}</h2>
-          <div class="progress-info">
-            <div class="progress-bar">
-              <div class="progress" [style.width.%]="progressPercent"></div>
-            </div>
-            <p class="progress-text">
-              <span class="count-new">
-                {{ 'review.new' | translate }}: {{ queue.newCount }}
-                <ng-container *ngIf="queue.newTotalCount !== undefined">
-                  / {{ queue.newTotalCount }} {{ 'review.total' | translate }}
-                </ng-container>
-              </span>
-              <span class="count-separator">·</span>
-              <span class="count-due">
-                {{ 'review.due' | translate }}: {{ queue.dueCount }}
-                <ng-container *ngIf="queue.dueTodayCount !== undefined">
-                  / {{ queue.dueTodayCount }} {{ 'review.today' | translate }}
-                </ng-container>
-              </span>
-              <ng-container *ngIf="queue.learningAheadCount && queue.learningAheadCount > 0">
-                <span class="count-separator">·</span>
-                <span class="count-ahead">{{ 'review.ahead' | translate }}: {{ queue.learningAheadCount }}</span>
-              </ng-container>
+      @if (sessionComplete) {
+        <div class="session-complete">
+          <article class="complete-message" [class.celebration]="isFirstCompletionToday()">
+            <p class="complete-kicker">
+              {{ (isFirstCompletionToday() ? 'review.sessionFirstTodayTitle' : 'review.sessionGreatWork') | translate }}
             </p>
-          </div>
-        </header>
+            <h2>{{ 'review.sessionComplete' | translate }}</h2>
+            <p class="complete-subtitle">
+              {{ (isFirstCompletionToday() ? 'review.sessionFirstTodayHint' : 'review.allCardsReviewed') | translate }}
+            </p>
+            @if (completion?.streak; as streak) {
+              <div class="streak-progress" [class.celebration]="isFirstCompletionToday()">
+                <div class="streak-values">
+                  @if (isFirstCompletionToday()) {
+                    <span class="streak-before">{{ streak.previousStreakDays }}</span>
+                  }
+                  @if (isFirstCompletionToday()) {
+                    <span class="streak-arrow">→</span>
+                  }
+                  <span class="streak-after">{{ animatedStreakValue }}</span>
+                </div>
+                <span class="streak-caption">{{ 'stats.streakDays' | translate }}</span>
+              </div>
+            }
+            <div class="completion-stats">
+              <article class="completion-stat">
+                <span>{{ 'review.sessionDuration' | translate }}</span>
+                <strong>{{ completionSessionDuration() }}</strong>
+              </article>
+              <article class="completion-stat">
+                <span>{{ 'review.sessionReviewsDone' | translate }}</span>
+                <strong>{{ completionSessionReviews() }}</strong>
+              </article>
+              <article class="completion-stat">
+                <span>{{ 'review.sessionDoneToday' | translate }}</span>
+                <strong>{{ completion?.completionIndexToday ?? 1 }}</strong>
+              </article>
+              <article class="completion-stat">
+                <span>{{ 'review.sessionBestStreak' | translate }}</span>
+                <strong>{{ completion?.streak?.longestStreakDays ?? animatedStreakValue }}</strong>
+              </article>
+            </div>
+            <div class="complete-actions">
+              <app-button variant="primary" size="lg" (click)="backToDeck()">
+                {{ 'review.backToDeck' | translate }}
+              </app-button>
+            </div>
+          </article>
+        </div>
+      }
 
-        <div class="card-container">
-          <div class="flashcard">
-            <app-flashcard-view
-              *ngIf="template && currentCard && !revealed"
-              [template]="template"
-              [content]="currentCard.effectiveContent"
-              [side]="'front'"
-              [hideLabels]="preferences.hideFieldLabels"
-              [autoPlayAudioSequence]="preferences.autoPlayCardAudioSequence"
-              [autoPlaySequenceToken]="currentCard.userCardId"
-            ></app-flashcard-view>
-            <div *ngIf="revealed && template && currentCard" class="revealed-content">
-              <app-flashcard-view
-                *ngIf="preferences.showFrontSideAfterFlip"
-                [template]="template"
-                [content]="currentCard.effectiveContent"
-                [side]="'front'"
-                [hideLabels]="preferences.hideFieldLabels"
-                [autoPlayAudioSequence]="false"
-              ></app-flashcard-view>
-              <div *ngIf="preferences.showFrontSideAfterFlip" class="divider"></div>
-              <app-flashcard-view
-                [template]="template"
-                [content]="currentCard.effectiveContent"
-                [side]="'back'"
-                [hideLabels]="preferences.hideFieldLabels"
-                [autoPlayAudioSequence]="false"
-              ></app-flashcard-view>
+      @if (!sessionComplete && currentCard) {
+        <div>
+          <header class="review-header">
+            @if (deck) {
+              <h2>{{ deck.displayName }}</h2>
+            }
+            <div class="progress-info">
+              <div class="progress-bar">
+                <div class="progress" [style.width.%]="progressPercent"></div>
+              </div>
+              <p class="progress-text">
+                <span class="count-new">
+                  {{ 'review.new' | translate }}: {{ queue.newCount }}
+                  @if (queue.newTotalCount !== undefined) {
+                    / {{ queue.newTotalCount }} {{ 'review.total' | translate }}
+                  }
+                </span>
+                <span class="count-separator">·</span>
+                <span class="count-due">
+                  {{ 'review.due' | translate }}: {{ queue.dueCount }}
+                  @if (queue.dueTodayCount !== undefined) {
+                    / {{ queue.dueTodayCount }} {{ 'review.today' | translate }}
+                  }
+                </span>
+                @if (queue.learningAheadCount && queue.learningAheadCount > 0) {
+                  <span class="count-separator">·</span>
+                  <span class="count-ahead">{{ 'review.ahead' | translate }}: {{ queue.learningAheadCount }}</span>
+                }
+              </p>
+            </div>
+          </header>
+          <div class="card-container">
+            <div class="flashcard">
+              @if (template && currentCard && !revealed) {
+                <app-flashcard-view
+                  [template]="template"
+                  [content]="currentCard.effectiveContent"
+                  [side]="'front'"
+                  [hideLabels]="preferences.hideFieldLabels"
+                  [autoPlayAudioSequence]="preferences.autoPlayCardAudioSequence"
+                  [autoPlaySequenceToken]="currentCard.userCardId"
+                ></app-flashcard-view>
+              }
+              @if (revealed && template && currentCard) {
+                <div class="revealed-content">
+                  @if (preferences.showFrontSideAfterFlip) {
+                    <app-flashcard-view
+                      [template]="template"
+                      [content]="currentCard.effectiveContent"
+                      [side]="'front'"
+                      [hideLabels]="preferences.hideFieldLabels"
+                      [autoPlayAudioSequence]="false"
+                    ></app-flashcard-view>
+                  }
+                  @if (preferences.showFrontSideAfterFlip) {
+                    <div class="divider"></div>
+                  }
+                  <app-flashcard-view
+                    [template]="template"
+                    [content]="currentCard.effectiveContent"
+                    [side]="'back'"
+                    [hideLabels]="preferences.hideFieldLabels"
+                    [autoPlayAudioSequence]="false"
+                  ></app-flashcard-view>
+                </div>
+              }
             </div>
           </div>
+          @if (!revealed) {
+            <div class="show-answer-container">
+              <app-button variant="primary" size="lg" (click)="revealAnswer()">
+                {{ 'review.showAnswer' | translate }}
+              </app-button>
+              <p class="keyboard-hint">{{ 'review.spaceToReveal' | translate }}</p>
+            </div>
+          }
+          @if (revealed) {
+            <div class="answer-actions" [class.mobile-column-mode]="isMobileSwipeColumnMode()">
+              <div
+                class="answer-buttons"
+                [class.answer-buttons-mobile-column]="isMobileSwipeColumnMode()"
+                [class.answer-buttons-mobile-left]="isMobileSwipeColumnMode() && preferences.mobileReviewButtonsSide === 'left'"
+                [class.answer-buttons-mobile-right]="isMobileSwipeColumnMode() && preferences.mobileReviewButtonsSide === 'right'"
+                (pointerdown)="onAnswerRailPointerDown($event)"
+                (pointerup)="onAnswerRailPointerUp($event)"
+                (pointercancel)="onAnswerRailPointerCancel()"
+                >
+                @if (isMobileSwipeColumnMode()) {
+                  <p class="swipe-hint">{{ 'review.mobileSwipeHint' | translate }}</p>
+                }
+                @for (option of answerOptions; track option) {
+                  <app-button
+                    [variant]="option.variant"
+                    [fullWidth]="isMobileSwipeColumnMode()"
+                    (click)="answer(option.rating)"
+                    >
+                    {{ option.labelKey | translate }}{{ formatInterval(option.rating) }}
+                  </app-button>
+                }
+              </div>
+            </div>
+          }
+          @if (revealed) {
+            <div class="keyboard-hint">
+              <p>{{ (isHlr() ? 'review.keyboardShortcutsBinary' : 'review.keyboardShortcuts') | translate }}</p>
+            </div>
+          }
         </div>
-
-        <div *ngIf="!revealed" class="show-answer-container">
-          <app-button variant="primary" size="lg" (click)="revealAnswer()">
-            {{ 'review.showAnswer' | translate }}
-          </app-button>
-          <p class="keyboard-hint">{{ 'review.spaceToReveal' | translate }}</p>
-        </div>
-
-        <div *ngIf="revealed" class="answer-actions" [class.mobile-column-mode]="isMobileSwipeColumnMode()">
-          <div
-            class="answer-buttons"
-            [class.answer-buttons-mobile-column]="isMobileSwipeColumnMode()"
-            [class.answer-buttons-mobile-left]="isMobileSwipeColumnMode() && preferences.mobileReviewButtonsSide === 'left'"
-            [class.answer-buttons-mobile-right]="isMobileSwipeColumnMode() && preferences.mobileReviewButtonsSide === 'right'"
-            (pointerdown)="onAnswerRailPointerDown($event)"
-            (pointerup)="onAnswerRailPointerUp($event)"
-            (pointercancel)="onAnswerRailPointerCancel()"
-          >
-            <p *ngIf="isMobileSwipeColumnMode()" class="swipe-hint">{{ 'review.mobileSwipeHint' | translate }}</p>
-
-            <app-button
-              *ngFor="let option of answerOptions"
-              [variant]="option.variant"
-              [fullWidth]="isMobileSwipeColumnMode()"
-              (click)="answer(option.rating)"
-            >
-              {{ option.labelKey | translate }}{{ formatInterval(option.rating) }}
-            </app-button>
-          </div>
-        </div>
-
-        <div *ngIf="revealed" class="keyboard-hint">
-          <p>{{ (isHlr() ? 'review.keyboardShortcutsBinary' : 'review.keyboardShortcuts') | translate }}</p>
-        </div>
-      </div>
+      }
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .review-session {
         max-width: 56rem;
@@ -545,6 +564,15 @@ interface ReviewAnswerOption {
     `]
 })
 export class ReviewSessionComponent implements OnInit, OnDestroy {
+    private route = inject(ActivatedRoute);
+    private router = inject(Router);
+    private deckApi = inject(DeckApiService);
+    private publicDeckApi = inject(PublicDeckApiService);
+    private templateApi = inject(TemplateApiService);
+    private reviewApi = inject(ReviewApiService);
+    preferences = inject(PreferencesService);
+    private i18n = inject(I18nService);
+
     deck: UserDeckDTO | null = null;
     template: CardTemplateDTO | null = null;
     currentCard: ReviewNextCardResponse | null = null;
@@ -573,17 +601,6 @@ export class ReviewSessionComponent implements OnInit, OnDestroy {
         { rating: 'AGAIN', labelKey: 'review.again', variant: 'ghost' },
         { rating: 'GOOD', labelKey: 'review.good', variant: 'primary' }
     ];
-
-    constructor(
-        private route: ActivatedRoute,
-        private router: Router,
-        private deckApi: DeckApiService,
-        private publicDeckApi: PublicDeckApiService,
-        private templateApi: TemplateApiService,
-        private reviewApi: ReviewApiService,
-        public preferences: PreferencesService,
-        private i18n: I18nService
-    ) {}
 
     ngOnInit(): void {
         this.updateMobileViewport();

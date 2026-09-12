@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { I18nService } from './i18n.service';
 
 interface MemoryTip {
@@ -17,7 +17,8 @@ const MEMORY_TIP_KEYS: string[] = [
 
 @Injectable({ providedIn: 'root' })
 export class MemoryTipsService {
-    constructor(private i18n: I18nService) {}
+    private i18n = inject(I18nService);
+
 
     getRandomTip(): MemoryTip | null {
         if (!MEMORY_TIP_KEYS.length) return null;

@@ -1,9 +1,8 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, ChangeDetectionStrategy } from '@angular/core';
 import { NgClass } from '@angular/common';
 
 @Component({
     selector: 'app-button',
-    standalone: true,
     imports: [NgClass],
     template: `
     <button
@@ -24,6 +23,7 @@ import { NgClass } from '@angular/common';
       <ng-content></ng-content>
     </button>
   `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .btn {

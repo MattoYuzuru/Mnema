@@ -1,5 +1,5 @@
-import { Component, EventEmitter, Input, OnInit, Output, Injector, computed, effect, inject, signal } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { Component, EventEmitter, Input, OnInit, Output, Injector, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormsModule } from '@angular/forms';
 import { AiApiService } from '../../core/services/ai-api.service';
 import { TemplateApiService } from '../../core/services/template-api.service';
@@ -28,8 +28,7 @@ type TtsMapping = { sourceField: string; targetField: string };
 
 @Component({
     selector: 'app-ai-add-cards-modal',
-    standalone: true,
-    imports: [NgFor, NgIf, FormsModule, ButtonComponent, TranslatePipe, AiPreflightPanelComponent],
+    imports: [FormsModule, ButtonComponent, TranslatePipe, AiPreflightPanelComponent],
     template: `
     <div class="modal-overlay" (click)="close()">
       <div class="modal-content ai-modal" (click)="$event.stopPropagation()">
@@ -63,15 +62,19 @@ type TtsMapping = { sourceField: string; targetField: string };
                 [ngModel]="selectedCredentialId()"
                 (ngModelChange)="onProviderChange($event)"
                 [disabled]="loadingProviders() || providerKeys().length === 0"
-              >
+                >
                 <option [ngValue]="''">{{ 'aiAdd.selectKey' | translate }}</option>
-                <option *ngFor="let key of providerKeys(); trackBy: trackProvider" [ngValue]="key.id">
-                  {{ key.provider }}{{ key.alias ? ' · ' + key.alias : '' }}
-                </option>
+                @for (key of providerKeys(); track trackProvider($index, key)) {
+                  <option [ngValue]="key.id">
+                    {{ key.provider }}{{ key.alias ? ' · ' + key.alias : '' }}
+                  </option>
+                }
               </select>
-              <p *ngIf="!loadingProviders() && providerKeys().length === 0" class="field-hint">
-                {{ 'aiAdd.noKeys' | translate }}
-              </p>
+              @if (!loadingProviders() && providerKeys().length === 0) {
+                <p class="field-hint">
+                  {{ 'aiAdd.noKeys' | translate }}
+                </p>
+              }
             </div>
 
             <div class="form-field">
@@ -83,7 +86,7 @@ type TtsMapping = { sourceField: string; targetField: string };
                 max="50"
                 [ngModel]="cardsCount()"
                 (ngModelChange)="onCountChange($event)"
-              />
+                />
             </div>
 
             <div class="form-field">
@@ -93,18 +96,21 @@ type TtsMapping = { sourceField: string; targetField: string };
                 class="glass-select"
                 [ngModel]="modelChoice('text', modelName())"
                 (ngModelChange)="onModelChoiceChange('text', $event)"
-              >
-                <option *ngFor="let model of textModelOptions()" [ngValue]="model.value">
-                  {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
-                </option>
+                >
+                @for (model of textModelOptions(); track model) {
+                  <option [ngValue]="model.value">
+                    {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
+                  </option>
+                }
               </select>
-              <input
-                *ngIf="isCustomModel('text', modelName())"
-                type="text"
-                [ngModel]="modelName()"
-                (ngModelChange)="onModelChange($event)"
-                [placeholder]="modelPlaceholder()"
-              />
+              @if (isCustomModel('text', modelName())) {
+                <input
+                  type="text"
+                  [ngModel]="modelName()"
+                  (ngModelChange)="onModelChange($event)"
+                  [placeholder]="modelPlaceholder()"
+                  />
+              }
               <p class="field-hint">{{ modelHint('text', modelName()) }}</p>
             </div>
           </div>
@@ -112,237 +118,275 @@ type TtsMapping = { sourceField: string; targetField: string };
           <div class="field-options">
             <label>{{ 'aiAdd.fieldsLabel' | translate }}</label>
             <div class="field-grid">
-              <label *ngFor="let field of fieldOptions(); trackBy: trackField" class="field-option" [class.disabled]="!field.enabled">
-                <input
-                  class="field-checkbox"
-                  type="checkbox"
-                  [checked]="selectedFields().has(field.key)"
-                  (change)="toggleField(field)"
-                  [disabled]="!field.enabled"
-                />
-                <span class="field-label">{{ field.label }}</span>
-              </label>
+              @for (field of fieldOptions(); track trackField($index, field)) {
+                <label class="field-option" [class.disabled]="!field.enabled">
+                  <input
+                    class="field-checkbox"
+                    type="checkbox"
+                    [checked]="selectedFields().has(field.key)"
+                    (change)="toggleField(field)"
+                    [disabled]="!field.enabled"
+                    />
+                  <span class="field-label">{{ field.label }}</span>
+                </label>
+              }
             </div>
           </div>
 
-          <div *ngIf="hasAudioFields()" class="tts-section">
-            <div *ngIf="!ttsSupported()" class="field-hint">{{ 'aiAdd.ttsUnavailable' | translate }}</div>
-
-            <div *ngIf="ttsEnabled()" class="tts-panel">
-              <div class="form-grid">
-                <div class="form-field">
-                  <label for="ai-tts-model">{{ 'aiAdd.ttsModelLabel' | translate }}</label>
-                  <select
-                    id="ai-tts-model"
-                    class="glass-select"
-                    [ngModel]="modelChoice('tts', ttsModel())"
-                    (ngModelChange)="onModelChoiceChange('tts', $event)"
-                  >
-                    <option *ngFor="let model of ttsModelOptions()" [ngValue]="model.value">
-                      {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
-                    </option>
-                  </select>
-                  <input
-                    *ngIf="isCustomModel('tts', ttsModel())"
-                    type="text"
-                    [ngModel]="ttsModel()"
-                    (ngModelChange)="onTtsModelChange($event)"
-                    [placeholder]="ttsModelPlaceholder()"
-                  />
-                  <p class="field-hint">{{ modelHint('tts', ttsModel()) }}</p>
-                </div>
-                <div class="form-field">
-                  <label for="ai-tts-voice">{{ 'aiAdd.voiceLabel' | translate }}</label>
-                  <select
-                    id="ai-tts-voice"
-                    class="glass-select"
-                    [ngModel]="ttsVoicePreset()"
-                    (ngModelChange)="onTtsVoicePresetChange($event)"
-                  >
-                    <option *ngFor="let voice of voiceOptions()" [ngValue]="voice">
-                      {{ voiceLabel(voice) }}
-                    </option>
-                  </select>
-                  <input
-                    *ngIf="ttsVoicePreset() === 'custom'"
-                    type="text"
-                    [ngModel]="ttsVoiceCustom()"
-                    (ngModelChange)="onTtsVoiceCustomChange($event)"
-                    [placeholder]="'aiAdd.customVoicePlaceholder' | translate"
-                  />
-                </div>
-                <div class="form-field">
-                  <label for="ai-tts-format">{{ 'aiAdd.formatLabel' | translate }}</label>
-                  <select
-                    id="ai-tts-format"
-                    class="glass-select"
-                    [ngModel]="ttsFormat()"
-                    (ngModelChange)="onTtsFormatChange($event)"
-                  >
-                    <option *ngFor="let format of ttsFormatOptions()" [ngValue]="format">
-                      {{ format }}
-                    </option>
-                  </select>
-                </div>
-                <div class="form-field">
-                  <label for="ai-tts-max-chars">{{ 'aiAdd.maxCharsLabel' | translate }}</label>
-                  <input
-                    id="ai-tts-max-chars"
-                    type="number"
-                    min="1"
-                    max="1000"
-                    [ngModel]="ttsMaxChars()"
-                    (ngModelChange)="onTtsMaxCharsChange($event)"
-                  />
-                </div>
-              </div>
-
-              <div class="tts-mapping">
-                <label>{{ 'aiAdd.audioMappingLabel' | translate }}</label>
-                <div class="mapping-list">
-                  <div *ngFor="let mapping of ttsMappings(); let i = index" class="mapping-row">
-                    <select
-                      class="glass-select"
-                      [ngModel]="mapping.sourceField"
-                      (ngModelChange)="onTtsSourceChange(i, $event)"
-                    >
-                      <option *ngFor="let field of textFields()" [ngValue]="field.name">
-                        {{ field.label || field.name }}
-                      </option>
-                    </select>
-                    <span class="mapping-arrow">→</span>
-                    <select
-                      class="glass-select"
-                      [ngModel]="mapping.targetField"
-                      (ngModelChange)="onTtsTargetChange(i, $event)"
-                    >
-                      <option *ngFor="let field of audioFields()" [ngValue]="field.name">
-                        {{ field.label || field.name }}
-                      </option>
-                    </select>
-                    <button type="button" class="remove-mapping" (click)="removeTtsMapping(i)" [disabled]="ttsMappings().length <= 1">
-                      ×
-                    </button>
+          @if (hasAudioFields()) {
+            <div class="tts-section">
+              @if (!ttsSupported()) {
+                <div class="field-hint">{{ 'aiAdd.ttsUnavailable' | translate }}</div>
+              }
+              @if (ttsEnabled()) {
+                <div class="tts-panel">
+                  <div class="form-grid">
+                    <div class="form-field">
+                      <label for="ai-tts-model">{{ 'aiAdd.ttsModelLabel' | translate }}</label>
+                      <select
+                        id="ai-tts-model"
+                        class="glass-select"
+                        [ngModel]="modelChoice('tts', ttsModel())"
+                        (ngModelChange)="onModelChoiceChange('tts', $event)"
+                        >
+                        @for (model of ttsModelOptions(); track model) {
+                          <option [ngValue]="model.value">
+                            {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
+                          </option>
+                        }
+                      </select>
+                      @if (isCustomModel('tts', ttsModel())) {
+                        <input
+                          type="text"
+                          [ngModel]="ttsModel()"
+                          (ngModelChange)="onTtsModelChange($event)"
+                          [placeholder]="ttsModelPlaceholder()"
+                          />
+                      }
+                      <p class="field-hint">{{ modelHint('tts', ttsModel()) }}</p>
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-tts-voice">{{ 'aiAdd.voiceLabel' | translate }}</label>
+                      <select
+                        id="ai-tts-voice"
+                        class="glass-select"
+                        [ngModel]="ttsVoicePreset()"
+                        (ngModelChange)="onTtsVoicePresetChange($event)"
+                        >
+                        @for (voice of voiceOptions(); track voice) {
+                          <option [ngValue]="voice">
+                            {{ voiceLabel(voice) }}
+                          </option>
+                        }
+                      </select>
+                      @if (ttsVoicePreset() === 'custom') {
+                        <input
+                          type="text"
+                          [ngModel]="ttsVoiceCustom()"
+                          (ngModelChange)="onTtsVoiceCustomChange($event)"
+                          [placeholder]="'aiAdd.customVoicePlaceholder' | translate"
+                          />
+                      }
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-tts-format">{{ 'aiAdd.formatLabel' | translate }}</label>
+                      <select
+                        id="ai-tts-format"
+                        class="glass-select"
+                        [ngModel]="ttsFormat()"
+                        (ngModelChange)="onTtsFormatChange($event)"
+                        >
+                        @for (format of ttsFormatOptions(); track format) {
+                          <option [ngValue]="format">
+                            {{ format }}
+                          </option>
+                        }
+                      </select>
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-tts-max-chars">{{ 'aiAdd.maxCharsLabel' | translate }}</label>
+                      <input
+                        id="ai-tts-max-chars"
+                        type="number"
+                        min="1"
+                        max="1000"
+                        [ngModel]="ttsMaxChars()"
+                        (ngModelChange)="onTtsMaxCharsChange($event)"
+                        />
+                    </div>
+                  </div>
+                  <div class="tts-mapping">
+                    <label>{{ 'aiAdd.audioMappingLabel' | translate }}</label>
+                    <div class="mapping-list">
+                      @for (mapping of ttsMappings(); track mapping; let i = $index) {
+                        <div class="mapping-row">
+                          <select
+                            class="glass-select"
+                            [ngModel]="mapping.sourceField"
+                            (ngModelChange)="onTtsSourceChange(i, $event)"
+                            >
+                            @for (field of textFields(); track field) {
+                              <option [ngValue]="field.name">
+                                {{ field.label || field.name }}
+                              </option>
+                            }
+                          </select>
+                          <span class="mapping-arrow">→</span>
+                          <select
+                            class="glass-select"
+                            [ngModel]="mapping.targetField"
+                            (ngModelChange)="onTtsTargetChange(i, $event)"
+                            >
+                            @for (field of audioFields(); track field) {
+                              <option [ngValue]="field.name">
+                                {{ field.label || field.name }}
+                              </option>
+                            }
+                          </select>
+                          <button type="button" class="remove-mapping" (click)="removeTtsMapping(i)" [disabled]="ttsMappings().length <= 1">
+                            ×
+                          </button>
+                        </div>
+                      }
+                    </div>
+                    <button type="button" class="add-mapping" (click)="addTtsMapping()">{{ 'aiAdd.addMapping' | translate }}</button>
                   </div>
                 </div>
-                <button type="button" class="add-mapping" (click)="addTtsMapping()">{{ 'aiAdd.addMapping' | translate }}</button>
-              </div>
+              }
             </div>
-          </div>
+          }
 
-          <div *ngIf="selectedImageFields().length > 0" class="tts-section">
-            <label class="tts-toggle">{{ 'aiAdd.imageTitle' | translate }}</label>
-            <div *ngIf="!imageSupported()" class="field-hint">{{ 'aiAdd.imageUnavailable' | translate }}</div>
-            <div *ngIf="imageSupported()" class="tts-panel">
-              <div class="form-grid">
-                <div class="form-field">
-                  <label for="ai-image-model">{{ 'aiAdd.imageModelLabel' | translate }}</label>
-                  <select
-                    id="ai-image-model"
-                    class="glass-select"
-                    [ngModel]="imageModel()"
-                    (ngModelChange)="onImageModelChange($event)"
-                  >
-                    <option *ngFor="let model of imageModelOptions()" [ngValue]="model">
-                      {{ model === 'custom' ? ('aiAdd.customOption' | translate) : model }}
-                    </option>
-                  </select>
-                  <input
-                    *ngIf="imageModel() === 'custom'"
-                    type="text"
-                    [ngModel]="imageModelCustom()"
-                    (ngModelChange)="onImageModelCustomChange($event)"
-                    [placeholder]="'aiAdd.customImageModelPlaceholder' | translate"
-                  />
+          @if (selectedImageFields().length > 0) {
+            <div class="tts-section">
+              <label class="tts-toggle">{{ 'aiAdd.imageTitle' | translate }}</label>
+              @if (!imageSupported()) {
+                <div class="field-hint">{{ 'aiAdd.imageUnavailable' | translate }}</div>
+              }
+              @if (imageSupported()) {
+                <div class="tts-panel">
+                  <div class="form-grid">
+                    <div class="form-field">
+                      <label for="ai-image-model">{{ 'aiAdd.imageModelLabel' | translate }}</label>
+                      <select
+                        id="ai-image-model"
+                        class="glass-select"
+                        [ngModel]="imageModel()"
+                        (ngModelChange)="onImageModelChange($event)"
+                        >
+                        @for (model of imageModelOptions(); track model) {
+                          <option [ngValue]="model">
+                            {{ model === 'custom' ? ('aiAdd.customOption' | translate) : model }}
+                          </option>
+                        }
+                      </select>
+                      @if (imageModel() === 'custom') {
+                        <input
+                          type="text"
+                          [ngModel]="imageModelCustom()"
+                          (ngModelChange)="onImageModelCustomChange($event)"
+                          [placeholder]="'aiAdd.customImageModelPlaceholder' | translate"
+                          />
+                      }
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-image-size">{{ 'aiAdd.imageSizeLabel' | translate }}</label>
+                      <input
+                        id="ai-image-size"
+                        type="text"
+                        [ngModel]="imageSize()"
+                        (ngModelChange)="onImageSizeChange($event)"
+                        placeholder="1024x1024"
+                        />
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-image-format">{{ 'aiAdd.imageFormatLabel' | translate }}</label>
+                      <select
+                        id="ai-image-format"
+                        class="glass-select"
+                        [ngModel]="imageFormat()"
+                        (ngModelChange)="onImageFormatChange($event)"
+                        >
+                        <option [ngValue]="'png'">png</option>
+                        <option [ngValue]="'jpg'">jpg</option>
+                        <option [ngValue]="'webp'">webp</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
-                <div class="form-field">
-                  <label for="ai-image-size">{{ 'aiAdd.imageSizeLabel' | translate }}</label>
-                  <input
-                    id="ai-image-size"
-                    type="text"
-                    [ngModel]="imageSize()"
-                    (ngModelChange)="onImageSizeChange($event)"
-                    placeholder="1024x1024"
-                  />
-                </div>
-                <div class="form-field">
-                  <label for="ai-image-format">{{ 'aiAdd.imageFormatLabel' | translate }}</label>
-                  <select
-                    id="ai-image-format"
-                    class="glass-select"
-                    [ngModel]="imageFormat()"
-                    (ngModelChange)="onImageFormatChange($event)"
-                  >
-                    <option [ngValue]="'png'">png</option>
-                    <option [ngValue]="'jpg'">jpg</option>
-                    <option [ngValue]="'webp'">webp</option>
-                  </select>
-                </div>
-              </div>
+              }
             </div>
-          </div>
+          }
 
-          <div *ngIf="selectedVideoFields().length > 0" class="tts-section">
-            <label class="tts-toggle">{{ 'aiAdd.videoTitle' | translate }}</label>
-            <div *ngIf="!videoSupported()" class="field-hint">{{ 'aiAdd.videoUnavailable' | translate }}</div>
-            <div *ngIf="videoSupported()" class="tts-panel">
-              <div class="form-grid">
-                <div class="form-field">
-                  <label for="ai-video-model">{{ 'aiAdd.videoModelLabel' | translate }}</label>
-                  <select
-                    id="ai-video-model"
-                    class="glass-select"
-                    [ngModel]="videoModel()"
-                    (ngModelChange)="onVideoModelChange($event)"
-                  >
-                    <option *ngFor="let model of videoModelOptions()" [ngValue]="model">
-                      {{ model === 'custom' ? ('aiAdd.customOption' | translate) : model }}
-                    </option>
-                  </select>
-                  <input
-                    *ngIf="videoModel() === 'custom'"
-                    type="text"
-                    [ngModel]="videoModelCustom()"
-                    (ngModelChange)="onVideoModelCustomChange($event)"
-                    [placeholder]="'aiAdd.customVideoModelPlaceholder' | translate"
-                  />
+          @if (selectedVideoFields().length > 0) {
+            <div class="tts-section">
+              <label class="tts-toggle">{{ 'aiAdd.videoTitle' | translate }}</label>
+              @if (!videoSupported()) {
+                <div class="field-hint">{{ 'aiAdd.videoUnavailable' | translate }}</div>
+              }
+              @if (videoSupported()) {
+                <div class="tts-panel">
+                  <div class="form-grid">
+                    <div class="form-field">
+                      <label for="ai-video-model">{{ 'aiAdd.videoModelLabel' | translate }}</label>
+                      <select
+                        id="ai-video-model"
+                        class="glass-select"
+                        [ngModel]="videoModel()"
+                        (ngModelChange)="onVideoModelChange($event)"
+                        >
+                        @for (model of videoModelOptions(); track model) {
+                          <option [ngValue]="model">
+                            {{ model === 'custom' ? ('aiAdd.customOption' | translate) : model }}
+                          </option>
+                        }
+                      </select>
+                      @if (videoModel() === 'custom') {
+                        <input
+                          type="text"
+                          [ngModel]="videoModelCustom()"
+                          (ngModelChange)="onVideoModelCustomChange($event)"
+                          [placeholder]="'aiAdd.customVideoModelPlaceholder' | translate"
+                          />
+                      }
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-video-duration">{{ 'aiAdd.videoDurationLabel' | translate }}</label>
+                      <input
+                        id="ai-video-duration"
+                        type="number"
+                        min="1"
+                        max="20"
+                        [ngModel]="videoDurationSeconds()"
+                        (ngModelChange)="onVideoDurationChange($event)"
+                        />
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-video-resolution">{{ 'aiAdd.videoResolutionLabel' | translate }}</label>
+                      <input
+                        id="ai-video-resolution"
+                        type="text"
+                        [ngModel]="videoResolution()"
+                        (ngModelChange)="onVideoResolutionChange($event)"
+                        placeholder="1280x720"
+                        />
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-video-format">{{ 'aiAdd.videoFormatLabel' | translate }}</label>
+                      <select
+                        id="ai-video-format"
+                        class="glass-select"
+                        [ngModel]="videoFormat()"
+                        (ngModelChange)="onVideoFormatChange($event)"
+                        >
+                        <option [ngValue]="'mp4'">mp4</option>
+                        <option [ngValue]="'gif'">gif</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
-                <div class="form-field">
-                  <label for="ai-video-duration">{{ 'aiAdd.videoDurationLabel' | translate }}</label>
-                  <input
-                    id="ai-video-duration"
-                    type="number"
-                    min="1"
-                    max="20"
-                    [ngModel]="videoDurationSeconds()"
-                    (ngModelChange)="onVideoDurationChange($event)"
-                  />
-                </div>
-                <div class="form-field">
-                  <label for="ai-video-resolution">{{ 'aiAdd.videoResolutionLabel' | translate }}</label>
-                  <input
-                    id="ai-video-resolution"
-                    type="text"
-                    [ngModel]="videoResolution()"
-                    (ngModelChange)="onVideoResolutionChange($event)"
-                    placeholder="1280x720"
-                  />
-                </div>
-                <div class="form-field">
-                  <label for="ai-video-format">{{ 'aiAdd.videoFormatLabel' | translate }}</label>
-                  <select
-                    id="ai-video-format"
-                    class="glass-select"
-                    [ngModel]="videoFormat()"
-                    (ngModelChange)="onVideoFormatChange($event)"
-                  >
-                    <option [ngValue]="'mp4'">mp4</option>
-                    <option [ngValue]="'gif'">gif</option>
-                  </select>
-                </div>
-              </div>
+              }
             </div>
-          </div>
+          }
 
           <div class="form-field">
             <label for="ai-prompt">{{ 'aiAdd.instructionsLabel' | translate }}</label>
@@ -355,20 +399,27 @@ type TtsMapping = { sourceField: string; targetField: string };
             ></textarea>
           </div>
 
-          <div *ngIf="createError()" class="error-state" role="alert">
-            {{ createError() }}
-          </div>
-          <div *ngIf="createSuccess()" class="success-state" role="status">
-            {{ createSuccess() }}
-          </div>
-          <div *ngIf="preflightError()" class="error-state" role="alert">
-            {{ preflightError() }}
-          </div>
-          <app-ai-preflight-panel
-            *ngIf="preflight()"
-            [preflight]="preflight()"
-            title="Review generation plan"
-          />
+          @if (createError()) {
+            <div class="error-state" role="alert">
+              {{ createError() }}
+            </div>
+          }
+          @if (createSuccess()) {
+            <div class="success-state" role="status">
+              {{ createSuccess() }}
+            </div>
+          }
+          @if (preflightError()) {
+            <div class="error-state" role="alert">
+              {{ preflightError() }}
+            </div>
+          }
+          @if (preflight()) {
+            <app-ai-preflight-panel
+              [preflight]="preflight()"
+              title="Review generation plan"
+              />
+          }
         </div>
 
         <div class="modal-footer">
@@ -377,13 +428,14 @@ type TtsMapping = { sourceField: string; targetField: string };
             variant="primary"
             (click)="submit()"
             [disabled]="!canSubmit()"
-          >
+            >
             {{ submitLabel() }}
           </app-button>
         </div>
       </div>
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(8, 12, 22, 0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(12px) saturate(140%); }
       .modal-content { background: var(--color-surface-solid); border-radius: var(--border-radius-lg); max-height: 90vh; display: flex; flex-direction: column; border: 1px solid var(--glass-border); box-shadow: var(--shadow-lg); }
@@ -513,6 +565,10 @@ type TtsMapping = { sourceField: string; targetField: string };
     `]
 })
 export class AiAddCardsModalComponent implements OnInit {
+    private aiApi = inject(AiApiService);
+    private templateApi = inject(TemplateApiService);
+    private i18n = inject(I18nService);
+
     @Input() userDeckId = '';
     @Input() deckName = '';
     @Input() templateId = '';
@@ -710,12 +766,6 @@ export class AiAddCardsModalComponent implements OnInit {
         'Rocky',
         'Kiki'
     ];
-
-    constructor(
-        private aiApi: AiApiService,
-        private templateApi: TemplateApiService,
-        private i18n: I18nService
-    ) {}
 
     ngOnInit(): void {
         this.storageKey = `mnema_ai_add_cards:${this.userDeckId || 'default'}`;

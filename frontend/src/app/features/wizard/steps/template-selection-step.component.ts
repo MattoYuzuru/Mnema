@@ -1,5 +1,5 @@
-import { Component, Output, EventEmitter, OnInit } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { Component, Output, EventEmitter, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
 import { TemplateApiService } from '../../../core/services/template-api.service';
@@ -17,104 +17,111 @@ type TemplateFilter = 'mine' | 'public';
 
 @Component({
     selector: 'app-template-selection-step',
-    standalone: true,
-    imports: [NgFor, NgIf, ButtonComponent, TemplateCardComponent, TemplateCreatorModalComponent, ImportDeckModalComponent, TranslatePipe],
+    imports: [ButtonComponent, TemplateCardComponent, TemplateCreatorModalComponent, ImportDeckModalComponent, TranslatePipe],
     template: `
     <div class="step">
       <h2>{{ 'wizard.chooseTemplate' | translate }}</h2>
       <p class="subtitle">{{ mode === 'choose' ? ('wizard.templateSubtitle' | translate) : ('wizard.browseSubtitle' | translate) }}</p>
 
-      <div *ngIf="mode === 'choose'" class="choice-grid">
-        <div class="choice-card" (click)="openTemplateCreator()">
-          <div class="choice-icon">+</div>
-          <h3>{{ 'wizard.createNewTemplate' | translate }}</h3>
-          <p>{{ 'wizard.createNewTemplateDesc' | translate }}</p>
-        </div>
-
-        <div class="choice-card" (click)="openVisualBuilder()">
-          <div class="choice-icon">🎨</div>
-          <h3>{{ 'wizard.visualBuilder' | translate }}</h3>
-          <p>{{ 'wizard.visualBuilderDesc' | translate }}</p>
-        </div>
-
-        <div class="choice-card" (click)="enterBrowseMode()">
-          <div class="choice-icon">📚</div>
-          <h3>{{ 'wizard.useExistingTemplate' | translate }}</h3>
-          <p>{{ 'wizard.useExistingTemplateDesc' | translate }}</p>
-        </div>
-
-        <div class="choice-card" (click)="openImportModal()">
-          <div class="choice-icon">⬆️</div>
-          <h3>{{ 'wizard.importDeck' | translate }}</h3>
-          <p>{{ 'wizard.importDeckDesc' | translate }}</p>
-        </div>
-      </div>
-
-      <div *ngIf="mode === 'browse'">
-        <div *ngIf="loading">{{ 'wizard.loadingTemplates' | translate }}</div>
-
-        <div *ngIf="!loading" class="browse-content">
-          <div class="filter-tabs">
-            <button
-              class="filter-tab"
-              [class.active]="activeFilter === 'mine'"
-              (click)="activeFilter = 'mine'"
-            >
-              {{ 'wizard.myTemplates' | translate }} ({{ myTemplates.length }})
-            </button>
-            <button
-              class="filter-tab"
-              [class.active]="activeFilter === 'public'"
-              (click)="activeFilter = 'public'"
-            >
-              {{ 'wizard.publicTemplates' | translate }} ({{ publicTemplates.length }})
-            </button>
+      @if (mode === 'choose') {
+        <div class="choice-grid">
+          <div class="choice-card" (click)="openTemplateCreator()">
+            <div class="choice-icon">+</div>
+            <h3>{{ 'wizard.createNewTemplate' | translate }}</h3>
+            <p>{{ 'wizard.createNewTemplateDesc' | translate }}</p>
           </div>
-
-          <div class="templates-grid">
-            <app-template-card
-              *ngFor="let t of filteredTemplates"
-              [template]="t"
-              [selected]="selectedTemplateId === t.templateId"
-              [selectLabel]="'templates.select' | translate"
-              [selectedLabel]="'templates.selected' | translate"
-              (select)="selectTemplate(t.templateId)"
-              (click)="selectTemplate(t.templateId)"
-            ></app-template-card>
+          <div class="choice-card" (click)="openVisualBuilder()">
+            <div class="choice-icon">🎨</div>
+            <h3>{{ 'wizard.visualBuilder' | translate }}</h3>
+            <p>{{ 'wizard.visualBuilderDesc' | translate }}</p>
           </div>
-
-          <div *ngIf="filteredTemplates.length === 0" class="empty-state">
-            <p>{{ 'wizard.noTemplates' | translate }}</p>
+          <div class="choice-card" (click)="enterBrowseMode()">
+            <div class="choice-icon">📚</div>
+            <h3>{{ 'wizard.useExistingTemplate' | translate }}</h3>
+            <p>{{ 'wizard.useExistingTemplateDesc' | translate }}</p>
           </div>
-
-          <div class="pagination" *ngIf="totalPages > 1">
-            <app-button variant="ghost" size="sm" [disabled]="currentPage === 1" (click)="loadPage(currentPage - 1)">{{ 'wizard.previous' | translate }}</app-button>
-            <span class="page-info">{{ 'wizard.page' | translate }} {{ currentPage }} {{ 'wizard.of' | translate }} {{ totalPages }}</span>
-            <app-button variant="ghost" size="sm" [disabled]="currentPage >= totalPages" (click)="loadPage(currentPage + 1)">{{ 'wizard.next' | translate }}</app-button>
+          <div class="choice-card" (click)="openImportModal()">
+            <div class="choice-icon">⬆️</div>
+            <h3>{{ 'wizard.importDeck' | translate }}</h3>
+            <p>{{ 'wizard.importDeckDesc' | translate }}</p>
           </div>
         </div>
+      }
 
-        <div class="step-actions">
-          <app-button variant="ghost" (click)="mode = 'choose'; selectedTemplateId = null">{{ 'wizard.back' | translate }}</app-button>
-          <app-button variant="primary" [disabled]="!selectedTemplateId" (click)="onNext()">{{ 'wizard.nextDeckInfo' | translate }}</app-button>
+      @if (mode === 'browse') {
+        <div>
+          @if (loading) {
+            <div>{{ 'wizard.loadingTemplates' | translate }}</div>
+          }
+          @if (!loading) {
+            <div class="browse-content">
+              <div class="filter-tabs">
+                <button
+                  class="filter-tab"
+                  [class.active]="activeFilter === 'mine'"
+                  (click)="activeFilter = 'mine'"
+                  >
+                  {{ 'wizard.myTemplates' | translate }} ({{ myTemplates.length }})
+                </button>
+                <button
+                  class="filter-tab"
+                  [class.active]="activeFilter === 'public'"
+                  (click)="activeFilter = 'public'"
+                  >
+                  {{ 'wizard.publicTemplates' | translate }} ({{ publicTemplates.length }})
+                </button>
+              </div>
+              <div class="templates-grid">
+                @for (t of filteredTemplates; track t) {
+                  <app-template-card
+                    [template]="t"
+                    [selected]="selectedTemplateId === t.templateId"
+                    [selectLabel]="'templates.select' | translate"
+                    [selectedLabel]="'templates.selected' | translate"
+                    (selectRequested)="selectTemplate(t.templateId)"
+                    (click)="selectTemplate(t.templateId)"
+                  ></app-template-card>
+                }
+              </div>
+              @if (filteredTemplates.length === 0) {
+                <div class="empty-state">
+                  <p>{{ 'wizard.noTemplates' | translate }}</p>
+                </div>
+              }
+              @if (totalPages > 1) {
+                <div class="pagination">
+                  <app-button variant="ghost" size="sm" [disabled]="currentPage === 1" (click)="loadPage(currentPage - 1)">{{ 'wizard.previous' | translate }}</app-button>
+                  <span class="page-info">{{ 'wizard.page' | translate }} {{ currentPage }} {{ 'wizard.of' | translate }} {{ totalPages }}</span>
+                  <app-button variant="ghost" size="sm" [disabled]="currentPage >= totalPages" (click)="loadPage(currentPage + 1)">{{ 'wizard.next' | translate }}</app-button>
+                </div>
+              }
+            </div>
+          }
+          <div class="step-actions">
+            <app-button variant="ghost" (click)="mode = 'choose'; selectedTemplateId = null">{{ 'wizard.back' | translate }}</app-button>
+            <app-button variant="primary" [disabled]="!selectedTemplateId" (click)="onNext()">{{ 'wizard.nextDeckInfo' | translate }}</app-button>
+          </div>
         </div>
-      </div>
+      }
     </div>
 
-    <app-template-creator-modal
-      *ngIf="showCreator"
-      (created)="onTemplateCreated($event)"
-      (cancelled)="closeTemplateCreator()"
-    ></app-template-creator-modal>
+    @if (showCreator) {
+      <app-template-creator-modal
+        (created)="onTemplateCreated($event)"
+        (cancelled)="closeTemplateCreator()"
+      ></app-template-creator-modal>
+    }
 
-    <app-import-deck-modal
-      *ngIf="showImport"
-      mode="create"
-      [showProfileAction]="true"
-      (closed)="closeImportModal()"
-      (goProfile)="goToDecks()"
-    ></app-import-deck-modal>
-  `,
+    @if (showImport) {
+      <app-import-deck-modal
+        mode="create"
+        [showProfileAction]="true"
+        (closed)="closeImportModal()"
+        (goProfile)="goToDecks()"
+      ></app-import-deck-modal>
+    }
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .step { display: flex; flex-direction: column; gap: var(--spacing-lg); min-width: 0; }
       h2 { font-size: 1.5rem; font-weight: 600; margin: 0; }
@@ -307,6 +314,11 @@ type TemplateFilter = 'mine' | 'public';
     `]
 })
 export class TemplateSelectionStepComponent implements OnInit {
+    private templateApi = inject(TemplateApiService);
+    private userApi = inject(UserApiService);
+    private wizardState = inject(DeckWizardStateService);
+    private router = inject(Router);
+
     @Output() next = new EventEmitter<void>();
 
     mode: TemplateMode = 'choose';
@@ -324,13 +336,6 @@ export class TemplateSelectionStepComponent implements OnInit {
     totalPages = 1;
     pageSize = 10;
     currentUserId: string | null = null;
-
-    constructor(
-        private templateApi: TemplateApiService,
-        private userApi: UserApiService,
-        private wizardState: DeckWizardStateService,
-        private router: Router
-    ) {}
 
     ngOnInit(): void {
         this.selectedTemplateId = this.wizardState.getCurrentState().templateId;

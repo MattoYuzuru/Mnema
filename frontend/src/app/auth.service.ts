@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Router } from '@angular/router';
 import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
@@ -35,6 +35,9 @@ export interface PasswordStatus {
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
+    private http = inject(HttpClient);
+    private router = inject(Router);
+
     private readonly storageKey = 'mnema_tokens';
 
     private _statusSubject = new BehaviorSubject<AuthStatus>('anonymous');
@@ -46,11 +49,6 @@ export class AuthService {
 
     status$: Observable<AuthStatus> = this._statusSubject.asObservable();
     user$: Observable<AuthUser | null> = this._userSubject.asObservable();
-
-    constructor(
-        private http: HttpClient,
-        private router: Router
-    ) {}
 
     status(): AuthStatus {
         return this._statusSubject.value;

@@ -1,5 +1,5 @@
-import { Component, OnInit } from '@angular/core';
-import { DatePipe, NgFor, NgIf } from '@angular/common';
+import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
+import { DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { forkJoin } from 'rxjs';
@@ -33,9 +33,8 @@ interface ChartView {
 }
 
 @Component({
-    standalone: true,
     selector: 'app-admin-panel',
-    imports: [NgIf, NgFor, FormsModule, DatePipe, ButtonComponent, TranslatePipe],
+    imports: [FormsModule, DatePipe, ButtonComponent, TranslatePipe],
     template: `
     <section class="admin-page">
       <div class="admin-shell">
@@ -51,52 +50,60 @@ interface ChartView {
         </header>
 
         <section class="stats-grid">
-          <article class="stat-card glass" *ngFor="let stat of statCards()">
-            <div class="stat-value">{{ stat.value }}</div>
-            <div class="stat-label">{{ stat.label | translate }}</div>
-            <p class="stat-hint">{{ stat.hint | translate }}</p>
-          </article>
+          @for (stat of statCards(); track stat) {
+            <article class="stat-card glass">
+              <div class="stat-value">{{ stat.value }}</div>
+              <div class="stat-label">{{ stat.label | translate }}</div>
+              <p class="stat-hint">{{ stat.hint | translate }}</p>
+            </article>
+          }
         </section>
 
-        <section class="chart-grid" *ngIf="reportStats">
-          <article class="chart-card glass" *ngFor="let chart of charts()">
-            <div class="panel-head compact">
-              <div>
-                <h2>{{ chart.title | translate }}</h2>
-                <p>{{ chart.subtitle | translate }}</p>
-              </div>
-            </div>
-
-            <div class="chart-body">
-              <div class="chart-visual" [class.empty]="chart.total === 0">
-                <svg class="pie-chart" viewBox="0 0 120 120" aria-hidden="true">
-                  <circle class="pie-track" cx="60" cy="60" r="44"></circle>
-                  <circle
-                    *ngFor="let segment of chart.segments"
-                    class="pie-segment"
-                    cx="60"
-                    cy="60"
-                    r="44"
-                    [attr.stroke]="segment.color"
-                    [attr.stroke-dasharray]="segment.dasharray"
-                    [attr.stroke-dashoffset]="segment.dashoffset"
-                  ></circle>
-                </svg>
-                <div class="chart-center">
-                  <strong>{{ chart.total }}</strong>
-                  <span>{{ chart.centerLabel | translate }}</span>
+        @if (reportStats) {
+          <section class="chart-grid">
+            @for (chart of charts(); track chart) {
+              <article class="chart-card glass">
+                <div class="panel-head compact">
+                  <div>
+                    <h2>{{ chart.title | translate }}</h2>
+                    <p>{{ chart.subtitle | translate }}</p>
+                  </div>
                 </div>
-              </div>
-              <div class="chart-legend">
-                <div class="legend-item" *ngFor="let slice of chart.legend">
-                  <span class="legend-dot" [style.background]="slice.color"></span>
-                  <span class="legend-label">{{ chart.label(slice.key) | translate }}</span>
-                  <strong>{{ slice.count }}</strong>
+                <div class="chart-body">
+                  <div class="chart-visual" [class.empty]="chart.total === 0">
+                    <svg class="pie-chart" viewBox="0 0 120 120" aria-hidden="true">
+                      <circle class="pie-track" cx="60" cy="60" r="44"></circle>
+                      @for (segment of chart.segments; track segment) {
+                        <circle
+                          class="pie-segment"
+                          cx="60"
+                          cy="60"
+                          r="44"
+                          [attr.stroke]="segment.color"
+                          [attr.stroke-dasharray]="segment.dasharray"
+                          [attr.stroke-dashoffset]="segment.dashoffset"
+                        ></circle>
+                      }
+                    </svg>
+                    <div class="chart-center">
+                      <strong>{{ chart.total }}</strong>
+                      <span>{{ chart.centerLabel | translate }}</span>
+                    </div>
+                  </div>
+                  <div class="chart-legend">
+                    @for (slice of chart.legend; track slice) {
+                      <div class="legend-item">
+                        <span class="legend-dot" [style.background]="slice.color"></span>
+                        <span class="legend-label">{{ chart.label(slice.key) | translate }}</span>
+                        <strong>{{ slice.count }}</strong>
+                      </div>
+                    }
+                  </div>
                 </div>
-              </div>
-            </div>
-          </article>
-        </section>
+              </article>
+            }
+          </section>
+        }
 
         <section class="content-grid">
           <article class="panel glass-strong">
@@ -114,45 +121,64 @@ interface ChartView {
                 (keydown.enter)="searchUsers()"
                 [placeholder]="'adminPanel.userSearchPlaceholder' | translate"
                 [attr.aria-label]="'adminPanel.userSearchPlaceholder' | translate"
-              />
+                />
               <app-button variant="primary" size="sm" (click)="searchUsers()" [disabled]="searchLoading">
                 {{ searchLoading ? ('adminPanel.loading' | translate) : ('adminPanel.search' | translate) }}
               </app-button>
             </div>
 
-            <p *ngIf="searchError" class="error-text">{{ searchError }}</p>
+            @if (searchError) {
+              <p class="error-text">{{ searchError }}</p>
+            }
 
-            <div class="user-list" *ngIf="searchResults.length > 0; else emptySearch">
-              <article class="user-card" *ngFor="let user of searchResults">
-                <div class="user-main">
-                  <img *ngIf="user.avatarUrl" class="avatar" [src]="user.avatarUrl" [alt]="user.username" />
-                  <div *ngIf="!user.avatarUrl" class="avatar placeholder">{{ user.username.charAt(0).toUpperCase() }}</div>
-                  <div>
-                    <div class="user-name-row">
-                      <strong>{{ user.username }}</strong>
-                      <span class="badge" *ngIf="user.admin">{{ 'adminPanel.adminBadge' | translate }}</span>
-                      <span class="badge banned" *ngIf="user.banned">{{ 'adminPanel.bannedBadge' | translate }}</span>
+            @if (searchResults.length > 0) {
+              <div class="user-list">
+                @for (user of searchResults; track user) {
+                  <article class="user-card">
+                    <div class="user-main">
+                      @if (user.avatarUrl) {
+                        <img class="avatar" [src]="user.avatarUrl" [alt]="user.username" />
+                      }
+                      @if (!user.avatarUrl) {
+                        <div class="avatar placeholder">{{ user.username.charAt(0).toUpperCase() }}</div>
+                      }
+                      <div>
+                        <div class="user-name-row">
+                          <strong>{{ user.username }}</strong>
+                          @if (user.admin) {
+                            <span class="badge">{{ 'adminPanel.adminBadge' | translate }}</span>
+                          }
+                          @if (user.banned) {
+                            <span class="badge banned">{{ 'adminPanel.bannedBadge' | translate }}</span>
+                          }
+                        </div>
+                        <div class="user-email">{{ user.email }}</div>
+                      </div>
                     </div>
-                    <div class="user-email">{{ user.email }}</div>
-                  </div>
-                </div>
-                <div class="user-actions">
-                  <app-button *ngIf="user.canPromoteToAdmin" variant="secondary" size="sm" (click)="grantAdmin(user)">
-                    {{ 'adminPanel.grantAdmin' | translate }}
-                  </app-button>
-                  <app-button *ngIf="user.bannableByCurrentAdmin" variant="ghost" size="sm" tone="danger" (click)="banUser(user)">
-                    {{ 'adminPanel.banUser' | translate }}
-                  </app-button>
-                  <app-button *ngIf="user.unbannableByCurrentAdmin" variant="ghost" size="sm" (click)="unbanUser(user)">
-                    {{ 'adminPanel.unbanUser' | translate }}
-                  </app-button>
-                </div>
-              </article>
-            </div>
-
-            <ng-template #emptySearch>
+                    <div class="user-actions">
+                      @if (user.canPromoteToAdmin) {
+                        <app-button variant="secondary" size="sm" (click)="grantAdmin(user)">
+                          {{ 'adminPanel.grantAdmin' | translate }}
+                        </app-button>
+                      }
+                      @if (user.bannableByCurrentAdmin) {
+                        <app-button variant="ghost" size="sm" tone="danger" (click)="banUser(user)">
+                          {{ 'adminPanel.banUser' | translate }}
+                        </app-button>
+                      }
+                      @if (user.unbannableByCurrentAdmin) {
+                        <app-button variant="ghost" size="sm" (click)="unbanUser(user)">
+                          {{ 'adminPanel.unbanUser' | translate }}
+                        </app-button>
+                      }
+                    </div>
+                  </article>
+                }
+              </div>
+            } @else {
               <div class="empty-panel">{{ 'adminPanel.userSearchEmpty' | translate }}</div>
-            </ng-template>
+            }
+
           </article>
 
           <article class="panel glass">
@@ -163,32 +189,47 @@ interface ChartView {
               </div>
             </div>
 
-            <div class="user-list" *ngIf="admins.length > 0; else noAdmins">
-              <article class="user-card compact" *ngFor="let user of admins">
-                <div class="user-main">
-                  <img *ngIf="user.avatarUrl" class="avatar" [src]="user.avatarUrl" [alt]="user.username" />
-                  <div *ngIf="!user.avatarUrl" class="avatar placeholder">{{ user.username.charAt(0).toUpperCase() }}</div>
-                  <div>
-                    <div class="user-name-row">
-                      <strong>{{ user.username }}</strong>
-                      <span class="badge" *ngIf="!user.adminGrantedBy">{{ 'adminPanel.rootAdmin' | translate }}</span>
-                      <span class="badge accent" *ngIf="user.assignedByCurrentAdmin">{{ 'adminPanel.assignedByYou' | translate }}</span>
+            @if (admins.length > 0) {
+              <div class="user-list">
+                @for (user of admins; track user) {
+                  <article class="user-card compact">
+                    <div class="user-main">
+                      @if (user.avatarUrl) {
+                        <img class="avatar" [src]="user.avatarUrl" [alt]="user.username" />
+                      }
+                      @if (!user.avatarUrl) {
+                        <div class="avatar placeholder">{{ user.username.charAt(0).toUpperCase() }}</div>
+                      }
+                      <div>
+                        <div class="user-name-row">
+                          <strong>{{ user.username }}</strong>
+                          @if (!user.adminGrantedBy) {
+                            <span class="badge">{{ 'adminPanel.rootAdmin' | translate }}</span>
+                          }
+                          @if (user.assignedByCurrentAdmin) {
+                            <span class="badge accent">{{ 'adminPanel.assignedByYou' | translate }}</span>
+                          }
+                        </div>
+                        <div class="user-email">{{ user.email }}</div>
+                        @if (user.adminGrantedAt) {
+                          <div class="meta-text">
+                            {{ 'adminPanel.since' | translate }} {{ user.adminGrantedAt | date:'mediumDate' }}
+                          </div>
+                        }
+                      </div>
                     </div>
-                    <div class="user-email">{{ user.email }}</div>
-                    <div class="meta-text" *ngIf="user.adminGrantedAt">
-                      {{ 'adminPanel.since' | translate }} {{ user.adminGrantedAt | date:'mediumDate' }}
-                    </div>
-                  </div>
-                </div>
-                <app-button *ngIf="user.revocableByCurrentAdmin" variant="ghost" size="sm" tone="danger" (click)="revokeAdmin(user)">
-                  {{ 'adminPanel.revokeAdmin' | translate }}
-                </app-button>
-              </article>
-            </div>
-
-            <ng-template #noAdmins>
+                    @if (user.revocableByCurrentAdmin) {
+                      <app-button variant="ghost" size="sm" tone="danger" (click)="revokeAdmin(user)">
+                        {{ 'adminPanel.revokeAdmin' | translate }}
+                      </app-button>
+                    }
+                  </article>
+                }
+              </div>
+            } @else {
               <div class="empty-panel">{{ 'adminPanel.noAdmins' | translate }}</div>
-            </ng-template>
+            }
+
           </article>
 
           <article class="panel glass">
@@ -206,46 +247,61 @@ interface ChartView {
                 (keydown.enter)="reloadBanned()"
                 [placeholder]="'adminPanel.bannedSearchPlaceholder' | translate"
                 [attr.aria-label]="'adminPanel.bannedSearchPlaceholder' | translate"
-              />
+                />
               <app-button variant="ghost" size="sm" (click)="reloadBanned()">
                 {{ 'adminPanel.search' | translate }}
               </app-button>
             </div>
 
-            <div class="user-list" *ngIf="bannedUsers.length > 0; else noBanned">
-              <article class="user-card compact" *ngFor="let user of bannedUsers">
-                <div class="user-main">
-                  <img *ngIf="user.avatarUrl" class="avatar" [src]="user.avatarUrl" [alt]="user.username" />
-                  <div *ngIf="!user.avatarUrl" class="avatar placeholder">{{ user.username.charAt(0).toUpperCase() }}</div>
-                  <div>
-                    <div class="user-name-row">
-                      <strong>{{ user.username }}</strong>
-                      <span class="badge banned">{{ 'adminPanel.bannedBadge' | translate }}</span>
+            @if (bannedUsers.length > 0) {
+              <div class="user-list">
+                @for (user of bannedUsers; track user) {
+                  <article class="user-card compact">
+                    <div class="user-main">
+                      @if (user.avatarUrl) {
+                        <img class="avatar" [src]="user.avatarUrl" [alt]="user.username" />
+                      }
+                      @if (!user.avatarUrl) {
+                        <div class="avatar placeholder">{{ user.username.charAt(0).toUpperCase() }}</div>
+                      }
+                      <div>
+                        <div class="user-name-row">
+                          <strong>{{ user.username }}</strong>
+                          <span class="badge banned">{{ 'adminPanel.bannedBadge' | translate }}</span>
+                        </div>
+                        <div class="user-email">{{ user.email }}</div>
+                        @if (user.bannedAt) {
+                          <div class="meta-text">
+                            {{ 'adminPanel.bannedSince' | translate }} {{ user.bannedAt | date:'mediumDate' }}
+                          </div>
+                        }
+                        @if (user.banReason) {
+                          <div class="meta-text">
+                            {{ user.banReason }}
+                          </div>
+                        }
+                      </div>
                     </div>
-                    <div class="user-email">{{ user.email }}</div>
-                    <div class="meta-text" *ngIf="user.bannedAt">
-                      {{ 'adminPanel.bannedSince' | translate }} {{ user.bannedAt | date:'mediumDate' }}
-                    </div>
-                    <div class="meta-text" *ngIf="user.banReason">
-                      {{ user.banReason }}
-                    </div>
-                  </div>
-                </div>
-                <app-button *ngIf="user.unbannableByCurrentAdmin" variant="ghost" size="sm" (click)="unbanUser(user)">
-                  {{ 'adminPanel.unbanUser' | translate }}
-                </app-button>
-              </article>
-            </div>
-
-            <ng-template #noBanned>
+                    @if (user.unbannableByCurrentAdmin) {
+                      <app-button variant="ghost" size="sm" (click)="unbanUser(user)">
+                        {{ 'adminPanel.unbanUser' | translate }}
+                      </app-button>
+                    }
+                  </article>
+                }
+              </div>
+            } @else {
               <div class="empty-panel">{{ 'adminPanel.noBanned' | translate }}</div>
-            </ng-template>
+            }
 
-            <div class="panel-actions" *ngIf="bannedHasMore">
-              <app-button variant="ghost" size="sm" (click)="loadMoreBanned()" [disabled]="bannedLoading">
-                {{ bannedLoading ? ('adminPanel.loading' | translate) : ('adminPanel.loadMore' | translate) }}
-              </app-button>
-            </div>
+
+            @if (bannedHasMore) {
+              <div class="panel-actions">
+                <app-button variant="ghost" size="sm" (click)="loadMoreBanned()" [disabled]="bannedLoading">
+                  {{ bannedLoading ? ('adminPanel.loading' | translate) : ('adminPanel.loadMore' | translate) }}
+                </app-button>
+              </div>
+            }
           </article>
 
           <article class="panel glass reports">
@@ -256,39 +312,43 @@ interface ChartView {
               </div>
             </div>
 
-            <div class="report-list" *ngIf="openReports.length > 0; else noOpenReports">
-              <article
-                class="report-card interactive"
-                *ngFor="let report of openReports"
-                tabindex="0"
-                role="button"
-                (click)="openReportTarget(report)"
-                (keydown)="handleReportCardKeydown($event, report)"
-              >
-                <div class="report-copy">
-                  <div class="user-name-row">
-                    <strong>{{ report.targetTitle }}</strong>
-                    <span class="badge">{{ reportTargetLabel(report.targetType) | translate }}</span>
-                    <span class="badge accent">{{ reportReasonLabel(report.reason) | translate }}</span>
-                  </div>
-                  <div class="meta-text">{{ 'adminPanel.reportedBy' | translate }} {{ report.reporterUsername }}</div>
-                  <div class="meta-text">{{ report.createdAt | date:'medium' }}</div>
-                  <div class="meta-text" *ngIf="report.details">{{ report.details }}</div>
-                </div>
-                <div class="report-actions">
-                  <button class="report-link-btn" type="button" (click)="openReportTarget(report); $event.stopPropagation()">
-                    {{ 'adminPanel.openReportTarget' | translate }}
-                  </button>
-                  <app-button variant="primary" size="sm" (click)="closeReport(report); $event.stopPropagation()">
-                    {{ 'adminPanel.closeReport' | translate }}
-                  </app-button>
-                </div>
-              </article>
-            </div>
-
-            <ng-template #noOpenReports>
+            @if (openReports.length > 0) {
+              <div class="report-list">
+                @for (report of openReports; track report) {
+                  <article
+                    class="report-card interactive"
+                    tabindex="0"
+                    role="button"
+                    (click)="openReportTarget(report)"
+                    (keydown)="handleReportCardKeydown($event, report)"
+                    >
+                    <div class="report-copy">
+                      <div class="user-name-row">
+                        <strong>{{ report.targetTitle }}</strong>
+                        <span class="badge">{{ reportTargetLabel(report.targetType) | translate }}</span>
+                        <span class="badge accent">{{ reportReasonLabel(report.reason) | translate }}</span>
+                      </div>
+                      <div class="meta-text">{{ 'adminPanel.reportedBy' | translate }} {{ report.reporterUsername }}</div>
+                      <div class="meta-text">{{ report.createdAt | date:'medium' }}</div>
+                      @if (report.details) {
+                        <div class="meta-text">{{ report.details }}</div>
+                      }
+                    </div>
+                    <div class="report-actions">
+                      <button class="report-link-btn" type="button" (click)="openReportTarget(report); $event.stopPropagation()">
+                        {{ 'adminPanel.openReportTarget' | translate }}
+                      </button>
+                      <app-button variant="primary" size="sm" (click)="closeReport(report); $event.stopPropagation()">
+                        {{ 'adminPanel.closeReport' | translate }}
+                      </app-button>
+                    </div>
+                  </article>
+                }
+              </div>
+            } @else {
               <div class="empty-panel">{{ 'adminPanel.noOpenReports' | translate }}</div>
-            </ng-template>
+            }
+
           </article>
 
           <article class="panel glass">
@@ -299,35 +359,39 @@ interface ChartView {
               </div>
             </div>
 
-            <div class="report-list" *ngIf="closedReports.length > 0; else noClosedReports">
-              <article
-                class="report-card compact interactive"
-                *ngFor="let report of closedReports"
-                tabindex="0"
-                role="button"
-                (click)="openReportTarget(report)"
-                (keydown)="handleReportCardKeydown($event, report)"
-              >
-                <div class="report-copy">
-                  <div class="user-name-row">
-                    <strong>{{ report.targetTitle }}</strong>
-                    <span class="badge">{{ reportTargetLabel(report.targetType) | translate }}</span>
-                  </div>
-                  <div class="meta-text">
-                    {{ 'adminPanel.closedBy' | translate }} {{ report.closedByUsername || '—' }}
-                  </div>
-                  <div class="meta-text">{{ (report.closedAt || report.updatedAt) | date:'medium' }}</div>
-                  <div class="meta-text" *ngIf="report.resolutionNote">{{ report.resolutionNote }}</div>
-                </div>
-                <button class="report-link-btn" type="button" (click)="openReportTarget(report); $event.stopPropagation()">
-                  {{ 'adminPanel.openReportTarget' | translate }}
-                </button>
-              </article>
-            </div>
-
-            <ng-template #noClosedReports>
+            @if (closedReports.length > 0) {
+              <div class="report-list">
+                @for (report of closedReports; track report) {
+                  <article
+                    class="report-card compact interactive"
+                    tabindex="0"
+                    role="button"
+                    (click)="openReportTarget(report)"
+                    (keydown)="handleReportCardKeydown($event, report)"
+                    >
+                    <div class="report-copy">
+                      <div class="user-name-row">
+                        <strong>{{ report.targetTitle }}</strong>
+                        <span class="badge">{{ reportTargetLabel(report.targetType) | translate }}</span>
+                      </div>
+                      <div class="meta-text">
+                        {{ 'adminPanel.closedBy' | translate }} {{ report.closedByUsername || '—' }}
+                      </div>
+                      <div class="meta-text">{{ (report.closedAt || report.updatedAt) | date:'medium' }}</div>
+                      @if (report.resolutionNote) {
+                        <div class="meta-text">{{ report.resolutionNote }}</div>
+                      }
+                    </div>
+                    <button class="report-link-btn" type="button" (click)="openReportTarget(report); $event.stopPropagation()">
+                      {{ 'adminPanel.openReportTarget' | translate }}
+                    </button>
+                  </article>
+                }
+              </div>
+            } @else {
               <div class="empty-panel">{{ 'adminPanel.noClosedReports' | translate }}</div>
-            </ng-template>
+            }
+
           </article>
 
           <article class="panel glass">
@@ -338,19 +402,22 @@ interface ChartView {
               </div>
             </div>
 
-            <div class="resolver-list" *ngIf="reportStats?.resolverBreakdown?.length; else noResolvers">
-              <article class="resolver-card" *ngFor="let resolver of reportStats!.resolverBreakdown">
-                <div>
-                  <strong>{{ resolver.username }}</strong>
-                  <div class="meta-text">{{ 'adminPanel.resolvedReports' | translate }}</div>
-                </div>
-                <span class="resolver-count">{{ resolver.resolvedCount }}</span>
-              </article>
-            </div>
-
-            <ng-template #noResolvers>
+            @if (reportStats?.resolverBreakdown?.length) {
+              <div class="resolver-list">
+                @for (resolver of reportStats!.resolverBreakdown; track resolver) {
+                  <article class="resolver-card">
+                    <div>
+                      <strong>{{ resolver.username }}</strong>
+                      <div class="meta-text">{{ 'adminPanel.resolvedReports' | translate }}</div>
+                    </div>
+                    <span class="resolver-count">{{ resolver.resolvedCount }}</span>
+                  </article>
+                }
+              </div>
+            } @else {
               <div class="empty-panel">{{ 'adminPanel.noResolvers' | translate }}</div>
-            </ng-template>
+            }
+
           </article>
 
           <article class="panel glass rules">
@@ -364,7 +431,8 @@ interface ChartView {
         </section>
       </div>
     </section>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .admin-page {
         padding: var(--spacing-xl) var(--spacing-md);
@@ -757,6 +825,12 @@ interface ChartView {
   `]
 })
 export class AdminPanelComponent implements OnInit {
+    private adminApi = inject(AdminApiService);
+    private reportApi = inject(ReportApiService);
+    private router = inject(Router);
+    private i18n = inject(I18nService);
+    private toast = inject(ToastService);
+
     overview: AdminOverview | null = null;
     searchQuery = '';
     bannedQuery = '';
@@ -771,14 +845,6 @@ export class AdminPanelComponent implements OnInit {
     reportStats: ModerationReportStats | null = null;
     openReports: ModerationReportEntry[] = [];
     closedReports: ModerationReportEntry[] = [];
-
-    constructor(
-        private adminApi: AdminApiService,
-        private reportApi: ReportApiService,
-        private router: Router,
-        private i18n: I18nService,
-        private toast: ToastService
-    ) {}
 
     ngOnInit(): void {
         this.reloadAll();

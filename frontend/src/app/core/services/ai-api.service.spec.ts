@@ -1,4 +1,5 @@
 import { HttpClient } from '@angular/common/http';
+import { TestBed } from '@angular/core/testing';
 import { of } from 'rxjs';
 
 import { appConfig } from '../../app.config';
@@ -12,7 +13,8 @@ describe('AiApiService', () => {
     beforeEach(() => {
         originalAiEnabled = appConfig.features.aiEnabled;
         http = jasmine.createSpyObj<HttpClient>('HttpClient', ['get', 'post', 'delete']);
-        service = new AiApiService(http);
+        TestBed.configureTestingModule({ providers: [{ provide: HttpClient, useValue: http }] });
+        service = TestBed.runInInjectionContext(() => new AiApiService());
     });
 
     afterEach(() => {

@@ -1,8 +1,7 @@
-import { Component } from '@angular/core';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { TranslatePipe } from './shared/pipes/translate.pipe';
 
 @Component({
-    standalone: true,
     imports: [TranslatePipe],
     selector: 'app-privacy-page',
     template: `
@@ -41,6 +40,7 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
       </section>
     </div>
   `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .legal-page {
         max-width: 56rem;

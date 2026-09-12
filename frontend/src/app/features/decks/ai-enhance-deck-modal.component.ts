@@ -1,5 +1,5 @@
-import { Component, EventEmitter, Input, OnInit, Output, Injector, computed, effect, inject, signal } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { Component, EventEmitter, Input, OnInit, Output, Injector, computed, effect, inject, signal, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { AiApiService } from '../../core/services/ai-api.service';
@@ -32,8 +32,7 @@ type FieldLimitMap = Record<string, number>;
 
 @Component({
     selector: 'app-ai-enhance-deck-modal',
-    standalone: true,
-    imports: [NgFor, NgIf, FormsModule, ButtonComponent, TranslatePipe, AiPreflightPanelComponent],
+    imports: [FormsModule, ButtonComponent, TranslatePipe, AiPreflightPanelComponent],
     template: `
     <div class="modal-overlay" (click)="close()">
       <div class="modal-content ai-modal" (click)="$event.stopPropagation()">
@@ -56,15 +55,19 @@ type FieldLimitMap = Record<string, number>;
                 [ngModel]="selectedCredentialId()"
                 (ngModelChange)="onProviderChange($event)"
                 [disabled]="loadingProviders() || providerKeys().length === 0"
-              >
+                >
                 <option [ngValue]="''">{{ 'deckEnhance.selectKey' | translate }}</option>
-                <option *ngFor="let key of providerKeys(); trackBy: trackProvider" [ngValue]="key.id">
-                  {{ key.provider }}{{ key.alias ? ' · ' + key.alias : '' }}
-                </option>
+                @for (key of providerKeys(); track trackProvider($index, key)) {
+                  <option [ngValue]="key.id">
+                    {{ key.provider }}{{ key.alias ? ' · ' + key.alias : '' }}
+                  </option>
+                }
               </select>
-              <p *ngIf="!loadingProviders() && providerKeys().length === 0" class="field-hint">
-                {{ 'deckEnhance.noKeys' | translate }}
-              </p>
+              @if (!loadingProviders() && providerKeys().length === 0) {
+                <p class="field-hint">
+                  {{ 'deckEnhance.noKeys' | translate }}
+                </p>
+              }
             </div>
 
             <div class="form-field">
@@ -74,18 +77,21 @@ type FieldLimitMap = Record<string, number>;
                 class="glass-select"
                 [ngModel]="modelChoice('text', modelName())"
                 (ngModelChange)="onModelChoiceChange('text', $event)"
-              >
-                <option *ngFor="let model of textModelOptions()" [ngValue]="model.value">
-                  {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
-                </option>
+                >
+                @for (model of textModelOptions(); track model) {
+                  <option [ngValue]="model.value">
+                    {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
+                  </option>
+                }
               </select>
-              <input
-                *ngIf="isCustomModel('text', modelName())"
-                type="text"
-                [ngModel]="modelName()"
-                (ngModelChange)="onModelChange($event)"
-                [placeholder]="modelPlaceholder()"
-              />
+              @if (isCustomModel('text', modelName())) {
+                <input
+                  type="text"
+                  [ngModel]="modelName()"
+                  (ngModelChange)="onModelChange($event)"
+                  [placeholder]="modelPlaceholder()"
+                  />
+              }
               <p class="field-hint">{{ modelHint('text', modelName()) }}</p>
             </div>
           </div>
@@ -93,299 +99,359 @@ type FieldLimitMap = Record<string, number>;
           <div class="enhance-grid">
             <label class="grid-label">{{ 'deckEnhance.optionsLabel' | translate }}</label>
             <div class="enhance-list">
-              <label *ngFor="let option of options(); trackBy: trackOption" class="field-option" [class.disabled]="!option.enabled">
-                <input
-                  class="field-checkbox"
-                  type="checkbox"
-                  [checked]="selectedOptions().has(option.key)"
-                  (change)="toggleOption(option)"
-                  [disabled]="!option.enabled"
-                />
-                <div class="field-copy">
-                  <div class="field-label">{{ option.label | translate }}</div>
-                  <div class="field-meta">{{ option.description | translate }}</div>
-                </div>
-                <span *ngIf="!option.enabled" class="field-required">{{ 'deckEnhance.unavailable' | translate }}</span>
-              </label>
+              @for (option of options(); track trackOption($index, option)) {
+                <label class="field-option" [class.disabled]="!option.enabled">
+                  <input
+                    class="field-checkbox"
+                    type="checkbox"
+                    [checked]="selectedOptions().has(option.key)"
+                    (change)="toggleOption(option)"
+                    [disabled]="!option.enabled"
+                    />
+                  <div class="field-copy">
+                    <div class="field-label">{{ option.label | translate }}</div>
+                    <div class="field-meta">{{ option.description | translate }}</div>
+                  </div>
+                  @if (!option.enabled) {
+                    <span class="field-required">{{ 'deckEnhance.unavailable' | translate }}</span>
+                  }
+                </label>
+              }
             </div>
           </div>
 
-          <div *ngIf="hasMissingFields()" class="missing-panel">
-            <label class="grid-label">{{ 'deckEnhance.fieldsToFill' | translate }}</label>
-            <div *ngIf="missingLoading()" class="field-hint">{{ 'deckEnhance.missingLoading' | translate }}</div>
-            <div *ngIf="!missingLoading() && missingError()" class="error-state" role="alert">
-              {{ missingError() }}
+          @if (hasMissingFields()) {
+            <div class="missing-panel">
+              <label class="grid-label">{{ 'deckEnhance.fieldsToFill' | translate }}</label>
+              @if (missingLoading()) {
+                <div class="field-hint">{{ 'deckEnhance.missingLoading' | translate }}</div>
+              }
+              @if (!missingLoading() && missingError()) {
+                <div class="error-state" role="alert">
+                  {{ missingError() }}
+                </div>
+              }
+              @if (!missingLoading() && !missingError()) {
+                <div class="missing-list">
+                  @if (hasAudioFields() && !ttsSupported()) {
+                    <div class="field-hint">{{ 'deckEnhance.ttsUnavailable' | translate }}</div>
+                  }
+                  @if (hasImageFields() && !imageSupported()) {
+                    <div class="field-hint">{{ 'deckEnhance.imageUnavailable' | translate }}</div>
+                  }
+                  @if (hasVideoFields() && !videoSupported()) {
+                    <div class="field-hint">{{ 'deckEnhance.videoUnavailable' | translate }}</div>
+                  }
+                  @for (stat of missingRows(); track trackMissingField($index, stat)) {
+                    <label
+                      class="field-option missing-option"
+                      [class.disabled]="!isFieldSelectable(stat.field)"
+                      >
+                      <input
+                        class="field-checkbox"
+                        type="checkbox"
+                        [checked]="selectedMissingFields().has(stat.field)"
+                        (change)="toggleMissingField(stat.field)"
+                        [disabled]="!isFieldSelectable(stat.field)"
+                        />
+                      <div class="field-copy">
+                        <div class="field-label">{{ stat.label }}</div>
+                        <div class="field-meta">{{ stat.fieldType }}</div>
+                      </div>
+                      <div class="missing-tail">
+                        <input
+                          class="missing-limit-input"
+                          type="number"
+                          min="1"
+                          max="200"
+                          [ngModel]="getFieldLimit(stat.field)"
+                          (ngModelChange)="onFieldLimitChange(stat.field, $event)"
+                          [disabled]="!selectedMissingFields().has(stat.field)"
+                          />
+                        <span class="missing-count">{{ 'deckEnhance.missingCount' | translate:{ count: stat.missingCount } }}</span>
+                      </div>
+                    </label>
+                  }
+                  @if (missingRows().length === 0) {
+                    <div class="field-hint">{{ 'deckEnhance.noMissing' | translate }}</div>
+                  }
+                </div>
+              }
             </div>
-            <div *ngIf="!missingLoading() && !missingError()" class="missing-list">
-              <div *ngIf="hasAudioFields() && !ttsSupported()" class="field-hint">{{ 'deckEnhance.ttsUnavailable' | translate }}</div>
-              <div *ngIf="hasImageFields() && !imageSupported()" class="field-hint">{{ 'deckEnhance.imageUnavailable' | translate }}</div>
-              <div *ngIf="hasVideoFields() && !videoSupported()" class="field-hint">{{ 'deckEnhance.videoUnavailable' | translate }}</div>
-              <label
-                *ngFor="let stat of missingRows(); trackBy: trackMissingField"
-                class="field-option missing-option"
-                [class.disabled]="!isFieldSelectable(stat.field)"
-              >
-                <input
-                  class="field-checkbox"
-                  type="checkbox"
-                  [checked]="selectedMissingFields().has(stat.field)"
-                  (change)="toggleMissingField(stat.field)"
-                  [disabled]="!isFieldSelectable(stat.field)"
-                />
-                <div class="field-copy">
-                  <div class="field-label">{{ stat.label }}</div>
-                  <div class="field-meta">{{ stat.fieldType }}</div>
-                </div>
-                <div class="missing-tail">
-                  <input
-                    class="missing-limit-input"
-                    type="number"
-                    min="1"
-                    max="200"
-                    [ngModel]="getFieldLimit(stat.field)"
-                    (ngModelChange)="onFieldLimitChange(stat.field, $event)"
-                    [disabled]="!selectedMissingFields().has(stat.field)"
-                  />
-                  <span class="missing-count">{{ 'deckEnhance.missingCount' | translate:{ count: stat.missingCount } }}</span>
-                </div>
-              </label>
-              <div *ngIf="missingRows().length === 0" class="field-hint">{{ 'deckEnhance.noMissing' | translate }}</div>
-            </div>
-          </div>
+          }
 
-          <div *ngIf="hasMissingFields() && selectedAudioFields().length > 0" class="tts-section">
-            <label class="grid-label">{{ 'deckEnhance.audioGeneration' | translate }}</label>
-            <div *ngIf="!ttsSupported()" class="field-hint">{{ 'deckEnhance.ttsUnavailable' | translate }}</div>
-            <div *ngIf="ttsSupported()" class="tts-panel">
-              <div class="form-grid">
-                <div class="form-field">
-                  <label for="ai-tts-model">{{ 'deckEnhance.ttsModelLabel' | translate }}</label>
-                  <select
-                    id="ai-tts-model"
-                    class="glass-select"
-                    [ngModel]="modelChoice('tts', ttsModel())"
-                    (ngModelChange)="onModelChoiceChange('tts', $event)"
-                  >
-                    <option *ngFor="let model of ttsModelOptions()" [ngValue]="model.value">
-                      {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
-                    </option>
-                  </select>
-                  <input
-                    *ngIf="isCustomModel('tts', ttsModel())"
-                    type="text"
-                    [ngModel]="ttsModel()"
-                    (ngModelChange)="onTtsModelChange($event)"
-                    [placeholder]="ttsModelPlaceholder()"
-                  />
-                  <p class="field-hint">{{ modelHint('tts', ttsModel()) }}</p>
-                </div>
-                <div class="form-field">
-                  <label for="ai-tts-voice">{{ 'deckEnhance.voiceLabel' | translate }}</label>
-                  <select
-                    id="ai-tts-voice"
-                    class="glass-select"
-                    [ngModel]="ttsVoicePreset()"
-                    (ngModelChange)="onTtsVoicePresetChange($event)"
-                  >
-                    <option *ngFor="let voice of voiceOptions()" [ngValue]="voice">
-                      {{ voiceLabel(voice) }}
-                    </option>
-                  </select>
-                  <input
-                    *ngIf="ttsVoicePreset() === 'custom'"
-                    type="text"
-                    [ngModel]="ttsVoiceCustom()"
-                    (ngModelChange)="onTtsVoiceCustomChange($event)"
-                    [placeholder]="'deckEnhance.customVoicePlaceholder' | translate"
-                  />
-                </div>
-                <div class="form-field">
-                  <label for="ai-tts-format">{{ 'deckEnhance.formatLabel' | translate }}</label>
-                  <select
-                    id="ai-tts-format"
-                    class="glass-select"
-                    [ngModel]="ttsFormat()"
-                    (ngModelChange)="onTtsFormatChange($event)"
-                  >
-                    <option *ngFor="let format of ttsFormatOptions()" [ngValue]="format">
-                      {{ format }}
-                    </option>
-                  </select>
-                </div>
-                <div class="form-field">
-                  <label for="ai-tts-max-chars">{{ 'deckEnhance.maxCharsLabel' | translate }}</label>
-                  <input
-                    id="ai-tts-max-chars"
-                    type="number"
-                    min="1"
-                    max="1000"
-                    [ngModel]="ttsMaxChars()"
-                    (ngModelChange)="onTtsMaxCharsChange($event)"
-                  />
-                </div>
-              </div>
-
-              <div class="tts-mapping">
-                <label>{{ 'deckEnhance.audioMappingLabel' | translate }}</label>
-                <div class="mapping-list">
-                  <div *ngFor="let mapping of ttsMappings(); let i = index" class="mapping-row">
-                    <select
-                      class="glass-select"
-                      [ngModel]="mapping.sourceField"
-                      (ngModelChange)="onTtsSourceChange(i, $event)"
-                    >
-                      <option *ngFor="let field of textFields()" [ngValue]="field.name">
-                        {{ field.label || field.name }}
-                      </option>
-                    </select>
-                    <span class="mapping-arrow">→</span>
-                    <select
-                      class="glass-select"
-                      [ngModel]="mapping.targetField"
-                      (ngModelChange)="onTtsTargetChange(i, $event)"
-                    >
-                      <option *ngFor="let field of ttsTargetFields()" [ngValue]="field.name">
-                        {{ field.label || field.name }}
-                      </option>
-                    </select>
-                    <button type="button" class="remove-mapping" (click)="removeTtsMapping(i)" [disabled]="ttsMappings().length <= 1">
-                      ×
-                    </button>
+          @if (hasMissingFields() && selectedAudioFields().length > 0) {
+            <div class="tts-section">
+              <label class="grid-label">{{ 'deckEnhance.audioGeneration' | translate }}</label>
+              @if (!ttsSupported()) {
+                <div class="field-hint">{{ 'deckEnhance.ttsUnavailable' | translate }}</div>
+              }
+              @if (ttsSupported()) {
+                <div class="tts-panel">
+                  <div class="form-grid">
+                    <div class="form-field">
+                      <label for="ai-tts-model">{{ 'deckEnhance.ttsModelLabel' | translate }}</label>
+                      <select
+                        id="ai-tts-model"
+                        class="glass-select"
+                        [ngModel]="modelChoice('tts', ttsModel())"
+                        (ngModelChange)="onModelChoiceChange('tts', $event)"
+                        >
+                        @for (model of ttsModelOptions(); track model) {
+                          <option [ngValue]="model.value">
+                            {{ model.label }}{{ model.badge ? ' · ' + model.badge : '' }}
+                          </option>
+                        }
+                      </select>
+                      @if (isCustomModel('tts', ttsModel())) {
+                        <input
+                          type="text"
+                          [ngModel]="ttsModel()"
+                          (ngModelChange)="onTtsModelChange($event)"
+                          [placeholder]="ttsModelPlaceholder()"
+                          />
+                      }
+                      <p class="field-hint">{{ modelHint('tts', ttsModel()) }}</p>
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-tts-voice">{{ 'deckEnhance.voiceLabel' | translate }}</label>
+                      <select
+                        id="ai-tts-voice"
+                        class="glass-select"
+                        [ngModel]="ttsVoicePreset()"
+                        (ngModelChange)="onTtsVoicePresetChange($event)"
+                        >
+                        @for (voice of voiceOptions(); track voice) {
+                          <option [ngValue]="voice">
+                            {{ voiceLabel(voice) }}
+                          </option>
+                        }
+                      </select>
+                      @if (ttsVoicePreset() === 'custom') {
+                        <input
+                          type="text"
+                          [ngModel]="ttsVoiceCustom()"
+                          (ngModelChange)="onTtsVoiceCustomChange($event)"
+                          [placeholder]="'deckEnhance.customVoicePlaceholder' | translate"
+                          />
+                      }
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-tts-format">{{ 'deckEnhance.formatLabel' | translate }}</label>
+                      <select
+                        id="ai-tts-format"
+                        class="glass-select"
+                        [ngModel]="ttsFormat()"
+                        (ngModelChange)="onTtsFormatChange($event)"
+                        >
+                        @for (format of ttsFormatOptions(); track format) {
+                          <option [ngValue]="format">
+                            {{ format }}
+                          </option>
+                        }
+                      </select>
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-tts-max-chars">{{ 'deckEnhance.maxCharsLabel' | translate }}</label>
+                      <input
+                        id="ai-tts-max-chars"
+                        type="number"
+                        min="1"
+                        max="1000"
+                        [ngModel]="ttsMaxChars()"
+                        (ngModelChange)="onTtsMaxCharsChange($event)"
+                        />
+                    </div>
+                  </div>
+                  <div class="tts-mapping">
+                    <label>{{ 'deckEnhance.audioMappingLabel' | translate }}</label>
+                    <div class="mapping-list">
+                      @for (mapping of ttsMappings(); track mapping; let i = $index) {
+                        <div class="mapping-row">
+                          <select
+                            class="glass-select"
+                            [ngModel]="mapping.sourceField"
+                            (ngModelChange)="onTtsSourceChange(i, $event)"
+                            >
+                            @for (field of textFields(); track field) {
+                              <option [ngValue]="field.name">
+                                {{ field.label || field.name }}
+                              </option>
+                            }
+                          </select>
+                          <span class="mapping-arrow">→</span>
+                          <select
+                            class="glass-select"
+                            [ngModel]="mapping.targetField"
+                            (ngModelChange)="onTtsTargetChange(i, $event)"
+                            >
+                            @for (field of ttsTargetFields(); track field) {
+                              <option [ngValue]="field.name">
+                                {{ field.label || field.name }}
+                              </option>
+                            }
+                          </select>
+                          <button type="button" class="remove-mapping" (click)="removeTtsMapping(i)" [disabled]="ttsMappings().length <= 1">
+                            ×
+                          </button>
+                        </div>
+                      }
+                    </div>
+                    <button type="button" class="add-mapping" (click)="addTtsMapping()">{{ 'deckEnhance.addMapping' | translate }}</button>
                   </div>
                 </div>
-                <button type="button" class="add-mapping" (click)="addTtsMapping()">{{ 'deckEnhance.addMapping' | translate }}</button>
+              }
+            </div>
+          }
+
+          @if (hasMissingFields() && selectedImageFields().length > 0) {
+            <div class="tts-section">
+              <label class="grid-label">{{ 'deckEnhance.imageGeneration' | translate }}</label>
+              @if (!imageSupported()) {
+                <div class="field-hint">{{ 'deckEnhance.imageUnavailable' | translate }}</div>
+              }
+              @if (imageSupported()) {
+                <div class="tts-panel">
+                  <div class="form-grid">
+                    <div class="form-field">
+                      <label for="ai-image-model">{{ 'deckEnhance.imageModelLabel' | translate }}</label>
+                      <select
+                        id="ai-image-model"
+                        class="glass-select"
+                        [ngModel]="imageModel()"
+                        (ngModelChange)="onImageModelChange($event)"
+                        >
+                        @for (model of imageModelOptions(); track model) {
+                          <option [ngValue]="model">
+                            {{ model === 'custom' ? 'Custom' : model }}
+                          </option>
+                        }
+                      </select>
+                      @if (imageModel() === 'custom') {
+                        <input
+                          type="text"
+                          [ngModel]="imageModelCustom()"
+                          (ngModelChange)="onImageModelCustomChange($event)"
+                          [placeholder]="'deckEnhance.customImageModelPlaceholder' | translate"
+                          />
+                      }
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-image-size">{{ 'deckEnhance.sizeLabel' | translate }}</label>
+                      <input
+                        id="ai-image-size"
+                        type="text"
+                        [ngModel]="imageSize()"
+                        (ngModelChange)="onImageSizeChange($event)"
+                        placeholder="1024x1024"
+                        />
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-image-format">{{ 'deckEnhance.formatLabel' | translate }}</label>
+                      <select
+                        id="ai-image-format"
+                        class="glass-select"
+                        [ngModel]="imageFormat()"
+                        (ngModelChange)="onImageFormatChange($event)"
+                        >
+                        <option [ngValue]="'png'">png</option>
+                        <option [ngValue]="'jpg'">jpg</option>
+                        <option [ngValue]="'webp'">webp</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              }
+            </div>
+          }
+
+          @if (hasMissingFields() && selectedVideoFields().length > 0) {
+            <div class="tts-section">
+              <label class="grid-label">{{ 'deckEnhance.videoGeneration' | translate }}</label>
+              @if (!videoSupported()) {
+                <div class="field-hint">{{ 'deckEnhance.videoUnavailable' | translate }}</div>
+              }
+              @if (videoSupported()) {
+                <div class="tts-panel">
+                  <div class="form-grid">
+                    <div class="form-field">
+                      <label for="ai-video-model">{{ 'deckEnhance.videoModelLabel' | translate }}</label>
+                      <select
+                        id="ai-video-model"
+                        class="glass-select"
+                        [ngModel]="videoModel()"
+                        (ngModelChange)="onVideoModelChange($event)"
+                        >
+                        @for (model of videoModelOptions(); track model) {
+                          <option [ngValue]="model">
+                            {{ model === 'custom' ? 'Custom' : model }}
+                          </option>
+                        }
+                      </select>
+                      @if (videoModel() === 'custom') {
+                        <input
+                          type="text"
+                          [ngModel]="videoModelCustom()"
+                          (ngModelChange)="onVideoModelCustomChange($event)"
+                          [placeholder]="'deckEnhance.customVideoModelPlaceholder' | translate"
+                          />
+                      }
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-video-duration">{{ 'deckEnhance.durationLabel' | translate }}</label>
+                      <input
+                        id="ai-video-duration"
+                        type="number"
+                        min="1"
+                        max="20"
+                        [ngModel]="videoDurationSeconds()"
+                        (ngModelChange)="onVideoDurationChange($event)"
+                        />
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-video-resolution">{{ 'deckEnhance.resolutionLabel' | translate }}</label>
+                      <input
+                        id="ai-video-resolution"
+                        type="text"
+                        [ngModel]="videoResolution()"
+                        (ngModelChange)="onVideoResolutionChange($event)"
+                        placeholder="1280x720"
+                        />
+                    </div>
+                    <div class="form-field">
+                      <label for="ai-video-format">{{ 'deckEnhance.formatLabel' | translate }}</label>
+                      <select
+                        id="ai-video-format"
+                        class="glass-select"
+                        [ngModel]="videoFormat()"
+                        (ngModelChange)="onVideoFormatChange($event)"
+                        >
+                        <option [ngValue]="'mp4'">mp4</option>
+                        <option [ngValue]="'gif'">gif</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              }
+            </div>
+          }
+
+          @if (textFields().length > 0) {
+            <div class="missing-panel">
+              <div class="dup-header">
+                <button
+                  type="button"
+                  class="find-duplicates"
+                  (click)="openManualDuplicateReview()"
+                  >
+                  Find duplicates (manual)
+                </button>
+              </div>
+              <div class="dup-hint">
+                Manual review opens a separate page with larger duplicate coverage and side-by-side card comparison.
               </div>
             </div>
-          </div>
-
-          <div *ngIf="hasMissingFields() && selectedImageFields().length > 0" class="tts-section">
-            <label class="grid-label">{{ 'deckEnhance.imageGeneration' | translate }}</label>
-            <div *ngIf="!imageSupported()" class="field-hint">{{ 'deckEnhance.imageUnavailable' | translate }}</div>
-            <div *ngIf="imageSupported()" class="tts-panel">
-              <div class="form-grid">
-                <div class="form-field">
-                  <label for="ai-image-model">{{ 'deckEnhance.imageModelLabel' | translate }}</label>
-                  <select
-                    id="ai-image-model"
-                    class="glass-select"
-                    [ngModel]="imageModel()"
-                    (ngModelChange)="onImageModelChange($event)"
-                  >
-                    <option *ngFor="let model of imageModelOptions()" [ngValue]="model">
-                      {{ model === 'custom' ? 'Custom' : model }}
-                    </option>
-                  </select>
-                  <input
-                    *ngIf="imageModel() === 'custom'"
-                    type="text"
-                    [ngModel]="imageModelCustom()"
-                    (ngModelChange)="onImageModelCustomChange($event)"
-                    [placeholder]="'deckEnhance.customImageModelPlaceholder' | translate"
-                  />
-                </div>
-                <div class="form-field">
-                  <label for="ai-image-size">{{ 'deckEnhance.sizeLabel' | translate }}</label>
-                  <input
-                    id="ai-image-size"
-                    type="text"
-                    [ngModel]="imageSize()"
-                    (ngModelChange)="onImageSizeChange($event)"
-                    placeholder="1024x1024"
-                  />
-                </div>
-                <div class="form-field">
-                  <label for="ai-image-format">{{ 'deckEnhance.formatLabel' | translate }}</label>
-                  <select
-                    id="ai-image-format"
-                    class="glass-select"
-                    [ngModel]="imageFormat()"
-                    (ngModelChange)="onImageFormatChange($event)"
-                  >
-                    <option [ngValue]="'png'">png</option>
-                    <option [ngValue]="'jpg'">jpg</option>
-                    <option [ngValue]="'webp'">webp</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div *ngIf="hasMissingFields() && selectedVideoFields().length > 0" class="tts-section">
-            <label class="grid-label">{{ 'deckEnhance.videoGeneration' | translate }}</label>
-            <div *ngIf="!videoSupported()" class="field-hint">{{ 'deckEnhance.videoUnavailable' | translate }}</div>
-            <div *ngIf="videoSupported()" class="tts-panel">
-              <div class="form-grid">
-                <div class="form-field">
-                  <label for="ai-video-model">{{ 'deckEnhance.videoModelLabel' | translate }}</label>
-                  <select
-                    id="ai-video-model"
-                    class="glass-select"
-                    [ngModel]="videoModel()"
-                    (ngModelChange)="onVideoModelChange($event)"
-                  >
-                    <option *ngFor="let model of videoModelOptions()" [ngValue]="model">
-                      {{ model === 'custom' ? 'Custom' : model }}
-                    </option>
-                  </select>
-                  <input
-                    *ngIf="videoModel() === 'custom'"
-                    type="text"
-                    [ngModel]="videoModelCustom()"
-                    (ngModelChange)="onVideoModelCustomChange($event)"
-                    [placeholder]="'deckEnhance.customVideoModelPlaceholder' | translate"
-                  />
-                </div>
-                <div class="form-field">
-                  <label for="ai-video-duration">{{ 'deckEnhance.durationLabel' | translate }}</label>
-                  <input
-                    id="ai-video-duration"
-                    type="number"
-                    min="1"
-                    max="20"
-                    [ngModel]="videoDurationSeconds()"
-                    (ngModelChange)="onVideoDurationChange($event)"
-                  />
-                </div>
-                <div class="form-field">
-                  <label for="ai-video-resolution">{{ 'deckEnhance.resolutionLabel' | translate }}</label>
-                  <input
-                    id="ai-video-resolution"
-                    type="text"
-                    [ngModel]="videoResolution()"
-                    (ngModelChange)="onVideoResolutionChange($event)"
-                    placeholder="1280x720"
-                  />
-                </div>
-                <div class="form-field">
-                  <label for="ai-video-format">{{ 'deckEnhance.formatLabel' | translate }}</label>
-                  <select
-                    id="ai-video-format"
-                    class="glass-select"
-                    [ngModel]="videoFormat()"
-                    (ngModelChange)="onVideoFormatChange($event)"
-                  >
-                    <option [ngValue]="'mp4'">mp4</option>
-                    <option [ngValue]="'gif'">gif</option>
-                  </select>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div *ngIf="textFields().length > 0" class="missing-panel">
-            <div class="dup-header">
-              <button
-                type="button"
-                class="find-duplicates"
-                (click)="openManualDuplicateReview()"
-              >
-                Find duplicates (manual)
-              </button>
-            </div>
-            <div class="dup-hint">
-              Manual review opens a separate page with larger duplicate coverage and side-by-side card comparison.
-            </div>
-          </div>
+          }
 
           <div class="form-field">
             <label for="ai-enhance-notes">{{ 'deckEnhance.notesLabel' | translate }}</label>
@@ -398,20 +464,27 @@ type FieldLimitMap = Record<string, number>;
             ></textarea>
           </div>
 
-          <div *ngIf="createError()" class="error-state" role="alert">
-            {{ createError() }}
-          </div>
-          <div *ngIf="createSuccess()" class="success-state" role="status">
-            {{ createSuccess() }}
-          </div>
-          <div *ngIf="preflightError()" class="error-state" role="alert">
-            {{ preflightError() }}
-          </div>
-          <app-ai-preflight-panel
-            *ngIf="preflight()"
-            [preflight]="preflight()"
-            [title]="'deckEnhance.reviewPlan' | translate"
-          />
+          @if (createError()) {
+            <div class="error-state" role="alert">
+              {{ createError() }}
+            </div>
+          }
+          @if (createSuccess()) {
+            <div class="success-state" role="status">
+              {{ createSuccess() }}
+            </div>
+          }
+          @if (preflightError()) {
+            <div class="error-state" role="alert">
+              {{ preflightError() }}
+            </div>
+          }
+          @if (preflight()) {
+            <app-ai-preflight-panel
+              [preflight]="preflight()"
+              [title]="'deckEnhance.reviewPlan' | translate"
+              />
+          }
         </div>
 
         <div class="modal-footer">
@@ -420,34 +493,39 @@ type FieldLimitMap = Record<string, number>;
             variant="primary"
             (click)="submit()"
             [disabled]="!canSubmit()"
-          >
+            >
             {{ submitLabelKey() | translate }}
           </app-button>
         </div>
       </div>
 
-      <div *ngIf="showScopePrompt()" class="modal-content scope-prompt" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h2>{{ 'deckEnhance.scopeTitle' | translate }}</h2>
-          <button class="close-btn" (click)="cancelScopePrompt()">&times;</button>
-        </div>
-        <div class="modal-body">
-          <p>{{ 'deckEnhance.scopeMessage' | translate }}</p>
-          <p *ngIf="selectedOptions().has('auto_resolve_duplicates')" class="field-hint">
-            {{ 'deckEnhance.scopeAutoResolveHint' | translate }}
-          </p>
-          <div class="scope-buttons">
-            <app-button variant="secondary" [fullWidth]="true" (click)="confirmScopeAndStart('local')" [disabled]="creating()">
-              {{ 'deckEnhance.scopeLocal' | translate }}
-            </app-button>
-            <app-button variant="primary" [fullWidth]="true" (click)="confirmScopeAndStart('global')" [disabled]="creating()">
-              {{ 'deckEnhance.scopeGlobal' | translate }}
-            </app-button>
+      @if (showScopePrompt()) {
+        <div class="modal-content scope-prompt" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h2>{{ 'deckEnhance.scopeTitle' | translate }}</h2>
+            <button class="close-btn" (click)="cancelScopePrompt()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <p>{{ 'deckEnhance.scopeMessage' | translate }}</p>
+            @if (selectedOptions().has('auto_resolve_duplicates')) {
+              <p class="field-hint">
+                {{ 'deckEnhance.scopeAutoResolveHint' | translate }}
+              </p>
+            }
+            <div class="scope-buttons">
+              <app-button variant="secondary" [fullWidth]="true" (click)="confirmScopeAndStart('local')" [disabled]="creating()">
+                {{ 'deckEnhance.scopeLocal' | translate }}
+              </app-button>
+              <app-button variant="primary" [fullWidth]="true" (click)="confirmScopeAndStart('global')" [disabled]="creating()">
+                {{ 'deckEnhance.scopeGlobal' | translate }}
+              </app-button>
+            </div>
           </div>
         </div>
-      </div>
+      }
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(8, 12, 22, 0.55); display: flex; align-items: center; justify-content: center; z-index: 1000; backdrop-filter: blur(12px) saturate(140%); }
       .modal-content { background: var(--color-surface-solid); border-radius: var(--border-radius-lg); max-height: 90vh; display: flex; flex-direction: column; border: 1px solid var(--glass-border); box-shadow: var(--shadow-lg); }
@@ -630,6 +708,11 @@ type FieldLimitMap = Record<string, number>;
     `]
 })
 export class AiEnhanceDeckModalComponent implements OnInit {
+    private aiApi = inject(AiApiService);
+    private cardApi = inject(CardApiService);
+    private templateApi = inject(TemplateApiService);
+    private router = inject(Router);
+
     @Input() userDeckId = '';
     @Input() deckName = '';
     @Input() templateId = '';
@@ -858,13 +941,6 @@ export class AiEnhanceDeckModalComponent implements OnInit {
         return audioFields.filter(field => selected.has(field.name));
     });
     readonly missingRows = computed<MissingFieldRow[]>(() => this.buildMissingRows());
-
-    constructor(
-        private aiApi: AiApiService,
-        private cardApi: CardApiService,
-        private templateApi: TemplateApiService,
-        private router: Router
-    ) {}
 
     ngOnInit(): void {
         this.storageKey = `mnema_ai_enhance:${this.userDeckId || 'default'}`;

@@ -1,6 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { NgIf, NgFor } from '@angular/common';
+
 import { forkJoin } from 'rxjs';
 import { TemplateApiService } from '../../core/services/template-api.service';
 import { SearchApiService } from '../../core/services/search-api.service';
@@ -17,95 +17,98 @@ type TemplateFilter = 'all' | 'mine' | 'public';
 
 @Component({
     selector: 'app-public-templates',
-    standalone: true,
     imports: [
-        NgIf,
-        NgFor,
-        TemplateCardComponent,
-        MemoryTipLoaderComponent,
-        EmptyStateComponent,
-        ButtonComponent,
-        TranslatePipe
-    ],
+    TemplateCardComponent,
+    MemoryTipLoaderComponent,
+    EmptyStateComponent,
+    ButtonComponent,
+    TranslatePipe
+],
     template: `
-    <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
+    @if (loading) {
+      <app-memory-tip-loader></app-memory-tip-loader>
+    }
 
-    <div *ngIf="!loading" class="templates-catalog">
-      <header class="page-header">
-        <div>
-          <div class="title-row">
-            <h1>{{ 'publicTemplates.title' | translate }}</h1>
-            <a
-              class="help-link"
-              href="https://github.com/MattoYuzuru/Mnema/wiki#templates"
-              target="_blank"
-              rel="noopener noreferrer"
-              aria-label="Templates guide"
-            >?</a>
+    @if (!loading) {
+      <div class="templates-catalog">
+        <header class="page-header">
+          <div>
+            <div class="title-row">
+              <h1>{{ 'publicTemplates.title' | translate }}</h1>
+              <a
+                class="help-link"
+                href="https://github.com/MattoYuzuru/Mnema/wiki#templates"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Templates guide"
+              >?</a>
+            </div>
+            <p class="subtitle">{{ 'publicTemplates.subtitle' | translate }}</p>
           </div>
-          <p class="subtitle">{{ 'publicTemplates.subtitle' | translate }}</p>
+        </header>
+        <div class="templates-toolbar">
+          <input
+            type="search"
+            class="templates-search"
+            [placeholder]="'publicTemplates.searchPlaceholder' | translate"
+            [attr.aria-label]="'publicTemplates.searchPlaceholder' | translate"
+            [value]="searchQuery"
+            (input)="onSearchInput($event)"
+            />
         </div>
-      </header>
-
-      <div class="templates-toolbar">
-        <input
-          type="search"
-          class="templates-search"
-          [placeholder]="'publicTemplates.searchPlaceholder' | translate"
-          [attr.aria-label]="'publicTemplates.searchPlaceholder' | translate"
-          [value]="searchQuery"
-          (input)="onSearchInput($event)"
-        />
+        <div class="filter-tabs">
+          <button class="filter-tab" [class.active]="activeFilter === 'all'" (click)="activeFilter = 'all'">
+            {{ 'publicTemplates.filterAll' | translate }} ({{ templates.length }})
+          </button>
+          <button class="filter-tab" [class.active]="activeFilter === 'mine'" (click)="activeFilter = 'mine'">
+            {{ 'publicTemplates.filterMine' | translate }} ({{ myTemplates.length }})
+          </button>
+          <button class="filter-tab" [class.active]="activeFilter === 'public'" (click)="activeFilter = 'public'">
+            {{ 'publicTemplates.filterPublic' | translate }} ({{ publicTemplates.length }})
+          </button>
+        </div>
+        @if (filteredTemplates.length > 0) {
+          <div class="templates-grid">
+            @for (template of filteredTemplates; track template) {
+              <app-template-card
+                [template]="template"
+                [showActions]="true"
+                [showViewButton]="true"
+                [showSelectButton]="fromWizard"
+                [showVisibility]="true"
+                [viewLabel]="'templates.view' | translate"
+                [selectLabel]="'publicTemplates.select' | translate"
+                [publicLabel]="'templates.public' | translate"
+                [privateLabel]="'templates.private' | translate"
+                (view)="openTemplate(template.templateId)"
+                (selectRequested)="selectTemplate(template.templateId)"
+                (click)="openTemplate(template.templateId)"
+              ></app-template-card>
+            }
+          </div>
+        }
+        @if (filteredTemplates.length === 0) {
+          <app-empty-state
+            icon="T"
+            [title]="searchQuery ? ('publicTemplates.noSearchResults' | translate) : ('templates.noTemplates' | translate)"
+            [description]="searchQuery ? ('publicTemplates.noSearchResultsDescription' | translate) : ('templates.noTemplatesDescription' | translate)"
+          ></app-empty-state>
+        }
+        @if (templates.length > 0 && hasMore) {
+          <div class="load-more-container">
+            <app-button
+              variant="secondary"
+              [disabled]="loadingMore"
+              (click)="loadMore()"
+              >
+              {{ (loadingMore ? 'templates.loading' : 'templates.loadMore') | translate }}
+            </app-button>
+          </div>
+        }
       </div>
-
-      <div class="filter-tabs">
-        <button class="filter-tab" [class.active]="activeFilter === 'all'" (click)="activeFilter = 'all'">
-          {{ 'publicTemplates.filterAll' | translate }} ({{ templates.length }})
-        </button>
-        <button class="filter-tab" [class.active]="activeFilter === 'mine'" (click)="activeFilter = 'mine'">
-          {{ 'publicTemplates.filterMine' | translate }} ({{ myTemplates.length }})
-        </button>
-        <button class="filter-tab" [class.active]="activeFilter === 'public'" (click)="activeFilter = 'public'">
-          {{ 'publicTemplates.filterPublic' | translate }} ({{ publicTemplates.length }})
-        </button>
-      </div>
-
-      <div *ngIf="filteredTemplates.length > 0" class="templates-grid">
-        <app-template-card
-          *ngFor="let template of filteredTemplates"
-          [template]="template"
-          [showActions]="true"
-          [showViewButton]="true"
-          [showSelectButton]="fromWizard"
-          [showVisibility]="true"
-          [viewLabel]="'templates.view' | translate"
-          [selectLabel]="'publicTemplates.select' | translate"
-          [publicLabel]="'templates.public' | translate"
-          [privateLabel]="'templates.private' | translate"
-          (view)="openTemplate(template.templateId)"
-          (select)="selectTemplate(template.templateId)"
-          (click)="openTemplate(template.templateId)"
-        ></app-template-card>
-      </div>
-
-      <app-empty-state
-        *ngIf="filteredTemplates.length === 0"
-        icon="T"
-        [title]="searchQuery ? ('publicTemplates.noSearchResults' | translate) : ('templates.noTemplates' | translate)"
-        [description]="searchQuery ? ('publicTemplates.noSearchResultsDescription' | translate) : ('templates.noTemplatesDescription' | translate)"
-      ></app-empty-state>
-
-      <div *ngIf="templates.length > 0 && hasMore" class="load-more-container">
-        <app-button
-          variant="secondary"
-          [disabled]="loadingMore"
-          (click)="loadMore()"
-        >
-          {{ (loadingMore ? 'templates.loading' : 'templates.loadMore') | translate }}
-        </app-button>
-      </div>
-    </div>
-  `,
+    }
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .templates-catalog {
         max-width: 72rem;
@@ -255,6 +258,13 @@ type TemplateFilter = 'all' | 'mine' | 'public';
     `]
 })
 export class PublicTemplatesComponent implements OnInit {
+    private templateApi = inject(TemplateApiService);
+    private searchApi = inject(SearchApiService);
+    private userApi = inject(UserApiService);
+    private wizardState = inject(DeckWizardStateService);
+    private router = inject(Router);
+    private route = inject(ActivatedRoute);
+
     loading = true;
     loadingMore = false;
     templates: CardTemplateDTO[] = [];
@@ -266,15 +276,6 @@ export class PublicTemplatesComponent implements OnInit {
     currentUserId: string | null = null;
     searchQuery = '';
     private searchDebounce?: ReturnType<typeof setTimeout>;
-
-    constructor(
-        private templateApi: TemplateApiService,
-        private searchApi: SearchApiService,
-        private userApi: UserApiService,
-        private wizardState: DeckWizardStateService,
-        private router: Router,
-        private route: ActivatedRoute
-    ) {}
 
     ngOnInit(): void {
         this.fromWizard = this.route.snapshot.queryParamMap.get('from') === 'wizard';

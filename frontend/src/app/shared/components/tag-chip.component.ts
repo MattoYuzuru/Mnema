@@ -1,24 +1,25 @@
-import { Component, Input, Output, EventEmitter } from '@angular/core';
-import { NgIf } from '@angular/common';
+import { Component, Input, Output, EventEmitter, ChangeDetectionStrategy } from '@angular/core';
+
 
 @Component({
     selector: 'app-tag-chip',
-    standalone: true,
-    imports: [NgIf],
+    imports: [],
     template: `
     <span class="tag-chip">
       <span class="tag-text">{{ text }}</span>
-      <button
-        *ngIf="removable"
-        type="button"
-        class="tag-remove"
-        (click)="onRemove()"
-        aria-label="Remove tag"
-      >
-        ×
-      </button>
+      @if (removable) {
+        <button
+          type="button"
+          class="tag-remove"
+          (click)="onRemove()"
+          aria-label="Remove tag"
+          >
+          ×
+        </button>
+      }
     </span>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .tag-chip {

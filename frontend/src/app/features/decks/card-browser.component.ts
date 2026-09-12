@@ -1,6 +1,6 @@
-import { Component, OnInit, HostListener } from '@angular/core';
+import { Component, OnInit, HostListener, inject, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { NgIf, NgFor } from '@angular/common';
+
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators, FormControl } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { CardApiService } from '../../core/services/card-api.service';
@@ -30,282 +30,321 @@ import { appConfig } from '../../app.config';
 
 @Component({
     selector: 'app-card-browser',
-    standalone: true,
-    imports: [NgIf, NgFor, ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, AiEnhanceCardModalComponent, InputComponent, TextareaComponent, MediaUploadComponent, ConfirmationDialogComponent, TagChipComponent, TranslatePipe],
+    imports: [ReactiveFormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, AiEnhanceCardModalComponent, InputComponent, TextareaComponent, MediaUploadComponent, ConfirmationDialogComponent, TagChipComponent, TranslatePipe],
     template: `
-    <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
+    @if (loading) {
+      <app-memory-tip-loader></app-memory-tip-loader>
+    }
 
-    <div *ngIf="!loading" class="card-browser">
-      <header class="page-header">
-        <div class="header-left">
-          <app-button variant="ghost" size="sm" (click)="backToDeck()">
-            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-              <path d="M10.5 3.5 6 8l4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            {{ 'cardBrowser.backToDeck' | translate }}
-          </app-button>
-          <div>
-            <h1>{{ 'cardBrowser.title' | translate }}</h1>
-            <p class="card-count">{{ cardCount }} {{ 'cardBrowser.cards' | translate }}</p>
-          </div>
-        </div>
-      </header>
-
-      <div *ngIf="cards.length > 0" class="browser-layout">
-        <aside class="cards-panel glass">
-          <div class="panel-header">
+    @if (!loading) {
+      <div class="card-browser">
+        <header class="page-header">
+          <div class="header-left">
+            <app-button variant="ghost" size="sm" (click)="backToDeck()">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <path d="M10.5 3.5 6 8l4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              {{ 'cardBrowser.backToDeck' | translate }}
+            </app-button>
             <div>
-              <h2>{{ 'cardBrowser.list' | translate }}</h2>
-              <p class="panel-meta">{{ cardCount }} {{ 'cardBrowser.cards' | translate }}</p>
+              <h1>{{ 'cardBrowser.title' | translate }}</h1>
+              <p class="card-count">{{ cardCount }} {{ 'cardBrowser.cards' | translate }}</p>
             </div>
           </div>
-
-          <div class="panel-search">
-            <input
-              type="search"
-              class="card-search"
-              [placeholder]="'cardBrowser.searchPlaceholder' | translate"
-              [attr.aria-label]="'cardBrowser.searchPlaceholder' | translate"
-              [value]="searchQuery"
-              (input)="onSearchInput($event)"
-            />
-            <span *ngIf="searchActive" class="search-meta">
-              {{ searchResultCount }} / {{ totalCards }} {{ 'cardBrowser.cards' | translate }}
-            </span>
-          </div>
-
-          <div class="cards-list" (scroll)="onListScroll($event)">
-            <div *ngFor="let card of cards; let index = index" class="cards-list-item" [class.active]="index === currentCardIndex">
-              <button class="card-preview" type="button" (click)="openCardFromList(index)">
-                <span class="card-index">{{ index + 1 }}</span>
-                <div class="card-preview-body">
-                  <span class="card-text">{{ getFrontPreview(card) }}</span>
-                  <div *ngIf="card.tags?.length" class="card-tags-inline">
-                    <app-tag-chip *ngFor="let tag of card.tags" [text]="tag"></app-tag-chip>
+        </header>
+        @if (cards.length > 0) {
+          <div class="browser-layout">
+            <aside class="cards-panel glass">
+              <div class="panel-header">
+                <div>
+                  <h2>{{ 'cardBrowser.list' | translate }}</h2>
+                  <p class="panel-meta">{{ cardCount }} {{ 'cardBrowser.cards' | translate }}</p>
+                </div>
+              </div>
+              <div class="panel-search">
+                <input
+                  type="search"
+                  class="card-search"
+                  [placeholder]="'cardBrowser.searchPlaceholder' | translate"
+                  [attr.aria-label]="'cardBrowser.searchPlaceholder' | translate"
+                  [value]="searchQuery"
+                  (input)="onSearchInput($event)"
+                  />
+                @if (searchActive) {
+                  <span class="search-meta">
+                    {{ searchResultCount }} / {{ totalCards }} {{ 'cardBrowser.cards' | translate }}
+                  </span>
+                }
+              </div>
+              <div class="cards-list" (scroll)="onListScroll($event)">
+                @for (card of cards; track card; let index = $index) {
+                  <div class="cards-list-item" [class.active]="index === currentCardIndex">
+                    <button class="card-preview" type="button" (click)="openCardFromList(index)">
+                      <span class="card-index">{{ index + 1 }}</span>
+                      <div class="card-preview-body">
+                        <span class="card-text">{{ getFrontPreview(card) }}</span>
+                        @if (card.tags?.length) {
+                          <div class="card-tags-inline">
+                            @for (tag of card.tags; track tag) {
+                              <app-tag-chip [text]="tag"></app-tag-chip>
+                            }
+                          </div>
+                        }
+                      </div>
+                    </button>
+                    <div class="card-item-actions">
+                      <button class="icon-btn" (click)="openEditModal(card); $event.stopPropagation()" [title]="'cardBrowser.editCard' | translate">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                      </button>
+                      <button class="icon-btn delete" (click)="openDeleteModal(card); $event.stopPropagation()" [title]="'cardBrowser.deleteCard' | translate">
+                        <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                          <path d="M3 6h18"/>
+                          <path d="M8 6V4h8v2"/>
+                          <path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/>
+                          <path d="M10 11v6"/>
+                          <path d="M14 11v6"/>
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                }
+              </div>
+            </aside>
+            <section class="preview-panel glass-strong">
+              <div class="preview-header">
+                <div>
+                  <h2>{{ 'cardBrowser.cardsView' | translate }}</h2>
+                  <p class="panel-meta">
+                    {{ searchNoResults ? 0 : (currentCardIndex + 1) }} / {{ searchNoResults ? 0 : cardCount }}
+                  </p>
+                </div>
+                <div class="preview-nav">
+                  <app-button
+                    variant="ghost"
+                    size="sm"
+                    (click)="previousCard()"
+                    [disabled]="searchNoResults || currentCardIndex === 0"
+                    >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <path d="M10.5 3.5 6 8l4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    {{ 'cardBrowser.previous' | translate }}
+                  </app-button>
+                  <app-button
+                    variant="ghost"
+                    size="sm"
+                    (click)="nextCard()"
+                    [disabled]="searchNoResults || currentCardIndex >= cards.length - 1"
+                    >
+                    {{ 'cardBrowser.next' | translate }}
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <path d="M5.5 3.5 10 8l-4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </app-button>
+                </div>
+              </div>
+              @if (searchNoResults) {
+                <div class="no-results-panel">
+                  <div class="no-results-card glass">
+                    <h3>{{ 'cardBrowser.noSearchResults' | translate }}</h3>
+                    <p>{{ 'cardBrowser.noSearchResultsDescription' | translate }}</p>
                   </div>
                 </div>
-              </button>
-              <div class="card-item-actions">
-                <button class="icon-btn" (click)="openEditModal(card); $event.stopPropagation()" [title]="'cardBrowser.editCard' | translate">
-                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                  </svg>
-                </button>
-                <button class="icon-btn delete" (click)="openDeleteModal(card); $event.stopPropagation()" [title]="'cardBrowser.deleteCard' | translate">
-                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path d="M3 6h18"/>
-                    <path d="M8 6V4h8v2"/>
-                    <path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/>
-                    <path d="M10 11v6"/>
-                    <path d="M14 11v6"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <section class="preview-panel glass-strong">
-          <div class="preview-header">
-            <div>
-              <h2>{{ 'cardBrowser.cardsView' | translate }}</h2>
-              <p class="panel-meta">
-                {{ searchNoResults ? 0 : (currentCardIndex + 1) }} / {{ searchNoResults ? 0 : cardCount }}
-              </p>
-            </div>
-            <div class="preview-nav">
-              <app-button
-                variant="ghost"
-                size="sm"
-                (click)="previousCard()"
-                [disabled]="searchNoResults || currentCardIndex === 0"
-              >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                  <path d="M10.5 3.5 6 8l4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                {{ 'cardBrowser.previous' | translate }}
-              </app-button>
-              <app-button
-                variant="ghost"
-                size="sm"
-                (click)="nextCard()"
-                [disabled]="searchNoResults || currentCardIndex >= cards.length - 1"
-              >
-                {{ 'cardBrowser.next' | translate }}
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                  <path d="M5.5 3.5 10 8l-4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </app-button>
-            </div>
-          </div>
-
-          <div *ngIf="searchNoResults" class="no-results-panel">
-            <div class="no-results-card glass">
-              <h3>{{ 'cardBrowser.noSearchResults' | translate }}</h3>
-              <p>{{ 'cardBrowser.noSearchResultsDescription' | translate }}</p>
-            </div>
-          </div>
-
-          <div *ngIf="!searchNoResults && currentCard" class="flashcard-container">
-            <div class="flashcard glass" (click)="onFlashcardClick($event)">
-              <div class="flashcard-content">
-                <div class="card-side front" [class.is-hidden]="revealed && !preferences.showFrontSideAfterFlip">
-                  <app-flashcard-view
-                    *ngIf="template && currentCard"
-                    [template]="template"
-                    [content]="currentCard.effectiveContent"
-                    side="front"
-                    [hideLabels]="preferences.hideFieldLabels"
-                    [autoPlayAudioSequence]="preferences.autoPlayCardAudioSequence"
-                    [autoPlaySequenceToken]="currentCard.userCardId"
-                  ></app-flashcard-view>
+              }
+              @if (!searchNoResults && currentCard) {
+                <div class="flashcard-container">
+                  <div class="flashcard glass" (click)="onFlashcardClick($event)">
+                    <div class="flashcard-content">
+                      <div class="card-side front" [class.is-hidden]="revealed && !preferences.showFrontSideAfterFlip">
+                        @if (template && currentCard) {
+                          <app-flashcard-view
+                            [template]="template"
+                            [content]="currentCard.effectiveContent"
+                            side="front"
+                            [hideLabels]="preferences.hideFieldLabels"
+                            [autoPlayAudioSequence]="preferences.autoPlayCardAudioSequence"
+                            [autoPlaySequenceToken]="currentCard.userCardId"
+                          ></app-flashcard-view>
+                        }
+                      </div>
+                      @if (revealed && preferences.showFrontSideAfterFlip) {
+                        <div class="divider"></div>
+                      }
+                      <div class="card-side back" [class.preload]="!revealed">
+                        @if (template && currentCard) {
+                          <app-flashcard-view
+                            [template]="template"
+                            [content]="currentCard.effectiveContent"
+                            side="back"
+                            [hideLabels]="preferences.hideFieldLabels"
+                            [autoPlayAudioSequence]="false"
+                          ></app-flashcard-view>
+                        }
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flip-hint">
+                    <p>{{ 'cardBrowser.clickToFlip' | translate }}</p>
+                    <p>{{ 'cardBrowser.keyboardHint' | translate }}</p>
+                  </div>
                 </div>
-                <div *ngIf="revealed && preferences.showFrontSideAfterFlip" class="divider"></div>
-                <div class="card-side back" [class.preload]="!revealed">
-                  <app-flashcard-view
-                    *ngIf="template && currentCard"
-                    [template]="template"
-                    [content]="currentCard.effectiveContent"
-                    side="back"
-                    [hideLabels]="preferences.hideFieldLabels"
-                    [autoPlayAudioSequence]="false"
-                  ></app-flashcard-view>
+              }
+              @if (!searchNoResults && currentCard?.tags?.length) {
+                <div class="card-tags-panel">
+                  @for (tag of currentCard!.tags; track tag) {
+                    <app-tag-chip [text]="tag"></app-tag-chip>
+                  }
                 </div>
-              </div>
-            </div>
-            <div class="flip-hint">
-              <p>{{ 'cardBrowser.clickToFlip' | translate }}</p>
-              <p>{{ 'cardBrowser.keyboardHint' | translate }}</p>
-            </div>
+              }
+              @if (!searchNoResults && currentCard) {
+                <div class="card-actions">
+                  @if (currentCard) {
+                    <app-button variant="secondary" size="sm" (click)="openEditModal(currentCard!)">
+                      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                      </svg>
+                      {{ 'cardBrowser.editCard' | translate }}
+                    </app-button>
+                  }
+                  @if (aiEnabled && currentCard && deck && publicDeck) {
+                    <app-button
+                      variant="ghost"
+                      size="sm"
+                      (click)="openAiEnhanceModal(currentCard!)"
+                      >
+                      ✨ {{ 'cardBrowser.enhanceCard' | translate }}
+                    </app-button>
+                  }
+                  @if (currentCard) {
+                    <app-button variant="ghost" size="sm" tone="danger" (click)="openDeleteModal(currentCard!)">
+                      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                        <path d="M3 6h18"/>
+                        <path d="M8 6V4h8v2"/>
+                        <path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/>
+                        <path d="M10 11v6"/>
+                        <path d="M14 11v6"/>
+                      </svg>
+                      {{ 'cardBrowser.deleteCard' | translate }}
+                    </app-button>
+                  }
+                </div>
+              }
+              @if (!searchNoResults && currentCard?.personalNote) {
+                <div class="personal-note">
+                  <h3>{{ 'cardBrowser.personalNote' | translate }}</h3>
+                  <p>{{ currentCard.personalNote }}</p>
+                </div>
+              }
+            </section>
           </div>
-
-          <div *ngIf="!searchNoResults && currentCard?.tags?.length" class="card-tags-panel">
-            <app-tag-chip *ngFor="let tag of currentCard!.tags" [text]="tag"></app-tag-chip>
-          </div>
-
-          <div class="card-actions" *ngIf="!searchNoResults && currentCard">
-            <app-button variant="secondary" size="sm" (click)="openEditModal(currentCard!)" *ngIf="currentCard">
-              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-              </svg>
-              {{ 'cardBrowser.editCard' | translate }}
-            </app-button>
-            <app-button
-              variant="ghost"
-              size="sm"
-              (click)="openAiEnhanceModal(currentCard!)"
-              *ngIf="aiEnabled && currentCard && deck && publicDeck"
-            >
-              ✨ {{ 'cardBrowser.enhanceCard' | translate }}
-            </app-button>
-            <app-button variant="ghost" size="sm" tone="danger" (click)="openDeleteModal(currentCard!)" *ngIf="currentCard">
-              <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                <path d="M3 6h18"/>
-                <path d="M8 6V4h8v2"/>
-                <path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/>
-                <path d="M10 11v6"/>
-                <path d="M14 11v6"/>
-              </svg>
-              {{ 'cardBrowser.deleteCard' | translate }}
-            </app-button>
-          </div>
-
-          <div *ngIf="!searchNoResults && currentCard?.personalNote" class="personal-note">
-            <h3>{{ 'cardBrowser.personalNote' | translate }}</h3>
-            <p>{{ currentCard?.personalNote }}</p>
-          </div>
-        </section>
+        }
+        @if (cards.length === 0) {
+          <app-empty-state
+            icon="📝"
+            [title]="searchActive ? ('cardBrowser.noSearchResults' | translate) : ('cardBrowser.noCards' | translate)"
+            [description]="searchActive ? ('cardBrowser.noSearchResultsDescription' | translate) : ('cardBrowser.noCardsDescription' | translate)"
+          ></app-empty-state>
+        }
       </div>
+    }
 
-      <app-empty-state
-        *ngIf="cards.length === 0"
-        icon="📝"
-        [title]="searchActive ? ('cardBrowser.noSearchResults' | translate) : ('cardBrowser.noCards' | translate)"
-        [description]="searchActive ? ('cardBrowser.noSearchResultsDescription' | translate) : ('cardBrowser.noCardsDescription' | translate)"
-      ></app-empty-state>
-    </div>
-
-    <div *ngIf="showEditModal && editingCard && template" class="modal-overlay" (click)="closeEditModal()">
-      <div class="modal-content" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h2>{{ 'cardBrowser.editCard' | translate }}</h2>
-          <button class="close-btn" (click)="closeEditModal()">&times;</button>
-        </div>
-        <div class="modal-body mn-scrollbar">
-          <form [formGroup]="editForm" class="edit-form">
-            <div *ngFor="let field of template.fields" class="field-group">
-              <app-media-upload
-                *ngIf="isMediaField(field)"
-                [label]="field.label + (field.isRequired ? ' *' : '')"
-                [fieldType]="getMediaFieldType(field)"
-                [value]="getMediaValue(field.name)"
-                (valueChange)="onMediaChange(field.name, $event)"
-              ></app-media-upload>
-              <app-input
-                *ngIf="field.fieldType === 'text'"
-                [label]="field.label + (field.isRequired ? ' *' : '')"
-                type="text"
-                [formControlName]="field.name"
-                [placeholder]="field.helpText || 'Enter ' + field.label"
-              ></app-input>
-              <app-textarea
-                *ngIf="field.fieldType === 'rich_text' || field.fieldType === 'markdown'"
-                [label]="field.label + (field.isRequired ? ' *' : '')"
-                [formControlName]="field.name"
-                [placeholder]="field.fieldType === 'markdown' ? 'Use **bold**, *italic*, inline code' : (field.helpText || 'Enter ' + field.label)"
-                [rows]="4"
-              ></app-textarea>
-            </div>
-            <div class="tag-editor">
-              <label>{{ 'cardBrowser.tags' | translate }}</label>
-              <input
-                type="text"
-                class="tag-input"
-                [formControl]="tagInputControl"
-                (keydown.enter)="addTag($event)"
-                [placeholder]="'cardBrowser.tagsPlaceholder' | translate"
-                [attr.maxlength]="maxTagLength"
-                [attr.aria-label]="'cardBrowser.tags' | translate"
-              />
-              <div *ngIf="tags.length > 0" class="tags-list">
-                <app-tag-chip
-                  *ngFor="let tag of tags; let i = index"
-                  [text]="tag"
-                  [removable]="true"
-                  (remove)="removeTag(i)"
-                ></app-tag-chip>
-              </div>
-              <p *ngIf="tagErrorKey" class="error-message">{{ tagErrorKey | translate }}</p>
-            </div>
-            <app-textarea
-              [label]="'cardBrowser.personalNote' | translate"
-              formControlName="personalNote"
-              [rows]="3"
-              placeholder="Add a personal note (optional)"
-            ></app-textarea>
-            <div class="global-edit" *ngIf="editingCard && canEditGlobally(editingCard)">
-              <label>
+    @if (showEditModal && editingCard && template) {
+      <div class="modal-overlay" (click)="closeEditModal()">
+        <div class="modal-content" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h2>{{ 'cardBrowser.editCard' | translate }}</h2>
+            <button class="close-btn" (click)="closeEditModal()">&times;</button>
+          </div>
+          <div class="modal-body mn-scrollbar">
+            <form [formGroup]="editForm" class="edit-form">
+              @for (field of template.fields; track field) {
+                <div class="field-group">
+                  @if (isMediaField(field)) {
+                    <app-media-upload
+                      [label]="field.label + (field.isRequired ? ' *' : '')"
+                      [fieldType]="getMediaFieldType(field)"
+                      [value]="getMediaValue(field.name)"
+                      (valueChange)="onMediaChange(field.name, $event)"
+                    ></app-media-upload>
+                  }
+                  @if (field.fieldType === 'text') {
+                    <app-input
+                      [label]="field.label + (field.isRequired ? ' *' : '')"
+                      type="text"
+                      [formControlName]="field.name"
+                      [placeholder]="field.helpText || 'Enter ' + field.label"
+                    ></app-input>
+                  }
+                  @if (field.fieldType === 'rich_text' || field.fieldType === 'markdown') {
+                    <app-textarea
+                      [label]="field.label + (field.isRequired ? ' *' : '')"
+                      [formControlName]="field.name"
+                      [placeholder]="field.fieldType === 'markdown' ? 'Use **bold**, *italic*, inline code' : (field.helpText || 'Enter ' + field.label)"
+                      [rows]="4"
+                    ></app-textarea>
+                  }
+                </div>
+              }
+              <div class="tag-editor">
+                <label>{{ 'cardBrowser.tags' | translate }}</label>
                 <input
-                  type="checkbox"
-                  [checked]="applyGlobalEdits"
-                  (change)="toggleGlobalEdit($event)"
-                />
-                {{ 'cardBrowser.editScopeGlobal' | translate }}
-              </label>
-              <p class="field-hint">{{ 'cardBrowser.editScopeGlobalHint' | translate }}</p>
-            </div>
-          </form>
-        </div>
-        <div class="modal-footer">
-          <app-button variant="ghost" (click)="closeEditModal()" [disabled]="saving">{{ 'cardBrowser.cancel' | translate }}</app-button>
-          <app-button variant="primary" (click)="saveEdit()" [disabled]="!canSaveEdit()">
-            {{ saving ? ('cardBrowser.saving' | translate) : ('cardBrowser.save' | translate) }}
-          </app-button>
+                  type="text"
+                  class="tag-input"
+                  [formControl]="tagInputControl"
+                  (keydown.enter)="addTag($event)"
+                  [placeholder]="'cardBrowser.tagsPlaceholder' | translate"
+                  [attr.maxlength]="maxTagLength"
+                  [attr.aria-label]="'cardBrowser.tags' | translate"
+                  />
+                @if (tags.length > 0) {
+                  <div class="tags-list">
+                    @for (tag of tags; track tag; let i = $index) {
+                      <app-tag-chip
+                        [text]="tag"
+                        [removable]="true"
+                        (remove)="removeTag(i)"
+                      ></app-tag-chip>
+                    }
+                  </div>
+                }
+                @if (tagErrorKey) {
+                  <p class="error-message">{{ tagErrorKey | translate }}</p>
+                }
+              </div>
+              <app-textarea
+                [label]="'cardBrowser.personalNote' | translate"
+                formControlName="personalNote"
+                [rows]="3"
+                placeholder="Add a personal note (optional)"
+              ></app-textarea>
+              @if (editingCard && canEditGlobally(editingCard)) {
+                <div class="global-edit">
+                  <label>
+                    <input
+                      type="checkbox"
+                      [checked]="applyGlobalEdits"
+                      (change)="toggleGlobalEdit($event)"
+                      />
+                    {{ 'cardBrowser.editScopeGlobal' | translate }}
+                  </label>
+                  <p class="field-hint">{{ 'cardBrowser.editScopeGlobalHint' | translate }}</p>
+                </div>
+              }
+            </form>
+          </div>
+          <div class="modal-footer">
+            <app-button variant="ghost" (click)="closeEditModal()" [disabled]="saving">{{ 'cardBrowser.cancel' | translate }}</app-button>
+            <app-button variant="primary" (click)="saveEdit()" [disabled]="!canSaveEdit()">
+              {{ saving ? ('cardBrowser.saving' | translate) : ('cardBrowser.save' | translate) }}
+            </app-button>
+          </div>
         </div>
       </div>
-    </div>
+    }
 
     <app-confirmation-dialog
       [open]="showDeleteConfirm"
@@ -317,37 +356,41 @@ import { appConfig } from '../../app.config';
       (cancelled)="closeDeleteConfirm()"
     ></app-confirmation-dialog>
 
-    <div *ngIf="showScopePrompt" class="modal-overlay" (click)="closeScopePrompt()">
-      <div class="modal-content scope-prompt" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h2>{{ 'cardBrowser.deleteScopeTitle' | translate }}</h2>
-          <button class="close-btn" (click)="closeScopePrompt()">&times;</button>
-        </div>
-        <div class="modal-body mn-scrollbar">
-          <p>{{ 'cardBrowser.deleteScopeMessage' | translate }}</p>
-          <div class="scope-buttons">
-            <app-button variant="secondary" (click)="confirmDelete('local')" [disabled]="deleting">
-              {{ 'cardBrowser.deleteLocal' | translate }}
-            </app-button>
-            <app-button variant="primary" (click)="confirmDelete('global')" [disabled]="deleting">
-              {{ 'cardBrowser.deleteGlobal' | translate }}
-            </app-button>
+    @if (showScopePrompt) {
+      <div class="modal-overlay" (click)="closeScopePrompt()">
+        <div class="modal-content scope-prompt" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h2>{{ 'cardBrowser.deleteScopeTitle' | translate }}</h2>
+            <button class="close-btn" (click)="closeScopePrompt()">&times;</button>
+          </div>
+          <div class="modal-body mn-scrollbar">
+            <p>{{ 'cardBrowser.deleteScopeMessage' | translate }}</p>
+            <div class="scope-buttons">
+              <app-button variant="secondary" (click)="confirmDelete('local')" [disabled]="deleting">
+                {{ 'cardBrowser.deleteLocal' | translate }}
+              </app-button>
+              <app-button variant="primary" (click)="confirmDelete('global')" [disabled]="deleting">
+                {{ 'cardBrowser.deleteGlobal' | translate }}
+              </app-button>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    }
 
-    <app-ai-enhance-card-modal
-      *ngIf="aiEnabled && showAiEnhanceModal && enhanceCardTarget && template"
-      [userDeckId]="userDeckId"
-      [deckName]="deck?.displayName || ''"
-      [deckDescription]="deck?.displayDescription || ''"
-      [card]="enhanceCardTarget"
-      [template]="template"
-      (cardUpdated)="onAiCardUpdated($event)"
-      (closed)="closeAiEnhanceModal()"
-    ></app-ai-enhance-card-modal>
-  `,
+    @if (aiEnabled && showAiEnhanceModal && enhanceCardTarget && template) {
+      <app-ai-enhance-card-modal
+        [userDeckId]="userDeckId"
+        [deckName]="deck?.displayName || ''"
+        [deckDescription]="deck?.displayDescription || ''"
+        [card]="enhanceCardTarget"
+        [template]="template"
+        (cardUpdated)="onAiCardUpdated($event)"
+        (closed)="closeAiEnhanceModal()"
+      ></app-ai-enhance-card-modal>
+    }
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .card-browser {
         max-width: 82rem;
@@ -921,6 +964,17 @@ import { appConfig } from '../../app.config';
     `]
 })
 export class CardBrowserComponent implements OnInit {
+    private route = inject(ActivatedRoute);
+    private router = inject(Router);
+    private cardApi = inject(CardApiService);
+    private deckApi = inject(DeckApiService);
+    private publicDeckApi = inject(PublicDeckApiService);
+    private templateApi = inject(TemplateApiService);
+    private userApi = inject(UserApiService);
+    private searchApi = inject(SearchApiService);
+    preferences = inject(PreferencesService);
+    private fb = inject(FormBuilder);
+
     private static readonly PAGE_SIZE = 50;
     private static readonly PREFETCH_THRESHOLD = 0.9;
     private static readonly MAX_TAGS = 3;
@@ -963,19 +1017,6 @@ export class CardBrowserComponent implements OnInit {
     private hasMoreCards = true;
     private loadingMore = false;
     private searchDebounce?: ReturnType<typeof setTimeout>;
-
-    constructor(
-        private route: ActivatedRoute,
-        private router: Router,
-        private cardApi: CardApiService,
-        private deckApi: DeckApiService,
-        private publicDeckApi: PublicDeckApiService,
-        private templateApi: TemplateApiService,
-        private userApi: UserApiService,
-        private searchApi: SearchApiService,
-        public preferences: PreferencesService,
-        private fb: FormBuilder
-    ) {}
 
     ngOnInit(): void {
         this.userDeckId = this.route.snapshot.paramMap.get('userDeckId') || '';
