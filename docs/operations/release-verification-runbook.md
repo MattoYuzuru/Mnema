@@ -11,6 +11,9 @@ artifact:
 
 # Mnema release smoke, diagnostics and rollback
 
+> Hosted operations paused since 2026-09-12. [Local development delivery](local-development-delivery.md)
+> supersedes automatic promotion below; retain these contracts for reviewed reactivation.
+
 ## Current replacement delivery — #142
 
 New Main CI artifacts contain exactly `identity-account` and `learning`, with

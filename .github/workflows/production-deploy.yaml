@@ -1,15 +1,14 @@
 name: Production Deploy
 
 on:
-  workflow_run:
-    workflows: [Staging Deploy]
-    types: [completed]
-    branches: [main]
+  # No callers or standalone trigger; #147 remains a separate cutover gate.
+  workflow_call:
 
 permissions: {}
 
 jobs:
   validate-staging-deploy:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     outputs:
       production_eligible: 'false'
@@ -49,7 +48,7 @@ jobs:
         run: echo 'production_eligible=false reason=maintenance_cutover_gate_147'
 
   preview-production:
-    if: ${{ needs.validate-staging-deploy.outputs.production_eligible == 'true' }}
+    if: ${{ false && (needs.validate-staging-deploy.outputs.production_eligible == 'true') }}
     needs: validate-staging-deploy
     runs-on: ubuntu-latest
     permissions:
@@ -379,7 +378,7 @@ jobs:
 
   deploy-production:
     needs: preview-production
-    if: needs.preview-production.outputs.has_release_changes == 'true'
+    if: ${{ false && (needs.preview-production.outputs.has_release_changes == 'true') }}
     concurrency:
       group: production-deploy
       cancel-in-progress: false
