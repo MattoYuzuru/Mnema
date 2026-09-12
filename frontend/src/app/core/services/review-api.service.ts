@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { appConfig } from '../../app.config';
@@ -15,9 +15,9 @@ import {
 
 @Injectable({ providedIn: 'root' })
 export class ReviewApiService {
-    private readonly baseUrl = `${appConfig.coreApiBaseUrl}/review`;
+    private http = inject(HttpClient);
 
-    constructor(private http: HttpClient) {}
+    private readonly baseUrl = `${appConfig.coreApiBaseUrl}/review`;
 
     getNextCard(userDeckId: string): Observable<ReviewNextCardResponse> {
         return this.http.get<ReviewNextCardResponse>(`${this.baseUrl}/decks/${userDeckId}/next`);

@@ -1,6 +1,6 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { NgIf, NgFor } from '@angular/common';
+
 import { FormsModule } from '@angular/forms';
 import { forkJoin } from 'rxjs';
 import { TemplateApiService } from '../../core/services/template-api.service';
@@ -33,258 +33,315 @@ type FieldSide = 'front' | 'back';
 
 @Component({
     selector: 'app-template-profile',
-    standalone: true,
-    imports: [NgIf, NgFor, FormsModule, ButtonComponent, MemoryTipLoaderComponent, TranslatePipe, ReportContentModalComponent],
+    imports: [FormsModule, ButtonComponent, MemoryTipLoaderComponent, TranslatePipe, ReportContentModalComponent],
     template: `
-    <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
+    @if (loading) {
+      <app-memory-tip-loader></app-memory-tip-loader>
+    }
 
-    <div *ngIf="!loading && template" class="template-profile">
-      <header class="profile-header">
-        <div class="title-block">
-          <h1 *ngIf="!editing">{{ template.name }}</h1>
-          <input
-            *ngIf="editing"
-            class="title-input"
-            [(ngModel)]="draftName"
-            [placeholder]="'templateProfile.namePlaceholder' | translate"
-            [attr.maxlength]="maxTemplateName"
-          />
-          <p *ngIf="!editing" class="description">{{ template.description || ('templateProfile.noDescription' | translate) }}</p>
-          <textarea
-            *ngIf="editing"
-            class="description-input"
-            rows="3"
-            [(ngModel)]="draftDescription"
-            [placeholder]="'templateProfile.descriptionPlaceholder' | translate"
-            [attr.maxlength]="maxTemplateDescription"
-          ></textarea>
+    @if (!loading && template) {
+      <div class="template-profile">
+        <header class="profile-header">
+          <div class="title-block">
+            @if (!editing) {
+              <h1>{{ template.name }}</h1>
+            }
+            @if (editing) {
+              <input
+                class="title-input"
+                [(ngModel)]="draftName"
+                [placeholder]="'templateProfile.namePlaceholder' | translate"
+                [attr.maxlength]="maxTemplateName"
+                />
+            }
+            @if (!editing) {
+              <p class="description">{{ template.description || ('templateProfile.noDescription' | translate) }}</p>
+            }
+            @if (editing) {
+              <textarea
+                class="description-input"
+                rows="3"
+                [(ngModel)]="draftDescription"
+                [placeholder]="'templateProfile.descriptionPlaceholder' | translate"
+                [attr.maxlength]="maxTemplateDescription"
+              ></textarea>
+            }
+          </div>
+          <div class="header-actions">
+            @if (fromWizard) {
+              <app-button variant="primary" (click)="useTemplate()">
+                {{ 'templateProfile.useTemplate' | translate }}
+              </app-button>
+            }
+            @if (canEditTemplate && !editing) {
+              <app-button variant="secondary" (click)="startEdit()">
+                {{ 'templateProfile.edit' | translate }}
+              </app-button>
+            }
+            @if (canReportTemplate) {
+              <app-button variant="ghost" (click)="openReportModal()">
+                {{ 'reports.action' | translate }}
+              </app-button>
+            }
+            @if (editing) {
+              <app-button variant="ghost" (click)="cancelEdit()" [disabled]="saving">
+                {{ 'templateProfile.cancel' | translate }}
+              </app-button>
+            }
+            @if (editing) {
+              <app-button variant="primary" (click)="saveChanges()" [disabled]="saving">
+                {{ saving ? ('templateProfile.saving' | translate) : ('templateProfile.save' | translate) }}
+              </app-button>
+            }
+          </div>
+        </header>
+        <div class="meta-row">
+          <div class="meta-item">
+            <span class="meta-label">{{ 'templateProfile.visibility' | translate }}</span>
+            @if (!editing) {
+              <span class="meta-value">
+                {{ template.isPublic ? ('templateProfile.public' | translate) : ('templateProfile.private' | translate) }}
+              </span>
+            }
+            @if (editing) {
+              <label class="visibility-toggle">
+                <input type="checkbox" [(ngModel)]="draftPublic" />
+                <span>{{ draftPublic ? ('templateProfile.public' | translate) : ('templateProfile.private' | translate) }}</span>
+              </label>
+            }
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">{{ 'templateProfile.createdAt' | translate }}</span>
+            <span class="meta-value">{{ formatDate(template.createdAt) }}</span>
+          </div>
+          <div class="meta-item">
+            <span class="meta-label">{{ 'templateProfile.version' | translate }}</span>
+            <span class="meta-value">
+              v{{ template.version || template.latestVersion || 1 }}
+              @if (template.latestVersion && template.version && template.version !== template.latestVersion) {
+                ({{ 'templateProfile.latestVersion' | translate }} v{{ template.latestVersion }})
+              }
+            </span>
+          </div>
         </div>
-
-        <div class="header-actions">
-          <app-button *ngIf="fromWizard" variant="primary" (click)="useTemplate()">
-            {{ 'templateProfile.useTemplate' | translate }}
-          </app-button>
-
-          <app-button *ngIf="canEditTemplate && !editing" variant="secondary" (click)="startEdit()">
-            {{ 'templateProfile.edit' | translate }}
-          </app-button>
-          <app-button *ngIf="canReportTemplate" variant="ghost" (click)="openReportModal()">
-            {{ 'reports.action' | translate }}
-          </app-button>
-          <app-button *ngIf="editing" variant="ghost" (click)="cancelEdit()" [disabled]="saving">
-            {{ 'templateProfile.cancel' | translate }}
-          </app-button>
-          <app-button *ngIf="editing" variant="primary" (click)="saveChanges()" [disabled]="saving">
-            {{ saving ? ('templateProfile.saving' | translate) : ('templateProfile.save' | translate) }}
-          </app-button>
-        </div>
-      </header>
-
-      <div class="meta-row">
-        <div class="meta-item">
-          <span class="meta-label">{{ 'templateProfile.visibility' | translate }}</span>
-          <span *ngIf="!editing" class="meta-value">
-            {{ template.isPublic ? ('templateProfile.public' | translate) : ('templateProfile.private' | translate) }}
-          </span>
-          <label *ngIf="editing" class="visibility-toggle">
-            <input type="checkbox" [(ngModel)]="draftPublic" />
-            <span>{{ draftPublic ? ('templateProfile.public' | translate) : ('templateProfile.private' | translate) }}</span>
-          </label>
-        </div>
-        <div class="meta-item">
-          <span class="meta-label">{{ 'templateProfile.createdAt' | translate }}</span>
-          <span class="meta-value">{{ formatDate(template.createdAt) }}</span>
-        </div>
-        <div class="meta-item">
-          <span class="meta-label">{{ 'templateProfile.version' | translate }}</span>
-          <span class="meta-value">
-            v{{ template.version || template.latestVersion || 1 }}
-            <ng-container *ngIf="template.latestVersion && template.version && template.version !== template.latestVersion">
-              ({{ 'templateProfile.latestVersion' | translate }} v{{ template.latestVersion }})
-            </ng-container>
-          </span>
-        </div>
+        @if (templateError) {
+          <p class="error-text">{{ templateError }}</p>
+        }
+        @if (!isLatestVersion) {
+          <p class="safe-note">{{ 'templateProfile.versionViewOnly' | translate }}</p>
+        }
+        @if (editing) {
+          <p class="safe-note">{{ 'templateProfile.safeChanges' | translate }}</p>
+        }
+        @if (aiEnabled) {
+          <section class="ai-profile-section">
+            <div class="section-header">
+              <h2>{{ 'templateProfile.aiProfileTitle' | translate }}</h2>
+            </div>
+            <p class="ai-hint">{{ 'templateProfile.aiProfileHint' | translate }}</p>
+            @if (editing) {
+              <textarea
+                class="ai-profile-input"
+                rows="4"
+                [(ngModel)]="draftAiProfilePrompt"
+                [placeholder]="'templateProfile.aiProfilePlaceholder' | translate"
+              ></textarea>
+            }
+            @if (!editing) {
+              <p class="ai-profile-preview">
+                {{ draftAiProfilePrompt || ('templateProfile.aiProfileEmpty' | translate) }}
+              </p>
+            }
+          </section>
+        }
+        <section class="preview-section">
+          <div class="section-header">
+            <h2>{{ 'templateProfile.previewTitle' | translate }}</h2>
+          </div>
+          <div class="flashcard-container">
+            <div class="flashcard" [class.flipped]="isFlipped" (click)="toggleFlip()">
+              <div class="flashcard-inner">
+                <div class="flashcard-face front">
+                  @if (frontFields.length === 0) {
+                    <div class="empty-preview">
+                      {{ 'templateProfile.noFrontFields' | translate }}
+                    </div>
+                  }
+                  @for (field of frontFields; track field) {
+                    <div class="field-block">
+                      <div class="field-label">{{ field.label }}</div>
+                      <div class="field-value">{{ sampleValue(field) }}</div>
+                    </div>
+                  }
+                </div>
+                <div class="flashcard-face back">
+                  @if (backFields.length === 0) {
+                    <div class="empty-preview">
+                      {{ 'templateProfile.noBackFields' | translate }}
+                    </div>
+                  }
+                  @for (field of backFields; track field) {
+                    <div class="field-block">
+                      <div class="field-label">{{ field.label }}</div>
+                      <div class="field-value">{{ sampleValue(field) }}</div>
+                    </div>
+                  }
+                </div>
+              </div>
+            </div>
+            <div class="flip-hint">{{ 'templateProfile.flipHint' | translate }}</div>
+          </div>
+        </section>
+        <section class="fields-section">
+          <div class="section-header">
+            <h2>{{ 'templateProfile.fields' | translate }}</h2>
+          </div>
+          <div class="fields-grid">
+            <div class="fields-column">
+              <h3>{{ 'templateProfile.front' | translate }}</h3>
+              @for (field of frontFields; track field; let i = $index) {
+                <div class="field-card">
+                  <div class="field-header">
+                    <span class="field-key">{{ field.name }}</span>
+                    <span class="field-type">{{ field.fieldType }}</span>
+                  </div>
+                  <div class="field-body">
+                    <label>{{ 'templateProfile.fieldLabel' | translate }}</label>
+                    @if (editing) {
+                      <input
+                        [(ngModel)]="field.label"
+                        class="field-input"
+                        [attr.maxlength]="maxFieldLabel"
+                        />
+                    }
+                    @if (!editing) {
+                      <span>{{ field.label }}</span>
+                    }
+                  </div>
+                  <div class="field-body">
+                    <label>{{ 'templateProfile.fieldHelpText' | translate }}</label>
+                    @if (editing) {
+                      <input
+                        [(ngModel)]="field.helpText"
+                        class="field-input"
+                        [attr.maxlength]="maxFieldHelpText"
+                        />
+                    }
+                    @if (!editing) {
+                      <span>{{ field.helpText || '-' }}</span>
+                    }
+                  </div>
+                  @if (editing) {
+                    <div class="field-actions">
+                      <button class="link-btn" (click)="moveField('front', i, -1)">{{ 'templateProfile.moveUp' | translate }}</button>
+                      <button class="link-btn" (click)="moveField('front', i, 1)">{{ 'templateProfile.moveDown' | translate }}</button>
+                      <button class="link-btn" (click)="moveToSide('front', i, 'back')">{{ 'templateProfile.moveToBack' | translate }}</button>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+            <div class="fields-column">
+              <h3>{{ 'templateProfile.back' | translate }}</h3>
+              @for (field of backFields; track field; let i = $index) {
+                <div class="field-card">
+                  <div class="field-header">
+                    <span class="field-key">{{ field.name }}</span>
+                    <span class="field-type">{{ field.fieldType }}</span>
+                  </div>
+                  <div class="field-body">
+                    <label>{{ 'templateProfile.fieldLabel' | translate }}</label>
+                    @if (editing) {
+                      <input
+                        [(ngModel)]="field.label"
+                        class="field-input"
+                        [attr.maxlength]="maxFieldLabel"
+                        />
+                    }
+                    @if (!editing) {
+                      <span>{{ field.label }}</span>
+                    }
+                  </div>
+                  <div class="field-body">
+                    <label>{{ 'templateProfile.fieldHelpText' | translate }}</label>
+                    @if (editing) {
+                      <input
+                        [(ngModel)]="field.helpText"
+                        class="field-input"
+                        [attr.maxlength]="maxFieldHelpText"
+                        />
+                    }
+                    @if (!editing) {
+                      <span>{{ field.helpText || '-' }}</span>
+                    }
+                  </div>
+                  @if (editing) {
+                    <div class="field-actions">
+                      <button class="link-btn" (click)="moveField('back', i, -1)">{{ 'templateProfile.moveUp' | translate }}</button>
+                      <button class="link-btn" (click)="moveField('back', i, 1)">{{ 'templateProfile.moveDown' | translate }}</button>
+                      <button class="link-btn" (click)="moveToSide('back', i, 'front')">{{ 'templateProfile.moveToFront' | translate }}</button>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          </div>
+          @if (editing) {
+            <div class="add-field">
+              <h3>{{ 'templateProfile.addField' | translate }}</h3>
+              <div class="add-field-grid">
+                <div class="form-field">
+                  <label>{{ 'templateProfile.fieldName' | translate }}</label>
+                  <input [(ngModel)]="newField.name" class="field-input" [placeholder]="'templateProfile.fieldNamePlaceholder' | translate" />
+                </div>
+                <div class="form-field">
+                  <label>{{ 'templateProfile.fieldLabel' | translate }}</label>
+                  <input [(ngModel)]="newField.label" class="field-input" [placeholder]="'templateProfile.fieldLabelPlaceholder' | translate" [attr.maxlength]="maxFieldLabel" />
+                </div>
+                <div class="form-field">
+                  <label>{{ 'templateProfile.fieldType' | translate }}</label>
+                  <select [(ngModel)]="newField.fieldType" class="field-input">
+                    <option value="text">{{ 'templateProfile.typeText' | translate }}</option>
+                    <option value="rich_text">{{ 'templateProfile.typeLongText' | translate }}</option>
+                    <option value="markdown">{{ 'templateProfile.typeMarkdown' | translate }}</option>
+                    <option value="image">{{ 'templateProfile.typeImage' | translate }}</option>
+                    <option value="audio">{{ 'templateProfile.typeAudio' | translate }}</option>
+                    <option value="video">{{ 'templateProfile.typeVideo' | translate }}</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label>{{ 'templateProfile.fieldSide' | translate }}</label>
+                  <select [(ngModel)]="newField.side" class="field-input">
+                    <option value="front">{{ 'templateProfile.front' | translate }}</option>
+                    <option value="back">{{ 'templateProfile.back' | translate }}</option>
+                  </select>
+                </div>
+                <div class="form-field">
+                  <label>{{ 'templateProfile.fieldHelpText' | translate }}</label>
+                  <input [(ngModel)]="newField.helpText" class="field-input" [placeholder]="'templateProfile.fieldHelpTextPlaceholder' | translate" [attr.maxlength]="maxFieldHelpText" />
+                </div>
+              </div>
+              @if (fieldError) {
+                <p class="error-text">{{ fieldError }}</p>
+              }
+              <app-button variant="secondary" size="sm" (click)="addField()" [disabled]="saving">
+                {{ 'templateProfile.addFieldButton' | translate }}
+              </app-button>
+            </div>
+          }
+        </section>
       </div>
-
-      <p *ngIf="templateError" class="error-text">{{ templateError }}</p>
-      <p *ngIf="!isLatestVersion" class="safe-note">{{ 'templateProfile.versionViewOnly' | translate }}</p>
-      <p *ngIf="editing" class="safe-note">{{ 'templateProfile.safeChanges' | translate }}</p>
-
-      <section *ngIf="aiEnabled" class="ai-profile-section">
-        <div class="section-header">
-          <h2>{{ 'templateProfile.aiProfileTitle' | translate }}</h2>
-        </div>
-        <p class="ai-hint">{{ 'templateProfile.aiProfileHint' | translate }}</p>
-        <textarea
-          *ngIf="editing"
-          class="ai-profile-input"
-          rows="4"
-          [(ngModel)]="draftAiProfilePrompt"
-          [placeholder]="'templateProfile.aiProfilePlaceholder' | translate"
-        ></textarea>
-        <p *ngIf="!editing" class="ai-profile-preview">
-          {{ draftAiProfilePrompt || ('templateProfile.aiProfileEmpty' | translate) }}
-        </p>
-      </section>
-
-      <section class="preview-section">
-        <div class="section-header">
-          <h2>{{ 'templateProfile.previewTitle' | translate }}</h2>
-        </div>
-        <div class="flashcard-container">
-          <div class="flashcard" [class.flipped]="isFlipped" (click)="toggleFlip()">
-            <div class="flashcard-inner">
-              <div class="flashcard-face front">
-                <div *ngIf="frontFields.length === 0" class="empty-preview">
-                  {{ 'templateProfile.noFrontFields' | translate }}
-                </div>
-                <div *ngFor="let field of frontFields" class="field-block">
-                  <div class="field-label">{{ field.label }}</div>
-                  <div class="field-value">{{ sampleValue(field) }}</div>
-                </div>
-              </div>
-              <div class="flashcard-face back">
-                <div *ngIf="backFields.length === 0" class="empty-preview">
-                  {{ 'templateProfile.noBackFields' | translate }}
-                </div>
-                <div *ngFor="let field of backFields" class="field-block">
-                  <div class="field-label">{{ field.label }}</div>
-                  <div class="field-value">{{ sampleValue(field) }}</div>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="flip-hint">{{ 'templateProfile.flipHint' | translate }}</div>
-        </div>
-      </section>
-
-      <section class="fields-section">
-        <div class="section-header">
-          <h2>{{ 'templateProfile.fields' | translate }}</h2>
-        </div>
-
-        <div class="fields-grid">
-          <div class="fields-column">
-            <h3>{{ 'templateProfile.front' | translate }}</h3>
-            <div *ngFor="let field of frontFields; let i = index" class="field-card">
-              <div class="field-header">
-                <span class="field-key">{{ field.name }}</span>
-                <span class="field-type">{{ field.fieldType }}</span>
-              </div>
-              <div class="field-body">
-                <label>{{ 'templateProfile.fieldLabel' | translate }}</label>
-                <input
-                  *ngIf="editing"
-                  [(ngModel)]="field.label"
-                  class="field-input"
-                  [attr.maxlength]="maxFieldLabel"
-                />
-                <span *ngIf="!editing">{{ field.label }}</span>
-              </div>
-              <div class="field-body">
-                <label>{{ 'templateProfile.fieldHelpText' | translate }}</label>
-                <input
-                  *ngIf="editing"
-                  [(ngModel)]="field.helpText"
-                  class="field-input"
-                  [attr.maxlength]="maxFieldHelpText"
-                />
-                <span *ngIf="!editing">{{ field.helpText || '-' }}</span>
-              </div>
-              <div *ngIf="editing" class="field-actions">
-                <button class="link-btn" (click)="moveField('front', i, -1)">{{ 'templateProfile.moveUp' | translate }}</button>
-                <button class="link-btn" (click)="moveField('front', i, 1)">{{ 'templateProfile.moveDown' | translate }}</button>
-                <button class="link-btn" (click)="moveToSide('front', i, 'back')">{{ 'templateProfile.moveToBack' | translate }}</button>
-              </div>
-            </div>
-          </div>
-
-          <div class="fields-column">
-            <h3>{{ 'templateProfile.back' | translate }}</h3>
-            <div *ngFor="let field of backFields; let i = index" class="field-card">
-              <div class="field-header">
-                <span class="field-key">{{ field.name }}</span>
-                <span class="field-type">{{ field.fieldType }}</span>
-              </div>
-              <div class="field-body">
-                <label>{{ 'templateProfile.fieldLabel' | translate }}</label>
-                <input
-                  *ngIf="editing"
-                  [(ngModel)]="field.label"
-                  class="field-input"
-                  [attr.maxlength]="maxFieldLabel"
-                />
-                <span *ngIf="!editing">{{ field.label }}</span>
-              </div>
-              <div class="field-body">
-                <label>{{ 'templateProfile.fieldHelpText' | translate }}</label>
-                <input
-                  *ngIf="editing"
-                  [(ngModel)]="field.helpText"
-                  class="field-input"
-                  [attr.maxlength]="maxFieldHelpText"
-                />
-                <span *ngIf="!editing">{{ field.helpText || '-' }}</span>
-              </div>
-              <div *ngIf="editing" class="field-actions">
-                <button class="link-btn" (click)="moveField('back', i, -1)">{{ 'templateProfile.moveUp' | translate }}</button>
-                <button class="link-btn" (click)="moveField('back', i, 1)">{{ 'templateProfile.moveDown' | translate }}</button>
-                <button class="link-btn" (click)="moveToSide('back', i, 'front')">{{ 'templateProfile.moveToFront' | translate }}</button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div *ngIf="editing" class="add-field">
-          <h3>{{ 'templateProfile.addField' | translate }}</h3>
-          <div class="add-field-grid">
-            <div class="form-field">
-              <label>{{ 'templateProfile.fieldName' | translate }}</label>
-              <input [(ngModel)]="newField.name" class="field-input" [placeholder]="'templateProfile.fieldNamePlaceholder' | translate" />
-            </div>
-            <div class="form-field">
-              <label>{{ 'templateProfile.fieldLabel' | translate }}</label>
-              <input [(ngModel)]="newField.label" class="field-input" [placeholder]="'templateProfile.fieldLabelPlaceholder' | translate" [attr.maxlength]="maxFieldLabel" />
-            </div>
-            <div class="form-field">
-              <label>{{ 'templateProfile.fieldType' | translate }}</label>
-              <select [(ngModel)]="newField.fieldType" class="field-input">
-                <option value="text">{{ 'templateProfile.typeText' | translate }}</option>
-                <option value="rich_text">{{ 'templateProfile.typeLongText' | translate }}</option>
-                <option value="markdown">{{ 'templateProfile.typeMarkdown' | translate }}</option>
-                <option value="image">{{ 'templateProfile.typeImage' | translate }}</option>
-                <option value="audio">{{ 'templateProfile.typeAudio' | translate }}</option>
-                <option value="video">{{ 'templateProfile.typeVideo' | translate }}</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label>{{ 'templateProfile.fieldSide' | translate }}</label>
-              <select [(ngModel)]="newField.side" class="field-input">
-                <option value="front">{{ 'templateProfile.front' | translate }}</option>
-                <option value="back">{{ 'templateProfile.back' | translate }}</option>
-              </select>
-            </div>
-            <div class="form-field">
-              <label>{{ 'templateProfile.fieldHelpText' | translate }}</label>
-              <input [(ngModel)]="newField.helpText" class="field-input" [placeholder]="'templateProfile.fieldHelpTextPlaceholder' | translate" [attr.maxlength]="maxFieldHelpText" />
-            </div>
-          </div>
-          <p *ngIf="fieldError" class="error-text">{{ fieldError }}</p>
-          <app-button variant="secondary" size="sm" (click)="addField()" [disabled]="saving">
-            {{ 'templateProfile.addFieldButton' | translate }}
-          </app-button>
-        </div>
-      </section>
-    </div>
+    }
 
     <app-report-content-modal
       [visible]="showReportModal"
       [subject]="template?.name || ''"
       [submitting]="reportSubmitting"
-      (close)="closeReportModal()"
+      (closed)="closeReportModal()"
       (submitted)="submitReport($event.reason, $event.details)"
     ></app-report-content-modal>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .template-profile {
         max-width: 72rem;
@@ -619,6 +676,15 @@ type FieldSide = 'front' | 'back';
     `]
 })
 export class TemplateProfileComponent implements OnInit {
+    private route = inject(ActivatedRoute);
+    private router = inject(Router);
+    private templateApi = inject(TemplateApiService);
+    private reportApi = inject(ReportApiService);
+    private userApi = inject(UserApiService);
+    private wizardState = inject(DeckWizardStateService);
+    private i18n = inject(I18nService);
+    private toast = inject(ToastService);
+
     private static readonly MAX_TEMPLATE_NAME = 50;
     private static readonly MAX_TEMPLATE_DESCRIPTION = 200;
     private static readonly MAX_FIELD_LABEL = 50;
@@ -667,17 +733,6 @@ export class TemplateProfileComponent implements OnInit {
         side: 'front',
         helpText: ''
     };
-
-    constructor(
-        private route: ActivatedRoute,
-        private router: Router,
-        private templateApi: TemplateApiService,
-        private reportApi: ReportApiService,
-        private userApi: UserApiService,
-        private wizardState: DeckWizardStateService,
-        private i18n: I18nService,
-        private toast: ToastService
-    ) {}
 
     ngOnInit(): void {
         const templateId = this.route.snapshot.paramMap.get('templateId') || '';

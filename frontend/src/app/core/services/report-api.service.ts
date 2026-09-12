@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { Page } from '../models/page.models';
@@ -63,9 +63,9 @@ export interface ModerationReportStats {
 
 @Injectable({ providedIn: 'root' })
 export class ReportApiService {
-    private readonly baseUrl = `${appConfig.coreApiBaseUrl}/moderation/reports`;
+    private http = inject(HttpClient);
 
-    constructor(private http: HttpClient) {}
+    private readonly baseUrl = `${appConfig.coreApiBaseUrl}/moderation/reports`;
 
     createReport(request: CreateReportRequest): Observable<ModerationReportEntry> {
         return this.http.post<ModerationReportEntry>(this.baseUrl, request);

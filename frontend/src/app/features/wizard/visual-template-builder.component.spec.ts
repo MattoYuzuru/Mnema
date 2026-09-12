@@ -1,6 +1,10 @@
+import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
 import { of } from 'rxjs';
 
+import { TemplateApiService } from '../../core/services/template-api.service';
 import { I18nService } from '../../core/services/i18n.service';
+import { DeckWizardStateService } from './deck-wizard-state.service';
 import { VisualTemplateBuilderComponent } from './visual-template-builder.component';
 
 describe('VisualTemplateBuilderComponent', () => {
@@ -20,12 +24,15 @@ describe('VisualTemplateBuilderComponent', () => {
         templateApi.createTemplate.and.returnValue(of({ templateId: 'template-1' }));
         router.navigate.and.returnValue(Promise.resolve(true));
 
-        component = new VisualTemplateBuilderComponent(
-            router,
-            templateApi,
-            wizardState,
-            new I18nService()
-        );
+        TestBed.configureTestingModule({
+            providers: [
+                { provide: Router, useValue: router },
+                { provide: TemplateApiService, useValue: templateApi },
+                { provide: DeckWizardStateService, useValue: wizardState },
+                { provide: I18nService, useValue: new I18nService() }
+            ]
+        });
+        component = TestBed.runInInjectionContext(() => new VisualTemplateBuilderComponent());
     });
 
     it('creates stable field names from final visible labels', () => {

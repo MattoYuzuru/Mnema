@@ -1,4 +1,4 @@
-import { Pipe, PipeTransform, ChangeDetectorRef, OnDestroy } from '@angular/core';
+import { Pipe, PipeTransform, ChangeDetectorRef, OnDestroy, inject } from '@angular/core';
 import { Subscription } from 'rxjs';
 import { I18nService, TranslationParams } from '../../core/services/i18n.service';
 
@@ -8,15 +8,15 @@ import { I18nService, TranslationParams } from '../../core/services/i18n.service
     pure: false
 })
 export class TranslatePipe implements PipeTransform, OnDestroy {
+    private i18n = inject(I18nService);
+    private cdr = inject(ChangeDetectorRef);
+
     private value = '';
     private lastKey = '';
     private lastParams?: TranslationParams;
     private subscription?: Subscription;
 
-    constructor(
-        private i18n: I18nService,
-        private cdr: ChangeDetectorRef
-    ) {
+    constructor() {
         this.subscription = this.i18n.currentLanguage$.subscribe(() => {
             this.updateValue(this.lastKey, this.lastParams);
         });

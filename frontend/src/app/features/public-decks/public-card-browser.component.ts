@@ -1,6 +1,6 @@
-import { Component, OnInit, HostListener, OnDestroy } from '@angular/core';
+import { Component, OnInit, HostListener, OnDestroy, inject, ChangeDetectionStrategy } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { NgIf, NgFor, DatePipe } from '@angular/common';
+
 import { FormsModule } from '@angular/forms';
 import { firstValueFrom, forkJoin, of, Subscription } from 'rxjs';
 import { catchError } from 'rxjs/operators';
@@ -28,292 +28,369 @@ import { ToastService } from '../../core/services/toast.service';
 
 @Component({
     selector: 'app-public-card-browser',
-    standalone: true,
-    imports: [NgIf, NgFor, DatePipe, FormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, TranslatePipe, TagChipComponent, MediaUploadComponent, ReportContentModalComponent],
+    imports: [FormsModule, MemoryTipLoaderComponent, EmptyStateComponent, FlashcardViewComponent, ButtonComponent, TranslatePipe, TagChipComponent, MediaUploadComponent, ReportContentModalComponent],
     template: `
-    <app-memory-tip-loader *ngIf="loading"></app-memory-tip-loader>
+    @if (loading) {
+      <app-memory-tip-loader></app-memory-tip-loader>
+    }
 
-    <div *ngIf="!loading" class="public-card-browser">
-      <header class="page-header">
-        <div class="header-left">
-          <h1>{{ deck?.name || ('publicCardBrowser.publicDeck' | translate) }}</h1>
-          <div class="deck-description" [innerHTML]="formatDescription(deck?.description)"></div>
-          <div *ngIf="deck?.tags?.length" class="deck-tags">
-            <app-tag-chip *ngFor="let tag of deck!.tags" [text]="tag"></app-tag-chip>
+    @if (!loading) {
+      <div class="public-card-browser">
+        <header class="page-header">
+          <div class="header-left">
+            <h1>{{ deck?.name || ('publicCardBrowser.publicDeck' | translate) }}</h1>
+            <div class="deck-description" [innerHTML]="formatDescription($safeNavigationMigration(deck?.description))"></div>
+            @if (deck?.tags?.length) {
+              <div class="deck-tags">
+                @for (tag of deck!.tags; track tag) {
+                  <app-tag-chip [text]="tag"></app-tag-chip>
+                }
+              </div>
+            }
+            @if (deck) {
+              <div class="deck-meta">
+                @if (deck.language) {
+                  <div class="meta-item">
+                    <span class="meta-label">{{ 'deckProfile.language' | translate }}:</span>
+                    <span class="meta-value">{{ formatLanguageCode(deck.language) }}</span>
+                  </div>
+                }
+                @if (deck.publishedAt) {
+                  <div class="meta-item">
+                    <span class="meta-label">{{ 'deckProfile.publishedAt' | translate }}:</span>
+                    <span class="meta-value">{{ formatMetaDate(deck.publishedAt) }}</span>
+                  </div>
+                }
+                @if (deck.updatedAt) {
+                  <div class="meta-item">
+                    <span class="meta-label">{{ 'deckProfile.updatedAt' | translate }}:</span>
+                    <span class="meta-value">{{ formatMetaDate(deck.updatedAt) }}</span>
+                  </div>
+                }
+                @if (deck.forkedFromDeck) {
+                  <div class="meta-item">
+                    <span class="meta-label">{{ 'deckProfile.forkedFrom' | translate }}:</span>
+                    <span class="meta-value">{{ deck.forkedFromDeck }}</span>
+                  </div>
+                }
+              </div>
+            }
+            <p class="card-count">{{ cardCount }} {{ 'publicCardBrowser.cards' | translate }}</p>
           </div>
-          <div *ngIf="deck" class="deck-meta">
-            <div class="meta-item" *ngIf="deck.language">
-              <span class="meta-label">{{ 'deckProfile.language' | translate }}:</span>
-              <span class="meta-value">{{ formatLanguageCode(deck.language) }}</span>
-            </div>
-            <div class="meta-item" *ngIf="deck.publishedAt">
-              <span class="meta-label">{{ 'deckProfile.publishedAt' | translate }}:</span>
-              <span class="meta-value">{{ formatMetaDate(deck.publishedAt) }}</span>
-            </div>
-            <div class="meta-item" *ngIf="deck.updatedAt">
-              <span class="meta-label">{{ 'deckProfile.updatedAt' | translate }}:</span>
-              <span class="meta-value">{{ formatMetaDate(deck.updatedAt) }}</span>
-            </div>
-            <div class="meta-item" *ngIf="deck.forkedFromDeck">
-              <span class="meta-label">{{ 'deckProfile.forkedFrom' | translate }}:</span>
-              <span class="meta-value">{{ deck.forkedFromDeck }}</span>
-            </div>
+          <div class="header-right">
+            @if (canReportDeck) {
+              <button class="report-trigger" type="button" (click)="openDeckReportModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M10.3 3.9 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
+                  <path d="M12 9v4"/>
+                  <path d="M12 17h.01"/>
+                </svg>
+                {{ 'reports.action' | translate }}
+              </button>
+            }
+            @if (canModerateDeck) {
+              <app-button variant="secondary" size="md" (click)="openDeckEditModal()">
+                {{ 'publicCardBrowser.editDeck' | translate }}
+              </app-button>
+            }
+            @if (canModerateDeck) {
+              <app-button variant="ghost" size="md" tone="danger" (click)="deleteDeck()">
+                {{ 'publicCardBrowser.deleteDeck' | translate }}
+              </app-button>
+            }
+            @if (canBanAuthor) {
+              <app-button variant="ghost" size="md" tone="danger" (click)="banAuthor()">
+                {{ 'publicCardBrowser.banAuthor' | translate }}
+              </app-button>
+            }
+            @if (canFork) {
+              <app-button variant="primary" size="md" (click)="forkDeck()">{{ 'button.fork' | translate }}</app-button>
+            }
           </div>
-          <p class="card-count">{{ cardCount }} {{ 'publicCardBrowser.cards' | translate }}</p>
-        </div>
-        <div class="header-right">
-          <button *ngIf="canReportDeck" class="report-trigger" type="button" (click)="openDeckReportModal()">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M10.3 3.9 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
-              <path d="M12 9v4"/>
-              <path d="M12 17h.01"/>
-            </svg>
-            {{ 'reports.action' | translate }}
-          </button>
-          <app-button *ngIf="canModerateDeck" variant="secondary" size="md" (click)="openDeckEditModal()">
-            {{ 'publicCardBrowser.editDeck' | translate }}
-          </app-button>
-          <app-button *ngIf="canModerateDeck" variant="ghost" size="md" tone="danger" (click)="deleteDeck()">
-            {{ 'publicCardBrowser.deleteDeck' | translate }}
-          </app-button>
-          <app-button *ngIf="canBanAuthor" variant="ghost" size="md" tone="danger" (click)="banAuthor()">
-            {{ 'publicCardBrowser.banAuthor' | translate }}
-          </app-button>
-          <app-button *ngIf="canFork" variant="primary" size="md" (click)="forkDeck()">{{ 'button.fork' | translate }}</app-button>
-        </div>
-      </header>
-
-      <div *ngIf="cards.length > 0" class="browser-layout">
-        <aside class="cards-panel glass">
-          <div class="panel-header">
-            <div>
-              <h2>{{ 'cardBrowser.list' | translate }}</h2>
-              <p class="panel-meta">{{ cardCount }} {{ 'publicCardBrowser.cards' | translate }}</p>
-            </div>
-          </div>
-
-          <div class="panel-search">
-            <input
-              type="search"
-              class="card-search"
-              [placeholder]="'publicCardBrowser.searchPlaceholder' | translate"
-              [attr.aria-label]="'publicCardBrowser.searchPlaceholder' | translate"
-              [value]="searchQuery"
-              (input)="onSearchInput($event)"
-            />
-            <span *ngIf="searchActive" class="search-meta">
-              {{ visibleCards.length }} / {{ totalCards || cards.length }} {{ 'publicCardBrowser.cards' | translate }}
-            </span>
-          </div>
-
-          <div class="cards-list" (scroll)="onListScroll($event)">
-            <div *ngFor="let card of visibleCards; let index = index" class="cards-list-item" [class.active]="index === currentCardIndex">
-              <button class="card-preview" type="button" [attr.data-card-id]="card.cardId" (click)="openCardFromList(index)">
-                <span class="card-index">{{ index + 1 }}</span>
-                <div class="card-preview-body">
-                  <span class="card-text">{{ getFrontPreview(card) }}</span>
-                  <div *ngIf="card.tags?.length" class="card-tags-inline">
-                    <app-tag-chip *ngFor="let tag of card.tags" [text]="tag"></app-tag-chip>
+        </header>
+        @if (cards.length > 0) {
+          <div class="browser-layout">
+            <aside class="cards-panel glass">
+              <div class="panel-header">
+                <div>
+                  <h2>{{ 'cardBrowser.list' | translate }}</h2>
+                  <p class="panel-meta">{{ cardCount }} {{ 'publicCardBrowser.cards' | translate }}</p>
+                </div>
+              </div>
+              <div class="panel-search">
+                <input
+                  type="search"
+                  class="card-search"
+                  [placeholder]="'publicCardBrowser.searchPlaceholder' | translate"
+                  [attr.aria-label]="'publicCardBrowser.searchPlaceholder' | translate"
+                  [value]="searchQuery"
+                  (input)="onSearchInput($event)"
+                  />
+                @if (searchActive) {
+                  <span class="search-meta">
+                    {{ visibleCards.length }} / {{ totalCards || cards.length }} {{ 'publicCardBrowser.cards' | translate }}
+                  </span>
+                }
+              </div>
+              <div class="cards-list" (scroll)="onListScroll($event)">
+                @for (card of visibleCards; track card; let index = $index) {
+                  <div class="cards-list-item" [class.active]="index === currentCardIndex">
+                    <button class="card-preview" type="button" [attr.data-card-id]="card.cardId" (click)="openCardFromList(index)">
+                      <span class="card-index">{{ index + 1 }}</span>
+                      <div class="card-preview-body">
+                        <span class="card-text">{{ getFrontPreview(card) }}</span>
+                        @if (card.tags.length) {
+                          <div class="card-tags-inline">
+                            @for (tag of card.tags; track tag) {
+                              <app-tag-chip [text]="tag"></app-tag-chip>
+                            }
+                          </div>
+                        }
+                      </div>
+                    </button>
+                    @if (canModerateDeck || canReportCard) {
+                      <div class="card-item-actions">
+                        @if (canReportCard) {
+                          <button class="icon-btn report" type="button" (click)="openCardReportModal(card); $event.stopPropagation()" [title]="'reports.action' | translate">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                              <path d="M10.3 3.9 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
+                              <path d="M12 9v4"/>
+                              <path d="M12 17h.01"/>
+                            </svg>
+                          </button>
+                        }
+                        @if (canModerateDeck) {
+                          <button class="icon-btn" type="button" (click)="openCardEditModal(card); $event.stopPropagation()" [title]="'cardBrowser.editCard' | translate">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                            </svg>
+                          </button>
+                        }
+                        @if (canModerateDeck) {
+                          <button class="icon-btn delete" type="button" (click)="deleteCard(card); $event.stopPropagation()" [title]="'cardBrowser.deleteCard' | translate">
+                            <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                              <path d="M3 6h18"/>
+                              <path d="M8 6V4h8v2"/>
+                              <path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/>
+                              <path d="M10 11v6"/>
+                              <path d="M14 11v6"/>
+                            </svg>
+                          </button>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+              </div>
+            </aside>
+            <section class="preview-panel glass-strong">
+              <div class="preview-header">
+                <div>
+                  <h2>{{ 'cardBrowser.cardsView' | translate }}</h2>
+                  <p class="panel-meta">
+                    {{ searchNoResults ? 0 : (currentCardIndex + 1) }} / {{ searchNoResults ? 0 : cardCount }}
+                  </p>
+                </div>
+                <div class="preview-nav">
+                  <app-button
+                    variant="ghost"
+                    size="sm"
+                    (click)="previousCard()"
+                    [disabled]="searchNoResults || currentCardIndex === 0"
+                    >
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <path d="M10.5 3.5 6 8l4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                    {{ 'cardBrowser.previous' | translate }}
+                  </app-button>
+                  <app-button
+                    variant="ghost"
+                    size="sm"
+                    (click)="nextCard()"
+                    [disabled]="searchNoResults || currentCardIndex >= visibleCards.length - 1"
+                    >
+                    {{ 'cardBrowser.next' | translate }}
+                    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                      <path d="M5.5 3.5 10 8l-4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </app-button>
+                </div>
+              </div>
+              @if (searchNoResults) {
+                <div class="no-results-panel">
+                  <div class="no-results-card glass">
+                    <h3>{{ 'publicCardBrowser.noSearchResults' | translate }}</h3>
+                    <p>{{ 'publicCardBrowser.noSearchResultsDescription' | translate }}</p>
                   </div>
                 </div>
-              </button>
-              <div *ngIf="canModerateDeck || canReportCard" class="card-item-actions">
-                <button *ngIf="canReportCard" class="icon-btn report" type="button" (click)="openCardReportModal(card); $event.stopPropagation()" [title]="'reports.action' | translate">
-                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path d="M10.3 3.9 1.82 18a2 2 0 0 0 1.72 3h16.92a2 2 0 0 0 1.72-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/>
-                    <path d="M12 9v4"/>
-                    <path d="M12 17h.01"/>
-                  </svg>
-                </button>
-                <button *ngIf="canModerateDeck" class="icon-btn" type="button" (click)="openCardEditModal(card); $event.stopPropagation()" [title]="'cardBrowser.editCard' | translate">
-                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                  </svg>
-                </button>
-                <button *ngIf="canModerateDeck" class="icon-btn delete" type="button" (click)="deleteCard(card); $event.stopPropagation()" [title]="'cardBrowser.deleteCard' | translate">
-                  <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                    <path d="M3 6h18"/>
-                    <path d="M8 6V4h8v2"/>
-                    <path d="M6 6l1 14a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-14"/>
-                    <path d="M10 11v6"/>
-                    <path d="M14 11v6"/>
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        </aside>
-
-        <section class="preview-panel glass-strong">
-          <div class="preview-header">
-            <div>
-              <h2>{{ 'cardBrowser.cardsView' | translate }}</h2>
-              <p class="panel-meta">
-                {{ searchNoResults ? 0 : (currentCardIndex + 1) }} / {{ searchNoResults ? 0 : cardCount }}
-              </p>
-            </div>
-            <div class="preview-nav">
-              <app-button
-                variant="ghost"
-                size="sm"
-                (click)="previousCard()"
-                [disabled]="searchNoResults || currentCardIndex === 0"
-              >
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                  <path d="M10.5 3.5 6 8l4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-                {{ 'cardBrowser.previous' | translate }}
-              </app-button>
-              <app-button
-                variant="ghost"
-                size="sm"
-                (click)="nextCard()"
-                [disabled]="searchNoResults || currentCardIndex >= visibleCards.length - 1"
-              >
-                {{ 'cardBrowser.next' | translate }}
-                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
-                  <path d="M5.5 3.5 10 8l-4.5 4.5" stroke-linecap="round" stroke-linejoin="round"/>
-                </svg>
-              </app-button>
-            </div>
-          </div>
-
-          <div *ngIf="searchNoResults" class="no-results-panel">
-            <div class="no-results-card glass">
-              <h3>{{ 'publicCardBrowser.noSearchResults' | translate }}</h3>
-              <p>{{ 'publicCardBrowser.noSearchResultsDescription' | translate }}</p>
-            </div>
-          </div>
-
-          <div *ngIf="!searchNoResults && currentCard" class="flashcard-container">
-            <div class="flashcard glass" (click)="toggleReveal()">
-              <div class="flashcard-content">
-                <div class="card-side front">
-                  <app-flashcard-view *ngIf="template && currentCard" [template]="template" [content]="currentCard.content" side="front"></app-flashcard-view>
+              }
+              @if (!searchNoResults && currentCard) {
+                <div class="flashcard-container">
+                  <div class="flashcard glass" (click)="toggleReveal()">
+                    <div class="flashcard-content">
+                      <div class="card-side front">
+                        @if (template && currentCard) {
+                          <app-flashcard-view [template]="template" [content]="currentCard.content" side="front"></app-flashcard-view>
+                        }
+                      </div>
+                      @if (revealed) {
+                        <div class="divider"></div>
+                      }
+                      <div class="card-side back" [class.preload]="!revealed">
+                        @if (template && currentCard) {
+                          <app-flashcard-view [template]="template" [content]="currentCard.content" side="back"></app-flashcard-view>
+                        }
+                      </div>
+                    </div>
+                  </div>
+                  <div class="flip-hint">
+                    <p>{{ 'cardBrowser.clickToFlip' | translate }}</p>
+                    <p>{{ 'cardBrowser.keyboardHint' | translate }}</p>
+                  </div>
                 </div>
-                <div *ngIf="revealed" class="divider"></div>
-                <div class="card-side back" [class.preload]="!revealed">
-                  <app-flashcard-view *ngIf="template && currentCard" [template]="template" [content]="currentCard.content" side="back"></app-flashcard-view>
+              }
+              @if (!searchNoResults && currentCard?.tags?.length) {
+                <div class="card-tags-panel">
+                  @for (tag of currentCard!.tags; track tag) {
+                    <app-tag-chip [text]="tag"></app-tag-chip>
+                  }
                 </div>
-              </div>
-            </div>
-            <div class="flip-hint">
-              <p>{{ 'cardBrowser.clickToFlip' | translate }}</p>
-              <p>{{ 'cardBrowser.keyboardHint' | translate }}</p>
-            </div>
+              }
+              @if (!searchNoResults && currentCard && (canModerateDeck || canReportCard)) {
+                <div class="card-actions">
+                  @if (canReportCard) {
+                    <app-button variant="ghost" size="sm" (click)="openCardReportModal(currentCard!)">
+                      {{ 'reports.action' | translate }}
+                    </app-button>
+                  }
+                  @if (canModerateDeck) {
+                    <app-button variant="secondary" size="sm" (click)="openCardEditModal(currentCard!)">
+                      {{ 'cardBrowser.editCard' | translate }}
+                    </app-button>
+                  }
+                  @if (canModerateDeck) {
+                    <app-button variant="ghost" size="sm" tone="danger" (click)="deleteCard(currentCard!)">
+                      {{ 'cardBrowser.deleteCard' | translate }}
+                    </app-button>
+                  }
+                </div>
+              }
+            </section>
           </div>
-
-          <div *ngIf="!searchNoResults && currentCard?.tags?.length" class="card-tags-panel">
-            <app-tag-chip *ngFor="let tag of currentCard!.tags" [text]="tag"></app-tag-chip>
-          </div>
-
-          <div class="card-actions" *ngIf="!searchNoResults && currentCard && (canModerateDeck || canReportCard)">
-            <app-button *ngIf="canReportCard" variant="ghost" size="sm" (click)="openCardReportModal(currentCard!)">
-              {{ 'reports.action' | translate }}
-            </app-button>
-            <app-button *ngIf="canModerateDeck" variant="secondary" size="sm" (click)="openCardEditModal(currentCard!)">
-              {{ 'cardBrowser.editCard' | translate }}
-            </app-button>
-            <app-button *ngIf="canModerateDeck" variant="ghost" size="sm" tone="danger" (click)="deleteCard(currentCard!)">
-              {{ 'cardBrowser.deleteCard' | translate }}
-            </app-button>
-          </div>
-        </section>
+        }
+        @if (cards.length === 0) {
+          <app-empty-state
+            icon="📝"
+            [title]="searchNoResults ? ('publicCardBrowser.noSearchResults' | translate) : ('publicCardBrowser.noCards' | translate)"
+            [description]="searchNoResults ? ('publicCardBrowser.noSearchResultsDescription' | translate) : ('publicCardBrowser.noCardsDescription' | translate)"
+          ></app-empty-state>
+        }
       </div>
+    }
 
-      <app-empty-state
-        *ngIf="cards.length === 0"
-        icon="📝"
-        [title]="searchNoResults ? ('publicCardBrowser.noSearchResults' | translate) : ('publicCardBrowser.noCards' | translate)"
-        [description]="searchNoResults ? ('publicCardBrowser.noSearchResultsDescription' | translate) : ('publicCardBrowser.noCardsDescription' | translate)"
-      ></app-empty-state>
-    </div>
-
-    <div *ngIf="showDeckEditModal && deckDraft" class="modal-overlay" (click)="closeDeckEditModal()">
-      <div class="modal-content" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h2>{{ 'publicCardBrowser.editDeck' | translate }}</h2>
-          <button class="close-btn" type="button" (click)="closeDeckEditModal()">&times;</button>
-        </div>
-        <div class="modal-body deck-edit-form">
-          <label>
-            <span>{{ 'deckProfile.publicDeckName' | translate }}</span>
-            <input [(ngModel)]="deckDraft.name" [attr.maxlength]="50" />
-          </label>
-          <label>
-            <span>{{ 'deckProfile.description' | translate }}</span>
-            <textarea [(ngModel)]="deckDraft.description" rows="4" [attr.maxlength]="200"></textarea>
-          </label>
-          <label>
-            <span>{{ 'deckProfile.tags' | translate }}</span>
-            <input
-              [(ngModel)]="deckTagInput"
-              (keydown.enter)="addDeckTag($event)"
-              [placeholder]="'cardBrowser.tagsPlaceholder' | translate"
-              [attr.maxlength]="maxDeckTagLength"
-            />
-            <div *ngIf="deckTags.length" class="deck-tags editable">
-              <app-tag-chip *ngFor="let tag of deckTags; let index = index" [text]="tag" [removable]="true" (remove)="removeDeckTag(index)"></app-tag-chip>
-            </div>
-            <p *ngIf="deckTagError" class="modal-error">{{ deckTagError }}</p>
-          </label>
-          <div class="checkbox-row">
-            <label><input type="checkbox" [(ngModel)]="deckDraft.isPublic" /> {{ 'wizard.visibilityPublic' | translate }}</label>
-            <label><input type="checkbox" [(ngModel)]="deckDraft.isListed" /> {{ 'deckProfile.isListed' | translate }}</label>
+    @if (showDeckEditModal && deckDraft) {
+      <div class="modal-overlay" (click)="closeDeckEditModal()">
+        <div class="modal-content" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h2>{{ 'publicCardBrowser.editDeck' | translate }}</h2>
+            <button class="close-btn" type="button" (click)="closeDeckEditModal()">&times;</button>
           </div>
-        </div>
-        <div class="modal-actions">
-          <app-button variant="ghost" (click)="closeDeckEditModal()">{{ 'cardBrowser.cancel' | translate }}</app-button>
-          <app-button variant="primary" (click)="saveDeckChanges()">{{ 'cardBrowser.save' | translate }}</app-button>
-        </div>
-      </div>
-    </div>
-
-    <div *ngIf="showCardEditModal && editingCard && template" class="modal-overlay" (click)="closeCardEditModal()">
-      <div class="modal-content" (click)="$event.stopPropagation()">
-        <div class="modal-header">
-          <h2>{{ 'cardBrowser.editCard' | translate }}</h2>
-          <button class="close-btn" type="button" (click)="closeCardEditModal()">&times;</button>
-        </div>
-        <div class="modal-body card-edit-form">
-          <div *ngFor="let field of template.fields || []" class="field-group">
-            <app-media-upload
-              *ngIf="isMediaField(field)"
-              [label]="field.label"
-              [fieldType]="getMediaFieldType(field)"
-              [value]="getCardMediaValue(field.name)"
-              (valueChange)="onCardMediaChange(field.name, $event)"
-            ></app-media-upload>
-            <label *ngIf="field.fieldType === 'text'">
-              <span>{{ field.label }}</span>
-              <input [ngModel]="editingCardContent[field.name]" (ngModelChange)="onCardFieldChange(field.name, $event)" />
+          <div class="modal-body deck-edit-form">
+            <label>
+              <span>{{ 'deckProfile.publicDeckName' | translate }}</span>
+              <input [(ngModel)]="deckDraft.name" [attr.maxlength]="50" />
             </label>
-            <label *ngIf="field.fieldType === 'rich_text' || field.fieldType === 'markdown'">
-              <span>{{ field.label }}</span>
-              <textarea [ngModel]="editingCardContent[field.name]" (ngModelChange)="onCardFieldChange(field.name, $event)" rows="4"></textarea>
+            <label>
+              <span>{{ 'deckProfile.description' | translate }}</span>
+              <textarea [(ngModel)]="deckDraft.description" rows="4" [attr.maxlength]="200"></textarea>
+            </label>
+            <label>
+              <span>{{ 'deckProfile.tags' | translate }}</span>
+              <input
+                [(ngModel)]="deckTagInput"
+                (keydown.enter)="addDeckTag($event)"
+                [placeholder]="'cardBrowser.tagsPlaceholder' | translate"
+                [attr.maxlength]="maxDeckTagLength"
+                />
+              @if (deckTags.length) {
+                <div class="deck-tags editable">
+                  @for (tag of deckTags; track tag; let index = $index) {
+                    <app-tag-chip [text]="tag" [removable]="true" (remove)="removeDeckTag(index)"></app-tag-chip>
+                  }
+                </div>
+              }
+              @if (deckTagError) {
+                <p class="modal-error">{{ deckTagError }}</p>
+              }
+            </label>
+            <div class="checkbox-row">
+              <label><input type="checkbox" [(ngModel)]="deckDraft.isPublic" /> {{ 'wizard.visibilityPublic' | translate }}</label>
+              <label><input type="checkbox" [(ngModel)]="deckDraft.isListed" /> {{ 'deckProfile.isListed' | translate }}</label>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <app-button variant="ghost" (click)="closeDeckEditModal()">{{ 'cardBrowser.cancel' | translate }}</app-button>
+            <app-button variant="primary" (click)="saveDeckChanges()">{{ 'cardBrowser.save' | translate }}</app-button>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (showCardEditModal && editingCard && template) {
+      <div class="modal-overlay" (click)="closeCardEditModal()">
+        <div class="modal-content" (click)="$event.stopPropagation()">
+          <div class="modal-header">
+            <h2>{{ 'cardBrowser.editCard' | translate }}</h2>
+            <button class="close-btn" type="button" (click)="closeCardEditModal()">&times;</button>
+          </div>
+          <div class="modal-body card-edit-form">
+            @for (field of template.fields || []; track field) {
+              <div class="field-group">
+                @if (isMediaField(field)) {
+                  <app-media-upload
+                    [label]="field.label"
+                    [fieldType]="getMediaFieldType(field)"
+                    [value]="getCardMediaValue(field.name)"
+                    (valueChange)="onCardMediaChange(field.name, $event)"
+                  ></app-media-upload>
+                }
+                @if (field.fieldType === 'text') {
+                  <label>
+                    <span>{{ field.label }}</span>
+                    <input [ngModel]="editingCardContent[field.name]" (ngModelChange)="onCardFieldChange(field.name, $event)" />
+                  </label>
+                }
+                @if (field.fieldType === 'rich_text' || field.fieldType === 'markdown') {
+                  <label>
+                    <span>{{ field.label }}</span>
+                    <textarea [ngModel]="editingCardContent[field.name]" (ngModelChange)="onCardFieldChange(field.name, $event)" rows="4"></textarea>
+                  </label>
+                }
+              </div>
+            }
+            <label>
+              <span>{{ 'cardBrowser.tags' | translate }}</span>
+              <input [(ngModel)]="editingCardTagsDraft" [placeholder]="'cardBrowser.tagsPlaceholder' | translate" />
             </label>
           </div>
-          <label>
-            <span>{{ 'cardBrowser.tags' | translate }}</span>
-            <input [(ngModel)]="editingCardTagsDraft" [placeholder]="'cardBrowser.tagsPlaceholder' | translate" />
-          </label>
-        </div>
-        <div class="modal-actions">
-          <app-button variant="ghost" (click)="closeCardEditModal()">{{ 'cardBrowser.cancel' | translate }}</app-button>
-          <app-button variant="primary" (click)="saveCardChanges()">{{ 'cardBrowser.save' | translate }}</app-button>
+          <div class="modal-actions">
+            <app-button variant="ghost" (click)="closeCardEditModal()">{{ 'cardBrowser.cancel' | translate }}</app-button>
+            <app-button variant="primary" (click)="saveCardChanges()">{{ 'cardBrowser.save' | translate }}</app-button>
+          </div>
         </div>
       </div>
-    </div>
+    }
 
     <app-report-content-modal
       [visible]="showReportModal"
       [subject]="reportSubject"
       [submitting]="reportSubmitting"
-      (close)="closeReportModal()"
+      (closed)="closeReportModal()"
       (submitted)="submitReport($event.reason, $event.details)"
     ></app-report-content-modal>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .public-card-browser {
         max-width: 82rem;
@@ -890,6 +967,18 @@ import { ToastService } from '../../core/services/toast.service';
     `]
 })
 export class PublicCardBrowserComponent implements OnInit, OnDestroy {
+    private route = inject(ActivatedRoute);
+    private router = inject(Router);
+    private publicDeckApi = inject(PublicDeckApiService);
+    private userApi = inject(UserApiService);
+    private adminApi = inject(AdminApiService);
+    private reportApi = inject(ReportApiService);
+    private deckApi = inject(DeckApiService);
+    private reviewApi = inject(ReviewApiService);
+    auth = inject(AuthService);
+    private i18n = inject(I18nService);
+    private toast = inject(ToastService);
+
     private static readonly PAGE_SIZE = 50;
     private static readonly PREFETCH_THRESHOLD = 0.8;
     private static readonly MAX_DECK_TAGS = 5;
@@ -958,20 +1047,6 @@ export class PublicCardBrowserComponent implements OnInit, OnDestroy {
         const locale = this.i18n.currentLanguage === 'ru' ? 'ru-RU' : 'en-US';
         return new Intl.DateTimeFormat(locale, { dateStyle: 'long' }).format(parsed);
     }
-
-    constructor(
-        private route: ActivatedRoute,
-        private router: Router,
-        private publicDeckApi: PublicDeckApiService,
-        private userApi: UserApiService,
-        private adminApi: AdminApiService,
-        private reportApi: ReportApiService,
-        private deckApi: DeckApiService,
-        private reviewApi: ReviewApiService,
-        public auth: AuthService,
-        private i18n: I18nService,
-        private toast: ToastService
-    ) {}
 
     ngOnInit(): void {
         this.deckId = this.route.snapshot.paramMap.get('deckId') || '';

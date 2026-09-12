@@ -1,5 +1,5 @@
-import { AfterViewInit, Component, ElementRef, OnInit, ViewChild } from '@angular/core';
-import { NgIf } from '@angular/common';
+import { AfterViewInit, Component, ElementRef, OnInit, ViewChild, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { FormsModule, NgForm } from '@angular/forms';
 import { HttpErrorResponse } from '@angular/common/http';
 import { RouterLink, ActivatedRoute } from '@angular/router';
@@ -19,9 +19,8 @@ declare global {
 }
 
 @Component({
-    standalone: true,
     selector: 'app-login-page',
-    imports: [NgIf, FormsModule, RouterLink, TranslatePipe],
+    imports: [FormsModule, RouterLink, TranslatePipe],
     template: `
     <div class="login-page">
       <div class="login-container">
@@ -30,160 +29,199 @@ declare global {
           <p>{{ 'login.subtitle' | translate }}</p>
         </div>
 
-        <div *ngIf="auth.status() === 'authenticated'" class="already-auth">
-          <p>{{ 'login.alreadyAuthenticated' | translate }}</p>
-          <a routerLink="/profile" class="link-button">{{ 'login.goToProfile' | translate }}</a>
-        </div>
-
-        <div *ngIf="auth.status() !== 'authenticated'" class="auth-blocks" [class.local-only]="!config.features.federatedAuthEnabled">
-          <div class="auth-block local-auth">
-            <h2>{{ mode === 'login' ? ('login.loginTitle' | translate) : ('login.registerTitle' | translate) }}</h2>
-            <form #localForm="ngForm" class="local-form" (ngSubmit)="submitLocal(localForm)">
-              <div *ngIf="mode === 'register'" class="form-group">
-                <label>{{ 'login.email' | translate }}</label>
-                <input
-                  type="email"
-                  class="form-input"
-                  [(ngModel)]="registerEmail"
-                  name="registerEmail"
-                  autocomplete="email"
-                  required
-                  email
-                  #registerEmailModel="ngModel"
-                />
-                <div class="form-error" *ngIf="registerEmailModel.invalid && (registerEmailModel.touched || formSubmitted)">
-                  <span *ngIf="registerEmailModel.errors?.['required']">{{ 'login.errorEmailRequired' | translate }}</span>
-                  <span *ngIf="!registerEmailModel.errors?.['required'] && registerEmailModel.errors?.['email']">
-                    {{ 'login.errorEmailInvalid' | translate }}
-                  </span>
-                </div>
-              </div>
-              <div *ngIf="mode === 'register'" class="form-group">
-                <label>{{ 'login.username' | translate }}</label>
-                <input
-                  type="text"
-                  class="form-input"
-                  [(ngModel)]="registerUsername"
-                  name="registerUsername"
-                  autocomplete="username"
-                  required
-                  [minlength]="usernameMinLength"
-                  [maxlength]="usernameMaxLength"
-                  pattern="[A-Za-z0-9._-]+"
-                  #registerUsernameModel="ngModel"
-                />
-                <div class="form-error" *ngIf="registerUsernameModel.invalid && (registerUsernameModel.touched || formSubmitted)">
-                  <span *ngIf="registerUsernameModel.errors?.['required']">{{ 'login.errorUsernameRequired' | translate }}</span>
-                  <span
-                    *ngIf="!registerUsernameModel.errors?.['required'] && (registerUsernameModel.errors?.['minlength'] || registerUsernameModel.errors?.['maxlength'] || registerUsernameModel.errors?.['pattern'])"
-                  >
-                    {{ 'login.errorUsernameInvalid' | translate }}
-                  </span>
-                </div>
-              </div>
-              <div *ngIf="mode === 'login'" class="form-group">
-                <label>{{ 'login.loginIdentifier' | translate }}</label>
-                <input
-                  type="text"
-                  class="form-input"
-                  [(ngModel)]="loginIdentifier"
-                  name="loginIdentifier"
-                  autocomplete="username"
-                  required
-                  #loginIdentifierModel="ngModel"
-                />
-                <div
-                  class="form-error"
-                  *ngIf="(loginIdentifierModel.touched || formSubmitted) && (loginIdentifierModel.invalid || loginIdentifierEmailInvalid)"
-                >
-                  <span *ngIf="loginIdentifierModel.errors?.['required']">{{ 'login.errorLoginRequired' | translate }}</span>
-                  <span *ngIf="!loginIdentifierModel.errors?.['required'] && loginIdentifierEmailInvalid">
-                    {{ 'login.errorEmailInvalid' | translate }}
-                  </span>
-                </div>
-              </div>
-              <div class="form-group">
-                <label>{{ 'login.password' | translate }}</label>
-                <input
-                  type="password"
-                  class="form-input"
-                  [(ngModel)]="password"
-                  name="password"
-                  [attr.autocomplete]="mode === 'register' ? 'new-password' : 'current-password'"
-                  required
-                  [minlength]="passwordMinLength"
-                  [maxlength]="mode === 'register' ? passwordMaxLength : null"
-                  #passwordModel="ngModel"
-                />
-                <div class="form-error" *ngIf="passwordModel.invalid && (passwordModel.touched || formSubmitted)">
-                  <span *ngIf="passwordModel.errors?.['required']">{{ 'login.errorPasswordRequired' | translate }}</span>
-                  <span *ngIf="!passwordModel.errors?.['required'] && passwordModel.errors?.['minlength']">
-                    {{ 'login.errorPasswordTooShort' | translate }}
-                  </span>
-                  <span *ngIf="!passwordModel.errors?.['required'] && passwordModel.errors?.['maxlength']">
-                    {{ 'login.errorPasswordTooLong' | translate }}
-                  </span>
-                </div>
-              </div>
-              <div *ngIf="turnstileEnabled" class="turnstile-block">
-                <div #turnstileContainer class="turnstile-container"></div>
-              </div>
-              <button class="local-submit" type="submit" [disabled]="submitting">
-                {{ mode === 'login' ? ('login.loginAction' | translate) : ('login.registerAction' | translate) }}
-              </button>
-              <div *ngIf="localErrorKey" class="form-error">{{ localErrorKey | translate }}</div>
-              <button type="button" class="toggle-mode" (click)="toggleMode()">
-                {{ mode === 'login' ? ('login.noAccount' | translate) : ('login.haveAccount' | translate) }}
-              </button>
-            </form>
+        @if (auth.status() === 'authenticated') {
+          <div class="already-auth">
+            <p>{{ 'login.alreadyAuthenticated' | translate }}</p>
+            <a routerLink="/profile" class="link-button">{{ 'login.goToProfile' | translate }}</a>
           </div>
+        }
 
-          <div *ngIf="config.features.federatedAuthEnabled" class="divider"></div>
-
-          <div *ngIf="config.features.federatedAuthEnabled" class="auth-block oauth-auth">
-            <h2>{{ 'login.oauthTitle' | translate }}</h2>
-
-            <button class="oauth-button google-button" type="button" (click)="login('google')">
-              <svg width="18" height="18" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-              </svg>
-              {{ 'login.signInWithGoogle' | translate }}
-            </button>
-
-            <button class="oauth-button github-button" type="button" (click)="login('github')">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
-              </svg>
-              {{ 'login.github' | translate }}
-            </button>
-
-            <button class="oauth-button yandex-button" type="button" (click)="login('yandex')">
-              <span class="yandex-icon" aria-hidden="true">Ya</span>
-              {{ 'login.yandex' | translate }}
-            </button>
-
-            <div class="oauth-button disabled-button">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M0 0v11.408h11.408V0H0zm12.594 0v11.408H24V0H12.594zM0 12.594V24h11.408V12.594H0zm12.594 0V24H24V12.594H12.594z"/>
-              </svg>
-              {{ 'login.microsoft' | translate }}
-              <span class="planned-badge">{{ 'login.plannedDevelopment' | translate }}</span>
+        @if (auth.status() !== 'authenticated') {
+          <div class="auth-blocks" [class.local-only]="!config.features.federatedAuthEnabled">
+            <div class="auth-block local-auth">
+              <h2>{{ mode === 'login' ? ('login.loginTitle' | translate) : ('login.registerTitle' | translate) }}</h2>
+              <form #localForm="ngForm" class="local-form" (ngSubmit)="submitLocal(localForm)">
+                @if (mode === 'register') {
+                  <div class="form-group">
+                    <label>{{ 'login.email' | translate }}</label>
+                    <input
+                      type="email"
+                      class="form-input"
+                      [(ngModel)]="registerEmail"
+                      name="registerEmail"
+                      autocomplete="email"
+                      required
+                      email
+                      #registerEmailModel="ngModel"
+                      />
+                    @if (registerEmailModel.invalid && (registerEmailModel.touched || formSubmitted)) {
+                      <div class="form-error">
+                        @if (registerEmailModel.errors?.['required']) {
+                          <span>{{ 'login.errorEmailRequired' | translate }}</span>
+                        }
+                        @if (!registerEmailModel.errors?.['required'] && registerEmailModel.errors?.['email']) {
+                          <span>
+                            {{ 'login.errorEmailInvalid' | translate }}
+                          </span>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+                @if (mode === 'register') {
+                  <div class="form-group">
+                    <label>{{ 'login.username' | translate }}</label>
+                    <input
+                      type="text"
+                      class="form-input"
+                      [(ngModel)]="registerUsername"
+                      name="registerUsername"
+                      autocomplete="username"
+                      required
+                      [minlength]="usernameMinLength"
+                      [maxlength]="usernameMaxLength"
+                      pattern="[A-Za-z0-9._-]+"
+                      #registerUsernameModel="ngModel"
+                      />
+                    @if (registerUsernameModel.invalid && (registerUsernameModel.touched || formSubmitted)) {
+                      <div class="form-error">
+                        @if (registerUsernameModel.errors?.['required']) {
+                          <span>{{ 'login.errorUsernameRequired' | translate }}</span>
+                        }
+                        @if (!registerUsernameModel.errors?.['required'] && (registerUsernameModel.errors?.['minlength'] || registerUsernameModel.errors?.['maxlength'] || registerUsernameModel.errors?.['pattern'])) {
+                          <span
+                            >
+                            {{ 'login.errorUsernameInvalid' | translate }}
+                          </span>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+                @if (mode === 'login') {
+                  <div class="form-group">
+                    <label>{{ 'login.loginIdentifier' | translate }}</label>
+                    <input
+                      type="text"
+                      class="form-input"
+                      [(ngModel)]="loginIdentifier"
+                      name="loginIdentifier"
+                      autocomplete="username"
+                      required
+                      #loginIdentifierModel="ngModel"
+                      />
+                    @if ((loginIdentifierModel.touched || formSubmitted) && (loginIdentifierModel.invalid || loginIdentifierEmailInvalid)) {
+                      <div
+                        class="form-error"
+                        >
+                        @if (loginIdentifierModel.errors?.['required']) {
+                          <span>{{ 'login.errorLoginRequired' | translate }}</span>
+                        }
+                        @if (!loginIdentifierModel.errors?.['required'] && loginIdentifierEmailInvalid) {
+                          <span>
+                            {{ 'login.errorEmailInvalid' | translate }}
+                          </span>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+                <div class="form-group">
+                  <label>{{ 'login.password' | translate }}</label>
+                  <input
+                    type="password"
+                    class="form-input"
+                    [(ngModel)]="password"
+                    name="password"
+                    [attr.autocomplete]="mode === 'register' ? 'new-password' : 'current-password'"
+                    required
+                    [minlength]="passwordMinLength"
+                    [maxlength]="mode === 'register' ? passwordMaxLength : null"
+                    #passwordModel="ngModel"
+                    />
+                  @if (passwordModel.invalid && (passwordModel.touched || formSubmitted)) {
+                    <div class="form-error">
+                      @if (passwordModel.errors?.['required']) {
+                        <span>{{ 'login.errorPasswordRequired' | translate }}</span>
+                      }
+                      @if (!passwordModel.errors?.['required'] && passwordModel.errors?.['minlength']) {
+                        <span>
+                          {{ 'login.errorPasswordTooShort' | translate }}
+                        </span>
+                      }
+                      @if (!passwordModel.errors?.['required'] && passwordModel.errors?.['maxlength']) {
+                        <span>
+                          {{ 'login.errorPasswordTooLong' | translate }}
+                        </span>
+                      }
+                    </div>
+                  }
+                </div>
+                @if (turnstileEnabled) {
+                  <div class="turnstile-block">
+                    <div #turnstileContainer class="turnstile-container"></div>
+                  </div>
+                }
+                <button class="local-submit" type="submit" [disabled]="submitting">
+                  {{ mode === 'login' ? ('login.loginAction' | translate) : ('login.registerAction' | translate) }}
+                </button>
+                @if (localErrorKey) {
+                  <div class="form-error">{{ localErrorKey | translate }}</div>
+                }
+                <button type="button" class="toggle-mode" (click)="toggleMode()">
+                  {{ mode === 'login' ? ('login.noAccount' | translate) : ('login.haveAccount' | translate) }}
+                </button>
+              </form>
             </div>
+            @if (config.features.federatedAuthEnabled) {
+              <div class="divider"></div>
+            }
+            @if (config.features.federatedAuthEnabled) {
+              <div class="auth-block oauth-auth">
+                <h2>{{ 'login.oauthTitle' | translate }}</h2>
+                <button class="oauth-button google-button" type="button" (click)="login('google')">
+                  <svg width="18" height="18" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                  </svg>
+                  {{ 'login.signInWithGoogle' | translate }}
+                </button>
+                <button class="oauth-button github-button" type="button" (click)="login('github')">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+                  </svg>
+                  {{ 'login.github' | translate }}
+                </button>
+                <button class="oauth-button yandex-button" type="button" (click)="login('yandex')">
+                  <span class="yandex-icon" aria-hidden="true">Ya</span>
+                  {{ 'login.yandex' | translate }}
+                </button>
+                <div class="oauth-button disabled-button">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M0 0v11.408h11.408V0H0zm12.594 0v11.408H24V0H12.594zM0 12.594V24h11.408V12.594H0zm12.594 0V24H24V12.594H12.594z"/>
+                  </svg>
+                  {{ 'login.microsoft' | translate }}
+                  <span class="planned-badge">{{ 'login.plannedDevelopment' | translate }}</span>
+                </div>
+              </div>
+            }
           </div>
-        </div>
+        }
 
-        <div *ngIf="auth.status() !== 'authenticated'" class="consent-section">
-          <label class="consent-label">
-            <input type="checkbox" checked disabled class="consent-checkbox" />
-            <span class="consent-text">{{ 'login.consentText' | translate }}</span>
-          </label>
-        </div>
+        @if (auth.status() !== 'authenticated') {
+          <div class="consent-section">
+            <label class="consent-label">
+              <input type="checkbox" checked disabled class="consent-checkbox" />
+              <span class="consent-text">{{ 'login.consentText' | translate }}</span>
+            </label>
+          </div>
+        }
       </div>
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .login-page {
@@ -483,6 +521,9 @@ declare global {
     ]
 })
 export class LoginPageComponent implements OnInit, AfterViewInit {
+    auth = inject(AuthService);
+    private route = inject(ActivatedRoute);
+
     private returnUrl = '/profile';
     private turnstileWidgetId: string | null = null;
     private viewReady = false;
@@ -507,11 +548,6 @@ export class LoginPageComponent implements OnInit, AfterViewInit {
     private readonly emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     @ViewChild('turnstileContainer') turnstileContainer?: ElementRef<HTMLDivElement>;
-
-    constructor(
-        public auth: AuthService,
-        private route: ActivatedRoute
-    ) {}
 
     ngOnInit(): void {
         this.returnUrl = this.route.snapshot.queryParams['returnUrl'] || '/profile';

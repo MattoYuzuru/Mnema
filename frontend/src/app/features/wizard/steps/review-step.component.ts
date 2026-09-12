@@ -1,5 +1,5 @@
-import { Component, Output, EventEmitter, OnInit } from '@angular/core';
-import { NgIf, NgFor } from '@angular/common';
+import { Component, Output, EventEmitter, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
+
 import { DeckWizardStateService, DeckWizardState } from '../deck-wizard-state.service';
 import { CardApiService } from '../../../core/services/card-api.service';
 import { UserCardDTO } from '../../../core/models/user-card.models';
@@ -10,8 +10,7 @@ import { markdownToHtml } from '../../../shared/utils/markdown.util';
 
 @Component({
     selector: 'app-review-step',
-    standalone: true,
-    imports: [NgIf, NgFor, ButtonComponent, TranslatePipe],
+    imports: [ButtonComponent, TranslatePipe],
     template: `
     <div class="step">
       <h2>{{ 'wizard.reviewDeck' | translate }}</h2>
@@ -29,19 +28,31 @@ import { markdownToHtml } from '../../../shared/utils/markdown.util';
             <span class="label">{{ 'wizard.labelVisibility' | translate }}:</span>
             {{ state.deckMetadata.isPublic ? ('wizard.visibilityPublic' | translate) : ('wizard.visibilityPrivate' | translate) }}{{ state.deckMetadata.isListed ? ' (' + ('wizard.visibilityListed' | translate) + ')' : '' }}
           </div>
-          <div *ngIf="state.deckMetadata.tags.length > 0"><span class="label">{{ 'wizard.labelTags' | translate }}:</span> {{ state.deckMetadata.tags.join(', ') }}</div>
+          @if (state.deckMetadata.tags.length > 0) {
+            <div><span class="label">{{ 'wizard.labelTags' | translate }}:</span> {{ state.deckMetadata.tags.join(', ') }}</div>
+          }
         </div>
       </div>
-      <div *ngIf="loading">{{ 'wizard.loadingCards' | translate }}</div>
-      <div *ngIf="!loading && cards.length > 0" class="review-section">
-        <h3>{{ 'wizard.cards' | translate }} ({{ cards.length }})</h3>
-        <div *ngFor="let card of cards.slice(0, 3)" class="card-preview">{{ getCardPreview(card) }}</div>
-        <div *ngIf="cards.length > 3" class="more-cards">+{{ cards.length - 3 }} {{ 'wizard.moreCards' | translate }}</div>
-      </div>
-      <div *ngIf="!loading && cards.length === 0" class="review-section">
-        <h3>{{ 'wizard.cards' | translate }}</h3>
-        <p>{{ 'wizard.noCardsAdded' | translate }}</p>
-      </div>
+      @if (loading) {
+        <div>{{ 'wizard.loadingCards' | translate }}</div>
+      }
+      @if (!loading && cards.length > 0) {
+        <div class="review-section">
+          <h3>{{ 'wizard.cards' | translate }} ({{ cards.length }})</h3>
+          @for (card of cards.slice(0, 3); track card) {
+            <div class="card-preview">{{ getCardPreview(card) }}</div>
+          }
+          @if (cards.length > 3) {
+            <div class="more-cards">+{{ cards.length - 3 }} {{ 'wizard.moreCards' | translate }}</div>
+          }
+        </div>
+      }
+      @if (!loading && cards.length === 0) {
+        <div class="review-section">
+          <h3>{{ 'wizard.cards' | translate }}</h3>
+          <p>{{ 'wizard.noCardsAdded' | translate }}</p>
+        </div>
+      }
       <div class="step-actions">
         <app-button variant="ghost" (click)="onBack()">{{ 'wizard.back' | translate }}</app-button>
         <div class="action-buttons">
@@ -50,7 +61,8 @@ import { markdownToHtml } from '../../../shared/utils/markdown.util';
         </div>
       </div>
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .step { display: flex; flex-direction: column; gap: var(--spacing-lg); min-width: 0; }
       .review-section { padding: var(--spacing-lg); background: var(--color-background); border: 1px solid var(--border-color); border-radius: var(--border-radius-md); }
@@ -85,13 +97,17 @@ import { markdownToHtml } from '../../../shared/utils/markdown.util';
     `]
 })
 export class ReviewStepComponent implements OnInit {
-    @Output() finish = new EventEmitter<'deck' | 'home'>();
+    private wizardState = inject(DeckWizardStateService);
+    private cardApi = inject(CardApiService);
+    private i18n = inject(I18nService);
+
+    @Output() finishRequested = new EventEmitter<'deck' | 'home'>();
     @Output() back = new EventEmitter<void>();
     state: DeckWizardState;
     loading = true;
     cards: UserCardDTO[] = [];
 
-    constructor(private wizardState: DeckWizardStateService, private cardApi: CardApiService, private i18n: I18nService) {
+    constructor() {
         this.state = this.wizardState.getCurrentState();
     }
 
@@ -128,6 +144,6 @@ export class ReviewStepComponent implements OnInit {
     }
 
     onFinish(destination: 'deck' | 'home'): void {
-        this.finish.emit(destination);
+        this.finishRequested.emit(destination);
     }
 }

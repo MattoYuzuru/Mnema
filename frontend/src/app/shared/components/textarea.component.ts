@@ -1,11 +1,10 @@
-import { Component, Input, forwardRef } from '@angular/core';
+import { Component, Input, forwardRef, ChangeDetectionStrategy } from '@angular/core';
 import { ControlValueAccessor, NG_VALUE_ACCESSOR } from '@angular/forms';
-import { NgIf, NgClass } from '@angular/common';
+import { NgClass } from '@angular/common';
 
 @Component({
     selector: 'app-textarea',
-    standalone: true,
-    imports: [NgIf, NgClass],
+    imports: [NgClass],
     providers: [
         {
             provide: NG_VALUE_ACCESSOR,
@@ -15,7 +14,9 @@ import { NgIf, NgClass } from '@angular/common';
     ],
     template: `
     <div class="textarea-wrapper">
-      <label *ngIf="label" [for]="id" class="textarea-label">{{ label }}</label>
+      @if (label) {
+        <label [for]="id" class="textarea-label">{{ label }}</label>
+      }
       <textarea
         [id]="id"
         [placeholder]="placeholder"
@@ -31,11 +32,14 @@ import { NgIf, NgClass } from '@angular/common';
         (input)="onInput($event)"
         (blur)="onTouched()"
       ></textarea>
-      <div *ngIf="hasError && errorMessage" class="error-message">
-        {{ errorMessage }}
-      </div>
+      @if (hasError && errorMessage) {
+        <div class="error-message">
+          {{ errorMessage }}
+        </div>
+      }
     </div>
-  `,
+    `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [
         `
       .textarea-wrapper {

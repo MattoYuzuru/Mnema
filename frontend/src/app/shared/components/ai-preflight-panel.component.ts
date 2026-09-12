@@ -1,77 +1,100 @@
-import { Component, Input } from '@angular/core';
-import { NgFor, NgIf } from '@angular/common';
+import { Component, Input, ChangeDetectionStrategy } from '@angular/core';
+
 import { AiJobPreflightResponse } from '../../core/models/ai.models';
 
 @Component({
     selector: 'app-ai-preflight-panel',
-    standalone: true,
-    imports: [NgIf, NgFor],
+    imports: [],
     template: `
-      <section *ngIf="preflight" class="preflight-panel" aria-live="polite">
-        <div class="preflight-header">
-          <div>
-            <p class="preflight-kicker">Analysis ready</p>
-            <h3>{{ title }}</h3>
+      @if (preflight) {
+        <section class="preflight-panel" aria-live="polite">
+          <div class="preflight-header">
+            <div>
+              <p class="preflight-kicker">Analysis ready</p>
+              <h3>{{ title }}</h3>
+            </div>
+            <div class="preflight-badges">
+              @if (preflight.targetCount !== null && preflight.targetCount !== undefined) {
+                <span class="preflight-badge">
+                  {{ preflight.targetCount }} planned
+                </span>
+              }
+              @if (preflight.queueAhead !== null && preflight.queueAhead !== undefined && preflight.queueAhead > 0) {
+                <span class="preflight-badge warning">
+                  {{ preflight.queueAhead }} job(s) ahead
+                </span>
+              }
+            </div>
           </div>
-          <div class="preflight-badges">
-            <span *ngIf="preflight.targetCount !== null && preflight.targetCount !== undefined" class="preflight-badge">
-              {{ preflight.targetCount }} planned
-            </span>
-            <span *ngIf="preflight.queueAhead !== null && preflight.queueAhead !== undefined && preflight.queueAhead > 0" class="preflight-badge warning">
-              {{ preflight.queueAhead }} job(s) ahead
-            </span>
+          @if (preflight.summary) {
+            <p class="preflight-summary">{{ preflight.summary }}</p>
+          }
+          @if (providerLabel(preflight)) {
+            <div class="meta-line provider-line">
+              <span class="meta-label">Provider</span>
+              <span>{{ providerLabel(preflight) }}</span>
+            </div>
+          }
+          <div class="preflight-meta">
+            <div class="meta-card">
+              <span class="meta-label">ETA</span>
+              <strong>{{ formatEta(preflight.estimatedSecondsRemaining) }}</strong>
+            </div>
+            <div class="meta-card">
+              <span class="meta-label">Estimated cost</span>
+              <strong>{{ formatCost($safeNavigationMigration(preflight.cost?.estimatedCost), $safeNavigationMigration(preflight.cost?.estimatedCostCurrency)) }}</strong>
+            </div>
+            @if (preflight.cost && ((preflight.cost.estimatedInputTokens !== null && preflight.cost.estimatedInputTokens !== undefined) || (preflight.cost.estimatedOutputTokens !== null && preflight.cost.estimatedOutputTokens !== undefined))) {
+              <div class="meta-card">
+                <span class="meta-label">Estimated tokens</span>
+                <strong>{{ formatTokens(preflight.cost.estimatedInputTokens, preflight.cost.estimatedOutputTokens) }}</strong>
+              </div>
+            }
           </div>
-        </div>
-
-        <p *ngIf="preflight.summary" class="preflight-summary">{{ preflight.summary }}</p>
-
-        <div *ngIf="providerLabel(preflight)" class="meta-line provider-line">
-          <span class="meta-label">Provider</span>
-          <span>{{ providerLabel(preflight) }}</span>
-        </div>
-
-        <div class="preflight-meta">
-          <div class="meta-card">
-            <span class="meta-label">ETA</span>
-            <strong>{{ formatEta(preflight.estimatedSecondsRemaining) }}</strong>
-          </div>
-          <div class="meta-card">
-            <span class="meta-label">Estimated cost</span>
-            <strong>{{ formatCost(preflight.cost?.estimatedCost, preflight.cost?.estimatedCostCurrency) }}</strong>
-          </div>
-          <div class="meta-card" *ngIf="preflight.cost?.estimatedInputTokens !== null || preflight.cost?.estimatedOutputTokens !== null">
-            <span class="meta-label">Estimated tokens</span>
-            <strong>{{ formatTokens(preflight.cost?.estimatedInputTokens, preflight.cost?.estimatedOutputTokens) }}</strong>
-          </div>
-        </div>
-
-        <div *ngIf="preflight.plannedStages?.length" class="meta-line">
-          <span class="meta-label">Stages</span>
-          <span>{{ preflight.plannedStages?.join(', ') }}</span>
-        </div>
-
-        <div *ngIf="preflight.fields?.length" class="meta-line">
-          <span class="meta-label">Fields</span>
-          <span>{{ preflight.fields?.join(', ') }}</span>
-        </div>
-
-        <div *ngIf="preflight.items?.length" class="planned-items">
-          <div class="meta-label">Planned items</div>
-          <div class="planned-list">
-            <article *ngFor="let item of preflight.items" class="planned-item">
-              <div class="planned-title">{{ item.preview || 'Planned item' }}</div>
-              <div *ngIf="item.cardId" class="planned-meta">{{ item.cardId }}</div>
-              <div *ngIf="item.fields?.length" class="planned-meta">Fields: {{ item.fields?.join(', ') }}</div>
-              <div *ngIf="item.plannedStages?.length" class="planned-meta">Stages: {{ item.plannedStages?.join(', ') }}</div>
-            </article>
-          </div>
-        </div>
-
-        <ul *ngIf="preflight.warnings?.length" class="warning-list">
-          <li *ngFor="let warning of preflight.warnings">{{ warning }}</li>
-        </ul>
-      </section>
-    `,
+          @if (preflight.plannedStages?.length) {
+            <div class="meta-line">
+              <span class="meta-label">Stages</span>
+              <span>{{ preflight.plannedStages.join(', ') }}</span>
+            </div>
+          }
+          @if (preflight.fields?.length) {
+            <div class="meta-line">
+              <span class="meta-label">Fields</span>
+              <span>{{ preflight.fields.join(', ') }}</span>
+            </div>
+          }
+          @if (preflight.items?.length) {
+            <div class="planned-items">
+              <div class="meta-label">Planned items</div>
+              <div class="planned-list">
+                @for (item of preflight.items; track item) {
+                  <article class="planned-item">
+                    <div class="planned-title">{{ item.preview || 'Planned item' }}</div>
+                    @if (item.cardId) {
+                      <div class="planned-meta">{{ item.cardId }}</div>
+                    }
+                    @if (item.fields?.length) {
+                      <div class="planned-meta">Fields: {{ item.fields.join(', ') }}</div>
+                    }
+                    @if (item.plannedStages?.length) {
+                      <div class="planned-meta">Stages: {{ item.plannedStages.join(', ') }}</div>
+                    }
+                  </article>
+                }
+              </div>
+            </div>
+          }
+          @if (preflight.warnings?.length) {
+            <ul class="warning-list">
+              @for (warning of preflight.warnings; track warning) {
+                <li>{{ warning }}</li>
+              }
+            </ul>
+          }
+        </section>
+      }
+      `,
+    changeDetection: ChangeDetectionStrategy.Eager,
     styles: [`
       .preflight-panel {
         margin-top: var(--spacing-md);

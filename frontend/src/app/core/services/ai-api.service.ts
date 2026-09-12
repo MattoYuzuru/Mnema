@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable, catchError, map, of, throwError } from 'rxjs';
 import { appConfig } from '../../app.config';
@@ -16,10 +16,10 @@ import {
 
 @Injectable({ providedIn: 'root' })
 export class AiApiService {
+    private http = inject(HttpClient);
+
     private readonly baseUrl = appConfig.aiApiBaseUrl;
     private static readonly SYSTEM_PROVIDER_ID = '00000000-0000-0000-0000-000000000001';
-
-    constructor(private http: HttpClient) {}
 
     listProviders(): Observable<AiProviderCredential[]> {
         if (!appConfig.features.aiEnabled) {

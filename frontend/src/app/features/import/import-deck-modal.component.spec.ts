@@ -13,7 +13,7 @@ describe('ImportDeckModalComponent', () => {
     let importApi: jasmine.SpyObj<ImportApiService>;
     let reviewApi: jasmine.SpyObj<ReviewApiService>;
 
-    beforeEach(() => {
+    beforeEach(async () => {
         importApi = jasmine.createSpyObj<ImportApiService>('ImportApiService', [
             'uploadSource',
             'preview',
@@ -26,10 +26,6 @@ describe('ImportDeckModalComponent', () => {
             'updateDeckAlgorithm'
         ]);
 
-        component = new ImportDeckModalComponent(importApi, reviewApi);
-    });
-
-    it('applies the reusable custom scrollbar class to the modal body', async () => {
         await TestBed.configureTestingModule({
             imports: [ImportDeckModalComponent],
             providers: [
@@ -38,7 +34,10 @@ describe('ImportDeckModalComponent', () => {
                 I18nService
             ]
         }).compileComponents();
+        component = TestBed.runInInjectionContext(() => new ImportDeckModalComponent());
+    });
 
+    it('applies the reusable custom scrollbar class to the modal body', async () => {
         fixture = TestBed.createComponent(ImportDeckModalComponent);
         fixture.detectChanges();
 
