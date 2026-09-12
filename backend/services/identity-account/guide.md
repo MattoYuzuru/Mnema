@@ -38,9 +38,17 @@ prove an implemented private Learning API.
 
 Every login rotates the Secure/HttpOnly/SameSite=Lax session cookie and CSRF token.
 Sessions live in PostgreSQL with eight-hour inactivity and absolute limits.
-Browser mutations require `X-CSRF-TOKEN`; fetch its value and header name from
+Cookie-authenticated browser mutations require `X-CSRF-TOKEN`; fetch its value and header name from
 `GET /api/accounts/csrf` with credentials. CORS permits only the exact configured
 `MNEMA_IDENTITY_FRONTEND_ORIGIN`.
+
+Explicit bearer requests follow Spring Resource Server's existing CSRF exemption
+and still require the operation's scope/current generation. The replacement web client
+uses its verified account bearer with `account.write` for logout/password changes,
+without ambient cookies; login/register remain cookie/CSRF flows. Identity must have
+a distinct origin from the frontend so the retained XHR transport can omit credentials.
+This prevents another tab's shared cookie from selecting a different account to revoke.
+An expired/failed logout is not proof of server-session revocation.
 
 Rate-limit identities use the raw socket peer by default. `X-Forwarded-For` is
 accepted only when that peer belongs to `MNEMA_IDENTITY_TRUSTED_PROXY_CIDRS`, and
