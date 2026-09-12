@@ -1,0 +1,10 @@
+{
+  "lang": {
+    "accept": ["ru", "RU-ru", "ja", "ar", "zh-Hant-TW", "en-001", "sl-rozaj", "de-CH-1901", "sh"],
+    "reject": ["abcd", "x-private", "i-klingon", "en-GB-oed", "en-u-ca-gregory", "en_US", "ru-", "sl-rozaj-ROZAJ", "рус", "en-1234-1234"]
+  },
+  "href": {
+    "accept": ["https://example.test/path?q=%3Cscript%3E#anchor", "HTTPS://example.test", "https://[::1]:443/", "https://127.0.0.1/", "https://xn--e1afmkfd.xn--p1ai/path", "https://example.test/%D1%8F"],
+    "reject": ["http://example.test", "javascript:alert(1)", "//example.test", "https://", "https://u:p@example.test", "https://@example.test", "https://example.test:65536", "https://example.test:0", "https://example.test/я", "https://пример.рф", "https://example.test/\n", "https://[fe80::1%25en0]/", "https://0177.0.0.1/", "https://2130706433/", "https://127.1/", "https://example.test:", "https://example.test.", "https://example..test", "https://a_b.test/", "https://example.test/%zz", "https://0x7f.0.0.1/", "https://1.2.3.256/", "https://[x]/", "https://example.test\\@evil.test", " https://example.test", "https://exa mple.test", "https://xn--a/", "https://xn--abc/", "https://xn--0/"]
+  }
+}

@@ -128,7 +128,11 @@ The exact editor library remains a prototype decision. The persisted contract be
 }
 ```
 
-Every node has a stable opaque `id`, a registered `type`, its own `version`, validated `attrs`, and optional children. Stable node IDs allow exercises and diffs to refer to meaning without fragile character offsets. IDs must be globally unique and client-generatable for future offline drafts; UUIDv4 is sufficient without adding a dependency.
+Every node has a stable opaque `id`, a registered `type`, its own `version`, validated `attrs`, and a `content` array (empty for leaves). Stable node IDs allow exercises and diffs to refer to meaning without fragile character offsets. IDs are unique within a document, client-generatable, and intentionally retained across revisions; UUIDv4 is sufficient without adding a dependency.
+
+The implemented [baseline native boundary](../../contracts/content/native-v1/README.md)
+owns exact structure, preservation, lexical profile and safety limits. It is not yet
+an HTTP/persistence/editor integration or the complete rich-node capability set below.
 
 The renderer registry owns four contracts for every node type:
 
