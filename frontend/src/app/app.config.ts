@@ -1,5 +1,7 @@
 export interface AppConfig {
     authServerUrl: string;
+    identityRedirectUri: string;
+    learningApiBaseUrl: string;
     apiBaseUrl: string;
     coreApiBaseUrl: string;
     mediaApiBaseUrl: string;
@@ -36,7 +38,9 @@ const isLocalSelfHost = isLocalHost;
 const defaultConfig: AppConfig = {
     authServerUrl: isMnemaProd
         ? 'https://auth.mnema.app'
-        : (isLocalHost ? 'http://localhost:8083' : window.location.origin),
+        : (isLocalHost ? 'https://localhost:18081' : window.location.origin),
+    identityRedirectUri: `${window.location.origin}/auth/callback`,
+    learningApiBaseUrl: '/api',
     apiBaseUrl: isMnemaProd
         ? '/api/user'
         : (isLocalHost ? 'http://localhost:8084/api/user' : '/api/user'),

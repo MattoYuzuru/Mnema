@@ -76,6 +76,8 @@ append_string_override() {
   key="$1"
   value="$2"
   if [ -n "$value" ]; then
+    control_free=$(printf '%s' "$value" | LC_ALL=C tr -d '\000-\037\177')
+    [ "$control_free" = "$value" ] || fail "$key must not contain control characters"
     escaped="$(js_escape "$value")"
     printf 'window.MNEMA_APP_CONFIG.%s = "%s";\n' "$key" "$escaped" >> "$OUT"
   fi
@@ -99,6 +101,26 @@ window.MNEMA_APP_CONFIG.features = window.MNEMA_APP_CONFIG.features || {};
 JS
 
 append_string_override "authServerUrl" "${MNEMA_AUTH_SERVER_URL:-}"
+IDENTITY_REDIRECT="${MNEMA_IDENTITY_REDIRECT_URI:-${PUBLIC_ORIGIN:+$PUBLIC_ORIGIN/auth/callback}}"
+LEARNING_BASE="${MNEMA_LEARNING_API_BASE_URL:-/api}"
+[ "$LEARNING_BASE" = /api ] || fail "Learning must use the canonical same-origin /api boundary"
+if [ -n "$IDENTITY_REDIRECT" ]; then
+  case "$IDENTITY_REDIRECT" in
+    https://*/auth/callback) ;;
+    *) fail "Identity redirect must use HTTPS and the exact auth callback path" ;;
+  esac
+  redirect_authority=${IDENTITY_REDIRECT#https://}
+  redirect_authority=${redirect_authority%/auth/callback}
+  case "$redirect_authority" in
+    "" | *[!a-z0-9.:-]* | /* | *..*) fail "Identity redirect must contain a DNS host and optional local port" ;;
+  esac
+  [ "$AUTH_ORIGIN" != "https://$redirect_authority" ] || fail "Identity must have a separate origin to omit ambient cookies"
+fi
+if [ "$APP_ENV" != development ]; then
+  [ "$IDENTITY_REDIRECT" = "$PUBLIC_ORIGIN/auth/callback" ] || fail "Identity redirect must exactly match the public auth callback"
+fi
+append_string_override "identityRedirectUri" "$IDENTITY_REDIRECT"
+append_string_override "learningApiBaseUrl" "$LEARNING_BASE"
 append_string_override "apiBaseUrl" "${MNEMA_API_BASE_URL:-}"
 append_string_override "coreApiBaseUrl" "${MNEMA_CORE_API_BASE_URL:-}"
 append_string_override "mediaApiBaseUrl" "${MNEMA_MEDIA_API_BASE_URL:-}"

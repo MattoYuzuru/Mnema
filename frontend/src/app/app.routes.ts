@@ -9,6 +9,7 @@ export const appRoutes: Routes = [
     { path: '', component: HomePageComponent },
     { path: 'login', component: LoginPageComponent },
     { path: 'register', component: LoginPageComponent },
+    { path: 'auth/callback', loadComponent: () => import('./auth-callback.component').then(module => module.AuthCallbackComponent) },
     {
         path: 'profile',
         loadComponent: () => import('./profile-page.component').then(module => module.ProfilePageComponent),

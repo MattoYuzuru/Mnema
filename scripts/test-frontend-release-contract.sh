@@ -16,6 +16,7 @@ fi
 # The application builder emits name-HASH assets and folds runtime into its module
 # graph. Check actual script/stylesheet/preload references, not a webpack filename.
 python3 -m unittest discover -s "$SCRIPT_DIR/tests" -p test_frontend_release_assets.py
+python3 -m unittest discover -s "$SCRIPT_DIR/tests" -p test_browser_identity_config.py
 python3 "$SCRIPT_DIR/frontend_release_assets.py" "$FRONTEND_DIST"
 
 nginx_config="$REPO_ROOT/frontend/nginx.conf"
