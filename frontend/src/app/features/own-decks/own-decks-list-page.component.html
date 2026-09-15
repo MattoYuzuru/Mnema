@@ -1,0 +1,69 @@
+<section class="page" aria-labelledby="own-decks-title">
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">Личная библиотека</p>
+      <h1 id="own-decks-title" tabindex="-1">Мои колоды</h1>
+      <p class="lede">Небольшие собрания материалов, которые видны только вам.</p>
+    </div>
+    <a class="button primary" routerLink="/decks/new">Создать колоду</a>
+  </header>
+
+  @let state = store.listState();
+  @if (state.phase === 'loading' && state.items.length === 0) {
+    <p class="status" role="status">Загружаем колоды…</p>
+  } @else if (state.phase === 'error' && state.items.length === 0) {
+    <section class="notice error" aria-labelledby="list-error-title">
+      <h2 id="list-error-title">Не удалось открыть библиотеку</h2>
+      <p>{{ failureMessage(state.failure!) }}</p>
+      <button class="button secondary" type="button" (click)="store.retryList()">Повторить запрос</button>
+    </section>
+  } @else if (state.items.length === 0) {
+    <section class="empty" aria-labelledby="empty-title">
+      <p class="folio" aria-hidden="true">I</p>
+      <h2 id="empty-title">Первая страница пока чиста</h2>
+      <p>Создайте колоду и задайте ей название. Материалы появятся в следующих шагах.</p>
+      <a class="text-link" routerLink="/decks/new">Создать первую колоду</a>
+    </section>
+  } @else {
+    <div class="list-toolbar">
+      <button class="text-button" type="button" (click)="store.loadList()"
+        [disabled]="state.phase === 'loading'">Обновить список</button>
+    </div>
+    <ol class="deck-list">
+      @for (deck of state.items; track deck.deckId) {
+        <li>
+          <a class="deck-row" [routerLink]="['/decks', deck.deckId]">
+            <span class="deck-copy">
+              <strong>{{ deck.metadata.title }}</strong>
+              @if (deck.metadata.description) {
+                <span class="deck-description">{{ deck.metadata.description }}</span>
+              } @else {
+                <span class="deck-description muted">Без описания</span>
+              }
+            </span>
+            <span class="deck-meta">
+              <span>Обновлено <time [attr.datetime]="deck.updatedAt">{{ deck.updatedAt | date:'dd.MM.y, HH:mm' }}</time></span>
+              <span>Открыть <span aria-hidden="true">→</span></span>
+            </span>
+          </a>
+        </li>
+      }
+    </ol>
+
+    @if (state.phase === 'error') {
+      <div class="notice compact error" role="alert">
+        <p>{{ failureMessage(state.failure!) }}</p>
+        <button class="button secondary" type="button" (click)="store.retryList()">Повторить</button>
+      </div>
+    }
+
+    @if (state.phase === 'ready' && (store.canGoBack() || state.nextCursor !== null)) {
+      <nav class="pager" aria-label="Страницы колод">
+        <button class="button secondary" type="button" (click)="store.loadPrevious()"
+          [disabled]="!store.canGoBack()">Предыдущая страница</button>
+        <button class="button secondary" type="button" (click)="store.loadMore()"
+          [disabled]="state.nextCursor === null">Следующая страница</button>
+      </nav>
+    }
+  }
+</section>

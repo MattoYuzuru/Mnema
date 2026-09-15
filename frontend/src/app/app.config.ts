@@ -1,5 +1,6 @@
 export interface AppConfig {
     authServerUrl: string;
+    learningApiBaseUrl: string;
     apiBaseUrl: string;
     coreApiBaseUrl: string;
     mediaApiBaseUrl: string;
@@ -34,6 +35,7 @@ const isLocalHost = host === 'localhost' || host === '127.0.0.1';
 const isLocalSelfHost = isLocalHost;
 
 const defaultConfig: AppConfig = {
+    learningApiBaseUrl: '/api',
     authServerUrl: isMnemaProd
         ? 'https://auth.mnema.app'
         : (isLocalHost ? 'http://localhost:8083' : window.location.origin),
