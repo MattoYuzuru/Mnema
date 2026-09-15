@@ -1,0 +1,40 @@
+<a class="skip-link" href="#main-content">К основному содержанию</a>
+
+<div class="paper-shell">
+  <header class="masthead">
+    <a class="brand" routerLink="/" aria-label="Mnema — главная">
+      <span class="brand-mark" aria-hidden="true">M</span>
+      <span>Mnema</span>
+    </a>
+
+    <nav class="primary-nav" aria-label="Основная навигация">
+      @if (status() === 'authenticated') {
+        <a routerLink="/decks" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Мои колоды</a>
+        <a routerLink="/decks/new" routerLinkActive="active">Новая колода</a>
+      }
+    </nav>
+
+    <div class="session">
+      @if (status() === 'authenticated') {
+        <span class="identity">{{ user()?.name || user()?.email }}</span>
+        <button type="button" class="quiet-action" (click)="logout()">Выйти</button>
+      } @else if (status() === 'pending') {
+        <span class="session-note" aria-live="polite">Проверяем вход…</span>
+      } @else {
+        <a class="quiet-action" routerLink="/login">Войти</a>
+      }
+    </div>
+  </header>
+
+  <main id="main-content" tabindex="-1">
+    <router-outlet (activate)="focusPageHeading()"></router-outlet>
+  </main>
+
+  <footer class="footer">
+    <span>Mnema</span>
+    <nav aria-label="Служебные ссылки">
+      <a routerLink="/privacy">Конфиденциальность</a>
+      <a routerLink="/terms">Условия</a>
+    </nav>
+  </footer>
+</div>

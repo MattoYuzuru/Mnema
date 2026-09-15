@@ -1,0 +1,118 @@
+<section class="page narrow" aria-labelledby="deck-detail-title">
+  <a class="back-link" routerLink="/decks"><span aria-hidden="true">←</span> Мои колоды</a>
+
+  @let detail = store.detailState();
+  @if (detail.phase === 'loading' || detail.phase === 'idle') {
+    <h1 id="deck-detail-title" tabindex="-1">Колода</h1>
+    <p class="status" role="status">Загружаем колоду…</p>
+  } @else if (detail.phase === 'error') {
+    <h1 id="deck-detail-title" tabindex="-1">Не удалось открыть колоду</h1>
+    <section class="notice error" aria-labelledby="detail-error-title">
+      <h2 id="detail-error-title">Запрос не выполнен</h2>
+      <p>{{ failureMessage(detail.failure!) }}</p>
+      <button class="button secondary" type="button" (click)="store.retryDetail()">Повторить запрос</button>
+    </section>
+  } @else if (detail.deck; as deck) {
+    <header class="page-heading">
+      <div>
+        <p class="eyebrow">Личная колода</p>
+        <h1 id="deck-detail-title" tabindex="-1">{{ deck.metadata.title }}</h1>
+        <p class="lede">Обновлено <time [attr.datetime]="deck.updatedAt">{{ deck.updatedAt | date:'dd.MM.y, HH:mm' }}</time></p>
+      </div>
+    </header>
+
+    @let mutation = store.mutationState();
+    @if (mutation.phase === 'conflict-loading') {
+      <p class="notice" role="status">Колода изменилась. Загружаем текущую версию…</p>
+    }
+
+    @if (mutation.phase === 'conflict') {
+      <section class="notice conflict" aria-labelledby="conflict-title">
+        <p class="eyebrow">Конфликт версий</p>
+        <h2 id="conflict-title">Колода уже изменена в другой вкладке</h2>
+        <p>Ваш ввод остаётся в форме. Выберите, какую версию продолжить.</p>
+        <dl class="server-version">
+          <div><dt>Текущее название на сервере</dt><dd>{{ mutation.latest.metadata.title }}</dd></div>
+          <div><dt>Текущее описание на сервере</dt><dd>{{ mutation.latest.metadata.description || 'Без описания' }}</dd></div>
+        </dl>
+        <div class="actions">
+          <button class="button secondary" type="button" (click)="chooseServerVersion()">Использовать версию сервера</button>
+          <button class="button primary" type="button" (click)="store.reapplyConflict()">Применить мой прежний ввод поверх неё</button>
+        </div>
+      </section>
+    }
+
+    @if (mutation.phase === 'error') {
+      <section class="notice error" aria-labelledby="save-error-title">
+        <h2 id="save-error-title">Изменения не подтверждены</h2>
+        <p>{{ failureMessage(mutation.failure) }}</p>
+        @if (mutationLocksDraft(mutation)) {
+          <p>Поля доступны только для чтения, пока не завершён показанный ниже безопасный выбор.</p>
+        }
+        <div class="actions">
+          @if (mutation.replayRefreshFailed || mutation.conflictRefreshFailed) {
+            <button class="button secondary" type="button" (click)="store.retryMutation()">Снова загрузить текущую версию</button>
+          } @else if (mayRetrySameCommand(mutation.failure)) {
+            <button class="button secondary" type="button" (click)="store.retryMutation()">Повторить ту же команду</button>
+          }
+          @if (mutation.failure.status === 409) {
+            <button class="button secondary" type="button" (click)="store.retryAsNewCommand()">Отправить как новую команду</button>
+          }
+        </div>
+      </section>
+    }
+
+    @if (mutation.phase === 'completed') {
+      <p class="notice success" role="status">Сервер подтвердил текущую версию колоды.</p>
+    }
+
+    <form class="metadata-form" [formGroup]="form" (ngSubmit)="save(deck)" novalidate>
+      <div class="field">
+        <label for="detail-title">Название <span aria-hidden="true">*</span></label>
+        <textarea class="title-field" id="detail-title" rows="2" formControlName="title" maxlength="400" (input)="syncDraft()"
+          [readOnly]="mutationLocksDraft(mutation)"
+          [attr.aria-invalid]="submitted() && (validation().titleBlank || validation().titleCodePoints > 200 || validation().titleBytes > 800)"
+          aria-describedby="detail-title-help detail-title-error" autocomplete="off"></textarea>
+        <div class="field-meta" id="detail-title-help">
+          <span>До 200 символов и 800 байт</span>
+          <span>{{ validation().titleCodePoints }}/200 · {{ validation().titleBytes }}/800 байт</span>
+        </div>
+        @if (submitted() && validation().titleBlank) {
+          <p class="field-error" id="detail-title-error">Введите название, состоящее не только из пробелов.</p>
+        } @else if (submitted() && (validation().titleCodePoints > 200 || validation().titleBytes > 800)) {
+          <p class="field-error" id="detail-title-error">Сократите название до указанных пределов.</p>
+        }
+      </div>
+
+      <div class="field">
+        <label for="detail-description">Описание <span class="optional">необязательно</span></label>
+        <textarea id="detail-description" rows="8" maxlength="4096" formControlName="description" (input)="syncDraft()"
+          [readOnly]="mutationLocksDraft(mutation)"
+          [attr.aria-invalid]="submitted() && validation().descriptionBytes > 4096"
+          aria-describedby="detail-description-help detail-description-error"></textarea>
+        <div class="field-meta" id="detail-description-help">
+          <span>До 4096 байт</span>
+          <span>{{ validation().descriptionBytes }}/4096 байт</span>
+        </div>
+        @if (submitted() && validation().descriptionBytes > 4096) {
+          <p class="field-error" id="detail-description-error">Сократите описание до 4096 байт.</p>
+        }
+      </div>
+
+      @if (submitted() && !validation().unicodeValid) {
+        <p class="notice error" role="alert">Текст содержит неподдерживаемую последовательность Unicode.</p>
+      }
+      @if (submitted() && validation().requestBytes > 8192) {
+        <p class="notice error" role="alert">Название и описание вместе превышают размер команды 8192 байта.</p>
+      }
+
+      <div class="form-actions">
+        <span class="draft-state" aria-live="polite">{{ form.dirty ? 'Есть несохранённые изменения' : 'Нет локальных изменений' }}</span>
+        <button class="button primary" type="submit"
+          [disabled]="!canStartNewMutation(mutation)">
+          {{ mutation.phase === 'pending' ? 'Отправляем…' : 'Сохранить изменения' }}
+        </button>
+      </div>
+    </form>
+  }
+</section>
