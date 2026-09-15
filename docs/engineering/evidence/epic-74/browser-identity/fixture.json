@@ -4,12 +4,12 @@
       "scenario": "both_real_apps_ready",
       "state": "passed",
       "identity_jar_sha256": "854055f9c7b19d1f7d63d9f60db9934c2248e91208e7d8bf17919aba0637f2d3",
-      "learning_jar_sha256": "99166c9b6a67371c046e8dba79ae4db90b71c007971375dbd9e3a43f32886892",
-      "harness_sha256": "295904c983d5ac498dd1bc8c5d79d77b15846b19efa2a5900f196f4482fee862",
+      "learning_jar_sha256": "59da7acbecc4569104fcf8954285cefc97f44a0f1eb63a01e9beab505822a8ba",
+      "harness_sha256": "57f4038dc8aaacebd86ea84530d217ceac451814b04d70ac3529a712fc56030d",
       "fixture_key_source_sha256": "799b1a83d580238d54ecf17325f1f65ffb3d80a21a7287481fa2c69c72e91257",
       "postgres": "PostgreSQL 18.4 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
       "max_clients": 1,
-      "started_utc": "2026-09-12T13:13:36.743395+00:00"
+      "started_utc": "2026-09-13T10:57:42.099559+00:00"
     },
     {
       "scenario": "learning_role_denied_identity_schema",

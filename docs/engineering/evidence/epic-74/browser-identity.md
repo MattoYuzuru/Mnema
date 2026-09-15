@@ -89,11 +89,15 @@ The fixture is a separately executed browser check, not silently counted as one 
 existing33repository steps. Exact candidate/full gate/hosted CI results are recorded in
 the PR delivery evidence after execution; these narrower checks do not replace them.
 
-Latest run2026-09-12T13:13:36Z uses canonical `/api` config and the latest focus/logout
+Latest run2026-09-13T10:57:42Z on candidate `aa5cde7a381405ea05355e8618b66bb0edf0a44f`
+after API #193 integration uses canonical `/api` config and the latest focus/logout
 warning source. Sanitized [browser results](browser-identity/browser.json),
 [artifact fingerprints](browser-identity/fixture.json) and [anonymous screenshot](browser-identity/login.png)
 are committed. Frontend tree SHA256: `5ca4589b4cd859535786c74db8ad3276dfa62fafe67a5cf6f55aac7f071b09f8`.
 Fingerprint means sorted relative file name + NUL + SHA256(content) per asset.
+
+Exact integrated candidate full repository gate: 33/33 PASS, unchanged clean tree;
+the separately rerun browser fixture again passed all eight scenarios with full cleanup.
 
 ## Residuals and sources
 
