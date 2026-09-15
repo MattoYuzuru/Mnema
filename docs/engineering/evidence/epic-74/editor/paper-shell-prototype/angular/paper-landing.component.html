@@ -1,0 +1,121 @@
+<div class="paper-landing">
+  <section class="paper-hero" aria-labelledby="paper-hero-title">
+    <div class="paper-hero-copy">
+      <p class="paper-kicker">Для любопытства, которое остаётся с вами</p>
+      <h1 id="paper-hero-title">Учиться.<br>Понимать.<br>Помнить.</h1>
+      <p class="paper-lede">
+        Ваши материалы — в одном месте. Записывайте важное, раскрывайте мысль
+        подробно и возвращайтесь к знанию целиком.
+      </p>
+      <div class="paper-hero-actions">
+        <a class="paper-primary-action" [routerLink]="primaryRoute()">
+          {{ primaryLabel() }} <span aria-hidden="true">→</span>
+        </a>
+        <a class="paper-text-action" href="#paper-authoring">Как это устроено</a>
+      </div>
+    </div>
+
+    <figure class="paper-memory-figure">
+      @if (engravingSrc()) {
+        <img [src]="engravingSrc()" alt="" width="1024" height="1536">
+      } @else {
+        <div class="paper-memory-plate" aria-hidden="true">
+          <span class="paper-memory-star">✦</span>
+          <span class="paper-memory-name">ΜΝΗΜΗ</span>
+          <span class="paper-memory-caption">БОГИНЯ ПАМЯТИ</span>
+        </div>
+      }
+      <figcaption>Память — это больше, чем хранение. Это понимание.</figcaption>
+    </figure>
+  </section>
+
+  <nav class="paper-feature-links" aria-label="О материалах Mnema">
+    <a href="#paper-authoring">
+      <span class="paper-feature-mark" aria-hidden="true">✺</span>
+      <strong>Записать сразу</strong>
+      <span>Оставьте мысль «На потом», не прерывая занятие или чтение.</span>
+    </a>
+    <a href="#paper-materials">
+      <span class="paper-feature-mark" aria-hidden="true">◎</span>
+      <strong>Разобрать глубже</strong>
+      <span>Превратите короткую запись в связный материал.</span>
+    </a>
+    <a href="#paper-browse">
+      <span class="paper-feature-mark" aria-hidden="true">✦</span>
+      <strong>Вернуться к целому</strong>
+      <span>Читайте материал без искусственного деления на две стороны.</span>
+    </a>
+  </nav>
+
+  <section id="paper-authoring" class="paper-section paper-section-authoring" aria-labelledby="paper-authoring-title">
+    <div class="paper-section-copy">
+      <p class="paper-kicker">01 / СОБИРАЙТЕ</p>
+      <h2 id="paper-authoring-title">Мысль — короткая.<br>Знание — глубокое.</h2>
+      <p>
+        Сохраните фрагмент «На потом», пока идёт урок, чтение или разговор.
+        Позже добавьте контекст, примеры и собственные связи — без спешки.
+      </p>
+      <a class="paper-outline-action" [routerLink]="primaryRoute()">
+        Перейти к своим колодам <span aria-hidden="true">→</span>
+      </a>
+    </div>
+
+    <article class="paper-note" aria-labelledby="paper-note-title">
+      <p class="paper-note-overline">ИЗ ЛИЧНОЙ КОЛОДЫ</p>
+      <h3 id="paper-note-title">Серендипность</h3>
+      <p class="paper-note-translation">Счастливая случайность, которая открывает новое.</p>
+      <div class="paper-note-rule"></div>
+      <p class="paper-note-label">Мой контекст</p>
+      <p>Книжный магазин, на который я наткнулся по дороге домой.</p>
+    </article>
+  </section>
+
+  <section id="paper-materials" class="paper-section paper-section-materials" aria-labelledby="paper-materials-title">
+    <div class="paper-material-sheet" aria-label="Пример цельного материала">
+      <p class="paper-note-overline">ОДИН МАТЕРИАЛ · СВОБОДНАЯ СТРУКТУРА</p>
+      <h3>Почему мы запоминаем истории</h3>
+      <p>Короткое определение может соседствовать с длинным объяснением, цитатой и примером.</p>
+      <blockquote>Смысл остаётся связанным, даже если материал занимает несколько экранов.</blockquote>
+      <p class="paper-source">ЗАМЕТКА · КОНТЕКСТ · ИСТОЧНИК</p>
+    </div>
+
+    <div class="paper-section-copy">
+      <p class="paper-kicker">02 / РАЗБИРАЙТЕСЬ</p>
+      <h2 id="paper-materials-title">Не всё знание помещается на карточке.</h2>
+      <p>
+        Материал может быть словом, правилом, конспектом или большим разбором.
+        Mnema сохраняет его как цельный документ, а не заставляет подгонять мысль
+        под обязательные «лицо» и «оборот».
+      </p>
+      <a class="paper-outline-action" href="#paper-browse">
+        Посмотреть, как читать <span aria-hidden="true">↓</span>
+      </a>
+    </div>
+  </section>
+
+  <section id="paper-browse" class="paper-section paper-section-browse" aria-labelledby="paper-browse-title">
+    <div class="paper-section-copy">
+      <p class="paper-kicker">03 / ВОЗВРАЩАЙТЕСЬ</p>
+      <h2 id="paper-browse-title">Весь материал остаётся рядом.</h2>
+      <p>
+        Откройте сохранённый разбор и прочитайте его в спокойном режиме Browse.
+        Длинный текст прокручивается естественно, а структура, направление письма
+        и языковые пометки сохраняют смысл.
+      </p>
+    </div>
+
+    <aside class="paper-annotation" aria-label="Принцип Mnema">
+      <span aria-hidden="true">✦</span>
+      <p>Ваши знания.<br>Ваш контекст.<br>Ваш ритм.</p>
+    </aside>
+  </section>
+
+  <section class="paper-closing" aria-labelledby="paper-closing-title">
+    <span aria-hidden="true">•</span>
+    <h2 id="paper-closing-title">Оставьте место любопытству.</h2>
+    <p>Начните с одной колоды. Наполните её тем, что важно вам.</p>
+    <a class="paper-primary-action" [routerLink]="primaryRoute()">
+      {{ primaryLabel() }} <span aria-hidden="true">→</span>
+    </a>
+  </section>
+</div>

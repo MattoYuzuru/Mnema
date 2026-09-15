@@ -1,0 +1,32 @@
+[
+  {
+    "name": "indigo ink on paper",
+    "foreground": "#281378",
+    "background": "#f4f0e5"
+  },
+  {
+    "name": "body text on paper",
+    "foreground": "#342e44",
+    "background": "#f4f0e5"
+  },
+  {
+    "name": "muted text on paper",
+    "foreground": "#625c70",
+    "background": "#f4f0e5"
+  },
+  {
+    "name": "paper sheet text on indigo",
+    "foreground": "#fbf8ef",
+    "background": "#281378"
+  },
+  {
+    "name": "body text on paper sheet",
+    "foreground": "#342e44",
+    "background": "#fbf8ef"
+  },
+  {
+    "name": "indigo ink on soft lavender",
+    "foreground": "#281378",
+    "background": "#e8e1ed"
+  }
+]

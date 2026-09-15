@@ -1,0 +1,106 @@
+c50618939402a515f433c98ffdde057bd80db845d9a15b684820c21255e57c99
+IMAGE,sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+/var/run/postgresql:5432 - accepting connections
+ENV,PostgreSQL 18.4 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit,java=21.0.11,max_heap=1073741824
+CONFIG,autovacuum=off;fsync=on;full_page_writes=on;max_connections=20;shared_buffers=32768;synchronous_commit=on
+METRIC,label,operations,logical_row_mutations,payload_queries,logical_payload_bytes,heap_delta,toast_delta,index_delta,wal_bytes,p50_ms,p95_ms,p99_ms
+PASS,SR4 UUID/native short exact round-trip;16384-byte accept/16385 reject;stableIDs;dangling/wrongkind/wrongcount/crossscope rejected
+PASS,SR2 grow across 12 boundaries to 1057; random shrink to zero; regrow/churn350; min16/max32/merge/redistribute/collapse/counts/history values
+PASS,SR3 delta count32/33 rollover;180 insert/edit/delete/move;all214 retained snapshots exact;4096-byte membership patch budget
+METRIC,uuid_tree_1000_build,1,1098,65,105032,114688,0,98304,398344,105.406,105.406,105.406
+METRIC,uuid_tree_1000_metadata,10,10,0,0,8192,0,16384,3792,0.500,0.895,0.895
+METRIC,uuid_tree_1000_edit,1,67,6,11122,8192,0,8192,26704,7.419,7.419,7.419
+METRIC,uuid_delta_1000_edit,1,1,0,0,8192,0,0,368,1.068,1.068,1.068
+METRIC,uuid_tree_1000_delete,1,66,7,14168,8192,0,8192,26432,8.192,8.192,8.192
+METRIC,uuid_delta_1000_delete,1,1,0,0,0,0,0,368,1.025,1.025,1.025
+METRIC,uuid_tree_1000_move,1,143,20,26736,8192,0,8192,50576,23.150,23.150,23.150
+METRIC,uuid_delta_1000_move,1,1,0,0,0,0,0,368,0.947,0.947,0.947
+METRIC,uuid_tree_1000_bulk100,1,5189,900,839290,524288,0,491520,1836824,1112.722,1112.722,1112.722
+METRIC,uuid_delta_1000_bulk100,1,100,0,0,16384,122880,24576,161104,51.045,51.045,51.045
+METRIC,uuid_tree_1000_page100,10,0,70,149220,0,0,0,0,2.982,3.357,3.357
+METRIC,uuid_delta_1000_array_page100,10,0,20,985740,0,0,0,0,1.919,2.205,2.205
+PASS,SR3 equal membership edits/delete/move/bulk100/checkpoint rollover n=1000
+METRIC,uuid_tree_10000_build,1,10971,647,1072859,1171456,0,942080,3921088,1127.124,1127.124,1127.124
+METRIC,uuid_tree_10000_metadata,10,10,0,0,0,0,0,3600,0.563,1.063,1.063
+METRIC,uuid_tree_10000_edit,1,79,9,12656,8192,0,24576,38992,11.527,11.527,11.527
+METRIC,uuid_delta_10000_edit,1,1,0,0,0,0,0,368,1.389,1.389,1.389
+METRIC,uuid_tree_10000_delete,1,78,11,18040,0,0,32768,35704,13.787,13.787,13.787
+METRIC,uuid_delta_10000_delete,1,1,0,0,0,0,0,368,1.108,1.108,1.108
+METRIC,uuid_tree_10000_move,1,164,24,30776,16384,0,8192,58816,27.017,27.017,27.017
+METRIC,uuid_delta_10000_move,1,1,0,0,0,0,0,368,0.959,0.959,0.959
+METRIC,uuid_tree_10000_bulk100,1,6089,900,971090,614400,0,524288,2148128,938.303,938.303,938.303
+METRIC,uuid_delta_10000_bulk100,1,100,0,0,16384,1228800,24576,1306216,121.266,121.266,121.266
+METRIC,uuid_tree_10000_page100,10,0,70,155810,0,0,0,0,3.206,3.860,3.860
+METRIC,uuid_delta_10000_array_page100,10,0,20,9805740,0,0,0,0,11.324,17.942,17.942
+PASS,SR3 equal membership edits/delete/move/bulk100/checkpoint rollover n=10000
+METRIC,uuid_tree_50000_build,1,54844,3229,5367771,5865472,0,4980736,19799736,5864.299,5864.299,5864.299
+METRIC,uuid_tree_50000_metadata,10,10,0,0,0,0,0,3600,0.794,1.124,1.124
+METRIC,uuid_tree_50000_edit,1,99,12,15336,8192,0,8192,37960,18.295,18.295,18.295
+METRIC,uuid_delta_50000_edit,1,1,0,0,0,0,0,368,1.624,1.624,1.624
+METRIC,uuid_tree_50000_delete,1,98,15,22643,8192,0,0,33752,17.031,17.031,17.031
+METRIC,uuid_delta_50000_delete,1,1,0,0,0,0,0,368,0.939,0.939,0.939
+METRIC,uuid_tree_50000_move,1,203,31,37915,24576,0,8192,69784,33.955,33.955,33.955
+METRIC,uuid_delta_50000_move,1,1,0,0,0,0,0,368,0.957,0.957,0.957
+METRIC,uuid_tree_50000_bulk100,1,7989,1200,1224690,778240,0,679936,2805136,1423.733,1423.733,1423.733
+METRIC,uuid_delta_50000_bulk100,1,100,0,0,16384,6127616,73728,6423704,395.183,395.183,395.183
+METRIC,uuid_tree_50000_page100,10,0,80,168490,0,0,0,0,3.592,3.950,3.950
+METRIC,uuid_delta_50000_array_page100,10,0,20,49005740,0,0,0,0,48.619,109.693,109.693
+PASS,SR3 equal membership edits/delete/move/bulk100/checkpoint rollover n=50000
+METRIC,uuid_tree_100000_build,1,109683,6455,10735468,11739136,0,9961472,39598504,11901.366,11901.366,11901.366
+METRIC,uuid_tree_100000_metadata,10,10,0,0,0,0,0,3600,0.508,0.859,0.859
+METRIC,uuid_tree_100000_edit,1,101,12,15636,16384,0,8192,38632,13.348,13.348,13.348
+METRIC,uuid_delta_100000_edit,1,1,0,0,0,0,0,368,1.819,1.819,1.819
+METRIC,uuid_tree_100000_delete,1,100,15,22943,8192,0,16384,42456,16.159,16.159,16.159
+METRIC,uuid_delta_100000_delete,1,1,0,0,0,0,0,368,1.069,1.069,1.069
+METRIC,uuid_tree_100000_move,1,207,31,38515,16384,0,0,70696,37.624,37.624,37.624
+METRIC,uuid_delta_100000_move,1,1,0,0,0,0,0,368,1.197,1.197,1.197
+METRIC,uuid_tree_100000_bulk100,1,8189,1200,1254690,794624,0,647168,2853528,1277.978,1277.978,1277.978
+METRIC,uuid_delta_100000_bulk100,1,100,0,0,16384,12255232,147456,12816264,1030.736,1030.736,1030.736
+METRIC,uuid_tree_100000_page100,10,0,80,169990,0,0,0,0,4.942,5.776,5.776
+METRIC,uuid_delta_100000_array_page100,10,0,20,98005740,0,0,0,0,93.865,113.599,113.599
+METRIC,delta_prepared_generation100000,1,100002,0,0,8454144,0,10518528,31578696,2036.351,2036.351,2036.351
+METRIC,delta_prepared_fork_chain25_first100,25,25,25,235025,8192,0,8192,6904,1.244,2.293,3.085
+METRIC,tree_fork_chain25_first100,25,50,175,447525,8192,0,8192,16856,5.283,5.689,6.771
+METRIC,delta_prepared_fork_private_edit,1,1,0,0,8192,0,8192,368,0.652,0.652,0.652
+PASS,SR3 prepared100k delta generation fork-of-fork25 independent sparse edit, generation preparation excluded from foreground
+PASS,SR3 equal membership edits/delete/move/bulk100/checkpoint rollover n=100000
+METRIC,native_tree_document1000edits,1000,42000,6000,7300000,4382720,2727936,3932160,19820728,7.239,9.707,10.578
+METRIC,native_delta_nodehead1000edits,1000,2000,0,0,81920,15867904,278528,16659080,1.644,2.065,13.924
+METRIC,native_tree_equal_document_rev0,10,0,60,3072370,0,0,0,0,5.617,6.707,6.707
+METRIC,native_delta_equal_document_rev0,10,0,20,2937600,0,0,0,0,3.106,5.728,5.728
+METRIC,native_tree_equal_document_rev1,10,0,60,3072370,0,0,0,0,5.229,6.394,6.394
+METRIC,native_delta_equal_document_rev1,10,0,20,2960530,0,0,0,0,3.142,5.102,5.102
+METRIC,native_tree_equal_document_rev31,10,0,60,3072370,0,0,0,0,5.363,6.090,6.090
+METRIC,native_delta_equal_document_rev31,10,0,20,2983460,0,0,0,0,3.182,3.607,3.607
+METRIC,native_tree_equal_document_rev32,10,0,60,3072370,0,0,0,0,5.439,6.253,6.253
+METRIC,native_delta_equal_document_rev32,10,0,20,3006390,0,0,0,0,3.345,5.387,5.387
+METRIC,native_tree_equal_document_rev33,10,0,60,3072370,0,0,0,0,5.132,5.973,5.973
+METRIC,native_delta_equal_document_rev33,10,0,20,3029320,0,0,0,0,3.561,3.893,3.893
+METRIC,native_tree_equal_document_rev999,10,0,60,3072370,0,0,0,0,5.600,7.919,7.919
+METRIC,native_delta_equal_document_rev999,10,0,20,3235690,0,0,0,0,3.608,4.484,4.484
+METRIC,native_tree_equal_document_rev1000,10,0,60,3072370,0,0,0,0,5.540,6.438,6.438
+METRIC,native_delta_equal_document_rev1000,10,0,20,3258620,0,0,0,0,3.440,6.522,6.522
+PASS,SR3 identical native payloads/order/nodeIDs at revisions0/1/31/32/33/999/1000;node-head delta checkpoint+patch transfer and client replay;64KiB byte rollover
+PASS,SR1 worker transaction atomic revision/head/receipt/projection before and after disconnect;staging survives;four simultaneous same-command retries one complete result;payload/stale conflicts
+PLAN,scoped_expiry,[{"Plan":{"Node Type":"Limit","Parallel Aware":false,"Async Capable":false,"Startup Cost":0.29,"Total Cost":1.42,"Plan Rows":8,"Plan Width":21,"Actual Startup Time":0.026,"Actual Total Time":0.03,"Actual Rows":8.0,"Actual Loops":1,"Disabled":false,"Shared Hit Blocks":11,"Shared Read Blocks":0,"Shared Dirtied Blocks":0,"Shared Written Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Dirtied Blocks":0,"Local Written Blocks":0,"Temp Read Blocks":0,"Temp Written Blocks":0,"Plans":[{"Node Type":"LockRows","Parent Relationship":"Outer","Parallel Aware":false,"Async Capable":false,"Startup Cost":0.29,"Total Cost":569.24,"Plan Rows":4013,"Plan Width":21,"Actual Startup Time":0.026,"Actual Total Time":0.028,"Actual Rows":8.0,"Actual Loops":1,"Disabled":false,"Shared Hit Blocks":11,"Shared Read Blocks":0,"Shared Dirtied Blocks":0,"Shared Written Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Dirtied Blocks":0,"Local Written Blocks":0,"Temp Read Blocks":0,"Temp Written Blocks":0,"Plans":[{"Node Type":"Index Scan","Parent Relationship":"Outer","Parallel Aware":false,"Async Capable":false,"Scan Direction":"Forward","Index Name":"root_expiry","Relation Name":"root","Alias":"root","Startup Cost":0.29,"Total Cost":529.11,"Plan Rows":4013,"Plan Width":21,"Actual Startup Time":0.017,"Actual Total Time":0.018,"Actual Rows":8.0,"Actual Loops":1,"Disabled":false,"Index Cond":"((scope = 'e150137c-f497-4153-9235-7de9c3d41e24'::uuid) AND (expires <= 10))","Rows Removed by Index Recheck":0,"Index Searches":1,"Shared Hit Blocks":3,"Shared Read Blocks":0,"Shared Dirtied Blocks":0,"Shared Written Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Dirtied Blocks":0,"Local Written Blocks":0,"Temp Read Blocks":0,"Temp Written Blocks":0}]}]},"Planning":{"Shared Hit Blocks":34,"Shared Read Blocks":0,"Shared Dirtied Blocks":0,"Shared Written Blocks":0,"Local Hit Blocks":0,"Local Read Blocks":0,"Local Dirtied Blocks":0,"Local Written Blocks":0,"Temp Read Blocks":0,"Temp Written Blocks":0},"Planning Time":0.203,"Triggers":[],"Execution Time":0.043}]
+PASS,SR5 scoped expiry index:20000 foreign expired roots+5000 local future roots+16 local expired;index(scope,expires) reads8 candidate rows with zero filtered rows
+PASS,SR5 normalized typed DAG GC max8candidates/32edges per object;source deletion;fork/draft/attempt page-to-block reachability;orphan page+block;deterministic newpin/staging lease races;disconnect+queue restart;bounded expiry+grace
+PASS,CHOICE_EXPERIMENT_ALL_ASSERTIONS
+TOTAL,Stats[rows=453057, heap=47054848, toast=46014464, index=45801472, wal=249442112]
+ROWS,object,15440
+ROWS,edge,319415
+ROWS,root,25020
+ROWS,garbage,15436
+ROWS,revision,67
+ROWS,deck,26
+ROWS,receipt,1
+ROWS,projection,1
+ROWS,checkpoint,58
+ROWS,patch,1573
+ROWS,current_node,128
+ROWS,generation_state,1
+ROWS,generation,100000
+ROWS,delta_deck,25
+ROWS,overlay,1
+VACUUM
+AFTER_VACUUM_DATABASE_BYTES,147756735

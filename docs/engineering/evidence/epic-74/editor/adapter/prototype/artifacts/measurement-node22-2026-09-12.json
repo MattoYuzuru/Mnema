@@ -1,0 +1,11 @@
+{
+  "classification": "synthetic local adapter measurement; not a production SLO or browser-render benchmark",
+  "runtime": "v22.23.2",
+  "architecture": "arm64",
+  "platform": "darwin",
+  "fixture": { "serializedBytes": 986013, "nodes": 7001, "paragraphs": 3500, "depth": 3 },
+  "iterations": 12,
+  "roundTripMs": { "min": 79.92499999999995, "median": 92.34375, "p95": 135.780958, "max": 135.780958 },
+  "heapUsedDeltaBytesAfterGc": 7705088,
+  "gcExposed": true
+}

@@ -1,0 +1,19 @@
+1820878a191ec67d877c5c63fab5ab75a0fa89f9a04178848793e5bcb8191277
+IMAGE,sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+/var/run/postgresql:5432 - accepting connections
+ENV,PostgreSQL 18.4 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit,java=21.0.11,heap=1073741824
+METRIC,label,operations,row_mutations,payload_queries,utf8_payload_bytes,heap_delta,toast_delta,index_delta,wal_bytes,p50_ms,p95_ms
+FIXTURE,native_utf8=25169,long_text_utf8=24562,physical_fragment_target=4096,physical_object_limit=16384
+METRIC,large_node_initial_save,1,23,0,0,24576,24576,40960,36952,33.114,33.114
+METRIC,large_node_tiny_replace,1,11,0,0,0,8192,0,6872,6.600,6.600
+REUSE,replacement,unchanged_fragments=5,changed_fragments=1,header_reused=true
+METRIC,large_node_short_insert,1,11,0,0,0,0,0,6872,5.303,5.303
+REUSE,insertion,unchanged_fragments=5,changed_fragments=1,header_reused=true
+METRIC,large_node_history0,10,0,10,253980,0,0,0,0,1.995,2.386
+METRIC,large_node_history1,10,0,10,253980,0,0,0,0,1.294,1.453
+METRIC,large_node_history2,10,0,10,254060,0,0,0,0,1.190,1.393
+BOUNDS,max_object_jsonb_bytes=4115,fragment_count=6,semantic_ids=5
+PASS,single oversized semantic text;Russian/RTL/ruby/emoji context;stable paragraph/text IDs;physical fragment replacement and insertion reuse;exact old history;page-fragment FK and bounded GC seam
+ROWS,object,8
+ROWS,edge,7
+PASS,LARGE_NATIVE_NODE_ALL_ASSERTIONS

@@ -1,0 +1,98 @@
+
+> mnema-r74-editor-adapter-prototype@0.0.0 test
+> node --test test/*.test.js
+
+TAP version 13
+# Subtest: Mnema AST round-trips semantically and never exports private ProseMirror state
+ok 1 - Mnema AST round-trips semantically and never exports private ProseMirror state
+  ---
+  duration_ms: 4.119834
+  type: 'test'
+  ...
+# Subtest: formatting a substring splits runs without duplicate IDs; undo and redo remain visible-history operations
+ok 2 - formatting a substring splits runs without duplicate IDs; undo and redo remain visible-history operations
+  ---
+  duration_ms: 4.776083
+  type: 'test'
+  ...
+# Subtest: split normalization is part of the same history event and round-trips exact IDs
+ok 3 - split normalization is part of the same history event and round-trips exact IDs
+  ---
+  duration_ms: 1.592625
+  type: 'test'
+  ...
+# Subtest: join undo and redo restore the exact before/after native identities
+ok 4 - join undo and redo restore the exact before/after native identities
+  ---
+  duration_ms: 1.196209
+  type: 'test'
+  ...
+# Subtest: top-level move retains every identity and unknown payload
+ok 5 - top-level move retains every identity and unknown payload
+  ---
+  duration_ms: 1.889833
+  type: 'test'
+  ...
+# Subtest: paste/copy freshens IDs recursively, including opaque unknown subtrees
+ok 6 - paste/copy freshens IDs recursively, including opaque unknown subtrees
+  ---
+  duration_ms: 1.441209
+  type: 'test'
+  ...
+# Subtest: copy assigns one fresh native link identity across all of its text runs
+ok 7 - copy assigns one fresh native link identity across all of its text runs
+  ---
+  duration_ms: 1.046375
+  type: 'test'
+  ...
+# Subtest: external HTTPS link marks are normalized and paste freshening supplies native identities
+ok 8 - external HTTPS link marks are normalized and paste freshening supplies native identities
+  ---
+  duration_ms: 0.988125
+  type: 'test'
+  ...
+# Subtest: splitting linked content keeps the first link ID and undo/redo restores exact native ASTs
+ok 9 - splitting linked content keeps the first link ID and undo/redo restores exact native ASTs
+  ---
+  duration_ms: 0.961875
+  type: 'test'
+  ...
+# Subtest: links preserve mixed text, ruby, and opaque children and copied atoms receive the fresh link mark
+ok 10 - links preserve mixed text, ruby, and opaque children and copied atoms receive the fresh link mark
+  ---
+  duration_ms: 0.707583
+  type: 'test'
+  ...
+# Subtest: unknown types and future known versions survive an unrelated edit plus undo/redo
+ok 11 - unknown types and future known versions survive an unrelated edit plus undo/redo
+  ---
+  duration_ms: 0.627791
+  type: 'test'
+  ...
+# Subtest: future root opens read-only and exports the untouched native document
+ok 12 - future root opens read-only and exports the untouched native document
+  ---
+  duration_ms: 0.096125
+  type: 'test'
+  ...
+# Subtest: validation rejects duplicate IDs, unsafe links, invalid direction, and oversized scalars
+ok 13 - validation rejects duplicate IDs, unsafe links, invalid direction, and oversized scalars
+  ---
+  duration_ms: 0.613125
+  type: 'test'
+  ...
+# Subtest: long Russian + RTL/LTR + ruby fixture remains within the bounded adapter contract
+ok 14 - long Russian + RTL/LTR + ruby fixture remains within the bounded adapter contract
+  ---
+  duration_ms: 6.495292
+  type: 'test'
+  ...
+1..14
+# tests 14
+# suites 0
+# pass 14
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 92.786917

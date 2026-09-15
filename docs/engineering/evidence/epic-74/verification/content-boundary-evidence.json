@@ -1,0 +1,37 @@
+{
+  "evidence_bundle": {
+    "work_package": "#173 prerequisite / PR #174, not Epic #74 completion",
+    "revision": "2afcb1e631c70b69c9ccde0cdceb0d7fc1e80a00",
+    "commands": [
+      {"command": "Full PR workflow local gate, initial /private/tmp worktree", "exit_code": 1, "state": "RESOLVED_ENVIRONMENT", "evidence": "Colima bind mounts unavailable; first runner started header checks before build; pinned Redis pull timed out"},
+      {"command": "Full PR workflow local gate, mounted worktree", "exit_code": 1, "state": "RESOLVED_ENVIRONMENT", "evidence": "31 of 32 groups passed; pinned Redis daemon pull timed out"},
+      {"command": "Full PR workflow local gate, final pre-push", "exit_code": 0, "state": "PASS", "evidence": "/tmp/mnema-epic74-delivery.V0VJES/gate-2afcb1e-final-prepush/summary.txt"},
+      {"command": "git diff --check 33a71f8..2afcb1e", "exit_code": 0, "state": "PASS"},
+      {"command": "Full PR workflow local gate, fresh pre-merge", "exit_code": 0, "state": "PASS", "evidence": "/tmp/mnema-epic74-delivery.V0VJES/gate-2afcb1e-premerge/summary.txt"},
+      {"command": "Full PR workflow local gate on merged main2b20459", "exit_code": 0, "state": "PASS", "evidence": "/tmp/mnema-epic74-delivery.V0VJES/gate-2b20459-main/summary.txt"},
+      {"command": "PR174 protected squash readiness and hosted checks", "exit_code": 0, "state": "PASS", "evidence": "Both quality jobs, dependencyreview and all CodeQL checks passed; strictup-to-date, zero unresolvedthreads; merged2b20459cf6511a1ce77f0087a403e0aeb001800e"},
+      {"command": "Verify Main CI 34037515842 on merged 2b20459", "exit_code": 0, "state": "PASS", "evidence": "https://github.com/MattoYuzuru/Mnema/actions/runs/34037515842"},
+      {"command": "Verify staging deployment and black-box release smoke 34037884045", "exit_code": 0, "state": "PASS", "evidence": "https://github.com/MattoYuzuru/Mnema/actions/runs/34037884045"},
+      {"command": "Verify production boundary in run 34037968013", "exit_code": 0, "state": "PASS", "evidence": "Guard blocked promotion until #147; preview-production and deploy-production jobs both skipped; no production operation"}
+    ],
+    "tests": [
+      {"command": "backend ./gradlew quality", "exit_code": 0, "tests": 681, "failures": 0, "errors": 0, "skipped": 0, "coverage": "All six configured thresholds pass; Identity92.25%, Learning96.07%"},
+      {"command": "frontend npm ci && npm run lint && npm run test && npm run build", "exit_code": 0, "tests": 51},
+      {"command": "All root-level PR workflow policy/contract/unit/container integration commands", "exit_code": 0, "evidence": "Includes nginx response security, PG16-to18 recovery, disposable purge rehearsal"}
+    ],
+    "artifacts": ["content-boundary-review.md", "image-environment.md", "https://github.com/MattoYuzuru/Mnema/pull/174"],
+    "findings": [
+      {"id": "CB-1", "state": "CLOSED", "evidence": "Independent grant removal and generation advancement tests in2afcb1e; unchanged counterpart asserted; reviewer checked source and targeted XML"}
+    ],
+    "limitations": [
+      "Main CI and staging release smoke passed; this maintenance release is not an integrated Epic #74 authoring verification. Production promotion remains unauthorized and was skipped.",
+      "No Learning HTTP filter/API, persisted schema, editor/browser integration or full Epic acceptance is claimed.",
+      "Owning HTTP slice must bound request materialization, canonical expansion and concurrency; validate native capabilities and authorization.",
+      "Dedicated backend lint/static analysis and frontend coverage threshold are not configured; no checks were disabled.",
+      "Existing default-branch dependency alerts were reported by GitHub on push; no dependency files changed here and no general security-clean claim is made."
+    ],
+    "verified_environments": ["macOS arm64, Temurin21.0.11, Node22.23.2/npm10.9.8, Chrome152, Colima Docker29.5.2, real PostgreSQL tests", "Configured staging release rollouts and black-box smoke for merged 2b20459"],
+    "unverified_environments": ["Production deployment/data", "Integrated Epic74 authoring/browser/device environment"],
+    "release_ready": false
+  }
+}

@@ -1,0 +1,7 @@
+METRIC,label,operations,row_mutations,payload_queries,utf8_payload_bytes,heap_delta,toast_delta,index_delta,wal_bytes,p50_ms,p95_ms
+METRIC,large_node_initial_save,1,23,0,0,24576,24576,40960,36952,33.114,33.114
+METRIC,large_node_tiny_replace,1,11,0,0,0,8192,0,6872,6.600,6.600
+METRIC,large_node_short_insert,1,11,0,0,0,0,0,6872,5.303,5.303
+METRIC,large_node_history0,10,0,10,253980,0,0,0,0,1.995,2.386
+METRIC,large_node_history1,10,0,10,253980,0,0,0,0,1.294,1.453
+METRIC,large_node_history2,10,0,10,254060,0,0,0,0,1.190,1.393
