@@ -1,5 +1,7 @@
 # AI Service (`backend/services/ai`)
 
+> **Status: legacy.** Retained as v1 replacement input; AI is deferred to Epic #77.
+
 ## Назначение
 
 `ai` инкапсулирует AI-функциональность Mnema:
@@ -48,4 +50,3 @@
 - Использует `core` как источник/приемник карточек и шаблонов.
 - Использует `media` для загрузки/резолва AI-сгенерированных ассетов.
 - Вызывается фронтендом из AI-модалок и AI import workflow.
-

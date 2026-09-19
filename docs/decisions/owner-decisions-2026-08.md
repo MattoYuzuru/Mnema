@@ -3,7 +3,7 @@ artifact:
   id: owner-decisions-2026-08
   type: decision-log
   title: "Mnema v2 owner decisions"
-  status: accepted-input
+  status: accepted
   created_at: "2026-08-15"
   updated_at: "2026-09-06"
   owners: ["project-owner"]
@@ -137,7 +137,7 @@ artifact:
 |---|---|---|
 | O-01 | Первый launch cohort: языки или exam/general students? | Запустить два concierge cohort внутри уже доступных каналов; roadmap P0 общий, messaging измерять отдельно. |
 | O-02 | Что делать, если изменился проверяемый ответ? | **Решено 2026-09-06:** сохранить историю и текущее состояние/расписание, без автоматической revalidation. Явное «Учить заново» начинает новый learning epoch. Действительно новая независимая цель получает собственное начальное состояние. |
-| O-03 | Какой editor engine? | Spike на IME/ruby/RTL, mobile selection, accessibility, large docs and Angular integration; dependency только после разрешения. |
+| O-03 | Какой editor engine? | **Решено в #74:** bounded ProseMirror adapter с Mnema-owned persisted format; unrun real IME/device/AT sessions остаются честной verification boundary. |
 | O-04 | Какой exact Anki conversion coverage достижим без legacy renderer? | После native launch собрать corpus; компилировать common HTML/CSS patterns в AST, выпускать per-item warnings и не публиковать unsafe/unsupported behaviour. |
 | O-05 | Точный будущий AI Starter quota и нужен ли Plus? | Исторический ориентир 299 ₽/30 дней относится к AI, не deck/offline offer. После реактивации #77 проверить цену и quota по measured p95 cost; Plus не вводить до доказанной необходимости. |
 | O-06 | AI provider routing? | Golden eval — фиксированный набор тестовых prompts/expected outputs. Сравнить direct DeepSeek и минимум один не-Yandex fallback по languages/STEM/code, cost/accepted item, p95 latency, privacy и доступности из РФ; см. [launch economics](../product/russia-launch-economics-2026.md). |
@@ -149,10 +149,13 @@ artifact:
 | O-12 | Количество бесплатных колод и платность offline? | Гипотезы; 5+5 не фиксировать как тариф. Сохранность существующих колод при окончании подписки обязательна. |
 | O-13 | Какая механика beyond P0 первой? | Matching с explicit short text/audio projections обязателен в target и prototype; production ordering относительно P0 уточнить без реализации всех mechanics сразу. |
 
-## Immediate implementation gates
+## Current implementation sequence
 
-1. Согласовать #74–#76 по storage, deck-local identity, projection/answer bindings, drafts, session modes и media references; статус engineering proposals не скрывать.
-2. Проверить новый бумажный prototype на основных пользовательских сценариях; production frontend строится отдельно на Angular.
-3. Разбить реализацию на reviewable content/UI, media и Study slices; сохранить community/AI/native offline вне первого own-deck релиза.
-4. При отдельной работе с GitHub синхронизировать scope эпиков; настоящая публикация/изменение задач этим документом не выполняются.
-5. После replacement gates завершить #146/#147; destructive cutover остаётся отдельной последней operational задачей.
+1. #74 завершил private Deck/LearningItem, draft/Capture, native editor/renderer и
+   paper-direction authoring; его contracts являются входом, а не новым gate.
+2. Отдельно refine #75 Study и #76 media в reviewable 1–3-дневные slices; сохранить
+   community/AI/native offline вне первого own-deck релиза.
+3. GitHub Issue и Project должны отражать реальную готовность; этот decision log не
+   переводит эпики в Ready сам по себе.
+4. После replacement gates завершить #146/#147; destructive cutover остаётся
+   отдельной последней operational задачей.

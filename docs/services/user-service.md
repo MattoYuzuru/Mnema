@@ -1,6 +1,7 @@
 # User Service (`backend/services/user`)
 
-> **Legacy runtime inventory:** этот документ описывает текущий сервис до greenfield replacement. Epic #73 переносит долгоживущие profile/identity данные в единый Identity & Account deployable и удаляет отдельный `user` runtime без compatibility proxy.
+> **Status: legacy.** Этот удалённый module описан только как v1 evidence. Epic #73
+> перенёс profile/identity в единый Identity & Account без compatibility proxy.
 
 ## Назначение
 

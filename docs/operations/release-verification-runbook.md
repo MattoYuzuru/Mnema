@@ -3,7 +3,7 @@ artifact:
   id: release-verification-runbook
   type: runbook
   title: "Mnema release smoke, diagnostics and rollback"
-  status: current
+  status: superseded
   created_at: "2026-08-19"
   updated_at: "2026-09-05"
   owners: ["project-owner"]

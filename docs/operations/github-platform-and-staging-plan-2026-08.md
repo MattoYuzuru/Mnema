@@ -3,7 +3,7 @@ artifact:
   id: github-platform-and-staging-plan-2026-08
   type: operations-plan
   title: "GitHub platform, CI/CD and staging plan"
-  status: current
+  status: historical
   created_at: "2026-08-15"
   updated_at: "2026-08-24"
   owners: ["project-owner"]
@@ -11,6 +11,10 @@ artifact:
 ---
 
 # GitHub, CI/CD и staging Mnema v2
+
+> Historical plan from the hosted-server phase. Current delivery follows
+> [local-development-delivery.md](local-development-delivery.md); do not execute or
+> wait for the operational paths described below.
 
 ## Решение
 

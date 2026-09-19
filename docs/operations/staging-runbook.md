@@ -3,7 +3,7 @@ artifact:
   id: staging-runbook
   type: runbook
   title: "Mnema staging bootstrap and secret contract"
-  status: current
+  status: superseded
   created_at: "2026-08-18"
   updated_at: "2026-09-05"
   owners: ["project-owner"]

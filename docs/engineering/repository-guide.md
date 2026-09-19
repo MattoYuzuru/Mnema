@@ -5,197 +5,276 @@ artifact:
   title: "Mnema repository guide"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-08-30"
+  updated_at: "2026-09-19"
   owners: ["project-owner"]
-  evidence_revision: "8e0c83d"
+  evidence_revision: "933da3e60add2102ed7480342dfd3de95a8a255b"
 ---
 
 # Repository guide
 
-Start here when changing Mnema. This page maps the v1 checkout as evidence; the accepted target is a direct greenfield replacement. Proposed relational/product details remain labelled, but `/v2`, compatibility wrappers and preservation of old module/algorithm boundaries are already rejected.
+This guide describes the checkout after Epic #74. Root [`AGENTS.md`](../../AGENTS.md)
+is normative; [docs/README.md](../README.md) owns documentation status/navigation.
 
 ## First read
 
-1. Root [AGENTS.md](../../AGENTS.md) — engineering, UX, dependency and quality constraints.
-2. [System overview](../system-overview.md) — current service topology.
-3. The service document and nearby tests for the area being changed.
-4. For content/review changes, read the current schema migrations, accepted [owner decisions](../decisions/owner-decisions-2026-08.md), proposed [content platform v2](../architecture/content-platform-v2.md), [native content format](../architecture/learning-content-format-v2.md) and [exercise catalog](../product/exercise-catalog-v2.md).
-5. For work that can reach production, read the [delivery audit](../operations/delivery-audit-2026-08.md).
+1. [`AGENTS.md`](../../AGENTS.md).
+2. [System overview](../system-overview.md).
+3. The current guide for the owning runtime and its nearby tests.
+4. [Local-only delivery](../operations/local-development-delivery.md) before any
+   delivery decision.
+5. For #75, use the [handoff below](#handoff-для-epic-75), not legacy review code.
 
-The [project review](../reviews/project-review-2026-08.md) and [product direction](../product/product-direction-v2.md) are proposals, not descriptions of implemented behavior.
+## Platform baseline
 
-## Map
+| Platform | Exact repository baseline | Source |
+|---|---:|---|
+| Java | toolchain 21 | `backend/build.gradle.kts`, CI setup-java |
+| Spring Boot | 3.5.16 | `backend/settings.gradle.kts` |
+| Kotlin | 2.1.10 | `backend/settings.gradle.kts` |
+| Gradle | 8.14.5 | `backend/gradle/wrapper/gradle-wrapper.properties` |
+| Angular | core 22.1.5; CLI/build 22.1.7 | `frontend/package.json` |
+| TypeScript | 6.0.3 | `frontend/package.json` |
+| Node | 22.23.2 in CI/images | workflows and `frontend/Dockerfile` |
+| PostgreSQL | 18 in replacement compose/tests | `docker-compose.yml`, test fixtures |
+
+The workstation JDK/Node may be newer; release claims use repository/CI toolchains,
+not whichever executable happens to be first on `PATH`.
+
+## Repository map
 
 ```text
 Mnema/
 ├── backend/
-│   ├── build.gradle.kts             aggregate quality/coverage tasks
-│   ├── settings.gradle.kts          six Spring Boot modules
-│   ├── scripts/                     backend quality support
+│   ├── build.gradle.kts                 aggregate quality and coverage
 │   └── services/
-│       ├── auth/                    OAuth/login/JWT issuer
-│       ├── user/                    profile and user-facing account data
-│       ├── core/                    decks, cards, templates, review/SRS
-│       ├── media/                   object storage and media metadata
-│       ├── import/                  asynchronous import jobs
-│       └── ai/                      providers, generation jobs, quotas
-├── frontend/                        Angular standalone SPA
-│   └── src/app/
-│       ├── core/                    app-wide services, models, guards, shell
-│       ├── features/                route/page features
-│       └── shared/                  reusable UI, pipes and utilities
-├── k8s/                             current production-style manifests
-├── monitoring/                      monitoring configuration/assets
-├── scripts/                         local launchers and local AI gateways
-├── docs/                            canonical navigation and service docs
-├── docker-compose.yml               local multi-service stack
-└── .github/workflows/               PR quality and main CI/CD
+│       ├── identity-account/            current account/OAuth/OIDC runtime
+│       ├── learning/                    current content/authoring runtime
+│       ├── core/                        legacy deck/card/review input
+│       ├── media/                       legacy media input
+│       ├── import/                      legacy import input
+│       └── ai/                          legacy/deferred AI input
+├── frontend/src/app/
+│   ├── content/                         native document/editor/renderer
+│   ├── features/authoring/              Capture, Draft, editor and Browse
+│   ├── features/own-decks/              canonical private Deck UI
+│   └── core/, shared/, other features/  mixed current shell and legacy input
+├── contracts/                           shared native/content/deck/item fixtures
+├── scripts/
+│   ├── browser-identity/                real local HTTPS browser/E2E harness
+│   ├── learning-security/               real Identity↔Learning harness
+│   ├── backup/, smoke/, purge/          deterministic policy/integration tools
+│   └── tests/                           repository policy tests
+├── docs/                                canonical navigator and evidence
+├── design/prototype/                    historical design evidence
+├── k8s/, deploy/                        paused/restoration operational sources
+├── docker-compose.yml                   replacement backend maintenance runtime
+└── .github/workflows/                   protected quality and dormant operations
 ```
 
-The current six services share one PostgreSQL instance with separate schemas/migration histories. That is a legacy runtime fact, not a target. Ordinary fixes never edit deployed migrations; the greenfield runtime instead starts a new migration history and later deletes the replaced modules/histories from the shipping build.
+`settings.gradle.kts` intentionally still compiles six modules. Shipping/local
+replacement topology is only Identity & Account + Learning; remaining legacy module
+removal belongs to #146.
 
-## Canonical locations
+## Current runtime contracts
 
-| Question | Current source of truth |
+### Identity & Account
+
+Read [its guide](../../backend/services/identity-account/guide.md). It owns account
+identity, local/federated login, OAuth/OIDC, browser sessions, profile/moderation,
+account avatar, transfer and deletion. Learning validates bearer claims and calls
+Identity `/userinfo`; it never reads Identity tables.
+
+### Learning
+
+Read [its guide](../../backend/services/learning/guide.md). Fresh migrations V1–V5
+own platform/storage, private Deck, deck-local LearningItem, EditingDraft and
+CaptureNote. API paths are canonical under `/api`; there is no `/v2` or v1 alias.
+
+The important #75 inputs already implemented are UUID identity, canonical JSON,
+global command receipts, CAS, RFC 9457 errors, owner ACL, immutable revisions,
+deck-local item identity, counted pages, native content and versioned projection/media
+seams. Study concepts themselves do not exist yet.
+
+### Frontend
+
+`app.routes.ts` is the route source of truth. `/decks` authoring routes are current
+and lazy. `my-study`, public-deck, template, old review/import/media/AI services and
+components are legacy or deferred; inspect them only as deletion/research evidence.
+The accepted visual direction is
+[paper/antiquity/indigo](../frontend/design-and-experience-2026-09.md).
+
+## Canonical executable sources
+
+| Question | Source of truth |
 |---|---|
-| Build versions/modules | [backend/settings.gradle.kts](../../backend/settings.gradle.kts) and [frontend/package.json](../../frontend/package.json) |
-| Backend quality gate | [backend/build.gradle.kts](../../backend/build.gradle.kts) |
-| Frontend commands | [frontend/package.json](../../frontend/package.json) |
-| API/runtime defaults | each service's `src/main/resources/application.properties` |
-| Database shape | each service's ordered `db/migration` directory |
-| Browser routes | [app.routes.ts](../../frontend/src/app/app.routes.ts) |
-| Local topology | [docker-compose.yml](../../docker-compose.yml) |
-| Production manifests | [k8s](../../k8s) |
-| PR/main automation | [.github/workflows](../../.github/workflows) |
-| Proposed greenfield model | [content-platform-v2.md](../architecture/content-platform-v2.md) |
-| Native content/rendering contract | [learning-content-format-v2.md](../architecture/learning-content-format-v2.md) |
-| Exercise contracts | [exercise-catalog-v2.md](../product/exercise-catalog-v2.md) |
-| Product hypotheses | [product-direction-v2.md](../product/product-direction-v2.md) |
-| No-snapshot account-only cutover/capacity/offline | [v2-reset-capacity-and-offline-plan.md](../operations/v2-reset-capacity-and-offline-plan.md) |
+| Modules and dependency versions | `backend/settings.gradle.kts`, service build files, `frontend/package.json` |
+| Database shape | ordered migrations under each runtime's `src/main/resources/db` |
+| HTTP routes | Spring controllers/security tests and `frontend/src/app/app.routes.ts` |
+| Local replacement topology | `docker-compose.yml` |
+| Protected CI | `.github/workflows/pull-request.yaml`, `.github/workflows/deploy.yaml` |
+| Coverage floors | `backend/coverage-baseline.json` |
+| Documentation entry | `docs/README.md` |
+| Issue/PR format and statuses | `docs/engineering/work-item-standard.md` |
 
-When prose and executable configuration disagree, verify runtime behavior and fix the prose; do not preserve a stale claim for consistency.
+## Полный quality gate
 
-## Quality commands
+Prerequisites: JDK 21 toolchain availability, Node 22.23.2, npm, Chrome/Chromium and
+working Docker/Testcontainers resources. Do not allow database tests to skip. With
+Colima on macOS, point discovery at its host socket and mounts at the Linux VM socket:
 
-Prerequisites: JDK 21, Node 22.23.2 (the CI and image-build baseline for Angular 18.2), npm and Chrome/Chromium for Karma. Docker is only needed for stack/integration work.
+```bash
+export DOCKER_HOST="unix://${HOME}/.colima/default/docker.sock"
+export TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock
+```
 
 ```bash
 cd backend
-./gradlew quality
-```
+./gradlew clean quality
 
-This compiles all modules, runs backend tests and checks the repository's per-service coverage baseline.
-
-### Docker 29 / Colima note
-
-On the workstation audited on 2026-08-15, Testcontainers 1.21.3 initially attempted Docker API 1.32 while Docker Engine 29 accepted 1.40+, then tried to mount the macOS Colima socket path inside the Linux VM. Because tests use `disabledWithoutDocker = true`, container-backed tests were marked skipped and the coverage gate failed rather than reporting a normal test failure.
-
-The verified workstation-local invocation was:
-
-```bash
-cd backend
-JAVA_TOOL_OPTIONS='-Dapi.version=1.44' \
-TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock \
-TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX=docker.io/ \
-./gradlew quality
-```
-
-The image prefix override was needed only to bypass this user's stale corporate mirror; use the approved registry for the actual environment. Docker documents the Engine 29 minimum API change in its [release notes](https://docs.docker.com/engine/release-notes/29/), and the matching Testcontainers 1.21.3 failure is tracked in [testcontainers-java issue 11235](https://github.com/testcontainers/testcontainers-java/issues/11235). A repository-level Testcontainers upgrade/configuration is preferable, but changing that dependency requires a separate compatibility proposal and permission under `AGENTS.md`.
-
-```bash
-cd frontend
+cd ../frontend
 npm ci
 npm run lint
 npm run test
 npm run build
 ```
 
-Run the complete relevant gate before presenting or pushing a change. There is no configured frontend coverage threshold or end-to-end test suite at this revision; do not imply those checks ran.
+Repository policy and docs:
 
-For the local stack, first read the root [source license](../../LICENSE), then
-follow [Self-hosted local deployment](../deploy/selfhost-local.md) and the
-launchers documented in [scripts/README.md](../../scripts/README.md). Current
-source permits only private personal use by one natural person unless a separate
-written license applies. Never assume checked-in defaults are safe production
-secrets.
+```bash
+python3 scripts/verify_docs.py
+python3 scripts/verify_github_actions_pins.py
+python3 scripts/verify_security_automation_policy.py
+python3 scripts/verify_artifact_security_policy.py
+python3 scripts/verify_production_image_pins.py
+python3 -m unittest discover -s scripts/tests -p 'test_verify_*.py' -v
+```
+
+Real cross-service security/cancellation:
+
+```bash
+./backend/gradlew -p backend :services:identity-account:bootJar :services:learning:bootJar
+MNEMA_RUN_CANCELLATION_INTEGRATION=1 python3 -m unittest discover -s scripts/learning-security/tests -v
+python3 scripts/learning-security/run.py
+python3 scripts/learning-security/verify_cancellation.py
+```
+
+The remaining mandatory release/security/smoke/backup/purge contracts are the exact
+commands in the `frontend-quality` job of
+[PR Quality](../../.github/workflows/pull-request.yaml). They include every maintained
+`scripts/test-*.sh`, smoke and backup unit suites, PostgreSQL 16→18 recovery and the
+disposable no-snapshot purge rehearsal. Operational contract tests do not perform a
+deployment.
+
+The real browser harness is proportional for auth/authoring changes, not a substitute
+for unit gates:
+
+```bash
+python3 scripts/browser-identity/run.py --authoring --output /tmp/mnema-authoring-evidence
+```
+
+It uses disposable local services and a real HTTPS Chrome flow. Follow
+[`scripts/browser-identity/README.md`](../../scripts/browser-identity/README.md) for
+environment prerequisites and cleanup.
+
+## Delivery mode
+
+The shared server is unavailable. `main` image publication and operational workflows
+are fail-closed/paused. A locally and hosted-verified protected squash is complete
+local delivery; it is not deployed or production-verified. Do not rerun historical
+operational workflows or contact the former host. Reactivation needs its own reviewed
+infrastructure issue.
 
 ## Change routes
 
-### Deck, card, version or template behavior
+### Epic #75: Study/exercises/scheduler
 
-- Start at `backend/services/core/.../deck` and the core Flyway migrations.
-- Check both browser and review adapters: current version selection is not uniform.
-- Preserve stable identities across edits; never use mutable content/checksum as identity.
-- Distinguish draft, publish, subscribe, update and fork in naming and tests.
-- Templates/fields are legacy evidence only. Greenfield work must not repair, wrap or carry them into new APIs/migrations; #74 replaces the whole path.
-- Treat the v2 architecture documents as proposals until ADRs accept their exact contracts.
+- Add new domain code under `backend/services/learning`; do not repair or import
+  `core/.../review` algorithms/entities/migrations.
+- Add new fresh Learning migrations after V5; never edit applied V1–V5.
+- Keep content, exercise revision, attempt/evaluation/evidence and `StudyState`
+  separate. Only explicitly `ASSESSED` objectives may receive scheduler evidence.
+- Reuse command receipts/CAS/problem details and Deck/LearningItem revision pins.
+- Add lazy Angular Study routes/components; do not build on legacy `my-study` or
+  old review services simply because they remain in source.
+- Preserve keyboard, screen-reader, touch and non-drag alternatives from the accepted
+  exercise catalog/a11y boundary.
 
-### Review or exercise behavior
+### Epic #76: media lifecycle
 
-- Current scheduler implementations live under `core/.../review/algorithm` as deletion/research evidence; #75 does not port them.
-- Current state/log persistence lives under `core/.../review/entity` and core migrations.
-- The frontend review route is currently one reveal/self-rating flow.
-- Keep content, exercise attempts and scheduler state separate in new contracts.
-- Add idempotency tests for answer retries and concurrency tests for first state creation.
+- The `media` module and v1 S3 rows/URLs are legacy evidence, not the target.
+- New logical authorized references must integrate with native content capabilities
+  without granting access by hash/object key.
+- Lifecycle, finalize races, variants, tombstones, GC and offline manifests require
+  separate refinement and object-protocol evidence.
 
-### Deferred AI or import behavior
+### Legacy removal
 
-- Neither is part of the first replacement runtime. #77 requires explicit reactivation; a later import compiler follows native launch.
-- Define idempotency, retry, timeout, partial-success and job-recovery behavior before changing a client loop.
-- Never log provider credentials, prompts containing sensitive material or tokens.
-- Verify provider/security APIs in official current documentation.
+Do not broaden feature work into global deletion. #146 owns remaining module/build/
+route removal only after #74–#76 gates. #147 owns production cutover/purge and is
+outside local delivery.
 
-### Frontend behavior
+## High-risk areas
 
-- Scan the containing feature and shared primitives before adding a component.
-- New route features should be lazy unless they are part of the initial shell.
-- Use accessible dialog/focus behavior, semantic controls, mobile-first layout and reduced-motion fallbacks.
-- Do not preserve Liquid Glass or the current visual identity. Until #74 receives owner design input, use a minimal accessible semantic HTML/CSS baseline.
-- Keep user-scoped local state keyed by identity and clear it when identity changes.
+- A green unit test cannot prove correct per-objective credit, deterministic replay,
+  session snapshot isolation or bounded M:N fan-out for #75.
+- Existing `core` scheduler names and tables can accidentally bias the new model;
+  they are deletion/research evidence only.
+- Frontend still contains legacy routes/services next to canonical authoring code;
+  route imports and bundles must be checked when adding Study.
+- PostgreSQL-backed integration tests are fail-closed. Docker/socket failure is an
+  environment failure, not permission to accept skipped coverage.
+- Local browser evidence does not certify VoiceOver/TalkBack, physical touch, Safari,
+  Firefox or production latency/capacity.
+- Hosted operations are paused; passing workflow contract tests does not prove a
+  server, backup, image or deployment exists.
 
-### Schema migration
+## Handoff для Epic #75
 
-- Add a new migration; never rewrite V1–V25 or any migration already deployed.
-- For ordinary v1 fixes, use expand/contract migrations.
-- For greenfield replacement, start a fresh PostgreSQL migration history; do not run the v1 chain, build transformers or add compatibility migrations.
-- Verify the account allowlist and rehearse only account-only restore. No full legacy snapshot is created. Follow the [reset plan](../operations/v2-reset-capacity-and-offline-plan.md); the first deletion is the explicit point of no return.
+Canonical reading order:
 
-### Deployment
+1. [Epic #75](https://github.com/MattoYuzuru/Mnema/issues/75).
+2. [Accepted owner decisions](../decisions/owner-decisions-2026-08.md) and
+   [authoring/Study workflows](../product/authoring-and-study-workflows.md).
+3. [Content/Study platform](../architecture/content-platform-v2.md) and
+   [exercise catalog](../product/exercise-catalog-v2.md).
+4. Current [Learning guide](../../backend/services/learning/guide.md), migrations,
+   platform tests and [#74 acceptance](./evidence/epic-74/verification/integrated-main-2026-09-19.md).
 
-- Repository access does not imply production-cluster access.
-- Resolve exact target/environment before any mutation.
-- Run the gate on the exact commit being deployed.
-- Use immutable image references and a complete release identity.
-- Verify rollout plus an end-to-end smoke; readiness alone is insufficient.
+Existing contracts: deck-local identities; immutable Deck/Item revisions; native
+projection capabilities; command idempotency; row-version CAS; owner ACL; stable
+Problem Details; fail-closed Identity; counted membership/storage roots. Do not
+redefine them during Study refinement without evidence of a conflict.
 
-## Known high-risk areas
+Open product/architecture decisions that keep Epic #75 in `Backlog`:
 
-- `CardService.java` is over 2,000 lines and combines several content/version workflows.
-- Current public-card snapshots grow quadratically when large decks are edited incrementally.
-- Pinned deck revisions are bypassed by some card read/review paths.
-- Published revisions can be mutated through stale update sessions.
-- Subscription eagerly creates per-card user rows.
-- Review idempotency and first-state concurrency are incomplete.
-- AI/import jobs have partial-commit and recovery gaps.
-- Clients that previously cached the old unhashed frontend bundles may retain them until the already-issued cache lifetime expires; current production builds use content-hashed asset names.
-- Large inline Angular components mix view, state, HTTP orchestration and persistence.
-- Production backup/restore and release atomicity are not demonstrated.
+- exact `MemoryObjective` granularity and forward/reverse independence;
+- whether P0 scheduler-affecting attempts may assess multiple objectives;
+- evidence decomposition, hint/confidence semantics and reducer inputs;
+- first algorithm/config and replay/versioning policy before cohort calibration;
+- session snapshot/budget/restart rules and concurrent attempt ordering;
+- evidence retention/aggregation and privacy/metrics boundaries;
+- P0 mechanic subset and exact accessible interaction/error flows.
 
-The evidence and priorities behind these points are in the [project review](../reviews/project-review-2026-08.md).
+Recommended 1–3 day task boundaries: (1) contract/refinement + adversarial fixtures;
+(2) objective/exercise immutable schema; (3) session snapshot/candidate pool;
+(4) one attempt→evaluation→evidence→reducer vertical; (5) accessible Angular
+vertical; (6) replay/concurrency/load evidence. Do not make the whole epic Ready.
 
-## Repository automation status
+The first implementation vertical should be one deck-scoped, single assessed
+objective, deterministic typed-answer or behavioral-self-check flow using a pinned
+Deck/Item revision and exact retry receipt. It should prove no cross-deck candidate,
+no state change on browse/cancel/failure, one transition on retry, replayable
+algorithm/config identity and accessible feedback before adding M:N mechanics.
 
-The repository currently contains quality scripts and delivery workflows, but no repo-local Codex skill/plugin/hook catalog, deterministic fixture generator, end-to-end harness or architecture verification command. The machine-readable inventory is [capability-inventory.yaml](./capability-inventory.yaml).
+Run the full gate above plus focused PostgreSQL concurrency/idempotency tests and the
+real browser harness. Residual risks that unit tests cannot hide: false mastery from
+wrong objective attribution, duplicate/out-of-order attempts, stale session pools,
+unbounded fan-out/locking, inaccessible mechanics and lack of production/device/
+cohort calibration evidence.
 
-Do not create empty framework folders. Add a repo-owned tool when its first consumer exists, and document input, output, side effects and validation in `scripts/README.md`. The first justified additions are:
+## Documentation contract
 
-1. deterministic native-document/exercise fixture generator;
-2. account-only export/import reconciliation checker;
-3. PostgreSQL 18 + MinIO API/worker E2E harness;
-4. anonymous/authenticated release smoke;
-5. bounded deck/attempt/evidence/media load profile;
-6. docs/link validation.
-
-## Documentation rule
-
-Every durable document should say whether it is `current`, `proposed`, `historical` or `deprecated`. Put unresolved decisions in one owning artifact and link to them; do not copy competing roadmaps across service pages. Update [docs/README.md](../README.md) when adding a canonical document.
+Add durable docs only when they own a decision, contract or evidence set. Give them
+one explicit status and link them from [docs/README.md](../README.md). Run
+`python3 scripts/verify_docs.py`; never fix drift by copying the same rules into a
+second agent guide.

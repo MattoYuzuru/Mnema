@@ -3,7 +3,7 @@ artifact:
   id: database-recovery-runbook
   type: operations-runbook
   title: "Production PostgreSQL backup and isolated recovery drill"
-  status: current
+  status: superseded
   created_at: "2026-08-19"
   updated_at: "2026-08-24"
   owners: ["project-owner"]

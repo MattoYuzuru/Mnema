@@ -1,8 +1,9 @@
 # Native document v1 — baseline boundary (#178 / Epic #74)
 
-Implemented by Learning's `catalog.content.NativeDocumentReader`; not yet wired to
-HTTP, storage, drafts, or a production editor. This defines baseline structure, not
-the complete rich authoring capability set of #74. No database/dependency change.
+Implemented by Learning's `catalog.content.NativeDocumentReader`, immutable native
+storage, authoring APIs and the production Angular editor/renderer. This file owns
+the baseline wire boundary; richer node types and #75 exercise projections remain
+separate capabilities.
 
 Input is UTF-8 JSON read through `ContentJsonReader` **before** ordinary JSON binding
 can discard duplicate keys. Output is a defensive `NativeDocument` semantic snapshot.
@@ -53,8 +54,8 @@ children, including opaque ones. Empty documents use one empty paragraph.
 Opaque acceptance grants **no rendering or execution capability**. Registering a
 new type/renderer must revalidate retained content against that schema before
 activating it; a matching type string is insufficient. Baseline unsupported examples
-include code/math/media/table nodes. Their actual rich schemas/renderers remain #74
-work; an inert placeholder is not evidence of full rich-authoring completion.
+include code/math/media/table nodes. Adding an actual rich schema/renderer needs its
+own capability and tests; an inert placeholder is not evidence that it exists.
 
 ## Shared lexical profile
 
@@ -98,10 +99,10 @@ ProseMirror state. Java tests cover it, lexical vectors, opaque fields/descendan
 UUID case duplicates, structure, defensive copies, multilingual scalar/depth/count
 boundaries, and a 7,001-node document beyond the earlier 100k-token parser budget.
 
-The research adapter still needs exact optional metadata preservation, aligned
-validation, opaque list-slot handling, and Angular/browser integration before
-adoption. This slice does not claim real IME/device/assistive-technology verification.
-No migration or production action is required; rollback is a protected code revert.
+The delivered adapter preserves optional metadata, aligns shared validation, handles
+opaque list slots and is integrated with Angular/browser authoring. It does not claim
+the still-unrun real IME/device/assistive-technology sessions recorded in Epic #74
+acceptance. No production action occurred; rollback is a protected code revert.
 
 Local verification, 2026-09-12: Java21 / existing PostgreSQL18 Testcontainers,
 `./gradlew :services:learning:test --rerun-tasks --console=plain`, exit0, 17 seconds.
@@ -109,9 +110,9 @@ Local verification, 2026-09-12: Java21 / existing PostgreSQL18 Testcontainers,
 JaCoCo lines: Learning619/637 (97.17%, existing floor90%), native186/190 (97.89%).
 Independent review identified lexical URL/language drift and optional-field/opaque
 adapter gaps; this boundary now has explicit shared vectors and preserves semantic
-fields without editor normalization. The later production adapter must consume
-those vectors; its remaining gaps are not hidden by this reader's green tests.
-Full repository exact-candidate gate and protected delivery are still pending.
+fields without editor normalization. The production adapter consumes those vectors;
+the complete protected-delivery and integrated authoring result is recorded in the
+[#74 acceptance](../../../docs/engineering/evidence/epic-74/verification/integrated-main-2026-09-19.md).
 
 Sources: [native-format target](../../../docs/architecture/learning-content-format-v2.md),
 [Java21 URI](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/net/URI.html),

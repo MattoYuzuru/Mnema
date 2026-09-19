@@ -2,7 +2,7 @@
 artifact:
   id: design-and-experience-2026-09
   type: design-direction-and-prototype
-  status: owner-direction-with-proposed-interaction-details
+  status: accepted
   created_at: "2026-09-06"
   updated_at: "2026-09-06"
 ---
@@ -289,7 +289,8 @@ API needs: список колод возвращает cursor page компак
 handle и первую bounded batch; job status и optional statistics загружаются независимо.
 Никакого per-deck N+1 ради счётчиков и одного общего loading gate на весь экран.
 Ошибка вспомогательной статистики не скрывает сохранённый материал/основное действие.
-Точные URLs/DTOs остаются #74/#75 LLD, не прототиповым публичным API.
+Authoring URLs/DTOs реализованы в #74 и описаны в current runtime guides; точные
+Study URLs/DTOs остаются #75 LLD, а не прототиповым публичным API.
 
 Измерять first useful content, route bytes, LCP/INP/CLS, request fan-out и p95/p99 API
 при явном профиле устройства/сети. Предлагаемые web quality ориентиры — p75 LCP ≤2.5 s,

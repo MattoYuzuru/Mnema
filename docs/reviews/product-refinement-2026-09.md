@@ -2,7 +2,7 @@
 artifact:
   id: product-refinement-2026-09
   type: research-handoff
-  status: reviewed-research-handoff
+  status: historical
   created_at: "2026-09-06"
   updated_at: "2026-09-06"
 ---

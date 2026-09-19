@@ -3,24 +3,25 @@ artifact:
   id: learning-content-format-v2
   type: architecture
   title: "Mnema native LearningItem content format"
-  status: proposed
+  status: accepted
   created_at: "2026-08-15"
-  updated_at: "2026-09-06"
+  updated_at: "2026-09-19"
   owners: ["project-owner"]
   decision_scope: [content-format, rendering, exercises, media, anki, offline]
 ---
 
 # Native LearningItem content format
 
-This proposed format belongs to greenfield epic #74. It replaces the canonical
-content/editor/renderer directly: no `/v2`, legacy renderer, compatibility route or
-mechanical reuse of v1 components is required. AI authoring is deferred to #77.
+This accepted format was implemented for the native-v1 baseline in Epic #74. It
+replaces the canonical content/editor/renderer directly: no `/v2`, legacy renderer,
+compatibility route or mechanical reuse of v1 components exists. Richer capabilities
+remain additive; AI authoring is deferred to #77.
 
 ## Decision
 
 The canonical content of a Mnema learning item is a **versioned, validated document
 tree**, not two Markdown strings, arbitrary HTML, or a user-defined field schema.
-The API exposes that semantic tree; the proposed physical representation is shared
+The API exposes that semantic tree; the selected and implemented physical representation is shared
 bounded immutable `JSONB` blocks and persistent manifest pages, not a complete new
 JSONB document for every edit. See [revision storage](./revision-storage-and-runtime-boundaries.md).
 
@@ -97,7 +98,8 @@ There are no `template`, `field`, mandatory deck language, or card-type entities
 
 ## Document envelope and node contract
 
-The exact editor library remains a prototype decision. The persisted contract belongs to Mnema and must not be an unversioned dump of a UI component's private state.
+Production authoring uses a bounded ProseMirror adapter. The persisted contract
+belongs to Mnema and is not an unversioned dump of the editor's private state.
 
 ```json
 {
@@ -131,8 +133,9 @@ The exact editor library remains a prototype decision. The persisted contract be
 Every node has a stable opaque `id`, a registered `type`, its own `version`, validated `attrs`, and a `content` array (empty for leaves). Stable node IDs allow exercises and diffs to refer to meaning without fragile character offsets. IDs are unique within a document, client-generatable, and intentionally retained across revisions; UUIDv4 is sufficient without adding a dependency.
 
 The implemented [baseline native boundary](../../contracts/content/native-v1/README.md)
-owns exact structure, preservation, lexical profile and safety limits. It is not yet
-an HTTP/persistence/editor integration or the complete rich-node capability set below.
+owns exact structure, preservation, lexical profile and safety limits and is integrated
+with Learning persistence/HTTP plus the Angular editor/renderer. It is not the complete
+rich-node capability set below.
 
 The renderer registry owns four contracts for every node type:
 
@@ -149,16 +152,21 @@ JSON preservation. If exact imported bytes are needed, retain an authorized sour
 artifact separately. A new node type normally needs a renderer and contract tests,
 not a database-wide migration; migration is needed when persisted meaning changes.
 
-ProseMirror's schema-governed document tree and transaction model are a useful reference; Tiptap documents storage as JSON or HTML and warns that arbitrary unsupported HTML is not preserved. See the [ProseMirror guide](https://prosemirror.net/docs/guide/), [Tiptap JSON/HTML storage guide](https://tiptap.dev/docs/guides/output-json-html) and [Tiptap FAQ](https://tiptap.dev/docs/guides/faq). Adopting either package requires a small Angular integration prototype and separate permission before changing dependencies.
+ProseMirror's schema-governed tree and transaction model underpin the delivered
+adapter. Tiptap remains comparative evidence and documents why arbitrary unsupported
+HTML is not preserved. See the [ProseMirror guide](https://prosemirror.net/docs/guide/),
+[Tiptap JSON/HTML storage guide](https://tiptap.dev/docs/guides/output-json-html) and
+[Tiptap FAQ](https://tiptap.dev/docs/guides/faq). Replacing the editor engine or adding
+another package requires a focused compatibility spike and dependency approval.
 
 ## Native block set
 
 ### Target document nodes and launch capability gate
 
-This list is the format's capability envelope, not a requirement to ship every
-editor in #74. Text/structure and image/audio/video are the accepted baseline;
-#76 supplies real media. Ruby/RTL/math/code/Mermaid fixtures probe extensibility
-and rendering safety. Exact initial editable nodes remain an explicit #74 gate;
+This list is the format's capability envelope, not a claim that every node already
+has an editor. #74 delivered the exact native-v1 text/structure baseline in the
+[wire contract](../../contracts/content/native-v1/README.md); #76 supplies real
+media. Ruby/RTL/math/code/Mermaid fixtures probe extensibility and rendering safety.
 Mermaid and richer diagram/source editors can follow later. Unsupported capability
 is visible and preserved, never silently approximated.
 
@@ -320,9 +328,13 @@ Do not introduce CRDT/Yjs history before real-time or concurrent offline editing
 - offline retry of the same attempt creates exactly one review event;
 - representative Anki fixtures produce explicit converted/warned/rejected reports without executing imported HTML/CSS/JavaScript.
 
-## Open decisions before implementation
+## Implemented baseline and remaining decisions
 
-1. Choose the editor engine only after a spike proves Angular integration, IME/ruby/RTL, mobile selection, large-document performance and accessible preview.
-2. Define the exact P0 node JSON schemas and size/depth limits.
-3. Implement the accepted answer-change rule: preserve state/history, with explicit user-requested learning restart. Select the material-level progress projection with #75; do not reopen automatic revalidation.
-4. Define the first supported Anki compiler pattern set and quarantine TTL after native launch; unsupported content must remain explicit.
+1. #74 selected the bounded ProseMirror adapter and implemented the exact native-v1
+   schemas, lexical rules and size/depth limits in the wire contract above.
+2. #75 must implement the accepted answer-change rule: preserve state/history, with
+   explicit user-requested learning restart. It still owns the material-level
+   progress projection and must not reopen automatic revalidation.
+3. #76 owns authorized media node/reference lifecycle and offline manifests.
+4. Before re-enabling import, define the first supported Anki compiler pattern set
+   and quarantine TTL; unsupported content must remain explicit.

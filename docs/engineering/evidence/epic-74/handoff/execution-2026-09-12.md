@@ -1,7 +1,7 @@
 # Epic #74 execution checkpoint
 
 Updated: 2026-09-12 ~13:13 UTC: renderer191 merged; browser Identity two-account RED/GREEN proved; API193/K3 gates and own-decks UI active.
-Mandate: execute [the owner's prompt](prompts/epic-74-end-to-end.md) through small
+Mandate: execute [the owner's prompt](../../../prompts/epic-74-end-to-end.md) through small
 protected PRs and squash merges. The latest explicit owner instruction prohibits
 further staging/production delivery after server loss; earlier deployment permission
 is superseded. Local and GitHub quality/security gates still apply; destructive data
@@ -518,7 +518,7 @@ typescript-eslint 8.58.0 pin. The latest answer also authorizes necessary produc
 deployment, subject to the readiness and non-destructive boundary above.
 
 1. APPROVED: the three exact proposals in
-   [dependency decisions](epic-74-dependency-decisions.md): direct ProseMirror
+   [dependency decisions](../../../epic-74-dependency-decisions.md): direct ProseMirror
    prototype, staged Angular 18→22 upgrade in its own child/PR, and Learning OAuth
    resource-server/test dependencies. Versions, licenses, alternatives and risks
    are listed there. Scoped installation and implementation have now started.
@@ -527,8 +527,8 @@ deployment, subject to the readiness and non-destructive boundary above.
    alternative is bounded deltas/checkpoints plus prepared membership generations.
    The recommendation favors large-deck changed-path locality and a common retention
    model, not universal latency/WAL superiority. See the
-   [final report](evidence/epic-74/storage/README.md) and
-   [independent review](evidence/epic-74/verification/storage-review.md).
+   [final report](../storage/README.md) and
+   [independent review](../verification/storage-review.md).
 3. APPROVED: `typescript-eslint:8.58.0` (MIT), enabling the final Angular22/TS6 step.
    Angular worker resumed on base `700325c`; no unrelated package refresh approved.
 

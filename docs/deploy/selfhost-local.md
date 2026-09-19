@@ -7,16 +7,31 @@ controlled devices. Shared or organizational use needs a
 ## Current replacement setup — #143
 
 The canonical `docker-compose.yml` starts only PostgreSQL 18, Identity & Account,
-and Learning. Both application shells report `maintenance` / `identity-learning`;
-product UI, login and learning flows belong to their implementation epics.
+and Learning. It does not start the Angular frontend or provision trusted local TLS,
+so the compose path is a backend maintenance runtime. The APIs already include the
+completed #74 private content/authoring domains; real HTTPS login/authoring is
+verified by the separate repository browser harness.
 
-Docker Engine and the Docker Compose plugin are required. Run commands from the
-repository root. Set a fresh password for this replacement database; a missing or
-empty `MNEMA_LOCAL_POSTGRES_PASSWORD` fails configuration before any container starts.
+Docker Engine, the Docker Compose plugin and JDK 21 are required. Run commands from
+the repository root. Set a fresh password for this replacement database; a missing
+or empty `MNEMA_LOCAL_POSTGRES_PASSWORD` fails configuration before any container starts.
+Identity also requires a private RSA JWKSet. For this disposable personal runtime,
+generate it once under ignored `.mnema/` with the repository fixture generator and
+retain the same file across ordinary restarts. It is not a deployment key generator.
 
 Bash/zsh:
 
 ```bash
+local_secret_dir="$PWD/.mnema/local-compose"
+install -d -m 700 "$local_secret_dir"
+if [ ! -f "$local_secret_dir/identity-signing-jwk-set.json" ]; then
+  java scripts/learning-security/FixtureKey.java \
+    "$local_secret_dir/identity-signing-jwk-set.json"
+  chmod 600 "$local_secret_dir/identity-signing-jwk-set.json"
+fi
+export MNEMA_LOCAL_IDENTITY_SIGNING_JWK_SET_FILE="$local_secret_dir/identity-signing-jwk-set.json"
+export MNEMA_LOCAL_IDENTITY_SIGNING_ACTIVE_KID=blackbox
+
 printf 'Fresh replacement database password: '
 read -r -s MNEMA_LOCAL_POSTGRES_PASSWORD
 printf '\n'
@@ -29,6 +44,15 @@ docker compose --project-name mnema-replacement --file docker-compose.yml up -d 
 PowerShell:
 
 ```powershell
+$secretDir = Join-Path (Get-Location) '.mnema/local-compose'
+New-Item -ItemType Directory -Force -Path $secretDir | Out-Null
+$signingFile = Join-Path $secretDir 'identity-signing-jwk-set.json'
+if (-not (Test-Path $signingFile)) {
+  java scripts/learning-security/FixtureKey.java $signingFile
+}
+$env:MNEMA_LOCAL_IDENTITY_SIGNING_JWK_SET_FILE = $signingFile
+$env:MNEMA_LOCAL_IDENTITY_SIGNING_ACTIVE_KID = 'blackbox'
+
 $env:MNEMA_LOCAL_POSTGRES_PASSWORD = [System.Net.NetworkCredential]::new('', (Read-Host 'Fresh replacement database password' -AsSecureString)).Password
 $env:COMPOSE_DISABLE_ENV_FILE = 'true'
 $env:MNEMA_LOCAL_BUILD_ID = git rev-parse HEAD
@@ -50,6 +74,8 @@ remove an existing v1 stack.
 | `MNEMA_LOCAL_IDENTITY_PORT` | `18081` | Loopback Identity HTTP port |
 | `MNEMA_LOCAL_LEARNING_PORT` | `18080` | Loopback Learning HTTP port |
 | `MNEMA_LOCAL_IDENTITY_ISSUER` | `https://localhost:18081` | HTTPS identity contract |
+| `MNEMA_LOCAL_IDENTITY_SIGNING_JWK_SET_FILE` | required | Owner-readable private local JWKSet path |
+| `MNEMA_LOCAL_IDENTITY_SIGNING_ACTIVE_KID` | required | Active private key ID; fixture generator uses `blackbox` |
 | `MNEMA_LOCAL_BUILD_ID` | `dev` | Reported source identity |
 
 The issuer is an HTTPS identifier required by `IssuerContract`. Local actuator
@@ -66,9 +92,11 @@ docker compose --project-name mnema-replacement --file docker-compose.yml stop
 ```
 
 Keep the same configuration for later Compose commands. `stop` preserves the new
-volume. Password/DB/user changes after initialization are not PostgreSQL credential
-rotation. Old volumes remain outside this workflow; removal or account/data transfer
-requires its own explicit procedure. PostgreSQL 18 mounts `/var/lib/postgresql`
+volume and the ignored JWKSet remains on the host. Do not commit, print or reuse that
+private file outside this disposable local runtime. Password/DB/user changes after
+initialization are not PostgreSQL credential rotation. Old volumes remain outside
+this workflow; removal or account/data transfer requires its own explicit procedure.
+PostgreSQL 18 mounts `/var/lib/postgresql`
 according to the [official image contract](https://hub.docker.com/_/postgres).
 The project boundary and loopback publications follow
 [Compose project naming](https://docs.docker.com/reference/compose-file/version-and-name/#name-top-level-element)

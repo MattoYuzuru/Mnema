@@ -1,9 +1,10 @@
-# Learning API runtime foundation
+# Learning API runtime
 
 `services:learning` is the standalone greenfield Learning API runtime. It has no
-Gradle project dependency on the legacy `auth`, `user`, `core`, `media`, `import`
-or `ai` applications. Product domains are intentionally absent until their owning
-epics add them.
+Gradle project dependency on legacy `core`, `media`, `import` or `ai`. Epic #74
+added the canonical private Deck, deck-local LearningItem, native content,
+EditingDraft and CaptureNote domains. Study/exercises/scheduler remain Epic #75;
+greenfield media lifecycle remains #76.
 
 ## Runtime contract
 
@@ -78,8 +79,26 @@ needs a trusted local HTTPS endpoint for authenticated flows, as Identity does.
 Security behavior is tested through actual Learning HTTP with real PostgreSQL and
 a controlled Identity protocol fixture, including a stalled body after headers,
 concurrency rejection/recovery, duplicate JSON fields and per-request revocation.
-This fixture is not evidence of real Identity lifecycle composition; that is a
-separate cross-service black-box harness. No production content endpoint is added.
+This fixture is complemented by the real packaged Identity/Learning black-box
+harness in `scripts/learning-security` and the HTTPS browser authoring harness in
+`scripts/browser-identity`. Those local checks are not deployment or production
+capacity evidence.
+
+## Content and authoring contract
+
+- `/api/decks` owns private Deck creation, bounded listing/detail and CAS metadata
+  updates with global command receipts.
+- `/api/decks/{deckId}/items` owns deck-local logical identity, immutable revisions,
+  current/historical reads and atomic publication.
+- `/api/editing-drafts` owns bounded acknowledged server drafts; autosave never
+  publishes.
+- `/api/capture-notes` owns durable quick notes and idempotent conversion while
+  retaining source/provenance.
+- Native document v1, immutable block/page storage and counted structural edits are
+  shared #75 inputs. They do not yet imply exercises, attempts or StudyState.
+
+Fresh Learning migrations V1–V5 are the database source of truth. Do not append
+Study tables to legacy `core` migrations or port old review algorithms.
 
 Sources: [Spring Security 6.5 JWT](https://docs.spring.io/spring-security/reference/6.5/servlet/oauth2/resource-server/jwt.html)
 for signature/claims/scope boundaries; the exact 6.5.11 source establishes claim

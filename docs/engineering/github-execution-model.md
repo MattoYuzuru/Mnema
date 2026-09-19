@@ -3,13 +3,17 @@ artifact:
   id: github-execution-model
   type: execution-plan
   title: "Mnema v2 GitHub planning model"
-  status: current
+  status: historical
   created_at: "2026-08-15"
   updated_at: "2026-08-30"
   owners: ["project-owner"]
 ---
 
 # Организация Mnema v2 в GitHub
+
+> Historical planning record. Current work-item/status rules live in
+> [work-item-standard.md](work-item-standard.md); current Issue and Project state
+> must be read from GitHub rather than from the dated snapshots below.
 
 ## Решение
 

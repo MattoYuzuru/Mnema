@@ -32,9 +32,9 @@ grant on each bearer request and returns the canonical account UUID in `sub`.
 Learning's integration can use this endpoint as a liveness check after local
 signature/type/issuer/audience/expiry and Learning-scope validation. It must compare
 `sub`, fail closed on errors/timeouts, and never cache a successful result as proof
-that a later request remains authorized. The receiving Learning filter and its real
-cross-service tests remain part of #74; this Identity-side contract alone does not
-prove an implemented private Learning API.
+that a later request remains authorized. The receiving Learning filter, private
+content APIs and real cross-service tests are implemented; this Identity-side
+contract still does not replace their independent authorization tests.
 
 Every login rotates the Secure/HttpOnly/SameSite=Lax session cookie and CSRF token.
 Sessions live in PostgreSQL with eight-hour inactivity and absolute limits.

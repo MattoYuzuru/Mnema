@@ -3,7 +3,7 @@ artifact:
   id: content-platform-v2
   type: architecture
   title: "Mnema greenfield content and study platform"
-  status: proposed
+  status: accepted
   created_at: "2026-08-15"
   updated_at: "2026-09-19"
   owners: ["project-owner"]
@@ -29,10 +29,10 @@ artifact:
 
 # Greenfield content and study platform
 
-This document remains the broader platform design, not a claim that every domain schema
-is implemented. Owner constraints are accepted inputs. Epic #74 has selected and
-implemented the bounded storage foundations described below; LearningItem, draft,
-Capture, study and operational details remain owned by their implementation slices.
+This document is the accepted broader platform design, not a claim that every domain
+schema is implemented. Epic #74 implemented bounded storage, private Deck,
+LearningItem, EditingDraft and CaptureNote contracts. Study remains owned by #75;
+media lifecycle by #76; operational cutover by #147.
 The target directly replaces v1 on canonical routes. It has no `/v2`, dual read/write,
 legacy adapter, old scheduler fallback or retained full legacy snapshot.
 
@@ -113,11 +113,11 @@ Do not expose hashes as entity identity. Identical text can represent separate l
 
 ## Context and components
 
-Identity and User source is already consolidated into Identity & Account. The
-[Learning API runtime shell](../../backend/services/learning/guide.md) exists with
-platform contracts, but its content/library/study product modules are not yet
-implemented. Legacy core/media/import/AI remain replacement input. The selected
-target puts content/library/study in one modular Learning API; separate
+Identity and User source is consolidated into Identity & Account. The
+[Learning API runtime](../../backend/services/learning/guide.md) implements platform,
+storage and private content/authoring contracts; Study remains unimplemented and the
+future library scope is limited to seams. Legacy core/media/import/AI remain
+replacement input. The selected target puts content/library/study in one modular Learning API; separate
 media/import/AI and bulk workers receive independent capacity when their capability
 is introduced. This lets a busy importer scale without multiplying API replicas.
 The distinction, real-project evidence and remaining database/failure boundaries
@@ -637,8 +637,8 @@ and `v1-apache-final` preserve evidence.
 
 ### Phase 1 — build the replacement
 
-Identity & Account source consolidation and the Learning API foundation exist;
-continue product implementation from their new source/module/schema roots.
+Identity & Account and the #74 Learning content/authoring domains exist; continue
+Study and media implementation from their new source/module/schema roots.
 Canonical endpoints have no `/v2` prefix or old aliases. #74 owns Deck/LearningItem
 revision implementation; #75 owns exercise/evidence/scheduler; #76 owns new learning
 media. #77 is absent. The product may remain in maintenance or incomplete while
@@ -658,11 +658,13 @@ After step 6, recovery of deleted v1 content/study/media/import/AI data is impos
 by owner decision. Only account-only/fresh-system recovery and roll-forward exist.
 No runbook may promise an emergency legacy restore.
 
-## Proposed decision sequence
+## Current delivery sequence
 
-1. Merge owner-decision/document/epic reconciliation; this is the current planning step.
-2. Use the implemented Identity & Account and greenfield runtime/platform foundation; verify remaining #73 delivery gates against its current status.
-3. Accept and implement #74 content, #75 study and #76 media contracts in their own epics.
-4. Rehearse the exact no-snapshot cutover on isolated synthetic targets.
-5. Execute the destructive operational issue only after all gates; #77 is not a dependency.
-6. Validate bounded storage/read contracts and measure the replacement before adding optional partitions, replicas, Kafka or another datastore.
+1. Refine #75 into reviewable Study/exercise/scheduler slices, then implement from
+   the completed #74 content contracts.
+2. Refine and implement #76 media lifecycle independently; #77 is not a dependency.
+3. Complete #146 legacy runtime/build removal only after #75 and #76 gates.
+4. Rehearse #147's exact no-snapshot cutover only on isolated synthetic targets;
+   destructive production work remains a separate final authorization boundary.
+5. Validate bounded storage/read contracts and measure the replacement before adding
+   optional partitions, replicas, Kafka or another datastore.
