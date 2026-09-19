@@ -48,7 +48,7 @@ time, but explicit owner/account/deck deletion policy may remove it.
   the existing wrong/revoked token and Identity fail-closed matrix.
 - `./gradlew quality --console=plain`: `BUILD SUCCESSFUL` in 25s on the exact final
   candidate (an earlier clean-cache run completed in 2m10s); Learning line coverage
-  is 95.54% against the 90% threshold and every backend module baseline passes.
+  is 95.52% against the 90% threshold and every backend module baseline passes.
 
 The checks prove transaction rollback and concurrent in-process/database behavior;
 they do not constitute a process-kill, production-load, retention-operations or
