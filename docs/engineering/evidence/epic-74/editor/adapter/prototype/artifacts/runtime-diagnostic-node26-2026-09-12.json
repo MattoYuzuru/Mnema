@@ -1,0 +1,13 @@
+{
+  "classification": "historical diagnostic run before the requested Node 22 binary was restored; not final acceptance evidence",
+  "runtime": "v26.3.0",
+  "nodeTests": { "pass": 18, "fail": 0, "durationMs": 167.966375 },
+  "browser": { "version": "153.0.8010.36", "pass": true, "timestamp": "2026-09-12T09:38:39.232Z" },
+  "measurement": {
+    "fixtureNodes": 7001,
+    "iterations": 12,
+    "medianMs": 79.273708,
+    "p95Ms": 103.646792,
+    "heapUsedDeltaBytesAfterGc": 7614192
+  }
+}

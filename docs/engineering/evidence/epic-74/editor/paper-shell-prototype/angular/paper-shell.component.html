@@ -1,0 +1,37 @@
+<div class="paper-frame">
+  <a class="paper-skip-link" href="#paper-main">К основному содержанию</a>
+
+  <header class="paper-header">
+    <a class="paper-wordmark" [routerLink]="homeRoute()" aria-label="Mnema — на главную">
+      <span class="paper-star" aria-hidden="true">✺</span>
+      <span>MNEMA</span>
+    </a>
+
+    <nav class="paper-navigation" aria-label="Основная навигация">
+      <a [routerLink]="homeRoute()" fragment="paper-materials">Материалы</a>
+      <a [routerLink]="homeRoute()" fragment="paper-authoring">Как это устроено</a>
+      <a [routerLink]="decksRoute()">Мои колоды</a>
+    </nav>
+
+    @if (viewer().authenticated) {
+      <a class="paper-account-link" [routerLink]="decksRoute()">
+        <span class="paper-account-label">{{ viewerLabel() }}</span>
+        <span aria-hidden="true">→</span>
+      </a>
+    } @else {
+      <a class="paper-account-link" [routerLink]="loginRoute()">
+        <span class="paper-account-label">{{ viewerLabel() }}</span>
+        <span aria-hidden="true">→</span>
+      </a>
+    }
+  </header>
+
+  <main id="paper-main" class="paper-main" tabindex="-1">
+    <ng-content></ng-content>
+  </main>
+
+  <footer class="paper-footer">
+    <span>MNEMA · ДЛЯ ТЕХ, КТО ЛЮБИТ УЧИТЬСЯ</span>
+    <a [routerLink]="createDeckRoute()">Создать свою колоду <span aria-hidden="true">→</span></a>
+  </footer>
+</div>

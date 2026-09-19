@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-09-12T09:52:52.856Z",
+  "runnerRuntime": "v22.23.2",
+  "browserVersion": "153.0.8010.36",
+  "desktop": {
+    "consoleErrors": [], "pageErrors": [], "failedRequests": [], "externalRequests": [],
+    "initial": {
+      "h1": 1, "editorLabel": "Редактор материала", "editable": "true", "ruby": 2, "rtl": 2,
+      "unsupported": 12, "scrollWidth": 1440, "clientWidth": 1440,
+      "leakedPayload": false, "nativeJsonContainsPrivateState": false
+    },
+    "sanitizedOrderedListBounds": {
+      "overflow": "<ol><li>overflow</li></ol>",
+      "maximum": "<ol start=\"2147483647\"><li>maximum</li></ol>",
+      "zero": "<ol><li>zero</li></ol>"
+    },
+    "syntheticHtmlPaste": {
+      "nativeIncludesText": true, "executed": 0, "unsafeDom": false,
+      "safeLink": { "id": "f1dca649-aeff-4ff0-8033-70bcec26f828", "href": "https://example.test/pasted", "text": "безопасная ссылка" },
+      "undoRedo": "pass; undo restored exact prior AST and redo restored the fresh pasted link UUID"
+    },
+    "realPlainTextPasteUndoRedo": "pass; undo restored exact prior AST and redo restored exact pasted IDs",
+    "syntheticComposition": { "viewReportedComposing": true, "nativeIncludesText": true, "classification": "synthetic event + browser insertText; not real IME evidence" },
+    "identityNormalization": { "ids": 403, "uniqueIds": 403, "groupedHistoryNormalizations": 1 },
+    "linkedSplitUndoRedo": {
+      "firstLinkRetained": "00000000-0000-4000-8000-000000000972",
+      "secondLinkFresh": "89dc4a6b-d8be-4858-9f3f-9e3fbc07fad5", "exactUndoRedo": true
+    },
+    "optionalMetadataRoundTrip": {
+      "exactInitial": true, "exactUndoRedo": true, "rootLanguageSpelling": "RU-ru",
+      "originalMarkOrder": ["code", "strong"], "absentDefaultsStayedAbsent": true
+    },
+    "opaqueListFallback": {
+      "exactRoundTrip": true, "wholeContainerPlaceholders": 2,
+      "futureDirectListChildInert": true, "futureFirstParagraphInert": true
+    },
+    "externalOrderedListBounds": {
+      "pipeline": "sanitizer -> ProseMirror DOM parser -> identity normalization -> native export",
+      "overflowNormalizedToAbsentDefault": true,
+      "positiveInt32MaximumPreserved": 2147483647
+    },
+    "futureRoot": {
+      "readOnly": true, "editable": "false", "opaqueCount": 1,
+      "outputHasFuturePayload": true, "editorLeaksFuturePayload": false, "executed": 0
+    },
+    "teardown": { "destroyed": true, "staleOutputMutation": false, "editorDomRemoved": true }
+  },
+  "mobileEmulation": {
+    "consoleErrors": [], "pageErrors": [], "failedRequests": [], "externalRequests": [],
+    "layout": {
+      "scrollWidth": 390, "clientWidth": 390, "selection": { "from": 17, "to": 17 },
+      "insertedText": true, "touchTargetsBelow44": []
+    }
+  },
+  "limitations": [
+    "Synthetic composition events are not a real Japanese OS IME session.",
+    "Mobile evidence uses Chrome desktop device emulation, not physical Android/iOS hardware or a touch keyboard.",
+    "No screen reader, Safari, Firefox, Angular integration, or acknowledged server draft was exercised.",
+    "Arbitrary IDNA A-label parity with Java 21 IDN is advisory in this dependency-free browser adapter; the frozen shared vectors pass and the server remains publication authority."
+  ]
+}

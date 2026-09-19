@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "tool": "frontend-agent/scripts/contrast_check.py",
+  "results": [
+    {"id": "0", "foreground": "#281378", "background": "#f4f0e5", "ratio": 12.679, "aa_normal": true, "aa_large": true, "aaa_normal": true},
+    {"id": "1", "foreground": "#342e44", "background": "#f4f0e5", "ratio": 11.382, "aa_normal": true, "aa_large": true, "aaa_normal": true},
+    {"id": "2", "foreground": "#625c70", "background": "#f4f0e5", "ratio": 5.615, "aa_normal": true, "aa_large": true, "aaa_normal": false},
+    {"id": "3", "foreground": "#fbf8ef", "background": "#281378", "ratio": 13.595, "aa_normal": true, "aa_large": true, "aaa_normal": true},
+    {"id": "4", "foreground": "#342e44", "background": "#fbf8ef", "ratio": 12.205, "aa_normal": true, "aa_large": true, "aaa_normal": true},
+    {"id": "5", "foreground": "#281378", "background": "#e8e1ed", "ratio": 11.291, "aa_normal": true, "aa_large": true, "aaa_normal": true}
+  ],
+  "errors": []
+}

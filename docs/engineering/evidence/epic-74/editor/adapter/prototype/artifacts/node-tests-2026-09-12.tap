@@ -1,0 +1,31 @@
+TAP version 13
+# runtime: v22.23.2 darwin arm64
+# command: npm test (PATH begins /tmp/mnema-epic175-node22-recovery.a4W4JI/runtime/node-v22.23.2-darwin-arm64/bin)
+ok 1 - Mnema AST round-trips semantically and never exports private ProseMirror state
+ok 2 - optional attributes, original spelling, mark order, and absent defaults round-trip exactly
+ok 3 - unrepresentable native list slots stay whole-container opaque and copy losslessly with fresh IDs
+ok 4 - formatting a substring splits runs without duplicate IDs; undo and redo remain visible-history operations
+ok 5 - split normalization is part of the same history event and round-trips exact IDs
+ok 6 - join undo and redo restore the exact before/after native identities
+ok 7 - top-level move retains every identity and unknown payload
+ok 8 - paste/copy freshens IDs recursively, including opaque unknown subtrees
+ok 9 - copy assigns one fresh native link identity across all of its text runs
+ok 10 - external HTTPS link marks are normalized and paste freshening supplies native identities
+ok 11 - splitting linked content keeps the first link ID and undo/redo restores exact native ASTs
+ok 12 - links preserve mixed text, ruby, and opaque children and copied atoms receive the fresh link mark
+ok 13 - unknown types and future known versions survive an unrelated edit plus undo/redo
+ok 14 - future root opens read-only and exports the untouched native document
+ok 15 - validation rejects duplicate IDs, unsafe links, invalid direction, and oversized scalars
+ok 16 - validation matches frozen native-v1 lexical vectors
+ok 17 - validation enforces host grammar and semantic UUID uniqueness while preserving opaque extensions
+# regression assertions inside test 17: absent marks accepted and preserved; marks=null rejected
+# regression assertions inside test 17: order=2147483647 exact round-trip; order=2147483648 rejected
+ok 18 - long Russian + RTL/LTR + ruby fixture remains within the bounded adapter contract
+1..18
+# tests 18
+# pass 18
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 132.346041

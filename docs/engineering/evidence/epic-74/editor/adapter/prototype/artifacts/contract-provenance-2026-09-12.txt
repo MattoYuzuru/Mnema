@@ -1,0 +1,7 @@
+Frozen native-v1 source commit: a766097ae4ef8ceb9bd1450f7c2ff7792a9ae27b
+23b3485c4a8e91e88e34806f03c162a1cafd769df43c2a1f6459046f1a0a969f  contracts/content/native-v1/README.md
+e7a43915e6864736387add78a312447298cc890640bb8f9db5bacf3f2de6cb2f  contracts/content/native-v1/valid/mixed.json
+16563f5f6edc7137c480879275106a4ed93c4fa558f364e2a2b71265727e08ba  contracts/content/native-v1/lexical-vectors.json
+
+The prototype createFixture() and frozen mixed.json parse to the same semantic JSON:
+f07a60b6100752646e15761f41e4640c6e262cd1eb6f15cee1932e2f6ecdb5a1
