@@ -1,5 +1,7 @@
 # Core Service (`backend/services/core`)
 
+> **Status: legacy.** Retained as v1 replacement/deletion evidence until #146.
+
 ## Назначение
 
 `core` — центральный домен Mnema. Здесь живут:
@@ -57,4 +59,3 @@
 - Принимает данные от `import` после обработки импортов.
 - Используется `ai` для чтения/изменения карточек/колод при AI-пайплайнах.
 - Является основным API для фронтенда по учебному домену.
-

@@ -1,651 +1,91 @@
-<a id="readme-top"></a>
+# Mnema
 
-<div align="center">
-  <img src="images/read-me-512x512.png" alt="Mnema Logo" width="96" height="96">
-  <h1>Mnema</h1>
-  <p>Платформа интервального обучения: карточки, импорт, AI-генерация и аналитика.</p>
+Mnema — greenfield-платформа обучения вокруг версионируемых `LearningItem`,
+разных типов упражнений и объяснимого spaced practice. Репозиторий находится в
+прямой замене v1: compatibility API, `/v2`, dual read/write и legacy fallback не
+являются требованиями.
 
-  <p>
-    <a href="https://mnema.app">Демо</a>
-    &middot;
-    <a href="https://github.com/MattoYuzuru/Mnema">Репозиторий</a>
-    &middot;
-    <a href="docs/system-overview.md">System Docs</a>
-    &middot;
-    <a href="#дорожная-карта">Roadmap</a>
-  </p>
+## Текущее состояние
 
-  <p>
-    <a href="https://github.com/MattoYuzuru/Mnema/blob/main/LICENSE"><img alt="License" src="https://img.shields.io/badge/license-source--available-orange.svg"></a>
-    <a href="https://github.com/MattoYuzuru/Mnema/actions"><img alt="CI" src="https://img.shields.io/badge/CI-GitHub%20Actions-informational"></a>
-    <img alt="i18n" src="https://img.shields.io/badge/i18n-ru%20%7C%20en-brightgreen">
-  </p>
-</div>
+После завершения [Epic #74](https://github.com/MattoYuzuru/Mnema/issues/74)
+replacement runtime содержит:
 
----
+- единый Spring Boot runtime **Identity & Account** для аккаунтов, OAuth/OIDC,
+  сессий, профиля и account lifecycle;
+- Spring Boot **Learning API** с приватными Deck, deck-local LearningItem,
+  immutable revisions, native content, EditingDraft и CaptureNote;
+- Angular 22 SPA с paper/antiquity/indigo интерфейсом создания колоды,
+  Capture, редактора, явной публикации и Browse;
+- PostgreSQL 18 integration tests, real Identity/Learning security composition и
+  локальный HTTPS browser harness для authoring-пути.
 
-> Hosted Mnema is currently unavailable. Development continues locally with checked
-> PRs and protected merges; deployments are paused. See
-> [current delivery mode](docs/operations/local-development-delivery.md).
+Модули `core`, `media`, `import` и `ai`, а также часть старых frontend-компонентов
+остаются в дереве как legacy replacement input. Они не задают архитектуру новой
+Study-системы и удаляются только в границах
+[#146](https://github.com/MattoYuzuru/Mnema/issues/146) после готовности #74–#76.
 
-> [!IMPORTANT]
-> **Source-available licensing:** current Mnema revisions permit private local
-> use by one natural person. Organizational, shared, hosted, commercial, and
-> machine-learning use requires a separate written license. The final Apache
-> 2.0 revision is preserved at [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final).
-> See [License](LICENSE), [Russian translation](LICENSE.ru.md), and
-> [commercial/institutional licensing](COMMERCIAL-LICENSING.md) before running
-> or modifying the current source.
+Следующий продуктовый этап —
+[Epic #75: deck-scoped Study, M:N exercises и новый scheduler](https://github.com/MattoYuzuru/Mnema/issues/75).
+Его реализация ещё не начата; Epic остаётся в Backlog до отдельного refinement и
+разбиения на reviewable задачи.
 
-## Содержание
+## С чего начать
 
-* [О проекте](#о-проекте)
-* [Что уже умеет продукт](#что-уже-умеет-продукт)
-* [Чем Mnema выделяется относительно Anki/Quizlet](#чем-mnema-выделяется-относительно-ankiquizlet)
-* [Технологии](#технологии)
-* [Архитектура](#архитектура)
-* [Локальные maintenance runtime](#локальные-maintenance-runtime)
-* [Архивный Self-Hosted Public](#архивный-self-hosted-public)
-* [Локальная разработка](#локальная-разработка)
-* [Системные требования и sizing](#системные-требования-и-sizing)
-* [Переменные окружения (.env)](#переменные-окружения-env)
-* [CI/CD и деплой](#cicd-и-деплой)
-* [Безопасность](#безопасность)
-* [Наблюдаемость](#наблюдаемость)
-* [API и документация](#api-и-документация)
-* [Дорожная карта](#дорожная-карта)
-* [Как поучаствовать](#как-поучаствовать)
-* [Лицензия](#лицензия)
-* [Контакты](#контакты)
+1. Прочитайте [`AGENTS.md`](AGENTS.md) — это нормативные правила разработки.
+2. Откройте [каноническую навигацию](docs/README.md).
+3. Используйте [обзор текущей системы](docs/system-overview.md) и
+   [карту репозитория](docs/engineering/repository-guide.md).
+4. Перед Issue или PR следуйте
+   [work item standard](docs/engineering/work-item-standard.md).
 
----
+## Быстрые проверки
 
-## О проекте
-
-**Mnema** — веб-платформа для интервального запоминания с упором на инженерную архитектуру и реальный production-пайплайн.
-
-> **Greenfield redesign:** текущий checkout всё ещё содержит v1 runtime, но целевой продукт переписывается напрямую вокруг versioned `LearningItem`, нескольких exercises и spaced practice. `/v2`, compatibility runtime и retained legacy snapshot не создаются; сохраняются только account identity/profile данные. Managed AI отложен до manual learning MVP. Принятые решения собраны в [Mnema Docs](docs/README.md).
-
-Проект включает:
-- модульный backend на Spring Boot;
-- frontend на Angular;
-- полноценный auth контур (OAuth2 + local auth);
-- отдельные сервисы под media/import/AI;
-- CI/CD и k8s-инфраструктуру.
-
-**Демо:** [https://mnema.app](https://mnema.app)
-
----
-
-## Что уже умеет продукт
-
-- Регистрация/логин через local auth и OAuth2 (Google/GitHub/Yandex).
-- Создание и редактирование колод, карточек, шаблонов.
-- Публичные колоды и форки.
-- Версионирование колод и шаблонов + синхронизация пользовательских копий.
-- Review-сессии с несколькими алгоритмами (SM2, FSRS v6, HLR).
-- Ограничения на daily review/new, user timezone/day-cutoff, расширенная review-аналитика.
-- Импорт из APKG/CSV/TSV/TXT с preview и field mapping.
-- Экспорт колод.
-- Медиа-вложения: image/audio/video, аватары, иконки.
-- AI-функции:
-  - генерация и улучшение карточек;
-  - AI import (text/pdf/image/audio/docx);
-  - мультимодальные провайдеры (OpenAI/Gemini/Claude/Qwen/Grok + stub);
-  - квоты и учёт токенов.
-
----
-
-## Чем Mnema выделяется относительно Anki/Quizlet
-
-- Версионируемые публичные колоды и шаблоны с контролируемым sync.
-- Несколько SRS-алгоритмов в одном продукте с переключением на уровне колоды.
-- Отдельный media-сервис с presigned/multipart загрузками (масштабируемо для тяжёлых вложений).
-- Отдельный import-сервис с фоновой обработкой и preview перед импортом.
-- Отдельный AI-сервис с очередями задач, quota/ledger и мульти-провайдерами.
-- Более «продуктовый» веб-поток: профиль, каталог, поиск, аналитика, мобильная навигация.
-
----
-
-## Технологии
-
-### Backend
-- Java 21, Kotlin 2.1
-- Spring Boot 3.5.x
-- Spring Security, OAuth2 Authorization Server, OAuth2 Resource Server
-- Spring Data JPA, Flyway
-- PostgreSQL, Redis
-- S3 API (AWS SDK v2)
-- Testcontainers, JUnit
-
-### Frontend
-- Angular 18 (standalone)
-- RxJS
-- i18n ru/en
-- Nginx (production serving)
-
-### Infra / DevOps
-- Docker / Docker Compose
-- Kubernetes (k3s)
-- Traefik ingress, cert-manager
-- GitHub Actions + GHCR
-- Prometheus + Grafana + Loki + Alloy
-
----
-
-## Архитектура
-
-Сервисы backend:
-- `auth` — OAuth2 auth server + local auth.
-- `user` — профиль пользователя и account-related операции.
-- `core` — колоды, карточки, шаблоны, review, поиск, статистика.
-- `media` — upload/resolve медиа, S3 presigned URLs.
-- `import` — импорт/экспорт и фоновые import jobs.
-- `ai` — AI jobs, AI import, провайдеры, квоты.
-
-Frontend (`frontend`) общается с backend API:
-- `/api/user`
-- `/api/core`
-- `/api/media`
-- `/api/import`
-- `/api/ai`
-- auth endpoints через `auth`.
-
-Подробная документация:
-- [docs/README.md](docs/README.md)
-- [docs/system-overview.md](docs/system-overview.md)
-
----
-
-## Локальные maintenance runtime
-
-Текущая лицензия разрешает личное частное использование одному физическому лицу
-на собственных или контролируемых устройствах. Организационное или совместное
-использование требует [отдельной письменной лицензии](COMMERCIAL-LICENSING.md).
-
-Канонический `docker-compose.yml` поднимает PostgreSQL 18, `identity-account` и
-`learning` в maintenance. Это runtime shells для разработки; UI и продуктовые
-сценарии ещё реализуются в соответствующих задачах. Project `mnema-replacement`
-использует новый volume `replacement_postgres_data` и отдельные `MNEMA_LOCAL_*`
-настройки. Данные и credentials прежнего локального запуска не переносятся.
-
-Из корня репозитория, Bash/zsh:
+Требуются JDK 21, Node 22.23.2, npm, Chrome/Chromium и Docker для fail-closed
+PostgreSQL/Testcontainers проверок. Для Colima сначала примените socket environment
+из [repository guide](docs/engineering/repository-guide.md#полный-quality-gate).
 
 ```bash
-printf 'Fresh replacement database password: '
-read -r -s MNEMA_LOCAL_POSTGRES_PASSWORD
-printf '\n'
-export MNEMA_LOCAL_POSTGRES_PASSWORD
-export COMPOSE_DISABLE_ENV_FILE=true
-export MNEMA_LOCAL_BUILD_ID="$(git rev-parse HEAD)"
-docker compose --project-name mnema-replacement --file docker-compose.yml up -d --build
-curl -fsS http://127.0.0.1:18081/api/actuator/health/readiness
-curl -fsS http://127.0.0.1:18080/api/actuator/health/readiness
+cd backend
+./gradlew clean quality
+
+cd ../frontend
+npm ci
+npm run lint
+npm run test
+npm run build
+
+cd ..
+python3 scripts/verify_docs.py
+python3 -m unittest discover -s scripts/tests -p 'test_verify_*.py' -v
 ```
 
-Оба HTTP endpoint и PostgreSQL (`55432`) опубликованы только на loopback.
-HTTPS issuer `https://localhost:18081` — идентификатор будущего auth-контракта;
-этот локальный Compose не поднимает TLS listener или login flow.
+Это не весь repository gate: security, browser, backup, purge и release-contract
+проверки перечислены в
+[repository guide](docs/engineering/repository-guide.md#полный-quality-gate) и
+исполняются PR workflow. Coverage thresholds и container-backed tests являются
+обязательными.
 
-Старые `mnema-local` и `mnema-public` launcher-скрипты прекращают работу до
-изменений файлов и контейнеров. Полные инструкции, PowerShell, настройки портов
-и остановка: [local runbook](docs/deploy/selfhost-local.md).
+## Локальный runtime и delivery
 
----
+`docker-compose.yml` поднимает только fresh PostgreSQL 18, Identity & Account и
+Learning на loopback. Он не переносит legacy-данные и не включает frontend.
+Подготовка signing JWKSet и безопасный запуск описаны в
+[local maintenance runtimes](docs/deploy/selfhost-local.md).
 
-## Архивный Self-Hosted Public
+Общий сервер недоступен. Текущая граница готовности:
 
-Публичное или многопользовательское развёртывание текущей версии не разрешено
-публичной source-лицензией. Инструкции ниже сохранены только для последнего
-Apache 2.0-среза. Перед их использованием переключитесь на него:
-
-```bash
-git checkout v1-apache-final
+```text
+feature branch → полный local gate → hosted PR checks → protected squash → main checks
 ```
 
-Для публичного self-host Apache-версии добавлены bootstrap-скрипты:
-
-- Linux/macOS:
-```bash
-./scripts/mnema-public.sh
-```
-- Windows (PowerShell):
-```powershell
-.\scripts\mnema-public.ps1
-```
-
-Что делает скрипт:
-- спрашивает домены (`web`, `auth`) и базовые креды (`Postgres`, `MinIO`);
-- проверяет порты, при конфликте сдвигает на следующий свободный;
-- генерирует `.env.public` и `.mnema/compose.public.yml`;
-- включает профиль `prod,selfhost-public` для backend-сервисов;
-- включает `frontend` runtime-конфиг (`MNEMA_AUTH_SERVER_URL` и feature flags) без пересборки образа;
-- добавляет `MinIO` и `Ollama` в compose override;
-- может сразу выполнить `docker compose up -d --build`.
-
-Проверка без старта контейнеров:
-```bash
-MNEMA_DRY_RUN=1 ./scripts/mnema-public.sh
-```
-
-Подробный runbook (DNS, reverse proxy, TLS, OAuth): [docs/deploy/selfhost-public.md](docs/deploy/selfhost-public.md)
-
----
-
-## Локальная разработка
-
-Для запуска двух актуальных runtime используйте
-[локальный maintenance Compose](#локальные-maintenance-runtime). Точки проверки:
-
-- Identity & Account: `http://127.0.0.1:18081/api/actuator/info`;
-- Learning: `http://127.0.0.1:18080/api/actuator/info`;
-- PostgreSQL: `127.0.0.1:55432`.
-
-Health/info отражают maintenance, topology и runtime identity. Frontend по-прежнему
-проверяется через lint, tests и build; локальный replacement Compose его не публикует.
-
----
-
-## Системные требования и sizing
-
-Исторические оценки для v1 self-host local режима (без внешних SaaS); они не описывают текущие два maintenance runtime. Фактическое потребление зависит от моделей, числа одновременных задач и лимитов JVM.
-
-### Минимум для запуска
-- CPU: 4 vCPU
-- RAM: 8 GB (без тяжелых локальных AI задач)
-- Disk: 25 GB свободного места
-
-### Рекомендуемо для комфортной работы
-- CPU: 8+ vCPU
-- RAM: 16 GB (если Ollama 7B/8B используется регулярно)
-- Disk: 60+ GB (контейнеры + кэш моделей + импорт/медиа)
-
-### Оценка памяти (порядок величин)
-- Mnema сервисы + Postgres + Redis + MinIO + Frontend: ~4-7 GB RAM
-- Ollama runtime без активной модели: ~0.5-1 GB RAM
-- Одна активная 7B/8B модель в Ollama (квантованная): обычно +4-8 GB RAM
-- STT/TTS/Image локальные сервисы (при добавлении): обычно +1-6 GB RAM суммарно в зависимости от выбранных моделей
-
-### Оценка диска
-- Чистый git checkout (tracked files): ~6 MB
-- Docker images для базового стека (без AI-моделей): обычно ~8-15 GB
-- Ollama model cache:
-  - маленькие модели: ~2-5 GB каждая
-  - 7B/8B: ~4-8 GB каждая
-  - 30B+: десятки GB
-- Данные Postgres/MinIO/импорты: зависят от контента, закладывайте отдельный запас 10-100+ GB
-
-Практические команды для проверки на вашей машине:
-```bash
-docker stats
-docker system df
-du -h -d 1 .
-```
-
----
-
-## Переменные окружения (.env)
-
-Следующий inventory относится к прежнему v1 runtime. Текущий локальный Compose
-использует только `MNEMA_LOCAL_*` из [local runbook](docs/deploy/selfhost-local.md).
-
-Ниже расширенный перечень того, что реально используется в compose/сервисах. Значения и сам `.env` не меняются этим README.
-
-### База / общие
-```env
-POSTGRES_DB=
-POSTGRES_USER=
-POSTGRES_PASSWORD=
-POSTGRES_PORT=
-
-SPRING_DATASOURCE_USERNAME=
-SPRING_DATASOURCE_PASSWORD=
-```
-
-### Auth / issuer
-```env
-AUTH_ISSUER=http://localhost:8083
-AUTH_ISSUER_URI=http://localhost:8083
-
-GOOGLE_CLIENT_ID=
-GOOGLE_CLIENT_SECRET=
-GH_CLIENT_ID=
-GH_CLIENT_SECRET=
-YANDEX_CLIENT_ID=
-YANDEX_CLIENT_SECRET=
-
-TURNSTILE_SITE_KEY=
-TURNSTILE_SECRET_KEY=
-```
-
-### Media / S3
-```env
-MEDIA_INTERNAL_TOKEN=
-
-AWS_REGION=
-AWS_BUCKET_NAME=
-AWS_ENDPOINT=https://storage.yandexcloud.net
-AWS_PATH_STYLE_ACCESS=false
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-```
-
-### Межсервисные URL (обычно задаются в compose автоматически)
-```env
-CORE_BASE_URL=http://core:8080/api/core
-MEDIA_BASE_URL=http://media:8080/api/media
-```
-
-### AI vault / provider
-```env
-AI_PROVIDER=stub
-AI_VAULT_MASTER_KEY=
-AI_VAULT_KEY_ID=
-
-OPENAI_BASE_URL=https://api.openai.com
-OPENAI_DEFAULT_MODEL=gpt-5-mini
-OPENAI_TTS_MODEL=gpt-4o-mini-tts
-OPENAI_STT_MODEL=gpt-4o-mini-transcribe
-
-GEMINI_BASE_URL=https://generativelanguage.googleapis.com
-GEMINI_DEFAULT_MODEL=gemini-2.5-flash
-
-ANTHROPIC_BASE_URL=https://api.anthropic.com
-ANTHROPIC_API_VERSION=2023-06-01
-ANTHROPIC_DEFAULT_MODEL=claude-haiku-4-5
-
-QWEN_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
-QWEN_DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com
-
-GROK_BASE_URL=https://api.x.ai
-```
-
-### Ограничения upload/import/AI (опционально)
-```env
-MEDIA_MAX_FILE_SIZE=350MB
-MEDIA_MAX_REQUEST_SIZE=350MB
-IMPORT_MAX_FILE_SIZE=350MB
-IMPORT_MAX_REQUEST_SIZE=350MB
-
-AI_IMPORT_MAX_BYTES=10485760
-AI_IMPORT_PDF_MAX_BYTES=31457280
-AI_IMPORT_IMAGE_MAX_BYTES=20971520
-AI_IMPORT_AUDIO_MAX_BYTES=52428800
-AI_IMPORT_MAX_CHARS=200000
-```
-
-### Cache / runtime
-```env
-SPRING_CACHE_TYPE=redis
-REDIS_HOST=redis
-REDIS_PORT=6379
-APP_ENV=dev
-```
-
-Примечания:
-- Если local auth не нужен, можно оставить OAuth2-провайдеры пустыми, но соответствующие сценарии не будут работать.
-- Для AI-сценариев `stub` провайдер позволяет запускать пайплайн без внешних ключей.
-
----
-
-## CI/CD и деплой
-
-`Main CI` проверяет backend quality/coverage, frontend lint/tests/build и delivery
-contracts. После зелёных gates он публикует только digest-pinned `identity-account`
-и `learning`, с provenance, SBOM и vulnerability evidence, затем формирует
-checksummed manifests с `releaseMode=maintenance` и `productionEligible=false`.
-
-`Staging Deploy` проверяет точный commit/artifact, сохраняет предыдущий полный
-релиз, предварительно проверяет изменение, применяет два runtime и убирает шесть
-старых приложений. Rollout и smoke проверяют readiness, точный SHA, режим и runtime
-каждого сервиса; неудачный кандидат откатывается к сохранённому staging релизу.
-Production promotion жёстко заблокирован до отдельного go/no-go в #147.
-
-Канонические инструкции: [release verification](docs/operations/release-verification-runbook.md)
-и [staging boundary](docs/operations/staging-runbook.md). Production сохраняет
-ранее применённую топологию; новые maintenance manifests не запускают её cutover.
-
----
-
-## Безопасность
-
-- JWT + OAuth2 auth server.
-- PKCE flow для frontend OAuth2 login.
-- Method-level security в сервисах.
-- Валидация входных DTO и CORS-политики.
-- Внутрисервисный токен для media internal upload.
-- Vault-слой в AI сервисе для секретов провайдеров.
-
-См. также: [SECURITY.md](SECURITY.md)
-
----
-
-## Наблюдаемость
-
-- Spring Actuator + Prometheus endpoint в сервисах.
-- Grafana dashboards + Loki logs + Alloy collection.
-- Структурированная консольная log pattern (trace_id/span_id/request_id поля).
-
----
-
-## API и документация
-
-- Swagger UI у backend-сервисов (springdoc).
-- Внутренние docs проекта:
-  - [docs/README.md](docs/README.md)
-  - [docs/system-overview.md](docs/system-overview.md)
-  - [docs/services](docs/services)
-
----
-
-## Дорожная карта
-
-Актуальное предлагаемое направление, приоритеты и вопросы решения находятся в [project review 2026-08](docs/reviews/project-review-2026-08.md) и [product direction v2](docs/product/product-direction-v2.md). Раздел ниже — исторический журнал и прежний backlog; он не является принятой v2 roadmap.
-
-### Исторический путь (выполнено)
-
-#### 0) Foundation (октябрь 2025)
-- Инициализация репозитория, README, SECURITY, issue/PR templates.
-- Базовый CI/CD каркас.
-- Начальные k3s-манифесты и Docker-сборка.
-
-#### 1) Auth + User base (октябрь-ноябрь 2025)
-- Поднят `auth` service (Spring Initializr).
-- Поднят `user` service.
-- JPA/Flyway базы для user/auth.
-- Базовые CRUD endpoint-ы user.
-- OAuth2 интеграция, CORS, routing fixes.
-- Начальные security-конфиги.
-
-#### 2) Frontend bootstrap (ноябрь 2025)
-- Angular приложение и базовые экраны.
-- Подключение к backend API.
-- Исправления auth-потока и роутинга.
-
-#### 3) Core domain v1 (ноябрь-декабрь 2025)
-- Создан `core` service.
-- Большая миграция схемы `app_core`.
-- Deck/card/template сущности, DTO, репозитории, контроллеры.
-- Разделение контроллеров по доменам.
-- Endpoint-ы создания колод и карт.
-- Базовая security-защита endpoint-ов.
-
-#### 4) Testing maturity (декабрь 2025)
-- Наращивание тестовой базы core.
-- Интеграция Testcontainers.
-- Покрытие key-сценариев и стабилизация CI.
-
-#### 5) Template workflows + UX polish (декабрь 2025 - январь 2026)
-- Расширение CRUD шаблонов.
-- Улучшение template wizard и визуального UX.
-- Валидации форм на backend/frontend.
-- Маркдаун в описаниях.
-
-#### 6) Review engine (декабрь 2025 - январь 2026)
-- Формирование review-модуля.
-- Интерфейс алгоритмов + реализации.
-- Миграции и сущности review-state/log.
-- Ограничения `due/new` в день, user preferences.
-- Улучшения логики выбора карт и quality fixes.
-
-#### 7) OAuth/local auth hardening (январь 2026)
-- Рефактор auth под multi-provider.
-- Локальная регистрация/логин внутри auth сервиса.
-- Rate limiting/валидация для auth форм.
-- Улучшения удаления аккаунта и ошибок.
-
-#### 8) Media service (январь 2026)
-- Введение `media` сервиса.
-- S3 слой, сущности, политики, security.
-- Upload/resolve контроллеры.
-- Поддержка media в UI карточек.
-
-#### 9) Import/Export service (январь 2026)
-- Введение `import` сервиса.
-- APKG/CSV parser pipeline.
-- Фоновые job-ы импорта/экспорта.
-- Прогресс импорта и импорт review-прогресса.
-- Поддержка Anki 21b zstd.
-- Улучшения стилей/рендера импортированного контента.
-
-#### 10) Caching + search + scalability tweaks (январь 2026)
-- Redis-backed media resolve cache (`core/user/media`).
-- Поиск по колодам/карточкам/шаблонам + индексы.
-- Пагинация, lazy loading, стабильность fork/checksum сценариев.
-
-#### 11) UI redesign phase (январь 2026, historical and rejected for the rewrite)
-- Тогда был введён Liquid Glass; owner decision от 2026-08-30 требует полностью удалить этот стиль.
-- Hero/landing, улучшенная навигация, адаптивность.
-- Доработки UX карточного браузера и review.
-
-#### 12) AI platform introduction (январь-февраль 2026)
-- Введение `ai` сервиса и схемы `app_ai`.
-- Очереди job-ов, квоты, usage ledger, токен-учёт.
-- OpenAI прототип -> productionized pipeline.
-- Расширение до Gemini + Claude + Qwen + Grok.
-- TTS/STT/image/video сценарии (provider-dependent).
-- AI enhancer/audit/import.
-- Batch-операции и conflict fallback.
-
-#### 13) AI multimodal import + docs/stats (февраль 2026)
-- AI import modal: text/pdf/image/audio/docx.
-- OCR/аудио chunking, лимиты, троттлинг TTS.
-- Review analytics API + UI-панели.
-- Mobile-first навигация и улучшения review UX.
-- Введение внутренней документации по сервисам (`docs/`).
-
-#### 14) Deploy reliability (весь путь, особенно февраль 2026)
-- Много итераций CI/CD и k8s деплоя.
-- Переносы инфраструктуры/AI кластера.
-- Ingress/TLS/bridge стабилизация.
-- Улучшение rollout устойчивости.
-
-### Прежний текущий фокус (historical)
-
-- Стабильность импортов для “грязных” файлов и edge-case форматов.
-- Полировка стилей импортированных колод (Anki шаблоны + media html/css).
-- Дальнейшая стабилизация AI batch/retry flows.
-- Улучшение UX аналитики и мобильного review.
-
-### Прежний forward backlog (historical, не принят как v2 plan)
-
-#### Near-term (1-2 релизных цикла)
-- [ ] Историческая идея HTML/CSS compatibility/fallback renderer отклонена; будущий importer только компилирует поддерживаемый смысл в native format.
-- [ ] Улучшить import pipeline для проблемных форматов и частично битых APKG/CSV.
-- [ ] Добавить систему стриков (daily streak, freeze/day pass, streak analytics).
-- [ ] Доработать global/local scope инструменты для массовых изменений карточек.
-- [ ] Улучшить дедупликацию импортов и пост-импорт аудит качества.
-- [ ] Улучшить explainability review-алгоритмов в UI.
-
-#### Product / UX
-- [ ] Полноценный PWA режим (manifest, offline cache strategy, install prompts).
-- [ ] Push/Local notifications для review сессий (включая quiet hours).
-- [ ] Улучшить onboarding и сценарии для first-time users.
-- [ ] Отдельный режим «быстрый повтор» и «глубокая сессия».
-- [ ] Расширенные фильтры в поиске и браузере карточек.
-
-#### Platform / Architecture
-- [ ] Релиз «only-local» версии без лишних сервисов (упрощённый single-host профиль).
-- [ ] Dev profile: отключение внешних OAuth/AI провайдеров в пользу локальных заглушек.
-- [ ] Опциональный “lite mode” без AI/media/import микросервисов (монолитный runtime режим).
-- [ ] Расширенная конфигурация очередей AI/import (throughput controls, priority lanes).
-
-#### AI roadmap
-- [ ] Улучшить качество structured outputs для сложных шаблонов карточек.
-- [ ] Добавить provider health scoring и auto-fallback policy.
-- [ ] Улучшить cost-controls (пер-провайдер бюджеты, warnings, caps).
-- [ ] Расширить AI-audit: семантические дубликаты, factual consistency checks.
-
-#### AI quality/reliability roadmap
-- [x] P0: Для распознанных списков items в OpenAI-compatible/local AI import pipeline хранить `sourceIndex/sourceText`, не превращать заголовки в карточки и валидировать покрытие источника перед записью карточек.
-- [x] P0: Не применять item-by-line контракт к PDF/DOCX/учебниковым вырезкам и другому связному материалу, если источник не распознан как список; такие источники остаются в режиме генерации из свободного материала.
-- [x] P0: Чистить markdown/html/URL из текста перед TTS, чтобы короткие карточки озвучивались нейтральнее и без служебного мусора.
-- [ ] P1: Писать в `result_summary` и usage ledger расширенный breakdown: text input/output tokens, cached/reasoning tokens, per-batch usage, TTS chars/requests, image/video request counts.
-- [x] P1 slice: Для OpenAI-compatible/local card generation писать text generation request breakdown, cached/reasoning tokens, durationMs, TTS chars/requests и media counts в `result_summary.usage` и `ai_usage_ledger.details`.
-- [ ] P1: Перейти от step-based ETA к weighted progress по единицам работы: content batches, audit/repair batches, TTS requests, image/video requests, rolling average per provider/model.
-- [x] P1 slice: Уточнить ETA для local/OpenAI-compatible `import_generate`/`generate_cards`, учитывая batch size, число полей и локальный throughput; исправить planned import steps для `import_generate`.
-- [x] P1 slice: Обновлять `progress` по фактической доле текущего batch/audio/media шага и подмешивать этот прогресс в ETA для длинных `processing`-шагов.
-- [ ] P1: Вынести rate-limit wrapper для всех AI провайдеров: RPM/TPM buckets, `Retry-After`, exponential backoff with jitter, split-batch-on-timeout и checkpoint после успешного batch.
-- [x] P1 slice: Вынести общий retry/backoff wrapper для text/vision response-вызовов OpenAI-compatible, Claude, Gemini, Grok и Qwen с учетом `Retry-After` и retryable transport failures.
-- [ ] P2: Добавить draft -> audit -> repair контур: отдельная проверка фактической корректности, переводов, доменной терминологии, примеров, медиа-промптов и audio quality перед финальным apply.
-- [x] P2 slice: Для OpenAI-compatible/local `generate_cards` и `import_generate` добавить pre-apply draft quality gate: отдельный audit pass, targeted repair pass по проблемным draft-ам и запись `draftAudit`/`draftRepair` usage в `result_summary`.
-- [x] P2 slice: После repair выполнять final audit pass, считать quality score и отбрасывать явно битые/слишком короткие TTS-файлы до upload.
-- [ ] P2: Ввести eval-наборы на реальные import-кейсы, включая юридическую лексику, языковые пары, PDF/DOCX вырезки, OCR/STT шум и локальные модели.
-- [x] P2 slice: Добавить fixture-backed regression tests на реальные import quality кейсы с буквальными и смешанными переводами юридической лексики.
-- [x] P2 slice: Расширить fixture-backed import quality cases дополнительными сбойными юридическими терминами вроде `affidavit` и `discovery (legal process)`, чтобы quality gate ловил не только буквальные переводы, но и грубые смысловые подмены.
-- [x] P2 slice: Для item-based import из `ocr/stt` добавлен source normalization pass до генерации карточек, чтобы strict source coverage работал уже по очищенным терминам, а не по шумному распознаванию.
-- [x] P2 slice: Добавлен parameterized import eval harness для OpenAI-compatible path со сценариями `text/pdf/docx/ocr/stt`, чтобы regression-наборы проверяли не один happy path, а разные extraction modes и local/remote модели.
-- [x] UX slice: В deck AI job result panel показывать `qualityGate`, `sourceCoverage` и `usage` breakdown вместо сырого JSON, чтобы новые этапы и token accounting были видны в UI.
-
-#### Data / Quality
-- [ ] Больше e2e на критические пользовательские потоки.
-- [ ] Тесты несовместимых import edge-cases (коррупция, экзотические кодировки, broken media refs).
-- [ ] Реплики/бэкапы: документация RPO/RTO и restore-runbook.
-
-#### Observability / Ops
-- [ ] SLO/SLI для ключевых API и фоновых job-ов.
-- [ ] Tracing важных межсервисных вызовов.
-- [ ] Alerting playbooks для импорта, AI quota, media upload деградаций.
-
----
-
-## Как поучаствовать
-
-- Используйте демо и открывайте issue с багами/идеями.
-- Предлагайте улучшения импортов и UX review-сессий.
-- Для крупных изменений желательно сначала описать proposal (краткий RFC в issue).
-- Публичные code-PR и патчи временно не принимаются до публикации отдельного
-  contributor agreement; подробности — в [`CONTRIBUTING.md`](CONTRIBUTING.md).
-
----
-
-## Лицензия
-
-Текущие официальные ревизии распространяются по
-**Mnema Source-Available License 1.0**. Разрешено личное локальное использование
-одним физическим лицом; использование организациями, совместный или публичный
-доступ, hosting/SaaS, коммерческое использование и machine-learning use требуют
-отдельной письменной лицензии.
-
-- Канонический английский текст: [`LICENSE`](LICENSE)
-- Русский перевод: [`LICENSE.ru.md`](LICENSE.ru.md)
-- Последний Apache 2.0-срез: tag
-  [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final),
-  commit `f4c37df69c143d67e478b6b84af575e94941ece2`
-- Коммерческие, образовательные и пилотные запросы:
-  [`COMMERCIAL-LICENSING.md`](COMMERCIAL-LICENSING.md)
-- Использование названия и логотипа: [`TRADEMARKS.md`](TRADEMARKS.md)
-
-Уже предоставленные права Apache 2.0 на исторический срез сохраняются.
-
----
-
-## Контакты
-
-Автор: Матвей Рябушкин
-Telegram: [@Keyko_Mi](https://t.me/Keyko_Mi)
-Email: [matveyryabushkin@gmail.com](mailto:matveyryabushkin@gmail.com)
-Лицензирование: [matveybobr937@gmail.com](mailto:matveybobr937@gmail.com)
-Репозиторий: [https://github.com/MattoYuzuru/Mnema](https://github.com/MattoYuzuru/Mnema)
-
-<p align="right">(<a href="#readme-top">наверх</a>)</p>
+Staging, production, SSH, rollout и recovery не входят в local delivery и не
+заявляются как выполненные. Каноническая политика —
+[Delivery without hosted infrastructure](docs/operations/local-development-delivery.md).
+
+## Лицензия и участие
+
+Текущие ревизии распространяются по
+[Mnema Source-Available License 1.0](LICENSE). Условия участия — в
+[`CONTRIBUTING.md`](CONTRIBUTING.md), security reporting — в
+[`SECURITY.md`](SECURITY.md). Последний Apache 2.0-срез сохранён в теге
+[`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final).

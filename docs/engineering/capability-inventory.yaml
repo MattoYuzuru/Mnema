@@ -1,26 +1,53 @@
-schema_version: 1
-generated_at: "2026-08-15"
-evidence_revision: "8e0c83d"
+schema_version: 2
+updated_at: "2026-09-19"
+evidence_revision: "933da3e60add2102ed7480342dfd3de95a8a255b"
 scope: repository
+status: current
 
 capabilities:
   - id: backend-quality
     kind: command
     location: backend/build.gradle.kts
-    invoke: "cd backend && ./gradlew quality"
+    invoke: "cd backend && ./gradlew clean quality"
     effects: [compile, test, coverage-report, coverage-baseline-check]
     status: configured
-    environment_notes:
-      - "Docker Engine 29 with Testcontainers 1.21.3 required API/socket overrides on the audited Colima workstation."
-      - "A user-level image mirror also required an environment-specific prefix override."
+    requirements: [jdk21, docker-for-postgresql-tests]
 
   - id: frontend-quality
     kind: command-set
     location: frontend/package.json
     invoke: "cd frontend && npm ci && npm run lint && npm run test && npm run build"
-    effects: [dependency-install, lint, unit-test, production-build]
+    effects: [dependency-install, lint, browser-unit-test, production-build]
     status: configured
-    gaps: [no_e2e_suite, no_coverage_threshold, no_visual_or_a11y_gate]
+    requirements: [node-22.23.2, chrome-or-chromium]
+
+  - id: docs-validation
+    kind: deterministic-check
+    location: scripts/verify_docs.py
+    invoke: "python3 scripts/verify_docs.py"
+    effects: [validate-local-markdown-links, validate-canonical-doc-status]
+    status: configured
+    tests: "python3 -m unittest scripts.tests.test_verify_docs -v"
+
+  - id: identity-learning-security
+    kind: local-blackbox-harness
+    location: scripts/learning-security
+    invoke: "python3 scripts/learning-security/run.py"
+    effects: [disposable-postgresql, start-packaged-services, protocol-security-checks]
+    status: configured
+
+  - id: browser-identity-authoring
+    kind: local-browser-e2e-harness
+    location: scripts/browser-identity
+    invoke: "python3 scripts/browser-identity/run.py --authoring --output /tmp/mnema-authoring-evidence"
+    effects: [disposable-services, local-https, real-chrome, evidence-output]
+    status: configured
+
+  - id: repository-policy-and-operations-contracts
+    kind: command-set
+    location: .github/workflows/pull-request.yaml
+    effects: [policy-tests, security-contracts, smoke-tests, backup-recovery-test, purge-rehearsal]
+    status: configured
 
   - id: pull-request-quality
     kind: github-actions-workflow
@@ -29,53 +56,56 @@ capabilities:
     effects: [backend-quality, frontend-quality]
     status: configured
 
-  - id: production-delivery
+  - id: dependency-review
+    kind: github-actions-workflow
+    location: .github/workflows/dependency-review.yaml
+    trigger: dependency_changing_pull_request_to_main
+    effects: [dependency-diff-policy]
+    status: configured
+
+  - id: codeql
+    kind: github-hosted-workflow
+    location: dynamic/github-code-scanning/codeql
+    effects: [code-scanning]
+    status: configured-default-setup
+    notes: [managed-in-github-settings, no-checked-in-workflow]
+
+  - id: main-quality
     kind: github-actions-workflow
     location: .github/workflows/deploy.yaml
     trigger: push_to_main
-    effects: [quality, image-push, kubernetes-mutation]
-    status: unsafe_for_unattended_release
-    gaps: [cancellable_partial_release, no_release_manifest, no_postdeploy_smoke, no_verified_rollback]
+    effects: [backend-quality, frontend-quality]
+    status: configured-local-delivery
+    notes: [image-and-release-jobs-skipped-by-policy]
 
-  - id: local-stack
-    kind: compose-and-launchers
+  - id: local-replacement-runtime
+    kind: compose
     location: docker-compose.yml
-    entrypoints: [scripts/mnema-local.sh, scripts/mnema-local.ps1, scripts/mnema-public.sh, scripts/mnema-public.ps1]
-    effects: [local_container_mutation]
+    effects: [local-postgresql, identity-account, learning]
     status: configured
+    notes: [frontend-not-in-compose, fresh-data-only, loopback-ports]
 
-  - id: local-ai-gateways
-    kind: runtime-helper
+  - id: hosted-operations
+    kind: dormant-workflows
     locations:
-      - scripts/local-ai-gateway
-      - scripts/local-audio-gateway
-      - scripts/local-image-gateway
-    effects: [container_build, local_network_service]
-    status: configured
-
-  - id: kubernetes-observability
-    kind: manifests
-    location: k8s/observability
-    effects: [cluster_mutation]
-    status: configured_unverified
+      - .github/workflows/staging-deploy.yaml
+      - .github/workflows/production-deploy.yaml
+      - .github/workflows/staging-rollback-drill.yaml
+      - .github/workflows/database-recovery.yaml
+    effects: []
+    status: paused-fail-closed
+    canonical_policy: docs/operations/local-development-delivery.md
 
 repository_agent_assets:
+  normative_instructions: AGENTS.md
+  navigator: docs/README.md
+  repository_guide: docs/engineering/repository-guide.md
   skills: []
   plugins: []
   hooks: []
   mcp_servers: []
-  deterministic_fixture_generators: []
-  end_to_end_harnesses: []
-
-recommended_next_capabilities:
-  - deterministic-v2-fixtures
-  - account-export-import-reconciliation
-  - postgres18-minio-e2e
-  - release-smoke
-  - bounded-load-profile
-  - docs-link-check
 
 credential_notes:
-  - "Credential values were not inventoried or printed."
-  - "GitHub Actions references repository/environment secrets, but existence and rotation were not verified."
-  - "Production Kubernetes access was not available in the inspected local context."
+  - "Credential values are never inventoried or printed."
+  - "Repository access does not imply environment access."
+  - "The shared server is unavailable; no deployment or production verification is claimed."

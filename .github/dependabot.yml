@@ -86,7 +86,7 @@ updates:
         update-types:
           - "version-update:semver-major"
 
-  # Keep the Angular 18 dependency graph visible without routine npm update PRs.
+  # Keep the Angular 22 dependency graph visible without routine npm update PRs.
   # Security updates stay enabled and are grouped separately from version updates.
   - package-ecosystem: "npm"
     directory: "/frontend"

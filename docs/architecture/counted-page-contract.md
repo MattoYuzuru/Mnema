@@ -1,7 +1,18 @@
+---
+artifact:
+  id: counted-page-contract
+  type: architecture
+  title: "Counted-page editing contract"
+  status: current
+  updated_at: "2026-09-19"
+  owners: ["project-owner"]
+---
+
 # Counted-page editing contract
 
 Engineering selection for Epic #74, 2026-09-12, within the owner's accepted
-PostgreSQL immutable blocks/pages design. Implementation is not yet delivered.
+PostgreSQL immutable blocks/pages design. The counted-page and native structural
+editing kernels are implemented and verified in Learning.
 Extends the [revision storage boundary](revision-storage-and-runtime-boundaries.md)
 without changing K1 objects or the K2 native wire format. The lead owns this contract.
 
@@ -70,5 +81,7 @@ endpoint, migration, scheduler, worker, dependency or deployment.
 Required evidence: split/borrow/merge/collapse boundaries; seeded operations against
 an independent list; counts/occupancy/order and old-root immutability; multilingual
 native round-trip/reuse;10k/50k/100k membership reads/writes; actual PostgreSQL
-shared-root branches and GC pin protection. Synthetic physical forks do not prove
-domain ACL/concurrent publication; those remain lead-owned integration acceptance.
+shared-root branches and GC pin protection. Synthetic physical forks alone do not
+prove domain ACL/concurrent publication; the later
+[#74 integrated acceptance](../engineering/evidence/epic-74/verification/integrated-main-2026-09-19.md)
+verified those product boundaries.

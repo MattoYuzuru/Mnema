@@ -1,81 +1,100 @@
-# Mnema: обзор системы
+---
+artifact:
+  id: system-overview
+  type: architecture-overview
+  title: "Mnema current system overview"
+  status: current
+  updated_at: "2026-09-19"
+  owners: ["project-owner"]
+  evidence_revision: "933da3e60add2102ed7480342dfd3de95a8a255b"
+---
 
-> Этот файл описывает текущий v1 checkout как evidence для удаления и замены. Целевая архитектура — greenfield `LearningItem`/exercise platform без `/v2` coexistence и compatibility runtime; см. [owner decisions](./decisions/owner-decisions-2026-08.md) и [content platform](./architecture/content-platform-v2.md).
+# Mnema: текущий обзор системы
 
-## Что реализовано в legacy runtime
+Mnema напрямую заменяет v1 платформой вокруг versioned `LearningItem`. После Epic
+#74 канонический authoring runtime уже находится в `identity-account`, `learning` и
+Angular SPA. Study/scheduler из Epic #75 и media lifecycle из #76 ещё не реализованы.
 
-Mnema — это платформа для интервального обучения на карточках с акцентом на практический workflow, а не только на «карточки и кнопки Again/Good».
+## Shipping и local replacement boundary
 
-Ключевые пользовательские фичи:
-- создание личных и публичных колод;
-- версионирование колод и шаблонов с последующей синхронизацией;
-- гибкие шаблоны полей карточек (включая markdown и медиа);
-- продвинутый review-режим с несколькими SRS-алгоритмами;
-- импорт из APKG/CSV/TSV/TXT с превью и маппингом полей;
-- экспорт колод;
-- AI-генерация/улучшение контента карточек и AI-импорт;
-- мультимедиа (изображения, аудио, видео, аватары, иконки) с безопасной загрузкой;
-- OAuth2 + локальная авторизация.
+```text
+Angular 22 SPA
+  ├── OAuth 2.1/OIDC + account API ──> Identity & Account ─┐
+  └── private authoring API ─────────> Learning API ──────┼─> PostgreSQL 18
+                                      │                   │
+                                      └─ validates token + active account via Identity
+```
 
-## Чем Mnema выделяется на фоне Anki/Quizlet
+- `services:identity-account` владеет account identity, credentials, browser
+  sessions, OAuth/OIDC grants, federation, profile/moderation, account avatar,
+  transfer и deletion lifecycle.
+- `services:learning` владеет свежей `app_learning` migration history, platform
+  contracts, immutable storage и личным content/authoring доменом.
+- Angular SPA использует standalone components и lazy routes. Канонический #74 flow:
+  Deck → Capture/«На потом» → EditingDraft → явная публикация → Browse.
+- `docker-compose.yml` запускает только PostgreSQL, Identity & Account и Learning.
+  Frontend собирается и тестируется отдельно; compose — backend maintenance runtime,
+  а не полный deployed product.
 
-- Версионируемые публичные колоды и шаблоны: можно обновлять источник и аккуратно синхронизировать пользовательские копии.
-- Гибридный подход к SRS: поддержка нескольких алгоритмов (`SM2`, `FSRS v6`, `HLR`) и настройка параметров на уровне колоды.
-- Встроенный pipeline импорта: превью, маппинг, фоновые job-ы и перенос части review-прогресса.
-- AI как часть домена, а не внешний скрипт: отдельный сервис с квотами, usage ledger, воркером и несколькими AI-провайдерами.
-- Отдельный media-сервис с S3 presigned/multipart upload, что лучше масштабируется для больших вложений.
+У replacement нет `/v2`, aliases к v1, dual write/read или scheduler fallback.
+Identity и Learning — отдельные deployables без Gradle dependency на legacy modules.
 
-## Архитектура legacy runtime
+## Что реализовано в Learning
 
-Mnema — сервисно-модульная система:
-- backend: набор Spring Boot сервисов;
-- frontend: Angular SPA (standalone components, маршрутизация, интеграция со всеми API);
-- инфраструктура: PostgreSQL (схемы по сервисам), Redis (кэши), S3-compatible object storage, OAuth2/JWT.
+- private Deck create/list/read/metadata update с owner ACL, CAS и idempotency;
+- deck-local LearningItem `(deckId, memberKey)`, immutable revisions и atomic
+  publication;
+- Mnema-owned native document v1, безопасный renderer contract, immutable
+  block/page storage и counted-page edits;
+- acknowledged server `EditingDraft` и durable `CaptureNote` с idempotent conversion;
+- UUID, canonical JSON, command receipts, RFC 9457 Problem Details, row-version CAS;
+- bearer scope enforcement и fail-closed current-account validation через Identity.
 
-### Бэкенд-сервисы
-- `auth` — OAuth2 Authorization Server + локальная авторизация;
-- `user` — профиль пользователя и связанные данные;
-- `core` — основной домен обучения (колоды, карточки, шаблоны, review, поиск);
-- `media` — загрузка и раздача медиа через presigned URL;
-- `import` — импорт/экспорт колод, фоновые job-ы обработки;
-- `ai` — AI jobs, AI import/generate, провайдеры, квоты.
+Эти contracts являются входом для #75. В Learning пока нет `MemoryObjective`,
+Exercise/Attempt/Evidence, StudySession, `StudyState` или нового reducer/scheduler.
 
-## Основные потоки
+## Frontend boundary
 
-1. Аутентификация:
-- frontend получает токены в `auth`;
-- остальные сервисы валидируют JWT как resource servers.
+Replacement routes `/decks`, `/decks/:deckId`, deck-scoped
+`/decks/:deckId/materials/...`, `/decks/:deckId/capture` и editor реализуют выбранное
+paper/antiquity/indigo направление. Native editor state не является persisted
+format; frontend валидирует серверные envelopes и ETag/command contracts.
 
-2. Работа с колодой:
-- frontend вызывает `core`;
-- `core` при необходимости резолвит media URL через `media`.
+В исходниках всё ещё есть legacy components/services для public decks, old review,
+templates, import, media и AI. Их наличие не делает поведение текущим и не разрешает
+переиспользовать old card/template/scheduler boundaries в #75. Runtime-wide removal
+остаётся задачей #146.
 
-3. Импорт:
-- файл уходит в `media`;
-- `import` создаёт job, делает превью/обработку и пишет результат в `core`.
+## Legacy build boundary
 
-4. AI-процессы:
-- `ai` создаёт/выполняет job;
-- при необходимости читает/создаёт данные в `core` и загружает ассеты в `media`.
+Gradle graph всё ещё содержит `core`, `media`, `import` и `ai`, чтобы полный gate
+проверял не удалённый пока код. Старые `auth` и `user` modules уже заменены единым
+Identity & Account. Legacy migrations и service docs сохраняются как evidence до
+#146/#147; они не запускаются Learning и не являются rollback architecture.
 
-## Технологический срез
+## Проверка
 
-- Java 21 + Kotlin (в отдельных сервисах), Spring Boot 3.5.x;
-- Spring Security, OAuth2 Authorization Server, OAuth2 Resource Server;
-- Spring Data JPA + Flyway + PostgreSQL;
-- Redis cache;
-- Actuator + Prometheus metrics;
-- Angular 18 на фронтенде;
-- S3 SDK для object storage;
-- парсинг импорта: CSV/APKG/SQLite;
-- AI-интеграции: OpenAI, Gemini, Claude, Qwen, Grok (плюс stub).
+- backend: compilation, unit/integration tests и per-service coverage floor;
+- frontend: lint, component/protocol tests и production build;
+- real PostgreSQL tests, Identity↔Learning black-box security/cancellation harness;
+- real local HTTPS browser Identity/authoring harness;
+- repository policy, security, release-contract, backup/recovery and disposable
+  purge-rehearsal checks;
+- deterministic internal Markdown link/status validation.
 
-## Быстрый map по документации
+Точные команды и платформы: [Repository guide](./engineering/repository-guide.md).
+Acceptance #74: [integrated main evidence](./engineering/evidence/epic-74/verification/integrated-main-2026-09-19.md).
 
-- [Auth Service](./services/auth-service.md)
-- [User Service](./services/user-service.md)
-- [Core Service](./services/core-service.md)
-- [Media Service](./services/media-service.md)
-- [Import Service](./services/import-service.md)
-- [AI Service](./services/ai-service.md)
-- [Frontend (Angular)](./services/frontend.md)
+## Delivery boundary
+
+Общий сервер недоступен. Готовность заканчивается защищённым squash merge и
+проверкой `main`; staging, SSH, deployment, recovery и production verification не
+выполняются и не ожидаются. См.
+[local development delivery](./operations/local-development-delivery.md).
+
+## Следующие этапы
+
+1. #75 — refinement и реализация deck-scoped Study, exercises/evidence и scheduler.
+2. #76 — отдельный greenfield media lifecycle.
+3. #146 — удаление оставшегося legacy runtime/build wiring после #74–#76.
+4. #147 — отдельный production cutover/purge gate; сейчас не разрешён и не готов.

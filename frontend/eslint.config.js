@@ -100,8 +100,9 @@ module.exports = tseslint.config(
       "src/app/terms-page.component.ts"
     ],
     rules: {
-      // TODO(#74): Remove this compatibility exception with the superseded legacy
-      // components; replacement paper/authoring components use Signals/OnPush.
+      // TODO(#146): Remove this compatibility exception with the remaining legacy
+      // components when their runtime/build wiring is deleted; replacement components
+      // already use Signals/OnPush.
       "@angular-eslint/prefer-on-push-component-change-detection": "off"
     }
   }

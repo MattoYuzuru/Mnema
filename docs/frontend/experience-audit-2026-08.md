@@ -3,7 +3,7 @@ artifact:
   id: experience-audit-2026-08
   type: frontend-review
   title: "Mnema frontend, UX and exercise audit"
-  status: superseded-direction
+  status: superseded
   created_at: "2026-08-15"
   updated_at: "2026-09-06"
   owners: ["project-owner"]
@@ -87,7 +87,7 @@ Create one accessible dialog primitive using the already installed CDK or native
 ### P1 — searches and long-running work have lifecycle bugs
 
 - Public-card search filters only loaded pages and can stop prefetching on the first empty local result ([public-card-browser.component.ts](../../frontend/src/app/features/public-decks/public-card-browser.component.ts#L1175)). A later-page match can be reported absent. Use server search or explicitly state and correctly continue a loaded-only search.
-- AI modals poll recursively with `setTimeout` and no destroy cancellation ([ai-enhance-card-modal.component.ts](../../frontend/src/app/features/decks/ai-enhance-card-modal.component.ts#L1166), [ai-import-modal.component.ts](../../frontend/src/app/features/decks/ai-import-modal.component.ts#L1502)). Closing a modal can leave callbacks/requests alive. Move job observation to a job store or use `timer`/`switchMap`/`takeUntilDestroyed`; stop MediaRecorder and timers on destroy.
+- AI modals polled recursively with `setTimeout` and no destroy cancellation ([historical enhance modal](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/frontend/src/app/features/decks/ai-enhance-card-modal.component.ts#L1166), [historical import modal](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/frontend/src/app/features/decks/ai-import-modal.component.ts#L1502)). Closing a modal could leave callbacks/requests alive. The files were removed from the replacement UI; this finding remains historical evidence.
 
 ### P1 — unsupported Angular line and known dependency findings
 
@@ -178,7 +178,7 @@ to avoid, not a measured attribution of every observed slowdown.
 
 ## Exercise platform
 
-The current session is hard-coded as prompt → reveal → `AGAIN/HARD/GOOD/EASY` ([review-session.component.ts](../../frontend/src/app/features/decks/review-session.component.ts#L78)); the backend answer contract captures rating and response time, not an exercise attempt ([review.models.ts](../../frontend/src/app/core/models/review.models.ts#L29)).
+The v1 session was hard-coded as prompt → reveal → `AGAIN/HARD/GOOD/EASY` ([historical review session](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/frontend/src/app/features/decks/review-session.component.ts#L78)); the retained legacy answer model captures rating and response time, not an exercise attempt ([review.models.ts](../../frontend/src/app/core/models/review.models.ts#L29)).
 
 Use a bounded registry, not a plugin/microfrontend framework:
 

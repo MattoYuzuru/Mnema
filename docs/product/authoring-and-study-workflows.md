@@ -3,17 +3,17 @@ artifact:
   id: authoring-and-study-workflows
   type: product-contract
   title: "Own-deck authoring, exercise projections and practice modes"
-  status: accepted-input-with-proposed-engineering
+  status: accepted
   created_at: "2026-09-06"
-  updated_at: "2026-09-06"
+  updated_at: "2026-09-19"
   owners: ["project-owner"]
 ---
 
 # Материалы, черновики и обучение
 
 Источник — подробные ответы владельца 2026-09-06. Продуктовое поведение ниже
-принято как input; API envelopes, лимиты и способы хранения — инженерные предложения
-для #74–#76, а не реализованные возможности. Этот документ конкретизирует
+принято как input. Authoring subset реализован в #74; Study/exercise engineering
+остаётся input для refinement #75, media — для #76. Этот документ конкретизирует
 [owner decisions](../decisions/owner-decisions-2026-08.md) и
 [каталог упражнений](exercise-catalog-v2.md).
 

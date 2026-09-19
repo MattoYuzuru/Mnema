@@ -1,5 +1,8 @@
 # Frontend (`frontend`)
 
+> **Status: legacy.** This page describes the v1 Angular UI. Current routes and
+> Angular 22 boundaries are in the repository guide and source.
+
 ## Назначение
 
 Angular SPA, которая связывает все backend-сервисы в единый пользовательский продукт: обучение, редактирование, импорт, AI, профиль.
@@ -41,4 +44,3 @@ Angular SPA, которая связывает все backend-сервисы в 
 - `media` — upload/resolve медиа;
 - `import` — импорт/экспорт колод;
 - `ai` — AI jobs и AI import.
-

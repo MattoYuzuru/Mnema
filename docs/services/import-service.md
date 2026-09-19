@@ -1,5 +1,8 @@
 # Import Service (`backend/services/import`)
 
+> **Status: legacy.** Retained as v1 replacement/deletion evidence; it is not part
+> of the first replacement runtime.
+
 ## Назначение
 
 `import` отвечает за импорт и экспорт колод:
@@ -40,4 +43,3 @@
 - Использует `media` для хранения исходных/результирующих файлов.
 - Использует `core` для создания/обновления колод и карточек после разбора.
 - Вызывается фронтендом из модального workflow импорта.
-

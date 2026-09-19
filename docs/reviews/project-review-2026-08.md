@@ -3,7 +3,7 @@ artifact:
   id: project-review-2026-08
   type: decision-review
   title: "Mnema technical and product review"
-  status: proposed
+  status: historical
   created_at: "2026-08-15"
   updated_at: "2026-08-30"
   owners: ["project-owner"]

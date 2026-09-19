@@ -1,5 +1,8 @@
 # Media Service (`backend/services/media`)
 
+> **Status: legacy.** Retained as v1 replacement/deletion evidence; Epic #76 owns
+> the greenfield media lifecycle.
+
 ## Назначение
 
 `media` управляет пользовательскими файлами и бинарными вложениями:
@@ -38,4 +41,3 @@
 - Используется `core` и `user` для резолва ссылок на медиа.
 - Используется `import` и `ai` для server-side upload файлов/ассетов.
 - Вызывается фронтендом при пользовательских загрузках (аватар, медиа карточек и т.д.).
-

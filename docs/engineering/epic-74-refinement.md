@@ -2,7 +2,7 @@
 artifact:
   id: epic-74-refinement
   type: implementation-plan
-  status: active-execution-slices
+  status: historical
   created_at: "2026-09-06"
   updated_at: "2026-09-19"
   owners: ["project-owner"]

@@ -15,8 +15,8 @@ artifact:
 The owner has accepted the product requirements below and, after R74-S evidence,
 selected scoped UUID immutable blocks/pages, normalized FK edges and physical native-text
 fragments for Epic #74. K1 storage, K2 native codec and K3 counted-page/structural kernels
-are implemented and tested; complete LearningItem publication, retention policy and
-production capacity remain separate acceptance boundaries.
+and complete LearningItem publication are implemented and tested. Product retention
+policy and production capacity remain separate acceptance boundaries.
 [Content platform](./content-platform-v2.md) owns the domain overview;
 [product direction](../product/product-direction-v2.md) owns launch scope.
 
@@ -192,8 +192,8 @@ A publication job has actor, command/payload identity, expected source head,
 progress, lease expiry, cancellation and terminal result. Attempts after a worker
 crash reuse staged work safely. Proposed worker baseline: separate bounded queues
 per resource class and per-account concurrency caps, with explicit queue age and
-rejection behavior. #74 LLD must select deadlines from load evidence rather than
-claiming a guessed time as a production SLO.
+rejection behavior. Any slice that introduces such a worker must select deadlines
+from load evidence rather than claiming a guessed time as a production SLO.
 
 ## Session reads and large decks
 
@@ -242,10 +242,10 @@ silently introduced here.
 
 At this revision, Identity & Account source is consolidated and the separate
 [Learning API runtime](../../backend/services/learning/guide.md) includes its platform
-foundation, immutable storage kernels and private Deck metadata API. LearningItem
-publication, drafts, Capture and study remain unfinished. Legacy core/media/import/AI
-source remains replacement input. This is a selected target topology with bounded
-storage foundations, not a completed product-service consolidation or deployment claim.
+foundation, immutable storage kernels, private Deck/LearningItem publication,
+EditingDraft and CaptureNote APIs. Study remains unfinished. Legacy core/media/import/
+AI source remains replacement input. This is the current replacement content topology,
+not a completed product-service consolidation or deployment claim.
 
 The owner's scaling intuition is correct: a saturated importer should receive
 more worker capacity without multiplying unrelated API work. A modular Learning
@@ -296,10 +296,13 @@ Implementation then delivered the
 [K1 immutable storage kernel](../engineering/evidence/epic-74/storage-kernel.md),
 [K2 native codec](../engineering/evidence/epic-74/native-storage.md) and
 [K3 counted pages/structural editing](../engineering/evidence/epic-74/counted-pages.md).
-These close the storage research/kernel gates at their stated bounds; they do not
-claim a complete fork product, LearningItem API, drafts, scheduler or production rollout.
+These close the storage research/kernel gates at their stated bounds. The later
+[#74 integrated acceptance](../engineering/evidence/epic-74/verification/integrated-main-2026-09-19.md)
+verified the LearningItem API, authoring flows, owner ACL, concurrent publication and
+draft/Capture integration. It did not claim a complete fork product, scheduler or
+production rollout.
 
-Remaining owning slices must still verify integrated ACL/product behavior, selective
-pull, failed-cache behavior, saturated bulk queues, retention policy, backup/restore
-and production capacity. No synthetic result or storage-size estimate substitutes
-for those product and operational tests.
+Future owning slices must still verify selective pull, failed-cache behavior,
+saturated bulk queues, retention policy, backup/restore and production capacity.
+No synthetic result or storage-size estimate substitutes for those product and
+operational tests.

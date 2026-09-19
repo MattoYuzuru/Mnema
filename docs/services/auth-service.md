@@ -1,6 +1,7 @@
 # Auth Service (`backend/services/auth`)
 
-> **Legacy runtime inventory:** этот документ описывает текущий сервис до greenfield replacement. Epic #73 объединяет его с `user` в один Identity & Account deployable; отдельный compatibility service/API не сохраняется.
+> **Status: legacy.** Этот удалённый module описан только как v1 evidence. Epic #73
+> заменил `auth` и `user` единым Identity & Account без compatibility service/API.
 
 ## Назначение
 
