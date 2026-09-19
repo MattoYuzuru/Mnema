@@ -349,12 +349,13 @@ def main():
     parser.add_argument("--logout-selector", default='[data-testid="logout"]')
     parser.add_argument("--error-selector", default='[role="alert"]')
     parser.add_argument("--timeout", type=int, choices=range(30, 301), default=180)
+    parser.add_argument("--keep-on-failure", action="store_true",
+                        help="keep mode-0700 private logs/keys for local debugging")
     parser.add_argument("--control-file", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     args.dist = args.dist.resolve()
     BASE.require((args.dist / "index.html").is_file(), "missing built frontend index")
     args.output = Path(tempfile.mkdtemp(prefix="mnema-browser-evidence-"))
-    args.keep_on_failure = False
     args.clients = 1
     os.umask(0o077)
     fixture = None
@@ -370,8 +371,14 @@ def main():
         failed = False
     except KeyboardInterrupt:
         print(json.dumps({"suite": "interrupted_or_timed_out"}), flush=True)
-    except Exception:
-        print(json.dumps({"suite": "failed"}), flush=True)
+    except Exception as error:
+        diagnostic = {"suite": "failed", "kind": type(error).__name__}
+        if isinstance(error, AssertionError):
+            diagnostic["reason"] = str(error)
+        elif isinstance(error, subprocess.CalledProcessError):
+            command = error.cmd if isinstance(error.cmd, (list, tuple)) else []
+            diagnostic.update(returncode=error.returncode, command=[str(value) for value in command[:2]])
+        print(json.dumps(diagnostic), flush=True)
     finally:
         signal.alarm(0)
         if fixture is not None and not fixture.close(failed):

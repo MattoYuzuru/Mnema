@@ -25,6 +25,11 @@ export class AppShellComponent {
         }
     }
 
+    focusMain(event: Event): void {
+        event.preventDefault();
+        document.querySelector<HTMLElement>('#main-content')?.focus();
+    }
+
     focusPageHeading(): void {
         queueMicrotask(() => {
             const heading = document.querySelector<HTMLElement>('#main-content h1');

@@ -1,0 +1,54 @@
+{
+  "state": "passed",
+  "date": "2026-09-19",
+  "browser": "Chrome/154.0.8037.45",
+  "postgres": "PostgreSQL 18.6 arm64",
+  "transport": "real HTTPS, exact ephemeral SPKI allowlist, same-site cross-origin loopback",
+  "scenarios": [
+    "wrong_callback_rejected",
+    "real_browser_registration_auto_login_pkce",
+    "login_pkce_callback",
+    "real_own_deck_create_and_detail",
+    "real_own_deck_save_reload",
+    "real_own_deck_412_conflict_resolution",
+    "own_deck_responsive_and_zoom",
+    "authenticated_reload_profile_revalidated",
+    "logout_revokes_prior_bearer",
+    "two_account_shared_cookie_logout_isolation",
+    "wrong_live_pkce_state_rejected",
+    "replayed_callback_rejected"
+  ],
+  "ownDeckEvidence": {
+    "canonicalRoute": true,
+    "exactUnicodeAndRtl": true,
+    "persistedAfterReload": true,
+    "exactLocalDraftPreservedOn412": true,
+    "explicitConflictReapply": true,
+    "responsiveWidths": [1440, 390],
+    "zoomEquivalent": { "cssWidth": 320, "deviceScaleFactor": 2 },
+    "noHorizontalOverflow": true,
+    "primaryActionMinimumPx": 44,
+    "keyboardOrder": true,
+    "reducedMotion": true
+  },
+  "counts": {
+    "tokenExchanges": 4,
+    "networkRequests": 299,
+    "identityRequests": 53,
+    "externalRequestsBlocked": 0,
+    "browserRuntimeErrors": 0,
+    "logoutRequests": 2
+  },
+  "logoutWire": {
+    "allBearer": true,
+    "anyCookie": false,
+    "anyCsrf": false
+  },
+  "cleanup": "complete",
+  "manualCoverageNotClaimed": [
+    "VoiceOver",
+    "TalkBack",
+    "physical touch device",
+    "real IME composition"
+  ]
+}

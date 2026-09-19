@@ -65,6 +65,16 @@ describe('AppShellComponent', () => {
         expect(auth.logout).not.toHaveBeenCalled();
     });
 
+    it('keeps the current route and focuses main when the skip link is activated', () => {
+        const link = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('.skip-link')!;
+        const event = new MouseEvent('click', { bubbles: true, cancelable: true });
+
+        expect(link.dispatchEvent(event)).toBeFalse();
+        expect(event.defaultPrevented).toBeTrue();
+        expect(document.activeElement?.id).toBe('main-content');
+        expect(TestBed.inject(Router).url).toBe('/');
+    });
+
     it('shows a non-actionable pending state before offering anonymous login', () => {
         status.next('pending');
         fixture.detectChanges();
