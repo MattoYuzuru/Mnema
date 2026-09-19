@@ -18,6 +18,8 @@ describe('OwnDeckDetailPageComponent', () => {
     const mutation = signal<DeckMutationState>({ phase: 'idle' });
 
     beforeEach(async () => {
+        detail.set({ phase: 'ready', deckId: deck.deckId, deck, failure: null });
+        mutation.set({ phase: 'idle' });
         store = jasmine.createSpyObj<OwnDecksStore>('OwnDecksStore', [
             'openDeck', 'retryDetail', 'startSave', 'retryMutation', 'retryAsNewCommand',
             'useServerVersion', 'reapplyConflict', 'clearMutation', 'recoverMutation'

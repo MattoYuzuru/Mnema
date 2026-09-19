@@ -6,7 +6,7 @@ import {
     OWN_DECK_RECOVERY_STORAGE_KEY,
     OwnDeckRecoveryService
 } from './own-deck-recovery.service';
-import { PendingDeckCommand } from './own-decks.store';
+import type { PendingDeckCommand } from './own-decks.store';
 
 describe('OwnDeckRecoveryService', () => {
     let service: OwnDeckRecoveryService;

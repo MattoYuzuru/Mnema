@@ -9,7 +9,7 @@ import {
     isCanonicalVersion,
     validateDeckMetadata
 } from './own-deck.models';
-import { PendingDeckCommand } from './own-decks.store';
+import type { PendingDeckCommand } from './own-decks.store';
 
 export const OWN_DECK_RECOVERY_STORAGE_KEY = 'mnema_own_deck_recovery_v1';
 const RECOVERY_VERSION = 1;
