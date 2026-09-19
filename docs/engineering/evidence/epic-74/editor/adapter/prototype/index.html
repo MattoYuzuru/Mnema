@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Mnema · R74-E adapter prototype</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="./src/prototype.css">
+    <script type="importmap">
+      {
+        "imports": {
+          "orderedmap": "/node_modules/orderedmap/dist/index.js",
+          "prosemirror-commands": "/node_modules/prosemirror-commands/dist/index.js",
+          "prosemirror-history": "/node_modules/prosemirror-history/dist/index.js",
+          "prosemirror-keymap": "/node_modules/prosemirror-keymap/dist/index.js",
+          "prosemirror-model": "/node_modules/prosemirror-model/dist/index.js",
+          "prosemirror-schema-list": "/node_modules/prosemirror-schema-list/dist/index.js",
+          "prosemirror-state": "/node_modules/prosemirror-state/dist/index.js",
+          "prosemirror-transform": "/node_modules/prosemirror-transform/dist/index.js",
+          "prosemirror-view": "/node_modules/prosemirror-view/dist/index.js",
+          "rope-sequence": "/node_modules/rope-sequence/dist/index.js",
+          "w3c-keyname": "/node_modules/w3c-keyname/index.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <a class="skip-link" href="#editor-surface">К редактору</a>
+    <header>
+      <p class="eyebrow">R74-E · исследовательский прототип</p>
+      <h1>Нативный материал, не состояние редактора</h1>
+      <p>Изолированная проверка адаптера Mnema ↔ ProseMirror. Ничего отсюда не является production UI или форматом хранения.</p>
+    </header>
+    <main>
+      <nav class="mobile-tabs" aria-label="Режим материала">
+        <button type="button" data-tab="edit" aria-pressed="true">Материал</button>
+        <button type="button" data-tab="preview" aria-pressed="false">Вид</button>
+      </nav>
+      <div class="workspace">
+        <section class="editor-pane" data-pane="edit" aria-labelledby="editor-heading">
+          <div class="pane-heading">
+            <div>
+              <p class="eyebrow">Редактирование</p>
+              <h2 id="editor-heading">Материал</h2>
+            </div>
+            <p id="editor-help">Сочетания: ⌘/Ctrl+Z — отменить, Shift+⌘/Ctrl+Z — повторить.</p>
+          </div>
+          <div class="toolbar" role="toolbar" aria-label="Форматирование материала">
+            <button type="button" data-command="strong" aria-label="Полужирный">Ж</button>
+            <button type="button" data-command="em" aria-label="Курсив">К</button>
+            <button type="button" data-command="ruby">Вставить ruby</button>
+            <button type="button" data-command="undo">Отменить</button>
+            <button type="button" data-command="redo">Повторить</button>
+          </div>
+          <div id="editor-surface" class="editor-surface" aria-describedby="editor-help"></div>
+          <div class="actions">
+            <button type="button" class="primary" data-command="save">Проверить нативный AST</button>
+            <output id="status" aria-live="polite">Черновик открыт</output>
+          </div>
+        </section>
+        <section class="preview-pane" data-pane="preview" aria-labelledby="preview-heading">
+          <div class="pane-heading">
+            <div>
+              <p class="eyebrow">Безопасный renderer</p>
+              <h2 id="preview-heading">Вид</h2>
+            </div>
+          </div>
+          <article id="preview" aria-label="Предпросмотр материала"></article>
+        </section>
+      </div>
+      <details>
+        <summary>Последний нативный JSON</summary>
+        <pre id="native-output"></pre>
+      </details>
+    </main>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>

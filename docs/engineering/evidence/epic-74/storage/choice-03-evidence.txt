@@ -1,0 +1,104 @@
+e1dfd457015faa185dce161e70aa61414132bc1288d3822245bbb2612e11d298
+IMAGE,sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+/var/run/postgresql:5432 - accepting connections
+ENV,PostgreSQL 18.4 on aarch64-unknown-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit,java=21.0.11,max_heap=1073741824
+CONFIG,autovacuum=off;fsync=on;full_page_writes=on;max_connections=20;shared_buffers=32768;synchronous_commit=on
+METRIC,label,operations,logical_row_mutations,payload_queries,logical_payload_bytes,heap_delta,toast_delta,index_delta,wal_bytes,p50_ms,p95_ms,p99_ms
+PASS,SR4 UUID/native short exact round-trip;16384-byte accept/16385 reject;stableIDs;dangling/wrongkind/wrongcount/crossscope rejected
+PASS,SR2 grow across 12 boundaries to 1057; random shrink to zero; regrow/churn350; min16/max32/merge/redistribute/collapse/counts/history values
+PASS,SR3 delta count32/33 rollover;180 insert/edit/delete/move;all214 retained snapshots exact;4096-byte membership patch budget
+METRIC,uuid_tree_1000_build,1,1098,65,105032,114688,0,114688,407080,145.840,145.840,145.840
+METRIC,uuid_tree_1000_metadata,10,10,0,0,8192,0,16384,3816,0.710,1.076,1.076
+METRIC,uuid_tree_1000_edit,1,67,6,11122,8192,0,24576,38248,11.209,11.209,11.209
+METRIC,uuid_delta_1000_edit,1,1,0,0,8192,0,0,368,1.522,1.522,1.522
+METRIC,uuid_tree_1000_delete,1,66,7,14168,8192,0,0,22456,14.153,14.153,14.153
+METRIC,uuid_delta_1000_delete,1,1,0,0,0,0,0,368,1.426,1.426,1.426
+METRIC,uuid_tree_1000_move,1,143,20,26736,8192,0,16384,54440,29.650,29.650,29.650
+METRIC,uuid_delta_1000_move,1,1,0,0,0,0,0,368,1.431,1.431,1.431
+METRIC,uuid_tree_1000_bulk100,1,5189,900,839290,524288,0,458752,1838480,1406.951,1406.951,1406.951
+METRIC,uuid_delta_1000_bulk100,1,100,0,0,16384,122880,24576,160616,78.195,78.195,78.195
+METRIC,uuid_tree_1000_page100,10,0,70,149220,0,0,0,0,4.361,5.481,5.481
+METRIC,uuid_delta_1000_array_page100,10,0,20,985740,0,0,0,0,3.242,4.648,4.648
+PASS,SR3 equal membership edits/delete/move/bulk100/checkpoint rollover n=1000
+METRIC,uuid_tree_10000_build,1,10971,647,1072859,1171456,0,1024000,3979128,1777.254,1777.254,1777.254
+METRIC,uuid_tree_10000_metadata,10,10,0,0,0,0,0,3624,0.752,1.087,1.087
+METRIC,uuid_tree_10000_edit,1,79,9,12656,8192,0,8192,31176,15.897,15.897,15.897
+METRIC,uuid_delta_10000_edit,1,1,0,0,0,0,0,368,1.558,1.558,1.558
+METRIC,uuid_tree_10000_delete,1,78,11,18040,0,0,16384,27944,15.943,15.943,15.943
+METRIC,uuid_delta_10000_delete,1,1,0,0,0,0,0,368,1.398,1.398,1.398
+METRIC,uuid_tree_10000_move,1,164,24,30776,16384,0,16384,62768,61.591,61.591,61.591
+METRIC,uuid_delta_10000_move,1,1,0,0,0,0,0,368,2.855,2.855,2.855
+METRIC,uuid_tree_10000_bulk100,1,6089,900,971090,614400,0,540672,2161080,1578.927,1578.927,1578.927
+METRIC,uuid_delta_10000_bulk100,1,100,0,0,16384,1228800,24576,1306816,164.000,164.000,164.000
+METRIC,uuid_tree_10000_page100,10,0,70,155810,0,0,0,0,3.966,5.922,5.922
+METRIC,uuid_delta_10000_array_page100,10,0,20,9805740,0,0,0,0,13.781,14.911,14.911
+PASS,SR3 equal membership edits/delete/move/bulk100/checkpoint rollover n=10000
+METRIC,uuid_tree_50000_build,1,54844,3229,5367771,5865472,0,4923392,19775168,6960.922,6960.922,6960.922
+METRIC,uuid_tree_50000_metadata,10,10,0,0,0,0,0,3624,0.672,1.071,1.071
+METRIC,uuid_tree_50000_edit,1,99,12,15336,8192,0,0,33984,17.058,17.058,17.058
+METRIC,uuid_delta_50000_edit,1,1,0,0,0,0,0,368,1.377,1.377,1.377
+METRIC,uuid_tree_50000_delete,1,98,15,22643,8192,0,8192,37608,20.110,20.110,20.110
+METRIC,uuid_delta_50000_delete,1,1,0,0,0,0,0,368,1.180,1.180,1.180
+METRIC,uuid_tree_50000_move,1,203,31,37915,24576,0,8192,72040,34.453,34.453,34.453
+METRIC,uuid_delta_50000_move,1,1,0,0,0,0,0,368,1.494,1.494,1.494
+METRIC,uuid_tree_50000_bulk100,1,7989,1200,1224690,778240,0,745472,2829584,1791.587,1791.587,1791.587
+METRIC,uuid_delta_50000_bulk100,1,100,0,0,16384,6127616,73728,6426992,485.874,485.874,485.874
+METRIC,uuid_tree_50000_page100,10,0,80,168490,0,0,0,0,3.769,4.821,4.821
+METRIC,uuid_delta_50000_array_page100,10,0,20,49005740,0,0,0,0,49.367,56.581,56.581
+PASS,SR3 equal membership edits/delete/move/bulk100/checkpoint rollover n=50000
+METRIC,uuid_tree_100000_build,1,109683,6455,10735468,11739136,0,9912320,39574976,13593.553,13593.553,13593.553
+METRIC,uuid_tree_100000_metadata,10,10,0,0,0,0,0,3600,0.656,1.069,1.069
+METRIC,uuid_tree_100000_edit,1,101,12,15636,16384,0,0,34648,18.422,18.422,18.422
+METRIC,uuid_delta_100000_edit,1,1,0,0,0,0,0,368,1.328,1.328,1.328
+METRIC,uuid_tree_100000_delete,1,100,15,22943,8192,0,0,34328,16.873,16.873,16.873
+METRIC,uuid_delta_100000_delete,1,1,0,0,0,0,0,368,1.398,1.398,1.398
+METRIC,uuid_tree_100000_move,1,207,31,38515,16384,0,24576,82568,40.920,40.920,40.920
+METRIC,uuid_delta_100000_move,1,1,0,0,0,0,0,368,1.023,1.023,1.023
+METRIC,uuid_tree_100000_bulk100,1,8189,1200,1254690,794624,0,688128,2870000,1636.405,1636.405,1636.405
+METRIC,uuid_delta_100000_bulk100,1,100,0,0,16384,12263424,147456,12821328,809.433,809.433,809.433
+METRIC,uuid_tree_100000_page100,10,0,80,169990,0,0,0,0,3.955,4.333,4.333
+METRIC,uuid_delta_100000_array_page100,10,0,20,98005740,0,0,0,0,98.133,109.628,109.628
+METRIC,delta_prepared_generation100000,1,100002,0,0,8454144,0,10371072,31503952,1975.263,1975.263,1975.263
+METRIC,delta_prepared_fork_chain25_first100,25,25,25,235025,8192,0,8192,6904,1.476,2.075,2.772
+METRIC,tree_fork_chain25_first100,25,50,175,447525,8192,0,8192,16856,5.283,7.008,7.118
+METRIC,delta_prepared_fork_private_edit,1,1,0,0,8192,0,8192,368,0.737,0.737,0.737
+PASS,SR3 prepared100k delta generation fork-of-fork25 independent sparse edit, generation preparation excluded from foreground
+PASS,SR3 equal membership edits/delete/move/bulk100/checkpoint rollover n=100000
+METRIC,native_tree_document1000edits,1000,42000,6000,7300000,4382720,2727936,3973120,19857912,7.133,9.539,10.168
+METRIC,native_delta_nodehead1000edits,1000,2000,0,0,81920,15876096,278528,16659016,1.445,2.068,13.376
+METRIC,native_tree_equal_document_rev0,10,0,60,3072370,0,0,0,0,5.681,7.926,7.926
+METRIC,native_delta_equal_document_rev0,10,0,20,2937600,0,0,0,0,4.037,6.254,6.254
+METRIC,native_tree_equal_document_rev1,10,0,60,3072370,0,0,0,0,5.674,6.475,6.475
+METRIC,native_delta_equal_document_rev1,10,0,20,2960530,0,0,0,0,4.143,6.389,6.389
+METRIC,native_tree_equal_document_rev31,10,0,60,3072370,0,0,0,0,6.491,7.415,7.415
+METRIC,native_delta_equal_document_rev31,10,0,20,2983460,0,0,0,0,3.762,6.248,6.248
+METRIC,native_tree_equal_document_rev32,10,0,60,3072370,0,0,0,0,6.542,6.923,6.923
+METRIC,native_delta_equal_document_rev32,10,0,20,3006390,0,0,0,0,4.181,4.444,4.444
+METRIC,native_tree_equal_document_rev33,10,0,60,3072370,0,0,0,0,6.672,7.869,7.869
+METRIC,native_delta_equal_document_rev33,10,0,20,3029320,0,0,0,0,3.343,5.636,5.636
+METRIC,native_tree_equal_document_rev999,10,0,60,3072370,0,0,0,0,5.476,6.186,6.186
+METRIC,native_delta_equal_document_rev999,10,0,20,3235690,0,0,0,0,3.521,6.521,6.521
+METRIC,native_tree_equal_document_rev1000,10,0,60,3072370,0,0,0,0,6.609,7.871,7.871
+METRIC,native_delta_equal_document_rev1000,10,0,20,3258620,0,0,0,0,4.407,4.718,4.718
+PASS,SR3 identical native payloads/order/nodeIDs at revisions0/1/31/32/33/999/1000;node-head delta checkpoint+patch transfer and client replay;64KiB byte rollover
+PASS,SR1 worker transaction atomic revision/head/receipt/projection before and after disconnect;staging survives;four simultaneous same-command retries one complete result;payload/stale conflicts
+PASS,SR5 normalized typed DAG GC max8candidates/32edges per object;source deletion;fork/draft/attempt page-to-block reachability;orphan page+block;deterministic newpin/staging lease races;disconnect+queue restart;bounded expiry+grace
+PASS,CHOICE_EXPERIMENT_ALL_ASSERTIONS
+TOTAL,Stats[rows=453053, heap=45146112, toast=46030848, index=43278336, wal=239338400]
+ROWS,object,15438
+ROWS,edge,319415
+ROWS,root,4
+ROWS,garbage,15434
+ROWS,revision,67
+ROWS,deck,26
+ROWS,receipt,1
+ROWS,projection,1
+ROWS,checkpoint,58
+ROWS,patch,1573
+ROWS,current_node,128
+ROWS,generation_state,1
+ROWS,generation,100000
+ROWS,delta_deck,25
+ROWS,overlay,1
+VACUUM
+AFTER_VACUUM_DATABASE_BYTES,143341247
