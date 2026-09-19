@@ -42,11 +42,9 @@ import { TranslatePipe } from '../../shared/pipes/translate.pipe';
               @for (deck of decks; track deck) {
                 <app-deck-card
                   [userDeck]="deck"
-                  [showLearn]="true"
-                  [showBrowse]="true"
+                  [showLearn]="false"
+                  [showBrowse]="false"
                   (open)="openDeck(deck.userDeckId)"
-                  (learn)="learnDeck(deck.userDeckId)"
-                  (browse)="browseDeck(deck.userDeckId)"
                 ></app-deck-card>
               }
             </div>
@@ -215,14 +213,6 @@ export class MyStudyComponent implements OnInit {
 
     openDeck(userDeckId: string): void {
         void this.router.navigate(['/decks', userDeckId]);
-    }
-
-    learnDeck(userDeckId: string): void {
-        void this.router.navigate(['/decks', userDeckId, 'review']);
-    }
-
-    browseDeck(userDeckId: string): void {
-        void this.router.navigate(['/decks', userDeckId, 'browse']);
     }
 
     openTemplate(templateId: string): void {

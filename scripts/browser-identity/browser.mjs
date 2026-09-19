@@ -113,7 +113,7 @@ try {
       const url = new URL(event.request.url);
       networkRequests++;
       if (url.origin === config.identity) identityRequests++;
-      if (networkRequests > 300 || identityRequests > 100) asynchronousFailure = true;
+      if (networkRequests > 500 || identityRequests > 150) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
         run(tab.call('Fetch.failRequest', { requestId: event.requestId, errorReason: 'BlockedByClient' }));
@@ -195,9 +195,10 @@ try {
     await until(() => exists(selector, tab), 'form field absent');
     require(await tab.callFunction(`function(selector, value) {
       const element = document.querySelector(selector);
-      if (!(element instanceof HTMLInputElement)) return false;
+      if (!(element instanceof HTMLInputElement) && !(element instanceof HTMLTextAreaElement)) return false;
       element.focus();
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(element, value);
+      const prototype = element instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(prototype, 'value').set.call(element, value);
       element.dispatchEvent(new Event('input', { bubbles: true }));
       element.dispatchEvent(new Event('change', { bubbles: true }));
       return true;
@@ -210,6 +211,15 @@ try {
     return true;
   }`, [selector]);
   async function submit(tab = cdp) { await tab.evaluate("document.querySelector('form button[type=submit]').click()"); }
+  async function pressKey(key, code, virtualKeyCode, modifiers = 0, tab = cdp) {
+    const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers };
+    await tab.call('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...event });
+    await tab.call('Input.dispatchKeyEvent', { type: 'keyUp', ...event });
+  }
+  async function saveScreenshot(name, tab = cdp) {
+    const capture = await tab.call('Page.captureScreenshot', { format: 'png', fromSurface: true });
+    await writeFile(join(config.output, name), Buffer.from(capture.data, 'base64'));
+  }
   const sanitizedLocation = (tab = cdp) => tab.evaluate('location.pathname');
   step = 'wrong_callback';
   await navigate('/auth/callback?code=fixture-invalid&state=fixture-invalid');
@@ -246,6 +256,142 @@ try {
   require(!(await sanitizedLocation()).startsWith('/auth/callback'), 'callback not cleaned');
   const firstBearer = bearerTokens.at(-1), originalCallback = callback;
   record('login_pkce_callback', { loginStatus, secureContext: true, secureHttpOnlyLaxCookie: true });
+  step = 'own_deck_authoring';
+  const originalTitle = 'Русский материал — 漢字';
+  const savedTitle = 'Русский материал — версия 2';
+  await navigate('/decks');
+  await until(() => exists('#own-decks-title'), 'own deck library did not load');
+  require(await cdp.callFunction(`function() {
+    return document.body.innerText.includes('Первая страница пока чиста');
+  }`), 'fresh account did not show the own-deck empty state');
+  await navigate('/decks/new');
+  await fill('#create-title', originalTitle);
+  await fill('#create-description', 'Длинная строка на русском\nשורה בעברית');
+  await submit();
+  await until(async () => /^\/decks\/[0-9a-f-]{36}$/.test(await sanitizedLocation())
+    && await exists('#detail-title'), 'real deck create did not open its canonical detail route');
+  const deckPath = await sanitizedLocation();
+  require(await cdp.callFunction(`function(expected) {
+    const input = document.querySelector('#detail-title');
+    return input instanceof HTMLTextAreaElement && input.value === expected
+      && document.querySelector('h1')?.textContent?.trim() === expected;
+  }`, [originalTitle]), 'created deck did not preserve exact title');
+  record('real_own_deck_create_and_detail', { canonicalRoute: true, exactUnicode: true });
+  await cdp.call('Page.reload', { ignoreCache: true });
+  await until(() => exists('#detail-title'), 'deck detail did not survive browser reload');
+  require(await cdp.callFunction(`function(expected) {
+    const input = document.querySelector('#detail-title');
+    return input instanceof HTMLTextAreaElement && input.value === expected;
+  }`, [originalTitle]), 'reloaded deck lost persisted metadata');
+  await fill('#detail-title', savedTitle);
+  await submit();
+  await until(() => cdp.callFunction(`function(expected) {
+    return document.querySelector('h1')?.textContent?.trim() === expected
+      && document.body.innerText.includes('Сервер подтвердил текущую версию колоды.');
+  }`, [savedTitle]), 'real deck metadata save was not acknowledged');
+  record('real_own_deck_save_reload', { persistedAfterReload: true });
+
+  step = 'own_deck_conflict';
+  const conflictTab = await openTab();
+  await initialize(conflictTab);
+  const beforeConflictLogin = tokenExchanges;
+  await navigate('/login', conflictTab);
+  await fill('#login-name', config.login, conflictTab);
+  await fill('#password', config.password, conflictTab);
+  await submit(conflictTab);
+  await until(async () => tokenExchanges > beforeConflictLogin
+    && (await sanitizedLocation(conflictTab)) === '/decks', 'same-account conflict tab did not authenticate');
+  await navigate(deckPath, conflictTab);
+  await until(() => exists('#detail-title', conflictTab), 'conflict tab did not load the deck');
+  await navigate(deckPath);
+  await until(() => exists('#detail-title'), 'primary conflict tab did not reload the deck');
+  await fill('#detail-title', 'Изменение из первой вкладки');
+  await submit();
+  await until(() => cdp.callFunction(`function() {
+    return document.body.innerText.includes('Сервер подтвердил текущую версию колоды.');
+  }`), 'first concurrent save was not acknowledged');
+  await fill('#detail-title', 'Изменение из второй вкладки', conflictTab);
+  await submit(conflictTab);
+  await until(() => exists('#conflict-title', conflictTab), 'stale concurrent save did not expose a 412 choice');
+  require(await conflictTab.callFunction(`function() {
+    const input = document.querySelector('#detail-title');
+    return input instanceof HTMLTextAreaElement && input.readOnly
+      && input.value === 'Изменение из второй вкладки';
+  }`), 'conflict did not preserve and lock the exact local draft');
+  require(await click('.notice.conflict .button.primary', conflictTab), 'conflict reapply action absent');
+  await until(() => conflictTab.callFunction(`function() {
+    return document.body.innerText.includes('Сервер подтвердил текущую версию колоды.');
+  }`), 'explicit conflict reapply did not publish a fresh command');
+  await navigate(deckPath);
+  await until(() => cdp.callFunction(`function() {
+    const input = document.querySelector('#detail-title');
+    return input instanceof HTMLTextAreaElement && input.value === 'Изменение из второй вкладки';
+  }`), 'conflict resolution did not persist the chosen local draft');
+  record('real_own_deck_412_conflict_resolution', { exactLocalDraftPreserved: true, explicitReapply: true });
+
+  step = 'own_deck_responsive_evidence';
+  require(await cdp.callFunction(`function() {
+    const input = document.querySelector('#detail-title');
+    if (!(input instanceof HTMLTextAreaElement)) return false;
+    input.focus();
+    return document.activeElement === input;
+  }`), 'title field did not accept keyboard focus');
+  await pressKey('Tab', 'Tab', 9);
+  require(await cdp.callFunction(`function() {
+    return document.activeElement?.id === 'detail-description';
+  }`), 'metadata fields were not in predictable keyboard order');
+  require(await cdp.callFunction(`function() {
+    document.body.tabIndex = -1;
+    document.body.focus();
+    return document.activeElement === document.body;
+  }`), 'could not establish the keyboard traversal origin');
+  await pressKey('Tab', 'Tab', 9);
+  require(await cdp.callFunction(`function() {
+    const active = document.activeElement;
+    return active instanceof HTMLAnchorElement && active.classList.contains('skip-link')
+      && active.getBoundingClientRect().top >= 0;
+  }`), 'first keyboard stop was not the visible skip link');
+  await pressKey('Enter', 'Enter', 13);
+  await until(() => cdp.callFunction(`function() {
+    return document.activeElement?.id === 'main-content';
+  }`), 'skip link did not move keyboard focus to main content');
+  require((await sanitizedLocation()) === deckPath && await exists('#detail-title'),
+    'skip link changed the current route or removed its content');
+  await cdp.callFunction(`function() { document.body.removeAttribute('tabindex'); }`);
+  await cdp.call('Emulation.setEmulatedMedia',
+    { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+  require(await cdp.callFunction(`function() {
+    const input = document.querySelector('#detail-title');
+    return matchMedia('(prefers-reduced-motion: reduce)').matches
+      && input instanceof HTMLElement && parseFloat(getComputedStyle(input).transitionDuration) <= 0.001;
+  }`), 'reduced-motion preference did not suppress authored transitions');
+  await cdp.call('Emulation.setDeviceMetricsOverride',
+    { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+  await saveScreenshot('own-deck-1440.png');
+  await cdp.call('Emulation.setDeviceMetricsOverride',
+    { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+  require(await cdp.callFunction(`function() {
+    const action = document.querySelector('.button.primary');
+    return document.documentElement.scrollWidth <= document.documentElement.clientWidth
+      && action instanceof HTMLElement && action.getBoundingClientRect().height >= 44;
+  }`), '390px layout overflowed or exposed an undersized primary action');
+  await saveScreenshot('own-deck-390.png');
+  await cdp.call('Emulation.setDeviceMetricsOverride',
+    { width: 320, height: 900, deviceScaleFactor: 2, mobile: false });
+  require(await cdp.callFunction(`function() {
+    return window.innerWidth === 320 && window.devicePixelRatio === 2
+      && document.documentElement.clientWidth === 320
+      && document.documentElement.scrollWidth <= 320;
+  }`), '200% rasterized 320px layout did not reflow without horizontal overflow');
+  await saveScreenshot('own-deck-320-at-200-percent.png');
+  await cdp.call('Emulation.setDeviceMetricsOverride',
+    { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  await cdp.call('Emulation.setEmulatedMedia', { features: [] });
+  record('own_deck_responsive_and_zoom', { widths: [1440, 390], cssWidth: 320, deviceScaleFactor: 2,
+    noHorizontalOverflow: true, primaryActionMinimumPx: 44, keyboardOrder: true, reducedMotion: true });
+
+  await navigate('/login');
+  await until(authenticated, 'profile absent after own-deck authoring');
   step = 'reload';
   const beforeReload = tokenExchanges, beforeProfile = profileReads;
   await cdp.call('Page.reload', { ignoreCache: true });

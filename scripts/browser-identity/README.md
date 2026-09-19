@@ -22,8 +22,9 @@ Use `--chrome` for another existing Chrome executable. The page contract default
 `[data-testid="identity-profile"]`, `[data-testid="logout"]`, and `[role="alert"]`;
 matching CLI selector options are available. Registration uses `#email`, `#username`,
 `#password` (also `#login-name` if present); login uses `#login-name`, `#password`.
-After the successful callback returns to `/decks`, the harness opens `/login` to inspect
-the current profile/logout controls; it does not claim the legacy Deck screen is replaced.
+After the successful callback returns to `/decks`, the harness exercises the canonical
+own-deck list, create, detail, metadata-save and conflict UI against the real Learning API,
+then opens `/login` when it needs the profile/logout controls.
 
 ## Assertions and envelope
 
@@ -46,10 +47,20 @@ Two synthetic accounts and two same-profile browser tabs exercise:
 - A fresh login's real callback is redirected with a deliberately wrong `state`; the
   pending real PKCE transaction is rejected without exchanging its code.
 - Replaying a consumed callback is rejected client-side without another token exchange.
+- A fresh account sees the own-deck empty state, creates Unicode/RTL metadata through the
+  real API, lands on the canonical detail route, reloads it and saves another revision.
+- Two separately authenticated same-account tabs start from the same deck revision. The
+  stale tab receives a real `412`, keeps its exact draft read-only, and publishes it only
+  after the user explicitly chooses to reapply over the refreshed server version.
+- The resolved synthetic deck is captured at 1440px and 390px and at a 320 CSS px
+  layout rasterized at DPR 2. The harness rejects horizontal overflow and primary
+  actions below 44px. Real keyboard events verify the visible skip link, main focus and
+  title-to-description order; emulated reduced motion must suppress authored transitions.
+  These automated checks do not claim physical-device or AT coverage.
 
 The PKCE verifier is checked against the observed S256 challenge. Network interception
-blocks page requests outside the two exact origins; at most 300 page requests and
-100 Identity requests are allowed (full SPA navigations reload several bundled assets).
+blocks page requests outside the two exact origins; at most 500 page requests and
+150 Identity requests are allowed (full SPA navigations reload several bundled assets).
 Global deadline 180 seconds (CLI 30–300), individual CDP/HTTP/readiness deadlines, 1 MiB proxy
 request/response cap, 16 MiB static asset cap. Database has a 512 MiB/two-CPU limit; each JVM
 has a 384 MiB heap cap. This is behavioral smoke evidence, not load/soak evidence.
@@ -72,12 +83,16 @@ process/container deletion is used. An incomplete cleanup fails the run and repo
 owned resource identifiers for manual recovery. Never kill unrelated resources.
 
 Private TLS key, signing JWK, Chrome cookies/profile, token/callback data and child logs are
-never exported or retained for debugging. The separate 0700 evidence directory contains
-sanitized scenario/count results, artifact SHA-256 fingerprints, and on success only an
-empty login-form screenshot. It intentionally remains for reviewer inspection. Failure
+never exported and are removed by default. The separate 0700 evidence directory contains
+sanitized scenario/count results, artifact SHA-256 fingerprints, the empty login-form
+screenshot and synthetic own-deck responsive captures. It intentionally remains for reviewer inspection. Failure
 evidence contains only controlled failure/scenario labels and counts, not response bodies,
 console logs, URLs, credentials or stack traces. `--control-file` is a private optional
 cancellation-test synchronization file; do not publish it.
+
+For local diagnosis only, `--keep-on-failure` retains the separate mode-0700 private
+fixture directory and prints its path. It can contain disposable credentials, cookies and
+child logs; inspect it locally, never publish it, and remove that exact directory afterward.
 
 Fixture unit tests validate its safety mechanisms only. They do not substitute for a
 passing browser run, the full repository gates, an independent review or production proof.

@@ -1,0 +1,83 @@
+<section class="page narrow" aria-labelledby="create-deck-title">
+  <a class="back-link" routerLink="/decks"><span aria-hidden="true">←</span> Мои колоды</a>
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">Новая колода</p>
+      <h1 id="create-deck-title" tabindex="-1">Начните с названия</h1>
+      <p class="lede">Название и описание можно изменить позже. Текст останется именно таким, как вы его ввели.</p>
+    </div>
+  </header>
+
+  @if (recovered()) {
+    <p class="notice compact" role="status">Черновик восстановлен из этой вкладки.</p>
+  }
+
+  <form class="metadata-form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
+    <div class="field">
+      <label for="create-title">Название <span aria-hidden="true">*</span></label>
+      <textarea class="title-field" id="create-title" rows="2" formControlName="title" maxlength="400" (input)="syncDraft()"
+        [readOnly]="mutationLocksDraft(store.mutationState())"
+        [attr.aria-invalid]="submitted() && (validation().titleBlank || validation().titleCodePoints > 200 || validation().titleBytes > 800)"
+        aria-describedby="create-title-help create-title-error" autocomplete="off"></textarea>
+      <div class="field-meta" id="create-title-help">
+        <span>До 200 символов и 800 байт</span>
+        <span>{{ validation().titleCodePoints }}/200 · {{ validation().titleBytes }}/800 байт</span>
+      </div>
+      @if (submitted() && validation().titleBlank) {
+        <p class="field-error" id="create-title-error">Введите название, состоящее не только из пробелов.</p>
+      } @else if (submitted() && (validation().titleCodePoints > 200 || validation().titleBytes > 800)) {
+        <p class="field-error" id="create-title-error">Сократите название до указанных пределов.</p>
+      }
+    </div>
+
+    <div class="field">
+      <label for="create-description">Описание <span class="optional">необязательно</span></label>
+      <textarea id="create-description" rows="8" maxlength="4096" formControlName="description" (input)="syncDraft()"
+        [readOnly]="mutationLocksDraft(store.mutationState())"
+        [attr.aria-invalid]="submitted() && validation().descriptionBytes > 4096"
+        aria-describedby="create-description-help create-description-error"></textarea>
+      <div class="field-meta" id="create-description-help">
+        <span>До 4096 байт</span>
+        <span>{{ validation().descriptionBytes }}/4096 байт</span>
+      </div>
+      @if (submitted() && validation().descriptionBytes > 4096) {
+        <p class="field-error" id="create-description-error">Сократите описание до 4096 байт.</p>
+      }
+    </div>
+
+    @if (submitted() && !validation().unicodeValid) {
+      <p class="notice error" role="alert">Текст содержит неподдерживаемую последовательность Unicode.</p>
+    }
+    @if (submitted() && validation().requestBytes > 8192) {
+      <p class="notice error" role="alert">Название и описание вместе превышают размер команды 8192 байта.</p>
+    }
+
+    @let mutation = store.mutationState();
+    @if (mutation.phase === 'error') {
+      <section class="notice error" aria-labelledby="create-error-title">
+        <h2 id="create-error-title">Создание не подтверждено</h2>
+        <p>{{ failureMessage(mutation.failure) }}</p>
+        @if (mutationLocksDraft(mutation)) {
+          <p>Поля доступны только для чтения, пока не завершён показанный ниже безопасный выбор.</p>
+        }
+        <div class="actions">
+          @if (mutation.replayRefreshFailed) {
+            <button class="button secondary" type="button" (click)="retryMutation()">Снова проверить текущую версию</button>
+          } @else if (mayRetrySameCommand(mutation.failure)) {
+            <button class="button secondary" type="button" (click)="retryMutation()">Повторить ту же команду</button>
+          }
+          @if (mutation.failure.status === 409) {
+            <button class="button secondary" type="button" (click)="retryAsNewCommand()">Отправить как новую команду</button>
+          }
+        </div>
+      </section>
+    }
+
+    <div class="form-actions">
+      <a class="button quiet" routerLink="/decks">Отмена</a>
+      <button class="button primary" type="submit" [disabled]="!canStartNewMutation(mutation)">
+        {{ mutation.phase === 'pending' ? 'Создаём…' : 'Создать колоду' }}
+      </button>
+    </div>
+  </form>
+</section>

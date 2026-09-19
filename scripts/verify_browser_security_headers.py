@@ -17,7 +17,7 @@ from urllib.request import Request, urlopen
 from frontend_release_assets import hashed_assets
 
 
-JSON_LD_HASH = "sha256-VR45d+4Tpmsv5J0dHbmYAic5u7F3Ttjk763rpC0sZHI="
+JSON_LD_HASH = "sha256-dPpiNzPhacWONZyOECmbuE9hUJqG63dY8JOD/zBnn5Q="
 BASELINE_CSP = "base-uri 'self'; object-src 'none'; frame-ancestors 'none'"
 COMMON_HEADERS = {
     "x-content-type-options": "nosniff",

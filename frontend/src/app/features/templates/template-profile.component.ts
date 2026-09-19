@@ -7,7 +7,6 @@ import { TemplateApiService } from '../../core/services/template-api.service';
 import { ReportApiService, ReportReason } from '../../core/services/report-api.service';
 import { ToastService } from '../../core/services/toast.service';
 import { UserApiService } from '../../user-api.service';
-import { DeckWizardStateService } from '../wizard/deck-wizard-state.service';
 import { CardTemplateDTO, FieldTemplateDTO } from '../../core/models/template.models';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
@@ -68,11 +67,6 @@ type FieldSide = 'front' | 'back';
             }
           </div>
           <div class="header-actions">
-            @if (fromWizard) {
-              <app-button variant="primary" (click)="useTemplate()">
-                {{ 'templateProfile.useTemplate' | translate }}
-              </app-button>
-            }
             @if (canEditTemplate && !editing) {
               <app-button variant="secondary" (click)="startEdit()">
                 {{ 'templateProfile.edit' | translate }}
@@ -681,7 +675,6 @@ export class TemplateProfileComponent implements OnInit {
     private templateApi = inject(TemplateApiService);
     private reportApi = inject(ReportApiService);
     private userApi = inject(UserApiService);
-    private wizardState = inject(DeckWizardStateService);
     private i18n = inject(I18nService);
     private toast = inject(ToastService);
 
@@ -700,7 +693,6 @@ export class TemplateProfileComponent implements OnInit {
     currentUserId: string | null = null;
     isOwner = false;
     isAdmin = false;
-    fromWizard = false;
     isFlipped = false;
     editing = false;
     templateError = '';
@@ -738,7 +730,6 @@ export class TemplateProfileComponent implements OnInit {
         const templateId = this.route.snapshot.paramMap.get('templateId') || '';
         const versionParam = this.route.snapshot.queryParamMap.get('version');
         this.requestedVersion = versionParam ? Number(versionParam) : null;
-        this.fromWizard = this.route.snapshot.queryParamMap.get('from') === 'wizard';
         if (!templateId) {
             this.loading = false;
             return;
@@ -1047,13 +1038,6 @@ export class TemplateProfileComponent implements OnInit {
             return value;
         }
         return date.toLocaleDateString();
-    }
-
-    useTemplate(): void {
-        if (!this.template) return;
-        this.wizardState.setTemplateId(this.template.templateId);
-        this.wizardState.setCurrentStep(2);
-        void this.router.navigate(['/create-deck']);
     }
 
     private hydrateDraft(template: CardTemplateDTO): void {

@@ -1,13 +1,12 @@
 # Mnema
-Mnema is a web app for spaced repetition flashcards. Users can create decks, import from Anki/CSV, and study with SRS.
+Mnema is a learning platform under active development. The current signed-in experience supports creating private decks and editing their title and description.
 
 ## Key Pages
 - https://mnema.app/
 - https://mnema.app/public-decks
-- https://mnema.app/create-deck
 - https://mnema.app/privacy
 - https://mnema.app/terms
 
 ## Notes
-- Import supports APKG/CSV/TSV/TXT, preview and field mapping.
-- Media attachments include images, audio, and video.
+- Private deck pages require a verified Mnema account.
+- Study, editor, import, and public-catalog behavior is not part of the current own-deck flow.
