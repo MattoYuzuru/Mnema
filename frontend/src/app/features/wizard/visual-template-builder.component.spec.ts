@@ -4,14 +4,12 @@ import { of } from 'rxjs';
 
 import { TemplateApiService } from '../../core/services/template-api.service';
 import { I18nService } from '../../core/services/i18n.service';
-import { DeckWizardStateService } from './deck-wizard-state.service';
 import { VisualTemplateBuilderComponent } from './visual-template-builder.component';
 
 describe('VisualTemplateBuilderComponent', () => {
     let component: VisualTemplateBuilderComponent;
     let templateApi: jasmine.SpyObj<any>;
     let router: jasmine.SpyObj<any>;
-    let wizardState: jasmine.SpyObj<any>;
 
     beforeEach(() => {
         localStorage.removeItem('mnema_visual_builder_draft');
@@ -19,7 +17,6 @@ describe('VisualTemplateBuilderComponent', () => {
 
         templateApi = jasmine.createSpyObj('TemplateApiService', ['createTemplate']);
         router = jasmine.createSpyObj('Router', ['navigate']);
-        wizardState = jasmine.createSpyObj('DeckWizardStateService', ['setTemplateId', 'setCurrentStep']);
 
         templateApi.createTemplate.and.returnValue(of({ templateId: 'template-1' }));
         router.navigate.and.returnValue(Promise.resolve(true));
@@ -28,7 +25,6 @@ describe('VisualTemplateBuilderComponent', () => {
             providers: [
                 { provide: Router, useValue: router },
                 { provide: TemplateApiService, useValue: templateApi },
-                { provide: DeckWizardStateService, useValue: wizardState },
                 { provide: I18nService, useValue: new I18nService() }
             ]
         });

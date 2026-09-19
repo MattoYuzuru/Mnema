@@ -1,32 +1,35 @@
 :root {
-    --font-display: "Space Grotesk", "Sora", sans-serif;
-    --font-body: "Manrope", "Sora", sans-serif;
-    --font-code: "JetBrains Mono", "SFMono-Regular", "SF Mono", "Fira Code", monospace;
+    --paper: #f4f0e5;
+    --sheet: #fbf8ef;
+    --ink: #281378;
+    --body: #342e44;
+    --muted: #625c70;
+    --line: #c9c0ce;
+    --soft: #e8e1ed;
+    --font-display: Georgia, "Times New Roman", serif;
+    --font-body: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    --font-code: ui-monospace, "SFMono-Regular", "SF Mono", monospace;
 
-    --color-primary-accent: #0ea5e9;
-    --color-secondary-accent: #14b8a6;
-    --color-background: #edf1f8;
-    --color-card-background: rgba(255, 255, 255, 0.65);
-    --color-text-primary: #0b1220;
-    --color-text-secondary: #1f2a44;
-    --color-text-tertiary: #334155;
-    --color-text-muted: #5b6b86;
-    --accent-shadow: 0 12px 30px rgba(14, 165, 233, 0.25);
-    --accent-shadow-hover: 0 18px 36px rgba(14, 165, 233, 0.3);
+    /* Compatibility aliases stay opaque while legacy screens are retired. */
+    --color-primary-accent: var(--ink);
+    --color-secondary-accent: #4e3a8c;
+    --color-background: var(--paper);
+    --color-card-background: var(--sheet);
+    --color-text-primary: var(--body);
+    --color-text-secondary: #494259;
+    --color-text-tertiary: var(--body);
+    --color-text-muted: var(--muted);
+    --accent-shadow: none;
+    --accent-shadow-hover: none;
 
-    --glass-surface: rgba(255, 255, 255, 0.42);
-    --glass-surface-strong: rgba(255, 255, 255, 0.68);
-    --glass-border: rgba(255, 255, 255, 0.4);
-    --glass-border-strong: rgba(255, 255, 255, 0.6);
-    --glass-blur: 24px;
-    --color-surface-solid: #f9fbff;
+    --glass-surface: var(--sheet);
+    --glass-surface-strong: var(--sheet);
+    --glass-border: var(--line);
+    --glass-border-strong: var(--line);
+    --glass-blur: 0px;
+    --color-surface-solid: var(--sheet);
 
-    --page-gradient:
-        radial-gradient(900px 600px at 8% -10%, rgba(56, 189, 248, 0.45), transparent 60%),
-        radial-gradient(700px 500px at 92% 4%, rgba(249, 115, 22, 0.18), transparent 55%),
-        radial-gradient(650px 520px at 25% 110%, rgba(236, 72, 153, 0.18), transparent 55%),
-        radial-gradient(520px 420px at 70% 120%, rgba(45, 212, 191, 0.18), transparent 55%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(231, 242, 255, 0.9));
+    --page-gradient: none;
 
     --spacing-xs: 0.25rem;
     --spacing-sm: 0.5rem;
@@ -35,19 +38,19 @@
     --spacing-xl: 2.25rem;
     --spacing-2xl: 3.5rem;
 
-    --border-radius-sm: 0.5rem;
-    --border-radius-md: 0.85rem;
-    --border-radius-lg: 1.25rem;
+    --border-radius-sm: 2px;
+    --border-radius-md: 2px;
+    --border-radius-lg: 2px;
     --border-radius-full: 999px;
 
-    --shadow-color: rgba(15, 23, 42, 0.12);
-    --shadow-sm: 0 8px 24px var(--shadow-color);
-    --shadow-md: 0 18px 40px rgba(15, 23, 42, 0.16);
-    --shadow-lg: 0 28px 60px rgba(15, 23, 42, 0.18);
+    --shadow-color: rgb(40 19 120 / 12%);
+    --shadow-sm: 0 1px 0 var(--shadow-color);
+    --shadow-md: 0 8px 24px var(--shadow-color);
+    --shadow-lg: 0 14px 32px var(--shadow-color);
 
-    --border-color: rgba(148, 163, 184, 0.35);
-    --border-color-hover: rgba(148, 163, 184, 0.6);
-    --focus-ring: 0 0 0 3px rgba(14, 165, 233, 0.25);
+    --border-color: var(--line);
+    --border-color-hover: var(--ink);
+    --focus-ring: 0 0 0 3px rgb(40 19 120 / 25%);
     --mn-scrollbar-size: 8px;
     --mn-scrollbar-thumb: color-mix(in srgb, var(--glass-border-strong) 82%, var(--border-color));
     --mn-scrollbar-thumb-hover: color-mix(in srgb, var(--border-color-hover) 76%, var(--glass-border-strong));
@@ -62,34 +65,11 @@
 body {
     font-family: var(--font-body);
     background-color: var(--color-background);
-    background-image: var(--page-gradient);
-    background-attachment: fixed;
+    background-image: none;
     color: var(--color-text-primary);
     line-height: 1.6;
     overflow-x: hidden;
     min-height: 100vh;
-}
-
-body::before {
-    content: "";
-    position: fixed;
-    inset: -20vh;
-    background: radial-gradient(400px 400px at 20% 30%, rgba(255, 255, 255, 0.55), transparent 70%);
-    opacity: 0.5;
-    z-index: -1;
-    pointer-events: none;
-    filter: blur(30px);
-}
-
-body::after {
-    content: "";
-    position: fixed;
-    inset: -20vh;
-    background: radial-gradient(360px 360px at 80% 60%, rgba(255, 255, 255, 0.35), transparent 70%);
-    opacity: 0.45;
-    z-index: -1;
-    pointer-events: none;
-    filter: blur(40px);
 }
 
 h1, h2, h3, h4, h5 {
@@ -122,7 +102,7 @@ select {
     border-radius: var(--border-radius-md);
     color: var(--color-text-primary);
     padding: 0.65rem 0.9rem;
-    backdrop-filter: blur(var(--glass-blur));
+    backdrop-filter: none;
     transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -503,7 +483,7 @@ textarea::placeholder {
 
 @media (max-width: 480px) {
     body {
-        font-size: 13px;
+        font-size: 16px;
     }
 
     .modal-content, .wizard-content {

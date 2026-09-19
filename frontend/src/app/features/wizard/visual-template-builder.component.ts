@@ -5,7 +5,6 @@ import { FormsModule } from '@angular/forms';
 import { DragDropModule, CdkDragDrop, CdkDragEnter, CdkDragExit, moveItemInArray } from '@angular/cdk/drag-drop';
 import { TemplateApiService } from '../../core/services/template-api.service';
 import { CreateFieldTemplateRequest, CreateTemplateRequest } from '../../core/models/template.models';
-import { DeckWizardStateService } from './deck-wizard-state.service';
 import { ButtonComponent } from '../../shared/components/button.component';
 import { TranslatePipe } from '../../shared/pipes/translate.pipe';
 import { I18nService } from '../../core/services/i18n.service';
@@ -861,7 +860,6 @@ interface BuilderState {
 export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     private router = inject(Router);
     private templateApi = inject(TemplateApiService);
-    private wizardState = inject(DeckWizardStateService);
     i18n = inject(I18nService);
 
     private static readonly MAX_TEMPLATE_NAME = 50;
@@ -1139,9 +1137,7 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
             next: (template) => {
                 this.skipDraftSave = true;
                 this.clearDraft();
-                this.wizardState.setTemplateId(template.templateId);
-                this.wizardState.setCurrentStep(2);
-                void this.router.navigate(['/create-deck']);
+                void this.router.navigate(['/templates', template.templateId]);
             },
             error: () => {
                 this.saving = false;
@@ -1150,7 +1146,7 @@ export class VisualTemplateBuilderComponent implements OnInit, OnDestroy {
     }
 
     cancel(): void {
-        void this.router.navigate(['/create-deck']);
+        void this.router.navigate(['/templates']);
     }
 
     private loadDraft(): void {

@@ -7,10 +7,12 @@ import metadataFixture from '../../../../../contracts/decks/metadata.json';
 import { OwnDeck } from './own-deck.models';
 import { DeckDetailState, DeckMutationState, OwnDecksStore } from './own-decks.store';
 import { OwnDeckDetailPageComponent } from './own-deck-detail-page.component';
+import { OwnDeckRecoveryService } from './own-deck-recovery.service';
 
 describe('OwnDeckDetailPageComponent', () => {
     let fixture: ComponentFixture<OwnDeckDetailPageComponent>;
     let store: jasmine.SpyObj<OwnDecksStore>;
+    let recovery: jasmine.SpyObj<OwnDeckRecoveryService>;
     const deck = metadataFixture.detail as unknown as OwnDeck;
     const detail = signal<DeckDetailState>({ phase: 'ready', deckId: deck.deckId, deck, failure: null });
     const mutation = signal<DeckMutationState>({ phase: 'idle' });
@@ -18,14 +20,17 @@ describe('OwnDeckDetailPageComponent', () => {
     beforeEach(async () => {
         store = jasmine.createSpyObj<OwnDecksStore>('OwnDecksStore', [
             'openDeck', 'retryDetail', 'startSave', 'retryMutation', 'retryAsNewCommand',
-            'useServerVersion', 'reapplyConflict', 'clearMutation'
+            'useServerVersion', 'reapplyConflict', 'clearMutation', 'recoverMutation'
         ]);
+        recovery = jasmine.createSpyObj<OwnDeckRecoveryService>('OwnDeckRecoveryService', ['restore', 'save', 'clear']);
+        recovery.restore.and.returnValue(null);
         Object.defineProperty(store, 'detailState', { value: detail.asReadonly() });
         Object.defineProperty(store, 'mutationState', { value: mutation.asReadonly() });
         await TestBed.configureTestingModule({
             imports: [OwnDeckDetailPageComponent],
             providers: [
                 provideRouter([]),
+                { provide: OwnDeckRecoveryService, useValue: recovery },
                 { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ deckId: deck.deckId })) } }
             ]
         }).overrideComponent(OwnDeckDetailPageComponent, {
@@ -43,6 +48,11 @@ describe('OwnDeckDetailPageComponent', () => {
         expect(store.startSave).toHaveBeenCalledOnceWith(deck, {
             title: '  Точное имя  ', description: 'строка 1\nстрока 2'
         });
+        expect(recovery.save).toHaveBeenCalledWith(
+            { operation: 'save', deckId: deck.deckId },
+            { title: '  Точное имя  ', description: 'строка 1\nстрока 2' },
+            null
+        );
     });
 
     it('shows both explicit 412 choices and keeps the local draft in the form', () => {

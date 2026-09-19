@@ -21,6 +21,10 @@
       </div>
     </header>
 
+    @if (recovered()) {
+      <p class="notice compact" role="status">Черновик восстановлен из этой вкладки.</p>
+    }
+
     @let mutation = store.mutationState();
     @if (mutation.phase === 'conflict-loading') {
       <p class="notice" role="status">Колода изменилась. Загружаем текущую версию…</p>
@@ -37,7 +41,7 @@
         </dl>
         <div class="actions">
           <button class="button secondary" type="button" (click)="chooseServerVersion()">Использовать версию сервера</button>
-          <button class="button primary" type="button" (click)="store.reapplyConflict()">Применить мой прежний ввод поверх неё</button>
+          <button class="button primary" type="button" (click)="reapplyConflict()">Применить мой прежний ввод поверх неё</button>
         </div>
       </section>
     }
@@ -51,12 +55,12 @@
         }
         <div class="actions">
           @if (mutation.replayRefreshFailed || mutation.conflictRefreshFailed) {
-            <button class="button secondary" type="button" (click)="store.retryMutation()">Снова загрузить текущую версию</button>
+            <button class="button secondary" type="button" (click)="retryMutation()">Снова загрузить текущую версию</button>
           } @else if (mayRetrySameCommand(mutation.failure)) {
-            <button class="button secondary" type="button" (click)="store.retryMutation()">Повторить ту же команду</button>
+            <button class="button secondary" type="button" (click)="retryMutation()">Повторить ту же команду</button>
           }
           @if (mutation.failure.status === 409) {
-            <button class="button secondary" type="button" (click)="store.retryAsNewCommand()">Отправить как новую команду</button>
+            <button class="button secondary" type="button" (click)="retryAsNewCommand()">Отправить как новую команду</button>
           }
         </div>
       </section>

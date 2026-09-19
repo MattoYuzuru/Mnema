@@ -146,6 +146,21 @@ export class OwnDecksStore {
         if (state.phase === 'error' && state.deckId !== null) this.requestDetail(state.deckId);
     }
 
+    recoverMutation(pending: PendingDeckCommand): void {
+        if (!canStartNewMutation(this.mutationSignal())) return;
+        if (pending.operation === 'save' && this.detailSignal().deckId !== pending.deckId) return;
+        this.mutationEpoch += 1;
+        this.mutationSubscription?.unsubscribe();
+        this.mutationSignal.set({
+            phase: 'error',
+            pending,
+            failure: { kind: 'network', status: 0, code: null },
+            replayRefreshFailed: false,
+            replayDeckId: null,
+            conflictRefreshFailed: false
+        });
+    }
+
     startCreate(metadata: DeckMetadata): void {
         if (!canStartNewMutation(this.mutationSignal())) return;
         this.executeMutation({ operation: 'create', command: createDeckCommand(metadata) });
@@ -406,6 +421,11 @@ export function mutationLocksDraft(state: DeckMutationState): boolean {
     if (state.phase === 'pending' || state.phase === 'conflict-loading' || state.phase === 'conflict') return true;
     return state.phase === 'error' && (state.replayRefreshFailed || state.conflictRefreshFailed
         || mayRetrySameCommand(state.failure) || state.failure.status === 409);
+}
+
+export function recoverablePendingCommand(state: DeckMutationState): PendingDeckCommand | null {
+    if (state.phase === 'pending' || state.phase === 'conflict-loading' || state.phase === 'conflict') return state.pending;
+    return state.phase === 'error' && mutationLocksDraft(state) ? state.pending : null;
 }
 
 export function canStartNewMutation(state: DeckMutationState): boolean {

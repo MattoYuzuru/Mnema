@@ -4,21 +4,25 @@ import { provideRouter, Router } from '@angular/router';
 
 import { DeckMutationState, OwnDecksStore } from './own-decks.store';
 import { OwnDeckCreatePageComponent } from './own-deck-create-page.component';
+import { OwnDeckRecoveryService } from './own-deck-recovery.service';
 
 describe('OwnDeckCreatePageComponent', () => {
     let fixture: ComponentFixture<OwnDeckCreatePageComponent>;
     let store: jasmine.SpyObj<OwnDecksStore>;
+    let recovery: jasmine.SpyObj<OwnDeckRecoveryService>;
     let mutation: WritableSignal<DeckMutationState>;
 
     beforeEach(async () => {
         store = jasmine.createSpyObj<OwnDecksStore>('OwnDecksStore', [
-            'startCreate', 'retryMutation', 'retryAsNewCommand'
+            'startCreate', 'retryMutation', 'retryAsNewCommand', 'recoverMutation'
         ]);
+        recovery = jasmine.createSpyObj<OwnDeckRecoveryService>('OwnDeckRecoveryService', ['restore', 'save', 'clear']);
+        recovery.restore.and.returnValue(null);
         mutation = signal<DeckMutationState>({ phase: 'idle' });
         Object.defineProperty(store, 'mutationState', { value: mutation.asReadonly() });
         await TestBed.configureTestingModule({
             imports: [OwnDeckCreatePageComponent],
-            providers: [provideRouter([])]
+            providers: [provideRouter([]), { provide: OwnDeckRecoveryService, useValue: recovery }]
         }).overrideComponent(OwnDeckCreatePageComponent, {
             set: { providers: [{ provide: OwnDecksStore, useValue: store }] }
         }).compileComponents();
@@ -43,6 +47,11 @@ describe('OwnDeckCreatePageComponent', () => {
         expect(store.startCreate).toHaveBeenCalledOnceWith({
             title: '  Моя колода  ', description: ' первая\nвторая '
         });
+        expect(recovery.save).toHaveBeenCalledWith(
+            { operation: 'create' },
+            { title: '  Моя колода  ', description: ' первая\nвторая ' },
+            null
+        );
     });
 
     it('preserves a title newline entered through the real DOM control', () => {

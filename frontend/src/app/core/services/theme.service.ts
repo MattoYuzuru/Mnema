@@ -7,126 +7,63 @@ type ThemeMode = 'light' | 'dark';
 type ThemeAccent = 'neo' | 'vintage';
 
 interface ThemePalette {
-    primaryAccent: string;
-    secondaryAccent: string;
-    background: string;
-    cardBackground: string;
-    textPrimary: string;
-    textSecondary: string;
-    textTertiary: string;
-    textMuted: string;
-    accentShadow: string;
-    accentShadowHover: string;
-    borderColor: string;
-    borderColorHover: string;
-    surfaceSolid: string;
-    glassSurface: string;
-    glassSurfaceStrong: string;
-    glassBorder: string;
-    glassBorderStrong: string;
-    shadowColor: string;
-    pageGradient: string;
-    focusRing: string;
+    readonly background: string;
+    readonly sheet: string;
+    readonly ink: string;
+    readonly body: string;
+    readonly muted: string;
+    readonly line: string;
+    readonly soft: string;
 }
 
-const THEME_PALETTES: Record<ThemeMode, Record<ThemeAccent, ThemePalette>> = {
-    light: {
-        neo: {
-            primaryAccent: '#0ea5e9',
-            secondaryAccent: '#14b8a6',
-            background: '#edf1f8',
-            cardBackground: 'rgba(255, 255, 255, 0.55)',
-            textPrimary: '#0b1220',
-            textSecondary: '#1f2a44',
-            textTertiary: '#334155',
-            textMuted: '#5b6b86',
-            accentShadow: '0 12px 30px rgba(14, 165, 233, 0.25)',
-            accentShadowHover: '0 18px 36px rgba(14, 165, 233, 0.3)',
-            borderColor: 'rgba(148, 163, 184, 0.35)',
-            borderColorHover: 'rgba(148, 163, 184, 0.6)',
-            surfaceSolid: '#f9fbff',
-            glassSurface: 'rgba(255, 255, 255, 0.42)',
-            glassSurfaceStrong: 'rgba(255, 255, 255, 0.68)',
-            glassBorder: 'rgba(255, 255, 255, 0.4)',
-            glassBorderStrong: 'rgba(255, 255, 255, 0.6)',
-            shadowColor: 'rgba(15, 23, 42, 0.14)',
-            pageGradient: 'radial-gradient(900px 600px at 8% -10%, rgba(56, 189, 248, 0.45), transparent 60%), radial-gradient(700px 500px at 92% 4%, rgba(249, 115, 22, 0.18), transparent 55%), radial-gradient(650px 520px at 25% 110%, rgba(236, 72, 153, 0.18), transparent 55%), radial-gradient(520px 420px at 70% 120%, rgba(45, 212, 191, 0.18), transparent 55%), linear-gradient(180deg, rgba(255, 255, 255, 0.94), rgba(231, 242, 255, 0.9))',
-            focusRing: '0 0 0 3px rgba(14, 165, 233, 0.25)'
-        },
-        vintage: {
-            primaryAccent: '#b45309',
-            secondaryAccent: '#f97316',
-            background: '#fff3e0',
-            cardBackground: 'rgba(255, 250, 240, 0.6)',
-            textPrimary: '#3b1d05',
-            textSecondary: '#5c2a0c',
-            textTertiary: '#5c2a0c',
-            textMuted: '#8a4b1b',
-            accentShadow: '0 12px 30px rgba(249, 115, 22, 0.28)',
-            accentShadowHover: '0 18px 36px rgba(249, 115, 22, 0.36)',
-            borderColor: 'rgba(249, 115, 22, 0.25)',
-            borderColorHover: 'rgba(249, 115, 22, 0.45)',
-            surfaceSolid: '#fff7ed',
-            glassSurface: 'rgba(255, 247, 237, 0.5)',
-            glassSurfaceStrong: 'rgba(255, 239, 213, 0.72)',
-            glassBorder: 'rgba(255, 214, 170, 0.45)',
-            glassBorderStrong: 'rgba(255, 214, 170, 0.7)',
-            shadowColor: 'rgba(120, 53, 15, 0.12)',
-            pageGradient: 'radial-gradient(900px 600px at 0% -10%, rgba(251, 146, 60, 0.28), transparent 60%), radial-gradient(700px 500px at 90% 0%, rgba(234, 179, 8, 0.22), transparent 55%), radial-gradient(600px 500px at 30% 100%, rgba(248, 113, 113, 0.18), transparent 55%), linear-gradient(180deg, rgba(255, 247, 237, 0.92), rgba(254, 243, 199, 0.85))',
-            focusRing: '0 0 0 3px rgba(249, 115, 22, 0.28)'
-        }
-    },
-    dark: {
-        neo: {
-            primaryAccent: '#38bdf8',
-            secondaryAccent: '#22d3ee',
-            background: '#0a0f1e',
-            cardBackground: 'rgba(15, 23, 42, 0.65)',
-            textPrimary: '#e2e8f0',
-            textSecondary: '#cbd5f5',
-            textTertiary: '#f1f5f9',
-            textMuted: '#94a3b8',
-            accentShadow: '0 12px 30px rgba(56, 189, 248, 0.3)',
-            accentShadowHover: '0 18px 36px rgba(56, 189, 248, 0.38)',
-            borderColor: 'rgba(148, 163, 184, 0.18)',
-            borderColorHover: 'rgba(148, 163, 184, 0.4)',
-            surfaceSolid: '#0b1220',
-            glassSurface: 'rgba(15, 23, 42, 0.5)',
-            glassSurfaceStrong: 'rgba(17, 25, 40, 0.72)',
-            glassBorder: 'rgba(148, 163, 184, 0.2)',
-            glassBorderStrong: 'rgba(148, 163, 184, 0.35)',
-            shadowColor: 'rgba(2, 6, 23, 0.55)',
-            pageGradient: 'radial-gradient(900px 600px at 10% -10%, rgba(56, 189, 248, 0.2), transparent 60%), radial-gradient(700px 500px at 85% 0%, rgba(251, 113, 133, 0.16), transparent 55%), radial-gradient(600px 500px at 20% 100%, rgba(45, 212, 191, 0.12), transparent 55%), linear-gradient(180deg, rgba(8, 12, 24, 0.95), rgba(10, 16, 30, 0.85))',
-            focusRing: '0 0 0 3px rgba(56, 189, 248, 0.35)'
-        },
-        vintage: {
-            primaryAccent: '#f59e0b',
-            secondaryAccent: '#fb7185',
-            background: '#1c1917',
-            cardBackground: 'rgba(41, 37, 36, 0.75)',
-            textPrimary: '#fafaf9',
-            textSecondary: '#e7e5e4',
-            textTertiary: '#fafaf9',
-            textMuted: '#b9b2ab',
-            accentShadow: '0 12px 30px rgba(251, 146, 60, 0.3)',
-            accentShadowHover: '0 18px 36px rgba(251, 146, 60, 0.4)',
-            borderColor: 'rgba(120, 113, 108, 0.35)',
-            borderColorHover: 'rgba(120, 113, 108, 0.6)',
-            surfaceSolid: '#181310',
-            glassSurface: 'rgba(41, 37, 36, 0.55)',
-            glassSurfaceStrong: 'rgba(41, 37, 36, 0.78)',
-            glassBorder: 'rgba(168, 162, 158, 0.25)',
-            glassBorderStrong: 'rgba(168, 162, 158, 0.4)',
-            shadowColor: 'rgba(12, 10, 9, 0.6)',
-            pageGradient: 'radial-gradient(900px 600px at 5% -10%, rgba(251, 146, 60, 0.18), transparent 60%), radial-gradient(700px 500px at 90% 0%, rgba(244, 114, 182, 0.16), transparent 55%), radial-gradient(600px 500px at 15% 100%, rgba(234, 179, 8, 0.12), transparent 55%), linear-gradient(180deg, rgba(20, 18, 17, 0.95), rgba(28, 25, 23, 0.85))',
-            focusRing: '0 0 0 3px rgba(244, 114, 182, 0.3)'
-        }
-    }
+const LIGHT: ThemePalette = {
+    background: '#f4f0e5',
+    sheet: '#fbf8ef',
+    ink: '#281378',
+    body: '#342e44',
+    muted: '#625c70',
+    line: '#c9c0ce',
+    soft: '#e8e1ed'
 };
 
+const LIGHT_WARM: ThemePalette = {
+    ...LIGHT,
+    background: '#f2eadb',
+    sheet: '#fcf6e9',
+    line: '#cbbca9',
+    soft: '#e9dfd1'
+};
+
+const DARK: ThemePalette = {
+    background: '#19152c',
+    sheet: '#211b38',
+    ink: '#ded5ff',
+    body: '#f1edf8',
+    muted: '#c4bbd1',
+    line: '#554b6b',
+    soft: '#31294b'
+};
+
+const DARK_WARM: ThemePalette = {
+    ...DARK,
+    background: '#201a24',
+    sheet: '#2b222d',
+    line: '#665466',
+    soft: '#3b2e3d'
+};
+
+const THEME_PALETTES: Record<ThemeMode, Record<ThemeAccent, ThemePalette>> = {
+    light: { neo: LIGHT, vintage: LIGHT_WARM },
+    dark: { neo: DARK, vintage: DARK_WARM }
+};
+
+/**
+ * Keeps the legacy settings API while mapping every choice to opaque paper surfaces.
+ * Canonical pages therefore cannot be switched back to the retired glass treatment.
+ */
 @Injectable({ providedIn: 'root' })
 export class ThemeService {
-    private readonly _mode = signal<ThemeMode>('dark');
+    private readonly _mode = signal<ThemeMode>('light');
     private readonly _accent = signal<ThemeAccent>('neo');
 
     readonly mode = this._mode.asReadonly();
@@ -156,40 +93,44 @@ export class ThemeService {
     private applyTheme(): void {
         const palette = THEME_PALETTES[this._mode()][this._accent()];
         const root = document.documentElement;
+        const properties: Readonly<Record<string, string>> = {
+            '--paper': palette.background,
+            '--sheet': palette.sheet,
+            '--ink': palette.ink,
+            '--body': palette.body,
+            '--muted': palette.muted,
+            '--line': palette.line,
+            '--soft': palette.soft,
+            '--color-primary-accent': palette.ink,
+            '--color-secondary-accent': palette.muted,
+            '--color-background': palette.background,
+            '--color-card-background': palette.sheet,
+            '--color-text-primary': palette.body,
+            '--color-text-secondary': palette.body,
+            '--color-text-tertiary': palette.body,
+            '--color-text-muted': palette.muted,
+            '--border-color': palette.line,
+            '--border-color-hover': palette.ink,
+            '--color-surface-solid': palette.sheet,
+            '--glass-surface': palette.sheet,
+            '--glass-surface-strong': palette.sheet,
+            '--glass-border': palette.line,
+            '--glass-border-strong': palette.line,
+            '--glass-blur': '0px',
+            '--accent-shadow': 'none',
+            '--accent-shadow-hover': 'none',
+            '--page-gradient': 'none',
+            '--focus-ring': `0 0 0 3px color-mix(in srgb, ${palette.ink} 25%, transparent)`
+        };
 
-        root.style.setProperty('--color-primary-accent', palette.primaryAccent);
-        root.style.setProperty('--color-secondary-accent', palette.secondaryAccent);
-        root.style.setProperty('--color-background', palette.background);
-        root.style.setProperty('--color-card-background', palette.cardBackground);
-        root.style.setProperty('--color-text-primary', palette.textPrimary);
-        root.style.setProperty('--color-text-secondary', palette.textSecondary);
-        root.style.setProperty('--color-text-tertiary', palette.textTertiary);
-        root.style.setProperty('--color-text-muted', palette.textMuted);
-        root.style.setProperty('--accent-shadow', palette.accentShadow);
-        root.style.setProperty('--accent-shadow-hover', palette.accentShadowHover);
-        root.style.setProperty('--border-color', palette.borderColor);
-        root.style.setProperty('--border-color-hover', palette.borderColorHover);
-        root.style.setProperty('--color-surface-solid', palette.surfaceSolid);
-        root.style.setProperty('--glass-surface', palette.glassSurface);
-        root.style.setProperty('--glass-surface-strong', palette.glassSurfaceStrong);
-        root.style.setProperty('--glass-border', palette.glassBorder);
-        root.style.setProperty('--glass-border-strong', palette.glassBorderStrong);
-        root.style.setProperty('--shadow-color', palette.shadowColor);
-        root.style.setProperty('--page-gradient', palette.pageGradient);
-        root.style.setProperty('--focus-ring', palette.focusRing);
+        for (const [name, value] of Object.entries(properties)) root.style.setProperty(name, value);
     }
 
     private loadFromStorage(): void {
         const savedMode = localStorage.getItem(MODE_STORAGE_KEY);
         const savedAccent = localStorage.getItem(ACCENT_STORAGE_KEY);
-
-        if (savedMode === 'light' || savedMode === 'dark') {
-            this._mode.set(savedMode);
-        }
-
-        if (savedAccent === 'neo' || savedAccent === 'vintage') {
-            this._accent.set(savedAccent);
-        }
+        if (savedMode === 'light' || savedMode === 'dark') this._mode.set(savedMode);
+        if (savedAccent === 'neo' || savedAccent === 'vintage') this._accent.set(savedAccent);
     }
 
     private saveToStorage(): void {

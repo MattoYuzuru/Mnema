@@ -1,11 +1,10 @@
 import { Component, OnInit, inject, ChangeDetectionStrategy } from '@angular/core';
-import { ActivatedRoute, Router } from '@angular/router';
+import { Router } from '@angular/router';
 
 import { forkJoin } from 'rxjs';
 import { TemplateApiService } from '../../core/services/template-api.service';
 import { SearchApiService } from '../../core/services/search-api.service';
 import { UserApiService } from '../../user-api.service';
-import { DeckWizardStateService } from '../wizard/deck-wizard-state.service';
 import { CardTemplateDTO } from '../../core/models/template.models';
 import { TemplateCardComponent } from '../../shared/components/template-card.component';
 import { MemoryTipLoaderComponent } from '../../shared/components/memory-tip-loader.component';
@@ -74,14 +73,13 @@ type TemplateFilter = 'all' | 'mine' | 'public';
                 [template]="template"
                 [showActions]="true"
                 [showViewButton]="true"
-                [showSelectButton]="fromWizard"
+                [showSelectButton]="false"
                 [showVisibility]="true"
                 [viewLabel]="'templates.view' | translate"
                 [selectLabel]="'publicTemplates.select' | translate"
                 [publicLabel]="'templates.public' | translate"
                 [privateLabel]="'templates.private' | translate"
                 (view)="openTemplate(template.templateId)"
-                (selectRequested)="selectTemplate(template.templateId)"
                 (click)="openTemplate(template.templateId)"
               ></app-template-card>
             }
@@ -261,9 +259,7 @@ export class PublicTemplatesComponent implements OnInit {
     private templateApi = inject(TemplateApiService);
     private searchApi = inject(SearchApiService);
     private userApi = inject(UserApiService);
-    private wizardState = inject(DeckWizardStateService);
     private router = inject(Router);
-    private route = inject(ActivatedRoute);
 
     loading = true;
     loadingMore = false;
@@ -271,14 +267,12 @@ export class PublicTemplatesComponent implements OnInit {
     page = 1;
     pageSize = 12;
     hasMore = false;
-    fromWizard = false;
     activeFilter: TemplateFilter = 'all';
     currentUserId: string | null = null;
     searchQuery = '';
     private searchDebounce?: ReturnType<typeof setTimeout>;
 
     ngOnInit(): void {
-        this.fromWizard = this.route.snapshot.queryParamMap.get('from') === 'wizard';
         this.loadTemplates();
     }
 
@@ -382,16 +376,6 @@ export class PublicTemplatesComponent implements OnInit {
     }
 
     openTemplate(templateId: string): void {
-        const queryParams = this.fromWizard ? { from: 'wizard' } : {};
-        void this.router.navigate(['/templates', templateId], { queryParams });
-    }
-
-    selectTemplate(templateId: string): void {
-        if (!this.fromWizard) {
-            return;
-        }
-        this.wizardState.setTemplateId(templateId);
-        this.wizardState.setCurrentStep(2);
-        void this.router.navigate(['/create-deck']);
+        void this.router.navigate(['/templates', templateId]);
     }
 }

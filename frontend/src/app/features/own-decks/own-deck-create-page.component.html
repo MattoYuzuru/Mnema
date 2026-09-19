@@ -8,6 +8,10 @@
     </div>
   </header>
 
+  @if (recovered()) {
+    <p class="notice compact" role="status">Черновик восстановлен из этой вкладки.</p>
+  }
+
   <form class="metadata-form" [formGroup]="form" (ngSubmit)="submit()" novalidate>
     <div class="field">
       <label for="create-title">Название <span aria-hidden="true">*</span></label>
@@ -58,12 +62,12 @@
         }
         <div class="actions">
           @if (mutation.replayRefreshFailed) {
-            <button class="button secondary" type="button" (click)="store.retryMutation()">Снова проверить текущую версию</button>
+            <button class="button secondary" type="button" (click)="retryMutation()">Снова проверить текущую версию</button>
           } @else if (mayRetrySameCommand(mutation.failure)) {
-            <button class="button secondary" type="button" (click)="store.retryMutation()">Повторить ту же команду</button>
+            <button class="button secondary" type="button" (click)="retryMutation()">Повторить ту же команду</button>
           }
           @if (mutation.failure.status === 409) {
-            <button class="button secondary" type="button" (click)="store.retryAsNewCommand()">Отправить как новую команду</button>
+            <button class="button secondary" type="button" (click)="retryAsNewCommand()">Отправить как новую команду</button>
           }
         </div>
       </section>

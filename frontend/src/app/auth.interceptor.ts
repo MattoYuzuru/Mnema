@@ -1,51 +1,37 @@
 import { HttpErrorResponse, HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
+import { catchError, throwError } from 'rxjs';
 import { AuthService } from './auth.service';
-import { appConfig } from './app.config';
-import { catchError } from 'rxjs/operators';
-import { throwError } from 'rxjs';
+import { BROWSER_IDENTITY_CONFIG } from './auth-browser';
+import { boundedText } from './auth-protocol';
+
+/** Canonical owned route boundary, not a hostname/string prefix allowlist. */
+export function isCredentialTarget(requestUrl: string, identityOrigin: string, learningBase: string, origin: string): boolean {
+    try {
+        // Encoded routing separators and dot segments are not canonical application paths.
+        if (!boundedText(requestUrl, 8192) || requestUrl.includes('\\') || requestUrl.includes(' ') ||
+            /%(?:2f|5c|2e)/iu.test(requestUrl) || /(?:^|\/)\.{1,2}(?:\/|$)/u.test(requestUrl)) return false;
+        const url = new URL(requestUrl, origin);
+        const identity = new URL(identityOrigin);
+        const learning = new URL(learningBase, origin);
+        if (url.username || url.password || url.hash || identity.origin !== identityOrigin) return false;
+        const identityRoute = url.origin === identity.origin && ['/userinfo', '/api/accounts/me'].includes(url.pathname);
+        const prefix = learning.pathname.replace(/\/$/u, '');
+        const learningRoute = url.origin === learning.origin &&
+            (url.pathname === `${prefix}/decks` || url.pathname.startsWith(`${prefix}/decks/`));
+        return identityRoute || learningRoute;
+    } catch { return false; }
+}
 
 export const authInterceptor: HttpInterceptorFn = (req, next) => {
+    const config = inject(BROWSER_IDENTITY_CONFIG);
+    if (!isCredentialTarget(req.url, config.authServerUrl, config.learningApiBaseUrl, window.location.origin)) return next(req);
     const auth = inject(AuthService);
     const token = auth.accessToken();
-
-    const isApiRequest =
-        req.url.startsWith('/api/') ||
-        req.url.startsWith(appConfig.apiBaseUrl) ||
-        req.url.startsWith(appConfig.coreApiBaseUrl) ||
-        req.url.startsWith(appConfig.mediaApiBaseUrl) ||
-        req.url.startsWith(appConfig.importApiBaseUrl) ||
-        req.url.startsWith(appConfig.aiApiBaseUrl);
-
-    const authEndpointBase = `${appConfig.authServerUrl}/auth/`;
-    const isAuthEndpoint = req.url.startsWith(authEndpointBase);
-    const isAuthProtected =
-        req.url.startsWith(`${authEndpointBase}password`) ||
-        req.url.startsWith(`${authEndpointBase}password/status`) ||
-        req.url.startsWith(`${authEndpointBase}account`);
-
-    if (!token || !(isApiRequest || (isAuthEndpoint && isAuthProtected))) {
-        return next(req).pipe(
-            catchError((error: HttpErrorResponse) => {
-                if (isApiRequest && error.status === 401) {
-                    auth.expireSession();
-                }
-                return throwError(() => error);
-            })
-        );
-    }
-
-    const authReq = req.clone({
-        setHeaders: {
-            Authorization: `Bearer ${token}`
-        }
-    });
-
-    return next(authReq).pipe(
-        catchError((error: HttpErrorResponse) => {
-            if (error.status === 401) {
-                auth.expireSession();
-            }
+    if (!token) return next(req);
+    return next(req.clone({ setHeaders: { Authorization: `Bearer ${token}` } })).pipe(
+        catchError((error: unknown) => {
+            if (error instanceof HttpErrorResponse && error.status === 401) auth.expireSession(token);
             return throwError(() => error);
         })
     );

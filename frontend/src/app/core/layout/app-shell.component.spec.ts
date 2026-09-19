@@ -1,9 +1,9 @@
 import { Component } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { provideRouter, Router } from '@angular/router';
-import { of } from 'rxjs';
+import { BehaviorSubject, of } from 'rxjs';
 
-import { AuthService } from '../../auth.service';
+import { AuthService, AuthStatus } from '../../auth.service';
 import { AppShellComponent } from './app-shell.component';
 
 @Component({ template: '<h1 tabindex="-1">Мои колоды</h1>' })
@@ -12,13 +12,25 @@ class TestPageComponent {}
 describe('AppShellComponent', () => {
     let fixture: ComponentFixture<AppShellComponent>;
     let auth: jasmine.SpyObj<AuthService>;
+    let status: BehaviorSubject<AuthStatus>;
 
     beforeEach(async () => {
         auth = jasmine.createSpyObj<AuthService>('AuthService', ['status', 'user', 'logout']);
+        status = new BehaviorSubject<AuthStatus>('authenticated');
         auth.status.and.returnValue('authenticated');
-        auth.user.and.returnValue({ email: 'reader@example.test', name: 'Читатель' });
-        Object.defineProperty(auth, 'status$', { value: of('authenticated') });
-        Object.defineProperty(auth, 'user$', { value: of({ email: 'reader@example.test', name: 'Читатель' }) });
+        const user = {
+            accountId: '11111111-1111-4111-8111-111111111111',
+            email: 'reader@example.test',
+            emailVerified: true,
+            profileUsername: 'reader',
+            displayName: 'Читатель',
+            hasPassword: true,
+            name: 'Читатель'
+        };
+        auth.user.and.returnValue(user);
+        auth.logout.and.resolveTo();
+        Object.defineProperty(auth, 'status$', { value: status.asObservable() });
+        Object.defineProperty(auth, 'user$', { value: of(user) });
         await TestBed.configureTestingModule({
             imports: [AppShellComponent],
             providers: [
@@ -53,13 +65,26 @@ describe('AppShellComponent', () => {
         expect(auth.logout).not.toHaveBeenCalled();
     });
 
-    it('delegates logout without claiming a completed server session', () => {
+    it('shows a non-actionable pending state before offering anonymous login', () => {
+        status.next('pending');
+        fixture.detectChanges();
+        expect((fixture.nativeElement as HTMLElement).textContent).toContain('Проверяем вход…');
+        expect((fixture.nativeElement as HTMLElement).querySelector('.session a')).toBeNull();
+
+        status.next('anonymous');
+        fixture.detectChanges();
+        expect((fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('.session a')?.getAttribute('href'))
+            .toBe('/login');
+    });
+
+    it('delegates logout without claiming a completed server session', async () => {
         (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('.quiet-action')?.click();
+        await fixture.whenStable();
         expect(auth.logout).toHaveBeenCalledTimes(1);
     });
 
     it('opens login recovery when server logout is not confirmed', async () => {
-        auth.logout.and.throwError('server unavailable');
+        auth.logout.and.rejectWith(new Error('server unavailable'));
 
         await fixture.componentInstance.logout();
 

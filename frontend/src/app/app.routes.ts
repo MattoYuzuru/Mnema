@@ -9,6 +9,7 @@ export const appRoutes: Routes = [
     { path: '', component: HomePageComponent },
     { path: 'login', component: LoginPageComponent },
     { path: 'register', component: LoginPageComponent },
+    { path: 'auth/callback', loadComponent: () => import('./auth-callback.component').then(module => module.AuthCallbackComponent) },
     {
         path: 'profile',
         loadComponent: () => import('./profile-page.component').then(module => module.ProfilePageComponent),
@@ -21,32 +22,20 @@ export const appRoutes: Routes = [
     },
     {
         path: 'decks',
-        loadComponent: () => import('./features/decks/decks-list.component').then(module => module.DecksListComponent),
+        loadComponent: () => import('./features/own-decks/own-decks-list-page.component')
+            .then(module => module.OwnDecksListPageComponent),
         canActivate: [authGuard]
     },
     {
-        path: 'decks/:userDeckId',
-        loadComponent: () => import('./features/decks/deck-profile.component').then(module => module.DeckProfileComponent),
+        path: 'decks/new',
+        loadComponent: () => import('./features/own-decks/own-deck-create-page.component')
+            .then(module => module.OwnDeckCreatePageComponent),
         canActivate: [authGuard]
     },
     {
-        path: 'decks/:userDeckId/browse',
-        loadComponent: () => import('./features/decks/card-browser.component').then(module => module.CardBrowserComponent),
-        canActivate: [authGuard]
-    },
-    {
-        path: 'decks/:userDeckId/duplicates-review',
-        loadComponent: () => import('./features/decks/duplicate-review-page.component').then(module => module.DuplicateReviewPageComponent),
-        canActivate: [authGuard]
-    },
-    {
-        path: 'decks/:userDeckId/review',
-        loadComponent: () => import('./features/decks/review-session.component').then(module => module.ReviewSessionComponent),
-        canActivate: [authGuard]
-    },
-    {
-        path: 'create-deck',
-        loadComponent: () => import('./features/wizard/deck-wizard.component').then(module => module.DeckWizardComponent),
+        path: 'decks/:deckId',
+        loadComponent: () => import('./features/own-decks/own-deck-detail-page.component')
+            .then(module => module.OwnDeckDetailPageComponent),
         canActivate: [authGuard]
     },
     {

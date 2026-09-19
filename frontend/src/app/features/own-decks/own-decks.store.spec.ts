@@ -94,6 +94,23 @@ describe('OwnDecksStore', () => {
         if (completed.phase === 'completed') expect(completed.confirmation).toBe('fresh');
     });
 
+    it('restores an unresolved command without sending it until explicit retry', () => {
+        const pending = {
+            operation: 'create' as const,
+            command: {
+                commandId: '123e4567-e89b-42d3-a456-426614174000',
+                metadata: { title: 'Восстановленный ввод', description: 'не терять' }
+            }
+        };
+        api.create.and.returnValue(of(writeResult(fixtureDeck, false)));
+
+        store.recoverMutation(pending);
+        expect(api.create).not.toHaveBeenCalled();
+        store.retryMutation();
+
+        expect(api.create).toHaveBeenCalledOnceWith(pending.command);
+    });
+
     it('admits only one create while its first transport is still pending', () => {
         const observers: Observer<DeckWriteResult>[] = [];
         api.create.and.callFake(() => stubbornObservable(observers));

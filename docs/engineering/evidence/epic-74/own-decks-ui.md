@@ -1,8 +1,9 @@
 # Epic 74 own-decks UI implementation evidence
 
-Date: 2026-09-12  
-Issue: #194  
-Implementation base: `a45435e577e7f6e25093e804398e6f1c6794663b`
+Date: 2026-09-12; integration updated 2026-09-19
+Issue: #194
+Checkpoint base: `a45435e577e7f6e25093e804398e6f1c6794663b`
+Integration sources: own-decks `17044725c71ca7b5cc828bf9d200ea0f90f351d0`, browser Identity `8edcc50ec16b73399a5d65ff230b688ab9caadbf`
 
 ## Implemented boundary
 
@@ -12,7 +13,17 @@ Implementation base: `a45435e577e7f6e25093e804398e6f1c6794663b`
 - Added a component-scoped Signals store. It rejects stale list/detail/write epochs, admits only one unresolved command, retains the exact command for an unknown-result retry, refreshes every replay acknowledgement with GET, and treats 412 as a two-choice conflict without discarding the draft.
 - The shell awaits the #192 logout contract. A rejected server logout opens `/login`, where the auth slice owns the explicit unconfirmed/retry state; the shell does not claim revocation.
 
-No route, auth, runtime config, shared contract, dependency, global-style, backend, or CI file is owned by this slice. The visible main-owned changes to `app.config.ts` and `tsconfig.spec.json` were preserved.
+The 2026-09-19 integration wires the canonical guarded lazy routes, preserves the
+Identity callback/runtime configuration, removes the superseded Deck route components
+without aliases, replaces the fake data-fetching Home page, and maps global/themed
+surfaces to the accepted opaque paper direction. Incompatible legacy Study/template
+actions no longer navigate to removed Deck routes.
+
+Dirty metadata and an unresolved exact command now survive navigation, reload and the
+Identity 401 round trip in bounded tab-scoped `sessionStorage`. Recovery is versioned,
+limited to five contexts/64 KiB/24 hours, bound to the verified `accountId`, rejects
+malformed or cross-account state, and never stores a bearer credential. A recovered
+command is not sent automatically; only the user's explicit retry replays it.
 
 ## Contract and UX details
 
@@ -83,9 +94,25 @@ PASS: production build in 6.566 s; current-route initial raw 650.53 kB, estimate
 
 The component tests import `contracts/decks/metadata.json` directly. They cover byte/code-point/envelope boundaries, UUID/version/ETag parsing, exact requests and private response headers, replay rejection/refresh, pending and unknown-result admission, exact-command save/create retry, 412 draft preservation/reapply, stale list/write epochs, a 100-page memory bound, cursor back navigation, multiline title DOM input, unresolved-draft locking, failure wording, page states, shell landmarks/focus, and logout recovery.
 
-## Remaining acceptance work (main-owned)
+Integration verification on 2026-09-19 used the unchanged dependency lockfile and the
+existing local install (`node v26.9.0`, `npm 11.19.1`, Chrome Headless 154):
 
-- Wire the three canonical lazy routes after #192 auth integration and remove the superseded route components in the owning integration diff; there are no aliases in this slice.
-- Run the real Identity/Learning/PostgreSQL create → list → detail → save → reload flow, two-tab conflict, replay/unknown-result probes, and full exact-head repository gate.
-- Capture actual routed 320/390/1440 and 200% browser evidence, keyboard order/focus, long Russian text, contrast, and reduced-motion behavior. No manual AT/IME result is claimed here.
-- Re-measure the three own-deck lazy chunks after route wiring. The local production build validates the new shell, while unrouted feature pages are compiled and template-checked by the 33-test Karma build but intentionally do not appear in the current route bundle.
+```text
+npm run lint
+PASS: all frontend files.
+
+ng test --watch=false --browsers=ChromeHeadless [own-decks/routes/shell/home/settings/template-builder includes]
+PASS: 45/45.
+
+npm run build
+PASS: production build; 589.13 kB initial raw / 145.73 kB estimated transfer.
+Own-deck list/create/detail are separate lazy chunks (11.49/15.05/18.92 kB raw).
+```
+
+## Remaining acceptance work (central verification)
+
+- Run the real Identity/Learning/PostgreSQL create → list → detail → save → reload flow,
+  two-tab conflict, replay/unknown-result probes, and the full exact-head repository gate.
+- Capture actual routed 320/390/1440 and 200% browser evidence, keyboard order/focus,
+  long Russian text, contrast, reduced-motion and manual AT/IME behavior.
+- No hosted deployment, staging availability or production rollout is claimed.
