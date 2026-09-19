@@ -1,7 +1,8 @@
 # EditingDraft and CaptureNote lifecycle — #201 evidence
 
-Candidate implementation only; protected integration and delivery remain owned by
-the lead. Wire contract: `contracts/authoring/README.md`.
+Merged through protected PR #206 as
+`344b15630284af35f60de1adbb665c350a35e6da`. Integrated delivery is reconciled by
+#203. Wire contract: `contracts/authoring/README.md`.
 
 V5 adds owner/deck-scoped acknowledged native EditingDraft rows and durable
 CaptureNote rows. Draft context/base and CaptureNote creation/conversion provenance

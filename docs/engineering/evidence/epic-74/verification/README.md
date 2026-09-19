@@ -1,6 +1,12 @@
-# Epic #74 independent verification plan
+# Epic #74 verification index
 
-Status: pre-implementation strategy, not acceptance evidence
+Current closure assessment: [integrated-main-2026-09-19.md](integrated-main-2026-09-19.md)
+reconciles the accepted scope with merged `main`, executable evidence and the
+remaining manual/device and no-server boundaries. The material below is the original
+pre-implementation strategy retained as historical context; its `NOT RUN` and
+blocker statements do not describe the final integrated implementation.
+
+Historical status: pre-implementation strategy, not acceptance evidence
 
 Target revision inspected: `33a71f814185a16e922923e034518e25baeadbb8`
 
@@ -117,6 +123,8 @@ existing baseline evidence.
 
 ## Evidence set
 
+- [integrated-main-2026-09-19.md](integrated-main-2026-09-19.md) — final integrated
+  acceptance mapping, exact revision, executed gates and residual boundaries.
 - [acceptance-matrix.md](acceptance-matrix.md) — requirement and adversarial cases.
 - [identity-and-boundaries.md](identity-and-boundaries.md) — Identity/Learning
   authentication, ownership, and deletion-boundary verification.

@@ -1,5 +1,12 @@
 # Epic #74 acceptance and adversarial matrix
 
+Closure status (2026-09-19): this file is the preserved verification design, not a
+current dashboard. Its initial `NOT RUN` state applies only to the research revision
+named below. The integrated disposition and evidence links are recorded in
+[integrated-main-2026-09-19.md](integrated-main-2026-09-19.md); unresolved
+manual/device coverage remains explicit there rather than being converted into an
+automated pass.
+
 All rows are `NOT RUN` at revision
 `33a71f814185a16e922923e034518e25baeadbb8`. `Accepted` means the expected behavior
 is an accepted product/architecture input. `Decision` means a proposed detail needs

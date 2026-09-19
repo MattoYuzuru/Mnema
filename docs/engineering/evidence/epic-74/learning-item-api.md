@@ -1,7 +1,8 @@
 # Deck-local LearningItem API — #200 evidence
 
-Candidate implementation only; protected delivery and the exact repository-wide
-gate are owned by the integrating lead. Contract: `contracts/items/README.md`.
+Merged through protected PR #205 as
+`68d177e34ad81e4020895cb702805393637524f3`. Integrated delivery and the exact
+repository-wide gate are reconciled by #203. Contract: `contracts/items/README.md`.
 
 V4 adds Deck-local logical ownership, immutable item revisions, a rebuildable
 bounded current-head projection and immutable per-Deck-revision change records. A

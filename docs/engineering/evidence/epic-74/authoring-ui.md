@@ -1,9 +1,9 @@
 # Authoring UI candidate — issue #202
 
-Status: integrated local review candidate on `epic-74/issue-202-authoring-ui`;
-verified against the merged #201 backend and the canonical multi-edit publication
-contract. It is not merged or deployed. Deployment is intentionally outside the
-current local-only delivery boundary.
+Status: merged through protected PR #207 as
+`f5ae54d4f1dab4665b398290524017f0d3d4c656`; verified against the merged #201
+backend and the canonical multi-edit publication contract. It is not deployed;
+deployment is intentionally outside the current local-only delivery boundary.
 
 ## Implemented boundary
 
@@ -119,8 +119,9 @@ errors, 0 external requests, no executed unsafe markup, fresh Identity validatio
 logout revocation and two-account isolation. Private keys, credentials, bearer
 tokens and service logs were deleted by the harness and are not evidence artifacts.
 
-The exact full repository gate and hosted PR checks are still required on the final
-commit before protected squash. Offline/reconnect and 412 semantics have deterministic
+The exact candidate full repository gate and hosted PR checks passed before protected
+squash; #203 independently reruns the integrated `main` evidence. Offline/reconnect
+and 412 semantics have deterministic
 unit/integration coverage; the real browser flow covers their ordinary successful path.
 
 Rollback is a protected revert of this UI change plus its dependency lock entries;
