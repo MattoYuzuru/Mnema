@@ -41,6 +41,24 @@ class CDP {
     require(!result.exceptionDetails, 'browser evaluation failed');
     return result.result.value;
   }
+  async callFunction(functionDeclaration, values = []) {
+    const global = await this.call('Runtime.evaluate', { expression: 'globalThis' });
+    const objectId = global.result?.objectId;
+    require(objectId, 'browser execution context unavailable');
+    try {
+      const result = await this.call('Runtime.callFunctionOn', {
+        functionDeclaration,
+        objectId,
+        arguments: values.map(value => ({ value })),
+        awaitPromise: true,
+        returnByValue: true,
+      });
+      require(!result.exceptionDetails, 'browser function failed');
+      return result.result.value;
+    } finally {
+      await this.call('Runtime.releaseObject', { objectId }).catch(() => {});
+    }
+  }
   close() {
     for (const pending of this.pending.values()) { clearTimeout(pending.timeout); pending.reject(new Error('CDP closed')); }
     this.pending.clear(); this.socket.close();
@@ -161,7 +179,8 @@ try {
     }
     throw new SafeFailure(label);
   }
-  const exists = (selector, tab = cdp) => tab.evaluate(`!!document.querySelector(${JSON.stringify(selector)})`);
+  const exists = (selector, tab = cdp) => tab.callFunction(
+    'function(selector) { return Boolean(document.querySelector(selector)); }', [selector]);
   const authenticated = (tab = cdp) => exists(config.readySelector, tab);
   async function navigateUrl(url, tab = cdp) {
     const navigation = await tab.call('Page.navigate', { url });
@@ -174,10 +193,22 @@ try {
   }
   async function fill(selector, value, tab = cdp) {
     await until(() => exists(selector, tab), 'form field absent');
-    await tab.evaluate(`(() => {const e=document.querySelector(${JSON.stringify(selector)});e.focus();
-      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,${JSON.stringify(value)});
-      e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}));})()`);
+    require(await tab.callFunction(`function(selector, value) {
+      const element = document.querySelector(selector);
+      if (!(element instanceof HTMLInputElement)) return false;
+      element.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(element, value);
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    }`, [selector, value]), 'form field is not an input');
   }
+  const click = (selector, tab = cdp) => tab.callFunction(`function(selector) {
+    const element = document.querySelector(selector);
+    if (!(element instanceof HTMLElement)) return false;
+    element.click();
+    return true;
+  }`, [selector]);
   async function submit(tab = cdp) { await tab.evaluate("document.querySelector('form button[type=submit]').click()"); }
   const sanitizedLocation = (tab = cdp) => tab.evaluate('location.pathname');
   step = 'wrong_callback';
@@ -197,7 +228,7 @@ try {
   await until(authenticated, 'registered profile absent');
   record('real_browser_registration_auto_login_pkce', { status: 201 });
   await until(() => exists(config.logoutSelector), 'logout control absent');
-  await cdp.evaluate(`document.querySelector(${JSON.stringify(config.logoutSelector)}).click()`);
+  require(await click(config.logoutSelector), 'logout control is not clickable');
   await until(async () => logoutStatus === 204 && !(await authenticated()), 'registration session logout failed');
   step = 'login';
   const beforeLogin = tokenExchanges;
@@ -220,10 +251,13 @@ try {
   await cdp.call('Page.reload', { ignoreCache: true });
   await until(async () => (await authenticated()) && profileReads > beforeProfile, 'reload did not revalidate profile');
   require(tokenExchanges === beforeReload, 'reload unexpectedly reauthorized');
-  require(await cdp.evaluate(`!Object.values(localStorage).some(v=>
-    ${JSON.stringify(bearerTokens)}.some(token=>v.includes(token)))`), 'bearer persisted in localStorage');
-  require(await cdp.evaluate(`![...Object.values(localStorage),...Object.values(sessionStorage)].some(v=>
-    ${JSON.stringify([...idTokens, config.password])}.some(secret=>v.includes(secret)))`), 'ID token or password persisted');
+  require(await cdp.callFunction(`function(secrets) {
+    return !Object.values(localStorage).some(value => secrets.some(secret => value.includes(secret)));
+  }`, [bearerTokens]), 'bearer persisted in localStorage');
+  require(await cdp.callFunction(`function(secrets) {
+    return ![...Object.values(localStorage), ...Object.values(sessionStorage)]
+      .some(value => secrets.some(secret => value.includes(secret)));
+  }`, [[...idTokens, config.password]]), 'ID token or password persisted');
   record('authenticated_reload_profile_revalidated', { noLocalStorageBearer: true });
   step = 'two_account_session_divergence';
   // Tabs share Identity cookies but not sessionStorage: the current cookie becomes account B,
@@ -244,26 +278,32 @@ try {
   await navigate('/login', second);
   await until(() => authenticated(second), 'second account profile absent');
   require(await authenticated(), 'first tab lost its independent profile');
-  require(await cdp.evaluate(`(async()=>{
+  require(await cdp.callFunction(`async function(firstUrl, firstAuthorization, secondUrl, secondAuthorization, sessionUrl) {
     const values=await Promise.all([
-      fetch(${JSON.stringify(config.identity + '/userinfo')},{credentials:'omit',headers:{Authorization:${JSON.stringify('Bearer ' + firstBearer)}}}),
-      fetch(${JSON.stringify(config.identity + '/userinfo')},{credentials:'omit',headers:{Authorization:${JSON.stringify('Bearer ' + secondBearer)}}}),
-      fetch(${JSON.stringify(config.identity + '/api/accounts/session')},{credentials:'include'})
+      fetch(firstUrl, { credentials: 'omit', headers: { Authorization: firstAuthorization } }),
+      fetch(secondUrl, { credentials: 'omit', headers: { Authorization: secondAuthorization } }),
+      fetch(sessionUrl, { credentials: 'include' })
     ].map(async response=>{const result=await response;return result.ok?result.json():null;}));
     return typeof values[0]?.sub==='string' && typeof values[1]?.sub==='string'
       && values[0].sub!==values[1].sub && values[2]?.accountId===values[1].sub;
-  })()`), 'two-account shared-cookie precondition not established');
+  }`, [config.identity + '/userinfo', 'Bearer ' + firstBearer,
+    config.identity + '/userinfo', 'Bearer ' + secondBearer,
+    config.identity + '/api/accounts/session']), 'two-account shared-cookie precondition not established');
   step = 'logout';
   logoutStatus = 0;
   await until(() => exists(config.logoutSelector), 'logout control absent');
-  await cdp.evaluate(`document.querySelector(${JSON.stringify(config.logoutSelector)}).click()`);
+  require(await click(config.logoutSelector), 'logout control is not clickable');
   await until(async () => logoutStatus === 204 && !(await authenticated()), 'logout did not clear authentication');
-  require(await cdp.evaluate(`![...Object.values(localStorage),...Object.values(sessionStorage)].some(v=>
-    ${JSON.stringify(bearerTokens)}.some(token=>v.includes(token)))`), 'logout retained bearer in browser storage');
-  actorAfterLogout = await cdp.evaluate(`fetch(${JSON.stringify(config.identity + '/userinfo')},
-    {headers:{Authorization:${JSON.stringify('Bearer ' + firstBearer)}},credentials:'omit'}).then(r=>r.status)`);
-  otherAfterLogout = await second.evaluate(`fetch(${JSON.stringify(config.identity + '/userinfo')},
-    {headers:{Authorization:${JSON.stringify('Bearer ' + secondBearer)}},credentials:'omit'}).then(r=>r.status)`);
+  require(await cdp.callFunction(`function(secrets) {
+    return ![...Object.values(localStorage), ...Object.values(sessionStorage)]
+      .some(value => secrets.some(secret => value.includes(secret)));
+  }`, [bearerTokens]), 'logout retained bearer in browser storage');
+  actorAfterLogout = await cdp.callFunction(`function(url, authorization) {
+    return fetch(url, { headers: { Authorization: authorization }, credentials: 'omit' }).then(response => response.status);
+  }`, [config.identity + '/userinfo', 'Bearer ' + firstBearer]);
+  otherAfterLogout = await second.callFunction(`function(url, authorization) {
+    return fetch(url, { headers: { Authorization: authorization }, credentials: 'omit' }).then(response => response.status);
+  }`, [config.identity + '/userinfo', 'Bearer ' + secondBearer]);
   require(actorAfterLogout === 401 && otherAfterLogout === 200,
     'logout actor followed shared cookie instead of active bearer');
   record('logout_revokes_prior_bearer', { logoutStatus: 204, oldBearerStatus: 401 });
@@ -287,8 +327,9 @@ try {
   // Only an empty login form is exported; account/profile/callback screens remain private.
   await navigate('/login'); await until(() => exists('#login-name'), 'final login route absent');
   await fill('#login-name', ''); await fill('#password', '');
-  require(!(await authenticated()) && await cdp.evaluate(`![${JSON.stringify(config.login)},${JSON.stringify(config.email)}]
-    .some(value=>document.body.innerText.includes(value))`), 'screenshot not anonymous');
+  require(!(await authenticated()) && await cdp.callFunction(`function(values) {
+    return !values.some(value => document.body.innerText.includes(value));
+  }`, [[config.login, config.email]]), 'screenshot not anonymous');
   await Promise.all([...asyncWork]);
   for (const body of exchanges) {
     const verifier = body.get('code_verifier');

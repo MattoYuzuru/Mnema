@@ -41,6 +41,11 @@ class FixtureSafety(unittest.TestCase):
         self.addCleanup(cleanup)
         return fixture
 
+    def test_browser_values_are_passed_as_cdp_arguments(self):
+        source = Path(__file__).with_name("browser.mjs").read_text()
+        self.assertIn("Runtime.callFunctionOn", source)
+        self.assertNotIn("${JSON.stringify", source)
+
     def test_static_assets_and_spa_are_confined(self):
         self.assertEqual(self.dist / "main.js", HARNESS.static_path(self.dist, "/main.js?version=1"))
         self.assertEqual(self.dist / "index.html", HARNESS.static_path(self.dist, "/auth/callback?code=private"))
