@@ -250,7 +250,8 @@ class Fixture(BASE.Fixture):
         config = {"debugPort": port, "frontend": self.frontend_origin, "identity": self.identity_origin,
                   "output": str(self.args.output), "login": "browser_fixture", "email": "browser_fixture@example.invalid",
                   "password": BASE.PASSWORD, "readySelector": self.args.ready_selector,
-                  "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector}
+                  "logoutSelector": self.args.logout_selector, "errorSelector": self.args.error_selector,
+                  "authoring": self.args.authoring}
         private_config = self.tmp / "browser.json"
         private_config.write_text(json.dumps(config))
         digest = hashlib.sha256()
@@ -348,6 +349,8 @@ def main():
     parser.add_argument("--ready-selector", default='[data-testid="identity-profile"]')
     parser.add_argument("--logout-selector", default='[data-testid="logout"]')
     parser.add_argument("--error-selector", default='[role="alert"]')
+    parser.add_argument("--authoring", action="store_true",
+                        help="also verify the real Deck, Capture, draft, publication and Browse loop")
     parser.add_argument("--timeout", type=int, choices=range(30, 301), default=180)
     parser.add_argument("--keep-on-failure", action="store_true",
                         help="keep mode-0700 private logs/keys for local debugging")

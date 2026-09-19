@@ -1,0 +1,32 @@
+<section class="editor-frame" aria-label="Редактор материала">
+  @if (failure(); as message) {
+    <p class="editor-error" role="alert">{{ message }}</p>
+  }
+
+  @if (editable()) {
+    <div class="editor-toolbar" role="toolbar" aria-label="Форматирование материала">
+      <button type="button" [disabled]="disabled()" (click)="paragraph()">Текст</button>
+      <button type="button" [disabled]="disabled()" (click)="heading(2)">Заголовок</button>
+      <button type="button" [disabled]="disabled()" [attr.aria-pressed]="activeMarks().has('strong')" (click)="toggle('strong')"><strong>Жирный</strong></button>
+      <button type="button" [disabled]="disabled()" [attr.aria-pressed]="activeMarks().has('em')" (click)="toggle('em')"><em>Курсив</em></button>
+      <button type="button" [disabled]="disabled()" [attr.aria-pressed]="activeMarks().has('code')" (click)="toggle('code')"><code>Код</code></button>
+      <button type="button" [disabled]="disabled()" (click)="quote()">Цитата</button>
+      <button type="button" [disabled]="disabled()" (click)="list('bullet_list')">Список</button>
+      <button type="button" [disabled]="disabled()" (click)="list('ordered_list')">Нумерация</button>
+      <button type="button" [disabled]="disabled()" (click)="divider()">Разделитель</button>
+      <button type="button" [disabled]="disabled()" (click)="undo()" aria-label="Отменить последнее изменение">↶</button>
+      <button type="button" [disabled]="disabled()" (click)="redo()" aria-label="Повторить отменённое изменение">↷</button>
+    </div>
+
+    <div #editorHost class="editor-host"></div>
+
+    <fieldset class="ruby-fields">
+      <legend>Добавить чтение над текстом</legend>
+      <label>Текст <input type="text" maxlength="256" [disabled]="disabled()" [value]="rubyBase()" (input)="rubyBase.set($any($event.target).value)"></label>
+      <label>Чтение <input type="text" maxlength="256" [disabled]="disabled()" [value]="rubyReading()" (input)="rubyReading.set($any($event.target).value)"></label>
+      <button type="button" [disabled]="disabled() || !canInsertRuby()" (click)="insertRuby()">Вставить ruby</button>
+    </fieldset>
+  } @else if (!failure()) {
+    <p class="editor-note" role="note">Эта версия документа сохранена без изменений, но пока доступна только для просмотра.</p>
+  }
+</section>

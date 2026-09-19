@@ -199,7 +199,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
-    void explicitStructuralInsertPublishesNewTopologyAndPreservesOldSnapshot() {
+    void orderedStructuralEditsPublishAtomicallyAndPreserveOldSnapshot() {
         UUID actor = UUID.randomUUID();
         UUID deck = createDeck(actor);
         JsonNode before = decks.read(actor, deck);
@@ -208,17 +208,32 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         UUID oldRevision = UUID.fromString(created.acknowledgement().path("changes").get(0)
                 .path("itemRevisionId").textValue());
         ObjectNode next = nativeDocument.deepCopy();
-        ObjectNode paragraph = ((ArrayNode) next.path("root").path("content")).addObject()
-                .put("id", UUID.randomUUID().toString()).put("type", "paragraph").put("version", 1);
-        paragraph.putObject("attrs"); paragraph.putArray("content");
+        ArrayNode content = (ArrayNode) next.path("root").path("content");
+        UUID deleted = UUID.fromString(content.get(1).path("id").textValue());
+        UUID movedId = UUID.fromString(content.get(2).path("id").textValue());
+        content.remove(1);
+        UUID insertedId = UUID.randomUUID();
+        ObjectNode paragraph = JSON.createObjectNode().put("id", insertedId.toString())
+                .put("type", "paragraph").put("version", 1);
+        paragraph.putObject("attrs");
+        ObjectNode insertedText = paragraph.putArray("content").addObject().put("id", UUID.randomUUID().toString())
+                .put("type", "text").put("version", 1);
+        insertedText.putObject("attrs").put("text", "Atomic subtree"); insertedText.putArray("content");
+        content.insert(1, paragraph);
+        JsonNode moved = content.remove(2);
+        content.insert(0, moved);
+        ((ObjectNode) content.get(1).path("content").get(0).path("attrs")).put("text", "Value and topology");
         JsonNode deckHead = decks.read(actor, deck);
         ObjectNode body = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
                 .put("expectedDeckRevisionId", deckHead.path("revisionId").textValue())
                 .put("expectedItemRevisionId", oldRevision.toString()).put("expectedOrdinal", 0);
         body.set("document", next);
-        body.putObject("edit").put("type", "insert")
-                .put("parentId", nativeDocument.path("root").path("id").textValue())
-                .put("childIndex", nativeDocument.path("root").path("content").size());
+        ArrayNode edits = body.putArray("edits");
+        edits.addObject().put("type", "delete").put("nodeId", deleted.toString());
+        edits.addObject().put("type", "insert").put("nodeId", insertedId.toString())
+                .put("parentId", nativeDocument.path("root").path("id").textValue()).put("childIndex", 1);
+        edits.addObject().put("type", "move").put("nodeId", movedId.toString())
+                .put("parentId", nativeDocument.path("root").path("id").textValue()).put("childIndex", 0);
         service.publish(actor, deck, 1, ItemPublicationCommand.readSave(bytes(body), member));
         assertNative(service.read(actor, deck, member, null).path("document"), next);
         assertNative(service.read(actor, deck, member, oldRevision).path("document"), nativeDocument);

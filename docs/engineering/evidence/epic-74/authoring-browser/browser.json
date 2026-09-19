@@ -1,0 +1,86 @@
+{
+  "state": "passed",
+  "scenarios": [
+    {
+      "scenario": "wrong_callback_rejected"
+    },
+    {
+      "scenario": "real_browser_registration_auto_login_pkce",
+      "status": 201
+    },
+    {
+      "scenario": "login_pkce_callback",
+      "loginStatus": 200,
+      "secureContext": true,
+      "secureHttpOnlyLaxCookie": true
+    },
+    {
+      "scenario": "real_own_deck_create_and_detail",
+      "canonicalRoute": true,
+      "exactUnicode": true
+    },
+    {
+      "scenario": "real_own_deck_save_reload",
+      "persistedAfterReload": true
+    },
+    {
+      "scenario": "real_own_deck_412_conflict_resolution",
+      "exactLocalDraftPreserved": true,
+      "explicitReapply": true
+    },
+    {
+      "scenario": "own_deck_responsive_and_zoom",
+      "widths": [
+        1440,
+        390
+      ],
+      "cssWidth": 320,
+      "deviceScaleFactor": 2,
+      "noHorizontalOverflow": true,
+      "primaryActionMinimumPx": 44,
+      "keyboardOrder": true,
+      "reducedMotion": true
+    },
+    {
+      "scenario": "authenticated_reload_profile_revalidated",
+      "noLocalStorageBearer": true
+    },
+    {
+      "scenario": "real_https_authoring_capture_draft_publish_reload_browse",
+      "requests": 85,
+      "durationMs": 2410,
+      "captureSourcePreserved": true,
+      "acknowledgedDraftRestored": true,
+      "unsafeMarkupExecuted": false
+    },
+    {
+      "scenario": "logout_revokes_prior_bearer",
+      "logoutStatus": 204,
+      "oldBearerStatus": 401
+    },
+    {
+      "scenario": "two_account_shared_cookie_logout_isolation",
+      "loggedOutAccountBearerStatus": 401,
+      "otherAccountBearerStatus": 200
+    },
+    {
+      "scenario": "wrong_live_pkce_state_rejected"
+    },
+    {
+      "scenario": "replayed_callback_rejected"
+    }
+  ],
+  "tokenExchanges": 4,
+  "networkRequests": 418,
+  "identityRequests": 58,
+  "externalRequestsBlocked": 0,
+  "browserRuntimeErrors": 0,
+  "transport": "real HTTPS, exact ephemeral SPKI allowlist, same-site cross-origin loopback",
+  "browser": "Chrome/154.0.8037.45",
+  "logoutWire": {
+    "requests": 2,
+    "allBearer": true,
+    "anyCookie": false,
+    "anyCsrf": false
+  }
+}

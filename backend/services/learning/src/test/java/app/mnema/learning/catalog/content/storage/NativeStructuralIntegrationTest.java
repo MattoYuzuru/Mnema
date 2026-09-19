@@ -9,6 +9,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 
 import static app.mnema.learning.catalog.content.storage.NativeStorageFixtures.*;
@@ -30,7 +31,8 @@ class NativeStructuralIntegrationTest extends PostgresIntegrationTest {
         ObjectNode next = doc.deepCopy();
         ((ObjectNode) next.path("root")).withArray("content").insert(30, node(101, "paragraph", text(102, "日本語 🌿")));
         var plan = new NativeStructuralEditor().apply(initial.snapshot(), read(next),
-                new NativeStructuralEdit.Insert(UUID.fromString(doc.path("root").path("id").asText()), 30));
+                List.of(new NativeStructuralEdit.Insert(UUID.fromString(next.path("root").path("content").get(30)
+                                .path("id").asText()), UUID.fromString(doc.path("root").path("id").asText()), 30)));
         var prepared = adapter.begin(plan, actor, Duration.ofMinutes(5), first.root());
         while (!prepared.complete()) adapter.stageNext(prepared);
         assertThat(readStored(adapter, prepared.root()).document().toJson()).isEqualTo(read(next).toJson());

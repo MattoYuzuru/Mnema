@@ -1,0 +1,25 @@
+<section class="page" aria-labelledby="editor-title">
+  @if (deck(); as currentDeck) { <a class="back-link" [routerLink]="['/decks', currentDeck.deckId, 'materials']">← К материалам</a> }
+  <header class="page-heading"><div><p class="eyebrow">{{ item() ? 'Редактирование' : 'Новый материал' }}</p><h1 id="editor-title" tabindex="-1">{{ deck()?.metadata?.title ?? 'Материал' }}</h1><p class="lede">Черновик хранится на сервере. Публикация всегда остаётся отдельным действием.</p></div></header>
+  @if (restored()) { <p class="notice success" role="status">Открыт последний серверный черновик этого материала.</p> }
+  @if (message(); as currentMessage) {
+    <section class="notice" [class.error]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected'" [attr.role]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected' ? 'alert' : 'status'">
+      <p>{{ currentMessage }}</p>
+      @if (phase() === 'error') { <button class="button" type="button" (click)="retry()">Повторить безопасное действие</button> }
+      @if (phase() === 'conflict' && conflict() === 'draft') {
+        <div class="actions"><button class="button" type="button" (click)="resolveDraftConflict(false)">Использовать версию сервера</button><button class="button primary" type="button" (click)="resolveDraftConflict(true)">Оставить мой ввод</button></div>
+      } @else if (phase() === 'conflict' && conflict() === 'publication') { <a class="button" [routerLink]="['/decks', deck()?.deckId, 'materials']">Открыть актуальный Browse</a> }
+    </section>
+  }
+  @if (phase() === 'loading') { <p role="status">Готовим серверный черновик…</p> }
+  @if (document(); as currentDocument) {
+    <div class="editor-layout">
+      <section class="sheet" aria-labelledby="material-editor-heading"><h2 id="material-editor-heading">Материал</h2><app-native-editor [document]="currentDocument" [disabled]="phase() === 'publishing' || phase() === 'error' || phase() === 'conflict'" (documentChange)="changeDocument($event)" /></section>
+      <aside class="sheet preview" aria-labelledby="preview-heading"><h2 id="preview-heading">Как будет выглядеть</h2><app-native-document-renderer [document]="currentDocument" /></aside>
+    </div>
+    <section class="page-heading" aria-label="Сохранение">
+      <p class="muted" aria-live="polite">@switch (phase()) { @case ('saving-draft') { Сохраняем черновик… } @case ('publishing') { Публикуем… } @default { {{ dirty() ? 'Есть изменения без подтверждения сервера' : 'Черновик подтверждён сервером' }} } }</p>
+      <div class="actions"><button class="button" type="button" [disabled]="!dirty() || phase() === 'saving-draft' || phase() === 'publishing'" (click)="saveDraft()">Сохранить черновик</button><button class="button primary" type="button" [disabled]="dirty() || phase() !== 'ready'" (click)="publish()">Опубликовать</button></div>
+    </section>
+  }
+</section>

@@ -1,11 +1,38 @@
 # R74-E editor research checkpoint
 
-Date: 2026-09-06  
-Repository base: `33a71f814185a16e922923e034518e25baeadbb8`  
-Issue: #172  
-Status: dependency and Angular-upgrade approvals pending. No package, shared route,
-bootstrap, auth, global-style, asset, or AST changes have been made. An isolated
-presentational paper shell now exists under `frontend/src/app/paper/` for review.
+Research date: 2026-09-06; implementation evidence updated 2026-09-19
+
+Original research base: `33a71f814185a16e922923e034518e25baeadbb8`
+
+Issue: #172
+
+Status: owner approvals recorded; Angular 22 migration and the exact direct
+ProseMirror set are implemented. The Mnema-owned adapter and production authoring
+UI are verified locally on the issue #202 candidate. Protected merge and integrated
+main verification remain delivery gates, not research blockers.
+
+## Implemented result
+
+The recommendation below was accepted without adding an Angular wrapper, Tiptap,
+collaboration state or a second persisted format. The direct adapter imports and
+exports only native-v1, keeps ProseMirror state private, preserves unknown nodes as
+inert payloads and assigns stable UUIDv4 identities through split/paste/history
+transactions. Shared preview and Browse continue to use the independent safe native
+renderer.
+
+ChromeHeadless coverage includes golden round-trip, stable and copied identities,
+unknown/future nodes, ruby, RTL/LTR, formatting, paste sanitation, unsafe URL/HTML/
+SVG corpus, undo/redo, external document replacement, native size/depth/node/scalar
+limits and a 10,000-node render fixture. The integrated real HTTPS run additionally
+used the production build and real contenteditable input through acknowledged draft
+reload and publication; see [authoring UI evidence](../authoring-ui.md).
+
+The final build keeps the editor in a guarded 253.10 kB raw lazy chunk; the initial
+bundle is 591.99 kB raw and Deck/Capture/Browse do not import that runtime. The
+distribution preserves the MIT notices and the production dependency audit reports
+zero vulnerabilities. Human VoiceOver/TalkBack, real Japanese OS IME, physical
+mobile selection, Safari and Firefox remain explicitly unverified manual/device
+coverage rather than inferred passes.
 
 ## Recommendation requiring owner approval
 

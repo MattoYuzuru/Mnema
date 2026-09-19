@@ -8,7 +8,6 @@ import app.mnema.learning.storage.StorageTypes.NewObject;
 import app.mnema.learning.storage.StorageTypes.ObjectKind;
 import app.mnema.learning.storage.StorageTypes.ObjectRef;
 import app.mnema.learning.storage.StorageTypes.StoredObject;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.ArrayDeque;
@@ -26,14 +25,20 @@ import static app.mnema.learning.catalog.content.storage.NativeStorageFormat.*;
 
 /** Native intent validation plus local page edits; publication/ACL/leases remain caller-owned. */
 public final class NativeStructuralEditor {
+    public static final int MAX_EDITS = 100;
+
     // Native-v1's editable container capabilities, not acceptance of opaque payloads.
     // Keep aligned with contracts/content/native-v1/README.md; schema validation remains in its reader.
     private static final Set<String> EDITABLE_CONTAINERS = Set.of("doc", "paragraph", "heading", "blockquote",
             "bullet_list", "ordered_list", "list_item", "link");
 
-    public NativeEncodingPlan apply(NativeSnapshot previous, NativeDocument resulting, NativeStructuralEdit edit) {
-        Objects.requireNonNull(previous); Objects.requireNonNull(resulting); Objects.requireNonNull(edit);
-        Intent intent = verify(previous.document(), resulting, edit);
+    public NativeEncodingPlan apply(NativeSnapshot previous, NativeDocument resulting,
+                                    List<NativeStructuralEdit> edits) {
+        Objects.requireNonNull(previous); Objects.requireNonNull(resulting); Objects.requireNonNull(edits);
+        if (edits.isEmpty() || edits.size() > MAX_EDITS || edits.stream().anyMatch(Objects::isNull)) {
+            throw new NativeStorageFailure(NativeStorageFailure.Code.INVALID_GRAPH);
+        }
+        List<Intent> intents = verify(previous.document(), resulting, List.copyOf(edits));
         if (resulting.toJson().equals(previous.document().toJson())) return new NativeEncodingPlan(previous, List.of(), previous.root());
         UUID scope = previous.root().reuseScopeId();
         Map<UUID, NewObject> created = new LinkedHashMap<>();
@@ -54,6 +59,7 @@ public final class NativeStructuralEditor {
         for (int i = 0; i < oldRecords.size(); i++) oldIndices.put(oldRecords.get(i).id(), i);
         RecordWriter writer = new RecordWriter(scope, previous, created, source);
         List<Entry> desired = new ArrayList<>();
+        Map<UUID, Entry> desiredById = new HashMap<>();
         int recordBytes = 0;
         for (var record : nextRecords) {
             String text = canonical(record.value());
@@ -67,20 +73,21 @@ public final class NativeStructuralEditor {
                         : NativeSnapshotCodec.replaceFragments(previous.fragments().get(oldIndex), text);
                 desired.add(new Entry(record.id(), writer.record(fragments)));
             }
+            desiredById.put(record.id(), desired.getLast());
         }
         List<Entry> order = new ArrayList<>(oldEntries);
-        if (intent.removed() > 0) {
-            for (int i = 0; i < intent.removed(); i++) {
-                current = keep(pages.delete(current, intent.from(), oldEntries.get(intent.from() + i).key()), created);
+        for (Intent intent : intents) {
+            for (UUID removed : intent.removed()) {
+                require(intent.from() < order.size() && order.get(intent.from()).key().equals(removed));
+                current = keep(pages.delete(current, intent.from(), removed), created);
+                order.remove(intent.from());
             }
-            order.subList(intent.from(), intent.from() + intent.removed()).clear();
-        }
-        if (intent.inserted() > 0) {
-            for (int i = 0; i < intent.inserted(); i++) {
-                Entry entry = desired.get(intent.to() + i);
+            for (int i = 0; i < intent.inserted().size(); i++) {
+                Entry entry = desiredById.get(intent.inserted().get(i));
+                require(entry != null && intent.to() + i <= order.size());
                 current = keep(pages.insert(current, intent.to() + i, entry), created);
+                order.add(intent.to() + i, entry);
             }
-            order.addAll(intent.to(), desired.subList(intent.to(), intent.to() + intent.inserted()));
         }
         require(order.size() == desired.size());
         for (int i = 0; i < desired.size(); i++) {
@@ -114,51 +121,97 @@ public final class NativeStructuralEditor {
         additions.add(object);
     }
 
-    private static Intent verify(NativeDocument before, NativeDocument after, NativeStructuralEdit edit) {
+    private static List<Intent> verify(NativeDocument before, NativeDocument after,
+                                       List<NativeStructuralEdit> edits) {
         ObjectNode expected = (ObjectNode) before.toJson();
         ObjectNode root = (ObjectNode) expected.path("root");
         ObjectNode actual = (ObjectNode) after.toJson().path("root");
-        require(editableContainer(root));
-        Intent result;
-        switch (edit) {
-            case NativeStructuralEdit.Insert insert -> {
-                Located parent = locate(root, insert.parentId());
-                Located resultParent = locate(actual, insert.parentId());
-                require(parent != null && parent.editableAncestry() && editableContainer(parent.node())
-                        && resultParent != null && insert.childIndex() <= parent.node().path("content").size()
-                        && insert.childIndex() < resultParent.node().path("content").size());
-                ObjectNode inserted = ((ObjectNode) resultParent.node().path("content").get(insert.childIndex())).deepCopy();
-                parent.node().withArray("content").insert(insert.childIndex(), inserted);
-                result = new Intent(0, ordinal(after, id(inserted)), 0, size(inserted));
-            }
-            case NativeStructuralEdit.Delete delete -> {
-                Located selected = locate(root, delete.nodeId());
-                require(selected != null && selected.parent() != null && selected.editableAncestry());
-                int count = size(selected.node());
-                selected.parent().withArray("content").remove(selected.index());
-                result = new Intent(ordinal(before, delete.nodeId()), 0, count, 0);
-            }
-            case NativeStructuralEdit.Move move -> {
-                Located selected = locate(root, move.nodeId());
-                require(selected != null && selected.parent() != null && selected.editableAncestry()
-                        && locate(selected.node(), move.parentId()) == null);
-                int count = size(selected.node());
-                selected.parent().withArray("content").remove(selected.index());
-                Located parent = locate(root, move.parentId());
-                require(parent != null && parent.editableAncestry() && editableContainer(parent.node())
-                        && move.childIndexAfterRemoval() <= parent.node().path("content").size());
-                parent.node().withArray("content").insert(move.childIndexAfterRemoval(), selected.node());
-                result = new Intent(ordinal(before, move.nodeId()), ordinal(after, move.nodeId()), count, count);
+        require(editableContainer(root) && editableContainer(actual));
+        Set<UUID> currentIds = new HashSet<>(preorderIds(root));
+        Set<UUID> editedRoots = new HashSet<>();
+        List<Intent> result = new ArrayList<>();
+        for (NativeStructuralEdit edit : edits) {
+            UUID editedRoot = switch (edit) {
+                case NativeStructuralEdit.Insert insert -> insert.nodeId();
+                case NativeStructuralEdit.Delete delete -> delete.nodeId();
+                case NativeStructuralEdit.Move move -> move.nodeId();
+            };
+            require(editedRoots.add(editedRoot));
+            switch (edit) {
+                case NativeStructuralEdit.Insert insert -> {
+                    Located parent = locate(root, insert.parentId());
+                    Located finalNode = locate(actual, insert.nodeId());
+                    require(parent != null && parent.editableAncestry() && editableContainer(parent.node())
+                            && finalNode != null && insert.childIndex() <= parent.node().path("content").size());
+                    ObjectNode inserted = finalNode.node().deepCopy();
+                    List<UUID> insertedIds = preorderIds(inserted);
+                    require(insertedIds.stream().noneMatch(currentIds::contains));
+                    parent.node().withArray("content").insert(insert.childIndex(), inserted);
+                    currentIds.addAll(insertedIds);
+                    result.add(new Intent(0, ordinal(root, insert.nodeId()), List.of(), insertedIds));
+                }
+                case NativeStructuralEdit.Delete delete -> {
+                    Located selected = locate(root, delete.nodeId());
+                    require(selected != null && selected.parent() != null && selected.editableAncestry());
+                    int from = ordinal(root, delete.nodeId());
+                    List<UUID> removedIds = preorderIds(selected.node());
+                    selected.parent().withArray("content").remove(selected.index());
+                    currentIds.removeAll(removedIds);
+                    result.add(new Intent(from, 0, removedIds, List.of()));
+                }
+                case NativeStructuralEdit.Move move -> {
+                    Located selected = locate(root, move.nodeId());
+                    require(selected != null && selected.parent() != null && selected.editableAncestry()
+                            && locate(selected.node(), move.parentId()) == null);
+                    int from = ordinal(root, move.nodeId());
+                    List<UUID> movedIds = preorderIds(selected.node());
+                    ObjectNode moved = selected.node();
+                    selected.parent().withArray("content").remove(selected.index());
+                    Located parent = locate(root, move.parentId());
+                    require(parent != null && parent.editableAncestry() && editableContainer(parent.node())
+                            && move.childIndexAfterRemoval() <= parent.node().path("content").size());
+                    parent.node().withArray("content").insert(move.childIndexAfterRemoval(), moved);
+                    result.add(new Intent(from, ordinal(root, move.nodeId()), movedIds, movedIds));
+                }
             }
         }
-        require(expected.equals(after.toJson()));
-        return result;
+        require(sameTopology(root, actual));
+        return List.copyOf(result);
     }
 
-    private static int ordinal(NativeDocument document, UUID id) {
-        List<NativeSnapshotCodec.NodeRecord> records = NativeSnapshotCodec.flatten(document);
-        for (int i = 0; i < records.size(); i++) if (records.get(i).id().equals(id)) return i;
+    private static int ordinal(ObjectNode root, UUID id) {
+        List<UUID> ids = preorderIds(root);
+        for (int i = 0; i < ids.size(); i++) if (ids.get(i).equals(id)) return i;
         throw new NativeStorageFailure(NativeStorageFailure.Code.INVALID_GRAPH);
+    }
+
+    private static List<UUID> preorderIds(ObjectNode root) {
+        List<UUID> result = new ArrayList<>();
+        var pending = new ArrayDeque<ObjectNode>();
+        pending.push(root);
+        while (!pending.isEmpty()) {
+            ObjectNode node = pending.pop();
+            result.add(id(node));
+            for (int i = node.path("content").size() - 1; i >= 0; i--) {
+                pending.push((ObjectNode) node.path("content").get(i));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private static boolean sameTopology(ObjectNode expected, ObjectNode actual) {
+        var pending = new ArrayDeque<ObjectNode[]>();
+        pending.push(new ObjectNode[]{expected, actual});
+        while (!pending.isEmpty()) {
+            ObjectNode[] pair = pending.pop();
+            if (!id(pair[0]).equals(id(pair[1]))
+                    || pair[0].path("content").size() != pair[1].path("content").size()) return false;
+            for (int i = 0; i < pair[0].path("content").size(); i++) {
+                pending.push(new ObjectNode[]{(ObjectNode) pair[0].path("content").get(i),
+                        (ObjectNode) pair[1].path("content").get(i)});
+            }
+        }
+        return true;
     }
 
     private static Located locate(ObjectNode root, UUID id) {
@@ -175,18 +228,11 @@ public final class NativeStructuralEditor {
         return null;
     }
 
-    private static int size(ObjectNode root) {
-        var pending = new ArrayDeque<JsonNode>();
-        pending.add(root);
-        int count = 0;
-        while (!pending.isEmpty()) { JsonNode node = pending.pop(); count++; node.path("content").forEach(pending::push); }
-        return count;
-    }
     private static UUID id(ObjectNode node) { return UUID.fromString(node.path("id").textValue()); }
     private static boolean editableContainer(ObjectNode node) {
         return node.path("version").intValue() == 1 && EDITABLE_CONTAINERS.contains(node.path("type").textValue());
     }
-    private record Intent(int from, int to, int removed, int inserted) { }
+    private record Intent(int from, int to, List<UUID> removed, List<UUID> inserted) { }
     private record Located(ObjectNode node, ObjectNode parent, int index, boolean editableAncestry) { }
 
     private static final class RecordWriter {

@@ -18,6 +18,11 @@ node --check scripts/browser-identity/browser.mjs
 python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node /absolute/path/to/node22
 ```
 
+Pass `--authoring` to extend the same real HTTPS composition through Deck creation,
+Capture conversion, acknowledged draft reload, explicit LearningItem publication and
+Browse. The extended check also confirms that adversarial note text remains inert and
+that the retained Capture source/conversion can be read from the real Learning API.
+
 Use `--chrome` for another existing Chrome executable. The page contract defaults to
 `[data-testid="identity-profile"]`, `[data-testid="logout"]`, and `[role="alert"]`;
 matching CLI selector options are available. Registration uses `#email`, `#username`,

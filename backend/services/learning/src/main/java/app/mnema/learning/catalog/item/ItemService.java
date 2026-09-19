@@ -217,7 +217,7 @@ public class ItemService {
                     ItemRecord current = currentItems.get(member);
                     int fromOrdinal = currentOrdinals.get(member);
                     NativeSnapshot previous = decode(current.scopeId(), current.contentRootId());
-                    NativeEncodingPlan plan = plan(previous, save.document(), save.edit());
+                    NativeEncodingPlan plan = plan(previous, save.document(), save.edits());
                     StagedRoot content = stageNative(plan, actor, current.contentRootId(), temporaryPins);
                     UUID itemRevision = UUID.randomUUID();
                     long itemSequence = current.itemSequence() + 1;
@@ -336,9 +336,9 @@ public class ItemService {
     }
 
     private NativeEncodingPlan plan(NativeSnapshot previous, NativeDocument document,
-                                    app.mnema.learning.catalog.content.storage.NativeStructuralEdit edit) {
+                                    List<app.mnema.learning.catalog.content.storage.NativeStructuralEdit> edits) {
         try {
-            return edit == null ? codec.replace(previous, document) : structuralEditor.apply(previous, document, edit);
+            return edits.isEmpty() ? codec.replace(previous, document) : structuralEditor.apply(previous, document, edits);
         } catch (NativeStorageFailure failure) {
             throw new InvalidRequestException();
         }
