@@ -1160,8 +1160,9 @@ export class SettingsComponent implements OnInit {
         this.showDeleteConfirmation = false;
         this.userApi.deleteMe().subscribe({
             next: () => {
-                this.auth.logout();
-                void this.router.navigate(['/']);
+                // Account deletion already invalidates server access; do not send another account mutation.
+                this.auth.expireSession();
+                void this.router.navigate(['/login']);
             },
             error: () => {
             }

@@ -1,383 +1,259 @@
-import { Injectable, inject } from '@angular/core';
-import { HttpClient } from '@angular/common/http';
+import { Injectable, inject, signal } from '@angular/core';
+import { HttpBackend, HttpClient, HttpErrorResponse } from '@angular/common/http';
 import { Router } from '@angular/router';
-import { BehaviorSubject, Observable, firstValueFrom } from 'rxjs';
-import { appConfig } from './app.config';
-
-export interface AuthUser {
-    email: string;
-    name?: string;
-    picture?: string;
-    emailVerified?: boolean;
-}
+import { toObservable } from '@angular/core/rxjs-interop';
+import { firstValueFrom, timeout } from 'rxjs';
+import { AUTH_BROWSER, BROWSER_IDENTITY_CONFIG, validateIdentityConfig } from './auth-browser';
+import { AUTH_SCOPES, AUTH_STORAGE_KEY, PKCE_STORAGE_KEY, AuthFailure, IdentityProfile, StoredAccess,
+    objectValue, boundedText, parseProfile, parseStoredAccess, parseToken, parseTransaction, safeReturnUrl } from './auth-protocol';
 
 export type AuthStatus = 'anonymous' | 'pending' | 'authenticated' | 'error';
-
-interface TokenResponse {
-    access_token: string;
-    refresh_token?: string;
-    id_token?: string;
-    expires_in: number;
-    expires_at?: number;
-    token_type: string;
-    scope?: string;
-    [key: string]: unknown;
-}
-
-export interface TurnstileConfig {
-    enabled: boolean;
-    siteKey?: string | null;
-}
-
-export interface PasswordStatus {
-    hasPassword: boolean;
-}
+export interface AuthUser extends IdentityProfile { name?: string }
+export interface PasswordStatus { hasPassword: boolean }
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-    private http = inject(HttpClient);
-    private router = inject(Router);
-
-    private readonly storageKey = 'mnema_tokens';
-
-    private _statusSubject = new BehaviorSubject<AuthStatus>('anonymous');
-    private _userSubject = new BehaviorSubject<AuthUser | null>(null);
-    private _accessToken: string | null = null;
-    private _expiresAt: number | null = null;
-    private tokenExpiryTimer: number | null = null;
-    private turnstileConfig: TurnstileConfig | null = null;
-
-    status$: Observable<AuthStatus> = this._statusSubject.asObservable();
-    user$: Observable<AuthUser | null> = this._userSubject.asObservable();
-
-    status(): AuthStatus {
-        return this._statusSubject.value;
-    }
-
-    user(): AuthUser | null {
-        return this._userSubject.value;
-    }
+    // Protocol traffic supplies credentials explicitly; it must not recurse through the bearer interceptor.
+    private readonly http = new HttpClient(inject(HttpBackend));
+    private readonly router = inject(Router);
+    private readonly browser = inject(AUTH_BROWSER);
+    private readonly config = inject(BROWSER_IDENTITY_CONFIG);
+    private readonly state = signal<AuthStatus>('anonymous');
+    private readonly profile = signal<AuthUser | null>(null);
+    readonly status = this.state.asReadonly();
+    readonly user = this.profile.asReadonly();
+    readonly status$ = toObservable(this.status);
+    readonly user$ = toObservable(this.user);
+    readonly logoutUnconfirmed = signal(false);
+    private access: StoredAccess | null = null;
+    // Only an explicit failed logout may reuse this in-memory credential; never exposed as active access or persisted.
+    private pendingLogout: StoredAccess | null = null;
+    private cookieFlowPending = false;
+    private epoch = 0;
+    private restoration: Promise<void> | null = null;
+    private expiryTimer: ReturnType<typeof setTimeout> | null = null;
 
     accessToken(): string | null {
-        if (this._accessToken && this.isExpired()) {
-            this.expireSession();
-            return null;
-        }
-        return this._accessToken;
+        if (this.access && this.access.expiresAt <= this.browser.now()) this.expireSession(this.access.token);
+        return this.access?.token ?? null;
     }
 
-    initFromUrlAndStorage(): void {
-        const params = new URLSearchParams(window.location.search);
-        const code = params.get('code');
-        const state = params.get('state');
-
-        if (code) {
-            void this.handleAuthCallback(code, state);
-            return;
-        }
-
-        const raw = window.sessionStorage.getItem(this.storageKey);
-        if (raw) {
-            try {
-                const saved = JSON.parse(raw) as TokenResponse;
-                this.applyTokens(saved);
-            } catch {
-                window.sessionStorage.removeItem(this.storageKey);
-            }
-        }
+    /** Single-flight restoration. Guard awaits it, while the public shell may render immediately. */
+    restore(): Promise<void> {
+        this.restoration ??= this.restoreAccess();
+        return this.restoration;
     }
 
-    async beginLogin(returnTo: string = window.location.pathname, provider?: string): Promise<void> {
-        this._statusSubject.next('pending');
-
-        const codeVerifier = this.randomString(64);
-        const codeChallenge = await this.pkceChallengeFromVerifier(codeVerifier);
-        const state = crypto.randomUUID();
-
-        window.sessionStorage.setItem('pkce_verifier', codeVerifier);
-        window.sessionStorage.setItem('oauth_state', state);
-        window.sessionStorage.setItem('oauth_return_to', returnTo);
-
-        const redirectUri = `${window.location.origin}/`;
-        const params = new URLSearchParams({
-            response_type: 'code',
-            client_id: appConfig.clientId,
-            redirect_uri: redirectUri,
-            scope: 'openid profile email user.read user.write',
-            state,
-            code_challenge: codeChallenge,
-            code_challenge_method: 'S256'
-        });
-
-        if (provider) {
-            params.set('provider', provider);
-        }
-
-        window.location.href = `${appConfig.authServerUrl}/oauth2/authorize?${params.toString()}`;
-    }
-
-    logout(): void {
-        this.clearSession();
-
-        const redirectUrl = `${window.location.origin}/`;
-        window.location.href = `${appConfig.authServerUrl}/logout?redirect=${encodeURIComponent(redirectUrl)}`;
-    }
-
-    async loginWithPassword(
-        login: string,
-        password: string,
-        returnTo: string,
-        turnstileToken?: string | null
-    ): Promise<void> {
-        this._statusSubject.next('pending');
+    private async restoreAccess(): Promise<void> {
+        if (this.browser.pathname === '/auth/callback') return;
+        const epoch = this.epoch;
         try {
-            const tokenResponse = await firstValueFrom(
-                this.http.post<TokenResponse>(`${appConfig.authServerUrl}/auth/login`, {
-                    login,
-                    password,
-                    turnstileToken
-                })
-            );
-            const storedTokens = this.withExpiresAt(tokenResponse);
-            window.sessionStorage.setItem(this.storageKey, JSON.stringify(storedTokens));
-            this.applyTokens(storedTokens);
-            await this.router.navigateByUrl(returnTo);
-        } catch (e) {
-            console.error('Local login failed', e);
-            this._statusSubject.next('error');
-            throw e;
+            const raw = this.browser.storage.getItem(AUTH_STORAGE_KEY);
+            if (!raw) return;
+            validateIdentityConfig(this.config, this.browser.origin);
+            const access = parseStoredAccess(raw, this.browser.now(), this.config.authServerUrl, this.config.clientId);
+            this.state.set('pending');
+            const profile = await this.loadProfile(access.token);
+            if (epoch === this.epoch) this.accept(access, profile);
+        } catch (error) {
+            if (epoch !== this.epoch) return;
+            this.clear();
+            if (error instanceof HttpErrorResponse && error.status !== 401) this.state.set('error');
         }
     }
 
-    async registerWithPassword(
-        email: string,
-        username: string,
-        password: string,
-        returnTo: string,
-        turnstileToken?: string | null
-    ): Promise<void> {
-        this._statusSubject.next('pending');
+    async beginLogin(returnTo: string = this.router.url): Promise<void> {
+        if (this.cookieFlowPending) throw new AuthFailure('protocol');
+        await this.startAuthorization(returnTo);
+    }
+
+    private async startAuthorization(returnTo: string): Promise<void> {
+        this.pendingLogout = null;
+        this.clear();
+        const epoch = this.epoch;
+        this.state.set('pending');
         try {
-            const tokenResponse = await firstValueFrom(
-                this.http.post<TokenResponse>(`${appConfig.authServerUrl}/auth/register`, {
-                    email,
-                    username,
-                    password,
-                    turnstileToken
-                })
-            );
-            const storedTokens = this.withExpiresAt(tokenResponse);
-            window.sessionStorage.setItem(this.storageKey, JSON.stringify(storedTokens));
-            this.applyTokens(storedTokens);
-            await this.router.navigateByUrl(returnTo);
-        } catch (e) {
-            console.error('Local registration failed', e);
-            this._statusSubject.next('error');
-            throw e;
+            validateIdentityConfig(this.config, this.browser.origin);
+            const verifier = this.browser.random();
+            const state = this.browser.random();
+            const challenge = await this.browser.challenge(verifier);
+            if (epoch !== this.epoch) return;
+            const transaction = { state, verifier, returnUrl: safeReturnUrl(returnTo), createdAt: this.browser.now(),
+                issuer: this.config.authServerUrl, clientId: this.config.clientId, redirectUri: this.config.identityRedirectUri };
+            this.persist(PKCE_STORAGE_KEY, transaction);
+            const query = new URLSearchParams({ response_type: 'code', client_id: this.config.clientId,
+                redirect_uri: this.config.identityRedirectUri, scope: AUTH_SCOPES, state,
+                code_challenge: challenge, code_challenge_method: 'S256' });
+            this.browser.navigate(`${this.config.authServerUrl}/oauth2/authorize?${query}`);
+        } catch (error) {
+            if (epoch === this.epoch) { this.clear(); this.state.set('error'); }
+            throw error;
         }
     }
 
-    async getTurnstileConfig(): Promise<TurnstileConfig> {
-        if (this.turnstileConfig) {
-            return this.turnstileConfig;
-        }
+    async completeCallback(): Promise<void> {
+        this.clear(false);
+        const epoch = this.epoch;
+        this.state.set('pending');
         try {
-            const config = await firstValueFrom(
-                this.http.get<TurnstileConfig>(`${appConfig.authServerUrl}/auth/turnstile/config`)
-            );
-            this.turnstileConfig = config;
-            return config;
-        } catch {
-            this.turnstileConfig = { enabled: false };
-            return this.turnstileConfig;
+            if (this.browser.pathname !== '/auth/callback') throw new AuthFailure('protocol');
+            const query = new URLSearchParams(this.browser.search);
+            this.browser.clearQuery();
+            validateIdentityConfig(this.config, this.browser.origin);
+            const raw = this.browser.storage.getItem(PKCE_STORAGE_KEY);
+            // Consume before any asynchronous exchange, including malformed/error callbacks.
+            this.browser.storage.removeItem(PKCE_STORAGE_KEY);
+            if (!raw) throw new AuthFailure('protocol');
+            const transaction = parseTransaction(raw, this.browser.now(), this.config.authServerUrl, this.config.clientId, this.config.identityRedirectUri);
+            const code = query.get('code');
+            if (query.has('error') || query.getAll('code').length !== 1 || query.getAll('state').length !== 1 ||
+                query.get('state') !== transaction.state || !boundedText(code, 2048) || !code ||
+                (query.has('iss') && (query.getAll('iss').length !== 1 || query.get('iss') !== this.config.authServerUrl))) throw new AuthFailure('protocol');
+            const body = new URLSearchParams({ grant_type: 'authorization_code', code, client_id: this.config.clientId,
+                redirect_uri: this.config.identityRedirectUri, code_verifier: transaction.verifier }).toString();
+            const value = await firstValueFrom(this.http.post<unknown>(`${this.config.authServerUrl}/oauth2/token`, body,
+                { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }).pipe(timeout(8000)));
+            if (epoch !== this.epoch) return;
+            const access = parseToken(value, this.browser.now(), this.config.authServerUrl, this.config.clientId);
+            const profile = await this.loadProfile(access.token);
+            if (epoch !== this.epoch) return;
+            this.persist(AUTH_STORAGE_KEY, access);
+            this.accept(access, profile);
+            await this.router.navigateByUrl(transaction.returnUrl, { replaceUrl: true });
+        } catch (error) {
+            if (epoch === this.epoch) { this.clear(); this.state.set('error'); }
+            throw error;
         }
+    }
+
+    async loginWithPassword(login: string, password: string, returnTo: string): Promise<void> {
+        if (this.cookieFlowPending) throw new AuthFailure('protocol');
+        this.cookieFlowPending = true;
+        try { await this.passwordLogin(login, password, returnTo); }
+        finally { this.cookieFlowPending = false; }
+    }
+
+    private async passwordLogin(login: string, password: string, returnTo: string): Promise<void> {
+        this.pendingLogout = null;
+        this.clear();
+        const epoch = this.epoch;
+        this.state.set('pending');
+        try {
+            validateIdentityConfig(this.config, this.browser.origin);
+            parseProfile(await this.accountMutation('/login', { login, password }));
+            if (epoch === this.epoch) await this.startAuthorization(returnTo);
+        } catch (error) {
+            if (epoch === this.epoch) this.state.set('error');
+            throw error;
+        }
+    }
+
+    async registerWithPassword(email: string, username: string, password: string, returnTo: string): Promise<void> {
+        if (this.cookieFlowPending) throw new AuthFailure('protocol');
+        this.cookieFlowPending = true;
+        this.pendingLogout = null;
+        this.clear();
+        const epoch = this.epoch;
+        this.state.set('pending');
+        try {
+            validateIdentityConfig(this.config, this.browser.origin);
+            parseProfile(await this.accountMutation('/register', { email, loginName: username, profileUsername: username, password }));
+            if (epoch === this.epoch) await this.passwordLogin(username, password, returnTo);
+        } catch (error) {
+            if (epoch === this.epoch) this.state.set('error');
+            throw error;
+        } finally {
+            this.cookieFlowPending = false;
+        }
+    }
+
+    async logout(): Promise<void> {
+        const access = this.access ?? this.pendingLogout;
+        this.clear();
+        const epoch = this.epoch;
+        this.pendingLogout = access;
+        this.logoutUnconfirmed.set(true);
+        if (this.cookieFlowPending) throw new AuthFailure('protocol');
+        // Bind revocation to this tab's verified account, never a different tab's shared Identity cookie.
+        validateIdentityConfig(this.config, this.browser.origin);
+        if (!access || access.expiresAt <= this.browser.now()) { this.pendingLogout = null; throw new AuthFailure('protocol'); }
+        await this.bearerMutation('/logout', {}, access.token);
+        if (epoch !== this.epoch) return;
+        this.pendingLogout = null;
+        this.logoutUnconfirmed.set(false);
+        await this.router.navigateByUrl('/login', { replaceUrl: true });
     }
 
     async getPasswordStatus(): Promise<PasswordStatus> {
-        return firstValueFrom(
-            this.http.get<PasswordStatus>(`${appConfig.authServerUrl}/auth/password/status`)
-        );
+        const token = this.accessToken();
+        if (!token) throw new AuthFailure('protocol');
+        return { hasPassword: (await this.loadProfile(token)).hasPassword };
     }
 
     async setPassword(currentPassword: string | null, newPassword: string): Promise<PasswordStatus> {
-        return firstValueFrom(
-            this.http.post<PasswordStatus>(`${appConfig.authServerUrl}/auth/password`, {
-                currentPassword,
-                newPassword
-            })
-        );
+        const token = this.accessToken();
+        if (!token) throw new AuthFailure('protocol');
+        await this.bearerMutation('/me/password', { currentPassword, newPassword }, token);
+        this.expireSession(token);
+        return { hasPassword: true };
     }
 
-    private async handleAuthCallback(code: string, returnedState: string | null): Promise<void> {
-        const expectedState = window.sessionStorage.getItem('oauth_state');
-        const codeVerifier = window.sessionStorage.getItem('pkce_verifier');
-        const redirectUri = `${window.location.origin}/`;
+    expireSession(expectedToken?: string): void {
+        // A delayed401 for an old request must not discard a later successful login.
+        if (expectedToken && expectedToken !== this.access?.token) return;
+        const wasActive = this.state() === 'authenticated';
+        this.clear();
+        if (wasActive) void this.router.navigate(['/login'], { queryParams: { returnUrl: safeReturnUrl(this.router.url) } });
+    }
 
-        window.history.replaceState(null, '', window.location.pathname);
+    private async loadProfile(token: string): Promise<IdentityProfile> {
+        return parseProfile(await firstValueFrom(this.http.get<unknown>(`${this.config.authServerUrl}/api/accounts/me`,
+            { headers: { Authorization: `Bearer ${token}` } }).pipe(timeout(8000))));
+    }
 
-        if (!codeVerifier || !expectedState || returnedState !== expectedState) {
-            this._statusSubject.next('error');
-            return;
-        }
+    private bearerMutation(path: '/logout' | '/me/password', body: unknown, token: string): Promise<unknown> {
+        validateIdentityConfig(this.config, this.browser.origin);
+        // Spring's existing Resource Server exempts explicit bearer requests from CSRF; cookie mutations do not.
+        return firstValueFrom(this.http.post<unknown>(`${this.config.authServerUrl}/api/accounts${path}`, body,
+            { withCredentials: false, headers: { Authorization: `Bearer ${token}` } }).pipe(timeout(8000)));
+    }
 
-        const body = new URLSearchParams({
-            grant_type: 'authorization_code',
-            code,
-            redirect_uri: redirectUri,
-            client_id: appConfig.clientId,
-            code_verifier: codeVerifier
-        });
+    private async accountMutation(path: string, body: unknown): Promise<unknown> {
+        const epoch = this.epoch;
+        const csrf = objectValue(await firstValueFrom(this.http.get<unknown>(`${this.config.authServerUrl}/api/accounts/csrf`,
+            { withCredentials: true }).pipe(timeout(8000))));
+        if (csrf['headerName'] !== 'X-CSRF-TOKEN' || !boundedText(csrf['token'], 256) || !csrf['token']) throw new AuthFailure('protocol');
+        if (epoch !== this.epoch) throw new AuthFailure('protocol');
+        return firstValueFrom(this.http.post<unknown>(`${this.config.authServerUrl}/api/accounts${path}`, body,
+            { withCredentials: true, headers: { 'X-CSRF-TOKEN': csrf['token'] } }).pipe(timeout(8000)));
+    }
 
+    private accept(access: StoredAccess, profile: IdentityProfile): void {
+        if (access.expiresAt <= this.browser.now()) throw new AuthFailure('protocol');
+        this.access = access;
+        this.profile.set({ ...profile, name: profile.displayName ?? profile.profileUsername ?? undefined });
+        this.state.set('authenticated');
+        if (this.expiryTimer !== null) clearTimeout(this.expiryTimer);
+        this.expiryTimer = setTimeout(() => this.expireSession(access.token), access.expiresAt - this.browser.now());
+    }
+
+    private persist(key: string, value: unknown): void {
+        try { this.browser.storage.setItem(key, JSON.stringify(value)); }
+        catch { throw new AuthFailure('storage'); }
+    }
+
+    private clear(clearTransaction = true): void {
+        this.epoch++;
+        this.access = null;
+        this.profile.set(null);
+        this.state.set('anonymous');
+        if (this.expiryTimer !== null) clearTimeout(this.expiryTimer);
+        this.expiryTimer = null;
         try {
-            const tokenResponse = await firstValueFrom(
-                this.http.post<TokenResponse>(
-                    `${appConfig.authServerUrl}/oauth2/token`,
-                    body,
-                    { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
-                )
-            );
-
-            const storedTokens = this.withExpiresAt(tokenResponse);
-            window.sessionStorage.setItem(this.storageKey, JSON.stringify(storedTokens));
-            this.applyTokens(storedTokens);
-
-            const returnTo = window.sessionStorage.getItem('oauth_return_to') || '/';
-            window.sessionStorage.removeItem('oauth_return_to');
-            await this.router.navigateByUrl(returnTo);
-        } catch (e) {
-            console.error('Token exchange failed', e);
-            this._statusSubject.next('error');
-        } finally {
-            window.sessionStorage.removeItem('pkce_verifier');
-            window.sessionStorage.removeItem('oauth_state');
-        }
-    }
-
-    private applyTokens(tokens: TokenResponse): void {
-        const expiresAt = this.resolveExpiresAt(tokens);
-        if (expiresAt && Date.now() >= expiresAt) {
-            this.expireSession();
-            return;
-        }
-
-        this.clearExpiryTimer();
-        this._accessToken = tokens.access_token;
-        this._expiresAt = expiresAt;
-        this._statusSubject.next('authenticated');
-        if (expiresAt) {
-            this.scheduleExpiry(expiresAt);
-        }
-
-        const tokenForProfile = tokens.id_token ?? tokens.access_token;
-        if (tokenForProfile) {
-            const payload = this.decodeJwt(tokenForProfile);
-            const user: AuthUser = {
-                email: (payload['email'] as string) ?? '',
-                name: (payload['name'] || payload['given_name']) as string | undefined,
-                picture: payload['picture'] as string | undefined,
-                emailVerified: payload['email_verified'] as boolean | undefined
-            };
-            this._userSubject.next(user);
-        }
-    }
-
-    expireSession(): void {
-        const wasAnonymous = this._statusSubject.value === 'anonymous';
-        this.clearSession();
-        if (wasAnonymous) {
-            return;
-        }
-        const returnUrl = this.router.url || '/';
-        if (!returnUrl.startsWith('/login')) {
-            void this.router.navigate(['/login'], { queryParams: { returnUrl } });
-        }
-    }
-
-    private clearSession(): void {
-        this._statusSubject.next('anonymous');
-        this._userSubject.next(null);
-        this._accessToken = null;
-        this._expiresAt = null;
-        this.clearExpiryTimer();
-        window.sessionStorage.removeItem(this.storageKey);
-    }
-
-    private scheduleExpiry(expiresAt: number): void {
-        this.clearExpiryTimer();
-        const delay = Math.max(expiresAt - Date.now(), 0);
-        this.tokenExpiryTimer = window.setTimeout(() => this.expireSession(), delay);
-    }
-
-    private clearExpiryTimer(): void {
-        if (this.tokenExpiryTimer !== null) {
-            window.clearTimeout(this.tokenExpiryTimer);
-            this.tokenExpiryTimer = null;
-        }
-    }
-
-    private isExpired(): boolean {
-        return this._expiresAt !== null && Date.now() >= this._expiresAt;
-    }
-
-    private withExpiresAt(tokens: TokenResponse): TokenResponse {
-        if (typeof tokens.expires_at === 'number') {
-            return tokens;
-        }
-        const expiresAt = this.resolveExpiresAt(tokens) ?? (Date.now() + tokens.expires_in * 1000);
-        return { ...tokens, expires_at: expiresAt };
-    }
-
-    private resolveExpiresAt(tokens: TokenResponse): number | null {
-        if (typeof tokens.expires_at === 'number') {
-            return tokens.expires_at;
-        }
-        const accessExp = this.getJwtExpiry(tokens.access_token);
-        if (accessExp) {
-            return accessExp;
-        }
-        if (tokens.id_token) {
-            const idExp = this.getJwtExpiry(tokens.id_token);
-            if (idExp) {
-                return idExp;
-            }
-        }
-        return null;
-    }
-
-    private getJwtExpiry(token: string): number | null {
-        try {
-            const payload = this.decodeJwt(token);
-            const exp = payload['exp'];
-            if (typeof exp === 'number') {
-                return exp * 1000;
-            }
-        } catch {
-            return null;
-        }
-        return null;
-    }
-
-    private decodeJwt(token: string): Record<string, unknown> {
-        const [, payload] = token.split('.');
-        const decoded = atob(payload.replace(/-/g, '+').replace(/_/g, '/'));
-        return JSON.parse(decoded);
-    }
-
-    private randomString(length: number): string {
-        const charset = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-        const result: string[] = [];
-        const randomValues = crypto.getRandomValues(new Uint8Array(length));
-        for (let i = 0; i < length; i++) {
-            result.push(charset[randomValues[i] % charset.length]);
-        }
-        return result.join('');
-    }
-
-    private async pkceChallengeFromVerifier(verifier: string): Promise<string> {
-        const data = new TextEncoder().encode(verifier);
-        const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        const base64 = btoa(String.fromCharCode(...hashArray));
-        return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+            this.browser.storage.removeItem(AUTH_STORAGE_KEY);
+            if (clearTransaction) this.browser.storage.removeItem(PKCE_STORAGE_KEY);
+            // Discard replaced legacy credentials; never restore or translate them.
+            for (const key of ['mnema_tokens', 'pkce_verifier', 'oauth_state', 'oauth_return_to']) this.browser.storage.removeItem(key);
+        } catch { /* In-memory state remains anonymous when browser storage is unavailable. */ }
     }
 }

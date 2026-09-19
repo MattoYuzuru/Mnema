@@ -971,7 +971,6 @@ export class AppShellComponent implements OnInit, OnDestroy {
     private routerSubscription?: Subscription;
 
     ngOnInit(): void {
-        this.auth.initFromUrlAndStorage();
         this.themeService.mode();
 
         if (this.auth.status() === 'authenticated') {
@@ -1091,8 +1090,7 @@ export class AppShellComponent implements OnInit, OnDestroy {
 
     logout(): void {
         this.closeUserMenu();
-        this.auth.logout();
-        void this.router.navigate(['/']);
+        void this.auth.logout().catch(() => this.router.navigate(['/login']));
     }
 
     loginFromMobileMenu(): void {
@@ -1102,8 +1100,7 @@ export class AppShellComponent implements OnInit, OnDestroy {
 
     logoutFromMobileMenu(): void {
         this.closeMobileMenu();
-        this.auth.logout();
-        void this.router.navigate(['/']);
+        void this.auth.logout().catch(() => this.router.navigate(['/login']));
     }
 
     onMobilePrimaryAction(): void {
