@@ -107,7 +107,7 @@ PASS: 137/137 after resetting the shared detail/mutation test signals between ca
 covering skip-link activation without nested-route loss.
 
 npm run build
-PASS: production build; 589.27 kB initial raw / 145.86 kB estimated transfer.
+PASS: production build; 589.27 kB initial raw / 145.90 kB estimated transfer.
 Own-deck list/create/detail are separate lazy chunks (11.49/15.05/18.92 kB raw).
 
 ./backend/gradlew -p backend :services:identity-account:bootJar :services:learning:bootJar
