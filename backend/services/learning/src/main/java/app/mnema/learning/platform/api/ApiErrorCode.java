@@ -23,6 +23,11 @@ enum ApiErrorCode {
             "Precondition required",
             "A current resource version is required for this command."
     ),
+    RESOURCE_LIMIT_EXCEEDED(
+            HttpStatus.UNPROCESSABLE_ENTITY,
+            "Resource limit exceeded",
+            "The account or resource limit would be exceeded."
+    ),
     INVALID_REQUEST(
             HttpStatus.BAD_REQUEST,
             "Invalid request",

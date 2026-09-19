@@ -181,6 +181,15 @@ class LearningSecurityHttpIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void authoringRoutesUseReadForRestoreAndWriteForMutation() throws Exception {
+        assertThat(request("GET", "/editing-drafts", token("learning.read", c -> { })).statusCode()).isEqualTo(200);
+        assertThat(request("GET", "/capture-notes", token("learning.read", c -> { })).statusCode()).isEqualTo(200);
+        assertProblem(request("POST", "/editing-drafts", token("learning.read", c -> { })), 403, "ACCESS_DENIED");
+        assertProblem(request("POST", "/capture-notes", token("learning.read", c -> { })), 403, "ACCESS_DENIED");
+        assertProblem(request("GET", "/editing-drafts", token("learning.write", c -> { })), 403, "ACCESS_DENIED");
+    }
+
+    @Test
     void rejectsMissingCookieAndQueryCredentialsWithoutCreatingSession() throws Exception {
         String token = token("learning.read", c -> { });
         var response = CLIENT.send(HttpRequest.newBuilder(uri("/_security?access_token=" + token))

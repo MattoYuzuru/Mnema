@@ -86,6 +86,16 @@ public final class ItemPublicationCommand {
         return command(body, List.of(value));
     }
 
+    static ItemPublicationCommand create(UUID commandId, UUID expectedDeckRevisionId,
+                                         Integer ordinal, NativeDocument document) {
+        ObjectNode body = JsonNodeFactory.instance.objectNode().put("commandId", commandId.toString())
+                .put("expectedDeckRevisionId", expectedDeckRevisionId.toString());
+        if (ordinal != null) body.put("ordinal", ordinal);
+        body.set("document", document.toJson());
+        return new ItemPublicationCommand(commandId, expectedDeckRevisionId,
+                List.of(new Create(null, ordinal, document)), body);
+    }
+
     private static ItemPublicationCommand command(JsonNode body, List<Change> changes) {
         try {
             return new ItemPublicationCommand(id(body, "commandId"), id(body, "expectedDeckRevisionId"), changes,
