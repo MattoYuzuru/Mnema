@@ -159,12 +159,13 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
                     .containsExactlyInAnyOrder("applied", "conflict");
         }
         assertThat(count("item_revision", "deck_id", deck)).isEqualTo(2);
-        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.storage_pin WHERE pin_kind='staging' AND actor_id=:actor")
-                .param("actor", actor).query(Long.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT pin_id,root_id,owner_kind,owner_id,expires_at FROM app_learning.storage_pin "
+                        + "WHERE pin_kind='staging' AND actor_id=:actor ORDER BY pin_id")
+                .param("actor", actor).query().listOfRows()).isEmpty();
     }
 
     @Test
-    void outerRollbackHidesHeadProjectionRevisionPinsAndReceiptTogether() {
+    void preparationSurvivesOuterRollbackWhilePublicationRemainsAtomicAndRetryable() {
         UUID actor = UUID.randomUUID();
         UUID deck = createDeck(actor);
         JsonNode before = decks.read(actor, deck);
@@ -178,8 +179,16 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(service.list(actor, deck, null, null).path("items")).isEmpty();
         assertThat(count("item_revision", "deck_id", deck)).isZero();
         assertThat(count("command_receipt", "command_id", command)).isZero();
-        assertThat(count("storage_object", "reuse_scope_id", repository.deck(actor, deck).orElseThrow().scopeId()))
-                .isEqualTo(objects);
+        UUID scope = repository.deck(actor, deck).orElseThrow().scopeId();
+        assertThat(count("storage_object", "reuse_scope_id", scope)).isGreaterThan(objects);
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.storage_pin "
+                        + "WHERE reuse_scope_id=:scope AND pin_kind='staging' AND actor_id=:actor")
+                .param("scope", scope).param("actor", actor).query(Long.class).single()).isPositive();
+
+        var retried = service.publish(actor, deck, 0, create(command, before, nativeDocument, null));
+        assertThat(retried.replayed()).isFalse();
+        assertThat(service.list(actor, deck, null, null).path("items")).hasSize(1);
+        assertThat(count("command_receipt", "command_id", command)).isOne();
     }
 
     @Test

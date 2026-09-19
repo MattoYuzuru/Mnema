@@ -60,6 +60,8 @@ class CommandReceiptServiceIntegrationTest extends PostgresIntegrationTest {
 
         assertThat(first).isEqualTo(duplicate);
         assertThat(duplicate.path("receipt").textValue()).isEqualTo("stored");
+        assertThat(service.replay(identity, reorderedPayload)).contains(first);
+        assertThat(service.replay(identity(), reorderedPayload)).isEmpty();
         assertThat(calls).hasValue(1);
         assertThat(receiptCount(identity.commandId())).isOne();
     }
@@ -75,6 +77,8 @@ class CommandReceiptServiceIntegrationTest extends PostgresIntegrationTest {
         assertConflict(new CommandIdentity(original.commandId(), UUID.randomUUID(), original.scope(), original.type()), payload);
         assertConflict(new CommandIdentity(original.commandId(), original.actorId(), "library.item", original.type()), payload);
         assertConflict(new CommandIdentity(original.commandId(), original.actorId(), original.scope(), "replace"), payload);
+        assertThatThrownBy(() -> service.replay(original, objectMapper.createObjectNode().put("secret", "beta")))
+                .isInstanceOf(IdempotencyConflictException.class);
         assertThat(receiptCount(original.commandId())).isOne();
     }
 

@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Objects;
+import java.util.Optional;
 import java.util.function.Supplier;
 
 /**
@@ -25,6 +26,21 @@ public class CommandReceiptService {
     ) {
         this.repository = repository;
         this.canonicalJsonHasher = canonicalJsonHasher;
+    }
+
+    /**
+     * Returns a committed acknowledgement without acquiring the command lock. Callers must authorize
+     * the current actor before using it. A concurrent in-flight command may still be absent here; the
+     * transactional execute path remains the serialization authority.
+     */
+    @Transactional(readOnly = true)
+    public Optional<JsonNode> replay(CommandIdentity identity, JsonNode payload) {
+        Objects.requireNonNull(identity, "identity");
+        byte[] payloadHash = canonicalJsonHasher.hash(payload).sha256();
+        return repository.find(identity.commandId()).map(receipt -> {
+            if (!receipt.matches(identity, payloadHash)) throw new IdempotencyConflictException();
+            return receipt.result().deepCopy();
+        });
     }
 
     @Transactional

@@ -26,14 +26,19 @@ PostgreSQL integration coverage exercises owner create/list/read/save/reload,
 historical round-trip of the multilingual/opaque golden document, metadata-only
 root reuse, exact retry, changed replay, stale head, competing writers, foreign IDs,
 bulk reorder/delete, durable reachability and an outer rollback that removes head,
-projection, revisions, staged objects, pins and receipt together. MVC tests cover
+projection, revisions, durable pins and receipt while independently committed staging
+remains retryable. MVC tests cover
 wire headers, 428/412-safe preconditions, strict input and stable opaque errors.
 
-The synchronous path is bounded, but no latency/SLO, process-kill recovery or
-large-job resume guarantee is claimed. K1 staging objects are transaction-local in
-this slice; a failed transaction leaves no staged work to resume. Imports, public
-catalog, forks, exercise behavior, media upload/serving, drafts/capture, scheduler
-and deployment remain outside #200.
+Encoding and K1/K2/K3 staging run in bounded committed batches before the short
+publication transaction. The final transaction rechecks the exact prepared Deck head,
+then commits receipt, head CAS, revision/change/projection rows and durable root pins
+atomically. A known replay or CAS loss releases its preparations in a separate cleanup
+transaction; process loss leaves only leased, invisible staging for bounded expiry, and
+a retry safely reuses equal immutable objects with fresh pins. No latency/SLO, durable
+job cursor or large-job resume guarantee is claimed. Imports, public catalog, forks,
+exercise behavior, media upload/serving, drafts/capture, scheduler and deployment remain
+outside #200.
 
 ## Local verification — 2026-09-19
 
@@ -47,15 +52,15 @@ and deployment remain outside #200.
   pass, with the two separately invoked real-service cancellation cases skipped by
   their explicit opt-in flag.
 - `python3 scripts/learning-security/run.py --requests 8 --duration-seconds 1`:
-  25 scenarios pass in 16.87 seconds; LearningItem create/browse/save/reload,
+  25 scenarios pass in 16.37 seconds; LearningItem create/browse/save/reload,
   historical read, exact retry, changed retry, stale and foreign ACL cases pass;
   cleanup completes with no retained private files.
 - `python3 scripts/learning-security/verify_cancellation.py`: SIGINT and SIGTERM
   mid-paced real-service cases pass; two processes, the owned PostgreSQL container
-  and private directory are removed in 560.51 ms and 570.42 ms respectively.
+  and private directory are removed in 630.46 ms and 570.82 ms respectively.
 
 The verified artifacts are Learning
-`4823888cc0d813ed3461e5d0f0b2443607c91148fad19b0b86cc4b0ce5015148`, Identity
+`f771424db4ca0a0dc22c544dc0c1ec6bbbf35149de0c43df2a169169e313e3f4`, Identity
 `5dde50005f2db8af7de128fd50b019122412123a34d5bca5ab575753871592a8`, harness
 `4ca6f24732e367a7d574b4c8c20f7281ab39631d9a946d25751db5531aefab2e` and
 cancellation verifier
