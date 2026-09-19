@@ -105,7 +105,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         JsonNode before = decks.read(actor, deck);
         List<UUID> members = List.of(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID());
         ArrayNode creates = JSON.createArrayNode();
-        for (UUID member : members) creates.add(change("create", member, null, nativeDocument, null));
+        for (UUID member : members) creates.add(change("create", member, null, null, nativeDocument, null));
         var created = service.publish(actor, deck, 0, bulk(UUID.randomUUID(), before, creates));
         UUID removedRevision = UUID.fromString(created.acknowledgement().path("changes").get(1)
                 .path("itemRevisionId").textValue());
@@ -115,8 +115,8 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
 
         JsonNode currentDeck = decks.read(actor, deck);
         ArrayNode changes = JSON.createArrayNode();
-        changes.add(change("reorder", members.get(2), movedRevision, null, 0));
-        changes.add(change("delete", members.get(1), removedRevision, null, null));
+        changes.add(change("reorder", members.get(2), movedRevision, 2, null, 0));
+        changes.add(change("delete", members.get(1), removedRevision, 1, null, null));
         service.publish(actor, deck, 1, bulk(UUID.randomUUID(), currentDeck, changes));
 
         JsonNode page = service.list(actor, deck, "100", null);
@@ -150,6 +150,13 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
                 .isInstanceOf(ResourceNotFoundException.class);
 
         JsonNode currentDeck = decks.read(actor, deck);
+        ObjectNode wrongPosition = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
+                .put("expectedDeckRevisionId", currentDeck.path("revisionId").textValue())
+                .put("expectedItemRevisionId", revision.toString()).put("expectedOrdinal", 1);
+        wrongPosition.set("document", nativeDocument.deepCopy());
+        assertThatThrownBy(() -> service.publish(actor, deck, 1,
+                ItemPublicationCommand.readSave(bytes(wrongPosition), member)))
+                .isInstanceOf(VersionConflictException.class);
         CountDownLatch start = new CountDownLatch(1);
         try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
             var left = executor.submit(() -> race(start, actor, deck, currentDeck, member, revision));
@@ -207,7 +214,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         JsonNode deckHead = decks.read(actor, deck);
         ObjectNode body = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
                 .put("expectedDeckRevisionId", deckHead.path("revisionId").textValue())
-                .put("expectedItemRevisionId", oldRevision.toString());
+                .put("expectedItemRevisionId", oldRevision.toString()).put("expectedOrdinal", 0);
         body.set("document", next);
         body.putObject("edit").put("type", "insert")
                 .put("parentId", nativeDocument.path("root").path("id").textValue())
@@ -219,6 +226,10 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
 
     @Test
     void databaseRejectsMutableLogicalHistoryAndCrossItemProjection() {
+        assertThat(jdbc.sql("""
+                SELECT count(*) FROM information_schema.columns
+                 WHERE table_schema='app_learning' AND table_name='deck_head_item' AND column_name='ordinal'
+                """).query(Long.class).single()).isZero();
         UUID actor = UUID.randomUUID();
         UUID deck = createDeck(actor);
         JsonNode before = decks.read(actor, deck);
@@ -271,7 +282,7 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
                                                JsonNode document, Integer ordinal) {
         ObjectNode body = JSON.createObjectNode().put("commandId", command.toString())
                 .put("expectedDeckRevisionId", deck.path("revisionId").textValue())
-                .put("expectedItemRevisionId", revision.toString());
+                .put("expectedItemRevisionId", revision.toString()).put("expectedOrdinal", 0);
         body.set("document", document.deepCopy());
         if (ordinal != null) body.put("ordinal", ordinal);
         return ItemPublicationCommand.readSave(bytes(body), member);
@@ -284,9 +295,11 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         return ItemPublicationCommand.readBulk(bytes(body));
     }
 
-    private static ObjectNode change(String operation, UUID member, UUID revision, JsonNode document, Integer ordinal) {
+    private static ObjectNode change(String operation, UUID member, UUID revision, Integer expectedOrdinal,
+                                     JsonNode document, Integer ordinal) {
         ObjectNode result = JSON.createObjectNode().put("operation", operation).put("memberKey", member.toString());
         if (revision != null) result.put("expectedItemRevisionId", revision.toString());
+        if (expectedOrdinal != null) result.put("expectedOrdinal", expectedOrdinal);
         if (document != null) result.set("document", document.deepCopy());
         if (ordinal != null) result.put("ordinal", ordinal);
         return result;

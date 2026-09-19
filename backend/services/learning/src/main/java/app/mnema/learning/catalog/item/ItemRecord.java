@@ -8,17 +8,17 @@ import java.time.Instant;
 import java.util.UUID;
 
 record ItemRecord(UUID deckId, UUID memberKey, UUID revisionId, long itemSequence,
-                  UUID publishedDeckRevisionId, long publishedDeckVersion, int ordinal,
+                  UUID publishedDeckRevisionId, long publishedDeckVersion, Integer ordinal,
                   UUID scopeId, UUID contentRootId, UUID descriptorRootId, Instant createdAt, Instant updatedAt) {
-    ObjectNode summary() {
+    ObjectNode summary(Integer selectedOrdinal) {
         return JsonNodeFactory.instance.objectNode().put("memberKey", memberKey.toString())
                 .put("itemRevisionId", revisionId.toString()).put("itemVersion", Long.toString(itemSequence))
-                .put("ordinal", ordinal).put("formatVersion", 1)
+                .put("ordinal", selectedOrdinal == null ? ordinal : selectedOrdinal).put("formatVersion", 1)
                 .put("createdAt", createdAt.toString()).put("updatedAt", updatedAt.toString());
     }
 
     ObjectNode detail(UUID deckRevisionId, long deckVersion, NativeDocument document) {
-        ObjectNode result = summary().put("deckId", deckId.toString())
+        ObjectNode result = summary(null).put("deckId", deckId.toString())
                 .put("deckRevisionId", deckRevisionId.toString()).put("deckVersion", Long.toString(deckVersion));
         result.set("document", document.toJson());
         return result;

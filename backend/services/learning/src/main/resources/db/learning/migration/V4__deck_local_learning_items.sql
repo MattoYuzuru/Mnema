@@ -55,10 +55,8 @@ CREATE TABLE app_learning.deck_head_item (
     member_key UUID NOT NULL,
     revision_id UUID NOT NULL,
     item_sequence BIGINT NOT NULL CHECK (item_sequence >= 0),
-    ordinal INTEGER NOT NULL CHECK (ordinal >= 0 AND ordinal < 100000),
     updated_at TIMESTAMPTZ NOT NULL CHECK (isfinite(updated_at)),
     PRIMARY KEY (deck_id, member_key),
-    UNIQUE (deck_id, ordinal) DEFERRABLE INITIALLY DEFERRED,
     FOREIGN KEY (deck_id, member_key, revision_id, item_sequence)
         REFERENCES app_learning.item_revision(deck_id, member_key, revision_id, item_sequence)
         DEFERRABLE INITIALLY DEFERRED

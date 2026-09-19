@@ -43,7 +43,8 @@ class ItemPublicationCommandTest {
                 .contains("privateFuture", "<script>data only</script>");
 
         UUID member = UUID.randomUUID();
-        ObjectNode save = base(deckRevision).put("expectedItemRevisionId", UUID.randomUUID().toString());
+        ObjectNode save = base(deckRevision).put("expectedItemRevisionId", UUID.randomUUID().toString())
+                .put("expectedOrdinal", 0);
         save.set("document", document);
         save.putObject("edit").put("type", "delete").put("nodeId", UUID.randomUUID().toString());
         assertThat(((ItemPublicationCommand.Save) ItemPublicationCommand.readSave(bytes(save.toString()), member)
@@ -81,7 +82,8 @@ class ItemPublicationCommandTest {
         var changes = bulk.putArray("changes");
         for (int i = 0; i <= ItemPublicationCommand.MAX_CHANGES; i++) {
             changes.addObject().put("operation", "reorder").put("memberKey", UUID.randomUUID().toString())
-                    .put("expectedItemRevisionId", UUID.randomUUID().toString()).put("ordinal", 0);
+                    .put("expectedItemRevisionId", UUID.randomUUID().toString())
+                    .put("expectedOrdinal", 0).put("ordinal", 0);
         }
         assertThatThrownBy(() -> ItemPublicationCommand.readBulk(bytes(bulk.toString())))
                 .isInstanceOf(InvalidRequestException.class);

@@ -415,7 +415,8 @@ REVOKE ALL ON SCHEMA app_learning FROM PUBLIC,identity_fixture;""")
         next_native["root"]["content"][0]["content"][0]["attrs"]["text"] = "Сохранённая правка"
         head = client.request("GET", path, bearer=access)[2]
         item_save = {"commandId": str(uuid.uuid4()), "expectedDeckRevisionId": head["revisionId"],
-                     "expectedItemRevisionId": first_item_revision, "document": next_native}
+                     "expectedItemRevisionId": first_item_revision, "expectedOrdinal": 0,
+                     "document": next_native}
         require(client.request("PUT", item_path, item_save, bearer=access)[0] == 428,
                 "LearningItem save requires Deck precondition")
         status, headers, saved_item = client.request("PUT", item_path, item_save, bearer=access,

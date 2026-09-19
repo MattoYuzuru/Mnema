@@ -76,11 +76,12 @@ public final class ItemPublicationCommand {
         JsonNode body = read(input);
         requirePrecondition(body, "expectedDeckRevisionId");
         requirePrecondition(body, "expectedItemRevisionId");
-        fields(body, Set.of("commandId", "expectedDeckRevisionId", "expectedItemRevisionId", "document"),
-                Set.of("commandId", "expectedDeckRevisionId", "expectedItemRevisionId", "document", "ordinal"),
-                Set.of("commandId", "expectedDeckRevisionId", "expectedItemRevisionId", "document", "edit"),
-                Set.of("commandId", "expectedDeckRevisionId", "expectedItemRevisionId", "document", "ordinal", "edit"));
-        Change value = new Save(memberKey, id(body, "expectedItemRevisionId"), ordinal(body.path("ordinal")),
+        requirePrecondition(body, "expectedOrdinal");
+        fields(body, Set.of("commandId", "expectedDeckRevisionId", "expectedItemRevisionId", "expectedOrdinal", "document"),
+                Set.of("commandId", "expectedDeckRevisionId", "expectedItemRevisionId", "expectedOrdinal", "document", "ordinal"),
+                Set.of("commandId", "expectedDeckRevisionId", "expectedItemRevisionId", "expectedOrdinal", "document", "edit"),
+                Set.of("commandId", "expectedDeckRevisionId", "expectedItemRevisionId", "expectedOrdinal", "document", "ordinal", "edit"));
+        Change value = new Save(memberKey, id(body, "expectedItemRevisionId"), requiredOrdinal(body, "expectedOrdinal"), ordinal(body.path("ordinal")),
                 document(body.path("document")), edit(body.path("edit")));
         return command(body, List.of(value));
     }
@@ -105,23 +106,26 @@ public final class ItemPublicationCommand {
             }
             case "save" -> {
                 requirePrecondition(value, "expectedItemRevisionId");
-                fields(value, Set.of("operation", "memberKey", "expectedItemRevisionId", "document"),
-                        Set.of("operation", "memberKey", "expectedItemRevisionId", "document", "ordinal"),
-                        Set.of("operation", "memberKey", "expectedItemRevisionId", "document", "edit"),
-                        Set.of("operation", "memberKey", "expectedItemRevisionId", "document", "ordinal", "edit"));
-                yield new Save(member, id(value, "expectedItemRevisionId"), ordinal(value.path("ordinal")),
+                requirePrecondition(value, "expectedOrdinal");
+                fields(value, Set.of("operation", "memberKey", "expectedItemRevisionId", "expectedOrdinal", "document"),
+                        Set.of("operation", "memberKey", "expectedItemRevisionId", "expectedOrdinal", "document", "ordinal"),
+                        Set.of("operation", "memberKey", "expectedItemRevisionId", "expectedOrdinal", "document", "edit"),
+                        Set.of("operation", "memberKey", "expectedItemRevisionId", "expectedOrdinal", "document", "ordinal", "edit"));
+                yield new Save(member, id(value, "expectedItemRevisionId"), requiredOrdinal(value, "expectedOrdinal"), ordinal(value.path("ordinal")),
                         document(value.path("document")), edit(value.path("edit")));
             }
             case "delete" -> {
                 requirePrecondition(value, "expectedItemRevisionId");
-                fields(value, Set.of("operation", "memberKey", "expectedItemRevisionId"));
-                yield new Delete(member, id(value, "expectedItemRevisionId"));
+                requirePrecondition(value, "expectedOrdinal");
+                fields(value, Set.of("operation", "memberKey", "expectedItemRevisionId", "expectedOrdinal"));
+                yield new Delete(member, id(value, "expectedItemRevisionId"), requiredOrdinal(value, "expectedOrdinal"));
             }
             case "reorder" -> {
                 requirePrecondition(value, "expectedItemRevisionId");
-                fields(value, Set.of("operation", "memberKey", "expectedItemRevisionId", "ordinal"));
+                requirePrecondition(value, "expectedOrdinal");
+                fields(value, Set.of("operation", "memberKey", "expectedItemRevisionId", "expectedOrdinal", "ordinal"));
                 Integer position = ordinal(value.path("ordinal"));
-                yield new Reorder(member, id(value, "expectedItemRevisionId"), position);
+                yield new Reorder(member, id(value, "expectedItemRevisionId"), requiredOrdinal(value, "expectedOrdinal"), position);
             }
             default -> throw new InvalidRequestException();
         };
@@ -176,6 +180,12 @@ public final class ItemPublicationCommand {
         return result;
     }
 
+    private static int requiredOrdinal(JsonNode object, String name) {
+        Integer value = ordinal(object.path(name));
+        if (value == null) throw new InvalidRequestException();
+        return value;
+    }
+
     private static int integer(JsonNode value) {
         if (!value.isIntegralNumber() || !value.canConvertToInt() || value.intValue() < 0) {
             throw new InvalidRequestException();
@@ -222,16 +232,16 @@ public final class ItemPublicationCommand {
         @Override public String operation() { return "create"; }
     }
 
-    public record Save(UUID memberKey, UUID expectedItemRevisionId, Integer ordinal,
+    public record Save(UUID memberKey, UUID expectedItemRevisionId, int expectedOrdinal, Integer ordinal,
                        NativeDocument document, NativeStructuralEdit edit) implements Change {
         @Override public String operation() { return "save"; }
     }
 
-    public record Delete(UUID memberKey, UUID expectedItemRevisionId) implements Change {
+    public record Delete(UUID memberKey, UUID expectedItemRevisionId, int expectedOrdinal) implements Change {
         @Override public String operation() { return "delete"; }
     }
 
-    public record Reorder(UUID memberKey, UUID expectedItemRevisionId, int ordinal) implements Change {
+    public record Reorder(UUID memberKey, UUID expectedItemRevisionId, int expectedOrdinal, int ordinal) implements Change {
         @Override public String operation() { return "reorder"; }
     }
 }

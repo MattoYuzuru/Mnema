@@ -127,7 +127,7 @@ class ItemControllerTest {
     private String saveBody() {
         ObjectNode body = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
                 .put("expectedDeckRevisionId", deckRevision.toString())
-                .put("expectedItemRevisionId", itemRevision.toString());
+                .put("expectedItemRevisionId", itemRevision.toString()).put("expectedOrdinal", 0);
         body.set("document", document());
         return body.toString();
     }
@@ -136,7 +136,7 @@ class ItemControllerTest {
         ObjectNode body = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
                 .put("expectedDeckRevisionId", deckRevision.toString());
         body.putArray("changes").addObject().put("operation", "reorder").put("memberKey", member.toString())
-                .put("expectedItemRevisionId", itemRevision.toString()).put("ordinal", 0);
+                .put("expectedItemRevisionId", itemRevision.toString()).put("expectedOrdinal", 0).put("ordinal", 0);
         return body.toString();
     }
 

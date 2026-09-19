@@ -4,7 +4,7 @@ Candidate implementation only; protected delivery and the exact repository-wide
 gate are owned by the integrating lead. Contract: `contracts/items/README.md`.
 
 V4 adds Deck-local logical ownership, immutable item revisions, a rebuildable
-ordered current projection and immutable per-Deck-revision change records. A
+bounded current-head projection and immutable per-Deck-revision change records. A
 rank-9 item descriptor binds the member/revision identity to one native rank-8
 content root. The counted member page points to that descriptor, so the existing
 Deck revision durable member-root pin protects the complete published graph.
@@ -30,6 +30,13 @@ projection, revisions, durable pins and receipt while independently committed st
 remains retryable. MVC tests cover
 wire headers, 428/412-safe preconditions, strict input and stable opaque errors.
 
+The counted K3 member root, not a dense SQL ordinal column, is the canonical order.
+Browse reads at most one requested page from K3 and batch-loads only those current
+heads. Mutations require the source `expectedOrdinal` and validate its expected key;
+the final transaction inserts, updates or deletes only the command's head rows.
+Front insertion, deletion and reorder therefore do not perform a Deck-wide SQL
+renumber and stay proportional to at most 100 requested changes.
+
 Encoding and K1/K2/K3 staging run in bounded committed batches before the short
 publication transaction. The final transaction rechecks the exact prepared Deck head,
 then commits receipt, head CAS, revision/change/projection rows and durable root pins
@@ -46,7 +53,7 @@ outside #200.
   errors or skips; PostgreSQL item coverage includes create/save/history, bulk
   reorder/delete, competing writers, rollback and database invariants.
 - `./gradlew quality --console=plain`: `BUILD SUCCESSFUL`; Learning line coverage
-  96.38% against the 90% baseline (all other backend module baselines also pass).
+  96.32% against the 90% baseline (all other backend module baselines also pass).
 - `python3 -m py_compile scripts/learning-security/run.py` and
   `python3 -m unittest discover -s scripts/learning-security/tests -v`: 14 tests
   pass, with the two separately invoked real-service cancellation cases skipped by
@@ -60,9 +67,9 @@ outside #200.
   and private directory are removed in 630.46 ms and 570.82 ms respectively.
 
 The verified artifacts are Learning
-`f771424db4ca0a0dc22c544dc0c1ec6bbbf35149de0c43df2a169169e313e3f4`, Identity
+`626c8a36bcfe4d8bbff39ee585de6b6d9ce4e698d457ded22ab1e20824150261`, Identity
 `5dde50005f2db8af7de128fd50b019122412123a34d5bca5ab575753871592a8`, harness
-`4ca6f24732e367a7d574b4c8c20f7281ab39631d9a946d25751db5531aefab2e` and
+`3766fb81d43ca59e6edf0e774acf6243575227bb644eabfe6913fda29db5b7ca` and
 cancellation verifier
 `92a2a952148516e8073a26f6efdf40a1142c1f71279da19ccce95ca46dbd7ae3`.
 

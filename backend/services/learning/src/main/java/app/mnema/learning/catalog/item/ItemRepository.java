@@ -29,7 +29,8 @@ class ItemRepository {
     private static final RowMapper<ItemRecord> ITEM = (row, ignored) -> new ItemRecord(
             row.getObject("deck_id", UUID.class), row.getObject("member_key", UUID.class),
             row.getObject("revision_id", UUID.class), row.getLong("item_sequence"),
-            row.getObject("deck_revision_id", UUID.class), row.getLong("deck_sequence"), row.getInt("ordinal"),
+            row.getObject("deck_revision_id", UUID.class), row.getLong("deck_sequence"),
+            row.getObject("ordinal", Integer.class),
             row.getObject("reuse_scope_id", UUID.class), row.getObject("content_root_id", UUID.class),
             row.getObject("descriptor_root_id", UUID.class), row.getTimestamp("item_created_at").toInstant(),
             row.getTimestamp("updated_at").toInstant());
@@ -46,7 +47,8 @@ class ItemRepository {
 
     Optional<ItemRecord> headItem(UUID actor, UUID deck, UUID member) {
         return jdbc.sql("""
-                SELECT p.deck_id,p.member_key,p.revision_id,p.item_sequence,p.ordinal,r.deck_revision_id,r.deck_sequence,
+                SELECT p.deck_id,p.member_key,p.revision_id,p.item_sequence,NULL::INTEGER AS ordinal,
+                       r.deck_revision_id,r.deck_sequence,
                        r.reuse_scope_id,
                        r.content_root_id,r.descriptor_root_id,i.created_at AS item_created_at,p.updated_at
                   FROM app_learning.deck d JOIN app_learning.deck_head_item p ON p.deck_id=d.deck_id
@@ -78,18 +80,19 @@ class ItemRepository {
                 .query(ITEM).optional();
     }
 
-    List<ItemRecord> page(UUID actor, UUID deck, int start, int limit) {
+    List<ItemRecord> heads(UUID actor, UUID deck, List<UUID> members) {
+        if (members.isEmpty()) return List.of();
         return jdbc.sql("""
-                SELECT p.deck_id,p.member_key,p.revision_id,p.item_sequence,p.ordinal,r.deck_revision_id,r.deck_sequence,
+                SELECT p.deck_id,p.member_key,p.revision_id,p.item_sequence,NULL::INTEGER AS ordinal,
+                       r.deck_revision_id,r.deck_sequence,
                        r.reuse_scope_id,
                        r.content_root_id,r.descriptor_root_id,i.created_at AS item_created_at,p.updated_at
                   FROM app_learning.deck d JOIN app_learning.deck_head_item p ON p.deck_id=d.deck_id
                   JOIN app_learning.item_revision r ON r.deck_id=p.deck_id AND r.member_key=p.member_key
                     AND r.revision_id=p.revision_id
                   JOIN app_learning.learning_item i ON i.deck_id=p.deck_id AND i.member_key=p.member_key
-                 WHERE d.owner_id=:actor AND p.deck_id=:deck AND p.ordinal>=:start
-                 ORDER BY p.ordinal LIMIT :limit
-                """).param("actor", actor).param("deck", deck).param("start", start).param("limit", limit + 1)
+                 WHERE d.owner_id=:actor AND p.deck_id=:deck AND p.member_key IN (:members)
+                """).param("actor", actor).param("deck", deck).param("members", members)
                 .query(ITEM).list();
     }
 
@@ -142,13 +145,12 @@ class ItemRepository {
                 .param("content", contentRoot).param("descriptor", descriptorRoot).param("time", Timestamp.from(time)).update();
     }
 
-    void insertHead(UUID deck, UUID member, UUID revision, long sequence, int ordinal, Instant time) {
-        shiftForInsert(deck, ordinal);
+    void insertHead(UUID deck, UUID member, UUID revision, long sequence, Instant time) {
         jdbc.sql("""
-                INSERT INTO app_learning.deck_head_item(deck_id,member_key,revision_id,item_sequence,ordinal,updated_at)
-                VALUES (:deck,:member,:revision,:sequence,:ordinal,:time)
+                INSERT INTO app_learning.deck_head_item(deck_id,member_key,revision_id,item_sequence,updated_at)
+                VALUES (:deck,:member,:revision,:sequence,:time)
                 """).param("deck", deck).param("member", member).param("revision", revision).param("sequence", sequence)
-                .param("ordinal", ordinal).param("time", Timestamp.from(time)).update();
+                .param("time", Timestamp.from(time)).update();
     }
 
     void updateHead(UUID deck, UUID member, UUID revision, long sequence, Instant time) {
@@ -159,28 +161,9 @@ class ItemRepository {
                 .param("deck", deck).param("member", member).update();
     }
 
-    void deleteHead(UUID deck, UUID member, int ordinal) {
+    void deleteHead(UUID deck, UUID member) {
         jdbc.sql("DELETE FROM app_learning.deck_head_item WHERE deck_id=:deck AND member_key=:member")
                 .param("deck", deck).param("member", member).update();
-        jdbc.sql("UPDATE app_learning.deck_head_item SET ordinal=ordinal-1 WHERE deck_id=:deck AND ordinal>:ordinal")
-                .param("deck", deck).param("ordinal", ordinal).update();
-    }
-
-    void moveHead(UUID deck, UUID member, int from, int to) {
-        if (from == to) return;
-        if (from < to) {
-            jdbc.sql("""
-                    UPDATE app_learning.deck_head_item SET ordinal=ordinal-1
-                     WHERE deck_id=:deck AND ordinal>:from AND ordinal<=:to
-                    """).param("deck", deck).param("from", from).param("to", to).update();
-        } else {
-            jdbc.sql("""
-                    UPDATE app_learning.deck_head_item SET ordinal=ordinal+1
-                     WHERE deck_id=:deck AND ordinal>=:to AND ordinal<:from
-                    """).param("deck", deck).param("from", from).param("to", to).update();
-        }
-        jdbc.sql("UPDATE app_learning.deck_head_item SET ordinal=:to WHERE deck_id=:deck AND member_key=:member")
-                .param("to", to).param("deck", deck).param("member", member).update();
     }
 
     void change(UUID deck, UUID deckRevision, long deckSequence, int index, UUID member, String kind,
@@ -195,8 +178,4 @@ class ItemRepository {
                 .param("from", from, java.sql.Types.INTEGER).param("to", to, java.sql.Types.INTEGER).update();
     }
 
-    private void shiftForInsert(UUID deck, int ordinal) {
-        jdbc.sql("UPDATE app_learning.deck_head_item SET ordinal=ordinal+1 WHERE deck_id=:deck AND ordinal>=:ordinal")
-                .param("deck", deck).param("ordinal", ordinal).update();
-    }
 }

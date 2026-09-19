@@ -15,7 +15,9 @@ All responses are private/no-store and expose neither physical roots nor pins.
 
 `If-Match` is the quoted Deck row version defined by the Deck contract. Every
 command also contains `expectedDeckRevisionId`; save/delete/reorder contains
-`expectedItemRevisionId`. Missing HTTP or body preconditions return 428, malformed
+`expectedItemRevisionId` and the source `expectedOrdinal` at that expected Deck
+revision (all ordinals in one bulk command refer to that starting revision, not
+to intermediate changes earlier in the array). Missing HTTP or body preconditions return 428, malformed
 values return 400, and stale values return 412. A list cursor binds the current
 Deck revision, so it returns 412 rather than mixing two Browse snapshots after a
 publication.
@@ -35,7 +37,13 @@ command. An exact retry returns the original acknowledgement with
 409. Fresh results include the new Deck ETag. Clients reconcile any retry with GET.
 Foreign or absent Deck/member/revision tuples share the opaque 404 boundary.
 
-The current projection is ordered and rebuildable from the immutable member root.
+The immutable counted member root is the canonical order and serves bounded Browse
+pages directly. The current SQL projection contains only the changed item heads, so
+front insert/delete/reorder never renumbers an entire Deck. `expectedOrdinal` lets
+the counted tree validate a member in logarithmic bounded work; Browse summaries
+and publication acknowledgements expose ordinals, while direct current-item reads
+return `ordinal: null` because they do not scan the tree to locate a key.
+The current projection is rebuildable from the immutable member root.
 Historical item reads decode the exact content root directly; neither current nor
 historical reads replay prior revisions. A Deck metadata-only save reuses member
 and exercise roots. Publication advances the Deck head, immutable revision,

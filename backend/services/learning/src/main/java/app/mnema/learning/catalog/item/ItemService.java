@@ -78,20 +78,34 @@ public class ItemService {
         cleanupTransaction.setTimeout(10);
     }
 
-    @Transactional(readOnly = true, timeout = 10)
+    @Transactional(timeout = 10)
     public ObjectNode list(UUID actor, UUID deckId, String limit, String cursor) {
         ItemRepository.DeckHead deck = own(actor, deckId);
         ItemCursor position = ItemCursor.decode(cursor);
         if (position != null && !position.deckRevisionId().equals(deck.revisionId())) throw new VersionConflictException();
         int size = ItemCursor.pageSize(limit);
         int start = position == null ? 0 : position.nextOrdinal();
-        List<ItemRecord> rows = repository.page(actor, deckId, start, size);
+        if (start > deck.memberCount()) throw new InvalidRequestException();
+        TreeRoot membership = tree(deck.scopeId(), deck.membersRootId(), deck.memberCount());
+        List<Entry> entries = start == deck.memberCount() ? List.of()
+                : memberPages().read(membership, start, Math.min(size, deck.memberCount() - start));
+        Map<UUID, ItemRecord> rows = new HashMap<>();
+        repository.heads(actor, deckId, entries.stream().map(Entry::key).toList())
+                .forEach(row -> rows.put(row.memberKey(), row));
         ObjectNode result = JsonNodeFactory.instance.objectNode().put("deckId", deckId.toString())
                 .put("deckRevisionId", deck.revisionId().toString()).put("deckVersion", Long.toString(deck.version()))
                 .put("total", deck.memberCount());
         var items = result.putArray("items");
-        rows.stream().limit(size).forEach(row -> items.add(row.summary()));
-        if (rows.size() > size) result.put("nextCursor", new ItemCursor(deck.revisionId(), rows.get(size).ordinal()).encode());
+        for (int index = 0; index < entries.size(); index++) {
+            ItemRecord row = rows.get(entries.get(index).key());
+            if (row == null || !row.descriptorRootId().equals(entries.get(index).target().objectId())) {
+                throw new IllegalStateException("Member projection is inconsistent");
+            }
+            items.add(row.summary(start + index));
+        }
+        if (start + entries.size() < deck.memberCount()) {
+            result.put("nextCursor", new ItemCursor(deck.revisionId(), start + entries.size()).encode());
+        }
         else result.putNull("nextCursor");
         return result;
     }
@@ -147,10 +161,9 @@ public class ItemService {
             throw new InvalidRequestException();
         }
 
-        var pageSource = (CountedPageTypesSource) ref -> storage.readBatch(ref.reuseScopeId(),
-                List.of(ref.objectId())).getFirst().value();
-        CountedPages pages = new CountedPages(Profile.members(MAX_MEMBERS), pageSource::read);
+        CountedPages pages = memberPages();
         TreeRoot membership = tree(before.scopeId(), before.membersRootId(), before.memberCount());
+        TreeRoot initialMembership = membership;
         List<StagedRoot> temporaryPins = new ArrayList<>();
         List<PreparedChange> preparedChanges = new ArrayList<>();
         Map<UUID, ItemRecord> currentItems = new HashMap<>();
@@ -159,7 +172,12 @@ public class ItemService {
             if (change instanceof ItemPublicationCommand.Create) continue;
             ItemRecord current = current(actor, deckId, change.memberKey(), expectedRevision(change));
             currentItems.put(change.memberKey(), current);
-            currentOrdinals.put(change.memberKey(), current.ordinal());
+            int expectedOrdinal = expectedOrdinal(change);
+            if (expectedOrdinal >= initialMembership.count()
+                    || !pages.read(initialMembership, expectedOrdinal, 1).getFirst().key().equals(change.memberKey())) {
+                throw new VersionConflictException();
+            }
+            currentOrdinals.put(change.memberKey(), expectedOrdinal);
         }
 
         for (ItemPublicationCommand.Change change : command.changes()) {
@@ -179,6 +197,7 @@ public class ItemService {
                     membership = stagePage(pages.insert(membership, ordinal, new Entry(member, descriptor.root())),
                             before.scopeId(), actor, temporaryPins);
                     shiftForInsert(currentOrdinals, ordinal);
+                    currentOrdinals.put(member, ordinal);
                     preparedChanges.add(new PreparedCreate(member, itemRevision, content.root().objectId(),
                             descriptor.root().objectId(), ordinal));
                 }
@@ -230,7 +249,7 @@ public class ItemService {
                 List.of(before.exercisesRootId())), PREPARATION_LEASE).getFirst();
         temporaryPins.add(exercises);
         return new PreparedPublication(before, UUID.randomUUID(), membership, List.copyOf(preparedChanges),
-                List.copyOf(temporaryPins), exercises);
+                Map.copyOf(currentOrdinals), List.copyOf(temporaryPins), exercises);
     }
 
     private ObjectNode apply(UUID actor, UUID deckId, long expectedDeckVersion, ItemPublicationCommand command,
@@ -250,36 +269,30 @@ public class ItemService {
                     repository.insertItemRevision(deckId, create.member(), create.revision(), before.scopeId(), actor, 0,
                             null, prepared.deckRevision(), deckSequence, command.commandId(), create.contentRoot(),
                             create.descriptorRoot(), time);
-                    repository.insertHead(deckId, create.member(), create.revision(), 0, create.ordinal(), time);
+                    repository.insertHead(deckId, create.member(), create.revision(), 0, time);
                     pendingChanges.add(new PendingChange("create", create.member(), null, create.revision(),
                             create.revision(), 0, null));
                 }
                 case PreparedSave save -> {
                     ItemRecord current = current(actor, deckId, save.member(), save.expectedRevision());
-                    if (current.ordinal() != save.fromOrdinal() || current.itemSequence() + 1 != save.itemSequence()) {
+                    if (current.itemSequence() + 1 != save.itemSequence()) {
                         throw new VersionConflictException();
                     }
                     repository.insertItemRevision(deckId, save.member(), save.revision(), before.scopeId(), actor,
                             save.itemSequence(), current.revisionId(), prepared.deckRevision(), deckSequence,
                             command.commandId(), save.contentRoot(), save.descriptorRoot(), time);
                     repository.updateHead(deckId, save.member(), save.revision(), save.itemSequence(), time);
-                    if (save.toOrdinal() != save.fromOrdinal()) {
-                        repository.moveHead(deckId, save.member(), save.fromOrdinal(), save.toOrdinal());
-                    }
                     pendingChanges.add(new PendingChange("save", save.member(), current.revisionId(), save.revision(),
                             save.revision(), save.itemSequence(), save.fromOrdinal()));
                 }
                 case PreparedDelete delete -> {
                     ItemRecord current = current(actor, deckId, delete.member(), delete.expectedRevision());
-                    if (current.ordinal() != delete.fromOrdinal()) throw new VersionConflictException();
-                    repository.deleteHead(deckId, delete.member(), delete.fromOrdinal());
+                    repository.deleteHead(deckId, delete.member());
                     pendingChanges.add(new PendingChange("delete", delete.member(), current.revisionId(), null,
                             null, delete.itemSequence(), delete.fromOrdinal()));
                 }
                 case PreparedReorder reorder -> {
                     ItemRecord current = current(actor, deckId, reorder.member(), reorder.expectedRevision());
-                    if (current.ordinal() != reorder.fromOrdinal()) throw new VersionConflictException();
-                    repository.moveHead(deckId, reorder.member(), reorder.fromOrdinal(), reorder.toOrdinal());
                     pendingChanges.add(new PendingChange("reorder", reorder.member(), current.revisionId(), null,
                             current.revisionId(), reorder.itemSequence(), reorder.fromOrdinal()));
                 }
@@ -295,8 +308,7 @@ public class ItemService {
         var results = JsonNodeFactory.instance.arrayNode();
         for (int index = 0; index < pendingChanges.size(); index++) {
             PendingChange change = pendingChanges.get(index);
-            Integer finalOrdinal = change.operation().equals("delete") ? null
-                    : repository.headItem(actor, deckId, change.member()).orElseThrow().ordinal();
+            Integer finalOrdinal = prepared.finalOrdinals().get(change.member());
             repository.change(deckId, prepared.deckRevision(), deckSequence, index, change.member(), change.operation(),
                     change.previousRevision(), change.publishedRevision(), change.fromOrdinal(), finalOrdinal);
             results.add(result(change.operation(), change.member(), change.resultRevision(),
@@ -360,6 +372,12 @@ public class ItemService {
         return new TreeRoot(new ObjectRef(scope, root), page.payload().path("treeHeight").intValue(), expectedCount);
     }
 
+    private CountedPages memberPages() {
+        var source = (CountedPageTypesSource) ref -> storage.readBatch(ref.reuseScopeId(),
+                List.of(ref.objectId())).getFirst().value();
+        return new CountedPages(Profile.members(MAX_MEMBERS), source::read);
+    }
+
     private NativeSnapshot decode(UUID scope, UUID root) {
         NativeSnapshotDecoder decoder = new NativeSnapshotDecoder(new ObjectRef(scope, root));
         while (!decoder.isComplete()) nativeBatches.readNext(decoder);
@@ -392,6 +410,15 @@ public class ItemService {
             case ItemPublicationCommand.Delete delete -> delete.expectedItemRevisionId();
             case ItemPublicationCommand.Reorder reorder -> reorder.expectedItemRevisionId();
             case ItemPublicationCommand.Create ignored -> throw new IllegalArgumentException("Create has no revision");
+        };
+    }
+
+    private static int expectedOrdinal(ItemPublicationCommand.Change change) {
+        return switch (change) {
+            case ItemPublicationCommand.Save save -> save.expectedOrdinal();
+            case ItemPublicationCommand.Delete delete -> delete.expectedOrdinal();
+            case ItemPublicationCommand.Reorder reorder -> reorder.expectedOrdinal();
+            case ItemPublicationCommand.Create ignored -> throw new IllegalArgumentException("Create has no ordinal precondition");
         };
     }
 
@@ -459,9 +486,11 @@ public class ItemService {
                                    int fromOrdinal, int toOrdinal) implements PreparedChange { }
 
     private record PreparedPublication(ItemRepository.DeckHead before, UUID deckRevision, TreeRoot membership,
-                                       List<PreparedChange> changes, List<StagedRoot> pins, StagedRoot exercises) {
+                                       List<PreparedChange> changes, Map<UUID, Integer> finalOrdinals,
+                                       List<StagedRoot> pins, StagedRoot exercises) {
         private PreparedPublication {
             changes = List.copyOf(changes);
+            finalOrdinals = Map.copyOf(finalOrdinals);
             pins = List.copyOf(pins);
         }
     }
