@@ -66,24 +66,30 @@ third-party notices и текущие LICENSE/NOTICE.
 | K2 native codec/fragments | #181 / #190 | `6eba60d5a4e418fa1c6efcfccf6a3c4c5cd1bfe4` |
 | Safe native renderer | #183 / #191 | `8c76daa7446de67863a5fb10dfa6154fb25f4481` |
 | Private Deck metadata API | #188 / #193 | `cf698f957c5b66c45ae8829a6a688bda8a2a7b13` |
+| K3 counted pages / structural editing | #187 / #196 | `2e0712af517c40f24cd6de04f45705e27214f3a0` |
+| Browser Identity | #192 / #197 | `8fb93904dfedc2d78d11f1fe01d53fc2d9d5fa1c` |
+| Canonical private Deck UI | #194 / #198 | `1b994d9b793eeb5a26b33d2c88ea9b4d2ddd843e` |
 
-Текущие срезы передачи:
+После исходной передачи завершены:
 
-- **#187 K3**: counted pages и native structural editing, готовый независимо
-  проверенный kernel. Candidate `88f123fd8839dbbee3afd2d2c3843d45086a4dd5`.
-  [PR #196](https://github.com/MattoYuzuru/Mnema/pull/196), merge оставлен владельцу.
-- **#192 Browser Identity**: canonical login/register/PKCE/reload/logout, готовый
-  независимо проверенный срез. Candidate после API integration `aa5cde7`, затем
-  `d25be79` добавил fingerprints повторного browser-run.
-  [PR #197](https://github.com/MattoYuzuru/Mnema/pull/197), merge оставлен владельцу;
-  auth backend не переписывался.
-- **#194 Own Deck UI**: сохранённый **незавершённый checkpoint**, draft PR ветки
-  `epic-74/own-decks-ui`. Initial implementation commit `9c330c7`, затем main merge.
-  Страницы list/create/detail НЕ подключены к router; новый shell уже меняет общий
-  layout этой ветки. Не называть его готовым пользовательским интерфейсом и не
-  закрывать #194 до оставшейся интеграции/проверок.
-- **#171/#172**: исходные storage/editor research имеют историю и незавершённые
-  критерии. Не закрывать их из одного kernel merge или dependency approval.
+- **#187 K3**: counted pages и native structural editing доставлены через
+  [PR #196](https://github.com/MattoYuzuru/Mnema/pull/196), protected squash
+  `2e0712af517c40f24cd6de04f45705e27214f3a0`; research и implementation bounds
+  остаются описаны в counted-page evidence.
+- **#192 Browser Identity**: canonical login/register/PKCE/reload/logout доставлены
+  через [PR #197](https://github.com/MattoYuzuru/Mnema/pull/197); protected squash
+  `8fb93904dfedc2d78d11f1fe01d53fc2d9d5fa1c`. Auth backend не переписывался.
+- **#194 Own Deck UI**: canonical lazy list/create/detail, paper shell, bounded
+  tab-local recovery и настоящий API/conflict flow доставлены через
+  [PR #198](https://github.com/MattoYuzuru/Mnema/pull/198); protected squash
+  `1b994d9b793eeb5a26b33d2c88ea9b4d2ddd843e`. Это metadata slice, не editor.
+- **#171 Storage research**: bounded research acceptance выполнен, owner storage
+  choice явно записан, а K1/K2/K3 доставлены отдельными slices. Перед закрытием
+  требуется только сверить checklist/evidence bookkeeping; не выдавать это за
+  завершение LearningItem, fork product или всего Epic #74.
+- **#172 Editor research**: остаётся открытым. Static ProseMirror evidence не заменяет
+  обещанный Angular prototype; этот handoff не меняет его scope и не разрешает
+  production adoption.
 
 **Ещё не реализовано:** полноценная публикация LearningItem, member API и Browse,
 серверные EditingDraft, долговечные CaptureNote «На потом» и атомарная conversion,
@@ -102,7 +108,6 @@ cd Mnema
 git fetch origin
 git status --short --branch
 git log -8 --oneline
-git worktree add ../Mnema-own-decks -b resume/epic-74-own-decks origin/epic-74/own-decks-ui
 ```
 
 Не нужны старые worktree paths, agent memory, `/tmp` или build caches. Они не
@@ -110,7 +115,7 @@ git worktree add ../Mnema-own-decks -b resume/epic-74-own-decks origin/epic-74/o
 должны браться из GitHub. Старые absolute paths в historical evidence — provenance.
 
 Тестировалось: Node **22.23.2**, npm10.9.8, Java21 (Temurin21.0.11), Docker/Colima,
-Python3, Bash, Chrome153; PostgreSQL18.4 в disposable контейнерах. Версии зависимостей
+Python3, Bash, Chrome154; PostgreSQL18.6 в disposable контейнерах. Версии зависимостей
 в package-lock/Gradle — истина; не выполнять `npm update`/`audit fix` при восстановлении.
 Angular runtime22.1.5/build22.1.7, TS6.0.3, typescript-eslint8.58.0 уже migrated.
 Локальный Node26 старой машины не использовался для воспроизводимых gates.
@@ -215,39 +220,23 @@ Access max5min в sessionStorage; no refresh/ID-token persistence. Bearer logout
 без ambient Cookie; distinct HTTPS Identity origin enforced. TabA logout не отзывает
 TabB при общей cookie. Local clear не равен подтверждённой серверной ревокации.
 
-## 7. Точный следующий шаг: #194
+## 7. Точный следующий шаг: #200
 
-1. Checkout remote draft ветку; ознакомиться с `own-decks-ui.md` целиком и diff.
-2. Merge свежий main с #192. Сохранить новый paper shell, убрать legacy `init()`;
-   примирить app.config без дублирования `learningApiBaseUrl`, дополнить mock AuthUser
-   всеми required полями нового auth. Не выбирать blind ours/theirs.
-3. Подключить lazy `/decks`, `/decks/new` (перед ID), `/decks/:deckId` к новым страницам.
-   Без `/v2`, alias, compatibility wrapper. Shared runtime/media/AI не удалять целиком.
-4. Удалить заменённые legacy list/profile и только их недостижимые модалки/tests:
-   `features/decks/decks-list`, `deck-profile`, `add-cards-modal`, `ai-add-cards-modal`,
-   `ai-enhance-deck-modal`, `ai-import-modal` (все component.ts + существующие specs).
-   При снятии browse/review/duplicates-review освобождаются все14файлов папки;
-   shared API/renderer ещё нужны public-decks/my-study/templates/wizard/settings.
-5. Старый Home делает guest PublicDeck API и auth legacy N+1/review/media; заменить
-   честным стартом своих колод, без fake due/progress/catalog/study. Global CSS имеет
-   heading overrides, glass input blur, glow body,13pxmobile font; сделать paper base.
-   Убрать внешние Google Fonts из index.html, lang=ru. Не менять JSON-LD без обновления
-   связанных CSP hashes в runtime-generator/security verifier.
-6. Применять canonical paper#f4f0e5/sheet#fbf8ef/ink#281378/body#342e44/muted#625c70;
-   Georgia fallback headings/systemsans controls16px, один main/h1,44pxactions/focus.
-   ThemeService сохраняет inline tokens после Settings; учесть, не удалять вслепую.
-7. Прогнать реальный browser Identity+Learning+PostgreSQL: create/list/detail/save/reload,
-   два writer tabs412, lost acknowledgement→same command retry, replay GET failure,
-   cross-owner404/403/401/503. Расширять harness без настоящих credentials.
-8. 320/390/1440px,200%zoom, keyboard/focus, long Russian text, reduced motion/contrast,
-   route chunks/first useful screen/request fanout. Не называть Chromium manualAT/IME.
-9. Independent review → exact fullgate → PRready → protected squash → main verification.
+#194 завершён: route integration, paper shell, bounded account-bound `sessionStorage`
+recovery, real API/reload/412 browser path и cleanup вошли в main. Recovery хранит только
+точную pending-команду в пределах вкладки и не является серверным EditingDraft.
 
-Исправления уже доказаны RED→GREEN: store admission против второго UUID, блокировка
-незавершённого draft, «Создание не подтверждено», multiline title,20rows/10cursorwindow.
-33componenttests и независимый120pageprobe PASS. **Но state page-local**, не durability:
-reload/navigation теряют draft/unknown command; это нужно явно обработать до продуктовой
-приёмки. Не выдавать этот store за серверный EditingDraft.
+Следующий bounded slice — [#200](https://github.com/MattoYuzuru/Mnema/issues/200):
+
+1. Зафиксировать deck-local `memberKey` identity и canonical
+   `/api/decks/{deckId}/items` без `/v2`/legacy adapters.
+2. Публиковать base `LearningItemRevision` и deck revision/head projection атомарно,
+   сохраняя immutable K1/K2/K3 objects, pins, ACL, CAS и idempotency receipts.
+3. Ограничить native body, request/response, item count и preparation work; не делать
+   full-manifest scan, eager fork materialization или renumber-all.
+4. Проверить own/foreign scopes, missing/stale preconditions, same-command replay,
+   concurrent writers, rollback/disconnect и lossless K1/K2/K3 round-trip.
+5. Independent review → exact full gate → PR ready → protected squash → main verification.
 
 ## 8. Затем backend Item → drafts/Capture → editor
 

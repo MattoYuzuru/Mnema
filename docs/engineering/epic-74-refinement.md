@@ -2,19 +2,19 @@
 artifact:
   id: epic-74-refinement
   type: implementation-plan
-  status: proposed-execution-slices
+  status: active-execution-slices
   created_at: "2026-09-06"
-  updated_at: "2026-09-06"
+  updated_at: "2026-09-19"
   owners: ["project-owner"]
 ---
 
 # #74: подготовка к реализации
 
 Цель — дать backend/frontend исполнителям одинаковые границы и короткие проверяемые
-задачи. Продуктовые решения и paper direction одобрены владельцем; конкретные storage
-schemas, editor engine и API DTOs ещё не выбраны. Этот план не утверждает, что spikes
-уже выполнены, и не переводит весь epic в Ready. Публикация документов/прототипа через
-защищённый PR разрешена; production, данные и новые dependencies этим шагом не меняются.
+задачи. Продуктовые решения и paper direction одобрены владельцем. R74-S завершён:
+storage direction выбран и реализован bounded kernel slices; R74-E и следующие editor,
+LearningItem, draft/Capture и product-integration границы сохраняют собственную приёмку.
+Этот план не переводит весь epic в Ready и не утверждает готовность production.
 
 Источники: [owner workflows](../product/authoring-and-study-workflows.md),
 [storage proposal](../architecture/revision-storage-and-runtime-boundaries.md),
@@ -62,6 +62,16 @@ transaction/staging/GC boundaries и одна следующая reviewable stor
 Measured latency не выдаётся за production SLO. Незакрытая критическая инварианта
 блокирует принятие storage schema, но не работу над визуальными компонентами.
 
+Статус: критерии R74-S/#171 выполнены. [Финальный отчёт](evidence/epic-74/storage/README.md)
+и [независимая проверка](evidence/epic-74/verification/storage-review.md) закрыли bounded
+research invariants; [решение владельца](epic-74-dependency-decisions.md#owner-answers)
+приняло blocks/pages, normalized FK edges и physical text fragments. Historical
+proposed DDL остаётся evidence, а не migration. Реализация разбита на K1
+[#179](https://github.com/MattoYuzuru/Mnema/issues/179), K2
+[#181](https://github.com/MattoYuzuru/Mnema/issues/181) и K3
+[#187](https://github.com/MattoYuzuru/Mnema/issues/187); это не закрывает оставшийся
+LearningItem/draft/Capture/editor scope Epic #74.
+
 ### R74-E: выбрать редактор без зависимости формата от UI-библиотеки
 
 Решение: какой поддерживаемый editor engine обеспечивает native AST, доступное
@@ -85,9 +95,10 @@ Production media upload и все богатые renderers не строятся
 следующая reviewable editor-задача. Screenshot без editing/round-trip evidence
 недостаточен. Сохранять весь private editor state как native format запрещено.
 
-## Контракты после spikes
+## Контракты после research gates
 
-Одна bounded contract-задача связывает принятый storage результат с UI fixtures.
+Одна bounded contract-задача связывает принятый storage результат с UI fixtures;
+editor-side contract остаётся зависим от незакрытого R74-E.
 Точные canonical URLs фиксируются здесь только после исследования; `/v2` и legacy
 aliases не добавляются. Для каждого контракта нужны success/error fixtures,
 ownership, expected version, retry/idempotency и bounded request/response.
@@ -131,9 +142,11 @@ visual/keyboard проверку изменённых flows. Никакого о
 а не притворная производительность ещё отсутствующего backend.
 
 Материальные approvals: новая dependency; изменение принятой продуктовой семантики;
-окончательный переход от proposed storage к принятой схеме после evidence;
-production/data cutover отдельно в #147. Точные тексты UI и конфигурируемые защитные
-defaults можно уточнять инженерно в уже согласованных границах.
+пересмотр принятого storage direction или его bounded limits; production/data cutover
+отдельно в #147. Переход от proposed storage к blocks/pages уже принят после R74-S
+evidence; это не разрешение применять historical proposed DDL как migration. Точные
+тексты UI и конфигурируемые защитные defaults можно уточнять инженерно в уже
+согласованных границах.
 
 Rollback текущего docs/prototype изменения — обычный revert через PR, без DB effects.
 Spikes удаляются/изолируются до shipping; owning implementation заменяет canonical

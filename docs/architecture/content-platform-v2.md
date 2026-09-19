@@ -5,7 +5,7 @@ artifact:
   title: "Mnema greenfield content and study platform"
   status: proposed
   created_at: "2026-08-15"
-  updated_at: "2026-09-06"
+  updated_at: "2026-09-19"
   owners: ["project-owner"]
   source_tasks: ["project architecture and product review"]
   supersedes: []
@@ -24,11 +24,17 @@ artifact:
     - "official Git and Flyway documentation, accessed 2026-08-15"
     - "owner product clarification and Learning API runtime guide, 2026-09-06"
     - "official Git, PostgreSQL, Shopify engineering and GitLab architecture sources, accessed 2026-09-06"
+    - "R74-S final storage report, independent review and owner decision; K1/K2/K3 implementation evidence, 2026-09-12 through 2026-09-19"
 ---
 
 # Greenfield content and study platform
 
-This document is a design proposal, not an implemented schema. Owner constraints are accepted inputs; relational details remain proposed until their epic is refined. The target directly replaces v1 on canonical routes. It has no `/v2`, dual read/write, legacy adapter, old scheduler fallback or retained full legacy snapshot.
+This document remains the broader platform design, not a claim that every domain schema
+is implemented. Owner constraints are accepted inputs. Epic #74 has selected and
+implemented the bounded storage foundations described below; LearningItem, draft,
+Capture, study and operational details remain owned by their implementation slices.
+The target directly replaces v1 on canonical routes. It has no `/v2`, dual read/write,
+legacy adapter, old scheduler fallback or retained full legacy snapshot.
 
 The 2026-09-06 owner clarification accepts personal-deck launch, deck-local items
 and progress, custom exercise presentations, durable authoring drafts, unfinished
@@ -36,7 +42,8 @@ quick notes, and repeat practice with no scheduler writes. Future catalog/forks,
 selective updates (manual pull is recommended), detailed conflict resolution and upstream contributions
 must remain possible. [Revision storage and runtime boundaries](./revision-storage-and-runtime-boundaries.md)
 supersedes earlier physical full-item snapshots, unbounded historical replay and
-cross-fork logical item identity assumptions. Its storage details are proposed.
+cross-fork logical item identity assumptions. Its block/page direction is accepted;
+the linked document states the implemented and still-open boundaries.
 
 ## Requirements and workload
 
@@ -93,13 +100,13 @@ This makes event retention, compact columns and rollups a more important long-te
 |---|---|---|---|
 | Full immutable item content plus full membership per release | Simple historical SQL and reads | Repeats unchanged document payload and `O(releases × items)` membership | Not the general storage target |
 | Stable-node deltas, head projection and bounded checkpoints | Compact usual edits and simple current SQL | Checkpoint/fork materialization needs budgets; replay depth must be capped | Viable simpler alternative with explicit revised decision |
-| Immutable bounded content blocks and persistent paged manifests | Reuses unchanged document blocks and membership pages; history-independent reads and cheap future fork | Page splitting, ordering, projection parity and GC require dedicated tests | **Proposed target** |
+| Immutable bounded content blocks and persistent paged manifests | Reuses unchanged document blocks and membership pages; history-independent reads and cheap future fork | Page splitting, ordering, projection parity and GC require dedicated tests | **Selected storage target; bounded kernels implemented** |
 | Literal Git/JGit/Merkle repository as primary store | Native objects, commits, refs and structural sharing | Poor fit for ACL, SQL search, moderation, transactions and common queries; extra GC/backup/operations | Reject for now |
 
 Git is useful as a semantic model: immutable objects, parented commits and refs.
 Logical snapshots do not imply complete physical copies. Git initially stores
 changed blobs and later may delta-compress them in packs; it does not always store
-only changed characters. Mnema's proposed block/page reuse, PostgreSQL caveats and
+only changed characters. Mnema's selected block/page reuse, PostgreSQL caveats and
 bounded-operation contract are in [revision storage](./revision-storage-and-runtime-boundaries.md).
 
 Do not expose hashes as entity identity. Identical text can represent separate learning units, and equality of private content must not become visible across users.
