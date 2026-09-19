@@ -1,5 +1,18 @@
 # Quality gates, evidence, and cleanup
 
+Current execution record (2026-09-19): the final implementation baseline is
+`f5ae54d4f1dab4665b398290524017f0d3d4c656`. The maintained commands below were
+rerun on that integrated `main` by #203. JDK 21.0.12.1 came from
+`/opt/homebrew/Cellar/openjdk@21/21.0.12.1`; Node 22.23.2/npm 10.9.8 came from
+`/opt/homebrew/Cellar/node@22/22.23.2_2`; Colima exposed Docker through
+`/Users/yuzuru/.colima/default/docker.sock`, with
+`TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE=/var/run/docker.sock` for Ryuk's Linux mount.
+Results and the distinction between executable coverage and unverified manual/device
+coverage are consolidated in
+[integrated-main-2026-09-19.md](integrated-main-2026-09-19.md). The remainder of
+this file preserves the original plan and commands, including obsolete `/tmp`
+runtime observations, for provenance.
+
 Inspected workflow: `.github/workflows/pull-request.yaml` at
 `33a71f814185a16e922923e034518e25baeadbb8`. No gate was run while preparing this
 strategy.
