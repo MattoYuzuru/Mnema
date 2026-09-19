@@ -7,14 +7,15 @@ import { Subject, debounceTime, forkJoin, of } from 'rxjs';
 import { NativeDocument } from '../../content/native-document';
 import { createEmptyNativeDocument } from '../../content/editing/native-editor-adapter';
 import { NativeEditorComponent } from '../../content/editing/native-editor.component';
+import { NativeStructuralEdit, planNativeStructuralEdits } from '../../content/editing/native-structural-edits';
 import { NativeDocumentRendererComponent } from '../../content/rendering/native-document-renderer.component';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { AuthoringApiService } from './authoring-api.service';
-import { DraftDetail, DraftSummary, ItemDetail, newCommandId } from './authoring.models';
+import { DraftDetail, DraftSummary, ItemDetail, ItemWriteResult, newCommandId } from './authoring.models';
 import { ItemApiService } from './item-api.service';
 
-type EditorPhase = 'loading' | 'ready' | 'saving-draft' | 'publishing' | 'conflict' | 'error';
+type EditorPhase = 'loading' | 'ready' | 'saving-draft' | 'publishing' | 'conflict' | 'rejected' | 'error';
 
 @Component({
     selector: 'app-item-editor-page',
@@ -47,7 +48,9 @@ export class ItemEditorPageComponent {
         readonly commandId: string; readonly document: NativeDocument;
     } | null = null;
     private pendingDraft: { readonly commandId: string; readonly document: NativeDocument } | null = null;
-    private pendingPublication: { readonly commandId: string; readonly document: NativeDocument } | null = null;
+    private pendingPublication: {
+        readonly commandId: string; readonly document: NativeDocument; readonly edits: readonly NativeStructuralEdit[];
+    } | null = null;
     private pendingNavigation: {
         readonly deckId: string; readonly memberKey: string; readonly ordinal: number;
         readonly draftId: string; readonly draftVersion: string;
@@ -55,7 +58,7 @@ export class ItemEditorPageComponent {
     private expectedOrdinal: number | null = null;
 
     constructor() {
-        this.changes.pipe(debounceTime(800), takeUntilDestroyed()).subscribe(() => this.saveDraft());
+        this.changes.pipe(debounceTime(1_000), takeUntilDestroyed()).subscribe(() => this.saveDraft());
         this.load();
     }
 
@@ -102,7 +105,7 @@ export class ItemEditorPageComponent {
         this.document.set(document);
         this.dirty.set(true);
         this.message.set(null);
-        if (this.phase() === 'error') this.phase.set('ready');
+        if (this.phase() === 'error' || this.phase() === 'rejected') this.phase.set('ready');
         this.changes.next(document);
     }
 
@@ -136,12 +139,15 @@ export class ItemEditorPageComponent {
                 },
                 error: error => {
                     const stale = error instanceof HttpErrorResponse && error.status === 412;
-                    if (stale) this.pendingDraft = null;
+                    const uncertain = isUncertain(error);
+                    if (!uncertain) this.pendingDraft = null;
                     this.conflict.set(stale ? 'draft' : null);
-                    this.phase.set(stale ? 'conflict' : 'error');
+                    this.phase.set(stale ? 'conflict' : uncertain ? 'error' : 'rejected');
                     this.message.set(stale
                         ? 'Черновик изменён в другой вкладке. Ваш ввод остался в этой вкладке.'
-                        : 'Сервер не подтвердил черновик. Безопасно повторите ту же команду.');
+                        : uncertain
+                            ? 'Сервер не подтвердил черновик. Безопасно повторите ту же команду.'
+                            : 'Черновик отклонён сервером. Исправьте материал и сохраните его новой командой.');
                 }
             });
     }
@@ -157,14 +163,24 @@ export class ItemEditorPageComponent {
             this.fail('Откройте редактор из актуального списка материалов, чтобы подтвердить позицию.');
             return;
         }
+        let edits: readonly NativeStructuralEdit[] = [];
+        if (!retry && item !== null) {
+            try {
+                edits = planNativeStructuralEdits(item.document, document);
+            } catch {
+                this.phase.set('rejected');
+                this.message.set('Структурная правка слишком велика для одной публикации. Сократите изменение и повторите.');
+                return;
+            }
+        }
         const pending = retry && this.pendingPublication !== null
-            ? this.pendingPublication : { commandId: newCommandId(), document };
+            ? this.pendingPublication : { commandId: newCommandId(), document, edits };
         this.pendingPublication = pending;
         this.phase.set('publishing');
         const publication = item === null
             ? this.items.create(deck.deckId, deck.rowVersion, deck.revisionId, pending.document, pending.commandId)
             : this.items.save(deck.deckId, item.memberKey, item.deckVersion, item.deckRevisionId,
-                item.itemRevisionId, this.expectedOrdinal!, pending.document, pending.commandId);
+                item.itemRevisionId, this.expectedOrdinal!, pending.document, pending.commandId, pending.edits);
         publication.pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: result => {
                 const memberKey = result.acknowledgement.changes[0]?.memberKey;
@@ -173,20 +189,23 @@ export class ItemEditorPageComponent {
                     this.fail('Сервер вернул неполное подтверждение публикации.');
                     return;
                 }
-                this.pendingPublication = null;
-                this.pendingNavigation = {
-                    deckId: deck.deckId, memberKey, ordinal, draftId: draft.draftId, draftVersion: draft.rowVersion
-                };
-                this.cleanupPublishedDraft();
+                if (result.replayed) {
+                    this.reconcileReplayedPublication(result, deck, draft, memberKey, ordinal);
+                } else {
+                    this.finishPublication(deck, draft, memberKey, ordinal);
+                }
             },
-                error: error => {
+            error: error => {
                 const stale = error instanceof HttpErrorResponse && error.status === 412;
-                if (stale) this.pendingPublication = null;
+                const uncertain = isUncertain(error);
+                if (!uncertain) this.pendingPublication = null;
                 this.conflict.set(stale ? 'publication' : null);
-                this.phase.set(stale ? 'conflict' : 'error');
+                this.phase.set(stale ? 'conflict' : uncertain ? 'error' : 'rejected');
                 this.message.set(stale
                     ? 'Колода или материал изменились. Ваш серверный черновик сохранён; загрузите свежую основу.'
-                    : 'Публикация не подтверждена. Безопасно повторите ту же команду.');
+                    : uncertain
+                        ? 'Публикация не подтверждена. Безопасно повторите ту же команду.'
+                        : 'Публикация отклонена сервером. Исправьте материал и отправьте новую команду.');
             }
         });
     }
@@ -284,6 +303,7 @@ export class ItemEditorPageComponent {
                 this.draft.set(current);
                 this.pendingDraft = null;
                 if (!sameJson(current.document, pending.document)) {
+                    this.conflict.set('draft');
                     this.phase.set('conflict');
                     this.message.set('Серверный черновик уже продолжили в другом месте. Ваш ввод не потерян; выберите свежую версию.');
                     return;
@@ -302,6 +322,36 @@ export class ItemEditorPageComponent {
                 this.message.set('Команда подтверждена повтором, но свежую версию черновика получить не удалось.');
             }
         });
+    }
+
+    private reconcileReplayedPublication(result: ItemWriteResult, deck: OwnDeck, draft: DraftDetail,
+                                          memberKey: string, ordinal: number): void {
+        this.items.read(deck.deckId, memberKey).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: current => {
+                const change = result.acknowledgement.changes[0];
+                if (change?.itemRevisionId !== current.itemRevisionId
+                    || result.acknowledgement.deckRevisionId !== current.deckRevisionId) {
+                    this.pendingPublication = null;
+                    this.conflict.set('publication');
+                    this.phase.set('conflict');
+                    this.message.set('Публикация подтверждена, но колода уже изменилась. Черновик сохранён; вернитесь в актуальный Browse.');
+                    return;
+                }
+                this.finishPublication(deck, draft, memberKey, ordinal);
+            },
+            error: () => {
+                this.phase.set('error');
+                this.message.set('Повтор публикации подтверждён, но актуальную серверную версию проверить не удалось.');
+            }
+        });
+    }
+
+    private finishPublication(deck: OwnDeck, draft: DraftDetail, memberKey: string, ordinal: number): void {
+        this.pendingPublication = null;
+        this.pendingNavigation = {
+            deckId: deck.deckId, memberKey, ordinal, draftId: draft.draftId, draftVersion: draft.rowVersion
+        };
+        this.cleanupPublishedDraft();
     }
 
     private cleanupPublishedDraft(): void {

@@ -1,0 +1,24 @@
+{
+  "fixture": [
+    {
+      "scenario": "both_real_apps_ready",
+      "state": "passed",
+      "identity_jar_sha256": "98006ed284c77d61f9487235a0c65da79a6c2c19df9e1b487d5a2827eaa63724",
+      "learning_jar_sha256": "1e6a8538ceb3f58259b5d19256ee983d9f33e43ffef9bc9d8342ee2355fa3f5c",
+      "harness_sha256": "3766fb81d43ca59e6edf0e774acf6243575227bb644eabfe6913fda29db5b7ca",
+      "fixture_key_source_sha256": "799b1a83d580238d54ecf17325f1f65ffb3d80a21a7287481fa2c69c72e91257",
+      "postgres": "PostgreSQL 18.6 (Debian 18.6-1.pgdg13+2) on aarch64-unknown-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+      "max_clients": 1,
+      "started_utc": "2026-09-19T16:10:51.737075+00:00"
+    },
+    {
+      "scenario": "learning_role_denied_identity_schema",
+      "state": "passed"
+    }
+  ],
+  "frontend_tree_sha256": "1b7f9e2e73c6230553c6cbcbd1611823a1310c694e52d3e94978520725e3d0fd",
+  "scripts": {
+    "run.py": "bfb566a460e92dda00beee6a739d1ae47b64cbda67ca6eee2f4932f5fd1065f1",
+    "browser.mjs": "ea330adb15bea530161f104fed45013ca1031175cabb14658b5ef90e584194e2"
+  }
+}

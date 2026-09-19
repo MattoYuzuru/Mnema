@@ -3,6 +3,7 @@ package app.mnema.learning.catalog.item;
 import app.mnema.learning.catalog.content.NativeDocument;
 import app.mnema.learning.catalog.content.NativeDocumentReader;
 import app.mnema.learning.catalog.content.storage.NativeStructuralEdit;
+import app.mnema.learning.catalog.content.storage.NativeStructuralEditor;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
 import app.mnema.learning.platform.id.UuidPolicy;
@@ -15,6 +16,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -23,6 +25,7 @@ import java.util.UUID;
 public final class ItemPublicationCommand {
     public static final int MAX_REQUEST_BYTES = 1_048_576;
     public static final int MAX_CHANGES = 100;
+    public static final int MAX_EDITS = NativeStructuralEditor.MAX_EDITS;
     private static final ContentJsonReader JSON = new ContentJsonReader(MAX_REQUEST_BYTES, 132, 250_500);
     private static final CanonicalJsonHasher CANONICAL = new CanonicalJsonHasher();
 
@@ -79,10 +82,10 @@ public final class ItemPublicationCommand {
         requirePrecondition(body, "expectedOrdinal");
         fields(body, Set.of("commandId", "expectedDeckRevisionId", "expectedItemRevisionId", "expectedOrdinal", "document"),
                 Set.of("commandId", "expectedDeckRevisionId", "expectedItemRevisionId", "expectedOrdinal", "document", "ordinal"),
-                Set.of("commandId", "expectedDeckRevisionId", "expectedItemRevisionId", "expectedOrdinal", "document", "edit"),
-                Set.of("commandId", "expectedDeckRevisionId", "expectedItemRevisionId", "expectedOrdinal", "document", "ordinal", "edit"));
+                Set.of("commandId", "expectedDeckRevisionId", "expectedItemRevisionId", "expectedOrdinal", "document", "edits"),
+                Set.of("commandId", "expectedDeckRevisionId", "expectedItemRevisionId", "expectedOrdinal", "document", "ordinal", "edits"));
         Change value = new Save(memberKey, id(body, "expectedItemRevisionId"), requiredOrdinal(body, "expectedOrdinal"), ordinal(body.path("ordinal")),
-                document(body.path("document")), edit(body.path("edit")));
+                document(body.path("document")), edits(body.path("edits")));
         return command(body, List.of(value));
     }
 
@@ -119,10 +122,10 @@ public final class ItemPublicationCommand {
                 requirePrecondition(value, "expectedOrdinal");
                 fields(value, Set.of("operation", "memberKey", "expectedItemRevisionId", "expectedOrdinal", "document"),
                         Set.of("operation", "memberKey", "expectedItemRevisionId", "expectedOrdinal", "document", "ordinal"),
-                        Set.of("operation", "memberKey", "expectedItemRevisionId", "expectedOrdinal", "document", "edit"),
-                        Set.of("operation", "memberKey", "expectedItemRevisionId", "expectedOrdinal", "document", "ordinal", "edit"));
+                        Set.of("operation", "memberKey", "expectedItemRevisionId", "expectedOrdinal", "document", "edits"),
+                        Set.of("operation", "memberKey", "expectedItemRevisionId", "expectedOrdinal", "document", "ordinal", "edits"));
                 yield new Save(member, id(value, "expectedItemRevisionId"), requiredOrdinal(value, "expectedOrdinal"), ordinal(value.path("ordinal")),
-                        document(value.path("document")), edit(value.path("edit")));
+                        document(value.path("document")), edits(value.path("edits")));
             }
             case "delete" -> {
                 requirePrecondition(value, "expectedItemRevisionId");
@@ -158,14 +161,23 @@ public final class ItemPublicationCommand {
         }
     }
 
+    private static List<NativeStructuralEdit> edits(JsonNode value) {
+        if (value.isMissingNode()) return List.of();
+        if (!value.isArray() || value.isEmpty() || value.size() > MAX_EDITS) throw new InvalidRequestException();
+        List<NativeStructuralEdit> result = new ArrayList<>();
+        value.forEach(element -> result.add(edit(element)));
+        if (new HashSet<>(result).size() != result.size()) throw new InvalidRequestException();
+        return List.copyOf(result);
+    }
+
     private static NativeStructuralEdit edit(JsonNode value) {
-        if (value.isMissingNode()) return null;
         if (!value.isObject() || !value.path("type").isTextual()) throw new InvalidRequestException();
         try {
             return switch (value.path("type").textValue()) {
                 case "insert" -> {
-                    fields(value, Set.of("type", "parentId", "childIndex"));
-                    yield new NativeStructuralEdit.Insert(id(value, "parentId"), integer(value.path("childIndex")));
+                    fields(value, Set.of("type", "nodeId", "parentId", "childIndex"));
+                    yield new NativeStructuralEdit.Insert(id(value, "nodeId"), id(value, "parentId"),
+                            integer(value.path("childIndex")));
                 }
                 case "delete" -> {
                     fields(value, Set.of("type", "nodeId"));
@@ -243,7 +255,8 @@ public final class ItemPublicationCommand {
     }
 
     public record Save(UUID memberKey, UUID expectedItemRevisionId, int expectedOrdinal, Integer ordinal,
-                       NativeDocument document, NativeStructuralEdit edit) implements Change {
+                       NativeDocument document, List<NativeStructuralEdit> edits) implements Change {
+        public Save { edits = List.copyOf(edits); if (edits.size() > MAX_EDITS) throw new InvalidRequestException(); }
         @Override public String operation() { return "save"; }
     }
 

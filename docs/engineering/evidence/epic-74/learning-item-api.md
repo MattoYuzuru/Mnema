@@ -17,7 +17,9 @@ provide CAS. Current ACL runs before receipt replay. Exact retry returns the ori
 acknowledgement; changed command reuse is rejected. List cursors bind one Deck head.
 
 Only validated native-v1 documents cross the boundary. Same-topology saves reuse
-unchanged objects; structural changes require the K3 explicit edit intent. Reads
+unchanged objects; structural changes require 1..100 ordered K3 edit intents whose
+evolving topology must exactly match the final document. Atomic subtree inserts carry
+their final `nodeId`, and duplicate/overlapping/invalid intent sequences fail closed. Reads
 decode a bounded immutable graph directly rather than replaying history. The
 request and native boundaries independently reject duplicate keys, malformed UTF-8,
 unsupported numbers, excessive depth/tokens/nodes/scalars and commands over 1 MiB.
@@ -48,6 +50,15 @@ exercise behavior, media upload/serving, drafts/capture, scheduler and deploymen
 outside #200.
 
 ## Local verification — 2026-09-19
+
+The #202 integration extends Save from one `edit` to canonical ordered `edits`
+without a compatibility alias or schema migration. `NativeStructuralEditor` applies
+the bounded sequence to the existing immutable counted root, prunes intermediate
+pages, reuses unchanged K2 records/fragments by UUID and exact bytes, and decodes the
+result back to the exact final native document before publication. Targeted command,
+pure structural, PostgreSQL structural and Item service tests cover ordered
+insert/delete/move, atomic inserted subtrees, simultaneous value changes, exact old
+roots, duplicate targets, invalid order/final topology and the 100-intent bound.
 
 - `./gradlew :services:learning:test --console=plain`: 288 tests, zero failures,
   errors or skips; PostgreSQL item coverage includes create/save/history, bulk

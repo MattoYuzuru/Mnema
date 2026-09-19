@@ -24,4 +24,23 @@ describe('NativeEditorComponent', () => {
         const controls = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
         expect(controls.every(control => control.disabled)).toBeTrue();
     });
+
+    it('replaces stale editor state when the acknowledged server document changes', () => {
+        TestBed.configureTestingModule({ imports: [NativeEditorComponent] });
+        const fixture = TestBed.createComponent(NativeEditorComponent);
+        const initial = mixedNativeDocumentFixture();
+        fixture.componentRef.setInput('document', initial);
+        fixture.detectChanges();
+
+        const replacement = structuredClone(initial);
+        const text = replacement.root.content[0]?.content[0];
+        if (text === undefined) throw new Error('Fixture text is absent.');
+        (text.attrs as { text: string }).text = 'Свежая версия сервера';
+        fixture.componentRef.setInput('document', replacement);
+        fixture.detectChanges();
+        TestBed.flushEffects();
+
+        const surface = fixture.nativeElement.querySelector('[role="textbox"]') as HTMLElement;
+        expect(surface.innerText).toContain('Свежая версия сервера');
+    });
 });

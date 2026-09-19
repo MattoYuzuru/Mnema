@@ -17,8 +17,9 @@ export function isCredentialTarget(requestUrl: string, identityOrigin: string, l
         if (url.username || url.password || url.hash || identity.origin !== identityOrigin) return false;
         const identityRoute = url.origin === identity.origin && ['/userinfo', '/api/accounts/me'].includes(url.pathname);
         const prefix = learning.pathname.replace(/\/$/u, '');
-        const learningRoute = url.origin === learning.origin &&
-            (url.pathname === `${prefix}/decks` || url.pathname.startsWith(`${prefix}/decks/`));
+        const learningRoots = [`${prefix}/decks`, `${prefix}/editing-drafts`, `${prefix}/capture-notes`];
+        const learningRoute = url.origin === learning.origin && learningRoots.some(root =>
+            url.pathname === root || url.pathname.startsWith(`${root}/`));
         return identityRoute || learningRoute;
     } catch { return false; }
 }

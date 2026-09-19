@@ -19,13 +19,18 @@ class ItemPublicationCommandTest {
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     @Test
-    void sharedCreateFixtureIsTheExecutableWireContract() throws Exception {
+    void sharedFixtureIsTheExecutableCreateAndOrderedSaveWireContract() throws Exception {
         Path root = Path.of("").toAbsolutePath();
         while (!Files.exists(root.resolve("contracts/items/publication.json"))) root = root.getParent();
         JsonNode fixture = JSON.readTree(Files.readString(root.resolve("contracts/items/publication.json")));
         ItemPublicationCommand command = ItemPublicationCommand.readCreate(bytes(fixture.path("create").toString()));
         assertThat(command.commandId().toString()).isEqualTo(fixture.path("create").path("commandId").textValue());
         assertThat(((ItemPublicationCommand.Create) command.changes().getFirst()).ordinal()).isZero();
+        ItemPublicationCommand save = ItemPublicationCommand.readSave(bytes(fixture.path("save").toString()), UUID.randomUUID());
+        var structural = ((ItemPublicationCommand.Save) save.changes().getFirst()).edits();
+        assertThat(structural).containsExactly(new app.mnema.learning.catalog.content.storage.NativeStructuralEdit.Insert(
+                UUID.fromString("00000000-0000-4000-8000-000000000004"),
+                UUID.fromString("00000000-0000-4000-8000-000000000001"), 1));
     }
 
     @Test
@@ -46,9 +51,9 @@ class ItemPublicationCommandTest {
         ObjectNode save = base(deckRevision).put("expectedItemRevisionId", UUID.randomUUID().toString())
                 .put("expectedOrdinal", 0);
         save.set("document", document);
-        save.putObject("edit").put("type", "delete").put("nodeId", UUID.randomUUID().toString());
+        save.putArray("edits").addObject().put("type", "delete").put("nodeId", UUID.randomUUID().toString());
         assertThat(((ItemPublicationCommand.Save) ItemPublicationCommand.readSave(bytes(save.toString()), member)
-                .changes().getFirst()).edit()).isNotNull();
+                .changes().getFirst()).edits()).hasSize(1);
     }
 
     @Test
@@ -90,6 +95,49 @@ class ItemPublicationCommandTest {
         byte[] oversized = new byte[ItemPublicationCommand.MAX_REQUEST_BYTES + 1];
         java.util.Arrays.fill(oversized, (byte) ' ');
         assertThatThrownBy(() -> ItemPublicationCommand.readCreate(new ByteArrayInputStream(oversized)))
+                .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void parsesBoundedOrderedEditsAndRejectsLegacyEmptyDuplicateAndOversizedForms() {
+        UUID revision = UUID.randomUUID();
+        ObjectNode save = base(revision).put("expectedItemRevisionId", UUID.randomUUID().toString())
+                .put("expectedOrdinal", 0);
+        save.set("document", document());
+        UUID inserted = UUID.randomUUID(), parent = UUID.randomUUID(), moved = UUID.randomUUID();
+        var edits = save.putArray("edits");
+        edits.addObject().put("type", "insert").put("nodeId", inserted.toString())
+                .put("parentId", parent.toString()).put("childIndex", 1);
+        edits.addObject().put("type", "move").put("nodeId", moved.toString())
+                .put("parentId", parent.toString()).put("childIndex", 0);
+        ItemPublicationCommand.Save parsed = (ItemPublicationCommand.Save) ItemPublicationCommand
+                .readSave(bytes(save.toString()), UUID.randomUUID()).changes().getFirst();
+        assertThat(parsed.edits()).containsExactly(
+                new app.mnema.learning.catalog.content.storage.NativeStructuralEdit.Insert(inserted, parent, 1),
+                new app.mnema.learning.catalog.content.storage.NativeStructuralEdit.Move(moved, parent, 0));
+
+        ObjectNode legacy = save.deepCopy();
+        legacy.remove("edits");
+        legacy.putObject("edit").put("type", "delete").put("nodeId", UUID.randomUUID().toString());
+        assertThatThrownBy(() -> ItemPublicationCommand.readSave(bytes(legacy.toString()), UUID.randomUUID()))
+                .isInstanceOf(InvalidRequestException.class);
+
+        ObjectNode empty = save.deepCopy(); empty.putArray("edits");
+        assertThatThrownBy(() -> ItemPublicationCommand.readSave(bytes(empty.toString()), UUID.randomUUID()))
+                .isInstanceOf(InvalidRequestException.class);
+
+        ObjectNode duplicate = save.deepCopy();
+        duplicate.withArray("edits").add(duplicate.path("edits").get(0).deepCopy());
+        assertThatThrownBy(() -> ItemPublicationCommand.readSave(bytes(duplicate.toString()), UUID.randomUUID()))
+                .isInstanceOf(InvalidRequestException.class);
+
+        ObjectNode oversized = save.deepCopy();
+        oversized.putArray("edits");
+        for (int index = 0; index <= ItemPublicationCommand.MAX_EDITS; index++) {
+            oversized.withArray("edits").addObject().put("type", "delete")
+                    .put("nodeId", UUID.randomUUID().toString());
+        }
+        assertThatThrownBy(() -> ItemPublicationCommand.readSave(bytes(oversized.toString()), UUID.randomUUID()))
                 .isInstanceOf(InvalidRequestException.class);
     }
 

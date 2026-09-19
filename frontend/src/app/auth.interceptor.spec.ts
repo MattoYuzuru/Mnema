@@ -23,7 +23,9 @@ describe('canonical bearer interceptor', () => {
     afterEach(() => mock.verify());
 
     it('only attaches to exact canonical Learning and Identity routes', () => {
-        for (const url of ['/api/decks', '/api/decks/123', `${identity}/api/accounts/me`, `${identity}/userinfo`]) {
+        for (const url of ['/api/decks', '/api/decks/123', '/api/editing-drafts', '/api/editing-drafts/123',
+            '/api/capture-notes', '/api/capture-notes/123/conversions',
+            `${identity}/api/accounts/me`, `${identity}/userinfo`]) {
             http.get(url).subscribe();
             const request = mock.expectOne(url);
             expect(request.request.headers.get('Authorization')).toBe('Bearer current-token');
@@ -32,7 +34,8 @@ describe('canonical bearer interceptor', () => {
     });
 
     it('refuses legacy APIs, lookalike hosts/path prefixes and routing encodings', () => {
-        for (const url of ['/api/core/decks', '/api/user/me', '/api/media/x', '/api/decks-other', '/api/other/../decks',
+        for (const url of ['/api/core/decks', '/api/user/me', '/api/media/x', '/api/decks-other', '/api/editing-drafts-other',
+            '/api/capture-notes-other', '/api/other/../decks',
             'https://identity.example.test.evil.test/api/accounts/me', `${identity}/api/accounts/me/other`,
             `${identity}/api/accounts/login`, `${identity}/oauth2/token`, '/api/%64ecks', '/api/decks%2f123',
             'https://evil.test/api/decks', '//evil.test/api/decks', 'https://user@identity.example.test/userinfo']) {

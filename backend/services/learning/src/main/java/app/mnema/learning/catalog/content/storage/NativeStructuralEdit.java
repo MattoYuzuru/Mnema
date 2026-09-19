@@ -6,8 +6,11 @@ import java.util.UUID;
 
 /** Explicit intent; indices address direct native children, and move uses after-removal indexing. */
 public sealed interface NativeStructuralEdit {
-    record Insert(UUID parentId, int childIndex) implements NativeStructuralEdit {
-        public Insert { UuidPolicy.requireEntityId(parentId, "parentId"); if (childIndex < 0) throw new IllegalArgumentException("Invalid child index"); }
+    record Insert(UUID nodeId, UUID parentId, int childIndex) implements NativeStructuralEdit {
+        public Insert {
+            UuidPolicy.requireEntityId(nodeId, "nodeId"); UuidPolicy.requireEntityId(parentId, "parentId");
+            if (childIndex < 0) throw new IllegalArgumentException("Invalid child index");
+        }
     }
     record Delete(UUID nodeId) implements NativeStructuralEdit {
         public Delete { UuidPolicy.requireEntityId(nodeId, "nodeId"); }

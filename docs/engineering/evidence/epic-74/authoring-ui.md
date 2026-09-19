@@ -1,8 +1,9 @@
 # Authoring UI candidate — issue #202
 
-Status: local review candidate on `epic-74/issue-202-authoring-ui`; not merged,
-deployed or verified against the pending #201 backend yet. This record deliberately
-does not claim the HTTPS browser acceptance that requires the integrated API.
+Status: integrated local review candidate on `epic-74/issue-202-authoring-ui`;
+verified against the merged #201 backend and the canonical multi-edit publication
+contract. It is not merged or deployed. Deployment is intentionally outside the
+current local-only delivery boundary.
 
 ## Implemented boundary
 
@@ -17,6 +18,10 @@ does not claim the HTTPS browser acceptance that requires the integrated API.
   source ordinal obtained from the current K3-backed Browse page or create
   acknowledgement; save sends it as required `expectedOrdinal`, so a stale
   position fails closed instead of scanning or trusting the browser.
+- Existing-item publication computes at most 100 ordered `insert`/`delete`/`move`
+  intents against stable native IDs. The backend validates every evolving topology,
+  treats insert as an atomic final subtree and requires the final topology to equal
+  the submitted native document before one publication transaction can commit.
 - Draft edits debounce to the server and retain an uncertain command ID for exact
   retry. A replay acknowledgement is reconciled with a fresh draft GET before it
   unlocks publication. Publication remains an explicit action and is available
@@ -25,6 +30,11 @@ does not claim the HTTPS browser acceptance that requires the integrated API.
   command and payload for replay instead of creating duplicate resources. Draft
   CAS conflicts expose explicit server-version and keep-local choices; keeping
   local first refreshes the acknowledged row version and requires a new save.
+- Deterministic 4xx rejections release the editor for correction and a new command;
+  uncertain transport/5xx outcomes retain the exact command. Replayed publication
+  performs a fresh item GET before deleting its source draft. An external document
+  replacement also resets the ProseMirror state, preventing a resolved server copy
+  from being overwritten by stale local state on the next keystroke.
 - The Mnema-owned direct ProseMirror adapter persists only native-v1. It preserves
   the shared golden fixture exactly, keeps unknown/future nodes opaque, allocates
   UUIDv4 identities for split/pasted known and opaque subtrees, and keeps identity
@@ -43,10 +53,19 @@ Controls use semantic links, buttons, labels, fieldsets, status/alert regions,
 non-editable, together with its toolbar, during publication. CSS supplies a
 single-column mobile layout, forced-colors borders and reduced-motion fallback.
 
-This is code/test evidence, not a claim of screen-reader or physical-device
-certification. VoiceOver/TalkBack, mobile selection, real IME composition,
-200% browser zoom and the 320/768/1440 viewport matrix remain in the integrated
-HTTPS run below.
+The real HTTPS run verified keyboard order, visible skip-link focus transfer,
+reduced-motion behavior, no horizontal overflow at 390 CSS px, a 44 px publication
+target, and existing own-deck evidence at 1440/390 plus 320 CSS px at 2x raster
+scale. Current authoring screenshots are
+[editor 390](authoring-browser/authoring-editor-390.png) and
+[Browse 1440](authoring-browser/authoring-browse-1440.png).
+
+This is code/browser evidence, not a claim of physical-device certification.
+Chrome's real contenteditable path, native insertion, paste sanitation, ruby,
+mixed RTL/LTR, undo/redo and long multilingual fixtures are covered, but a human
+VoiceOver/TalkBack session, real Japanese OS IME, physical touch selection, Safari
+and Firefox remain explicitly unverified device/manual gaps. Automated semantics
+and synthetic composition do not replace those checks.
 
 ## Dependency and bundle evidence
 
@@ -58,9 +77,9 @@ build output preserves their texts in `dist/mnema-frontend/3rdpartylicenses.txt`
 the root Mnema license and notice are unchanged. `prosemirror-view` is not below
 the version containing the paste-XSS fix recorded in the dependency decision.
 
-The production build on 2026-09-19 reported 594.86 kB raw / 147.29 kB estimated
+The final production build on 2026-09-19 reported 591.99 kB raw / 146.68 kB estimated
 initial JavaScript+CSS, with ProseMirror isolated to the guarded editor lazy chunk
-(249.22 kB raw / 66.94 kB estimated). Capture and Browse remain separate 13.51 kB
+(253.10 kB raw / 67.80 kB estimated). Capture and Browse remain separate 13.51 kB
 and 10.96 kB raw lazy chunks and do not import the editor runtime. No speculative
 request fan-out is introduced: Browse performs Deck + one bounded item page in
 parallel; editor performs Deck + item + at most ten bounded draft pages, then one
@@ -69,7 +88,7 @@ draft detail/create request; Capture paginates explicitly.
 ## Local verification
 
 - `npm run lint` — pass.
-- `npm test` — 156 ChromeHeadless tests, zero failures. They cover route guards/laziness, exact item/draft/
+- `npm test` — 162 ChromeHeadless tests, zero failures. They cover route guards/laziness, exact item/draft/
   Capture wire contracts, private cache controls and CAS headers; native golden
   round-trip, unsafe paste, future-root read-only behavior, identity split/copy,
   undo and native limits; editor inert DOM and publication lock; long multilingual
@@ -77,17 +96,32 @@ draft detail/create request; Capture paginates explicitly.
 - `npm run build` — pass; lazy chunk and third-party notice evidence above.
 - `npm audit --omit=dev --audit-level=low` under the repository Node 22.23.2/npm
   10.9.8 toolchain — zero production vulnerabilities.
+- Learning parser/editor unit and real PostgreSQL structural/item integration suites
+  pass with ordered multi-edit, final-subtree insert and invalid-topology cases.
+- `python3 -m unittest scripts/browser-identity/test_fixture.py` — 11 tests pass;
+  `node --check scripts/browser-identity/browser.mjs` passes.
 
-## Integration gate after #201 rebase
+## Integrated HTTPS evidence
 
-Rebase onto the final #201 API and run the repository frontend gate plus real
-authenticated HTTPS browser E2E. The E2E must prove create/reload/restore/autosave,
-exact retry and 412 conflict, Capture source preservation/conversion, Browse/editor
-renderer identity, offline/reconnect, unsafe HTML/JS/SVG/URL non-execution, IME,
-RTL/ruby/paste/undo/redo, keyboard-only operation, VoiceOver/TalkBack smoke,
-touch/coarse pointer, reduced motion, forced colors, 320/768/1440 widths and 200%
-zoom. Record request counts and cold-route timings on the integrated build rather
-than inventing an SLO from this isolated branch.
+The reproducible command is documented in
+[authoring browser evidence](authoring-browser/README.md). It started real packaged
+Identity and Learning applications against disposable PostgreSQL 18.6 and served
+the production Angular build over HTTPS. Chrome 154 completed the authenticated
+authoring loop in 2.410 seconds and 85 requests inside the already-running fixture:
+create Deck, create adversarial multilingual Capture, convert, edit native content,
+receive a server draft acknowledgement, reload and restore it, explicitly publish,
+render the item in Browse, and directly re-read the preserved Capture source and
+conversion. This duration is local evidence, not a production SLO.
+
+The sanitized raw summaries are [browser.json](authoring-browser/browser.json) and
+[fixture.json](authoring-browser/fixture.json). The run recorded 0 browser runtime
+errors, 0 external requests, no executed unsafe markup, fresh Identity validation,
+logout revocation and two-account isolation. Private keys, credentials, bearer
+tokens and service logs were deleted by the harness and are not evidence artifacts.
+
+The exact full repository gate and hosted PR checks are still required on the final
+commit before protected squash. Offline/reconnect and 412 semantics have deterministic
+unit/integration coverage; the real browser flow covers their ordinary successful path.
 
 Rollback is a protected revert of this UI change plus its dependency lock entries;
 server drafts, captures and published native documents remain canonical API data.

@@ -51,12 +51,15 @@ describe('ItemApiService', () => {
     });
 
     it('publishes one exact item with deck and item revision preconditions', async () => {
-        const result = firstValueFrom(api.save(deckId, memberKey, '8', deckRevisionId, revisionId, 4, document, commandId));
+        const edits = [{ type: 'insert' as const, nodeId: id('78'), parentId: id('79'), childIndex: 1 }];
+        const result = firstValueFrom(api.save(deckId, memberKey, '8', deckRevisionId, revisionId, 4,
+            document, commandId, edits));
         const request = http.expectOne(`/api/decks/${deckId}/items/${memberKey}`);
         expect(request.request.method).toBe('PUT');
         expect(request.request.headers.get('If-Match')).toBe('"8"');
         expect(request.request.body.expectedItemRevisionId).toBe(revisionId);
         expect(request.request.body.expectedOrdinal).toBe(4);
+        expect(request.request.body.edits).toEqual(edits);
         request.flush({
             commandId, deckId, deckRevisionId: id('76'), deckVersion: '9', memberCount: 5,
             changes: [{ operation: 'save', memberKey, itemRevisionId: id('77'), itemVersion: '1', ordinal: 4 }]

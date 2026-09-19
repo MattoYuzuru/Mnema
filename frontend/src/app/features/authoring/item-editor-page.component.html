@@ -3,12 +3,12 @@
   <header class="page-heading"><div><p class="eyebrow">{{ item() ? 'Редактирование' : 'Новый материал' }}</p><h1 id="editor-title" tabindex="-1">{{ deck()?.metadata?.title ?? 'Материал' }}</h1><p class="lede">Черновик хранится на сервере. Публикация всегда остаётся отдельным действием.</p></div></header>
   @if (restored()) { <p class="notice success" role="status">Открыт последний серверный черновик этого материала.</p> }
   @if (message(); as currentMessage) {
-    <section class="notice" [class.error]="phase() === 'error' || phase() === 'conflict'" [attr.role]="phase() === 'error' || phase() === 'conflict' ? 'alert' : 'status'">
+    <section class="notice" [class.error]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected'" [attr.role]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected' ? 'alert' : 'status'">
       <p>{{ currentMessage }}</p>
       @if (phase() === 'error') { <button class="button" type="button" (click)="retry()">Повторить безопасное действие</button> }
       @if (phase() === 'conflict' && conflict() === 'draft') {
         <div class="actions"><button class="button" type="button" (click)="resolveDraftConflict(false)">Использовать версию сервера</button><button class="button primary" type="button" (click)="resolveDraftConflict(true)">Оставить мой ввод</button></div>
-      } @else if (phase() === 'conflict') { <button class="button" type="button" (click)="reload()">Загрузить свежую основу</button> }
+      } @else if (phase() === 'conflict' && conflict() === 'publication') { <a class="button" [routerLink]="['/decks', deck()?.deckId, 'materials']">Открыть актуальный Browse</a> }
     </section>
   }
   @if (phase() === 'loading') { <p role="status">Готовим серверный черновик…</p> }

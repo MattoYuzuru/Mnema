@@ -26,6 +26,46 @@
       }
     }
   },
+  "save": {
+    "commandId": "018f1d98-5c10-7abc-8abc-0123456789ac",
+    "expectedDeckRevisionId": "33333333-3333-4333-8333-333333333333",
+    "expectedItemRevisionId": "55555555-5555-4555-8555-555555555555",
+    "expectedOrdinal": 0,
+    "document": {
+      "formatVersion": 1,
+      "root": {
+        "id": "00000000-0000-4000-8000-000000000001",
+        "type": "doc",
+        "version": 1,
+        "attrs": {},
+        "content": [{
+          "id": "00000000-0000-4000-8000-000000000002",
+          "type": "paragraph",
+          "version": 1,
+          "attrs": {"lang": "ru", "dir": "auto"},
+          "content": [{
+            "id": "00000000-0000-4000-8000-000000000003",
+            "type": "text",
+            "version": 1,
+            "attrs": {"text": "Проверяемое знание", "marks": ["strong"]},
+            "content": []
+          }]
+        }, {
+          "id": "00000000-0000-4000-8000-000000000004",
+          "type": "paragraph",
+          "version": 1,
+          "attrs": {},
+          "content": []
+        }]
+      }
+    },
+    "edits": [{
+      "type": "insert",
+      "nodeId": "00000000-0000-4000-8000-000000000004",
+      "parentId": "00000000-0000-4000-8000-000000000001",
+      "childIndex": 1
+    }]
+  },
   "acknowledgement": {
     "commandId": "018f1d98-5c10-7abc-8abc-0123456789ab",
     "deckId": "11111111-1111-4111-8111-111111111111",

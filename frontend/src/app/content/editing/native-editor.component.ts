@@ -52,27 +52,49 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
 
     private readonly editorHost = viewChild.required<ElementRef<HTMLElement>>('editorHost');
     private editorView: EditorView | null = null;
+    private viewInitialized = false;
     private readonly disabledSync = effect(() => {
         const disabled = this.disabled();
         this.editorView?.setProps({ editable: () => !disabled });
     });
+    private readonly documentSync = effect(() => {
+        const document = this.document();
+        if (this.viewInitialized) this.syncDocument(document);
+    });
 
     ngAfterViewInit(): void {
+        this.viewInitialized = true;
+        this.syncDocument(this.document());
+    }
+
+    ngOnDestroy(): void {
+        this.viewInitialized = false;
+        this.editorView?.destroy();
+        this.editorView = null;
+    }
+
+    private syncDocument(document: NativeDocument): void {
         try {
-            const imported = importNativeDocument(this.document());
+            if (this.editorView !== null
+                && JSON.stringify(exportNativeDocument(this.editorView.state.doc)) === JSON.stringify(document)) return;
+            const imported = importNativeDocument(document);
             this.editable.set(imported.editable);
-            if (imported.document === null) return;
+            if (imported.document === null) {
+                this.editorView?.destroy();
+                this.editorView = null;
+                this.editorHost().nativeElement.replaceChildren();
+                return;
+            }
+            const state = this.createState(imported.document);
+            if (this.editorView !== null) {
+                this.editorView.updateState(state);
+                this.editorView.setProps({ editable: () => !this.disabled() });
+                this.updateFormattingState(state);
+                this.failure.set(null);
+                return;
+            }
             this.editorView = new EditorView(this.editorHost().nativeElement, {
-                state: EditorState.create({
-                    schema: nativeEditorSchema,
-                    doc: imported.document,
-                    plugins: [
-                        history(),
-                        nativeTextIdentityPlugin,
-                        keymap({ 'Mod-z': undo, 'Shift-Mod-z': redo, 'Mod-y': redo }),
-                        keymap(baseKeymap)
-                    ]
-                }),
+                state,
                 editable: () => !this.disabled(),
                 attributes: {
                     class: 'mnema-editor-surface',
@@ -103,9 +125,17 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
         }
     }
 
-    ngOnDestroy(): void {
-        this.editorView?.destroy();
-        this.editorView = null;
+    private createState(document: import('prosemirror-model').Node): EditorState {
+        return EditorState.create({
+            schema: nativeEditorSchema,
+            doc: document,
+            plugins: [
+                history(),
+                nativeTextIdentityPlugin,
+                keymap({ 'Mod-z': undo, 'Shift-Mod-z': redo, 'Mod-y': redo }),
+                keymap(baseKeymap)
+            ]
+        });
     }
 
     toggle(mark: 'strong' | 'em' | 'code'): void {

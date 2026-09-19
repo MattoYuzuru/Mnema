@@ -19,7 +19,7 @@ New production files in `backend/services/learning/src/main/java/app/mnema/learn
 - `pages/CountedPageFailure.java`: sanitized internal page/range/key/budget failures.
 - `pages/CountedPages.java`: bounded bulk build, ordinal insert/delete/move-one/replace and up-to-100-entry read.
 - `storage/NativeStructuralEdit.java`: explicit insert, delete or subtree-move intent.
-- `storage/NativeStructuralEditor.java`: validates intent against the final native document, edits
+- `storage/NativeStructuralEditor.java`: validates 1..100 ordered intents against the final native topology, edits
   preorder pages and returns the existing K2 `NativeEncodingPlan`.
 
 Four new test files mirror these packages: `CountedPagesTest`, `CountedPagesIntegrationTest`,
@@ -69,8 +69,8 @@ path reads. A 100-entry range reads only intersecting paths. Read and edit valid
 and visited pages/child counts, not every off-path descendant. Inputs must come from qualified
 immutable roots; K1 additionally enforces cross-scope and rank integrity on physical storage.
 
-At fixed fanout32, insert/delete/move-one copy O(height) pages; a native structural change copies
-O(K * height) pages plus changed record/fragments. Native record inspection, intent validation,
+At fixed fanout32, insert/delete/move-one copy O(height) pages; a native structural batch copies
+O(K * height) pages plus changed record/fragments across at most100 intents. Native record inspection, intent validation,
 UUID matching and final full decoding remain bounded full-body work. List splices occur once per
 subtree, not once per removed entry. Total CPU/allocation includes O(K * height) edit work on top
 of O(N + bytes) planning; transient pure-plan objects are not the durable additions budget.
@@ -81,7 +81,8 @@ copying its implementation. Unchanged records match by UUID value and exact cano
 ordinal. Changed records retain scalar-safe prefix/suffix fragments; equal fragment pages reuse
 their complete payload/rank/ordered-edge values. The existing decoder revalidates the final graph
 and exact native JSON before exposing the plan. Original UUID spelling, opaque fields, arrays,
-optional semantic data and parent child counts remain intact. Unrelated final-body changes, root
+optional semantic data and parent child counts remain intact. Value changes may accompany structural
+intents, while unaccounted final topology changes, duplicate target roots, overlapping inserts, root
 deletion/move and descendant-cycle moves fail closed. Existing K2 fixed-topology replacement still
 rejects structural edits; there is no fallback or wire version change.
 

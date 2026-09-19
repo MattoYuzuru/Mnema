@@ -5,6 +5,7 @@ import { Observable, defer, map } from 'rxjs';
 import { appConfig } from '../../app.config';
 import { NativeDocument } from '../../content/native-document';
 import { readNativeDocument } from '../../content/native-document-boundary';
+import { NativeStructuralEdit } from '../../content/editing/native-structural-edits';
 import { expectedEtag } from '../own-decks/own-deck.models';
 import {
     AuthoringProtocolError,
@@ -78,12 +79,13 @@ export class ItemApiService {
 
     save(deckId: string, memberKey: string, deckVersion: string, deckRevisionId: string,
          itemRevisionId: string, expectedOrdinal: number, document: NativeDocument,
-         commandId: string): Observable<ItemWriteResult> {
-        const body = {
+         commandId: string, edits: readonly NativeStructuralEdit[]): Observable<ItemWriteResult> {
+        const body: Record<string, unknown> = {
             commandId: requireCommand(commandId), expectedDeckRevisionId: requireEntity(deckRevisionId),
             expectedItemRevisionId: requireEntity(itemRevisionId), expectedOrdinal: requireOrdinal(expectedOrdinal, false),
             document: readNativeDocument(document)
         };
+        if (edits.length > 0) body['edits'] = edits;
         return this.write('PUT', deckId, memberKey, deckVersion, body, 200);
     }
 

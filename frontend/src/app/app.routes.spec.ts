@@ -16,6 +16,10 @@ describe('appRoutes', () => {
         expect(paths).not.toContain('decks/:userDeckId/browse');
         expect(paths).not.toContain('decks/:userDeckId/duplicates-review');
         expect(paths).not.toContain('decks/:userDeckId/review');
+        expect(paths).not.toContain('wizard/visual-template-builder');
+        expect(paths).not.toContain('templates/:templateId');
+        expect(paths).not.toContain('templates');
+        expect(paths).not.toContain('public-templates');
 
         const deckPaths = paths.filter(path => path?.startsWith('decks'));
         expect(deckPaths).toEqual([

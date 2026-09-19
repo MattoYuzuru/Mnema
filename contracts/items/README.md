@@ -24,10 +24,17 @@ publication.
 
 The request boundary is strict JSON, at most 1 MiB, with duplicate keys rejected.
 Only the shared [native-v1](../content/native-v1/README.md) document is persisted.
-A save without `edit` may change values while preserving node IDs/topology. A
-structural insert/delete/move supplies the corresponding explicit native edit
-intent; this prevents an arbitrary final document from silently deleting or
-reparenting content. Bulk has 1..100 changes with distinct member keys and supports
+A save without `edits` may change values while preserving node IDs/topology. A
+structural save supplies an ordered array of 1..100 explicit native intents; every
+`insert` identifies the atomic final subtree by `nodeId`, `parentId` and `childIndex`,
+`delete` identifies its current subtree by `nodeId`, and `move` uses `nodeId`,
+`parentId` and the after-removal `childIndex`. Intents address the topology produced
+by the preceding intent. One node cannot be the root target of two intents, inserted
+subtrees cannot overlap nodes still present in the evolving document, and the complete
+resulting ID/parent/order topology must exactly equal `document`. Value changes are
+allowed in the same save and the final validated document is persisted exactly. This
+prevents an arbitrary final document from silently inserting, deleting or reparenting
+content; there is no singular `edit` alias. Bulk has 1..100 changes with distinct member keys and supports
 `create`, `save`, `delete` and `reorder`. Ordinals are zero-based; move destinations
 are final ordinals after removal.
 

@@ -90,6 +90,7 @@ try {
   const allowed = new Set([config.frontend, config.identity]);
   let externalRequests = 0, tokenExchanges = 0, registrationStatus = 0, loginStatus = 0, logoutStatus = 0;
   let browserErrors = 0, callback = null, networkRequests = 0, identityRequests = 0, profileReads = 0;
+  const authoringResponses = [];
   let tamperNextCallback = false;
   const bearerTokens = [], idTokens = [], exchanges = [];
   const challenges = new Set();
@@ -98,7 +99,8 @@ try {
   let asynchronousFailure = false;
   let actorAfterLogout = null, otherAfterLogout = null;
   diagnostics = () => ({ networkRequests, identityRequests, tokenExchanges, browserErrors, externalRequests,
-    asynchronousFailure, eventFailed: tabs.some(tab => tab.eventFailed), actorAfterLogout, otherAfterLogout });
+    asynchronousFailure, eventFailed: tabs.some(tab => tab.eventFailed), actorAfterLogout, otherAfterLogout,
+    authoringResponses });
   const run = promise => {
     asyncWork.add(promise);
     promise.catch(() => { asynchronousFailure = true; }).finally(() => asyncWork.delete(promise));
@@ -143,6 +145,12 @@ try {
     });
     tab.on('Network.responseReceived', event => {
       const url = new URL(event.response.url);
+      if (config.authoring && url.origin === config.frontend && url.pathname.startsWith('/api/')) {
+        const resource = url.pathname.startsWith('/api/capture-notes') ? 'capture'
+          : url.pathname.startsWith('/api/editing-drafts') ? 'draft'
+            : url.pathname.startsWith('/api/decks') ? 'deck' : 'other';
+        authoringResponses.push({ resource, status: event.response.status });
+      }
       if (url.origin !== config.identity) return;
       if (url.pathname === '/api/accounts/register') registrationStatus = event.response.status;
       if (url.pathname === '/api/accounts/login') loginStatus = event.response.status;
@@ -210,6 +218,15 @@ try {
     element.click();
     return true;
   }`, [selector]);
+  const clickText = (selector, label, tab = cdp) => tab.callFunction(`function(selector, label) {
+    const element = [...document.querySelectorAll(selector)]
+      .find(candidate => candidate.textContent.trim() === label);
+    if (!(element instanceof HTMLElement) || element.matches(':disabled')) return false;
+    element.click();
+    return true;
+  }`, [selector, label]);
+  const bodyIncludes = (text, tab = cdp) => tab.callFunction(
+    'function(text) { return document.body.innerText.includes(text); }', [text]);
   async function submit(tab = cdp) { await tab.evaluate("document.querySelector('form button[type=submit]').click()"); }
   async function pressKey(key, code, virtualKeyCode, modifiers = 0, tab = cdp) {
     const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode, modifiers };
@@ -423,6 +440,99 @@ try {
   require(secondBearer !== firstBearer, 'second account did not receive distinct access');
   await navigate('/login', second);
   await until(() => authenticated(second), 'second account profile absent');
+  if (config.authoring) {
+    step = 'authoring_create_deck';
+    const authoringStarted = Date.now();
+    const requestsBeforeAuthoring = networkRequests;
+    const deckTitle = 'Северный архив';
+    const capturedText = 'سلام · 日本語 · <img src=x onerror="globalThis.__mnemaXss=true">';
+    const editedText = 'Долговечный материал — עברית, русский и 日本語';
+    await navigate('/decks/new', second);
+    await fill('#create-title', deckTitle, second);
+    await fill('#create-description', 'HTTPS browser authoring fixture', second);
+    await submit(second);
+    await until(async () => /^\/decks\/[0-9a-f-]{36}$/.test(await sanitizedLocation(second)),
+      'deck creation did not reach detail');
+    const deckPath = await sanitizedLocation(second);
+
+    step = 'authoring_capture';
+    await navigate(deckPath + '/capture', second);
+    await fill('#capture-text', capturedText, second);
+    await submit(second);
+    await until(() => bodyIncludes(capturedText, second), 'captured note absent');
+    require(await second.callFunction(`function() {
+      return !globalThis.__mnemaXss && !document.querySelector('img[src="x"]');
+    }`), 'captured text executed as markup');
+    require(await clickText('button', 'Превратить в материал', second), 'capture conversion unavailable');
+    await until(async () => /^\/decks\/[0-9a-f-]{36}\/materials\/[0-9a-f-]{36}\/edit$/.test(
+      await sanitizedLocation(second)), 'conversion did not open editor');
+
+    step = 'authoring_acknowledged_draft';
+    await until(() => exists('.ProseMirror[contenteditable="true"]', second), 'native editor absent');
+    require(await second.callFunction(`function() {
+      const editor = document.querySelector('.ProseMirror[contenteditable="true"]');
+      if (!(editor instanceof HTMLElement)) return false;
+      editor.focus();
+      const selection = getSelection();
+      const range = document.createRange();
+      range.selectNodeContents(editor);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return true;
+    }`), 'native editor could not be selected');
+    await second.call('Input.insertText', { text: editedText });
+    await until(() => bodyIncludes('Черновик подтверждён сервером.', second), 'draft acknowledgement absent');
+    const editorPath = await sanitizedLocation(second);
+    await second.call('Page.reload', { ignoreCache: true });
+    await until(async () => (await sanitizedLocation(second)) === editorPath
+      && (await bodyIncludes(editedText, second))
+      && (await bodyIncludes('Открыт последний серверный черновик', second)),
+    'acknowledged draft did not restore after reload');
+    await second.call('Emulation.setDeviceMetricsOverride',
+      { width: 390, height: 844, deviceScaleFactor: 1, mobile: true });
+    require(await second.callFunction(`function() {
+      const primary = [...document.querySelectorAll('button')]
+        .find(button => button.textContent.trim() === 'Опубликовать');
+      return document.documentElement.scrollWidth <= document.documentElement.clientWidth
+        && primary instanceof HTMLElement && primary.getBoundingClientRect().height >= 44;
+    }`), '390px editor overflowed or exposed an undersized publication action');
+    await saveScreenshot('authoring-editor-390.png', second);
+    await second.call('Emulation.setDeviceMetricsOverride',
+      { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+
+    step = 'authoring_publish_browse';
+    require(await clickText('button', 'Опубликовать', second), 'publication unavailable');
+    await until(async () => /^\/decks\/[0-9a-f-]{36}\/materials\/[0-9a-f-]{36}$/.test(
+      await sanitizedLocation(second)) && await bodyIncludes(editedText, second),
+    'publication did not reach Browse');
+    require(await second.callFunction(`function() {
+      return !globalThis.__mnemaXss && !document.querySelector('img[src="x"]');
+    }`), 'published content executed as markup');
+    await saveScreenshot('authoring-browse-1440.png', second);
+    await navigate(deckPath + '/materials', second);
+    await until(() => bodyIncludes('1 материалов', second), 'Browse list did not expose the published item');
+
+    const persisted = await second.callFunction(`async function(base, authorization, expectedText) {
+      const response = await fetch(base + '/api/capture-notes?limit=20', {
+        credentials: 'omit', headers: { Authorization: authorization }
+      });
+      if (!response.ok) return null;
+      const body = await response.json();
+      const note = body.items?.find(candidate => candidate.text === expectedText);
+      return note ? { source: note.source, converted: Boolean(note.conversion),
+        createdAt: note.createdAt, updatedAt: note.updatedAt } : null;
+    }`, [config.frontend, 'Bearer ' + secondBearer, capturedText]);
+    require(persisted?.source === 'manual' && persisted.converted
+      && typeof persisted.createdAt === 'string' && typeof persisted.updatedAt === 'string',
+    'Capture source/conversion was not preserved');
+    record('real_https_authoring_capture_draft_publish_reload_browse', {
+      requests: networkRequests - requestsBeforeAuthoring,
+      durationMs: Date.now() - authoringStarted,
+      captureSourcePreserved: true,
+      acknowledgedDraftRestored: true,
+      unsafeMarkupExecuted: false
+    });
+  }
   require(await authenticated(), 'first tab lost its independent profile');
   require(await cdp.callFunction(`async function(firstUrl, firstAuthorization, secondUrl, secondAuthorization, sessionUrl) {
     const values=await Promise.all([

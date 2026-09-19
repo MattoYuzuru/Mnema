@@ -75,32 +75,12 @@ export const appRoutes: Routes = [
         canActivate: [authGuard]
     },
     {
-        path: 'wizard/visual-template-builder',
-        loadComponent: () => import('./features/wizard/visual-template-builder.component').then(module => module.VisualTemplateBuilderComponent),
-        canActivate: [authGuard]
-    },
-    {
         path: 'public-decks',
         loadComponent: () => import('./features/public-decks/public-decks-catalog.component').then(module => module.PublicDecksCatalogComponent)
     },
     {
         path: 'public-decks/:deckId/browse',
         loadComponent: () => import('./features/public-decks/public-card-browser.component').then(module => module.PublicCardBrowserComponent)
-    },
-    {
-        path: 'templates/:templateId',
-        loadComponent: () => import('./features/templates/template-profile.component').then(module => module.TemplateProfileComponent),
-        canActivate: [authGuard]
-    },
-    {
-        path: 'templates',
-        loadComponent: () => import('./features/templates/templates-list.component').then(module => module.TemplatesListComponent),
-        canActivate: [authGuard]
-    },
-    {
-        path: 'public-templates',
-        loadComponent: () => import('./features/templates/public-templates.component').then(module => module.PublicTemplatesComponent),
-        canActivate: [authGuard]
     },
     {
         path: 'settings',
