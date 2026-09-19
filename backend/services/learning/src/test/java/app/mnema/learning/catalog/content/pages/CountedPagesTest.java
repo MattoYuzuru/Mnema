@@ -93,6 +93,14 @@ class CountedPagesTest {
         int insertionReads = reads;
         assertThat(insertionReads).isLessThanOrEqualTo(12);
         assertThat(edit.additions().size()).isLessThanOrEqualTo(2 * (old.height() + 1) + 1);
+        reads = 0;
+        var moved = pages.move(old, 0, size - 1, model.getFirst().key());
+        assertThat(reads).isLessThanOrEqualTo(12);
+        assertThat(moved.additions().size()).isLessThanOrEqualTo(4 * (old.height() + 1) + 2);
+        reads = 0;
+        var deleted = pages.delete(old, 0, model.getFirst().key());
+        assertThat(reads).isLessThanOrEqualTo(12);
+        assertThat(deleted.additions().size()).isLessThanOrEqualTo(3 * (old.height() + 1) + 2);
         var next = keep(edit);
         assertThat(next.height()).isLessThanOrEqualTo(3);
         validate(old, model);
