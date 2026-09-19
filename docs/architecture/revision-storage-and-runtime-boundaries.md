@@ -3,19 +3,22 @@ artifact:
   id: revision-storage-and-runtime-boundaries
   type: architecture
   title: "Revision storage, fork locality and independently scalable workloads"
-  status: proposed
+  status: current
   created_at: "2026-09-06"
-  updated_at: "2026-09-06"
+  updated_at: "2026-09-19"
   owners: ["project-owner"]
   decision_scope: [revision-storage, fork-lineage, publication, runtime-boundaries, bounded-reads]
 ---
 
 # Revision storage and runtime boundaries
 
-The owner has accepted the product requirements below. The physical representation,
-limits and index designs are engineering proposals for #74/#75, not implemented or
-load-tested guarantees. [Content platform](./content-platform-v2.md) owns the domain
-overview; [product direction](../product/product-direction-v2.md) owns launch scope.
+The owner has accepted the product requirements below and, after R74-S evidence,
+selected scoped UUID immutable blocks/pages, normalized FK edges and physical native-text
+fragments for Epic #74. K1 storage, K2 native codec and K3 counted-page/structural kernels
+are implemented and tested; complete LearningItem publication, retention policy and
+production capacity remain separate acceptance boundaries.
+[Content platform](./content-platform-v2.md) owns the domain overview;
+[product direction](../product/product-direction-v2.md) owns launch scope.
 
 ## Accepted requirements
 
@@ -53,16 +56,17 @@ JSONB nor a small `jsonb_set` operation is evidence that historical copies are
 cheap. Measure heap, TOAST, indexes, WAL and backup growth, including vacuum work.
 [PostgreSQL TOAST](https://www.postgresql.org/docs/current/storage-toast.html).
 
-## Physical candidates and proposed choice
+## Physical candidates and selected choice
 
 | Candidate | Storage and read behavior | Engineering tradeoff |
 |---|---|---|
 | Full document and full membership per revision | Simple direct reads; repeats unchanged payload and memberships | Reject as the general history format; valid for deliberately bounded caches |
 | Stable-node deltas, materialized current head, periodic checkpoints | Small usual edits; historical read applies at most a configured number of patches | Good simpler alternative for small items; checkpoint work and forks need explicit budgets, no unbounded replay |
-| Immutable content blocks and persistent paged manifests | Reuses unchanged blocks/pages; a revision selects roots, read cost depends on document/page size rather than history length | Proposed target: one bounded storage abstraction, with SQL projections for query-intensive paths |
+| Immutable content blocks and persistent paged manifests | Reuses unchanged blocks/pages; a revision selects roots, read cost depends on document/page size rather than history length | **Selected target:** one bounded storage abstraction, with SQL projections for query-intensive paths |
 | Literal Git/JGit primary store | Mature version objects and merge primitives | Additional ACL/query/transaction/GC integration; not proposed |
 
-Recommend immutable JSONB **blocks at semantic block granularity**, plus a persistent
+The accepted Epic #74 direction uses immutable JSONB **blocks at semantic block
+granularity**, plus a persistent
 paged manifest for deck membership and exercise policy. Do not split every
 character into an object or build a general distributed filesystem. A short item
 can be one block. Changing that short block copies the block; this bounded write
@@ -70,7 +74,7 @@ amplification is intentional. Large document blocks must be split at supported
 node boundaries, with a byte limit even when one user paragraph is enormous.
 Unchanged image/audio/video assets remain references.
 
-Proposed internals:
+Selected storage internals:
 
 - `content_block(block_id, reuse_scope_id, format_version, payload, checksum)` is
   immutable. It contains bounded native nodes with stable node IDs; its internal
@@ -98,17 +102,18 @@ write a constant number of logical records. A page of `P` members costs
 `O(log_F N + P)` traversal/transfer. Fetching a whole item still costs its document
 size. These are algorithmic bounds, not latency or physical disk-byte promises.
 
-The LLD must prove page split/merge, ordering, node identity and projection parity
-with property tests before adopting this representation. If implementation cost
-proves excessive, the alternative is bounded delta history: a maximum of 32 item
-patches after a checkpoint, byte-budget-triggered checkpoints and immutable
-materializations prepared by jobs for large deck snapshots. Such a fallback needs
-an explicit revised decision and must preserve cheap fork creation and bounded
-historical reads; “add checkpoints when slow” is not an acceptable contract.
+R74-S and the subsequent K1/K2/K3 slices proved the selected kernel's page
+split/merge, ordering, node identity, bounded reads, publication and reachability
+properties at their documented boundaries. The measured alternative remains bounded
+delta history: a maximum of 32 item patches after a checkpoint, byte-budget-triggered
+checkpoints and immutable materializations prepared by jobs for large deck snapshots.
+Adopting that fallback still requires an explicit revised decision and must preserve
+cheap fork creation and bounded historical reads; “add checkpoints when slow” is not
+an acceptable contract.
 
 ## Logical locality and physical sharing
 
-The proposed local identity is `(deck_id, member_key)`. `member_key` is stable inside
+The selected local identity is `(deck_id, member_key)`. `member_key` is stable inside
 its deck; a fork may reuse its source keys in a new deck namespace. The compound
 identity differs without inserting `N` mapping rows at fork time. Public references
 carry `deckId` plus an item key (or a reversibly scoped opaque equivalent), never
@@ -236,11 +241,11 @@ silently introduced here.
 ## Runtime decision and evidence
 
 At this revision, Identity & Account source is consolidated and the separate
-[Learning API runtime foundation](../../backend/services/learning/guide.md) exists:
-fresh schema, error contracts, CAS and idempotent commands. Content, library and
-study domains have not yet been implemented in it. Legacy core/media/import/AI
-source remains replacement input. This is a selected target topology and a
-runtime shell, not a completed product-service consolidation or deployment claim.
+[Learning API runtime](../../backend/services/learning/guide.md) includes its platform
+foundation, immutable storage kernels and private Deck metadata API. LearningItem
+publication, drafts, Capture and study remain unfinished. Legacy core/media/import/AI
+source remains replacement input. This is a selected target topology with bounded
+storage foundations, not a completed product-service consolidation or deployment claim.
 
 The owner's scaling intuition is correct: a saturated importer should receive
 more worker capacity without multiplying unrelated API work. A modular Learning
@@ -276,16 +281,25 @@ Replication/failover, tested backup restore and later partitioning/sharding addr
 different failure/capacity boundaries. Horizontal scaling alone does not promise
 unlimited exponential growth or remove every single point of failure.
 
-## Evidence required before implementation acceptance
+## Evidence status and remaining implementation acceptance
 
-Verify metadata-only saves write no item revisions; tiny edits reuse unchanged
-blocks; 1,000 successive edits have a history-independent read bound; a fork of
-100,000 items performs bounded synchronous writes and returns a bounded first
-page; fork-of-fork reads have no lineage-depth penalty. Test independent progress,
-source deletion, selective-pull retries, stale heads, worker crash before final
-commit, reachable-object GC races and zero scheduler writes in practice modes.
+The bounded R74-S research gate is complete. Its
+[final report](../engineering/evidence/epic-74/storage/README.md),
+[independent review](../engineering/evidence/epic-74/verification/storage-review.md)
+and [owner decision](../engineering/epic-74-dependency-decisions.md#owner-answers)
+cover metadata-only saves, unchanged-block reuse, 1,000 edits with history-independent
+reads, 100k direct forks/fork-of-fork, independent namespaces, CAS/retry/crash
+publication and reachable-object collection races. The historical proposed DDL is
+evidence of the evaluated choice, not a migration.
 
-Measure rows/bytes/WAL per mutation and latency under concurrent publish/review,
-including a hot deck, failed cache and a saturated bulk queue. These are required
-future validation scenarios, not tests performed by this documentation change.
-No production capacity claim or storage-size estimate substitutes for those tests.
+Implementation then delivered the
+[K1 immutable storage kernel](../engineering/evidence/epic-74/storage-kernel.md),
+[K2 native codec](../engineering/evidence/epic-74/native-storage.md) and
+[K3 counted pages/structural editing](../engineering/evidence/epic-74/counted-pages.md).
+These close the storage research/kernel gates at their stated bounds; they do not
+claim a complete fork product, LearningItem API, drafts, scheduler or production rollout.
+
+Remaining owning slices must still verify integrated ACL/product behavior, selective
+pull, failed-cache behavior, saturated bulk queues, retention policy, backup/restore
+and production capacity. No synthetic result or storage-size estimate substitutes
+for those product and operational tests.

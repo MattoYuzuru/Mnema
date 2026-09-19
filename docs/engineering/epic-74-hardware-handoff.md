@@ -69,9 +69,10 @@ third-party notices и текущие LICENSE/NOTICE.
 
 Текущие срезы передачи:
 
-- **#187 K3**: counted pages и native structural editing, готовый независимо
-  проверенный kernel. Candidate `88f123fd8839dbbee3afd2d2c3843d45086a4dd5`.
-  [PR #196](https://github.com/MattoYuzuru/Mnema/pull/196), merge оставлен владельцу.
+- **#187 K3**: counted pages и native structural editing доставлены через
+  [PR #196](https://github.com/MattoYuzuru/Mnema/pull/196), protected squash
+  `2e0712af517c40f24cd6de04f45705e27214f3a0`; research и implementation bounds
+  остаются описаны в counted-page evidence.
 - **#192 Browser Identity**: canonical login/register/PKCE/reload/logout, готовый
   независимо проверенный срез. Candidate после API integration `aa5cde7`, затем
   `d25be79` добавил fingerprints повторного browser-run.
@@ -82,8 +83,13 @@ third-party notices и текущие LICENSE/NOTICE.
   Страницы list/create/detail НЕ подключены к router; новый shell уже меняет общий
   layout этой ветки. Не называть его готовым пользовательским интерфейсом и не
   закрывать #194 до оставшейся интеграции/проверок.
-- **#171/#172**: исходные storage/editor research имеют историю и незавершённые
-  критерии. Не закрывать их из одного kernel merge или dependency approval.
+- **#171 Storage research**: bounded research acceptance выполнен, owner storage
+  choice явно записан, а K1/K2/K3 доставлены отдельными slices. Перед закрытием
+  требуется только сверить checklist/evidence bookkeeping; не выдавать это за
+  завершение LearningItem, fork product или всего Epic #74.
+- **#172 Editor research**: остаётся открытым. Static ProseMirror evidence не заменяет
+  обещанный Angular prototype; этот handoff не меняет его scope и не разрешает
+  production adoption.
 
 **Ещё не реализовано:** полноценная публикация LearningItem, member API и Browse,
 серверные EditingDraft, долговечные CaptureNote «На потом» и атомарная conversion,

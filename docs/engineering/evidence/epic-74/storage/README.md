@@ -1,11 +1,14 @@
 # R74-S: schema-choice experiment
 
-Status: proposed storage choice; independent re-review complete, owner decision pending.
-No production schema, application behavior, dependency or migration is changed.
+Status: research complete; independent re-review passed and the owner subsequently
+accepted scoped UUID immutable blocks/pages, normalized FK edges and physical native-text
+fragments. This report preserves the pre-decision experiment and does not itself
+apply a production migration, dependency or application change. The proposed DDL
+remains historical research evidence, not an executable migration.
 The earlier [bigint-array baseline](./baseline-report.md) and [its CSV](./summary.csv)
 are retained. They do not describe the measured encoding proposed below.
 
-## Recommendation and alternative
+## Accepted recommendation and measured alternative
 
 Recommend immutable native blocks and persistent pages with **normalized UUID FK
 edges**, using one graph representation for ordinary and historical content.
@@ -192,20 +195,44 @@ database-wide statement counter. `logical_payload_bytes` counts serialized edge
 values and fetched UTF-8 JSON, excluding wire protocol overhead. `payload_queries`
 counts instrumented payload/validation fetches, not every control/CAS statement.
 
-Remaining production work is explicit: connect complete item/exercise/metadata
-contracts and ACLs; integrate the real head projections; implement admission and
+At the time of this research, remaining production work was explicit: connect
+complete item/exercise/metadata contracts and ACLs; integrate the real head
+projections; implement admission and
 durable preparation jobs with operational deadlines; enforce immutable writer
 permissions and typed validation receipts; define retention/lease policy and
 monitor GC backlog; add API failure, backup/restore and deployment evidence.
 These are implementation obligations, not claims of a finished product service.
 The [independent review](../verification/storage-review.md) confirms all five
-findings closed at the bounded feasibility level. The owner has been asked to
-select the physical scheme; no selection has been received.
+findings closed at the bounded feasibility level. The later owner decision is recorded in
+[Epic #74 dependency decisions](../../../epic-74-dependency-decisions.md#owner-answers):
+the immutable block/page direction, normalized FK edges and physical fragmentation were
+accepted after this evidence. Bounded deltas/checkpoints remain the measured alternative,
+not the selected implementation.
 
-The next reviewable implementation slice, after owner choice, is the accepted
-immutable page/block kernel with production validation and the existing platform
-transaction seams. No production cutover or application schema is authorized by
-this research artifact. Full repository quality gates remain with the lead.
+The next reviewable slice proposed here was subsequently delivered in bounded stages:
+[K1 storage kernel](../storage-kernel.md), [K2 native codec](../native-storage.md), and
+[K3 counted pages and structural editing](../counted-pages.md). Those implementation
+artifacts do not turn this research DDL into a migration or claim the unfinished
+LearningItem/draft/Capture/editor/product flows.
+
+## #171 acceptance completion mapping
+
+- Raw configuration, hardware, row inventory, heap/TOAST/index/WAL deltas and current,
+  historical and page-read latency are retained in this report and the linked raw/CSV files.
+- Metadata-only revisions write no content/pages; single-node edits reuse immutable data;
+  direct-root reads remain independent of revision-chain length.
+- The 100k direct fork/fork-of-fork fixtures use bounded foreground writes and reads,
+  separate deck namespaces and no eager per-item mapping.
+- Real PostgreSQL fixtures cover atomic publication, CAS, same-command retry, disconnect
+  rollback, staging visibility and bounded reachability/collection races.
+- The historical proposed DDL, page/object limits, transaction/staging/GC boundaries,
+  evidence qualifications and next kernel slice are explicit.
+- Owner acceptance is explicit in the decision record above; it is not inferred from a
+  merge or absent response.
+
+This completes the bounded R74-S/#171 research gate. Product integration, operational
+retention, backup/restore and deployment remain owned by later Epic #74/infrastructure
+slices and are not retroactively claimed here.
 
 Official sources: [PostgreSQL TOAST](https://www.postgresql.org/docs/18/storage-toast.html)
 informs changed-value storage measurement;
