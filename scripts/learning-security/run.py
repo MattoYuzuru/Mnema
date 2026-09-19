@@ -378,6 +378,65 @@ REVOKE ALL ON SCHEMA app_learning FROM PUBLIC,identity_fixture;""")
                     concurrent_statuses=[200, 412], foreign_read=404, foreign_retry=404, stale=412,
                     missing_precondition=428, schema_storage="real_postgresql", browser_transport="not_tested")
 
+        current = client.request("GET", path, bearer=access)[2]
+        native = {"formatVersion": 1, "root": {"id": str(uuid.uuid4()), "type": "doc", "version": 1,
+                  "attrs": {}, "content": [{"id": str(uuid.uuid4()), "type": "paragraph", "version": 1,
+                  "attrs": {"lang": "ru", "dir": "auto"}, "content": [{"id": str(uuid.uuid4()),
+                  "type": "text", "version": 1, "attrs": {"text": "Проверяемое знание", "marks": ["strong"]},
+                  "content": []}]}]}}
+        item_create = {"commandId": str(uuid.uuid4()), "expectedDeckRevisionId": current["revisionId"],
+                       "document": native}
+        items_path = path + "/items"
+        status, headers, item_ack = client.request("POST", items_path, item_create, bearer=access,
+                                                   extra_headers={"If-Match": '"2"'})
+        require(status == 201 and item_ack["deckVersion"] == "3", "LearningItem create")
+        member = item_ack["changes"][0]["memberKey"]
+        first_item_revision = item_ack["changes"][0]["itemRevisionId"]
+        item_path = items_path + "/" + member
+        status, headers, item = client.request("GET", item_path, bearer=access)
+        require(status == 200 and item["document"] == native and item["itemVersion"] == "0",
+                "LearningItem native reload")
+        page = client.request("GET", items_path + "?limit=1", bearer=access)[2]
+        require(page["total"] == 1 and page["items"][0]["memberKey"] == member,
+                "LearningItem bounded Browse page")
+        status, headers, item_retry = client.request("POST", items_path, item_create, bearer=access,
+                                                     extra_headers={"If-Match": '"2"'})
+        lower = {k.lower(): v for k, v in headers.items()}
+        require(status == 201 and item_retry == item_ack and lower.get("idempotency-replayed") == "true"
+                and "etag" not in lower, "LearningItem exact create retry")
+        require(client.request("GET", item_path, bearer=other)[0] == 404, "foreign direct LearningItem read")
+        require(client.request("POST", items_path, item_create, bearer=read_only,
+                               extra_headers={"If-Match": '"2"'})[0] == 403,
+                "read grant cannot publish LearningItem")
+        require(client.request("GET", item_path, bearer=write_only)[0] == 403,
+                "write grant cannot read LearningItem")
+
+        next_native = json.loads(json.dumps(native))
+        next_native["root"]["content"][0]["content"][0]["attrs"]["text"] = "Сохранённая правка"
+        head = client.request("GET", path, bearer=access)[2]
+        item_save = {"commandId": str(uuid.uuid4()), "expectedDeckRevisionId": head["revisionId"],
+                     "expectedItemRevisionId": first_item_revision, "document": next_native}
+        require(client.request("PUT", item_path, item_save, bearer=access)[0] == 428,
+                "LearningItem save requires Deck precondition")
+        status, headers, saved_item = client.request("PUT", item_path, item_save, bearer=access,
+                                                      extra_headers={"If-Match": '"3"'})
+        require(status == 200 and saved_item["deckVersion"] == "4"
+                and saved_item["changes"][0]["itemVersion"] == "1", "LearningItem conditional save")
+        require(client.request("GET", item_path, bearer=access)[2]["document"] == next_native,
+                "LearningItem saved document reload")
+        require(client.request("GET", item_path + "?revisionId=" + first_item_revision,
+                               bearer=access)[2]["document"] == native, "LearningItem historical read")
+        stale_item = {**item_save, "commandId": str(uuid.uuid4())}
+        require(client.request("PUT", item_path, stale_item, bearer=access,
+                               extra_headers={"If-Match": '"3"'})[0] == 412, "stale LearningItem save rejected")
+        changed_retry = {**item_create, "ordinal": 0}
+        require(client.request("POST", items_path, changed_retry, bearer=access,
+                               extra_headers={"If-Match": '"2"'})[0] == 409,
+                "LearningItem command identity includes payload")
+        self.record("learning_item_real_http_create_browse_save_reload_retry_acl", versions=["3", "4"],
+                    foreign_read=404, stale=412, changed_retry=409, missing_precondition=428,
+                    native_format="native-v1", historical_read=200)
+
     def run(self):
         self.start()
         require(self.learning() == 401, "missing token")
