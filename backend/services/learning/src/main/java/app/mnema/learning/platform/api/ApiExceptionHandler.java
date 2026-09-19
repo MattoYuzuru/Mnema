@@ -55,6 +55,14 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
         return response(ApiErrorCode.PRECONDITION_REQUIRED, request.getRequestURI(), new HttpHeaders());
     }
 
+    @ExceptionHandler(ResourceLimitExceededException.class)
+    ResponseEntity<Object> handleResourceLimitExceeded(
+            ResourceLimitExceededException exception,
+            HttpServletRequest request
+    ) {
+        return response(ApiErrorCode.RESOURCE_LIMIT_EXCEEDED, request.getRequestURI(), new HttpHeaders());
+    }
+
     @ExceptionHandler(Exception.class)
     ResponseEntity<Object> handleUnexpected(Exception exception, HttpServletRequest request) {
         log.error(
