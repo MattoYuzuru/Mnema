@@ -1,0 +1,40 @@
+.mnema-native-editor { display: block; min-inline-size: 0; }
+.mnema-native-editor * { box-sizing: border-box; }
+.mnema-native-editor .editor-frame { min-inline-size: 0; }
+.mnema-native-editor .editor-toolbar { display: flex; flex-wrap: wrap; gap: .35rem; padding-block-end: .75rem; border-block-end: 1px solid var(--line, #c9c0ce); }
+.mnema-native-editor .editor-toolbar button,
+.mnema-native-editor .ruby-fields button {
+    min-block-size: 2.75rem;
+    border: 1px solid var(--line, #c9c0ce);
+    border-radius: 2px;
+    padding: .55rem .75rem;
+    color: var(--ink, #281378);
+    background: var(--sheet, #fbf8ef);
+    font: 600 .875rem/1.2 system-ui, sans-serif;
+    cursor: pointer;
+}
+.mnema-native-editor .editor-host { min-block-size: 24rem; padding: 1.25rem 0; }
+.mnema-native-editor .mnema-editor-surface {
+    min-block-size: 21rem;
+    outline: none;
+    color: var(--body, #342e44);
+    font: 1.0625rem/1.75 Georgia, 'Times New Roman', serif;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+.mnema-native-editor .mnema-editor-surface:focus-visible { outline: 3px solid var(--ink, #281378); outline-offset: 4px; }
+.mnema-native-editor .mnema-editor-surface h1,
+.mnema-native-editor .mnema-editor-surface h2,
+.mnema-native-editor .mnema-editor-surface h3 { color: var(--ink, #281378); line-height: 1.2; }
+.mnema-native-editor .mnema-editor-surface a { color: var(--ink, #281378); text-decoration-thickness: .09em; text-underline-offset: .18em; }
+.mnema-native-editor .mnema-editor-surface blockquote { margin-inline: 0; border-inline-start: 3px solid var(--line, #c9c0ce); padding-inline-start: 1rem; }
+.mnema-native-editor .mnema-unsupported { display: inline-block; border: 1px dashed var(--ink, #281378); padding: .4rem .55rem; background: var(--soft, #e8e1ed); font: .8rem/1.3 system-ui, sans-serif; }
+.mnema-native-editor .ruby-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: .75rem; align-items: end; border: 1px solid var(--line, #c9c0ce); padding: 1rem; }
+.mnema-native-editor .ruby-fields legend { padding-inline: .35rem; color: var(--muted, #625c70); font: .8rem system-ui, sans-serif; }
+.mnema-native-editor .ruby-fields label { display: grid; gap: .35rem; font: .8rem system-ui, sans-serif; }
+.mnema-native-editor .ruby-fields input { min-block-size: 2.75rem; min-inline-size: 0; border: 1px solid var(--line, #c9c0ce); border-radius: 2px; padding: .55rem; font-size: 1rem; }
+.mnema-native-editor .editor-error { border-inline-start: 4px solid #9b3140; padding: .8rem 1rem; background: rgb(155 49 64 / 7%); }
+.mnema-native-editor .editor-note { color: var(--muted, #625c70); }
+.mnema-native-editor :where(button, input):focus-visible { outline: 3px solid var(--ink, #281378); outline-offset: 3px; }
+@media (max-width: 42rem) { .mnema-native-editor .ruby-fields { grid-template-columns: 1fr; } }
+@media (forced-colors: active) { .mnema-native-editor .editor-toolbar button, .mnema-native-editor .ruby-fields, .mnema-native-editor .ruby-fields input { border-color: CanvasText; } }

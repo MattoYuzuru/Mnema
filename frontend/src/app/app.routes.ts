@@ -1,9 +1,13 @@
-import { Routes } from '@angular/router';
+import { CanDeactivateFn, Routes } from '@angular/router';
 import { HomePageComponent } from './home-page.component';
 import { LoginPageComponent } from './login-page.component';
 import { PrivacyPageComponent } from './privacy-page.component';
 import { TermsPageComponent } from './terms-page.component';
 import { authGuard } from './core/guards/auth.guard';
+import type { ItemEditorPageComponent } from './features/authoring/item-editor-page.component';
+
+const lazyCanLeaveItemEditor: CanDeactivateFn<ItemEditorPageComponent> = (...args) =>
+    import('./features/authoring/item-editor-page.component').then(module => module.canLeaveItemEditor(args[0]));
 
 export const appRoutes: Routes = [
     { path: '', component: HomePageComponent },
@@ -30,6 +34,38 @@ export const appRoutes: Routes = [
         path: 'decks/new',
         loadComponent: () => import('./features/own-decks/own-deck-create-page.component')
             .then(module => module.OwnDeckCreatePageComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'decks/:deckId/materials/new',
+        loadComponent: () => import('./features/authoring/item-editor-page.component')
+            .then(module => module.ItemEditorPageComponent),
+        canActivate: [authGuard],
+        canDeactivate: [lazyCanLeaveItemEditor]
+    },
+    {
+        path: 'decks/:deckId/materials/:memberKey/edit',
+        loadComponent: () => import('./features/authoring/item-editor-page.component')
+            .then(module => module.ItemEditorPageComponent),
+        canActivate: [authGuard],
+        canDeactivate: [lazyCanLeaveItemEditor]
+    },
+    {
+        path: 'decks/:deckId/materials/:memberKey',
+        loadComponent: () => import('./features/authoring/browse-page.component')
+            .then(module => module.BrowsePageComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'decks/:deckId/materials',
+        loadComponent: () => import('./features/authoring/browse-page.component')
+            .then(module => module.BrowsePageComponent),
+        canActivate: [authGuard]
+    },
+    {
+        path: 'decks/:deckId/capture',
+        loadComponent: () => import('./features/authoring/capture-page.component')
+            .then(module => module.CapturePageComponent),
         canActivate: [authGuard]
     },
     {

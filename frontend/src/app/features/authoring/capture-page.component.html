@@ -1,0 +1,24 @@
+<section class="page narrow" aria-labelledby="capture-title">
+  @if (deck(); as currentDeck) { <a class="back-link" [routerLink]="['/decks', currentDeck.deckId]">← К колоде</a> }
+  <header class="page-heading"><div><p class="eyebrow">Быстрый ввод</p><h1 id="capture-title" tabindex="-1">На потом</h1><p class="lede">Сохраните мысль без разметки, а структуру добавьте позже.</p></div></header>
+  @if (error(); as message) { <section class="notice error" role="alert"><p>{{ message }}</p><button class="button" type="button" (click)="recovery() === 'retry' ? retry() : load()">{{ recovery() === 'retry' ? 'Повторить ту же команду' : 'Обновить' }}</button></section> }
+  @if (loading()) { <p role="status">Загружаем заметки…</p> }
+  @if (deck(); as currentDeck) {
+    <form class="sheet" [formGroup]="form" (ngSubmit)="capture()">
+      <div class="field"><label for="capture-text">Заметка</label><textarea id="capture-text" maxlength="32768" formControlName="text" [readonly]="recovery() === 'retry'" placeholder="Что важно не потерять?" aria-describedby="capture-help capture-error"></textarea>
+        <p class="muted" id="capture-help">До 32 КБ текста; пробелы без текста не сохраняются.</p>
+        @if (form.controls.text.dirty && form.controls.text.invalid) { <p id="capture-error" class="field-error">Введите текст и сократите его до 32 КБ.</p> }
+      </div>
+      <div class="actions"><button class="button primary" type="submit" [disabled]="busy() || form.invalid || recovery() === 'retry'">{{ busy() ? 'Сохраняем…' : 'Сохранить на потом' }}</button></div>
+    </form>
+    <ul class="capture-list">
+      @for (note of notes(); track note.noteId) {
+        <li class="capture-card"><p>{{ note.text }}</p><div class="actions">
+          @if (note.conversion; as conversion) { <a class="button" [routerLink]="['/decks', currentDeck.deckId, 'materials', conversion.memberKey]">Открыть материал</a> }
+          @else { <button class="button" type="button" [disabled]="busy() || recovery() === 'retry'" (click)="convert(note)">Превратить в материал</button> }
+        </div></li>
+      } @empty { <li class="notice">Заметок для этой колоды пока нет.</li> }
+    </ul>
+    @if (nextCursor()) { <div class="actions"><button class="button" type="button" [disabled]="loading()" (click)="loadMore()">Показать ещё</button></div> }
+  }
+</section>

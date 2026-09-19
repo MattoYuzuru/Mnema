@@ -70,6 +70,12 @@
       <p class="notice success" role="status">Сервер подтвердил текущую версию колоды.</p>
     }
 
+    <nav class="actions" aria-label="Материалы колоды">
+      <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'materials']">Просмотреть материалы</a>
+      <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'capture']">На потом</a>
+      <a class="button primary" [routerLink]="['/decks', deck.deckId, 'materials', 'new']">Новый материал</a>
+    </nav>
+
     <form class="metadata-form" [formGroup]="form" (ngSubmit)="save(deck)" novalidate>
       <div class="field">
         <label for="detail-title">Название <span aria-hidden="true">*</span></label>

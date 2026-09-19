@@ -1,0 +1,29 @@
+<section class="page" aria-labelledby="browse-title">
+  @if (deck(); as currentDeck) {
+    <a class="back-link" [routerLink]="item() ? ['/decks', currentDeck.deckId, 'materials'] : ['/decks', currentDeck.deckId]">← {{ item() ? 'К материалам' : 'К колоде' }}</a>
+  }
+  @if (loading()) {
+    <h1 id="browse-title" tabindex="-1">Материалы</h1>
+    <p role="status">Загружаем материалы…</p>
+  } @else if (failure()) {
+    <h1 id="browse-title" tabindex="-1">Материалы недоступны</h1>
+    <section class="notice error" role="alert"><p>Не удалось получить подтверждённую сервером версию.</p><button class="button" type="button" (click)="load()">Повторить</button></section>
+  } @else if (deck(); as currentDeck) {
+    @if (item(); as currentItem) {
+      <header class="page-heading"><div><p class="eyebrow">{{ selectedOrdinal() === null ? 'Материал' : 'Материал ' + (selectedOrdinal()! + 1) }}</p><h1 id="browse-title" tabindex="-1">{{ currentDeck.metadata.title }}</h1><p class="lede">Единый безопасный рендер опубликованной версии.</p></div>
+        @if (selectedOrdinal() !== null) { <a class="button primary" [routerLink]="['/decks', currentDeck.deckId, 'materials', currentItem.memberKey, 'edit']" [queryParams]="{ ordinal: selectedOrdinal() }">Редактировать</a> }
+      </header>
+      @if (selectedOrdinal() === null) { <p class="notice">Для безопасного редактирования откройте материал из списка: ссылка должна содержать позицию в текущей версии колоды.</p> }
+      <article class="sheet"><app-native-document-renderer [document]="currentItem.document" /></article>
+    } @else if (page(); as currentPage) {
+      <header class="page-heading"><div><p class="eyebrow">Просмотр колоды</p><h1 id="browse-title" tabindex="-1">{{ currentDeck.metadata.title }}</h1><p class="lede">{{ currentPage.total }} материалов</p></div><div class="actions"><a class="button" [routerLink]="['/decks', currentDeck.deckId, 'capture']">На потом</a><a class="button primary" [routerLink]="['/decks', currentDeck.deckId, 'materials', 'new']">Новый материал</a></div></header>
+      @if (currentPage.items.length === 0) { <section class="notice"><h2>Здесь пока пусто</h2><p>Создайте первый материал или перенесите заметку из «На потом».</p></section> }
+      <ol class="item-list">
+        @for (entry of currentPage.items; track entry.memberKey) {
+          <li><a class="item-row" [routerLink]="['/decks', currentDeck.deckId, 'materials', entry.memberKey]" [queryParams]="{ ordinal: entry.ordinal }"><span class="folio">{{ entry.ordinal + 1 }}</span><strong>Материал {{ entry.ordinal + 1 }}</strong><time [attr.datetime]="entry.updatedAt">{{ entry.updatedAt | date:'dd.MM.y, HH:mm' }}</time></a></li>
+        }
+      </ol>
+      @if (currentPage.nextCursor) { <div class="actions"><button class="button" type="button" (click)="loadMore()">Показать ещё</button></div> }
+    }
+  }
+</section>
