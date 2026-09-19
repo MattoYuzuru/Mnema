@@ -23,7 +23,8 @@ record AuthoringCursor(Instant createdAt, UUID id) {
         try {
             String value = new String(Base64.getUrlDecoder().decode(encoded), StandardCharsets.US_ASCII);
             String[] parts = value.split("/", -1);
-            Instant time = Instant.parse(parts.length == 2 ? parts[0] : "invalid");
+            if (parts.length != 2) throw new InvalidRequestException();
+            Instant time = Instant.parse(parts[0]);
             if (time.getNano() % 1000 != 0 || time.isBefore(Instant.EPOCH)
                     || time.isAfter(Instant.parse("9999-12-31T23:59:59.999999Z"))) throw new InvalidRequestException();
             AuthoringCursor result = new AuthoringCursor(time, AuthoringIds.entity(parts[1]));

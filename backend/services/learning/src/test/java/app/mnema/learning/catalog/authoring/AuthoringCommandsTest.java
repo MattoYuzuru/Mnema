@@ -73,6 +73,8 @@ class AuthoringCommandsTest {
         assertThatThrownBy(() -> AuthoringCursor.pageSize("101")).isInstanceOf(InvalidRequestException.class);
         assertThatThrownBy(() -> AuthoringCursor.decode("not+url-safe"))
                 .isInstanceOf(InvalidRequestException.class);
+        assertThatThrownBy(() -> AuthoringCursor.decode("YQ"))
+                .isInstanceOf(InvalidRequestException.class);
         assertThatThrownBy(() -> AuthoringPrecondition.read(java.util.Collections.enumeration(java.util.List.of("0"))))
                 .isInstanceOf(InvalidRequestException.class);
     }

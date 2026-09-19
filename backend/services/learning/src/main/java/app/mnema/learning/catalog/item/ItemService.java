@@ -122,6 +122,11 @@ public class ItemService {
     }
 
     public WriteResult publish(UUID actor, UUID deckId, long expectedDeckVersion, ItemPublicationCommand command) {
+        return publish(actor, deckId, expectedDeckVersion, command, (ignored, replayed) -> { });
+    }
+
+    WriteResult publish(UUID actor, UUID deckId, long expectedDeckVersion, ItemPublicationCommand command,
+                        PublicationParticipant participant) {
         UuidPolicy.requireEntityId(actor, "actor");
         UuidPolicy.requireEntityId(deckId, "deckId");
         // Current ACL is checked before command replay. A receipt is never an authorization capability.
@@ -129,16 +134,23 @@ public class ItemService {
         CommandIdentity identity = new CommandIdentity(command.commandId(), actor, "deck.items", "item.publish");
         ObjectNode envelope = command.envelope(deckId, expectedDeckVersion);
         var replay = receipts.replay(identity, envelope);
-        if (replay.isPresent()) return new WriteResult(replay.orElseThrow(), true);
+        if (replay.isPresent()) {
+            JsonNode acknowledgement = replay.orElseThrow();
+            publicationTransaction.executeWithoutResult(ignored -> participant.commit(acknowledgement, true));
+            return new WriteResult(acknowledgement, true);
+        }
         PreparedPublication prepared = preparationBoundary.execute(
                 ignored -> prepare(actor, deckId, expectedDeckVersion, command));
         boolean[] applied = {false};
         try {
-            JsonNode acknowledgement = publicationTransaction.execute(ignored -> receipts.execute(
-                    identity, envelope, () -> {
+            JsonNode acknowledgement = publicationTransaction.execute(ignored -> {
+                JsonNode result = receipts.execute(identity, envelope, () -> {
                         applied[0] = true;
                         return apply(actor, deckId, expectedDeckVersion, command, prepared);
-                    }));
+                    });
+                participant.commit(result, !applied[0]);
+                return result;
+            });
             if (!applied[0]) cleanup(prepared);
             return new WriteResult(acknowledgement, !applied[0]);
         } catch (RuntimeException failure) {
@@ -501,5 +513,10 @@ public class ItemService {
     public record WriteResult(JsonNode acknowledgement, boolean replayed) {
         public WriteResult { acknowledgement = acknowledgement.deepCopy(); }
         @Override public JsonNode acknowledgement() { return acknowledgement.deepCopy(); }
+    }
+
+    @FunctionalInterface
+    interface PublicationParticipant {
+        void commit(JsonNode acknowledgement, boolean replayed);
     }
 }

@@ -144,6 +144,8 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
         assertThatThrownBy(() -> captures.convert(actor, note.noteId(), 0,
                 conversion(conversionId, deck, document("different"), null)))
                 .isInstanceOf(IdempotencyConflictException.class);
+        assertThatThrownBy(() -> captures.convert(actor, note.noteId(), 1, conversion))
+                .isInstanceOf(IdempotencyConflictException.class);
 
         DeckHead current = deck(actor, deck.id());
         CaptureRecord failed = capture(actor, captures.create(actor,

@@ -52,7 +52,9 @@ Conversion accepts `commandId`, decimal-string `expectedDeckVersion`,
 The note ETag independently protects the note. The service invokes the canonical
 LearningItem create boundary through a narrow port; item receipt, Deck head/revision,
 pins/projection and the note's immutable conversion reference commit in one database
-transaction. Exact retry returns the stored conversion outcome and cannot create a
+transaction. Native/K3 preparation runs before that short transaction and holds no
+note row lock; the note CAS joins only after the item receipt is stored. The command
+identity binds the note ETag as well as the body. Exact retry returns the stored conversion outcome and cannot create a
 second item. Changed retry is rejected. Publication failure leaves both the note and
 all drafts untouched. Conversion retains source/text/createdAt and makes source/text
 immutable; archive and explicit deletion remain owner actions.

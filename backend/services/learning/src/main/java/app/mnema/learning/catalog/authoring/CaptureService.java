@@ -107,35 +107,60 @@ public class CaptureService {
         cas.updateOne(expected, () -> repository.deleteCapture(actor, noteId, expected));
     }
 
-    @Transactional(timeout = 10)
     public WriteResult convert(UUID actor, UUID noteId, long expected, AuthoringCommands.CaptureConvert command) {
         actor(actor);
-        CaptureRecord note = repository.lockedCapture(actor, noteId).orElseThrow(ResourceNotFoundException::new);
+        CaptureRecord note = own(actor, noteId);
         ownDeck(actor, note.deckId());
-        ObjectNode envelope = command.envelope();
-        envelope.put("noteId", noteId.toString());
-        byte[] hash = canonical.hash(envelope).sha256();
+        byte[] hash = conversionHash(command, noteId, expected);
         if (note.conversionCommandId() != null) {
-            if (!note.conversionCommandId().equals(command.commandId())
-                    || !MessageDigest.isEqual(note.conversionHash(), hash)) throw new IdempotencyConflictException();
+            requireSameConversion(note, command.commandId(), hash);
             return new WriteResult(note.conversionResult(), true);
         }
         if (note.rowVersion() != expected) throw new VersionConflictException();
+        boolean[] applied = {false};
         JsonNode publication = items.create(actor, note.deckId(), command.expectedDeckVersion(), command.commandId(),
-                command.expectedDeckRevisionId(), command.ordinal(), command.document());
+                command.expectedDeckRevisionId(), command.ordinal(), command.document(),
+                result -> applied[0] = commitConversion(actor, noteId, expected, command.commandId(), hash, result));
+        CaptureRecord converted = own(actor, noteId);
+        requireSameConversion(converted, command.commandId(), hash);
+        if (!converted.conversionResult().path("publication").equals(publication)) {
+            throw new IllegalStateException("Capture conversion publication mismatch");
+        }
+        return new WriteResult(converted.conversionResult(), !applied[0]);
+    }
+
+    private boolean commitConversion(UUID actor, UUID noteId, long expected, UUID commandId, byte[] hash,
+                                     JsonNode publication) {
+        CaptureRecord note = repository.lockedCapture(actor, noteId).orElseThrow(ResourceNotFoundException::new);
+        if (note.conversionCommandId() != null) {
+            requireSameConversion(note, commandId, hash);
+            return false;
+        }
+        if (note.rowVersion() != expected) throw new VersionConflictException();
         JsonNode first = publication.path("changes").path(0);
         if (!first.path("memberKey").isTextual() || !first.path("itemRevisionId").isTextual()) {
             throw new IllegalStateException("Item creation acknowledgement is incomplete");
         }
         UUID member = AuthoringIds.entity(first.path("memberKey").textValue());
         UUID revision = AuthoringIds.entity(first.path("itemRevisionId").textValue());
-        ObjectNode result = JsonNodeFactory.instance.objectNode().put("commandId", command.commandId().toString())
+        ObjectNode result = JsonNodeFactory.instance.objectNode().put("commandId", commandId.toString())
                 .put("noteId", noteId.toString()).put("noteVersion", Long.toString(expected + 1))
                 .put("sourcePreserved", true);
         result.set("publication", publication.deepCopy());
-        cas.updateOne(expected, () -> repository.convertCapture(actor, noteId, expected, command.commandId(), hash,
+        cas.updateOne(expected, () -> repository.convertCapture(actor, noteId, expected, commandId, hash,
                 member, revision, result, repository.now()));
-        return new WriteResult(result, false);
+        return true;
+    }
+
+    private byte[] conversionHash(AuthoringCommands.CaptureConvert command, UUID noteId, long expected) {
+        ObjectNode envelope = command.envelope();
+        envelope.put("noteId", noteId.toString()).put("expectedNoteVersion", Long.toString(expected));
+        return canonical.hash(envelope).sha256();
+    }
+
+    private static void requireSameConversion(CaptureRecord note, UUID commandId, byte[] hash) {
+        if (!commandId.equals(note.conversionCommandId())
+                || !MessageDigest.isEqual(note.conversionHash(), hash)) throw new IdempotencyConflictException();
     }
 
     private void requireCaptureCapacity(UUID actor, UUID except, int bytes, boolean creating) {

@@ -14,11 +14,12 @@ concurrent tabs from silently overwriting one another. Autosave only updates the
 draft row and receipt and has no dependency on LearningItem publication.
 
 Capture conversion depends on the caller-owned `CaptureItemPublisher` port. Its
-current adapter delegates to #200's canonical single-item publication. A row lock
-serializes conversion of one note; the Item receipt/publication and immutable note
-conversion reference share the outer transaction. Exact command/hash retry returns
-the stored result, while a failed or rolled-back publication leaves the source note,
-drafts, Deck head, Item projection and receipt unchanged.
+current adapter delegates to #200's canonical single-item publication. Native/K3
+preparation runs without a Capture row lock. In the short final transaction, the Item
+receipt is stored before a callback locks and CAS-updates the note; publication and
+the immutable conversion reference therefore commit or roll back together. Exact
+command/body/note-version retry returns the stored result, while a failed or rolled-back
+publication leaves the source note, drafts, Deck head, Item projection and receipt unchanged.
 
 Security review follows Spring Security's official
 [request authorization guidance](https://docs.spring.io/spring-security/reference/servlet/authorization/authorize-http-requests.html):

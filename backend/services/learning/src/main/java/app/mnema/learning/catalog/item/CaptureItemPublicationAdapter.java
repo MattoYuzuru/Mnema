@@ -15,8 +15,10 @@ final class CaptureItemPublicationAdapter implements CaptureItemPublisher {
 
     @Override
     public JsonNode create(UUID actor, UUID deckId, long expectedDeckVersion, UUID commandId,
-                           UUID expectedDeckRevisionId, Integer ordinal, NativeDocument document) {
+                           UUID expectedDeckRevisionId, Integer ordinal, NativeDocument document,
+                           Completion completion) {
         return items.publish(actor, deckId, expectedDeckVersion,
-                ItemPublicationCommand.create(commandId, expectedDeckRevisionId, ordinal, document)).acknowledgement();
+                ItemPublicationCommand.create(commandId, expectedDeckRevisionId, ordinal, document),
+                (publication, replayed) -> completion.commit(publication)).acknowledgement();
     }
 }

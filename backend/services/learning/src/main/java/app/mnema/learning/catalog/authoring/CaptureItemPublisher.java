@@ -8,5 +8,10 @@ import java.util.UUID;
 /** Caller-owned port isolating Capture lifecycle from LearningItem staging details. */
 public interface CaptureItemPublisher {
     JsonNode create(UUID actor, UUID deckId, long expectedDeckVersion, UUID commandId,
-                    UUID expectedDeckRevisionId, Integer ordinal, NativeDocument document);
+                    UUID expectedDeckRevisionId, Integer ordinal, NativeDocument document, Completion completion);
+
+    @FunctionalInterface
+    interface Completion {
+        void commit(JsonNode publication);
+    }
 }
