@@ -15,8 +15,9 @@ Mnema напрямую заменяет v1 платформой вокруг ver
 #74 канонический authoring runtime уже находится в `identity-account`, `learning` и
 Angular SPA. Epic #75 добавил objective/exercise authoring, bounded Study session
 snapshots, deterministic attempts, baseline scheduler state и production exercise
-inspector. Канонический Study runner уже проводит scheduled self-check и typed
-упражнения; progress, replay/practice и remaining P0 adapters ещё в работе. Media
+inspector. Канонический Study runner уже проводит все четыре scheduled P0-механики:
+self-check, typed, single-blank cloze и single choice; progress и replay/practice
+ещё в работе. Media
 lifecycle относится к #76.
 
 ## Shipping и local replacement boundary
@@ -59,8 +60,8 @@ Identity и Learning — отдельные deployables без Gradle dependency
 - UUID, canonical JSON, command receipts, RFC 9457 Problem Details, row-version CAS;
 - bearer scope enforcement и fail-closed current-account validation через Identity.
 
-В Learning пока нет progress projection, cloze/choice adapters и полной
-due/new/practice selection policy. Они остаются следующими slices #75; session
+В Learning пока нет progress projection и полной due/new/practice selection policy.
+Они остаются следующими slices #75; session
 закрепляет reducer/config identity и immutable presentations, а scheduled attempt
 атомарно пишет одну transition только assessed objective.
 
@@ -76,9 +77,10 @@ UUID/JSON. Native editor state не является persisted format; frontend 
 
 Lazy route `/decks/:deckId/study` запускается основной кнопкой «Учить» из своей
 колоды. Реализованы PREPARING polling, typed answer без показа эталона до принятого
-ответа, self-check reveal с четырьмя поведенческими оценками, явные состояния
+ответа, self-check reveal с четырьмя поведенческими оценками, one-blank cloze с
+явно учитываемой first-grapheme подсказкой и native-radio single choice, явные состояния
 completion/expiry/error и account-bound recovery точной pending attempt после
-неопределённого сетевого результата. Cloze/choice и дополнительные режимы добавляют
+неопределённого сетевого результата. Дополнительные режимы и progress добавляют
 следующие slices #75.
 
 В исходниках всё ещё есть legacy components/services для public decks, old review,

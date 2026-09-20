@@ -31,14 +31,50 @@
         <p class="eyebrow">Вспомните без подсказки</p>
         <h2>{{ presentation.prompt.text }}</h2>
 
-        @if (presentation.type === 'TYPED') {
+        @if (presentation.type === 'TYPED' || presentation.type === 'CLOZE_SINGLE') {
           <form (submit)="$event.preventDefault(); submitTyped()" novalidate>
-            <label for="typed-answer">Ваш ответ</label>
-            <textarea id="typed-answer" data-answer-control rows="4" autocomplete="off" autocapitalize="off"
-                      [value]="typedAnswer()" [readOnly]="phase() === 'submitting'"
-                      (input)="setTypedAnswer($any($event.target).value)"></textarea>
+            @if (presentation.type === 'CLOZE_SINGLE') {
+              <p class="cloze-blank"><span aria-hidden="true">_____</span><span class="visually-hidden">Один пропуск</span></p>
+              <label for="cloze-answer">Ответ в пропуск</label>
+              <input id="cloze-answer" data-answer-control type="text" autocomplete="off" autocapitalize="off"
+                     [value]="typedAnswer()" [readOnly]="phase() === 'submitting'"
+                     (input)="setTypedAnswer($any($event.target).value)" />
+              @if (clozeHintUsed()) {
+                <p class="hint" role="status">Подсказка: ответ начинается с «{{ firstGrapheme(presentation.reference) }}».</p>
+              } @else {
+                <button class="button secondary hint-action" type="button" (click)="showClozeHint()">Показать первую букву</button>
+              }
+            } @else {
+              <label for="typed-answer">Ваш ответ</label>
+              <textarea id="typed-answer" data-answer-control rows="4" autocomplete="off" autocapitalize="off"
+                        [value]="typedAnswer()" [readOnly]="phase() === 'submitting'"
+                        (input)="setTypedAnswer($any($event.target).value)"></textarea>
+            }
             <button class="button primary" type="submit" [disabled]="phase() === 'submitting'">
               {{ phase() === 'submitting' ? 'Проверяем…' : 'Проверить ответ' }}
+            </button>
+          </form>
+        }
+
+        @if (presentation.type === 'SINGLE_CHOICE') {
+          <form (submit)="$event.preventDefault(); submitChoice()">
+            <fieldset [disabled]="phase() === 'submitting'">
+              <legend>Выберите один ответ</legend>
+              <div class="choice-list">
+                @for (option of presentation.options; track option.optionId; let first = $first) {
+                  <label class="choice-option">
+                    <input type="radio" name="study-choice" [value]="option.optionId"
+                           [attr.data-answer-control]="first ? '' : null"
+                           [checked]="selectedOptionId() === option.optionId"
+                           (change)="selectOption(option.optionId)" />
+                    <span>{{ option.text }}</span>
+                  </label>
+                }
+              </div>
+            </fieldset>
+            <button class="button primary" type="submit"
+                    [disabled]="phase() === 'submitting' || selectedOptionId() === null">
+              {{ phase() === 'submitting' ? 'Проверяем…' : 'Подтвердить выбор' }}
             </button>
           </form>
         }
@@ -69,7 +105,7 @@
       <article class="study-card feedback-card" [class.correct]="outcome.feedback.result === 'CORRECT'">
         <p class="eyebrow">Ответ подтверждён сервером</p>
         <h2 id="feedback-title" tabindex="-1">{{ feedbackTitle(outcome) }}</h2>
-        @if (presentation.type === 'TYPED') {
+        @if (presentation.type === 'TYPED' || presentation.type === 'CLOZE_SINGLE') {
           <dl class="comparison">
             <div><dt>Ваш ответ</dt><dd>{{ typedAnswer() || 'Пустой ответ' }}</dd></div>
             <div><dt>Эталон</dt><dd>{{ outcome.feedback.reference || presentation.reference }}</dd></div>

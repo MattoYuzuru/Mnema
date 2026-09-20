@@ -96,9 +96,9 @@ The important #75 inputs already implemented are UUID identity, canonical JSON,
 global command receipts, CAS, RFC 9457 errors, owner ACL, immutable revisions,
 deck-local item identity, counted pages, native content, stable objectives,
 versioned P0 exercise bindings, pinned session presentations, deterministic
-typed/self-check attempts, durable evidence, explicit restart and the baseline
-`StudyState` reducer. Progress, remaining P0 adapters and retention cleanup follow
-in the remaining #75 slices.
+all four P0 attempts, durable evidence, explicit restart and the baseline
+`StudyState` reducer. Progress, additional session modes and retention cleanup
+follow in the remaining #75 slices.
 
 ### Frontend
 
@@ -112,11 +112,13 @@ The accepted visual direction is
 [paper/antiquity/indigo](../frontend/design-and-experience-2026-09.md).
 
 The canonical `/decks/:deckId/study` route is lazy and deck-scoped. It currently
-implements scheduled `SELF_CHECK` and `TYPED` presentations, PREPARING polling,
-strict server-envelope validation, account-bound 24-hour session recovery and an
+implements all four scheduled P0 presentations (`SELF_CHECK`, `TYPED`, one-blank
+`CLOZE_SINGLE` and `SINGLE_CHOICE`), PREPARING polling, strict server-envelope
+validation, account-bound 24-hour session recovery and an
 exact-attempt retry after an unknown network outcome. Reference answers remain
-hidden until a typed attempt is accepted. `CLOZE_SINGLE`, `SINGLE_CHOICE`, replay,
-practice and progress are owned by the remaining #75 slices rather than legacy
+hidden until a production attempt is accepted. Choice option IDs are checked
+against pinned server bindings and never credit distractors. Replay, practice and
+progress are owned by the remaining #75 slices rather than legacy
 `my-study` code.
 
 ## Canonical executable sources

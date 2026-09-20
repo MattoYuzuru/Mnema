@@ -10,20 +10,23 @@ import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
 
 record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceClass,
                          List<String> reasonCodes, ObjectNode feedback) {
     static AttemptEvaluation evaluate(String exerciseType, JsonNode evaluator, JsonNode answer,
-                                      AttemptCommand command) {
+                                      JsonNode bindings, AttemptCommand command) {
         if (command.response() instanceof AttemptCommand.CancelResponse) {
             return notAssessed();
         }
         String evaluatorId = evaluator.path("id").asText();
         String evaluatorVersion = evaluator.path("version").asText();
         if (!evaluatorVersion.equals("1")) return unavailable();
-        if (exerciseType.equals("TYPED") && evaluatorId.equals("deterministic-text")) {
+        if ((exerciseType.equals("TYPED") || exerciseType.equals("CLOZE_SINGLE"))
+                && evaluatorId.equals("deterministic-text")) {
             if (!(command.response() instanceof AttemptCommand.TextResponse text)) throw new InvalidRequestException();
-            return typed(answer, text.text(), command.hintsUsed());
+            return text(answer, text.text(), command.hintsUsed(), exerciseType.equals("CLOZE_SINGLE"));
         }
         if (exerciseType.equals("SELF_CHECK") && evaluatorId.equals("self-check")) {
             if (!(command.response() instanceof AttemptCommand.SelfCheckResponse self)) {
@@ -31,10 +34,17 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
             }
             return selfCheck(self.rating());
         }
+        if (exerciseType.equals("SINGLE_CHOICE") && evaluatorId.equals("deterministic-choice")) {
+            if (!(command.response() instanceof AttemptCommand.ChoiceResponse choice)
+                    || !command.hintsUsed().isEmpty()) throw new InvalidRequestException();
+            return choice(answer, bindings, choice.optionId());
+        }
         return unavailable();
     }
 
-    private static AttemptEvaluation typed(JsonNode answer, String supplied, List<String> hints) {
+    private static AttemptEvaluation text(JsonNode answer, String supplied, List<String> hints, boolean cloze) {
+        Set<String> allowedHints = Set.of("REVEAL_FIRST_GRAPHEME");
+        if (!allowedHints.containsAll(hints)) throw new InvalidRequestException();
         List<String> rules = new ArrayList<>();
         answer.path("normalization").forEach(rule -> rules.add(rule.textValue()));
         String normalized = normalize(supplied, rules);
@@ -51,8 +61,33 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
         ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", result.name())
                 .put("reference", answer.path("accepted").get(0).textValue());
         ArrayNode applied = feedback.putArray("appliedRules");
+        if (cloze) applied.add("SINGLE_BLANK");
         rules.forEach(applied::add);
         return new AttemptEvaluation(Status.ASSESSED, result, strength, reasons, feedback);
+    }
+
+    private static AttemptEvaluation choice(JsonNode answer, JsonNode bindings, UUID selectedOption) {
+        JsonNode assessed = null;
+        JsonNode selected = null;
+        for (JsonNode binding : bindings) {
+            if (binding.path("role").textValue().equals("ASSESSED")) assessed = binding;
+            if (binding.path("role").textValue().equals("OPTION")
+                    && binding.path("bindingId").textValue().equals(selectedOption.toString())) selected = binding;
+        }
+        if (assessed == null || selected == null) throw new InvalidRequestException();
+        boolean correct = sameTarget(assessed, selected);
+        Result result = correct ? Result.CORRECT : Result.INCORRECT;
+        ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", result.name())
+                .put("reference", answer.path("accepted").get(0).textValue());
+        feedback.putArray("appliedRules").add("SERVER_ISSUED_OPTION");
+        return new AttemptEvaluation(Status.ASSESSED, result, EvidenceClass.LOW,
+                List.of("RECOGNITION", "DETERMINISTIC", "PRODUCTION"), feedback);
+    }
+
+    private static boolean sameTarget(JsonNode left, JsonNode right) {
+        return left.path("memberKey").equals(right.path("memberKey"))
+                && left.path("itemRevisionId").equals(right.path("itemRevisionId"))
+                && left.path("nodeIds").equals(right.path("nodeIds"));
     }
 
     private static AttemptEvaluation selfCheck(AttemptCommand.SelfRating rating) {

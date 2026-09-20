@@ -117,7 +117,7 @@
     },
     "binding": {
       "type": "object",
-      "required": ["bindingId", "role", "memberKey", "itemRevisionId", "ordinal"],
+      "required": ["bindingId", "role", "memberKey", "itemRevisionId", "nodeIds", "display", "ordinal"],
       "properties": {
         "bindingId": {"$ref": "#/$defs/identifier"},
         "role": {"enum": ["ASSESSED", "CUE", "OPTION", "CONTEXT"]},

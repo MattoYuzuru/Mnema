@@ -4,7 +4,7 @@ import { TestBed } from '@angular/core/testing';
 import { firstValueFrom } from 'rxjs';
 
 import { StudyApiService } from './study-api.service';
-import { AttemptCommand, StudyProtocolError } from './study.models';
+import { AttemptCommand, ReadyStudySession, StudyProtocolError } from './study.models';
 
 describe('StudyApiService', () => {
     const id = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, '0')}`;
@@ -61,16 +61,40 @@ describe('StudyApiService', () => {
         await expectAsync(cacheable).toBeRejectedWithError(StudyProtocolError);
     });
 
-    function active(type: 'TYPED' | 'SELF_CHECK') {
+    it('accepts only choice options backed by the same server-issued OPTION bindings', async () => {
+        const choice = active('SINGLE_CHOICE');
+        const result = firstValueFrom(api.read(deckId, sessionId));
+        http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}`).flush(choice, { headers: privateHeaders });
+        const parsed = await result;
+        expect(parsed.status).toBe('ACTIVE');
+        if (parsed.status === 'PREPARING') fail('Expected an active session.');
+        else expect(parsed.presentations[0].options).toHaveSize(2);
+
+        const original = choice.presentations[0];
+        const tampered = { ...choice, presentations: [{ ...original,
+            options: [original.options[0], { ...original.options[1], optionId: id('99') }] }] };
+        const rejected = firstValueFrom(api.read(deckId, sessionId));
+        http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}`).flush(tampered, { headers: privateHeaders });
+        await expectAsync(rejected).toBeRejectedWithError(StudyProtocolError);
+    });
+
+    function active(type: 'TYPED' | 'SELF_CHECK' | 'CLOZE_SINGLE' | 'SINGLE_CHOICE'): ReadyStudySession {
+        const assessed = { bindingId: id('11'), role: 'ASSESSED' as const, memberKey: id('12'),
+            itemRevisionId: id('13'), ordinal: 0, nodeIds: [id('14')], display: { kind: 'NODE_TEXT' } };
+        const options = type === 'SINGLE_CHOICE'
+            ? [{ optionId: id('15'), text: 'memory' }, { optionId: id('16'), text: 'forgetting' }] : [];
+        const bindings = type === 'SINGLE_CHOICE' ? [assessed,
+            { ...assessed, bindingId: id('15'), role: 'OPTION' as const, ordinal: 1 },
+            { ...assessed, bindingId: id('16'), role: 'OPTION' as const, ordinal: 2, nodeIds: [id('17')] }
+        ] : [assessed];
         return { sessionId, deckId, mode: 'SCHEDULED', status: 'ACTIVE', timezone: 'Europe/Moscow',
             localStudyDate: '2026-09-20', deckRevisionId: id('5'), exerciseGenerationId: id('6'),
             selectionPolicyVersion: 'deck-due-new-v1', reducer: { id: 'mnema-baseline', version: '1',
                 configId: id('9'), configHash: `sha256:${'a'.repeat(64)}` }, seed: '42', nextCursor: null,
             expiresAt: '2026-09-21T10:00:00Z', presentations: [{ presentationId, nonce: 'abcdefghijklmnop', ordinal: 0,
                 exerciseRevisionId: id('10'), type, objectiveId: id('7'), objectiveRevisionId: id('8'), learningEpoch: '0',
-                reference: 'memory', prompt: { kind: 'TEXT', text: 'What remains?' }, options: [], bindings: [{
-                    bindingId: id('11'), role: 'ASSESSED', memberKey: id('12'), itemRevisionId: id('13'), ordinal: 0,
-                    nodeIds: [id('14')], display: { kind: 'NODE_TEXT' }
-                }], evaluator: { id: type === 'TYPED' ? 'deterministic-text' : 'self-check', version: '1' } }] };
+                reference: 'memory', prompt: { kind: 'TEXT', text: 'What remains?' }, options, bindings,
+                evaluator: { id: type === 'SELF_CHECK' ? 'self-check'
+                    : type === 'SINGLE_CHOICE' ? 'deterministic-choice' : 'deterministic-text', version: '1' } }] };
     }
 });

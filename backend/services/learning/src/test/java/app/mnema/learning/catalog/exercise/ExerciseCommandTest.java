@@ -65,7 +65,11 @@ class ExerciseCommandTest {
         choice.withObject("exercise").set("evaluatorPolicy",
                 JSON.createObjectNode().put("id", "deterministic-choice").put("version", "1"));
         var bindings = choice.withObject("exercise").withArray("bindings");
-        bindings.add(binding("OPTION", 1)); bindings.add(binding("OPTION", 2));
+        JsonNode assessed = bindings.get(0);
+        bindings.add(binding("OPTION", 1, UUID.fromString(assessed.path("memberKey").textValue()),
+                UUID.fromString(assessed.path("itemRevisionId").textValue()),
+                UUID.fromString(assessed.path("nodeIds").get(0).textValue())));
+        bindings.add(binding("OPTION", 2));
         assertThat(ExerciseCommand.readCreate(bytes(choice.toString())).exercise().bindings()).hasSize(3);
 
         ObjectNode insufficient = choice.deepCopy(); insufficient.withObject("exercise").withArray("bindings").remove(2);
@@ -74,6 +78,13 @@ class ExerciseCommandTest {
         ((ObjectNode) duplicate.withObject("exercise").withArray("bindings").get(2))
                 .put("bindingId", duplicate.path("exercise").path("bindings").get(1).path("bindingId").textValue());
         assertInvalid(duplicate);
+        ObjectNode duplicateTarget = choice.deepCopy();
+        ObjectNode firstOption = (ObjectNode) duplicateTarget.path("exercise").path("bindings").get(1);
+        ObjectNode secondOption = (ObjectNode) duplicateTarget.path("exercise").path("bindings").get(2);
+        secondOption.put("memberKey", firstOption.path("memberKey").textValue())
+                .put("itemRevisionId", firstOption.path("itemRevisionId").textValue());
+        secondOption.set("nodeIds", firstOption.path("nodeIds").deepCopy());
+        assertInvalid(duplicateTarget);
         ObjectNode wrongEvaluator = valid("TYPED");
         wrongEvaluator.withObject("exercise").withObject("evaluatorPolicy").put("id", "self-check");
         assertInvalid(wrongEvaluator);

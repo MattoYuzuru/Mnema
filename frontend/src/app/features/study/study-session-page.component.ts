@@ -33,6 +33,8 @@ export class StudySessionPageComponent {
     readonly session = signal<ReadyStudySession | null>(null);
     readonly phase = signal<Phase>('loading');
     readonly typedAnswer = signal('');
+    readonly selectedOptionId = signal<string | null>(null);
+    readonly clozeHintUsed = signal(false);
     readonly feedback = signal<AttemptOutcome | null>(null);
     readonly message = signal<string | null>(null);
     readonly pending = signal<AttemptCommand | null>(null);
@@ -67,6 +69,10 @@ export class StudySessionPageComponent {
         else {
             this.pending.set(recovered.pending);
             if (recovered.pending?.response.kind === 'TEXT') this.typedAnswer.set(recovered.pending.response.text);
+            if (recovered.pending?.response.kind === 'CHOICE') {
+                this.selectedOptionId.set(recovered.pending.response.optionId);
+            }
+            this.clozeHintUsed.set(recovered.pending?.hintsUsed.includes('REVEAL_FIRST_GRAPHEME') ?? false);
             this.resume(recovered.sessionId, recovered.pending !== null);
         }
     }
@@ -80,8 +86,27 @@ export class StudySessionPageComponent {
     }
 
     submitTyped(): void {
-        if (this.phase() !== 'answering' || this.current()?.type !== 'TYPED') return;
-        this.submit({ kind: 'TEXT', text: this.typedAnswer() }, []);
+        const type = this.current()?.type;
+        if (this.phase() !== 'answering' || (type !== 'TYPED' && type !== 'CLOZE_SINGLE')) return;
+        this.submit({ kind: 'TEXT', text: this.typedAnswer() },
+            type === 'CLOZE_SINGLE' && this.clozeHintUsed() ? ['REVEAL_FIRST_GRAPHEME'] : []);
+    }
+
+    showClozeHint(): void {
+        if (this.phase() === 'answering' && this.current()?.type === 'CLOZE_SINGLE') this.clozeHintUsed.set(true);
+    }
+
+    firstGrapheme(value: string): string {
+        const first = new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(value)[Symbol.iterator]().next();
+        return first.done ? '' : first.value.segment;
+    }
+
+    selectOption(optionId: string): void { this.selectedOptionId.set(optionId); }
+
+    submitChoice(): void {
+        const optionId = this.selectedOptionId();
+        if (this.phase() !== 'answering' || this.current()?.type !== 'SINGLE_CHOICE' || optionId === null) return;
+        this.submit({ kind: 'CHOICE', optionId }, []);
     }
 
     rate(rating: SelfRating): void {
@@ -106,6 +131,8 @@ export class StudySessionPageComponent {
         if (session === null || this.phase() !== 'feedback') return;
         this.feedback.set(null);
         this.typedAnswer.set('');
+        this.selectedOptionId.set(null);
+        this.clozeHintUsed.set(false);
         const remaining = session.presentations.slice(1);
         if (remaining.length === 0) {
             this.phase.set('loading');
@@ -130,7 +157,9 @@ export class StudySessionPageComponent {
 
     ruleName(rule: string): string {
         return ({ UNICODE_NFC: 'единая форма Unicode', TRIM: 'пробелы по краям не учитываются',
-            CASE_FOLD: 'регистр не учитывается', SELF_REPORT: 'самооценка после показа ответа' } as Record<string, string>)[rule] ?? rule;
+            CASE_FOLD: 'регистр не учитывается', SINGLE_BLANK: 'проверен один пропуск',
+            SERVER_ISSUED_OPTION: 'выбран серверный вариант', SELF_REPORT: 'самооценка после показа ответа'
+        } as Record<string, string>)[rule] ?? rule;
     }
 
     ratingLabel(rating: SelfRating): string {
@@ -206,11 +235,6 @@ export class StudySessionPageComponent {
             return;
         }
         const type = session.presentations[0].type;
-        if (type !== 'SELF_CHECK' && type !== 'TYPED') {
-            this.phase.set('unavailable');
-            this.message.set('Эта механика будет подключена следующим срезом. Попытка не создана и прогресс не изменён.');
-            return;
-        }
         this.phase.set('answering');
         queueMicrotask(() => this.element.nativeElement.querySelector<HTMLElement>('[data-answer-control]')?.focus());
     }

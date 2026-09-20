@@ -21,8 +21,9 @@ class AttemptRepository {
 
     record Presentation(UUID accountId, UUID sessionId, UUID presentationId, UUID deckId, String mode,
                         String sessionStatus, String nonce, String exerciseType, UUID objectiveId,
-                        UUID objectiveRevisionId, long learningEpoch, JsonNode evaluator, JsonNode answerContract,
-                        UUID configId, String reducerId, String reducerVersion, String configHash, Instant expiresAt) { }
+                        UUID objectiveRevisionId, long learningEpoch, JsonNode bindings, JsonNode evaluator,
+                        JsonNode answerContract, UUID configId, String reducerId, String reducerVersion,
+                        String configHash, Instant expiresAt) { }
     record Receipt(UUID attemptId, UUID accountId, UUID sessionId, UUID presentationId, UUID deckId,
                    byte[] payloadHash, String mode, String status, JsonNode outcome, Instant receiptExpiresAt) {
         Receipt { payloadHash = payloadHash.clone(); }
@@ -92,7 +93,8 @@ class AttemptRepository {
                         row.getString("mode"), row.getString("session_status"), row.getString("nonce"),
                         row.getString("exercise_type"), row.getObject("objective_id", UUID.class),
                         row.getObject("objective_revision_id", UUID.class), row.getLong("learning_epoch"),
-                        json(row.getString("evaluator")), json(row.getString("answer_contract")),
+                        json(row.getString("bindings")), json(row.getString("evaluator")),
+                        json(row.getString("answer_contract")),
                         row.getObject("reducer_config_id", UUID.class), row.getString("reducer_id"),
                         row.getString("reducer_version"), row.getString("config_hash"),
                         row.getTimestamp("expires_at").toInstant())).optional();

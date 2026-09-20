@@ -312,6 +312,13 @@ retry, а account-bound recovery живёт не более 24 часов и н�
 reduced-motion и forced-colors покрыты компонентными проверками; это не заменяет
 ручную проверку screen reader и физического touch-устройства.
 
+Slice #218 расширяет тот же shell single-blank cloze и single choice. Cloze
+показывает ровно один подписанный native input; первая графема раскрывается только
+явной кнопкой и передаётся как hint в exact attempt. Choice использует native radio
+group, 2–6 pinned вариантов и недоступный submit до выбора. Corrective feedback
+остаётся серверным, option IDs сверяются с `OPTION` bindings, а recognition evidence
+не превышает `LOW`; distractor не получает собственный progress.
+
 Измерять first useful content, route bytes, LCP/INP/CLS, request fan-out и p95/p99 API
 при явном профиле устройства/сети. Предлагаемые web quality ориентиры — p75 LCP ≤2.5 s,
 INP ≤200 ms, CLS ≤0.1; это [Core Web Vitals](https://web.dev/articles/vitals), не
