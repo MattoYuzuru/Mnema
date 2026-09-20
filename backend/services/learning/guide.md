@@ -3,8 +3,9 @@
 `services:learning` is the standalone greenfield Learning API runtime. It has no
 Gradle project dependency on legacy `core`, `media`, `import` or `ai`. Epic #74
 added the canonical private Deck, deck-local LearningItem, native content,
-EditingDraft and CaptureNote domains. Study/exercises/scheduler remain Epic #75;
-greenfield media lifecycle remains #76.
+EditingDraft and CaptureNote domains. Epic #75 now also owns immutable objectives,
+P0 exercise revisions and explicit content bindings; sessions/attempts/scheduling
+are delivered by the subsequent Study slices. Greenfield media lifecycle remains #76.
 
 ## Runtime contract
 
@@ -90,14 +91,20 @@ capacity evidence.
   updates with global command receipts.
 - `/api/decks/{deckId}/items` owns deck-local logical identity, immutable revisions,
   current/historical reads and atomic publication.
+- `/api/decks/{deckId}/exercises` owns owner-only bounded reads and atomic
+  publication of stable objectives, immutable answer/exercise revisions, exact
+  current item/node pins and one assessed binding. Supported P0 types are
+  `SELF_CHECK`, `TYPED`, `CLOZE_SINGLE` and `SINGLE_CHOICE`.
 - `/api/editing-drafts` owns bounded acknowledged server drafts; autosave never
   publishes.
 - `/api/capture-notes` owns durable quick notes and idempotent conversion while
   retaining source/provenance.
-- Native document v1, immutable block/page storage and counted structural edits are
-  shared #75 inputs. They do not yet imply exercises, attempts or StudyState.
+- Native document v1, immutable block/page storage and counted structural edits
+  back both material and exercise membership roots. Exercise writes advance the
+  Deck CAS and receipt in the same transaction. They do not yet imply attempts or
+  `StudyState`.
 
-Fresh Learning migrations V1–V5 are the database source of truth. Do not append
+Fresh Learning migrations V1–V6 are the database source of truth. Do not append
 Study tables to legacy `core` migrations or port old review algorithms.
 
 Sources: [Spring Security 6.5 JWT](https://docs.spring.io/spring-security/reference/6.5/servlet/oauth2/resource-server/jwt.html)
