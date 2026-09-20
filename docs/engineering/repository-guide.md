@@ -86,14 +86,16 @@ Identity `/userinfo`; it never reads Identity tables.
 
 ### Learning
 
-Read [its guide](../../backend/services/learning/guide.md). Fresh migrations V1–V5
-own platform/storage, private Deck, deck-local LearningItem, EditingDraft and
-CaptureNote. API paths are canonical under `/api`; there is no `/v2` or v1 alias.
+Read [its guide](../../backend/services/learning/guide.md). Fresh migrations V1–V6
+own platform/storage, private Deck, deck-local LearningItem, EditingDraft,
+CaptureNote and immutable objective/exercise authoring. API paths are canonical
+under `/api`; there is no `/v2` or v1 alias.
 
 The important #75 inputs already implemented are UUID identity, canonical JSON,
 global command receipts, CAS, RFC 9457 errors, owner ACL, immutable revisions,
-deck-local item identity, counted pages, native content and versioned projection/media
-seams. Study concepts themselves do not exist yet.
+deck-local item identity, counted pages, native content, stable objectives and
+versioned P0 exercise bindings. Sessions, attempts and `StudyState` follow in the
+remaining #75 slices.
 
 ### Frontend
 

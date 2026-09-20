@@ -66,7 +66,8 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         + ":" + migration.getState().name())
                 .containsExactly("1:platform foundation:SUCCESS", "2:immutable storage kernel:SUCCESS",
                         "3:private deck revisions:SUCCESS", "4:deck local learning items:SUCCESS",
-                        "5:authoring drafts and capture:SUCCESS");
+                        "5:authoring drafts and capture:SUCCESS",
+                        "6:immutable objectives and exercises:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -124,7 +125,8 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
     @Test
     void routeInventoryHasNoVersionOrLegacyAliases() throws Exception {
         assertThat(applicationContext.getBeanNamesForAnnotation(RestController.class))
-                .containsExactlyInAnyOrder("deckController", "itemController", "draftController", "captureController");
+                .containsExactlyInAnyOrder("deckController", "itemController", "draftController", "captureController",
+                        "exerciseController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
                 .allSatisfy(route -> {
