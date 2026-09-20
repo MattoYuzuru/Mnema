@@ -114,8 +114,9 @@ Do not expose hashes as entity identity. Identical text can represent separate l
 
 Identity and User source is consolidated into Identity & Account. The
 [Learning API runtime](../../backend/services/learning/guide.md) implements platform,
-storage, private content/authoring contracts and bounded Study session snapshots;
-attempts and scheduling state remain in progress and the
+storage, private content/authoring contracts, bounded Study session snapshots,
+deterministic attempts and baseline scheduling state; progress and remaining P0
+adapters remain in progress and the
 future library scope is limited to seams. Legacy core/media/import/AI remain
 replacement input. The selected target puts content/library/study in one modular Learning API; separate
 media/import/AI and bulk workers receive independent capacity when their capability
