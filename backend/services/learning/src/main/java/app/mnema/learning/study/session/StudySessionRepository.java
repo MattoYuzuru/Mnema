@@ -254,7 +254,7 @@ class StudySessionRepository {
     }
 
     void insertPresentation(UUID actor, UUID session, UUID deck, UUID generation, Candidate candidate, UUID id,
-                            int ordinal, String nonce, JsonNode prompt, JsonNode options, JsonNode bindings,
+                            int ordinal, String nonce, long learningEpoch, JsonNode prompt, JsonNode options, JsonNode bindings,
                             Instant now, Instant expires) {
         jdbc.sql("""
                 INSERT INTO app_learning.study_presentation(account_id,session_id,presentation_id,presentation_ordinal,
@@ -262,17 +262,60 @@ class StudySessionRepository {
                     objective_id,objective_revision_id,learning_epoch,prompt,options,bindings,evaluator,answer_contract,
                     issued_at,expires_at)
                 VALUES (:actor,:session,:id,:ordinal,:nonce,:deck,:generation,:candidateOrdinal,:exercise,
-                    :exerciseRevision,:type,:objective,:objectiveRevision,0,CAST(:prompt AS jsonb),CAST(:options AS jsonb),
+                    :exerciseRevision,:type,:objective,:objectiveRevision,:epoch,CAST(:prompt AS jsonb),CAST(:options AS jsonb),
                     CAST(:bindings AS jsonb),CAST(:evaluator AS jsonb),CAST(:answer AS jsonb),:now,:expires)
                 """).param("actor", actor).param("session", session).param("id", id).param("ordinal", ordinal)
                 .param("nonce", nonce).param("deck", deck).param("generation", generation)
                 .param("candidateOrdinal", candidate.ordinal()).param("exercise", candidate.exerciseId())
                 .param("exerciseRevision", candidate.exerciseRevisionId()).param("type", candidate.type())
                 .param("objective", candidate.objectiveId()).param("objectiveRevision", candidate.objectiveRevisionId())
+                .param("epoch", learningEpoch)
                 .param("prompt", prompt.toString()).param("options", options.toString())
                 .param("bindings", bindings.toString()).param("evaluator", candidate.evaluator().toString())
                 .param("answer", candidate.answerContract().toString()).param("now", Timestamp.from(now))
                 .param("expires", Timestamp.from(expires)).update();
+    }
+
+    long ensureState(UUID actor, UUID deck, UUID objective, UUID config, Instant now) {
+        jdbc.sql("""
+                INSERT INTO app_learning.study_policy_assignment(account_id,deck_id,objective_id,reducer_config_id,
+                    assigned_at)
+                VALUES (:actor,:deck,:objective,:config,:now)
+                ON CONFLICT (account_id,deck_id,objective_id) DO NOTHING
+                """).param("actor", actor).param("deck", deck).param("objective", objective)
+                .param("config", config).param("now", Timestamp.from(now)).update();
+        jdbc.sql("""
+                INSERT INTO app_learning.study_state(account_id,deck_id,objective_id,learning_epoch,level,
+                    correct_streak,lapse_count,last_assessed_at,next_due,reducer_config_id,transition_sequence,
+                    row_version,introduced_at,updated_at)
+                VALUES (:actor,:deck,:objective,0,0,0,0,NULL,NULL,:config,0,0,:now,:now)
+                ON CONFLICT (account_id,deck_id,objective_id) DO NOTHING
+                """).param("actor", actor).param("deck", deck).param("objective", objective)
+                .param("config", config).param("now", Timestamp.from(now)).update();
+        return jdbc.sql("""
+                SELECT learning_epoch FROM app_learning.study_state
+                 WHERE account_id=:actor AND deck_id=:deck AND objective_id=:objective
+                """).param("actor", actor).param("deck", deck).param("objective", objective)
+                .query(Long.class).single();
+    }
+
+    Optional<Long> stateEpoch(UUID actor, UUID deck, UUID objective) {
+        return jdbc.sql("""
+                SELECT learning_epoch FROM app_learning.study_state
+                 WHERE account_id=:actor AND deck_id=:deck AND objective_id=:objective
+                """).param("actor", actor).param("deck", deck).param("objective", objective)
+                .query(Long.class).optional();
+    }
+
+    void insertExposure(UUID actor, UUID session, UUID presentation, UUID deck, UUID objective,
+                        long epoch, Instant now) {
+        jdbc.sql("""
+                INSERT INTO app_learning.study_exposure(account_id,session_id,presentation_id,deck_id,objective_id,
+                    learning_epoch,exposed_at)
+                VALUES (:actor,:session,:presentation,:deck,:objective,:epoch,:now)
+                """).param("actor", actor).param("session", session).param("presentation", presentation)
+                .param("deck", deck).param("objective", objective).param("epoch", epoch)
+                .param("now", Timestamp.from(now)).update();
     }
 
     void copyPresentation(UUID actor, UUID sourceSession, UUID targetSession, UUID deck, UUID generation,

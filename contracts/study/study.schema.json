@@ -61,7 +61,8 @@
       "properties": {
         "result": {"enum": ["CORRECT", "PARTIAL", "INCORRECT", "UNSURE", "NOT_ASSESSED", "UNAVAILABLE"]},
         "reference": {"type": "string"},
-        "appliedRules": {"type": "array", "items": {"type": "string"}}
+        "appliedRules": {"type": "array", "items": {"type": "string"}},
+        "reasonCodes": {"type": "array", "items": {"type": "string"}}
       },
       "additionalProperties": false
     },
@@ -311,7 +312,7 @@
           "required": ["attemptId", "presentationId", "mode", "status", "evidence", "feedback", "transition", "canonicalEffects"],
           "properties": {
             "attemptId": {"$ref": "#/$defs/identifier"}, "presentationId": {"$ref": "#/$defs/identifier"},
-            "mode": {"enum": ["REPLAY", "PRACTICE"]}, "status": {"const": "ASSESSED"},
+            "mode": {"enum": ["REPLAY", "PRACTICE"]}, "status": {"enum": ["ASSESSED", "NOT_ASSESSED", "UNAVAILABLE"]},
             "evidence": {"type": "null"}, "feedback": {"$ref": "#/$defs/feedback"},
             "transition": {"type": "null"}, "canonicalEffects": {"const": false}
           },

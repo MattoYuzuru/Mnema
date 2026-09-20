@@ -225,9 +225,18 @@ public class StudySessionService {
                     .forEach(binding -> options.addObject().put("optionId", binding.path("bindingId").textValue())
                             .put("text", resolveBindingText(session.deckId(), binding)));
         }
+        long epoch = session.mode() == StudySessionCommand.Mode.SCHEDULED
+                ? repository.ensureState(session.accountId(), session.deckId(), candidate.objectiveId(),
+                        session.configId(), now)
+                : repository.stateEpoch(session.accountId(), session.deckId(), candidate.objectiveId()).orElse(0L);
+        UUID presentation = UUID.randomUUID();
         repository.insertPresentation(session.accountId(), session.sessionId(), session.deckId(),
-                session.generationId(), candidate, UUID.randomUUID(), ordinal, nonce(), prompt, options, bindings,
+                session.generationId(), candidate, presentation, ordinal, nonce(), epoch, prompt, options, bindings,
                 now, now.plus(SESSION_LIFETIME));
+        if (session.mode() == StudySessionCommand.Mode.SCHEDULED) {
+            repository.insertExposure(session.accountId(), session.sessionId(), presentation, session.deckId(),
+                    candidate.objectiveId(), epoch, now);
+        }
     }
 
     private ObjectNode resolvePrompt(UUID deck, JsonNode spec) {

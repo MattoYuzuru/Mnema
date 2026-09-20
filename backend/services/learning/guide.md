@@ -4,9 +4,10 @@
 Gradle project dependency on legacy `core`, `media`, `import` or `ai`. Epic #74
 added the canonical private Deck, deck-local LearningItem, native content,
 EditingDraft and CaptureNote domains. Epic #75 now also owns immutable objectives,
-P0 exercise revisions, explicit content bindings and bounded Study session
-snapshots. Attempts and scheduling state are delivered by the subsequent Study
-slices. Greenfield media lifecycle remains #76.
+P0 exercise revisions, explicit content bindings, bounded Study session snapshots,
+deterministic attempts and the baseline Study state reducer. Progress, full mode
+selection and retention cleanup are delivered by subsequent Study slices.
+Greenfield media lifecycle remains #76.
 
 ## Runtime contract
 
@@ -41,7 +42,8 @@ slices. Greenfield media lifecycle remains #76.
   changed row or raises `VERSION_CONFLICT`.
 - API failures use `application/problem+json` (RFC 9457). Stable machine codes are
   `IDEMPOTENCY_CONFLICT`, `VERSION_CONFLICT`, `PRECONDITION_REQUIRED`, `INVALID_REQUEST`,
-  `RESOURCE_NOT_FOUND`, `SESSION_EXPIRED`, `METHOD_NOT_ALLOWED` and `INTERNAL_ERROR`. Public details
+  `RESOURCE_NOT_FOUND`, `SESSION_EXPIRED`, `PRESENTATION_EXPIRED`, `METHOD_NOT_ALLOWED`
+  and `INTERNAL_ERROR`. Public details
   never contain exception messages, SQL or stored command data.
 
 PostgreSQL integration tests are fail-closed: Docker absence or container startup
@@ -102,16 +104,24 @@ capacity evidence.
   response contains at most 20 immutable presentations. The authenticated
   `zoneinfo` claim determines the local study date; invalid or absent values fall
   back to UTC, and clients cannot submit a timezone.
+- `/api/decks/{deckId}/study-sessions/{sessionId}/attempts` terminalizes one
+  server-issued presentation. `TYPED` and `SELF_CHECK` evaluation is deterministic;
+  only `SCHEDULED` writes evidence and one versioned `mnema-baseline-v1`
+  transition. Exact retries return the durable outcome, conflicting attempt IDs
+  never add transitions, and raw scheduled response JSON expires separately after
+  30 days.
+- `/api/decks/{deckId}/study-restarts` starts a new learning epoch for objectives
+  under explicitly selected current materials. It locks objectives in UUID order,
+  keeps prior evidence/transitions and makes old presentations non-assessing.
 - `/api/editing-drafts` owns bounded acknowledged server drafts; autosave never
   publishes.
 - `/api/capture-notes` owns durable quick notes and idempotent conversion while
   retaining source/provenance.
 - Native document v1, immutable block/page storage and counted structural edits
   back both material and exercise membership roots. Exercise writes advance the
-  Deck CAS and receipt in the same transaction. They do not yet imply attempts or
-  `StudyState`.
+  Deck CAS and receipt in the same transaction.
 
-Fresh Learning migrations V1–V7 are the database source of truth. Do not append
+Fresh Learning migrations V1–V8 are the database source of truth. Do not append
 Study tables to legacy `core` migrations or port old review algorithms.
 
 Sources: [Spring Security 6.5 JWT](https://docs.spring.io/spring-security/reference/6.5/servlet/oauth2/resource-server/jwt.html)

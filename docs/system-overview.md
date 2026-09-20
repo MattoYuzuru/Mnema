@@ -13,8 +13,9 @@ artifact:
 
 Mnema напрямую заменяет v1 платформой вокруг versioned `LearningItem`. После Epic
 #74 канонический authoring runtime уже находится в `identity-account`, `learning` и
-Angular SPA. Epic #75 добавил objective/exercise authoring и bounded Study session
-snapshots; attempts, scheduler state и UI ещё в работе. Media lifecycle относится к #76.
+Angular SPA. Epic #75 добавил objective/exercise authoring, bounded Study session
+snapshots, deterministic attempts и baseline scheduler state; progress, remaining
+P0 adapters и UI ещё в работе. Media lifecycle относится к #76.
 
 ## Shipping и local replacement boundary
 
@@ -50,12 +51,15 @@ Identity и Learning — отдельные deployables без Gradle dependency
 - acknowledged server `EditingDraft` и durable `CaptureNote` с idempotent conversion;
 - immutable `MemoryObjective`/Exercise revisions и bounded owner-scoped
   `SCHEDULED`/`REPLAY`/`PRACTICE` session snapshots;
+- deterministic typed/self-check attempts, durable evidence, versioned baseline
+  reducer и explicit material restart без удаления истории;
 - UUID, canonical JSON, command receipts, RFC 9457 Problem Details, row-version CAS;
 - bearer scope enforcement и fail-closed current-account validation через Identity.
 
-В Learning пока нет Attempt/Evidence, `StudyState` или применяющего переходы
-reducer/scheduler. Они остаются следующими slices #75; session уже закрепляет
-reducer/config identity и immutable presentations.
+В Learning пока нет progress projection, cloze/choice adapters и полной
+due/new/practice selection policy. Они остаются следующими slices #75; session
+закрепляет reducer/config identity и immutable presentations, а scheduled attempt
+атомарно пишет одну transition только assessed objective.
 
 ## Frontend boundary
 

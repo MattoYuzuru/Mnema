@@ -243,8 +243,9 @@ silently introduced here.
 At this revision, Identity & Account source is consolidated and the separate
 [Learning API runtime](../../backend/services/learning/guide.md) includes its platform
 foundation, immutable storage kernels, private Deck/LearningItem publication,
-EditingDraft, CaptureNote and bounded Study session APIs. Attempt reduction and
-progress projections remain unfinished. Legacy core/media/import/AI source remains replacement input. This is the current replacement content topology,
+EditingDraft, CaptureNote, bounded Study session, deterministic attempt and
+explicit restart APIs. Progress projections and remaining P0 adapters remain
+unfinished. Legacy core/media/import/AI source remains replacement input. This is the current replacement content topology,
 not a completed product-service consolidation or deployment claim.
 
 The owner's scaling intuition is correct: a saturated importer should receive
