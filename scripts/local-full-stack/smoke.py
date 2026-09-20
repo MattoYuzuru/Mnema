@@ -268,7 +268,9 @@ def resolve_session(web, access, deck_id, status, session):
 
 def start_session(web, access, deck_id, mode, source=None):
     payload = {"commandId": str(uuid.uuid4()), "mode": mode, "budget": {"maxPresentations": 20}}
-    if mode == "REPLAY":
+    if mode == "SCHEDULED":
+        payload["budget"]["maxNewObjectives"] = 5
+    elif mode == "REPLAY":
         payload["sourceSessionId"] = source
     elif mode == "PRACTICE":
         payload.update({"includeNew": False, "order": "WEAKEST_FIRST"})
@@ -352,7 +354,7 @@ def study_smoke(web, access, account, state_file):
     deck_id = account["deckId"]
     member = provision_study_fixture(web, access, account, state_file)
     anonymous_payload = {"commandId": str(uuid.uuid4()), "mode": "SCHEDULED",
-                         "budget": {"maxPresentations": 1}}
+                         "budget": {"maxPresentations": 1, "maxNewObjectives": 1}}
     anonymous, _, _ = web.request(
         "POST", f"/api/decks/{deck_id}/study-sessions", anonymous_payload
     )

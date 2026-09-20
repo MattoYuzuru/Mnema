@@ -176,6 +176,7 @@ class LocalFullStackTest(unittest.TestCase):
         self.assertIn('anonymous == 401', smoke)
         self.assertNotIn('#219 not integrated', smoke)
         self.assertIn('start_session(web, access, deck_id, "SCHEDULED")', smoke)
+        self.assertIn('payload["budget"]["maxNewObjectives"] = 5', smoke)
         self.assertIn('start_session(web, access, deck_id, "REPLAY"', smoke)
         self.assertIn('start_session(web, access, deck_id, "PRACTICE")', smoke)
         self.assertIn('"canonicalEffects"', smoke)
