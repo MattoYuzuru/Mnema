@@ -106,13 +106,17 @@ capacity evidence.
   most 500 exercise rows per poll, selection scans at most 80 candidates and a
   response contains at most 20 immutable presentations. The authenticated
   `zoneinfo` claim determines the local study date; invalid or absent values fall
-  back to UTC, and clients cannot submit a timezone.
+  back to UTC, and clients cannot submit a timezone. Resume returns only
+  presentations without a terminal attempt and each presentation carries the
+  answer-contract reference needed by the accessible Study feedback flow.
 - `/api/decks/{deckId}/study-sessions/{sessionId}/attempts` terminalizes one
   server-issued presentation. `TYPED` and `SELF_CHECK` evaluation is deterministic;
   only `SCHEDULED` writes evidence and one versioned `mnema-baseline-v1`
   transition. Exact retries return the durable outcome, conflicting attempt IDs
   never add transitions, and raw scheduled response JSON expires separately after
-  30 days.
+  30 days. The first terminal receipt atomically removes that presentation from
+  the resumable batch; after its last presentation, the bounded session becomes
+  `COMPLETE` in the same transaction.
 - `/api/decks/{deckId}/study-restarts` starts a new learning epoch for objectives
   under explicitly selected current materials. It locks objectives in UUID order,
   keeps prior evidence/transitions and makes old presentations non-assessing.

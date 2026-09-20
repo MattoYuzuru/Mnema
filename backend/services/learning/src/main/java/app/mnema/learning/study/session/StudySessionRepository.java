@@ -348,6 +348,20 @@ class StudySessionRepository {
                 .query(PRESENTATION).list();
     }
 
+    List<Presentation> pendingPresentations(UUID actor, UUID session, int start, int limit) {
+        return jdbc.sql("""
+                SELECT p.* FROM app_learning.study_presentation p
+                 WHERE p.account_id=:actor AND p.session_id=:session AND p.presentation_ordinal>=:start
+                   AND NOT EXISTS (
+                       SELECT 1 FROM app_learning.study_attempt_tombstone t
+                        WHERE t.account_id=p.account_id AND t.session_id=p.session_id
+                          AND t.presentation_id=p.presentation_id
+                   )
+                 ORDER BY p.presentation_ordinal LIMIT :limit
+                """).param("actor", actor).param("session", session).param("start", start).param("limit", limit)
+                .query(PRESENTATION).list();
+    }
+
     void updateSessionBatch(Session session, String status, int issued, int batchStart, int batchSize,
                             int scanCursor, boolean wrapped) {
         jdbc.sql("""

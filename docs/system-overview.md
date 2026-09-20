@@ -15,7 +15,8 @@ Mnema напрямую заменяет v1 платформой вокруг ver
 #74 канонический authoring runtime уже находится в `identity-account`, `learning` и
 Angular SPA. Epic #75 добавил objective/exercise authoring, bounded Study session
 snapshots, deterministic attempts, baseline scheduler state и production exercise
-inspector; Study runner, progress и remaining P0 adapters ещё в работе. Media
+inspector. Канонический Study runner уже проводит scheduled self-check и typed
+упражнения; progress, replay/practice и remaining P0 adapters ещё в работе. Media
 lifecycle относится к #76.
 
 ## Shipping и local replacement boundary
@@ -53,7 +54,8 @@ Identity и Learning — отдельные deployables без Gradle dependency
 - immutable `MemoryObjective`/Exercise revisions и bounded owner-scoped
   `SCHEDULED`/`REPLAY`/`PRACTICE` session snapshots;
 - deterministic typed/self-check attempts, durable evidence, versioned baseline
-  reducer и explicit material restart без удаления истории;
+  reducer и explicit material restart без удаления истории; terminal attempt
+  атомарно завершает bounded batch, а resume не возвращает решённые presentation;
 - UUID, canonical JSON, command receipts, RFC 9457 Problem Details, row-version CAS;
 - bearer scope enforcement и fail-closed current-account validation через Identity.
 
@@ -71,6 +73,13 @@ paper/antiquity/indigo направление. Отдельный lazy exercise 
 изменить одну явную objective, настроить четыре P0 mechanics и preview без работы с
 UUID/JSON. Native editor state не является persisted format; frontend валидирует
 серверные envelopes и ETag/command contracts.
+
+Lazy route `/decks/:deckId/study` запускается основной кнопкой «Учить» из своей
+колоды. Реализованы PREPARING polling, typed answer без показа эталона до принятого
+ответа, self-check reveal с четырьмя поведенческими оценками, явные состояния
+completion/expiry/error и account-bound recovery точной pending attempt после
+неопределённого сетевого результата. Cloze/choice и дополнительные режимы добавляют
+следующие slices #75.
 
 В исходниках всё ещё есть legacy components/services для public decks, old review,
 templates, import, media и AI. Их наличие не делает поведение текущим и не разрешает

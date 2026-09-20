@@ -59,6 +59,9 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(count("study_transition", "account_id", fixture.actor())).isOne();
         assertThat(count("study_evidence", "account_id", fixture.actor())).isOne();
         assertThat(rawCount(fixture.actor())).isOne();
+        JsonNode completed = sessions.read(fixture.actor(), fixture.deck(), first.session());
+        assertThat(completed.path("status").textValue()).isEqualTo("COMPLETE");
+        assertThat(completed.path("presentations")).isEmpty();
 
         AttemptCommand changedReuse = attempt(attempt, first, "TEXT", "wrong", List.of(), "KNEW");
         assertThatThrownBy(() -> service.submit(fixture.actor(), fixture.deck(), first.session(), changedReuse))

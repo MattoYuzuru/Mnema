@@ -243,7 +243,7 @@
               "maxItems": 20,
               "items": {
                 "type": "object",
-                "required": ["presentationId", "nonce", "ordinal", "exerciseRevisionId", "type", "objectiveId", "objectiveRevisionId", "learningEpoch", "prompt", "options", "bindings", "evaluator"],
+                "required": ["presentationId", "nonce", "ordinal", "exerciseRevisionId", "type", "objectiveId", "objectiveRevisionId", "learningEpoch", "reference", "prompt", "options", "bindings", "evaluator"],
                 "properties": {
                   "presentationId": {"$ref": "#/$defs/identifier"},
                   "nonce": {"type": "string"},
@@ -253,6 +253,7 @@
                   "objectiveId": {"$ref": "#/$defs/identifier"},
                   "objectiveRevisionId": {"$ref": "#/$defs/identifier"},
                   "learningEpoch": {"type": "string"},
+                  "reference": {"type": "string"},
                   "prompt": {"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string"}}, "additionalProperties": false},
                   "options": {"type": "array"},
                   "bindings": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/binding"}},

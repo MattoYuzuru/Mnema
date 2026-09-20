@@ -46,6 +46,7 @@
         "objectiveId": "77777777-7777-4777-8777-777777777771",
         "objectiveRevisionId": "77777777-7777-4777-8777-777777777773",
         "learningEpoch": "0",
+        "reference": "память",
         "prompt": {"kind": "TEXT", "text": "Как называется способность сохранять знания?"},
         "options": [],
         "bindings": [

@@ -1,0 +1,273 @@
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { HttpErrorResponse } from '@angular/common/http';
+import { timer } from 'rxjs';
+
+import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
+import { OwnDeck } from '../own-decks/own-deck.models';
+import { StudyApiService } from './study-api.service';
+import {
+    AttemptCommand,
+    AttemptOutcome,
+    ReadyStudySession,
+    SelfRating,
+    StudyPresentation,
+    StudyResponse,
+    StudySession
+} from './study.models';
+import { StudyRecoveryService } from './study-recovery.service';
+
+type Phase = 'loading' | 'preparing' | 'answering' | 'revealed' | 'submitting' | 'feedback'
+    | 'unknown' | 'conflict' | 'empty' | 'complete' | 'expired' | 'unavailable' | 'error';
+
+@Component({
+    selector: 'app-study-session-page',
+    imports: [RouterLink],
+    templateUrl: './study-session-page.component.html',
+    styleUrl: './study-session-page.component.css',
+    changeDetection: ChangeDetectionStrategy.OnPush
+})
+export class StudySessionPageComponent {
+    readonly deck = signal<OwnDeck | null>(null);
+    readonly session = signal<ReadyStudySession | null>(null);
+    readonly phase = signal<Phase>('loading');
+    readonly typedAnswer = signal('');
+    readonly feedback = signal<AttemptOutcome | null>(null);
+    readonly message = signal<string | null>(null);
+    readonly pending = signal<AttemptCommand | null>(null);
+    readonly current = computed(() => this.session()?.presentations[0] ?? null);
+    readonly position = computed(() => {
+        const current = this.current();
+        const session = this.session();
+        return current === null || session === null ? null : `${current.ordinal + 1} из ${current.ordinal + session.presentations.length}`;
+    });
+
+    private readonly route = inject(ActivatedRoute);
+    private readonly router = inject(Router);
+    private readonly decks = inject(OwnDecksApiService);
+    private readonly api = inject(StudyApiService);
+    private readonly recovery = inject(StudyRecoveryService);
+    private readonly destroyRef = inject(DestroyRef);
+    private readonly element: ElementRef<HTMLElement> = inject(ElementRef);
+    readonly deckId: string;
+    private presentedAt = 0;
+    private pollCount = 0;
+
+    constructor() {
+        const deckId = this.route.snapshot.paramMap.get('deckId');
+        if (deckId === null) throw new Error('Study route requires deckId.');
+        this.deckId = deckId.toLowerCase();
+        this.decks.detail(this.deckId).pipe(takeUntilDestroyed()).subscribe({
+            next: deck => this.deck.set(deck),
+            error: () => this.fail('Не удалось подтвердить выбранную колоду.')
+        });
+        const recovered = this.recovery.restore(this.deckId);
+        if (recovered === null) this.start();
+        else {
+            this.pending.set(recovered.pending);
+            if (recovered.pending?.response.kind === 'TEXT') this.typedAnswer.set(recovered.pending.response.text);
+            this.resume(recovered.sessionId, recovered.pending !== null);
+        }
+    }
+
+    setTypedAnswer(value: string): void { this.typedAnswer.set(value); }
+
+    reveal(): void {
+        if (this.phase() !== 'answering' || this.current()?.type !== 'SELF_CHECK') return;
+        this.phase.set('revealed');
+        queueMicrotask(() => this.element.nativeElement.querySelector<HTMLElement>('[data-first-rating]')?.focus());
+    }
+
+    submitTyped(): void {
+        if (this.phase() !== 'answering' || this.current()?.type !== 'TYPED') return;
+        this.submit({ kind: 'TEXT', text: this.typedAnswer() }, []);
+    }
+
+    rate(rating: SelfRating): void {
+        if (this.phase() !== 'revealed' || this.current()?.type !== 'SELF_CHECK') return;
+        this.submit({ kind: 'SELF_CHECK', rating }, ['REVEAL']);
+    }
+
+    retryPending(): void {
+        const command = this.pending();
+        const session = this.session();
+        if (command === null || session === null) return;
+        this.send(session.sessionId, command);
+    }
+
+    reconcile(): void {
+        const session = this.session();
+        if (session !== null) this.resume(session.sessionId, true);
+    }
+
+    next(): void {
+        const session = this.session();
+        if (session === null || this.phase() !== 'feedback') return;
+        this.feedback.set(null);
+        this.typedAnswer.set('');
+        const remaining = session.presentations.slice(1);
+        if (remaining.length === 0) {
+            this.phase.set('loading');
+            this.resume(session.sessionId, false);
+            return;
+        }
+        this.apply({ ...session, presentations: remaining }, false);
+    }
+
+    retryStart(): void { this.recovery.clear(); this.start(); }
+    pause(): void { void this.router.navigate(['/decks', this.deckId]); }
+
+    canLeave(): boolean {
+        if (this.phase() !== 'submitting' && this.phase() !== 'unknown' && this.typedAnswer().length === 0) return true;
+        return window.confirm('Сессия сохранена в этой вкладке. Выйти и продолжить её позже?');
+    }
+
+    feedbackTitle(outcome: AttemptOutcome): string {
+        return ({ CORRECT: 'Верно', PARTIAL: 'Частично', UNSURE: 'Неуверенно', INCORRECT: 'Нужно повторить',
+            NOT_ASSESSED: 'Без оценки', UNAVAILABLE: 'Проверка недоступна' })[outcome.feedback.result];
+    }
+
+    ruleName(rule: string): string {
+        return ({ UNICODE_NFC: 'единая форма Unicode', TRIM: 'пробелы по краям не учитываются',
+            CASE_FOLD: 'регистр не учитывается', SELF_REPORT: 'самооценка после показа ответа' } as Record<string, string>)[rule] ?? rule;
+    }
+
+    ratingLabel(rating: SelfRating): string {
+        return ({ NOT_RECALLED: 'Не вспомнил', HINTED: 'Вспомнил с подсказкой',
+            PARTIAL: 'Вспомнил частично', FULL: 'Вспомнил полностью' })[rating];
+    }
+
+    private start(): void {
+        this.phase.set('loading');
+        this.message.set(null);
+        const commandId = crypto.randomUUID();
+        this.api.start(this.deckId, commandId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: result => this.acceptStarted(result.value),
+            error: error => this.handle(error, 'Не удалось начать Study-сессию.')
+        });
+    }
+
+    private acceptStarted(session: StudySession): void {
+        this.recovery.save({ deckId: this.deckId, sessionId: session.sessionId, pending: null });
+        if (session.status === 'PREPARING') this.poll(session.sessionId);
+        else this.apply(session, false);
+    }
+
+    private poll(sessionId: string): void {
+        this.phase.set('preparing');
+        if (this.pollCount++ >= 20) {
+            this.fail('Подготовка занимает дольше обычного. Сессию можно продолжить позже.');
+            return;
+        }
+        timer(500).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.api.read(this.deckId, sessionId)
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: session => session.status === 'PREPARING' ? this.poll(sessionId) : this.apply(session, false),
+                error: error => this.handle(error, 'Не удалось проверить подготовку сессии.')
+            }));
+    }
+
+    private resume(sessionId: string, reconciling: boolean): void {
+        this.phase.set('loading');
+        this.api.read(this.deckId, sessionId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: session => {
+                if (session.status === 'PREPARING') { this.poll(sessionId); return; }
+                const pending = this.pending();
+                if (reconciling && pending !== null
+                    && !session.presentations.some(item => item.presentationId === pending.presentationId)) {
+                    this.pending.set(null);
+                    this.recovery.save({ deckId: this.deckId, sessionId, pending: null });
+                    this.message.set('Сервер уже принял предыдущую попытку. Результат не восстановлен, но прогресс не будет записан повторно.');
+                }
+                this.apply(session, reconciling && this.pending() !== null);
+            },
+            error: error => {
+                if (this.errorCode(error) === 'SESSION_EXPIRED') {
+                    this.phase.set('expired'); this.recovery.clear();
+                } else this.handle(error, 'Не удалось восстановить Study-сессию.');
+            }
+        });
+    }
+
+    private apply(session: ReadyStudySession, pendingUnknown: boolean): void {
+        this.session.set(session);
+        this.presentedAt = this.recovery.now();
+        if (session.status === 'EMPTY') { this.phase.set('empty'); this.recovery.clear(); return; }
+        if (session.status === 'COMPLETE') { this.phase.set('complete'); this.recovery.clear(); return; }
+        if (session.presentations.length === 0) {
+            this.phase.set('unavailable');
+            this.message.set('Текущая порция завершена, но сервер ещё не выдал продолжение. Попробуйте восстановить сессию.');
+            return;
+        }
+        this.recovery.save({ deckId: this.deckId, sessionId: session.sessionId, pending: this.pending() });
+        if (pendingUnknown) {
+            this.phase.set('unknown');
+            this.message.set('Исход предыдущего запроса неизвестен. Повторите ровно ту же попытку или сверьтесь с сервером.');
+            return;
+        }
+        const type = session.presentations[0].type;
+        if (type !== 'SELF_CHECK' && type !== 'TYPED') {
+            this.phase.set('unavailable');
+            this.message.set('Эта механика будет подключена следующим срезом. Попытка не создана и прогресс не изменён.');
+            return;
+        }
+        this.phase.set('answering');
+        queueMicrotask(() => this.element.nativeElement.querySelector<HTMLElement>('[data-answer-control]')?.focus());
+    }
+
+    private submit(response: StudyResponse, hintsUsed: readonly string[]): void {
+        const presentation = this.current();
+        const session = this.session();
+        if (presentation === null || session === null) return;
+        const command: AttemptCommand = {
+            attemptId: crypto.randomUUID(), presentationId: presentation.presentationId, nonce: presentation.nonce,
+            response, hintsUsed, confidence: null,
+            durationMs: Math.min(3_600_000, Math.max(0, this.recovery.now() - this.presentedAt))
+        };
+        this.pending.set(command);
+        this.recovery.save({ deckId: this.deckId, sessionId: session.sessionId, pending: command });
+        this.send(session.sessionId, command);
+    }
+
+    private send(sessionId: string, command: AttemptCommand): void {
+        this.phase.set('submitting');
+        this.message.set(null);
+        this.api.submit(this.deckId, sessionId, command).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: result => {
+                this.pending.set(null);
+                this.recovery.save({ deckId: this.deckId, sessionId, pending: null });
+                this.feedback.set(result.value);
+                this.phase.set('feedback');
+                queueMicrotask(() => this.element.nativeElement.querySelector<HTMLElement>('#feedback-title')?.focus());
+            },
+            error: error => {
+                const code = this.errorCode(error);
+                if (error instanceof HttpErrorResponse && error.status === 0) {
+                    this.phase.set('unknown');
+                    this.message.set('Связь оборвалась после отправки. Не меняйте ответ: безопасно повторите ту же попытку.');
+                } else if (code === 'IDEMPOTENCY_CONFLICT') {
+                    this.phase.set('conflict');
+                    this.message.set('Эта карточка уже завершена другой попыткой. Сверьтесь с сервером — новый ответ не отправлен.');
+                } else if (code === 'SESSION_EXPIRED' || code === 'PRESENTATION_EXPIRED') {
+                    this.phase.set('expired'); this.recovery.clear();
+                } else this.handle(error, 'Сервер отклонил попытку. Ответ сохранён в этой вкладке.');
+            }
+        });
+    }
+
+    private handle(error: unknown, fallback: string): void {
+        this.phase.set('error');
+        const code = this.errorCode(error);
+        this.message.set(code === 'RESOURCE_NOT_FOUND' ? 'Колода или сессия недоступна этому аккаунту.' : fallback);
+    }
+
+    private errorCode(error: unknown): string | null {
+        if (!(error instanceof HttpErrorResponse) || typeof error.error !== 'object' || error.error === null) return null;
+        const code = (error.error as Record<string, unknown>)['code'];
+        return typeof code === 'string' ? code : null;
+    }
+
+    private fail(message: string): void { this.phase.set('error'); this.message.set(message); }
+}
+
+export function canLeaveStudySession(component: StudySessionPageComponent): boolean { return component.canLeave(); }

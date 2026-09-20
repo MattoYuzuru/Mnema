@@ -310,7 +310,7 @@ public class StudySessionService {
             result.put("nextCursor", cursor(session));
         } else result.putNull("nextCursor");
         ArrayNode values = result.putArray("presentations");
-        repository.presentations(session.accountId(), session.sessionId(), session.batchStart(),
+        repository.pendingPresentations(session.accountId(), session.sessionId(), session.batchStart(),
                 Math.max(1, session.batchSize())).stream().limit(session.batchSize())
                 .forEach(row -> values.add(presentation(row)));
         return result;
@@ -322,12 +322,21 @@ public class StudySessionService {
                 .put("exerciseRevisionId", row.exerciseRevisionId().toString()).put("type", row.type())
                 .put("objectiveId", row.objectiveId().toString())
                 .put("objectiveRevisionId", row.objectiveRevisionId().toString())
-                .put("learningEpoch", Long.toString(row.learningEpoch()));
+                .put("learningEpoch", Long.toString(row.learningEpoch()))
+                .put("reference", reference(row.answerContract()));
         result.set("prompt", row.prompt().deepCopy());
         result.set("options", row.options().deepCopy());
         result.set("bindings", row.bindings().deepCopy());
         result.set("evaluator", row.evaluator().deepCopy());
         return result;
+    }
+
+    private static String reference(JsonNode answerContract) {
+        JsonNode accepted = answerContract.path("accepted");
+        if (!accepted.isArray() || accepted.isEmpty() || !accepted.get(0).isTextual()) {
+            throw new IllegalStateException("Pinned answer contract has no reference answer");
+        }
+        return accepted.get(0).textValue();
     }
 
     private void requireCurrent(StudySessionRepository.Session session, Instant now) {
