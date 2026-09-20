@@ -38,6 +38,11 @@ enum ApiErrorCode {
             "Resource not found",
             "The requested resource does not exist."
     ),
+    SESSION_EXPIRED(
+            HttpStatus.GONE,
+            "Study session expired",
+            "The Study session is no longer available."
+    ),
     METHOD_NOT_ALLOWED(
             HttpStatus.METHOD_NOT_ALLOWED,
             "Method not allowed",

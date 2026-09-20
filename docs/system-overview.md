@@ -4,7 +4,7 @@ artifact:
   type: architecture-overview
   title: "Mnema current system overview"
   status: current
-  updated_at: "2026-09-19"
+  updated_at: "2026-09-20"
   owners: ["project-owner"]
   evidence_revision: "933da3e60add2102ed7480342dfd3de95a8a255b"
 ---
@@ -13,7 +13,8 @@ artifact:
 
 Mnema напрямую заменяет v1 платформой вокруг versioned `LearningItem`. После Epic
 #74 канонический authoring runtime уже находится в `identity-account`, `learning` и
-Angular SPA. Study/scheduler из Epic #75 и media lifecycle из #76 ещё не реализованы.
+Angular SPA. Epic #75 добавил objective/exercise authoring и bounded Study session
+snapshots; attempts, scheduler state и UI ещё в работе. Media lifecycle относится к #76.
 
 ## Shipping и local replacement boundary
 
@@ -47,11 +48,14 @@ Identity и Learning — отдельные deployables без Gradle dependency
 - Mnema-owned native document v1, безопасный renderer contract, immutable
   block/page storage и counted-page edits;
 - acknowledged server `EditingDraft` и durable `CaptureNote` с idempotent conversion;
+- immutable `MemoryObjective`/Exercise revisions и bounded owner-scoped
+  `SCHEDULED`/`REPLAY`/`PRACTICE` session snapshots;
 - UUID, canonical JSON, command receipts, RFC 9457 Problem Details, row-version CAS;
 - bearer scope enforcement и fail-closed current-account validation через Identity.
 
-Эти contracts являются входом для #75. В Learning пока нет `MemoryObjective`,
-Exercise/Attempt/Evidence, StudySession, `StudyState` или нового reducer/scheduler.
+В Learning пока нет Attempt/Evidence, `StudyState` или применяющего переходы
+reducer/scheduler. Они остаются следующими slices #75; session уже закрепляет
+reducer/config identity и immutable presentations.
 
 ## Frontend boundary
 
