@@ -1,0 +1,29 @@
+{
+  "reducerId": "mnema-baseline",
+  "reducerVersion": "1",
+  "configId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+  "intervals": ["PT10M", "PT4H", "P1D", "P3D", "P7D", "P14D", "P30D", "P60D"],
+  "transitions": [
+    {"result": "CORRECT", "evidenceClass": "HIGH", "operation": "ADD", "levels": 2, "cap": 7, "streak": "INCREMENT", "lapse": "KEEP"},
+    {"result": "CORRECT", "evidenceClass": "MEDIUM", "operation": "ADD", "levels": 1, "cap": 6, "streak": "INCREMENT", "lapse": "KEEP"},
+    {"result": "CORRECT", "evidenceClass": "LOW", "operation": "ADD", "levels": 1, "cap": 3, "streak": "INCREMENT", "lapse": "KEEP"},
+    {"result": "PARTIAL", "evidenceClass": "HIGH", "operation": "SUBTRACT", "levels": 1, "cap": 7, "streak": "RESET", "lapse": "KEEP"},
+    {"result": "PARTIAL", "evidenceClass": "MEDIUM", "operation": "SUBTRACT", "levels": 1, "cap": 7, "streak": "RESET", "lapse": "KEEP"},
+    {"result": "PARTIAL", "evidenceClass": "LOW", "operation": "SUBTRACT", "levels": 1, "cap": 7, "streak": "RESET", "lapse": "KEEP"},
+    {"result": "UNSURE", "evidenceClass": "HIGH", "operation": "SUBTRACT", "levels": 1, "cap": 7, "streak": "RESET", "lapse": "INCREMENT"},
+    {"result": "UNSURE", "evidenceClass": "MEDIUM", "operation": "SUBTRACT", "levels": 1, "cap": 7, "streak": "RESET", "lapse": "INCREMENT"},
+    {"result": "UNSURE", "evidenceClass": "LOW", "operation": "SUBTRACT", "levels": 1, "cap": 7, "streak": "RESET", "lapse": "INCREMENT"},
+    {"result": "INCORRECT", "evidenceClass": "HIGH", "operation": "SET", "levels": 0, "cap": 7, "streak": "RESET", "lapse": "INCREMENT"},
+    {"result": "INCORRECT", "evidenceClass": "MEDIUM", "operation": "SUBTRACT", "levels": 2, "cap": 7, "streak": "RESET", "lapse": "INCREMENT"},
+    {"result": "INCORRECT", "evidenceClass": "LOW", "operation": "SUBTRACT", "levels": 1, "cap": 7, "streak": "RESET", "lapse": "INCREMENT"}
+  ],
+  "goldenCases": [
+    {"name": "new unhinted typed correct", "beforeLevel": 0, "result": "CORRECT", "evidenceClass": "HIGH", "afterLevel": 2, "acceptedAt": "2026-09-20T09:00:00Z", "nextDue": "2026-09-21T09:00:00Z"},
+    {"name": "recognition cannot exceed level three", "beforeLevel": 3, "result": "CORRECT", "evidenceClass": "LOW", "afterLevel": 3, "acceptedAt": "2026-09-20T09:00:00Z", "nextDue": "2026-09-23T09:00:00Z"},
+    {"name": "recognition never demotes mature state", "beforeLevel": 7, "result": "CORRECT", "evidenceClass": "LOW", "afterLevel": 7, "acceptedAt": "2026-09-20T09:00:00Z", "nextDue": "2026-11-19T09:00:00Z"},
+    {"name": "cued correct never demotes mature state", "beforeLevel": 7, "result": "CORRECT", "evidenceClass": "MEDIUM", "afterLevel": 7, "acceptedAt": "2026-09-20T09:00:00Z", "nextDue": "2026-11-19T09:00:00Z"},
+    {"name": "deterministic failure resets", "beforeLevel": 6, "result": "INCORRECT", "evidenceClass": "HIGH", "afterLevel": 0, "acceptedAt": "2026-09-20T09:00:00Z", "nextDue": "2026-09-20T09:10:00Z"},
+    {"name": "cued failure steps down twice", "beforeLevel": 5, "result": "INCORRECT", "evidenceClass": "MEDIUM", "afterLevel": 3, "acceptedAt": "2026-09-20T09:00:00Z", "nextDue": "2026-09-23T09:00:00Z"},
+    {"name": "unsure at floor remains due soon", "beforeLevel": 0, "result": "UNSURE", "evidenceClass": "LOW", "afterLevel": 0, "acceptedAt": "2026-09-20T09:00:00Z", "nextDue": "2026-09-20T09:10:00Z"}
+  ]
+}

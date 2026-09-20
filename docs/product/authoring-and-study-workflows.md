@@ -5,7 +5,7 @@ artifact:
   title: "Own-deck authoring, exercise projections and practice modes"
   status: accepted
   created_at: "2026-09-06"
-  updated_at: "2026-09-19"
+  updated_at: "2026-09-20"
   owners: ["project-owner"]
 ---
 
@@ -208,9 +208,10 @@ REPLAY/PRACTICE могут получать детерминированный f
 private response text. Practice raw answers не хранятся долговременно. Начальная
 инженерная политика session receipts — 24 часа; expired session даёт явный ответ,
 никогда не превращается в новую SCHEDULED попытку. Серверная история обычных сессий
-содержит достаточно данных для сегодняшнего replay; дальнейший срок raw response
-retention требует отдельного решения. Compact idempotency receipts не удаляются
-раньше допустимого retry/offline окна обычных попыток.
+содержит достаточно данных для сегодняшнего replay. Scheduled raw response хранится
+в отдельной TTL-записи ровно 30 дней; compact receipt, normalized evidence и
+before/after transition сохраняются до удаления аккаунта. Replay/practice raw не
+хранят. Receipt не удаляется раньше допустимого retry/offline окна.
 
 Полная колода не отправляется в StartSession. Контракт возвращает session identity,
 зафиксированный snapshot/manifest, seed, selection-policy version и opaque cursor.
@@ -292,9 +293,10 @@ archive/trash/copies, число лимитов, цена и состав под
 
 ## Осталось проверить
 
-Editor engine и точные schemas, storage representation и измеренные лимиты,
-формула material progress, reducer algorithm/calibration, multi-device ordering и
-retention — инженерная работа с явно записанными предложениями. Matching — обязательная
+Editor engine, storage representation и измеренные лимиты, cohort calibration,
+multi-device ordering и долгосрочное архивирование compact evidence — последующая
+инженерная работа. Точные P0 schemas, material progress, reducer и retention
+приняты в [Epic #75 refinement](../engineering/epic-75-refinement.md). Matching — обязательная
 целевая механика и часть prototype проверки; перенос из P1 в первый production slice
 не подразумевается автоматически одним наличием в макете. Community и paid packaging
 получают отдельный refinement после полезного own-deck loop.

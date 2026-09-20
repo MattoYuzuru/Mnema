@@ -1,0 +1,184 @@
+{
+  "cases": [
+    {
+      "id": "A-01",
+      "event": "binding references another deck",
+      "preconditions": ["owner controls deck A", "member belongs only to deck B"],
+      "request": {"operation": "publishExercise", "deck": "A", "bindingDeck": "B"},
+      "persistedEffect": {"rows": 0, "canonicalEffects": false},
+      "response": {"status": 404, "code": "RESOURCE_NOT_FOUND"},
+      "recovery": "correct the binding to a member in the authorized deck snapshot"
+    },
+    {
+      "id": "A-02",
+      "event": "binding references stale or deleted node",
+      "preconditions": ["item revision changed after editor selection"],
+      "request": {"operation": "publishExercise", "node": "stale"},
+      "persistedEffect": {"rows": 0, "canonicalEffects": false},
+      "response": {"status": 412, "code": "VERSION_CONFLICT"},
+      "recovery": "reload the current item revision and select a valid node"
+    },
+    {
+      "id": "A-03",
+      "event": "exact attempt retry",
+      "preconditions": ["first scheduled submit committed one transition"],
+      "request": {"operation": "submitAttempt", "payload": "byte-equivalent canonical payload"},
+      "persistedEffect": {"transitions": 1, "additionalRows": 0},
+      "response": {"status": 200, "header": "Idempotency-Replayed: true"},
+      "recovery": "return the stored outcome without evaluator or reducer execution"
+    },
+    {
+      "id": "A-04",
+      "event": "same attemptId with changed payload",
+      "preconditions": ["attempt receipt exists"],
+      "request": {"operation": "submitAttempt", "attemptId": "existing", "payload": "changed"},
+      "persistedEffect": {"transitions": 0, "additionalRows": 0},
+      "response": {"status": 409, "code": "IDEMPOTENCY_CONFLICT"},
+      "recovery": "retain the original outcome and require a new presentation"
+    },
+    {
+      "id": "A-05",
+      "event": "second attemptId for terminal presentation",
+      "preconditions": ["presentation already has a terminal receipt"],
+      "request": {"operation": "submitAttempt", "attemptId": "new", "presentation": "terminal"},
+      "persistedEffect": {"transitions": 0, "additionalRows": 0},
+      "response": {"status": 409, "code": "IDEMPOTENCY_CONFLICT"},
+      "recovery": "return the original terminal outcome reference"
+    },
+    {
+      "id": "A-06",
+      "event": "client spoofs mode or roles",
+      "preconditions": ["server presentation is PRACTICE with one assessed binding"],
+      "request": {"operation": "submitAttempt", "extraField": "mode or bindings"},
+      "persistedEffect": {"rows": 0, "canonicalEffects": false},
+      "response": {"status": 400, "code": "INVALID_REQUEST"},
+      "recovery": "submit only the strict response envelope"
+    },
+    {
+      "id": "A-07",
+      "event": "cancel",
+      "preconditions": ["active presentation has no receipt"],
+      "request": {"operation": "submitAttempt", "responseKind": "CANCEL"},
+      "persistedEffect": {"terminalReceipt": 1, "canonicalEffects": false},
+      "response": {"status": 200, "outcome": "NOT_ASSESSED"},
+      "recovery": "continue to the next bounded presentation"
+    },
+    {
+      "id": "A-08",
+      "event": "evaluator unavailable",
+      "preconditions": ["active presentation evaluator cannot produce a result"],
+      "request": {"operation": "submitAttempt", "responseKind": "TEXT"},
+      "persistedEffect": {"terminalReceipt": 1, "canonicalEffects": false},
+      "response": {"status": 200, "outcome": "UNAVAILABLE", "reasonCode": "EVALUATOR_UNAVAILABLE"},
+      "recovery": "show retry-later feedback without recording incorrect evidence"
+    },
+    {
+      "id": "A-09",
+      "event": "forward objective succeeds",
+      "preconditions": ["forward and reverse objectives have separate state"],
+      "request": {"operation": "submitAttempt", "direction": "FORWARD"},
+      "persistedEffect": {"assessedTransitions": 1, "reverseTransitions": 0},
+      "response": {"status": 200, "outcome": "ASSESSED"},
+      "recovery": "none"
+    },
+    {
+      "id": "A-10",
+      "event": "old epoch submit after restart",
+      "preconditions": ["presentation epoch is lower than current state epoch"],
+      "request": {"operation": "submitAttempt", "epoch": "old"},
+      "persistedEffect": {"terminalReceipt": 1, "canonicalEffects": false},
+      "response": {"status": 200, "outcome": "NOT_ASSESSED"},
+      "recovery": "start a new session against the current epoch"
+    },
+    {
+      "id": "A-11",
+      "event": "100 replay or practice submissions",
+      "preconditions": ["server sessions are REPLAY or PRACTICE"],
+      "request": {"operation": "submitAttempt", "count": 100},
+      "persistedEffect": {"evidenceRows": 0, "rawRows": 0, "stateTransitions": 0},
+      "response": {"status": 200, "outcome": "feedback only"},
+      "recovery": "compact receipts expire after the retry window"
+    },
+    {
+      "id": "A-12",
+      "event": "raw response expires",
+      "preconditions": ["scheduled raw row is older than submittedAt plus 30 days"],
+      "request": {"operation": "purgeExpiredRaw", "batch": "bounded"},
+      "persistedEffect": {"rawRows": 0, "receiptRows": 1, "evidenceRows": 1, "stateTransitions": 1},
+      "response": {"status": 200, "purged": 1},
+      "recovery": "exact attempt retry returns the stored outcome without evaluation"
+    },
+    {
+      "id": "A-13",
+      "event": "candidate generation not ready",
+      "preconditions": ["no READY generation exists for the pinned exercise root"],
+      "request": {"operation": "startSession", "mode": "SCHEDULED"},
+      "persistedEffect": {"preparationRequested": 1, "fullScan": false},
+      "response": {"status": 202, "sessionStatus": "PREPARING"},
+      "recovery": "poll the bounded status resource before requesting presentations"
+    },
+    {
+      "id": "A-14",
+      "event": "concurrent deck edit after session start",
+      "preconditions": ["session pins an immutable deck and exercise generation"],
+      "request": {"operation": "readPresentation", "afterConcurrentEdit": true},
+      "persistedEffect": {"issuedPresentationChanges": 0},
+      "response": {"status": 200, "snapshot": "original"},
+      "recovery": "new sessions see the new deck revision"
+    },
+    {
+      "id": "A-15",
+      "event": "multi-assessed P0 publication",
+      "preconditions": ["exercise contains two ASSESSED objective bindings"],
+      "request": {"operation": "publishExercise", "assessedBindings": 2},
+      "persistedEffect": {"rows": 0, "canonicalEffects": false},
+      "response": {"status": 400, "code": "INVALID_REQUEST"},
+      "recovery": "split into single-objective exercises or defer to P1"
+    },
+    {
+      "id": "A-16",
+      "event": "browse and reveal without assessed response",
+      "preconditions": ["material exists and owner is authorized"],
+      "request": {"operation": "browseReveal", "member": "current"},
+      "persistedEffect": {"exposureRows": 0, "evidenceRows": 0, "stateTransitions": 0},
+      "response": {"status": 200, "outcome": "CONTENT_ONLY"},
+      "recovery": "none"
+    },
+    {
+      "id": "A-17",
+      "event": "presentation expires before submit",
+      "preconditions": ["presentation expiresAt is before server clock"],
+      "request": {"operation": "submitAttempt", "presentation": "expired"},
+      "persistedEffect": {"canonicalEffects": false, "transitions": 0},
+      "response": {"status": 410, "code": "PRESENTATION_EXPIRED"},
+      "recovery": "request a current presentation; expiration is never incorrect evidence"
+    },
+    {
+      "id": "A-18",
+      "event": "correct typed answer after hint",
+      "preconditions": ["deterministic production evaluator returns CORRECT"],
+      "request": {"operation": "submitAttempt", "hintsUsed": ["REVEAL_FIRST_GRAPHEME"]},
+      "persistedEffect": {"result": "CORRECT", "evidenceClass": "MEDIUM", "transitions": 1},
+      "response": {"status": 200, "outcome": "ASSESSED"},
+      "recovery": "none"
+    },
+    {
+      "id": "A-19",
+      "event": "confidence differs for identical deterministic response",
+      "preconditions": ["response and presentation are otherwise identical"],
+      "request": {"operation": "compareEvaluation", "confidence": ["KNEW", "GUESSED"]},
+      "persistedEffect": {"sameResult": true, "sameEvidenceClass": true, "sameReducerTransition": true},
+      "response": {"status": 200, "outcome": "calibration metadata only"},
+      "recovery": "none"
+    },
+    {
+      "id": "A-20",
+      "event": "exact retry after raw response purge",
+      "preconditions": ["receipt remains and scheduled raw child row is absent"],
+      "request": {"operation": "submitAttempt", "payload": "original canonical payload"},
+      "persistedEffect": {"evaluationRuns": 0, "additionalRows": 0, "transitions": 1},
+      "response": {"status": 200, "header": "Idempotency-Replayed: true"},
+      "recovery": "return the durable stored outcome"
+    }
+  ]
+}

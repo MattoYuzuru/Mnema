@@ -1,0 +1,87 @@
+{
+  "typedSubmit": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+    "nonce": "c3R1ZHktbm9uY2UtdjE",
+    "response": {"kind": "TEXT", "text": "Память"},
+    "hintsUsed": [],
+    "confidence": "KNEW",
+    "durationMs": 4200
+  },
+  "selfCheckSubmit": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc2",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2",
+    "nonce": "c3R1ZHktbm9uY2UtdjI",
+    "response": {"kind": "SELF_CHECK", "rating": "FULL"},
+    "hintsUsed": ["REVEAL"],
+    "confidence": null,
+    "durationMs": 8000
+  },
+  "choiceSubmit": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
+    "nonce": "c3R1ZHktbm9uY2UtdjM",
+    "response": {"kind": "CHOICE", "optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd1"},
+    "hintsUsed": [],
+    "confidence": "UNSURE",
+    "durationMs": 3100
+  },
+  "cancelSubmit": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc4",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb4",
+    "nonce": "c3R1ZHktbm9uY2UtdjQ",
+    "response": {"kind": "CANCEL"},
+    "hintsUsed": [],
+    "confidence": null,
+    "durationMs": 0
+  },
+  "scheduledOutcome": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc1",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1",
+    "mode": "SCHEDULED",
+    "status": "ASSESSED",
+    "evidence": {
+      "objectiveId": "77777777-7777-4777-8777-777777777771",
+      "objectiveRevisionId": "77777777-7777-4777-8777-777777777773",
+      "result": "CORRECT",
+      "evidenceClass": "HIGH",
+      "reasonCodes": ["UNHINTED", "DETERMINISTIC", "PRODUCTION"]
+    },
+    "feedback": {
+      "result": "CORRECT",
+      "reference": "память",
+      "appliedRules": ["UNICODE_NFC", "TRIM", "CASE_FOLD"]
+    },
+    "transition": {
+      "learningEpoch": "0",
+      "sequence": "1",
+      "beforeLevel": 0,
+      "afterLevel": 2,
+      "acceptedAt": "2026-09-20T09:00:00Z",
+      "nextDue": "2026-09-21T09:00:00Z",
+      "reducerId": "mnema-baseline",
+      "reducerVersion": "1",
+      "configId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
+      "configHash": "sha256:9b70f5513a223f50f8358fd1033798b0037d5dcbc66e5f908239b8f3f8421718"
+    }
+  },
+  "practiceOutcome": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc5",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb5",
+    "mode": "PRACTICE",
+    "status": "ASSESSED",
+    "evidence": null,
+    "feedback": {"result": "CORRECT", "reference": "память", "appliedRules": ["TRIM"]},
+    "transition": null,
+    "canonicalEffects": false
+  },
+  "notAssessedOutcome": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc4",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb4",
+    "mode": "SCHEDULED",
+    "status": "NOT_ASSESSED",
+    "evidence": null,
+    "feedback": {"result": "NOT_ASSESSED"},
+    "transition": null
+  }
+}

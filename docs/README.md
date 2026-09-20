@@ -4,7 +4,7 @@ artifact:
   type: navigator
   title: "Mnema documentation"
   status: current
-  updated_at: "2026-09-19"
+  updated_at: "2026-09-20"
   owners: ["project-owner"]
   evidence_revision: "933da3e60add2102ed7480342dfd3de95a8a255b"
 ---
@@ -28,8 +28,9 @@ artifact:
    почему merge не требует deployment и не является production verification.
 5. **Historical acceptance evidence:**
    [закрытие Epic #74](./engineering/evidence/epic-74/verification/integrated-main-2026-09-19.md).
-6. **Proposed / next:** [Epic #75](https://github.com/MattoYuzuru/Mnema/issues/75)
-   и [handoff к refinement](./engineering/repository-guide.md#handoff-для-epic-75).
+6. **Accepted / in delivery:** [Epic #75](https://github.com/MattoYuzuru/Mnema/issues/75),
+   [refinement](./engineering/epic-75-refinement.md) и исполняемый
+   [`contracts/study`](../contracts/study/README.md).
 
 ## Product
 
@@ -37,7 +38,7 @@ artifact:
 |---|---|---|
 | accepted | [Owner decisions](./decisions/owner-decisions-2026-08.md) | Решения владельца и явно открытые вопросы. |
 | accepted | [Authoring and Study workflows](./product/authoring-and-study-workflows.md) | Product contract для authoring, Capture, exercises и режимов практики; #74 реализует authoring subset. |
-| proposed | [Exercise catalog](./product/exercise-catalog-v2.md) | Mechanics и attempt/evidence идеи для refinement #75, не текущая реализация. |
+| accepted | [Exercise catalog](./product/exercise-catalog-v2.md) | Принятые mechanics, attempt/evidence, reducer и retention boundaries для #75. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
 | proposed | [Launch economics](./product/russia-launch-economics-2026.md) | Коммерческие гипотезы. |
 | proposed | [Legal/payment checklist](./product/russia-legal-launch-checklist-2026.md) | Human/legal gates; не юридическая гарантия. |
@@ -74,6 +75,7 @@ artifact:
 | current | [Capability inventory](./engineering/capability-inventory.yaml) | Машиночитаемый список команд и harnesses. |
 | current | [Documentation/evidence index](./engineering/evidence/README.md) | Короткий вход в большие evidence-наборы. |
 | historical | [Epic #74 refinement](./engineering/epic-74-refinement.md) | Выполненный план #74; не backlog #75. |
+| accepted | [Epic #75 refinement](./engineering/epic-75-refinement.md) | Принятые решения, delivery slices и completion boundary текущего эпика. |
 | historical | [Epic #74 dependency decisions](./engineering/epic-74-dependency-decisions.md) | Принятые зависимости и rationale. |
 | historical | [Epic #74 hardware handoff](./engineering/epic-74-hardware-handoff.md) | Machine/session handoff завершённого этапа. |
 | historical | [Epic #74 execution prompt](./engineering/prompts/epic-74-end-to-end.md) | Исходное поручение; не текущая инструкция. |
