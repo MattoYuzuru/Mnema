@@ -24,7 +24,10 @@ describe('StudySessionPageComponent', () => {
     beforeEach(() => {
         const decks = jasmine.createSpyObj<OwnDecksApiService>('OwnDecksApiService', ['detail']);
         decks.detail.and.returnValue(of(deck));
-        api = jasmine.createSpyObj<StudyApiService>('StudyApiService', ['start', 'read', 'submit']);
+        api = jasmine.createSpyObj<StudyApiService>('StudyApiService',
+            ['start', 'read', 'refill', 'submit', 'progress', 'replaySources', 'restart']);
+        api.progress.and.returnValue(of({ asOf: '2026-09-20T10:00:00Z', items: [], nextCursor: null }));
+        api.replaySources.and.returnValue(of({ asOf: '2026-09-20T10:00:00Z', localStudyDate: '2026-09-20', items: [] }));
         recovery = jasmine.createSpyObj<StudyRecoveryService>('StudyRecoveryService', ['restore', 'save', 'clear', 'now']);
         recovery.restore.and.returnValue(null); recovery.now.and.callFake(() => now);
         const router = jasmine.createSpyObj<Router>('Router', ['navigate']); router.navigate.and.resolveTo(true);
@@ -116,6 +119,40 @@ describe('StudySessionPageComponent', () => {
         fixture.componentInstance.retryPending();
         expect(api.submit.calls.mostRecent().args[2]).toBe(first);
         expect(recovery.save).toHaveBeenCalledWith({ deckId: deck.deckId, sessionId, pending: first });
+    });
+
+    it('connects completion replay, practice, explainable progress and confirmed restart', () => {
+        const terminal: ReadyStudySession = { ...session('TYPED'), status: 'COMPLETE', presentations: [] };
+        api.start.and.returnValue(of({ value: terminal, replayed: false }));
+        api.progress.and.returnValue(of({ asOf: '2026-09-20T10:00:00Z', nextCursor: null, items: [{
+            memberKey: id('20'), itemRevisionId: id('21'), state: 'DUE',
+            objectiveCoverage: { enabled: 2, introduced: 1, assessed: 1 },
+            lastAssessedAt: '2026-09-19T10:00:00Z', nextDue: '2026-09-20T09:00:00Z'
+        }] }));
+        api.replaySources.and.returnValue(of({ asOf: '2026-09-20T10:00:00Z', localStudyDate: '2026-09-20',
+            items: [{ sessionId: id('30'), completedAt: '2026-09-20T09:00:00Z', presentationCount: 1 }] }));
+        api.restart.and.returnValue(of({ value: { commandId: id('31'), restartedAt: '2026-09-20T10:00:00Z',
+            objectiveCount: 2, learningEpochs: [{ objectiveId: id('22'), learningEpoch: '1' },
+                { objectiveId: id('23'), learningEpoch: '1' }] }, replayed: false }));
+        spyOn(window, 'confirm').and.returnValue(true);
+
+        fixture = TestBed.createComponent(StudySessionPageComponent); fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.textContent).toContain('Без условного процента');
+        expect(root.textContent).toContain('Пора повторить');
+        expect(root.textContent).not.toContain('%');
+
+        fixture.componentInstance.startReplay();
+        expect(api.start.calls.mostRecent().args[2]).toEqual({ mode: 'REPLAY', sourceSessionId: id('30') });
+        fixture.componentInstance.setIncludeNewPractice(true);
+        fixture.componentInstance.setPracticeOrder('WEAKEST_FIRST');
+        fixture.componentInstance.startPractice();
+        expect(api.start.calls.mostRecent().args[2]).toEqual({ mode: 'PRACTICE', includeNew: true,
+            order: 'WEAKEST_FIRST' });
+
+        fixture.componentInstance.restartMaterial(fixture.componentInstance.progress()[0]);
+        expect(window.confirm).toHaveBeenCalled();
+        expect(api.restart).toHaveBeenCalledWith(deck.deckId, jasmine.any(String), [id('20')]);
     });
 
     it('renders labelled controls without horizontal overflow at 320/390/1440 and RTL', () => {

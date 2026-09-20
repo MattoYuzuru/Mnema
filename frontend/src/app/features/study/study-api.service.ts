@@ -7,14 +7,19 @@ import {
     AttemptCommand,
     AttemptFeedback,
     AttemptOutcome,
+    MaterialProgress,
     PreparingStudySession,
     ReadyStudySession,
+    ReplaySources,
+    RestartAcknowledgement,
     StudyBinding,
     StudyExerciseType,
     StudyMode,
     StudyPresentation,
     StudyProtocolError,
     StudySession,
+    StudyStartIntent,
+    StudyProgressPage,
     StudyWriteResult
 } from './study.models';
 
@@ -23,13 +28,14 @@ export class StudyApiService {
     private readonly http = inject(HttpClient);
     private readonly baseUrl = appConfig.learningApiBaseUrl.replace(/\/$/, '');
 
-    start(deckId: string, commandId: string): Observable<StudyWriteResult<StudySession>> {
+    start(deckId: string, commandId: string,
+          intent: StudyStartIntent = { mode: 'SCHEDULED' }): Observable<StudyWriteResult<StudySession>> {
         return defer(() => {
             const deck = entity(deckId);
             const command = commandIdValue(commandId);
-            return this.http.post<unknown>(`${this.baseUrl}/decks/${deck}/study-sessions`, {
-                commandId: command, mode: 'SCHEDULED', budget: { maxPresentations: 20 }
-            }, { observe: 'response' });
+            const body = startCommand(command, intent);
+            return this.http.post<unknown>(`${this.baseUrl}/decks/${deck}/study-sessions`, body,
+                { observe: 'response' });
         }).pipe(map(response => {
             if (response.status !== 201 && response.status !== 202) throw protocol('Unexpected session status.');
             privateResponse(response);
@@ -39,6 +45,59 @@ export class StudyApiService {
             const expected = `/api/decks/${deckId.toLowerCase()}/study-sessions/${value.sessionId}`;
             if (location !== expected) throw protocol('Invalid Study session location.');
             return { value, replayed };
+        }));
+    }
+
+    refill(deckId: string, sessionId: string): Observable<StudySession> {
+        return defer(() => this.http.post<unknown>(
+            `${this.baseUrl}/decks/${entity(deckId)}/study-sessions/${entity(sessionId)}/presentations`, null,
+            { observe: 'response' }
+        )).pipe(map(response => {
+            if (response.status !== 200) throw protocol('Unexpected session refill status.');
+            privateResponse(response);
+            return parseSession(response.body, deckId, sessionId);
+        }));
+    }
+
+    progress(deckId: string, limit = 100, cursorValue: string | null = null): Observable<StudyProgressPage> {
+        return defer(() => {
+            const deck = entity(deckId);
+            if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) throw protocol('Invalid progress limit.');
+            const cursorQuery = cursorValue === null ? '' : `&cursor=${encodeURIComponent(text(cursorValue, 4096))}`;
+            return this.http.get<unknown>(`${this.baseUrl}/decks/${deck}/study-progress?limit=${limit}${cursorQuery}`,
+                { observe: 'response' });
+        }).pipe(map(response => {
+            if (response.status !== 200) throw protocol('Unexpected progress status.');
+            privateResponse(response);
+            return parseProgress(response.body);
+        }));
+    }
+
+    replaySources(deckId: string): Observable<ReplaySources> {
+        return defer(() => this.http.get<unknown>(
+            `${this.baseUrl}/decks/${entity(deckId)}/study-sessions/replay-sources`, { observe: 'response' }
+        )).pipe(map(response => {
+            if (response.status !== 200) throw protocol('Unexpected replay source status.');
+            privateResponse(response);
+            return parseReplaySources(response.body);
+        }));
+    }
+
+    restart(deckId: string, commandId: string,
+            memberKeys: readonly string[]): Observable<StudyWriteResult<RestartAcknowledgement>> {
+        return defer(() => {
+            if (memberKeys.length < 1 || memberKeys.length > 100) throw protocol('Invalid restart scope.');
+            const command = commandIdValue(commandId);
+            const members = memberKeys.map(entity);
+            if (new Set(members).size !== members.length) throw protocol('Duplicate restart material.');
+            return this.http.post<unknown>(`${this.baseUrl}/decks/${entity(deckId)}/study-restarts`,
+                { commandId: command, memberKeys: members }, { observe: 'response' });
+        }).pipe(map(response => {
+            if (response.status !== 200) throw protocol('Unexpected restart status.');
+            privateResponse(response);
+            const value = parseRestart(response.body);
+            if (value.commandId !== commandId.toLowerCase()) throw protocol('Restart acknowledgement mismatch.');
+            return { value, replayed: replayHeader(response.headers) };
         }));
     }
 
@@ -70,6 +129,66 @@ export class StudyApiService {
             return { value, replayed: replayHeader(response.headers) };
         }));
     }
+}
+
+function startCommand(commandId: string, intent: StudyStartIntent): Record<string, unknown> {
+    if (intent.mode === 'SCHEDULED') return { commandId, mode: intent.mode, budget: { maxPresentations: 20 } };
+    if (intent.mode === 'REPLAY') return { commandId, mode: intent.mode,
+        sourceSessionId: entity(intent.sourceSessionId), budget: { maxPresentations: 20 } };
+    if (intent.order !== 'SEEDED' && intent.order !== 'WEAKEST_FIRST') throw protocol('Invalid practice order.');
+    if (typeof intent.includeNew !== 'boolean') throw protocol('Invalid practice scope.');
+    return { commandId, mode: intent.mode, includeNew: intent.includeNew, order: intent.order,
+        budget: { maxPresentations: 20 } };
+}
+
+function parseProgress(value: unknown): StudyProgressPage {
+    const object = exact(value, ['asOf', 'items', 'nextCursor']);
+    if (!Array.isArray(object['items']) || object['items'].length > 100) throw protocol('Invalid progress page.');
+    return { asOf: instant(object['asOf']), items: object['items'].map(parseMaterialProgress),
+        nextCursor: cursor(object['nextCursor']) };
+}
+
+function parseMaterialProgress(value: unknown): MaterialProgress {
+    const object = exact(value, ['memberKey', 'itemRevisionId', 'state', 'objectiveCoverage',
+        'lastAssessedAt', 'nextDue']);
+    const state = object['state'];
+    if (state !== 'NOT_STARTED' && state !== 'LEARNING' && state !== 'DUE' && state !== 'ON_TRACK') {
+        throw protocol('Invalid material progress state.');
+    }
+    const coverage = exact(object['objectiveCoverage'], ['enabled', 'introduced', 'assessed']);
+    const enabled = count(coverage['enabled'], 1_000_000);
+    const introduced = count(coverage['introduced'], enabled);
+    const assessed = count(coverage['assessed'], introduced);
+    const nullableInstant = (item: unknown): string | null => item === null ? null : instant(item);
+    return { memberKey: entity(object['memberKey']), itemRevisionId: entity(object['itemRevisionId']), state,
+        objectiveCoverage: { enabled, introduced, assessed },
+        lastAssessedAt: nullableInstant(object['lastAssessedAt']), nextDue: nullableInstant(object['nextDue']) };
+}
+
+function parseReplaySources(value: unknown): ReplaySources {
+    const object = exact(value, ['asOf', 'localStudyDate', 'items']);
+    if (!Array.isArray(object['items']) || object['items'].length > 20) throw protocol('Invalid replay sources.');
+    return { asOf: instant(object['asOf']), localStudyDate: localDate(object['localStudyDate']),
+        items: object['items'].map(item => {
+            const source = exact(item, ['sessionId', 'completedAt', 'presentationCount']);
+            return { sessionId: entity(source['sessionId']), completedAt: instant(source['completedAt']),
+                presentationCount: count(source['presentationCount'], 100) };
+        }) };
+}
+
+function parseRestart(value: unknown): RestartAcknowledgement {
+    const object = exact(value, ['commandId', 'restartedAt', 'objectiveCount', 'learningEpochs']);
+    if (!Array.isArray(object['learningEpochs']) || object['learningEpochs'].length > 10_000) {
+        throw protocol('Invalid restart acknowledgement.');
+    }
+    const learningEpochs = object['learningEpochs'].map(item => {
+        const epoch = exact(item, ['objectiveId', 'learningEpoch']);
+        return { objectiveId: entity(epoch['objectiveId']), learningEpoch: unsigned(epoch['learningEpoch']) };
+    });
+    const objectiveCount = count(object['objectiveCount'], 10_000);
+    if (objectiveCount !== learningEpochs.length) throw protocol('Restart count mismatch.');
+    return { commandId: commandIdValue(object['commandId']), restartedAt: instant(object['restartedAt']),
+        objectiveCount, learningEpochs };
 }
 
 function parseSession(value: unknown, expectedDeck: string, expectedSession?: string): StudySession {

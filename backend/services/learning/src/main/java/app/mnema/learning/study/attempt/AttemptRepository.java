@@ -198,7 +198,7 @@ class AttemptRepository {
                    SET status='COMPLETE',completed_at=:now,batch_start=issued_count,batch_size=0,
                        row_version=row_version+1
                  WHERE s.account_id=:actor AND s.deck_id=:deck AND s.session_id=:session AND s.status='ACTIVE'
-                   AND (s.mode='REPLAY' OR s.issued_count>=s.budget OR s.wrapped)
+                   AND (s.issued_count>=s.budget OR s.wrapped)
                    AND NOT EXISTS (
                        SELECT 1 FROM app_learning.study_presentation p
                         WHERE p.account_id=s.account_id AND p.session_id=s.session_id

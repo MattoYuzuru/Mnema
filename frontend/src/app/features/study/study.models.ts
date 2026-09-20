@@ -2,6 +2,12 @@ export type StudyMode = 'SCHEDULED' | 'REPLAY' | 'PRACTICE';
 export type StudyStatus = 'ACTIVE' | 'EMPTY' | 'COMPLETE';
 export type StudyExerciseType = 'SELF_CHECK' | 'TYPED' | 'CLOZE_SINGLE' | 'SINGLE_CHOICE';
 export type SelfRating = 'NOT_RECALLED' | 'HINTED' | 'PARTIAL' | 'FULL';
+export type PracticeOrder = 'SEEDED' | 'WEAKEST_FIRST';
+
+export type StudyStartIntent =
+    | { readonly mode: 'SCHEDULED' }
+    | { readonly mode: 'REPLAY'; readonly sourceSessionId: string }
+    | { readonly mode: 'PRACTICE'; readonly includeNew: boolean; readonly order: PracticeOrder };
 
 export interface StudyPresentation {
     readonly presentationId: string;
@@ -98,6 +104,42 @@ export interface AttemptOutcome {
 }
 
 export interface StudyWriteResult<T> { readonly value: T; readonly replayed: boolean; }
+
+export type MaterialProgressState = 'NOT_STARTED' | 'LEARNING' | 'DUE' | 'ON_TRACK';
+
+export interface MaterialProgress {
+    readonly memberKey: string;
+    readonly itemRevisionId: string;
+    readonly state: MaterialProgressState;
+    readonly objectiveCoverage: { readonly enabled: number; readonly introduced: number; readonly assessed: number };
+    readonly lastAssessedAt: string | null;
+    readonly nextDue: string | null;
+}
+
+export interface StudyProgressPage {
+    readonly asOf: string;
+    readonly items: readonly MaterialProgress[];
+    readonly nextCursor: string | null;
+}
+
+export interface ReplaySource {
+    readonly sessionId: string;
+    readonly completedAt: string;
+    readonly presentationCount: number;
+}
+
+export interface ReplaySources {
+    readonly asOf: string;
+    readonly localStudyDate: string;
+    readonly items: readonly ReplaySource[];
+}
+
+export interface RestartAcknowledgement {
+    readonly commandId: string;
+    readonly restartedAt: string;
+    readonly objectiveCount: number;
+    readonly learningEpochs: readonly { readonly objectiveId: string; readonly learningEpoch: string }[];
+}
 
 export interface StudyRecoverySnapshot {
     readonly deckId: string;

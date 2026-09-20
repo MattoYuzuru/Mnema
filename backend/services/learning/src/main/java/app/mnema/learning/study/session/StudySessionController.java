@@ -48,6 +48,12 @@ public class StudySessionController {
                 .body(service.read(id(identity.getSubject()), id(deckId), id(sessionId)));
     }
 
+    @GetMapping("/replay-sources")
+    ResponseEntity<JsonNode> replaySources(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId) {
+        return ResponseEntity.ok().headers(privateHeaders()).body(service.replaySources(
+                id(identity.getSubject()), id(deckId), identity.getClaimAsString("zoneinfo")));
+    }
+
     @PostMapping("/{sessionId}/presentations")
     ResponseEntity<JsonNode> presentations(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
                                            @PathVariable String sessionId) {

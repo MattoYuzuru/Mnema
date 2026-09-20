@@ -319,6 +319,16 @@ group, 2–6 pinned вариантов и недоступный submit до в�
 остаётся серверным, option IDs сверяются с `OPTION` bindings, а recognition evidence
 не превышает `LOW`; distractor не получает собственный progress.
 
+Slice #219 завершает terminal flow в том же Study shell. После scheduled-сессии
+пользователь видит material states и точную objective coverage без псевдоточного
+mastery percentage, может выбрать сегодняшнюю завершённую сессию для replay или
+запустить practice. Practice по умолчанию повторяет уже введённое; включение новых
+материалов и weakest-first — явные настройки. Replay/practice постоянно помечены
+как режимы без изменения основного прогресса. «Учить заново» требует подтверждения,
+называет область действия и сохранение истории. Progress догружается cursor-page,
+а состояния loading/empty/error и управление клавиатурой остаются доступными на
+mobile, при увеличенном тексте, reduced motion и forced colors.
+
 Измерять first useful content, route bytes, LCP/INP/CLS, request fan-out и p95/p99 API
 при явном профиле устройства/сети. Предлагаемые web quality ориентиры — p75 LCP ≤2.5 s,
 INP ≤200 ms, CLS ≤0.1; это [Core Web Vitals](https://web.dev/articles/vitals), не

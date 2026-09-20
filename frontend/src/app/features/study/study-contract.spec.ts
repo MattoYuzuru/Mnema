@@ -3,6 +3,7 @@ import attempts from '../../../../../contracts/study/attempts.json';
 import authoring from '../../../../../contracts/study/authoring.json';
 import flows from '../../../../../contracts/study/flows.json';
 import progress from '../../../../../contracts/study/progress.json';
+import replaySources from '../../../../../contracts/study/replay-sources.json';
 import reducer from '../../../../../contracts/study/reducer-v1.json';
 import restart from '../../../../../contracts/study/restart.json';
 import schemaDocument from '../../../../../contracts/study/study.schema.json';
@@ -22,6 +23,7 @@ describe('Study shared contract', () => {
             [adversarial, 'adversarialDocument'],
             [flows, 'flowsDocument'],
             [progress, 'progressDocument'],
+            [replaySources, 'replaySourcesDocument'],
             [restart, 'restartDocument']
         ];
         fixtures.forEach(([fixture, definition]) => validate(fixture, asObject(definitions[definition]), root));

@@ -10,11 +10,15 @@ import { StudyApiService } from './study-api.service';
 import {
     AttemptCommand,
     AttemptOutcome,
+    MaterialProgress,
+    PracticeOrder,
     ReadyStudySession,
+    ReplaySource,
     SelfRating,
     StudyPresentation,
     StudyResponse,
-    StudySession
+    StudySession,
+    StudyStartIntent
 } from './study.models';
 import { StudyRecoveryService } from './study-recovery.service';
 
@@ -38,6 +42,14 @@ export class StudySessionPageComponent {
     readonly feedback = signal<AttemptOutcome | null>(null);
     readonly message = signal<string | null>(null);
     readonly pending = signal<AttemptCommand | null>(null);
+    readonly progress = signal<readonly MaterialProgress[]>([]);
+    readonly progressNextCursor = signal<string | null>(null);
+    readonly progressUnavailable = signal(false);
+    readonly replaySources = signal<readonly ReplaySource[]>([]);
+    readonly selectedReplayId = signal<string | null>(null);
+    readonly includeNewPractice = signal(false);
+    readonly practiceOrder = signal<PracticeOrder>('SEEDED');
+    readonly supportLoading = signal(true);
     readonly current = computed(() => this.session()?.presentations[0] ?? null);
     readonly position = computed(() => {
         const current = this.current();
@@ -64,6 +76,7 @@ export class StudySessionPageComponent {
             next: deck => this.deck.set(deck),
             error: () => this.fail('Не удалось подтвердить выбранную колоду.')
         });
+        this.loadSupportingState();
         const recovered = this.recovery.restore(this.deckId);
         if (recovered === null) this.start();
         else {
@@ -136,7 +149,11 @@ export class StudySessionPageComponent {
         const remaining = session.presentations.slice(1);
         if (remaining.length === 0) {
             this.phase.set('loading');
-            this.resume(session.sessionId, false);
+            this.api.refill(this.deckId, session.sessionId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: refilled => refilled.status === 'PREPARING' ? this.poll(session.sessionId)
+                    : this.apply(refilled, false),
+                error: error => this.handle(error, 'Не удалось получить следующую порцию заданий.')
+            });
             return;
         }
         this.apply({ ...session, presentations: remaining }, false);
@@ -144,6 +161,52 @@ export class StudySessionPageComponent {
 
     retryStart(): void { this.recovery.clear(); this.start(); }
     pause(): void { void this.router.navigate(['/decks', this.deckId]); }
+
+    chooseReplay(sessionId: string): void { this.selectedReplayId.set(sessionId); }
+    setIncludeNewPractice(value: boolean): void { this.includeNewPractice.set(value); }
+    setPracticeOrder(value: string): void {
+        if (value === 'SEEDED' || value === 'WEAKEST_FIRST') this.practiceOrder.set(value);
+    }
+
+    startReplay(): void {
+        const sourceSessionId = this.selectedReplayId();
+        if (sourceSessionId !== null) this.start({ mode: 'REPLAY', sourceSessionId });
+    }
+
+    startPractice(): void {
+        this.start({ mode: 'PRACTICE', includeNew: this.includeNewPractice(), order: this.practiceOrder() });
+    }
+
+    restartMaterial(material: MaterialProgress): void {
+        const affected = material.objectiveCoverage.enabled;
+        if (!window.confirm(`Начать заново этот материал и ${affected} ${this.objectiveWord(affected)}? `
+            + 'История останется, а текущее расписание начнётся с нового этапа.')) return;
+        this.message.set(null);
+        this.api.restart(this.deckId, crypto.randomUUID(), [material.memberKey])
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: result => {
+                    this.message.set(`Материал начат заново: ${result.value.objectiveCount} ${this.objectiveWord(result.value.objectiveCount)}.`);
+                    this.loadProgress();
+                },
+                error: error => this.handleSupportError(error, 'Не удалось начать материал заново.')
+            });
+    }
+
+    loadMoreProgress(): void {
+        const cursor = this.progressNextCursor();
+        if (cursor !== null) this.loadProgress(cursor, true);
+    }
+
+    progressLabel(state: MaterialProgress['state']): string {
+        return ({ NOT_STARTED: 'Не начат', LEARNING: 'В изучении', DUE: 'Пора повторить',
+            ON_TRACK: 'По плану' })[state];
+    }
+
+    formatDate(value: string | null): string {
+        return value === null ? 'нет данных' : new Intl.DateTimeFormat('ru-RU', {
+            dateStyle: 'medium', timeStyle: 'short'
+        }).format(new Date(value));
+    }
 
     canLeave(): boolean {
         if (this.phase() !== 'submitting' && this.phase() !== 'unknown' && this.typedAnswer().length === 0) return true;
@@ -167,11 +230,15 @@ export class StudySessionPageComponent {
             PARTIAL: 'Вспомнил частично', FULL: 'Вспомнил полностью' })[rating];
     }
 
-    private start(): void {
+    private start(intent: StudyStartIntent = { mode: 'SCHEDULED' }): void {
+        this.recovery.clear();
+        this.pending.set(null);
+        this.feedback.set(null);
+        this.session.set(null);
         this.phase.set('loading');
         this.message.set(null);
         const commandId = crypto.randomUUID();
-        this.api.start(this.deckId, commandId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        this.api.start(this.deckId, commandId, intent).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: result => this.acceptStarted(result.value),
             error: error => this.handle(error, 'Не удалось начать Study-сессию.')
         });
@@ -221,8 +288,12 @@ export class StudySessionPageComponent {
     private apply(session: ReadyStudySession, pendingUnknown: boolean): void {
         this.session.set(session);
         this.presentedAt = this.recovery.now();
-        if (session.status === 'EMPTY') { this.phase.set('empty'); this.recovery.clear(); return; }
-        if (session.status === 'COMPLETE') { this.phase.set('complete'); this.recovery.clear(); return; }
+        if (session.status === 'EMPTY') {
+            this.phase.set('empty'); this.recovery.clear(); this.loadSupportingState(); return;
+        }
+        if (session.status === 'COMPLETE') {
+            this.phase.set('complete'); this.recovery.clear(); this.loadSupportingState(); return;
+        }
         if (session.presentations.length === 0) {
             this.phase.set('unavailable');
             this.message.set('Текущая порция завершена, но сервер ещё не выдал продолжение. Попробуйте восстановить сессию.');
@@ -283,6 +354,49 @@ export class StudySessionPageComponent {
         this.phase.set('error');
         const code = this.errorCode(error);
         this.message.set(code === 'RESOURCE_NOT_FOUND' ? 'Колода или сессия недоступна этому аккаунту.' : fallback);
+    }
+
+    private loadSupportingState(): void {
+        this.supportLoading.set(true);
+        this.loadProgress();
+        this.api.replaySources(this.deckId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: sources => {
+                this.replaySources.set(sources.items);
+                const current = this.selectedReplayId();
+                this.selectedReplayId.set(sources.items.some(item => item.sessionId === current)
+                    ? current : sources.items[0]?.sessionId ?? null);
+                this.supportLoading.set(false);
+            },
+            error: () => { this.replaySources.set([]); this.supportLoading.set(false); }
+        });
+    }
+
+    private loadProgress(cursor: string | null = null, append = false): void {
+        this.api.progress(this.deckId, 100, cursor).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+            next: page => {
+                this.progress.set(append ? [...this.progress(), ...page.items] : page.items);
+                this.progressNextCursor.set(page.nextCursor);
+                this.progressUnavailable.set(false);
+            },
+            error: () => {
+                if (!append) this.progress.set([]);
+                this.progressNextCursor.set(null);
+                this.progressUnavailable.set(true);
+            }
+        });
+    }
+
+    private handleSupportError(error: unknown, fallback: string): void {
+        const code = this.errorCode(error);
+        this.message.set(code === 'RESOURCE_NOT_FOUND' ? 'Материал больше не доступен в этой колоде.' : fallback);
+    }
+
+    private objectiveWord(value: number): string {
+        const mod10 = value % 10;
+        const mod100 = value % 100;
+        if (mod10 === 1 && mod100 !== 11) return 'цель';
+        if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return 'цели';
+        return 'целей';
     }
 
     private errorCode(error: unknown): string | null {

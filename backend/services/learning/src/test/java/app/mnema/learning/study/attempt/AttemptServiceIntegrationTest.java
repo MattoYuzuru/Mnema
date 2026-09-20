@@ -9,6 +9,8 @@ import app.mnema.learning.catalog.item.ItemService;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.study.restart.StudyRestartCommand;
 import app.mnema.learning.study.restart.StudyRestartService;
+import app.mnema.learning.study.progress.StudyProgressService;
+import app.mnema.learning.study.retention.StudyRetentionService;
 import app.mnema.learning.study.session.StudySessionCommand;
 import app.mnema.learning.study.session.StudySessionService;
 import app.mnema.learning.support.PostgresIntegrationTest;
@@ -22,6 +24,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -37,6 +40,8 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
     @Autowired private AttemptService service;
     @Autowired private StudyRestartService restarts;
     @Autowired private StudySessionService sessions;
+    @Autowired private StudyProgressService progress;
+    @Autowired private StudyRetentionService retention;
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
     @Autowired private ExerciseService exercises;
@@ -46,6 +51,7 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
     void scheduledAttemptRetriesTransitionsAndRestartRetainsHistoryWhileRejectingOldEpoch() {
         Fixture fixture = fixture("TYPED");
         Presentation first = presentation(fixture, "SCHEDULED");
+        Presentation beforeRestart = presentation(fixture, "SCHEDULED");
         UUID attempt = UUID.randomUUID();
         AttemptCommand correct = attempt(attempt, first, "TEXT", " MEMORY ", List.of(), "KNEW");
 
@@ -70,7 +76,6 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
                 attempt(UUID.randomUUID(), first, "TEXT", "memory", List.of(), null)))
                 .isInstanceOf(IdempotencyConflictException.class);
 
-        Presentation beforeRestart = presentation(fixture, "SCHEDULED");
         StudyRestartCommand restart = restart(UUID.randomUUID(), fixture.member());
         StudyRestartService.Result restarted = restarts.restart(fixture.actor(), fixture.deck(), restart);
         assertThat(restarted.acknowledgement().path("objectiveCount").intValue()).isOne();
@@ -210,9 +215,100 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(count("study_transition", "account_id", fixture.actor())).isOne();
     }
 
+    @Test
+    void progressIsExplainableAndRawRetentionPreservesDurableRetryEvidence() {
+        Fixture fixture = fixture("TYPED");
+        JsonNode fresh = progress.read(fixture.actor(), fixture.deck(), 20, null).path("items").get(0);
+        assertThat(fresh.path("state").textValue()).isEqualTo("NOT_STARTED");
+        assertThat(fresh.path("objectiveCoverage").toString())
+                .isEqualTo("{\"enabled\":1,\"introduced\":0,\"assessed\":0}");
+
+        Presentation presentation = presentation(fixture, "SCHEDULED");
+        JsonNode introduced = progress.read(fixture.actor(), fixture.deck(), 20, null).path("items").get(0);
+        assertThat(introduced.path("state").textValue()).isEqualTo("LEARNING");
+        AttemptCommand command = attempt(UUID.randomUUID(), presentation, "TEXT", "memory", List.of(), null);
+        service.submit(fixture.actor(), fixture.deck(), presentation.session(), command);
+
+        JsonNode onTrack = progress.read(fixture.actor(), fixture.deck(), 20, null).path("items").get(0);
+        assertThat(onTrack.path("state").textValue()).isEqualTo("ON_TRACK");
+        assertThat(onTrack.path("objectiveCoverage").path("assessed").intValue()).isOne();
+        jdbc.sql("""
+                UPDATE app_learning.study_state SET next_due=statement_timestamp()-INTERVAL '1 second'
+                 WHERE account_id=:actor AND deck_id=:deck
+                """).param("actor", fixture.actor()).param("deck", fixture.deck()).update();
+        assertThat(progress.read(fixture.actor(), fixture.deck(), 20, null).path("items").get(0)
+                .path("state").textValue()).isEqualTo("DUE");
+        jdbc.sql("""
+                UPDATE app_learning.study_raw_response raw
+                   SET expires_at=statement_timestamp()-INTERVAL '1 second'
+                  FROM app_learning.study_attempt_tombstone attempt
+                 WHERE attempt.attempt_id=raw.attempt_id AND attempt.account_id=:actor
+                """).param("actor", fixture.actor()).update();
+        StudyRetentionService.PurgeResult purged = retention.purgeBatch();
+        assertThat(purged.rawResponses()).isOne();
+        assertThat(rawCount(fixture.actor())).isZero();
+        assertThat(count("study_attempt_tombstone", "account_id", fixture.actor())).isOne();
+        assertThat(count("study_evidence", "account_id", fixture.actor())).isOne();
+        assertThat(count("study_transition", "account_id", fixture.actor())).isOne();
+        assertThat(service.submit(fixture.actor(), fixture.deck(), presentation.session(), command).replayed()).isTrue();
+    }
+
+    @Test
+    void oneHundredPracticeAndReplaySubmissionsCannotChangeCanonicalState() {
+        Fixture fixture = fixture("TYPED");
+        Presentation scheduled = presentation(fixture, "SCHEDULED");
+        service.submit(fixture.actor(), fixture.deck(), scheduled.session(),
+                attempt(UUID.randomUUID(), scheduled, "TEXT", "memory", List.of(), null));
+        StateSnapshot before = state(fixture.actor());
+        long exposures = count("study_exposure", "account_id", fixture.actor());
+        long evidence = count("study_evidence", "account_id", fixture.actor());
+        long transitions = count("study_transition", "account_id", fixture.actor());
+
+        for (int index = 0; index < 50; index++) {
+            String mode = index % 2 == 0 ? "PRACTICE" : "REPLAY";
+            Presentation extra = presentation(fixture, mode, scheduled.session());
+            AttemptCommand command = attempt(UUID.randomUUID(), extra, "TEXT",
+                    index % 3 == 0 ? "wrong" : "memory", List.of(), "GUESSED");
+            assertThat(service.submit(fixture.actor(), fixture.deck(), extra.session(), command).replayed()).isFalse();
+            assertThat(service.submit(fixture.actor(), fixture.deck(), extra.session(), command).replayed()).isTrue();
+        }
+
+        assertThat(state(fixture.actor())).isEqualTo(before);
+        assertThat(count("study_exposure", "account_id", fixture.actor())).isEqualTo(exposures);
+        assertThat(count("study_evidence", "account_id", fixture.actor())).isEqualTo(evidence);
+        assertThat(count("study_transition", "account_id", fixture.actor())).isEqualTo(transitions);
+        assertThat(rawCount(fixture.actor())).isOne();
+
+        jdbc.sql("""
+                UPDATE app_learning.study_attempt_tombstone
+                   SET submitted_at=submitted_at-INTERVAL '2 days',
+                       receipt_expires_at=receipt_expires_at-INTERVAL '2 days'
+                 WHERE account_id=:actor AND mode<>'SCHEDULED'
+                """).param("actor", fixture.actor()).update();
+        assertThat(retention.purgeBatch().compactOutcomes()).isEqualTo(50);
+        assertThat(count("study_attempt_tombstone", "account_id", fixture.actor())).isEqualTo(51);
+        assertThat(jdbc.sql("""
+                SELECT count(*) FROM app_learning.study_attempt_tombstone
+                 WHERE account_id=:actor AND outcome IS NOT NULL
+                """).param("actor", fixture.actor()).query(Long.class).single()).isOne();
+
+        ObjectNode tampered = JSON.createObjectNode().put("attemptId", UUID.randomUUID().toString())
+                .put("presentationId", scheduled.id().toString()).put("nonce", scheduled.nonce())
+                .put("schedulerAffecting", true);
+        tampered.putObject("response").put("kind", "TEXT").put("text", "memory");
+        tampered.putArray("hintsUsed"); tampered.putNull("confidence"); tampered.put("durationMs", 1);
+        assertThatThrownBy(() -> AttemptCommand.read(bytes(tampered)))
+                .isInstanceOf(app.mnema.learning.platform.api.InvalidRequestException.class);
+    }
+
     private Presentation presentation(Fixture fixture, String mode) {
+        return presentation(fixture, mode, null);
+    }
+
+    private Presentation presentation(Fixture fixture, String mode, UUID sourceSession) {
         ObjectNode request = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString()).put("mode", mode);
         if (mode.equals("PRACTICE")) request.put("includeNew", true).put("order", "SEEDED");
+        if (mode.equals("REPLAY")) request.put("sourceSessionId", sourceSession.toString());
         request.set("budget", JSON.createObjectNode().put("maxPresentations", 20));
         StudySessionService.StartResult started = sessions.start(fixture.actor(), fixture.deck(), "UTC",
                 StudySessionCommand.read(bytes(request)));
@@ -223,6 +319,16 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
         value.path("options").forEach(option -> options.add(UUID.fromString(option.path("optionId").textValue())));
         return new Presentation(session, UUID.fromString(value.path("presentationId").textValue()),
                 value.path("nonce").textValue(), List.copyOf(options));
+    }
+
+    private StateSnapshot state(UUID actor) {
+        return jdbc.sql("""
+                SELECT learning_epoch,level,correct_streak,lapse_count,transition_sequence,last_assessed_at,next_due
+                  FROM app_learning.study_state WHERE account_id=:actor
+                """).param("actor", actor).query((row, ignored) -> new StateSnapshot(row.getLong("learning_epoch"),
+                row.getInt("level"), row.getInt("correct_streak"), row.getInt("lapse_count"),
+                row.getLong("transition_sequence"), row.getTimestamp("last_assessed_at").toInstant(),
+                row.getTimestamp("next_due").toInstant())).single();
     }
 
     private Fixture fixture(String type) {
@@ -329,4 +435,6 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
 
     private record Fixture(UUID actor, UUID deck, UUID member) { }
     private record Presentation(UUID session, UUID id, String nonce, List<UUID> options) { }
+    private record StateSnapshot(long learningEpoch, int level, int correctStreak, int lapseCount,
+                                 long transitionSequence, Instant lastAssessedAt, Instant nextDue) { }
 }

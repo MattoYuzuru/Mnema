@@ -23,11 +23,8 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayDeque;
-import java.util.ArrayList;
 import java.util.Base64;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -84,7 +81,7 @@ public class StudySessionService {
                     source == null ? null : source.sessionId(), now, now.plus(SESSION_LIFETIME));
             StudySessionRepository.Session inserted = repository.sessionForUpdate(actor, deckId, sessionId).orElseThrow();
             if (generation.status().equals("READY")) {
-                issueInitial(inserted, generation, source, now);
+                issueNext(inserted, generation, source, now, false);
                 inserted = repository.session(actor, deckId, sessionId).orElseThrow();
             }
             return response(inserted);
@@ -105,7 +102,7 @@ public class StudySessionService {
                 StudySessionRepository.Session source = session.sourceSessionId() == null ? null
                         : repository.replaySource(actor, deckId, session.sourceSessionId(), session.localStudyDate())
                         .orElseThrow(InvalidRequestException::new);
-                issueInitial(session, generation, source, now);
+                issueNext(session, generation, source, now, false);
                 session = repository.session(actor, deckId, sessionId).orElseThrow();
             }
         }
@@ -117,9 +114,33 @@ public class StudySessionService {
         own(actor, deckId);
         StudySessionRepository.Session session = repository.sessionForUpdate(actor, deckId, sessionId)
                 .orElseThrow(ResourceNotFoundException::new);
-        requireCurrent(session, repository.now());
-        // Until the attempt slice terminalizes the current batch, refill is a deterministic resume.
+        Instant now = repository.now();
+        requireCurrent(session, now);
+        if (session.status().equals("ACTIVE") && repository.pendingPresentations(actor, sessionId,
+                session.batchStart(), Math.max(1, session.batchSize())).isEmpty()) {
+            StudySessionRepository.Generation generation = repository.generationForUpdate(deckId,
+                    session.generationId()).orElseThrow(IllegalStateException::new);
+            StudySessionRepository.Session source = session.sourceSessionId() == null ? null
+                    : repository.replaySource(actor, deckId, session.sourceSessionId(), session.localStudyDate())
+                    .orElseThrow(InvalidRequestException::new);
+            issueNext(session, generation, source, now, false);
+            session = repository.session(actor, deckId, sessionId).orElseThrow();
+        }
         return response(session);
+    }
+
+    @Transactional(readOnly = true, timeout = 10)
+    public ObjectNode replaySources(UUID actor, UUID deckId, String trustedTimezone) {
+        own(actor, deckId);
+        Instant now = repository.now();
+        LocalDate studyDate = now.atZone(ZoneId.of(timezone(trustedTimezone))).toLocalDate();
+        ObjectNode response = JsonNodeFactory.instance.objectNode().put("asOf", now.toString())
+                .put("localStudyDate", studyDate.toString());
+        var items = response.putArray("items");
+        repository.replaySources(actor, deckId, studyDate, 20).forEach(source -> items.addObject()
+                .put("sessionId", source.sessionId().toString()).put("completedAt", source.completedAt().toString())
+                .put("presentationCount", source.presentationCount()));
+        return response;
     }
 
     private StudySessionRepository.Generation generation(StudySessionRepository.DeckHead deck, Instant now) {
@@ -152,64 +173,64 @@ public class StudySessionService {
         return repository.generationForUpdate(session.deckId(), generation.generationId()).orElseThrow();
     }
 
-    private void issueInitial(StudySessionRepository.Session session, StudySessionRepository.Generation generation,
-                              StudySessionRepository.Session source, Instant now) {
+    private void issueNext(StudySessionRepository.Session session, StudySessionRepository.Generation generation,
+                           StudySessionRepository.Session source, Instant now, boolean refill) {
         if (session.mode() == StudySessionCommand.Mode.REPLAY) {
-            issueReplay(session, source, now);
-            return;
-        }
-        if (session.mode() == StudySessionCommand.Mode.PRACTICE && !session.includeNew()) {
-            repository.updateSessionBatch(session, "EMPTY", 0, 0, 0, 0, false);
+            issueReplay(session, source, now, refill);
             return;
         }
         if (generation.candidateCount() == 0) {
-            repository.updateSessionBatch(session, "EMPTY", 0, 0, 0, 0, false);
+            if (refill) repository.complete(session, now);
+            else repository.updateSessionBatch(session, "EMPTY", 0, 0, 0, 0, true);
             return;
         }
-        BoundedCandidatePlanner.Window window = BoundedCandidatePlanner.window(session.seed(),
-                generation.candidateCount(), session.budget());
-        int target = window.target();
-        int start = window.start();
-        List<StudySessionRepository.Candidate> candidates = select(generation, window);
-        Set<UUID> objectives = new HashSet<>();
-        int issued = 0;
-        int cursor = start;
-        boolean wrapped = false;
+        int remaining = session.budget() - session.issuedCount();
+        if (remaining <= 0) { repository.complete(session, now); return; }
+        int target = Math.min(BoundedCandidatePlanner.PRESENTATION_LIMIT, remaining);
+        int start = session.issuedCount() == 0 ? Math.floorMod(session.seed(), generation.candidateCount())
+                : session.scanCursor();
+        List<StudySessionRepository.Candidate> candidates = repository.eligibleCandidates(session, start,
+                target * BoundedCandidatePlanner.SCAN_MULTIPLIER, now);
+        int batch = 0;
+        int cursor = session.scanCursor();
         for (StudySessionRepository.Candidate candidate : candidates) {
             cursor = candidate.ordinal() + 1;
-            if (cursor >= generation.candidateCount()) { cursor = 0; wrapped = true; }
-            if (!objectives.add(candidate.objectiveId())) continue;
-            insert(session, candidate, issued++, now);
-            if (issued == target) break;
+            if (cursor >= generation.candidateCount()) cursor = 0;
+            insert(session, candidate, session.issuedCount() + batch++, now);
+            if (batch == target) break;
         }
-        repository.updateSessionBatch(session, issued == 0 ? "EMPTY" : "ACTIVE", issued, 0, issued,
-                cursor, wrapped);
+        if (batch == 0) {
+            if (refill) repository.complete(session, now);
+            else repository.updateSessionBatch(session, "EMPTY", 0, 0, 0, cursor, true);
+            return;
+        }
+        boolean exhausted = batch < target;
+        repository.updateSessionBatch(session, "ACTIVE", session.issuedCount() + batch,
+                session.issuedCount(), batch, cursor, exhausted);
     }
 
-    private List<StudySessionRepository.Candidate> select(StudySessionRepository.Generation generation,
-                                                           BoundedCandidatePlanner.Window window) {
-        int start = window.start();
-        int scanLimit = window.scanLimit();
-        List<StudySessionRepository.Candidate> values = new ArrayList<>(
-                repository.candidates(generation.generationId(), start, scanLimit));
-        if (values.size() < scanLimit && start > 0) {
-            values.addAll(repository.candidates(generation.generationId(), 0, scanLimit - values.size()));
-        }
-        return List.copyOf(values);
-    }
-
-    private void issueReplay(StudySessionRepository.Session session, StudySessionRepository.Session source, Instant now) {
+    private void issueReplay(StudySessionRepository.Session session, StudySessionRepository.Session source, Instant now,
+                             boolean refill) {
         if (source == null) throw new InvalidRequestException();
+        int remaining = session.budget() - session.issuedCount();
+        if (remaining <= 0) { repository.complete(session, now); return; }
+        int target = Math.min(BoundedCandidatePlanner.PRESENTATION_LIMIT, remaining);
         List<StudySessionRepository.Presentation> originals = repository.presentations(session.accountId(),
-                source.sessionId(), 0, Math.min(BoundedCandidatePlanner.PRESENTATION_LIMIT, session.budget()));
-        int ordinal = 0;
+                source.sessionId(), session.issuedCount(), target);
+        int ordinal = session.issuedCount();
         for (StudySessionRepository.Presentation original : originals) {
             repository.copyPresentation(session.accountId(), source.sessionId(), session.sessionId(), session.deckId(),
                     session.generationId(), original, UUID.randomUUID(), ordinal++, nonce(), now,
                     now.plus(SESSION_LIFETIME));
         }
-        repository.updateSessionBatch(session, originals.isEmpty() ? "EMPTY" : "ACTIVE", originals.size(), 0,
-                originals.size(), originals.size(), false);
+        if (originals.isEmpty()) {
+            if (refill) repository.complete(session, now);
+            else repository.updateSessionBatch(session, "EMPTY", 0, 0, 0, 0, true);
+            return;
+        }
+        repository.updateSessionBatch(session, "ACTIVE", session.issuedCount() + originals.size(),
+                session.issuedCount(), originals.size(), session.issuedCount() + originals.size(),
+                originals.size() < target);
     }
 
     private void insert(StudySessionRepository.Session session, StudySessionRepository.Candidate candidate,

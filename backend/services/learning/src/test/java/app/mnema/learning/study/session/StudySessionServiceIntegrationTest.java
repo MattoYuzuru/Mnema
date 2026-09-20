@@ -82,12 +82,20 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
                 scheduled(UUID.randomUUID(), 20));
         UUID source = UUID.fromString(scheduledStart.body().path("sessionId").textValue());
         JsonNode sourceActive = service.read(fixture.actor(), fixture.deck(), source);
+        StudySessionService.StartResult introducedPractice = service.start(fixture.actor(), fixture.deck(), "UTC",
+                practice(UUID.randomUUID(), false));
+        assertThat(service.read(fixture.actor(), fixture.deck(),
+                UUID.fromString(introducedPractice.body().path("sessionId").textValue())).path("status").textValue())
+                .isEqualTo("ACTIVE");
         assertThatThrownBy(() -> service.read(UUID.randomUUID(), fixture.deck(), source))
                 .isInstanceOf(ResourceNotFoundException.class);
 
         jdbc.sql("UPDATE app_learning.study_session SET status='COMPLETE',completed_at=statement_timestamp() "
                         + "WHERE account_id=:actor AND session_id=:session")
                 .param("actor", fixture.actor()).param("session", source).update();
+        JsonNode sources = service.replaySources(fixture.actor(), fixture.deck(), "UTC");
+        assertThat(sources.path("items")).hasSize(1);
+        assertThat(sources.path("items").get(0).path("sessionId").textValue()).isEqualTo(source.toString());
         StudySessionService.StartResult replay = service.start(fixture.actor(), fixture.deck(), "UTC",
                 replay(UUID.randomUUID(), source));
         assertThat(replay.body().path("status").textValue()).isEqualTo("ACTIVE");

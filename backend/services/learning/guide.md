@@ -5,8 +5,8 @@ Gradle project dependency on legacy `core`, `media`, `import` or `ai`. Epic #74
 added the canonical private Deck, deck-local LearningItem, native content,
 EditingDraft and CaptureNote domains. Epic #75 now also owns immutable objectives,
 P0 exercise revisions, explicit content bindings, bounded Study session snapshots,
-deterministic attempts and the baseline Study state reducer. Progress, full mode
-selection and retention cleanup are delivered by subsequent Study slices.
+deterministic attempts, the baseline Study state reducer, material progress,
+scheduled/replay/practice selection and retention cleanup.
 Greenfield media lifecycle remains #76.
 
 ## Runtime contract
@@ -109,6 +109,11 @@ capacity evidence.
   back to UTC, and clients cannot submit a timezone. Resume returns only
   presentations without a terminal attempt and each presentation carries the
   answer-contract reference needed by the accessible Study feedback flow.
+- `/api/decks/{deckId}/study-sessions/replay-sources` returns at most 20 completed
+  scheduled sessions from the authenticated account's current local study date.
+  Scheduled selection is due-first and then introduces new objectives. Practice
+  defaults to already introduced objectives, supports deterministic seeded or
+  weakest-first order, and admits new objectives only when explicitly requested.
 - `/api/decks/{deckId}/study-sessions/{sessionId}/attempts` terminalizes one
   server-issued presentation. All four P0 evaluators are deterministic;
   only `SCHEDULED` writes evidence and one versioned `mnema-baseline-v1`
@@ -124,6 +129,13 @@ capacity evidence.
 - `/api/decks/{deckId}/study-restarts` starts a new learning epoch for objectives
   under explicitly selected current materials. It locks objectives in UUID order,
   keeps prior evidence/transitions and makes old presentations non-assessing.
+- `/api/decks/{deckId}/study-progress` returns a cursor-bounded current-material
+  projection with `NOT_STARTED`, `LEARNING`, `DUE` or `ON_TRACK`, exact objective
+  coverage and relevant timestamps. It deliberately exposes no mastery percentage.
+- The scheduled retention worker deletes expired raw scheduled responses in locked
+  batches of 500 and clears expired replay/practice outcomes while preserving their
+  global attempt-ID tombstones. `mnema.study.retention.initial-delay` and
+  `mnema.study.retention.fixed-delay` default to `PT1H`.
 - `/api/editing-drafts` owns bounded acknowledged server drafts; autosave never
   publishes.
 - `/api/capture-notes` owns durable quick notes and idempotent conversion while
@@ -138,4 +150,6 @@ Study tables to legacy `core` migrations or port old review algorithms.
 Sources: [Spring Security 6.5 JWT](https://docs.spring.io/spring-security/reference/6.5/servlet/oauth2/resource-server/jwt.html)
 for signature/claims/scope boundaries; the exact 6.5.11 source establishes claim
 conversion behavior; [Java 21 HTTP](https://docs.oracle.com/en/java/javase/21/docs/api/java.net.http/java/net/http/HttpRequest.Builder.html)
-for request deadlines, supplemented by explicit bounded body completion/cancellation.
+for request deadlines, supplemented by explicit bounded body completion/cancellation;
+[Spring scheduling](https://docs.spring.io/spring-framework/reference/integration/scheduling.html)
+for the enabled fixed-delay retention worker and duration-based configuration.

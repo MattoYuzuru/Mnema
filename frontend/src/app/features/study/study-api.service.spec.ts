@@ -78,6 +78,58 @@ describe('StudyApiService', () => {
         await expectAsync(rejected).toBeRejectedWithError(StudyProtocolError);
     });
 
+    it('sends server-owned replay/practice intents and validates refilled sessions', async () => {
+        const replayResult = firstValueFrom(api.start(deckId, commandId,
+            { mode: 'REPLAY', sourceSessionId: sessionId }));
+        const replay = http.expectOne(`/api/decks/${deckId}/study-sessions`);
+        expect(replay.request.body).toEqual({ commandId, mode: 'REPLAY', sourceSessionId: sessionId,
+            budget: { maxPresentations: 20 } });
+        replay.flush({ ...active('TYPED'), mode: 'REPLAY' }, { status: 201, statusText: 'Created', headers: {
+            ...privateHeaders, Location: `/api/decks/${deckId}/study-sessions/${sessionId}`
+        } });
+        expect((await replayResult).value.mode).toBe('REPLAY');
+
+        const practiceResult = firstValueFrom(api.start(deckId, commandId,
+            { mode: 'PRACTICE', includeNew: false, order: 'WEAKEST_FIRST' }));
+        const practice = http.expectOne(`/api/decks/${deckId}/study-sessions`);
+        expect(practice.request.body).toEqual({ commandId, mode: 'PRACTICE', includeNew: false,
+            order: 'WEAKEST_FIRST', budget: { maxPresentations: 20 } });
+        practice.flush({ ...active('TYPED'), mode: 'PRACTICE' }, { status: 201, statusText: 'Created', headers: {
+            ...privateHeaders, Location: `/api/decks/${deckId}/study-sessions/${sessionId}`
+        } });
+        expect((await practiceResult).value.mode).toBe('PRACTICE');
+
+        const refillResult = firstValueFrom(api.refill(deckId, sessionId));
+        const refill = http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}/presentations`);
+        expect(refill.request.method).toBe('POST');
+        refill.flush(active('TYPED'), { headers: privateHeaders });
+        expect((await refillResult).status).toBe('ACTIVE');
+    });
+
+    it('validates explainable progress, replay sources and restart acknowledgements', async () => {
+        const progressResult = firstValueFrom(api.progress(deckId));
+        http.expectOne(`/api/decks/${deckId}/study-progress?limit=100`).flush({
+            asOf: '2026-09-20T10:00:00Z', items: [{ memberKey: id('20'), itemRevisionId: id('21'),
+                state: 'DUE', objectiveCoverage: { enabled: 2, introduced: 1, assessed: 1 },
+                lastAssessedAt: '2026-09-19T10:00:00Z', nextDue: '2026-09-20T09:00:00Z' }], nextCursor: null
+        }, { headers: privateHeaders });
+        expect((await progressResult).items[0].state).toBe('DUE');
+
+        const sourcesResult = firstValueFrom(api.replaySources(deckId));
+        http.expectOne(`/api/decks/${deckId}/study-sessions/replay-sources`).flush({
+            asOf: '2026-09-20T10:00:00Z', localStudyDate: '2026-09-20',
+            items: [{ sessionId, completedAt: '2026-09-20T09:00:00Z', presentationCount: 4 }]
+        }, { headers: privateHeaders });
+        expect((await sourcesResult).items[0].presentationCount).toBe(4);
+
+        const restartResult = firstValueFrom(api.restart(deckId, commandId, [id('20')]));
+        const restart = http.expectOne(`/api/decks/${deckId}/study-restarts`);
+        expect(restart.request.body).toEqual({ commandId, memberKeys: [id('20')] });
+        restart.flush({ commandId, restartedAt: '2026-09-20T10:00:00Z', objectiveCount: 1,
+            learningEpochs: [{ objectiveId: id('22'), learningEpoch: '1' }] }, { headers: privateHeaders });
+        expect((await restartResult).value.objectiveCount).toBe(1);
+    });
+
     function active(type: 'TYPED' | 'SELF_CHECK' | 'CLOZE_SINGLE' | 'SINGLE_CHOICE'): ReadyStudySession {
         const assessed = { bindingId: id('11'), role: 'ASSESSED' as const, memberKey: id('12'),
             itemRevisionId: id('13'), ordinal: 0, nodeIds: [id('14')], display: { kind: 'NODE_TEXT' } };
