@@ -29,6 +29,7 @@ class ExerciseRepository {
                         JsonNode answerContract, Instant createdAt, Instant updatedAt) { }
     record ExerciseRow(UUID exerciseId, UUID revisionId, long sequence, int ordinal, String type, boolean enabled,
                        JsonNode prompt, JsonNode evaluator, UUID descriptorRootId, Instant createdAt, Instant updatedAt) { }
+    record ExerciseListRow(ExerciseRow exercise, ObjectiveRow objective) { }
     record BindingRow(UUID bindingId, int ordinal, String role, UUID memberKey, UUID itemRevisionId,
                       UUID objectiveId, UUID objectiveRevisionId, List<UUID> nodeIds, JsonNode display) { }
     record ItemRevision(UUID memberKey, UUID revisionId, UUID scopeId, UUID contentRootId) { }
@@ -55,6 +56,12 @@ class ExerciseRepository {
             row.getObject("member_key", UUID.class), row.getObject("item_revision_id", UUID.class),
             row.getObject("objective_id", UUID.class), row.getObject("objective_revision_id", UUID.class),
             uuidArray(row.getArray("node_ids")), json(row.getString("display_spec")));
+    private static final RowMapper<ExerciseListRow> EXERCISE_LIST = (row, ignored) -> new ExerciseListRow(
+            EXERCISE.mapRow(row, ignored), new ObjectiveRow(row.getObject("objective_id", UUID.class),
+                    row.getObject("objective_key", UUID.class), row.getObject("member_key", UUID.class),
+                    row.getObject("objective_revision_id", UUID.class), row.getLong("objective_sequence"),
+                    json(row.getString("answer_contract")), row.getTimestamp("objective_created_at").toInstant(),
+                    row.getTimestamp("objective_updated_at").toInstant()));
 
     Optional<DeckHead> deck(UUID actor, UUID deck) {
         return jdbc.sql("""
@@ -117,18 +124,42 @@ class ExerciseRepository {
         return query.query(EXERCISE).optional();
     }
 
-    List<ExerciseRow> page(UUID actor, UUID deck, int start, int limit) {
-        return jdbc.sql("""
+    List<ExerciseListRow> page(UUID actor, UUID deck, UUID member, int start, int limit) {
+        String memberFilter = member == null ? "" : " AND b.member_key=:member";
+        var query = jdbc.sql("""
                 SELECT x.exercise_id,r.revision_id,r.exercise_sequence,h.ordinal,r.exercise_type,r.enabled,
-                       r.prompt_spec,r.evaluator_policy,r.descriptor_root_id,x.created_at,r.created_at AS updated_at
+                       r.prompt_spec,r.evaluator_policy,r.descriptor_root_id,x.created_at,r.created_at AS updated_at,
+                       o.objective_id,o.objective_key,o.member_key,
+                       objective.revision_id AS objective_revision_id,objective.objective_sequence,
+                       objective.answer_contract,o.created_at AS objective_created_at,
+                       head.updated_at AS objective_updated_at
                   FROM app_learning.deck d JOIN app_learning.deck_head_exercise h ON h.deck_id=d.deck_id
                   JOIN app_learning.exercise_definition x ON x.deck_id=h.deck_id AND x.exercise_id=h.exercise_id
                   JOIN app_learning.exercise_revision r ON r.deck_id=h.deck_id AND r.exercise_id=h.exercise_id
                     AND r.revision_id=h.revision_id
+                  JOIN app_learning.exercise_content_binding b ON b.deck_id=r.deck_id
+                    AND b.exercise_id=r.exercise_id AND b.exercise_revision_id=r.revision_id AND b.role='ASSESSED'
+                  JOIN app_learning.memory_objective o ON o.deck_id=b.deck_id AND o.objective_id=b.objective_id
+                  JOIN app_learning.objective_head head ON head.deck_id=o.deck_id AND head.objective_id=o.objective_id
+                  JOIN app_learning.objective_revision objective ON objective.deck_id=head.deck_id
+                    AND objective.objective_id=head.objective_id AND objective.revision_id=head.revision_id
                  WHERE d.owner_id=:actor AND h.deck_id=:deck AND h.ordinal>=:start
+                """ + memberFilter + """
                  ORDER BY h.ordinal LIMIT :limit
-                """).param("actor", actor).param("deck", deck).param("start", start).param("limit", limit)
-                .query(EXERCISE).list();
+                """).param("actor", actor).param("deck", deck).param("start", start).param("limit", limit);
+        if (member != null) query.param("member", member);
+        return query.query(EXERCISE_LIST).list();
+    }
+
+    int count(UUID actor, UUID deck, UUID member) {
+        return jdbc.sql("""
+                SELECT count(*) FROM app_learning.deck d
+                  JOIN app_learning.deck_head_exercise h ON h.deck_id=d.deck_id
+                  JOIN app_learning.exercise_content_binding b ON b.deck_id=h.deck_id
+                    AND b.exercise_id=h.exercise_id AND b.exercise_revision_id=h.revision_id AND b.role='ASSESSED'
+                 WHERE d.owner_id=:actor AND h.deck_id=:deck AND b.member_key=:member
+                """).param("actor", actor).param("deck", deck).param("member", member)
+                .query(Integer.class).single();
     }
 
     List<BindingRow> bindings(UUID deck, UUID exercise, UUID revision) {

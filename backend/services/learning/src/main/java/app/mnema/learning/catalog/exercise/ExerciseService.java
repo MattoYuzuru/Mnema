@@ -74,20 +74,27 @@ public class ExerciseService {
 
     @Transactional(readOnly = true, timeout = 10)
     public ObjectNode list(UUID actor, UUID deckId, String limit, String cursor) {
+        return list(actor, deckId, null, limit, cursor);
+    }
+
+    @Transactional(readOnly = true, timeout = 10)
+    public ObjectNode list(UUID actor, UUID deckId, UUID memberKey, String limit, String cursor) {
         ExerciseRepository.DeckHead deck = own(actor, deckId);
         ExerciseCursor position = ExerciseCursor.decode(cursor);
         if (position != null && !position.deckRevisionId().equals(deck.revisionId())) throw new VersionConflictException();
         int start = position == null ? 0 : position.nextOrdinal();
         if (start > deck.exerciseCount()) throw new InvalidRequestException();
         int size = ExerciseCursor.pageSize(limit);
-        List<ExerciseRepository.ExerciseRow> rows = repository.page(actor, deckId, start, size);
+        List<ExerciseRepository.ExerciseListRow> fetched = repository.page(actor, deckId, memberKey, start, size + 1);
+        boolean more = fetched.size() > size;
+        List<ExerciseRepository.ExerciseListRow> rows = more ? fetched.subList(0, size) : fetched;
+        int total = memberKey == null ? deck.exerciseCount() : repository.count(actor, deckId, memberKey);
         ObjectNode result = JsonNodeFactory.instance.objectNode().put("deckId", deckId.toString())
                 .put("deckRevisionId", deck.revisionId().toString()).put("deckVersion", Long.toString(deck.version()))
-                .put("total", deck.exerciseCount());
+                .put("total", total);
         ArrayNode values = result.putArray("exercises");
-        rows.forEach(row -> values.add(summary(row)));
-        int next = start + rows.size();
-        if (next < deck.exerciseCount()) result.put("nextCursor", new ExerciseCursor(deck.revisionId(), next).encode());
+        rows.forEach(row -> values.add(summary(row.exercise()).set("objective", objective(row.objective()))));
+        if (more) result.put("nextCursor", new ExerciseCursor(deck.revisionId(), fetched.get(size).exercise().ordinal()).encode());
         else result.putNull("nextCursor");
         return result;
     }

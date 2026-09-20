@@ -11,7 +11,8 @@
   } @else if (deck(); as currentDeck) {
     @if (item(); as currentItem) {
       <header class="page-heading"><div><p class="eyebrow">{{ selectedOrdinal() === null ? 'Материал' : 'Материал ' + (selectedOrdinal()! + 1) }}</p><h1 id="browse-title" tabindex="-1">{{ currentDeck.metadata.title }}</h1><p class="lede">Единый безопасный рендер опубликованной версии.</p></div>
-        @if (selectedOrdinal() !== null) { <a class="button primary" [routerLink]="['/decks', currentDeck.deckId, 'materials', currentItem.memberKey, 'edit']" [queryParams]="{ ordinal: selectedOrdinal() }">Редактировать</a> }
+        <div class="actions"><a class="button" [routerLink]="['/decks', currentDeck.deckId, 'materials', currentItem.memberKey, 'exercises', 'new']">Упражнения</a>
+        @if (selectedOrdinal() !== null) { <a class="button primary" [routerLink]="['/decks', currentDeck.deckId, 'materials', currentItem.memberKey, 'edit']" [queryParams]="{ ordinal: selectedOrdinal() }">Редактировать</a> }</div>
       </header>
       @if (selectedOrdinal() === null) { <p class="notice">Для безопасного редактирования откройте материал из списка: ссылка должна содержать позицию в текущей версии колоды.</p> }
       <article class="sheet"><app-native-document-renderer [document]="currentItem.document" /></article>

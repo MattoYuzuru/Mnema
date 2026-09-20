@@ -1,0 +1,153 @@
+<section class="exercise-page" aria-labelledby="exercise-title">
+  @if (deck(); as currentDeck) {
+    <a class="back-link" [routerLink]="['/decks', currentDeck.deckId, 'materials', item()?.memberKey]">← К материалу</a>
+  }
+  <header class="page-heading">
+    <div>
+      <p class="eyebrow">{{ exercise() ? 'Настройка упражнения' : 'Новое упражнение' }}</p>
+      <h1 id="exercise-title" tabindex="-1">Проверка знания</h1>
+      <p class="lede">Выберите конкретные фрагменты материала. Направление знания и проверяемый ответ задаются явно.</p>
+    </div>
+  </header>
+
+  @if (phase() === 'loading') { <p role="status">Загружаем актуальные проекции…</p> }
+  @if (message(); as currentMessage) {
+    <section class="notice" [class.error]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected'"
+             [attr.role]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected' ? 'alert' : 'status'">
+      <p>{{ currentMessage }}</p>
+      @if (phase() === 'error') { <button class="button" type="button" (click)="retry()">Повторить безопасно</button> }
+      @if (phase() === 'conflict') { <button class="button" type="button" (click)="load()">Загрузить свежую основу</button> }
+    </section>
+  }
+  @if (staleProjection()) {
+    <p class="notice warning" role="status">Материал изменился после этой редакции упражнения. Перепроверьте вопрос и ответ: сервер не заменит удалённый фрагмент автоматически.</p>
+  }
+
+  @if (item(); as currentItem) {
+    <div class="authoring-layout">
+      <form class="inspector" (submit)="$event.preventDefault(); save()" novalidate>
+        <fieldset>
+          <legend>1. Механика</legend>
+          <div class="choice-grid">
+            @for (candidate of ['SELF_CHECK', 'TYPED', 'CLOZE_SINGLE', 'SINGLE_CHOICE']; track candidate) {
+              <label class="choice-card">
+                <input type="radio" name="type" [value]="candidate" [checked]="type() === candidate"
+                       (change)="setType($any(candidate))" />
+                <span>{{ exerciseName($any(candidate)) }}</span>
+              </label>
+            }
+          </div>
+        </fieldset>
+
+        <fieldset [attr.aria-describedby]="fieldErrors()['prompt'] ? 'prompt-error' : null">
+          <legend>2. Вопрос</legend>
+          <div class="segmented" role="group" aria-label="Источник вопроса">
+            <button type="button" [class.active]="promptMode() === 'node'" (click)="setPromptMode('node')">Фрагмент материала</button>
+            <button type="button" [class.active]="promptMode() === 'custom'" (click)="setPromptMode('custom')">Короткий текст</button>
+          </div>
+          @if (promptMode() === 'node') {
+            <label for="prompt-node">Фрагмент вопроса</label>
+            <select id="prompt-node" [value]="promptNodeId() ?? ''" [attr.aria-invalid]="fieldErrors()['prompt'] ? 'true' : null"
+                    (change)="setPromptNode($any($event.target).value)">
+              <option value="">Выберите фрагмент</option>
+              @for (projection of projections(); track projection.nodeId) { <option [value]="projection.nodeId">{{ projection.label }}</option> }
+            </select>
+          } @else {
+            <label for="custom-prompt">Текст вопроса <span class="hint">до 80 символов</span></label>
+            <textarea id="custom-prompt" rows="3" [value]="customPrompt()" [attr.aria-invalid]="fieldErrors()['prompt'] ? 'true' : null"
+                      (input)="setCustomPrompt($any($event.target).value)"></textarea>
+          }
+          @if (fieldErrors()['prompt']; as error) { <p class="field-error" id="prompt-error">{{ error }}</p> }
+        </fieldset>
+
+        <fieldset [attr.aria-describedby]="fieldErrors()['answer'] ? 'answer-error' : null">
+          <legend>3. Проверяемый ответ</legend>
+          <label for="answer-node">Фрагмент ответа</label>
+          <select id="answer-node" [value]="answerNodeId() ?? ''" [attr.aria-invalid]="fieldErrors()['answer'] ? 'true' : null"
+                  (change)="setAnswerNode($any($event.target).value)">
+            <option value="">Выберите фрагмент</option>
+            @for (projection of projections(); track projection.nodeId) { <option [value]="projection.nodeId">{{ projection.label }}</option> }
+          </select>
+          @if (fieldErrors()['answer']; as error) { <p class="field-error" id="answer-error">{{ error }}</p> }
+          @if (type() !== 'SELF_CHECK') {
+            <label for="aliases">Допустимые ответы <span class="hint">один вариант на строку</span></label>
+            <textarea id="aliases" rows="4" [value]="aliasesText()" [disabled]="objectiveMode() === 'reuse'"
+                      [attr.aria-invalid]="fieldErrors()['aliases'] ? 'true' : null"
+                      (input)="setAliases($any($event.target).value)"></textarea>
+            @if (fieldErrors()['aliases']; as error) { <p class="field-error">{{ error }}</p> }
+          }
+        </fieldset>
+
+        <fieldset [attr.aria-describedby]="fieldErrors()['objective'] ? 'objective-error' : null">
+          <legend>4. Направление знания</legend>
+          <p class="hint">Обратное направление — отдельная цель. Оно не получает прогресс автоматически.</p>
+          <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'create'" (change)="setObjectiveMode('create')" /> Создать отдельную цель</label>
+          @if (objectives().length > 0) {
+            <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'reuse'" (change)="setObjectiveMode('reuse')" /> Использовать существующую цель без изменения ответа</label>
+            <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'revise'" (change)="setObjectiveMode('revise')" /> Обновить ответ существующей цели</label>
+          }
+          @if (objectiveMode() !== 'create') {
+            <label for="objective">Существующая цель</label>
+            <select id="objective" [value]="selectedObjectiveId() ?? ''" [attr.aria-invalid]="fieldErrors()['objective'] ? 'true' : null"
+                    (change)="selectObjective($any($event.target).value)">
+              <option value="">Выберите цель</option>
+              @for (objective of objectives(); track objective.objectiveId) { <option [value]="objective.objectiveId">{{ objectiveName(objective) }}</option> }
+            </select>
+          }
+          @if (fieldErrors()['objective']; as error) { <p class="field-error" id="objective-error">{{ error }}</p> }
+        </fieldset>
+
+        @if (type() === 'SINGLE_CHOICE') {
+          <fieldset [attr.aria-describedby]="fieldErrors()['options'] ? 'options-error' : null">
+            <legend>5. Варианты ответа</legend>
+            <p class="hint">Выберите 2–6 разных фрагментов, включая правильный.</p>
+            <div class="option-list">
+              @for (projection of projections(); track projection.nodeId) {
+                <label><input type="checkbox" [checked]="optionNodeIds().includes(projection.nodeId)"
+                              (change)="toggleOption(projection.nodeId, $any($event.target).checked)" /> {{ projection.label }}</label>
+              }
+            </div>
+            @if (fieldErrors()['options']; as error) { <p class="field-error" id="options-error">{{ error }}</p> }
+          </fieldset>
+        }
+
+        <label class="enable-line"><input type="checkbox" [checked]="enabled()" (change)="setEnabled($any($event.target).checked)" /> Упражнение участвует в новых Study-сессиях</label>
+        <div class="save-bar">
+          <p aria-live="polite">@switch (phase()) { @case ('saving') { Сохраняем… } @case ('saved') { Сохранено } @default { {{ dirty() ? 'Есть неподтверждённые изменения' : 'Настройки подтверждены сервером' }} } }</p>
+          <button class="button primary" type="submit" [disabled]="phase() === 'saving'">{{ exercise() ? 'Сохранить редакцию' : 'Создать упражнение' }}</button>
+        </div>
+      </form>
+
+      <aside class="preview-column" aria-label="Предпросмотр упражнения">
+        <section class="preview-card">
+          <p class="eyebrow">Предпросмотр · {{ exerciseName(type()) }}</p>
+          <h2>{{ previewPrompt() }}</h2>
+          @if (type() === 'TYPED' || type() === 'CLOZE_SINGLE') { <label>Ответ <input type="text" disabled placeholder="Поле ученика" /></label> }
+          @if (type() === 'SINGLE_CHOICE') {
+            <div class="preview-options">@for (nodeId of optionNodeIds(); track nodeId) { <span>{{ projection(nodeId)?.label }}</span> }</div>
+          }
+          @if (type() === 'SELF_CHECK') { <button class="reveal" type="button" disabled>Показать ответ</button> }
+          <details><summary>Эталон ответа</summary><p>{{ previewAnswer() }}</p></details>
+        </section>
+        <section class="material-card" aria-labelledby="material-preview-heading">
+          <h2 id="material-preview-heading">Актуальный материал</h2>
+          <app-native-document-renderer [document]="currentItem.document" />
+        </section>
+      </aside>
+    </div>
+
+    @if (page(); as currentPage) {
+      <section class="existing" aria-labelledby="existing-title">
+        <div><p class="eyebrow">Этот материал</p><h2 id="existing-title">Упражнения ({{ currentPage.total }})</h2></div>
+        @if (currentPage.exercises.length === 0) { <p class="notice">Пока нет упражнений. Настройте первую явную проверку знания.</p> }
+        <ul>
+          @for (entry of currentPage.exercises; track entry.exerciseId) {
+            <li><div><strong>{{ exerciseName(entry.type) }}</strong><span>{{ objectiveName(entry.objective) }} · {{ entry.enabled ? 'включено' : 'выключено' }}</span></div>
+              <a class="button" [routerLink]="['/decks', currentPage.deckId, 'exercises', entry.exerciseId, 'edit']">Настроить</a></li>
+          }
+        </ul>
+        @if (currentPage.nextCursor) { <button class="button" type="button" (click)="loadMore()">Показать ещё</button> }
+      </section>
+    }
+  }
+</section>

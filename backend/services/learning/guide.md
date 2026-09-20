@@ -97,7 +97,10 @@ capacity evidence.
 - `/api/decks/{deckId}/exercises` owns owner-only bounded reads and atomic
   publication of stable objectives, immutable answer/exercise revisions, exact
   current item/node pins and one assessed binding. Supported P0 types are
-  `SELF_CHECK`, `TYPED`, `CLOZE_SINGLE` and `SINGLE_CHOICE`.
+  `SELF_CHECK`, `TYPED`, `CLOZE_SINGLE` and `SINGLE_CHOICE`. The optional
+  `memberKey` list filter remains cursor-bounded and returns each current
+  exercise with its current objective summary so authoring clients can reuse a
+  direction without scanning every exercise or exposing identifiers for input.
 - `/api/decks/{deckId}/study-sessions` starts and resumes owner-only
   `SCHEDULED`, `REPLAY` and `PRACTICE` snapshots. Candidate preparation reads at
   most 500 exercise rows per poll, selection scans at most 80 candidates and a
