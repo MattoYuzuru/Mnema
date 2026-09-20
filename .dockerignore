@@ -5,6 +5,12 @@
 *.iml
 .env
 .env.*
+.mnema
+backend/.gradle
+backend/**/build
+frontend/coverage
+frontend/dist
+frontend/node_modules
 docs
 images
 k8s

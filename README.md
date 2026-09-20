@@ -67,10 +67,11 @@ python3 -m unittest discover -s scripts/tests -p 'test_verify_*.py' -v
 
 ## Локальный runtime и delivery
 
-`docker-compose.yml` поднимает только fresh PostgreSQL 18, Identity & Account и
-Learning на loopback. Он не переносит legacy-данные и не включает frontend.
-Подготовка signing JWKSet и безопасный запуск описаны в
-[local maintenance runtimes](docs/deploy/selfhost-local.md).
+Persistent local launcher поднимает PostgreSQL 18, Identity & Account, Learning и
+production Angular frontend с локальным HTTPS и same-origin `/api`; обычный restart
+сохраняет данные. Безопасный bootstrap, trust локального CA, start/stop/smoke/reset
+описаны в [local replacement runtime](docs/deploy/selfhost-local.md). Backend-only
+`docker-compose.yml` остаётся maintenance-контуром.
 
 Общий сервер недоступен. Текущая граница готовности:
 

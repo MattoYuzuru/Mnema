@@ -1,106 +1,107 @@
-# Local maintenance runtimes
+# Persistent local replacement runtime
 
 Current revisions permit private personal use by one natural person on owned or
 controlled devices. Shared or organizational use needs a
 [separate written license](../../COMMERCIAL-LICENSING.md).
 
-## Current replacement setup — #143
+## Supported full-stack launcher — #220
 
-The canonical `docker-compose.yml` starts only PostgreSQL 18, Identity & Account,
-and Learning. It does not start the Angular frontend or provision trusted local TLS,
-so the compose path is a backend maintenance runtime. The APIs already include the
-completed #74 private content/authoring domains; real HTTPS login/authoring is
-verified by the separate repository browser harness.
+The supported personal-development path is `scripts/mnema-local-full-stack.sh` plus
+`compose.local-full-stack.yml`. It builds the production Angular image and the real
+Identity and Learning images, starts PostgreSQL 18 with a retained named volume, and
+publishes only two loopback TLS listeners:
 
-Docker Engine, the Docker Compose plugin and JDK 21 are required. Run commands from
-the repository root. Set a fresh password for this replacement database; a missing
-or empty `MNEMA_LOCAL_POSTGRES_PASSWORD` fails configuration before any container starts.
-Identity also requires a private RSA JWKSet. For this disposable personal runtime,
-generate it once under ignored `.mnema/` with the repository fixture generator and
-retain the same file across ordinary restarts. It is not a deployment key generator.
+- `https://localhost:3443` — the URL to open; static production frontend and
+  same-origin `/api` Learning traffic;
+- `https://localhost:3444` — the separate OAuth/OIDC issuer required by the browser
+  PKCE boundary. Identity and Learning themselves have no host HTTP ports.
 
-Bash/zsh:
+The Learning-to-Identity call also uses TLS. Its private truststore contains only the
+generated local CA; the launcher never enables the test-only plaintext transport.
+The disposable `scripts/browser-identity` and `scripts/learning-security` harnesses
+keep their own temporary processes, database and keys and do not consume this volume.
 
-```bash
-local_secret_dir="$PWD/.mnema/local-compose"
-install -d -m 700 "$local_secret_dir"
-if [ ! -f "$local_secret_dir/identity-signing-jwk-set.json" ]; then
-  java scripts/learning-security/FixtureKey.java \
-    "$local_secret_dir/identity-signing-jwk-set.json"
-  chmod 600 "$local_secret_dir/identity-signing-jwk-set.json"
-fi
-export MNEMA_LOCAL_IDENTITY_SIGNING_JWK_SET_FILE="$local_secret_dir/identity-signing-jwk-set.json"
-export MNEMA_LOCAL_IDENTITY_SIGNING_ACTIVE_KID=blackbox
+### First start
 
-printf 'Fresh replacement database password: '
-read -r -s MNEMA_LOCAL_POSTGRES_PASSWORD
-printf '\n'
-export MNEMA_LOCAL_POSTGRES_PASSWORD
-export COMPOSE_DISABLE_ENV_FILE=true
-export MNEMA_LOCAL_BUILD_ID="$(git rev-parse HEAD)"
-docker compose --project-name mnema-replacement --file docker-compose.yml up -d --build
-```
-
-PowerShell:
-
-```powershell
-$secretDir = Join-Path (Get-Location) '.mnema/local-compose'
-New-Item -ItemType Directory -Force -Path $secretDir | Out-Null
-$signingFile = Join-Path $secretDir 'identity-signing-jwk-set.json'
-if (-not (Test-Path $signingFile)) {
-  java scripts/learning-security/FixtureKey.java $signingFile
-}
-$env:MNEMA_LOCAL_IDENTITY_SIGNING_JWK_SET_FILE = $signingFile
-$env:MNEMA_LOCAL_IDENTITY_SIGNING_ACTIVE_KID = 'blackbox'
-
-$env:MNEMA_LOCAL_POSTGRES_PASSWORD = [System.Net.NetworkCredential]::new('', (Read-Host 'Fresh replacement database password' -AsSecureString)).Password
-$env:COMPOSE_DISABLE_ENV_FILE = 'true'
-$env:MNEMA_LOCAL_BUILD_ID = git rev-parse HEAD
-docker compose --project-name mnema-replacement --file docker-compose.yml up -d --build
-```
-
-These commands disable implicit `.env` loading and fix the project/file explicitly.
-The Compose source consumes only `MNEMA_LOCAL_*` settings, with no old `.env.local`,
-`.env.public`, override files or legacy database volume. Its fresh named volume is
-`mnema-replacement_replacement_postgres_data`. Startup does not migrate, stop or
-remove an existing v1 stack.
-
-| Setting | Default | Purpose |
-|---|---|---|
-| `MNEMA_LOCAL_POSTGRES_PASSWORD` | required | Fresh replacement DB password |
-| `MNEMA_LOCAL_POSTGRES_DB` | `mnema` | Replacement database name |
-| `MNEMA_LOCAL_POSTGRES_USER` | `mnema` | Replacement database user |
-| `MNEMA_LOCAL_POSTGRES_PORT` | `55432` | Loopback PostgreSQL port |
-| `MNEMA_LOCAL_IDENTITY_PORT` | `18081` | Loopback Identity HTTP port |
-| `MNEMA_LOCAL_LEARNING_PORT` | `18080` | Loopback Learning HTTP port |
-| `MNEMA_LOCAL_IDENTITY_ISSUER` | `https://localhost:18081` | HTTPS identity contract |
-| `MNEMA_LOCAL_IDENTITY_SIGNING_JWK_SET_FILE` | required | Owner-readable private local JWKSet path |
-| `MNEMA_LOCAL_IDENTITY_SIGNING_ACTIVE_KID` | required | Active private key ID; fixture generator uses `blackbox` |
-| `MNEMA_LOCAL_BUILD_ID` | `dev` | Reported source identity |
-
-The issuer is an HTTPS identifier required by `IssuerContract`. Local actuator
-transport is HTTP on loopback; no TLS listener or authentication flow is provisioned.
-Set the build ID to the checked-out commit for diagnostic correlation and rebuild
-after source changes; this local marker is not hosted release attestation.
+Prerequisites are Docker Engine with the Compose plugin, Java/JDK 21 (`java` and
+`keytool`), OpenSSL, Python 3 and curl. The local backend Dockerfile mirrors the
+pinned release build/runtime stages without its optional BuildKit cache mount, so the
+workflow also works with a Compose installation that has no buildx plugin. Run from
+the repository root:
 
 ```bash
-curl -fsS http://127.0.0.1:18081/api/actuator/health/readiness
-curl -fsS http://127.0.0.1:18081/api/actuator/info
-curl -fsS http://127.0.0.1:18080/api/actuator/health/readiness
-curl -fsS http://127.0.0.1:18080/api/actuator/info
-docker compose --project-name mnema-replacement --file docker-compose.yml stop
+./scripts/mnema-local-full-stack.sh start
 ```
 
-Keep the same configuration for later Compose commands. `stop` preserves the new
-volume and the ignored JWKSet remains on the host. Do not commit, print or reuse that
-private file outside this disposable local runtime. Password/DB/user changes after
-initialization are not PostgreSQL credential rotation. Old volumes remain outside
-this workflow; removal or account/data transfer requires its own explicit procedure.
-PostgreSQL 18 mounts `/var/lib/postgresql`
-according to the [official image contract](https://hub.docker.com/_/postgres).
-The project boundary and loopback publications follow
-[Compose project naming](https://docs.docker.com/reference/compose-file/version-and-name/#name-top-level-element)
-and [port definitions](https://docs.docker.com/reference/compose-file/services/#ports).
+`start` invokes the bounded bootstrap automatically. Running `bootstrap` separately
+is optional when you want to inspect/trust the CA before building images. Bootstrap
+creates a random PostgreSQL password, RSA Identity signing JWKSet, local
+CA, localhost/server certificate and Learning truststore under ignored
+`.mnema/local-full-stack/`. Private files are owner-only and are reused on ordinary
+starts. A missing, partial, permissive, mismatched or expiring set fails before
+Compose is invoked; there is no HTTP or anonymous-signing fallback.
+
+Import `.mnema/local-full-stack/local-ca.crt` into the current user's OS/browser
+trust store, explicitly as a local development root, then open
+`https://localhost:3443`. Browsers with a separate certificate store need the same
+one-time import there. Do not trust the private key, reuse this CA outside Mnema, or
+commit anything under `.mnema`. The launcher prints the exact CA path until curl sees
+it as trusted.
+
+Ports can be selected during the first bootstrap and are then retained with the
+local security/database configuration:
+
+```bash
+MNEMA_LOCAL_WEB_PORT=4443 MNEMA_LOCAL_IDENTITY_PORT=4444 \
+  ./scripts/mnema-local-full-stack.sh bootstrap
+```
+
+The retained OAuth redirect and issuer then use those ports.
+
+### Verify, stop and restart
+
+```bash
+./scripts/mnema-local-full-stack.sh smoke
+./scripts/mnema-local-full-stack.sh status
+./scripts/mnema-local-full-stack.sh logs 100
+./scripts/mnema-local-full-stack.sh stop
+./scripts/mnema-local-full-stack.sh start
+./scripts/mnema-local-full-stack.sh smoke
+```
+
+The smoke creates one private random local account, completes real S256 PKCE through
+the HTTPS issuer, and creates/reloads a Deck and Capture through the frontend's
+same-origin `/api`. Its owner-only credentials remain beside the other local state so
+the second smoke proves restart persistence. Until #219 is merged, the Study check is
+deliberately only a fail-closed route probe (anonymous `401`, authenticated `404`);
+this is not Study E2E evidence and must be replaced before #220 is completed.
+
+`stop` retains PostgreSQL, accounts, content, JWK and certificates. A clean data reset
+is destructive and requires the exact opt-in:
+
+```bash
+./scripts/mnema-local-full-stack.sh reset --confirm-delete-local-data
+```
+
+It deletes only the `mnema-local-v2` containers/volume and the synthetic smoke-account
+state; local certificates and signing JWK remain. Local certificate rotation is
+separate and preserves the database credentials, Identity signing key and smoke
+account:
+
+```bash
+./scripts/mnema-local-full-stack.sh reset-certificates --confirm
+```
+
+Stop the stack first, remove the old CA from browser/OS trust, and trust the newly
+printed CA path. Neither reset touches legacy v1 projects or hosted infrastructure.
+
+`docker-compose.yml` remains the backend-only maintenance runtime from #143. Use it
+only when frontend/HTTPS login is intentionally unnecessary. PostgreSQL 18 mounts
+`/var/lib/postgresql` according to the
+[official image contract](https://hub.docker.com/_/postgres); readiness ordering uses
+Compose [health dependencies](https://docs.docker.com/compose/how-tos/startup-order/),
+and private files are mounted through Compose
+[secrets](https://docs.docker.com/compose/how-tos/use-secrets/).
 
 ## Historical v1 self-host reference
 
