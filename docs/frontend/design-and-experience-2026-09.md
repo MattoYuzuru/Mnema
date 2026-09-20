@@ -303,6 +303,15 @@ field-level explanation. Container-based reflow проверяется в Chromi
 и 1440 px, включая 200% root text, RTL/multilingual input и отсутствие horizontal
 overflow; reduced-motion и forced-colors fallbacks заданы в scoped stylesheet.
 
+Study slice #217 добавляет production lazy route для scheduled `SELF_CHECK` и
+`TYPED`. В typed-механике эталон скрыт до подтверждённого ответа; self-check явно
+разделяет recall и reveal, после чего предлагает четыре подписанные поведенческие
+оценки. Неопределённый сетевой результат сохраняет exact attempt для безопасного
+retry, а account-bound recovery живёт не более 24 часов и не переносит данные между
+пользователями. Focus order, touch targets, 320/390/1440 px, RTL, 200% text,
+reduced-motion и forced-colors покрыты компонентными проверками; это не заменяет
+ручную проверку screen reader и физического touch-устройства.
+
 Измерять first useful content, route bytes, LCP/INP/CLS, request fan-out и p95/p99 API
 при явном профиле устройства/сети. Предлагаемые web quality ориентиры — p75 LCP ≤2.5 s,
 INP ≤200 ms, CLS ≤0.1; это [Core Web Vitals](https://web.dev/articles/vitals), не

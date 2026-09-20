@@ -6,12 +6,15 @@ import { TermsPageComponent } from './terms-page.component';
 import { authGuard } from './core/guards/auth.guard';
 import type { ItemEditorPageComponent } from './features/authoring/item-editor-page.component';
 import type { ExerciseAuthoringPageComponent } from './features/authoring/exercise-authoring-page.component';
+import type { StudySessionPageComponent } from './features/study/study-session-page.component';
 
 const lazyCanLeaveItemEditor: CanDeactivateFn<ItemEditorPageComponent> = (...args) =>
     import('./features/authoring/item-editor-page.component').then(module => module.canLeaveItemEditor(args[0]));
 const lazyCanLeaveExerciseAuthoring: CanDeactivateFn<ExerciseAuthoringPageComponent> = (...args) =>
     import('./features/authoring/exercise-authoring-page.component')
         .then(module => module.canLeaveExerciseAuthoring(args[0]));
+const lazyCanLeaveStudySession: CanDeactivateFn<StudySessionPageComponent> = (...args) =>
+    import('./features/study/study-session-page.component').then(module => module.canLeaveStudySession(args[0]));
 
 export const appRoutes: Routes = [
     { path: '', component: HomePageComponent },
@@ -39,6 +42,13 @@ export const appRoutes: Routes = [
         loadComponent: () => import('./features/own-decks/own-deck-create-page.component')
             .then(module => module.OwnDeckCreatePageComponent),
         canActivate: [authGuard]
+    },
+    {
+        path: 'decks/:deckId/study',
+        loadComponent: () => import('./features/study/study-session-page.component')
+            .then(module => module.StudySessionPageComponent),
+        canActivate: [authGuard],
+        canDeactivate: [lazyCanLeaveStudySession]
     },
     {
         path: 'decks/:deckId/materials/new',

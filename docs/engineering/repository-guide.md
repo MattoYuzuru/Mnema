@@ -111,6 +111,14 @@ are legacy or deferred; inspect them only as deletion/research evidence.
 The accepted visual direction is
 [paper/antiquity/indigo](../frontend/design-and-experience-2026-09.md).
 
+The canonical `/decks/:deckId/study` route is lazy and deck-scoped. It currently
+implements scheduled `SELF_CHECK` and `TYPED` presentations, PREPARING polling,
+strict server-envelope validation, account-bound 24-hour session recovery and an
+exact-attempt retry after an unknown network outcome. Reference answers remain
+hidden until a typed attempt is accepted. `CLOZE_SINGLE`, `SINGLE_CHOICE`, replay,
+practice and progress are owned by the remaining #75 slices rather than legacy
+`my-study` code.
+
 ## Canonical executable sources
 
 | Question | Source of truth |

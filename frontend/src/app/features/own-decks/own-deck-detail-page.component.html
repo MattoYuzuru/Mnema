@@ -71,9 +71,10 @@
     }
 
     <nav class="actions" aria-label="Материалы колоды">
+      <a class="button primary" [routerLink]="['/decks', deck.deckId, 'study']">Учить</a>
       <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'materials']">Просмотреть материалы</a>
       <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'capture']">На потом</a>
-      <a class="button primary" [routerLink]="['/decks', deck.deckId, 'materials', 'new']">Новый материал</a>
+      <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'materials', 'new']">Новый материал</a>
     </nav>
 
     <form class="metadata-form" [formGroup]="form" (ngSubmit)="save(deck)" novalidate>

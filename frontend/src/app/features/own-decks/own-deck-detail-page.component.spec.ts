@@ -97,4 +97,12 @@ describe('OwnDeckDetailPageComponent', () => {
         expect((fixture.nativeElement as HTMLElement)
             .querySelector<HTMLTextAreaElement>('#detail-title')?.readOnly).toBeTrue();
     });
+
+    it('makes Study the primary action inside the selected deck', () => {
+        const root = fixture.nativeElement as HTMLElement;
+        const study = [...root.querySelectorAll<HTMLAnchorElement>('a')].find(link => link.textContent?.trim() === 'Учить');
+        expect(study).toBeDefined();
+        expect(study?.classList).toContain('primary');
+        expect(study?.getAttribute('href')).toBe(`/decks/${deck.deckId}/study`);
+    });
 });

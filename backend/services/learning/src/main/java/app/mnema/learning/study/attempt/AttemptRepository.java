@@ -42,6 +42,14 @@ class AttemptRepository {
                 .param("key", key).query(Boolean.class).single();
     }
 
+    void lockSession(UUID actor, UUID deck, UUID session) {
+        jdbc.sql("""
+                SELECT session_id FROM app_learning.study_session
+                 WHERE account_id=:actor AND deck_id=:deck AND session_id=:session FOR UPDATE
+                """).param("actor", actor).param("deck", deck).param("session", session)
+                .query(UUID.class).optional().orElseThrow(app.mnema.learning.platform.api.ResourceNotFoundException::new);
+    }
+
     Optional<Receipt> receipt(UUID attempt) {
         return jdbc.sql("SELECT * FROM app_learning.study_attempt_tombstone WHERE attempt_id=:attempt")
                 .param("attempt", attempt).query((row, ignored) -> new Receipt(
@@ -180,6 +188,28 @@ class AttemptRepository {
                 VALUES (:attempt,CAST(:response AS jsonb),:expires)
                 """).param("attempt", attempt).param("response", response.toString())
                 .param("expires", Timestamp.from(expires)).update();
+    }
+
+    void completeSessionIfTerminal(UUID actor, UUID deck, UUID session, Instant now) {
+        jdbc.sql("""
+                UPDATE app_learning.study_session s
+                   SET status='COMPLETE',completed_at=:now,batch_start=issued_count,batch_size=0,
+                       row_version=row_version+1
+                 WHERE s.account_id=:actor AND s.deck_id=:deck AND s.session_id=:session AND s.status='ACTIVE'
+                   AND (s.mode='REPLAY' OR s.issued_count>=s.budget OR s.wrapped)
+                   AND NOT EXISTS (
+                       SELECT 1 FROM app_learning.study_presentation p
+                        WHERE p.account_id=s.account_id AND p.session_id=s.session_id
+                          AND p.presentation_ordinal>=s.batch_start
+                          AND p.presentation_ordinal<s.batch_start+s.batch_size
+                          AND NOT EXISTS (
+                              SELECT 1 FROM app_learning.study_attempt_tombstone t
+                               WHERE t.account_id=p.account_id AND t.session_id=p.session_id
+                                 AND t.presentation_id=p.presentation_id
+                          )
+                   )
+                """).param("actor", actor).param("deck", deck).param("session", session)
+                .param("now", Timestamp.from(now)).update();
     }
 
     Instant now() { return jdbc.sql("SELECT statement_timestamp()")

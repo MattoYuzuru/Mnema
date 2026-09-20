@@ -40,6 +40,7 @@ public class AttemptService {
         repository.lockAttempt(command.attemptId());
         var serialized = repository.receipt(command.attemptId());
         if (serialized.isPresent()) return replay(serialized.orElseThrow(), actor, deck, session, command, hash);
+        repository.lockSession(actor, deck, session);
         AttemptRepository.Presentation presentation = repository.presentationForUpdate(actor, deck, session,
                 command.presentationId()).orElseThrow(ResourceNotFoundException::new);
         Instant now = repository.now();
@@ -55,12 +56,14 @@ public class AttemptService {
             ObjectNode outcome = feedbackOnly(command, presentation, evaluation);
             repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(),
                     evaluation.status().name(), outcome, now, now.plus(COMPACT_RECEIPT_RETENTION));
+            repository.completeSessionIfTerminal(actor, deck, session, now);
             return new SubmitResult(outcome, false);
         }
         if (evaluation.status() != AttemptEvaluation.Status.ASSESSED) {
             ObjectNode outcome = noTransition(command, presentation, evaluation);
             repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(),
                     evaluation.status().name(), outcome, now, null);
+            repository.completeSessionIfTerminal(actor, deck, session, now);
             return new SubmitResult(outcome, false);
         }
 
@@ -72,6 +75,7 @@ public class AttemptService {
             ObjectNode outcome = noTransition(command, presentation, oldEpoch);
             repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(),
                     oldEpoch.status().name(), outcome, now, null);
+            repository.completeSessionIfTerminal(actor, deck, session, now);
             return new SubmitResult(outcome, false);
         }
         BaselineReducer.Transition transition = reducer.apply(new BaselineReducer.State(state.level(),
@@ -83,6 +87,7 @@ public class AttemptService {
         repository.insertTransition(command, presentation, state, transition);
         repository.updateState(state, transition, presentation.configId());
         repository.insertRaw(command.attemptId(), command.payload().path("response"), now.plus(RAW_RETENTION));
+        repository.completeSessionIfTerminal(actor, deck, session, now);
         return new SubmitResult(outcome, false);
     }
 
