@@ -48,7 +48,15 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
 
         assertThat(created.replayed()).isFalse();
         assertThat(service.publish(fixture.actor(), fixture.deck(), null, 1, create).replayed()).isTrue();
-        assertThat(service.list(fixture.actor(), fixture.deck(), "1", null).path("exercises")).hasSize(1);
+        JsonNode materialExercises = service.list(fixture.actor(), fixture.deck(), fixture.member(), "1", null);
+        assertThat(materialExercises.path("exercises")).hasSize(1);
+        assertThat(materialExercises.path("total").intValue()).isOne();
+        assertThat(materialExercises.path("exercises").get(0).path("objective").path("objectiveId").textValue())
+                .isEqualTo(objective.toString());
+        assertThat(materialExercises.path("exercises").get(0).path("objective")
+                .path("answerContract").path("accepted").get(0).textValue()).isEqualTo("memory");
+        assertThat(service.list(fixture.actor(), fixture.deck(), UUID.randomUUID(), "1", null)
+                .path("exercises")).isEmpty();
         JsonNode first = service.read(fixture.actor(), fixture.deck(), exercise, null);
         assertThat(first.path("objective").path("objectiveRevisionId").textValue())
                 .isEqualTo(firstObjectiveRevision.toString());

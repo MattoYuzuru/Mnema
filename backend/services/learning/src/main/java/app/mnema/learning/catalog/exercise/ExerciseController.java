@@ -32,8 +32,9 @@ public class ExerciseController {
     @GetMapping
     ResponseEntity<JsonNode> list(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
                                   HttpServletRequest request) {
-        JsonNode page = service.list(id(identity.getSubject()), id(deckId), parameter(request, "limit"),
-                parameter(request, "cursor"));
+        String member = parameter(request, "memberKey");
+        JsonNode page = service.list(id(identity.getSubject()), id(deckId), member == null ? null : id(member),
+                parameter(request, "limit"), parameter(request, "cursor"));
         return ResponseEntity.ok().headers(privateHeaders()).eTag(page.path("deckVersion").textValue()).body(page);
     }
 

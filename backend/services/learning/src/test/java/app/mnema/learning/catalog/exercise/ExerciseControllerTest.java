@@ -76,8 +76,10 @@ class ExerciseControllerTest {
                 .andExpect(header().doesNotExist("ETag"));
 
         ObjectNode page = JSON.createObjectNode().put("deckVersion", "2"); page.putArray("exercises");
-        when(service.list(actor, deck, "20", "cursor")).thenReturn(page);
-        mvc.perform(get("/decks/" + deck + "/exercises").param("limit", "20").param("cursor", "cursor"))
+        UUID member = UUID.randomUUID();
+        when(service.list(actor, deck, member, "20", "cursor")).thenReturn(page);
+        mvc.perform(get("/decks/" + deck + "/exercises").param("memberKey", member.toString())
+                        .param("limit", "20").param("cursor", "cursor"))
                 .andExpect(status().isOk()).andExpect(header().string("ETag", "\"2\""));
         when(service.read(actor, deck, exercise, exerciseRevision)).thenReturn(acknowledgement);
         mvc.perform(get("/decks/" + deck + "/exercises/" + exercise)
@@ -91,6 +93,8 @@ class ExerciseControllerTest {
                         .content(ExerciseCommandTest.valid("TYPED").toString()))
                 .andExpect(status().isPreconditionRequired()).andExpect(jsonPath("$.code").value("PRECONDITION_REQUIRED"));
         mvc.perform(get("/decks/bad/exercises")).andExpect(status().isBadRequest());
+        mvc.perform(get("/decks/" + deck + "/exercises").param("memberKey", "bad"))
+                .andExpect(status().isBadRequest());
         mvc.perform(get("/decks/" + deck + "/exercises/" + exercise)
                         .param("revisionId", exerciseRevision.toString(), exerciseRevision.toString()))
                 .andExpect(status().isBadRequest());

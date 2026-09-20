@@ -103,8 +103,11 @@ in the remaining #75 slices.
 ### Frontend
 
 `app.routes.ts` is the route source of truth. `/decks` authoring routes are current
-and lazy. `my-study`, public-deck, template, old review/import/media/AI services and
-components are legacy or deferred; inspect them only as deletion/research evidence.
+and lazy. Material Browse/editor links to a separate lazy exercise inspector for
+all four P0 mechanics; the inspector uses current node projections, strict
+exercise envelopes and recoverable conflict/retry state without loading Study.
+`my-study`, public-deck, template, old review/import/media/AI services and components
+are legacy or deferred; inspect them only as deletion/research evidence.
 The accepted visual direction is
 [paper/antiquity/indigo](../frontend/design-and-experience-2026-09.md).
 

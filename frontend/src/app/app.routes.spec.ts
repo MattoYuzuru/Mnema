@@ -6,6 +6,7 @@ import { OwnDecksListPageComponent } from './features/own-decks/own-decks-list-p
 import { BrowsePageComponent } from './features/authoring/browse-page.component';
 import { CapturePageComponent } from './features/authoring/capture-page.component';
 import { ItemEditorPageComponent } from './features/authoring/item-editor-page.component';
+import { ExerciseAuthoringPageComponent } from './features/authoring/exercise-authoring-page.component';
 
 describe('appRoutes', () => {
     it('keeps the Identity callback and exposes only canonical private deck routes', () => {
@@ -23,7 +24,9 @@ describe('appRoutes', () => {
 
         const deckPaths = paths.filter(path => path?.startsWith('decks'));
         expect(deckPaths).toEqual([
-            'decks', 'decks/new', 'decks/:deckId/materials/new', 'decks/:deckId/materials/:memberKey/edit',
+            'decks', 'decks/new', 'decks/:deckId/materials/new',
+            'decks/:deckId/materials/:memberKey/exercises/new', 'decks/:deckId/exercises/:exerciseId/edit',
+            'decks/:deckId/materials/:memberKey/edit',
             'decks/:deckId/materials/:memberKey', 'decks/:deckId/materials', 'decks/:deckId/capture', 'decks/:deckId'
         ]);
         for (const path of deckPaths) {
@@ -34,6 +37,8 @@ describe('appRoutes', () => {
         }
         expect(appRoutes.find(route => route.path === 'decks/:deckId/materials/new')?.canDeactivate).toHaveSize(1);
         expect(appRoutes.find(route => route.path === 'decks/:deckId/materials/:memberKey/edit')?.canDeactivate).toHaveSize(1);
+        expect(appRoutes.find(route => route.path === 'decks/:deckId/materials/:memberKey/exercises/new')?.canDeactivate).toHaveSize(1);
+        expect(appRoutes.find(route => route.path === 'decks/:deckId/exercises/:exerciseId/edit')?.canDeactivate).toHaveSize(1);
     });
 
     it('loads each own-deck page through its lazy route', async () => {
@@ -42,6 +47,8 @@ describe('appRoutes', () => {
         expect(await load('decks/new')).toBe(OwnDeckCreatePageComponent);
         expect(await load('decks/:deckId/materials/new')).toBe(ItemEditorPageComponent);
         expect(await load('decks/:deckId/materials/:memberKey/edit')).toBe(ItemEditorPageComponent);
+        expect(await load('decks/:deckId/materials/:memberKey/exercises/new')).toBe(ExerciseAuthoringPageComponent);
+        expect(await load('decks/:deckId/exercises/:exerciseId/edit')).toBe(ExerciseAuthoringPageComponent);
         expect(await load('decks/:deckId/materials/:memberKey')).toBe(BrowsePageComponent);
         expect(await load('decks/:deckId/materials')).toBe(BrowsePageComponent);
         expect(await load('decks/:deckId/capture')).toBe(CapturePageComponent);

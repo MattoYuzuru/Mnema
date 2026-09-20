@@ -14,8 +14,9 @@ artifact:
 Mnema напрямую заменяет v1 платформой вокруг versioned `LearningItem`. После Epic
 #74 канонический authoring runtime уже находится в `identity-account`, `learning` и
 Angular SPA. Epic #75 добавил objective/exercise authoring, bounded Study session
-snapshots, deterministic attempts и baseline scheduler state; progress, remaining
-P0 adapters и UI ещё в работе. Media lifecycle относится к #76.
+snapshots, deterministic attempts, baseline scheduler state и production exercise
+inspector; Study runner, progress и remaining P0 adapters ещё в работе. Media
+lifecycle относится к #76.
 
 ## Shipping и local replacement boundary
 
@@ -65,8 +66,11 @@ due/new/practice selection policy. Они остаются следующими 
 
 Replacement routes `/decks`, `/decks/:deckId`, deck-scoped
 `/decks/:deckId/materials/...`, `/decks/:deckId/capture` и editor реализуют выбранное
-paper/antiquity/indigo направление. Native editor state не является persisted
-format; frontend валидирует серверные envelopes и ETag/command contracts.
+paper/antiquity/indigo направление. Отдельный lazy exercise inspector позволяет
+выбрать актуальные node projections или короткий prompt, создать/переиспользовать/
+изменить одну явную objective, настроить четыре P0 mechanics и preview без работы с
+UUID/JSON. Native editor state не является persisted format; frontend валидирует
+серверные envelopes и ETag/command contracts.
 
 В исходниках всё ещё есть legacy components/services для public decks, old review,
 templates, import, media и AI. Их наличие не делает поведение текущим и не разрешает

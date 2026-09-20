@@ -1,6 +1,8 @@
 <section class="page" aria-labelledby="editor-title">
   @if (deck(); as currentDeck) { <a class="back-link" [routerLink]="['/decks', currentDeck.deckId, 'materials']">← К материалам</a> }
-  <header class="page-heading"><div><p class="eyebrow">{{ item() ? 'Редактирование' : 'Новый материал' }}</p><h1 id="editor-title" tabindex="-1">{{ deck()?.metadata?.title ?? 'Материал' }}</h1><p class="lede">Черновик хранится на сервере. Публикация всегда остаётся отдельным действием.</p></div></header>
+  <header class="page-heading"><div><p class="eyebrow">{{ item() ? 'Редактирование' : 'Новый материал' }}</p><h1 id="editor-title" tabindex="-1">{{ deck()?.metadata?.title ?? 'Материал' }}</h1><p class="lede">Черновик хранится на сервере. Публикация всегда остаётся отдельным действием.</p></div>
+    @if (item(); as currentItem) { <a class="button" [routerLink]="['/decks', deck()?.deckId, 'materials', currentItem.memberKey, 'exercises', 'new']">Настроить упражнения</a> }
+  </header>
   @if (restored()) { <p class="notice success" role="status">Открыт последний серверный черновик этого материала.</p> }
   @if (message(); as currentMessage) {
     <section class="notice" [class.error]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected'" [attr.role]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected' ? 'alert' : 'status'">
