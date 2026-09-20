@@ -71,6 +71,39 @@ describe('StudySessionPageComponent', () => {
         expect(command.hintsUsed).toEqual(['REVEAL']);
     });
 
+    it('renders one cloze blank and caps the exact attempt after a grapheme hint', () => {
+        api.start.and.returnValue(of({ value: session('CLOZE_SINGLE'), replayed: false }));
+        api.submit.and.returnValue(of({ value: outcome('CORRECT'), replayed: false }));
+        fixture = TestBed.createComponent(StudySessionPageComponent); fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('label[for="cloze-answer"]')).not.toBeNull();
+        expect(root.textContent).not.toContain('memory');
+
+        fixture.componentInstance.showClozeHint(); fixture.detectChanges();
+        expect(root.textContent).toContain('начинается с «m»');
+        fixture.componentInstance.setTypedAnswer('memory');
+        fixture.componentInstance.submitTyped();
+        const command = api.submit.calls.mostRecent().args[2];
+        expect(command.response).toEqual({ kind: 'TEXT', text: 'memory' });
+        expect(command.hintsUsed).toEqual(['REVEAL_FIRST_GRAPHEME']);
+    });
+
+    it('uses native single-choice radios and submits only the selected server option', () => {
+        api.start.and.returnValue(of({ value: session('SINGLE_CHOICE'), replayed: false }));
+        api.submit.and.returnValue(of({ value: outcome('CORRECT'), replayed: false }));
+        fixture = TestBed.createComponent(StudySessionPageComponent); fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        const radios = root.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+        expect(radios.length).toBe(2);
+        expect(root.querySelector<HTMLButtonElement>('button[type="submit"]')?.disabled).toBeTrue();
+
+        fixture.componentInstance.selectOption(radios[0].value);
+        fixture.componentInstance.submitChoice();
+        expect(api.submit.calls.mostRecent().args[2].response)
+            .toEqual({ kind: 'CHOICE', optionId: radios[0].value });
+        expect(api.submit.calls.mostRecent().args[2].hintsUsed).toEqual([]);
+    });
+
     it('retains and replays the exact command after an unknown network outcome', () => {
         api.start.and.returnValue(of({ value: session('TYPED'), replayed: false }));
         api.submit.and.returnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
@@ -97,16 +130,23 @@ describe('StudySessionPageComponent', () => {
         document.documentElement.style.fontSize = ''; root.removeAttribute('dir');
     });
 
-    function presentation(type: 'TYPED' | 'SELF_CHECK'): StudyPresentation {
+    function presentation(type: StudyPresentation['type']): StudyPresentation {
+        const assessed = { bindingId: id('7'), role: 'ASSESSED' as const, memberKey: id('8'),
+            itemRevisionId: id('9'), ordinal: 0, nodeIds: [id('10')], display: { kind: 'NODE_TEXT' } };
+        const options = type === 'SINGLE_CHOICE'
+            ? [{ optionId: id('15'), text: 'memory' }, { optionId: id('16'), text: 'forgetting' }] : [];
+        const bindings = type === 'SINGLE_CHOICE' ? [assessed,
+            { ...assessed, bindingId: id('15'), role: 'OPTION' as const, ordinal: 1 },
+            { ...assessed, bindingId: id('16'), role: 'OPTION' as const, ordinal: 2, nodeIds: [id('17')] }
+        ] : [assessed];
         return { presentationId, nonce: 'abcdefghijklmnop', ordinal: 0, exerciseRevisionId: id('4'), type,
             objectiveId: id('5'), objectiveRevisionId: id('6'), learningEpoch: '0', reference: 'memory',
-            prompt: { kind: 'TEXT', text: 'What remains?' }, options: [], bindings: [{ bindingId: id('7'),
-                role: 'ASSESSED', memberKey: id('8'), itemRevisionId: id('9'), ordinal: 0,
-                nodeIds: [id('10')], display: { kind: 'NODE_TEXT' } }],
-            evaluator: { id: type === 'TYPED' ? 'deterministic-text' : 'self-check', version: '1' } };
+            prompt: { kind: 'TEXT', text: 'What remains?' }, options, bindings,
+            evaluator: { id: type === 'SELF_CHECK' ? 'self-check'
+                : type === 'SINGLE_CHOICE' ? 'deterministic-choice' : 'deterministic-text', version: '1' } };
     }
 
-    function session(type: 'TYPED' | 'SELF_CHECK'): ReadyStudySession {
+    function session(type: StudyPresentation['type']): ReadyStudySession {
         return { sessionId, deckId: deck.deckId, mode: 'SCHEDULED', status: 'ACTIVE', timezone: 'Europe/Moscow',
             localStudyDate: '2026-09-20', deckRevisionId: id('11'), exerciseGenerationId: id('12'),
             selectionPolicyVersion: 'deck-due-new-v1', reducer: { id: 'mnema-baseline', version: '1',

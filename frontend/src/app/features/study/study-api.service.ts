@@ -129,10 +129,20 @@ function parsePresentation(value: unknown): StudyPresentation {
     });
     const bindings = object['bindings'].map(parseBinding);
     if (bindings.filter(binding => binding.role === 'ASSESSED').length !== 1) throw protocol('Invalid assessed binding.');
+    const type = exerciseType(object['type']);
+    const optionBindings = bindings.filter(binding => binding.role === 'OPTION');
+    if (type === 'SINGLE_CHOICE') {
+        const optionIds = new Set(options.map(option => option.optionId));
+        if (options.length < 2 || options.length > 6 || optionIds.size !== options.length
+            || optionBindings.length !== options.length
+            || optionBindings.some(binding => !optionIds.has(binding.bindingId))) {
+            throw protocol('Invalid choice options.');
+        }
+    } else if (options.length !== 0 || optionBindings.length !== 0) throw protocol('Unexpected choice options.');
     return {
         presentationId: entity(object['presentationId']), nonce: text(object['nonce'], 100, 16),
         ordinal: count(object['ordinal'], 99), exerciseRevisionId: entity(object['exerciseRevisionId']),
-        type: exerciseType(object['type']), objectiveId: entity(object['objectiveId']),
+        type, objectiveId: entity(object['objectiveId']),
         objectiveRevisionId: entity(object['objectiveRevisionId']), learningEpoch: unsigned(object['learningEpoch']),
         reference: text(object['reference'], 4096, 0), prompt: { kind: 'TEXT', text: text(prompt['text'], 4096, 0) },
         options, bindings, evaluator: { id: text(evaluator['id'], 100), version: text(evaluator['version'], 100) }

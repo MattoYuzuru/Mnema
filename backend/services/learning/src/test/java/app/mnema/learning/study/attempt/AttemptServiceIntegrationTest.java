@@ -108,16 +108,34 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(rawCount(fixture.actor())).isZero();
         assertThat(count("study_attempt_tombstone", "account_id", fixture.actor())).isEqualTo(2);
 
-        Fixture unsupportedFixture = fixture("CLOZE_SINGLE");
-        Presentation unsupported = presentation(unsupportedFixture, "SCHEDULED");
-        JsonNode unavailable = service.submit(unsupportedFixture.actor(), unsupportedFixture.deck(),
-                unsupported.session(), attempt(UUID.randomUUID(), unsupported, "TEXT", "memory", List.of(), null))
+    }
+
+    @Test
+    void clozeAndChoiceUseCanonicalReducerWithConservativeEvidence() {
+        Fixture clozeFixture = fixture("CLOZE_SINGLE");
+        Presentation cloze = presentation(clozeFixture, "SCHEDULED");
+        JsonNode clozeOutcome = service.submit(clozeFixture.actor(), clozeFixture.deck(), cloze.session(),
+                attempt(UUID.randomUUID(), cloze, "TEXT", " MEMORY ", List.of("REVEAL_FIRST_GRAPHEME"), null))
                 .outcome();
-        assertThat(unavailable.path("status").textValue()).isEqualTo("UNAVAILABLE");
-        assertThat(unavailable.path("feedback").path("result").textValue()).isEqualTo("UNAVAILABLE");
-        assertThat(unavailable.path("feedback").path("reasonCodes")).containsExactly(
-                JSON.getNodeFactory().textNode("EVALUATOR_UNAVAILABLE"));
-        assertThat(count("study_transition", "account_id", unsupportedFixture.actor())).isZero();
+        assertThat(clozeOutcome.path("evidence").path("result").textValue()).isEqualTo("CORRECT");
+        assertThat(clozeOutcome.path("evidence").path("evidenceClass").textValue()).isEqualTo("MEDIUM");
+        assertThat(clozeOutcome.path("transition").path("afterLevel").intValue()).isOne();
+
+        Fixture choiceFixture = fixture("SINGLE_CHOICE");
+        Presentation choice = presentation(choiceFixture, "SCHEDULED");
+        assertThat(choice.options()).hasSize(2);
+        assertThatThrownBy(() -> service.submit(choiceFixture.actor(), choiceFixture.deck(), choice.session(),
+                attempt(UUID.randomUUID(), choice, "CHOICE", UUID.randomUUID().toString(), List.of(), null)))
+                .isInstanceOf(app.mnema.learning.platform.api.InvalidRequestException.class);
+
+        JsonNode choiceOutcome = service.submit(choiceFixture.actor(), choiceFixture.deck(), choice.session(),
+                attempt(UUID.randomUUID(), choice, "CHOICE", choice.options().get(0).toString(), List.of(), null))
+                .outcome();
+        assertThat(choiceOutcome.path("evidence").path("result").textValue()).isEqualTo("CORRECT");
+        assertThat(choiceOutcome.path("evidence").path("evidenceClass").textValue()).isEqualTo("LOW");
+        assertThat(choiceOutcome.path("transition").path("afterLevel").intValue()).isOne();
+        assertThat(count("study_state", "account_id", choiceFixture.actor())).isOne();
+        assertThat(count("study_transition", "account_id", choiceFixture.actor())).isOne();
     }
 
     @Test
@@ -201,8 +219,10 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
         UUID session = UUID.fromString(started.body().path("sessionId").textValue());
         JsonNode active = started.preparing() ? sessions.read(fixture.actor(), fixture.deck(), session) : started.body();
         JsonNode value = active.path("presentations").get(0);
+        List<UUID> options = new java.util.ArrayList<>();
+        value.path("options").forEach(option -> options.add(UUID.fromString(option.path("optionId").textValue())));
         return new Presentation(session, UUID.fromString(value.path("presentationId").textValue()),
-                value.path("nonce").textValue());
+                value.path("nonce").textValue(), List.copyOf(options));
     }
 
     private Fixture fixture(String type) {
@@ -211,6 +231,7 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
                 .acknowledgement().path("deck").path("deckId").textValue());
         JsonNode head = decks.read(actor, deck);
         UUID answerNode = UUID.randomUUID();
+        UUID distractorNode = UUID.randomUUID();
         ObjectNode document = JSON.createObjectNode().put("formatVersion", 1);
         ObjectNode root = document.putObject("root").put("id", UUID.randomUUID().toString())
                 .put("type", "doc").put("version", 1);
@@ -221,6 +242,12 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
         ObjectNode text = paragraph.putArray("content").addObject().put("id", UUID.randomUUID().toString())
                 .put("type", "text").put("version", 1);
         text.putObject("attrs").put("text", "memory"); text.putArray("content");
+        ObjectNode distractor = root.withArray("content").addObject().put("id", distractorNode.toString())
+                .put("type", "paragraph").put("version", 1);
+        distractor.putObject("attrs");
+        ObjectNode distractorText = distractor.putArray("content").addObject().put("id", UUID.randomUUID().toString())
+                .put("type", "text").put("version", 1);
+        distractorText.putObject("attrs").put("text", "forgetting"); distractorText.putArray("content");
         ObjectNode itemBody = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
                 .put("expectedDeckRevisionId", head.path("revisionId").textValue());
         itemBody.set("document", document);
@@ -243,7 +270,13 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
                 .put("itemRevisionId", revision.toString()).put("ordinal", 0);
         binding.putArray("nodeIds").add(answerNode.toString());
         binding.putObject("display").put("kind", "NODE_TEXT");
-        exercise.putObject("evaluatorPolicy").put("id", type.equals("SELF_CHECK") ? "self-check" : "deterministic-text")
+        if (type.equals("SINGLE_CHOICE")) {
+            addOption(exercise.withArray("bindings"), member, revision, answerNode, 1);
+            addOption(exercise.withArray("bindings"), member, revision, distractorNode, 2);
+        }
+        String evaluator = type.equals("SELF_CHECK") ? "self-check"
+                : type.equals("SINGLE_CHOICE") ? "deterministic-choice" : "deterministic-text";
+        exercise.putObject("evaluatorPolicy").put("id", evaluator)
                 .put("version", "1");
         exercises.publish(actor, deck, null, 1, ExerciseCommand.readCreate(bytes(exerciseBody)));
         return new Fixture(actor, deck, member);
@@ -255,10 +288,20 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
                 .put("presentationId", presentation.id().toString()).put("nonce", presentation.nonce());
         ObjectNode response = body.putObject("response").put("kind", kind);
         if (kind.equals("TEXT")) response.put("text", value);
+        if (kind.equals("CHOICE")) response.put("optionId", value);
         body.set("hintsUsed", JSON.valueToTree(hints));
         if (confidence == null) body.putNull("confidence"); else body.put("confidence", confidence);
         body.put("durationMs", 1_000);
         return AttemptCommand.read(bytes(body));
+    }
+
+    private static void addOption(com.fasterxml.jackson.databind.node.ArrayNode bindings, UUID member,
+                                  UUID revision, UUID node, int ordinal) {
+        ObjectNode option = bindings.addObject().put("bindingId", UUID.randomUUID().toString())
+                .put("role", "OPTION").put("memberKey", member.toString())
+                .put("itemRevisionId", revision.toString()).put("ordinal", ordinal);
+        option.putArray("nodeIds").add(node.toString());
+        option.putObject("display").put("kind", "NODE_TEXT");
     }
 
     private static StudyRestartCommand restart(UUID command, UUID member) {
@@ -285,5 +328,5 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
     }
 
     private record Fixture(UUID actor, UUID deck, UUID member) { }
-    private record Presentation(UUID session, UUID id, String nonce) { }
+    private record Presentation(UUID session, UUID id, String nonce, List<UUID> options) { }
 }

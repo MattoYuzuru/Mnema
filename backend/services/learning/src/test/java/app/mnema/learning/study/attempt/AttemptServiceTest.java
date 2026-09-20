@@ -30,6 +30,7 @@ class AttemptServiceTest {
         answer.putArray("accepted").add("answer");
         var presentation = new AttemptRepository.Presentation(actor, session, command.presentationId(), deck,
                 "SCHEDULED", "ACTIVE", command.nonce(), "TYPED", UUID.randomUUID(), UUID.randomUUID(), 0,
+                JSON.createArrayNode(),
                 JSON.createObjectNode().put("id", "deterministic-text").put("version", "1"),
                 answer, UUID.randomUUID(),
                 "mnema-baseline", "1", "hash", Instant.parse("2026-09-20T09:00:00Z"));

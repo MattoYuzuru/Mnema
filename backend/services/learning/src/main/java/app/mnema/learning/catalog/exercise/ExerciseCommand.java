@@ -117,7 +117,21 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
         if (assessed != 1 || (type.equals("SINGLE_CHOICE") ? options < 2 || options > 6 : options != 0)) {
             throw invalid();
         }
+        if (type.equals("SINGLE_CHOICE")) validateChoiceTargets(bindings);
         return new Exercise(type, value.path("enabled").booleanValue(), prompt, bindings, evaluator);
+    }
+
+    private static void validateChoiceTargets(List<Binding> bindings) {
+        Binding assessed = bindings.stream().filter(binding -> binding.role().equals("ASSESSED"))
+                .findFirst().orElseThrow();
+        if (assessed.nodeIds().size() != 1) throw invalid();
+        Target assessedTarget = Target.of(assessed);
+        Set<Target> options = new HashSet<>();
+        for (Binding binding : bindings) {
+            if (!binding.role().equals("OPTION")) continue;
+            if (binding.nodeIds().size() != 1 || !options.add(Target.of(binding))) throw invalid();
+        }
+        if (!options.contains(assessedTarget)) throw invalid();
     }
 
     private static ObjectNode prompt(JsonNode value) {
@@ -227,6 +241,12 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
     }
 
     private static InvalidRequestException invalid() { return new InvalidRequestException(); }
+
+    private record Target(UUID memberKey, UUID itemRevisionId, List<UUID> nodeIds) {
+        private static Target of(Binding binding) {
+            return new Target(binding.memberKey(), binding.itemRevisionId(), binding.nodeIds());
+        }
+    }
 
     public sealed interface Objective permits CreateObjective, ReuseObjective, ReviseObjective { }
     public record CreateObjective(ObjectNode answerContract) implements Objective {

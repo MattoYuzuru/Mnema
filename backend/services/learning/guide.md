@@ -110,9 +110,13 @@ capacity evidence.
   presentations without a terminal attempt and each presentation carries the
   answer-contract reference needed by the accessible Study feedback flow.
 - `/api/decks/{deckId}/study-sessions/{sessionId}/attempts` terminalizes one
-  server-issued presentation. `TYPED` and `SELF_CHECK` evaluation is deterministic;
+  server-issued presentation. All four P0 evaluators are deterministic;
   only `SCHEDULED` writes evidence and one versioned `mnema-baseline-v1`
-  transition. Exact retries return the durable outcome, conflicting attempt IDs
+  transition. `TYPED` and single-blank `CLOZE_SINGLE` normalize the pinned answer
+  contract; a first-grapheme hint caps only a correct result at `MEDIUM`.
+  `SINGLE_CHOICE` accepts only a server-issued `OPTION` binding matching the pinned
+  focal target and always produces `LOW` recognition evidence. Exact retries
+  return the durable outcome, conflicting attempt IDs
   never add transitions, and raw scheduled response JSON expires separately after
   30 days. The first terminal receipt atomically removes that presentation from
   the resumable batch; after its last presentation, the bounded session becomes

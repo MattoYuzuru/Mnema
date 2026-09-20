@@ -51,7 +51,7 @@ public class AttemptService {
         }
 
         AttemptEvaluation evaluation = AttemptEvaluation.evaluate(presentation.exerciseType(),
-                presentation.evaluator(), presentation.answerContract(), command);
+                presentation.evaluator(), presentation.answerContract(), presentation.bindings(), command);
         if (!presentation.mode().equals("SCHEDULED")) {
             ObjectNode outcome = feedbackOnly(command, presentation, evaluation);
             repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(),

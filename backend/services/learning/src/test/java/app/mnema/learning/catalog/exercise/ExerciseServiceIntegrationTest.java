@@ -93,7 +93,7 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
                 JSON.createObjectNode().put("id", "deterministic-choice").put("version", "1"));
         ArrayNode bindings = create.withObject("exercise").withArray("bindings");
         bindings.add(binding("OPTION", 1, fixture));
-        bindings.add(binding("OPTION", 2, fixture));
+        bindings.add(binding("OPTION", 2, fixture, fixture.distractor()));
         var published = service.publish(fixture.actor(), fixture.deck(), null, 1,
                 ExerciseCommand.readCreate(bytes(create)));
         assertThat(service.read(fixture.actor(), fixture.deck(),
@@ -157,7 +157,7 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         UUID deck = UUID.fromString(decks.create(actor, new DeckCommand(UUID.randomUUID(), "Deck", "Description"))
                 .acknowledgement().path("deck").path("deckId").textValue());
         JsonNode deckHead = decks.read(actor, deck);
-        UUID rootNode = UUID.randomUUID(), answerNode = UUID.randomUUID();
+        UUID rootNode = UUID.randomUUID(), answerNode = UUID.randomUUID(), distractorNode = UUID.randomUUID();
         ObjectNode document = JSON.createObjectNode().put("formatVersion", 1);
         ObjectNode root = document.putObject("root").put("id", rootNode.toString()).put("type", "doc").put("version", 1);
         root.putObject("attrs");
@@ -167,13 +167,19 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         ObjectNode text = paragraph.putArray("content").addObject().put("id", UUID.randomUUID().toString())
                 .put("type", "text").put("version", 1);
         text.putObject("attrs").put("text", "memory"); text.putArray("content");
+        ObjectNode distractor = root.withArray("content").addObject().put("id", distractorNode.toString())
+                .put("type", "paragraph").put("version", 1);
+        distractor.putObject("attrs");
+        ObjectNode distractorText = distractor.putArray("content").addObject().put("id", UUID.randomUUID().toString())
+                .put("type", "text").put("version", 1);
+        distractorText.putObject("attrs").put("text", "forgetting"); distractorText.putArray("content");
         ObjectNode itemBody = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
                 .put("expectedDeckRevisionId", deckHead.path("revisionId").textValue());
         itemBody.set("document", document);
         JsonNode item = items.publish(actor, deck, 0, ItemPublicationCommand.readCreate(bytes(itemBody)))
                 .acknowledgement().path("changes").get(0);
         return new Fixture(actor, deck, decks.read(actor, deck), UUID.fromString(item.path("memberKey").textValue()),
-                UUID.fromString(item.path("itemRevisionId").textValue()), answerNode);
+                UUID.fromString(item.path("itemRevisionId").textValue()), answerNode, distractorNode);
     }
 
     private static ExerciseCommand command(UUID command, JsonNode deck, Fixture fixture, String type,
@@ -216,10 +222,14 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
     }
 
     private static ObjectNode binding(String role, int ordinal, Fixture fixture) {
+        return binding(role, ordinal, fixture, fixture.node());
+    }
+
+    private static ObjectNode binding(String role, int ordinal, Fixture fixture, UUID node) {
         ObjectNode binding = JSON.createObjectNode().put("bindingId", UUID.randomUUID().toString())
                 .put("role", role).put("memberKey", fixture.member().toString())
                 .put("itemRevisionId", fixture.itemRevision().toString()).put("ordinal", ordinal);
-        binding.putArray("nodeIds").add(fixture.node().toString());
+        binding.putArray("nodeIds").add(node.toString());
         binding.putObject("display").put("kind", "NODE_TEXT");
         return binding;
     }
@@ -233,5 +243,6 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         return new ByteArrayInputStream(value.toString().getBytes(StandardCharsets.UTF_8));
     }
 
-    private record Fixture(UUID actor, UUID deck, JsonNode deckHead, UUID member, UUID itemRevision, UUID node) { }
+    private record Fixture(UUID actor, UUID deck, JsonNode deckHead, UUID member, UUID itemRevision, UUID node,
+                           UUID distractor) { }
 }
