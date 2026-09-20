@@ -1,0 +1,487 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mnema.app/contracts/study/study.schema.json",
+  "$defs": {
+    "identifier": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+    "nullableString": {"type": ["string", "null"]},
+    "answerContract": {
+      "type": "object",
+      "required": ["schemaVersion", "normalization", "accepted"],
+      "properties": {
+        "schemaVersion": {"type": "integer"},
+        "normalization": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "accepted": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "evaluator": {
+      "type": "object",
+      "required": ["id", "version"],
+      "properties": {"id": {"type": "string"}, "version": {"type": "string"}},
+      "additionalProperties": false
+    },
+    "budget": {
+      "type": "object",
+      "required": ["maxPresentations"],
+      "properties": {"maxPresentations": {"type": "integer"}},
+      "additionalProperties": false
+    },
+    "reducerReference": {
+      "type": "object",
+      "required": ["id", "version", "configId", "configHash"],
+      "properties": {
+        "id": {"type": "string"}, "version": {"type": "string"},
+        "configId": {"$ref": "#/$defs/identifier"}, "configHash": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "submitResponse": {
+      "oneOf": [
+        {"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string"}}, "additionalProperties": false},
+        {"type": "object", "required": ["kind", "rating"], "properties": {"kind": {"const": "SELF_CHECK"}, "rating": {"enum": ["NOT_RECALLED", "HINTED", "PARTIAL", "FULL"]}}, "additionalProperties": false},
+        {"type": "object", "required": ["kind", "optionId"], "properties": {"kind": {"const": "CHOICE"}, "optionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false},
+        {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "CANCEL"}}, "additionalProperties": false}
+      ]
+    },
+    "evidence": {
+      "type": "object",
+      "required": ["objectiveId", "objectiveRevisionId", "result", "evidenceClass", "reasonCodes"],
+      "properties": {
+        "objectiveId": {"$ref": "#/$defs/identifier"},
+        "objectiveRevisionId": {"$ref": "#/$defs/identifier"},
+        "result": {"enum": ["CORRECT", "PARTIAL", "INCORRECT", "UNSURE"]},
+        "evidenceClass": {"enum": ["HIGH", "MEDIUM", "LOW"]},
+        "reasonCodes": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "feedback": {
+      "type": "object",
+      "required": ["result"],
+      "properties": {
+        "result": {"enum": ["CORRECT", "PARTIAL", "INCORRECT", "UNSURE", "NOT_ASSESSED", "UNAVAILABLE"]},
+        "reference": {"type": "string"},
+        "appliedRules": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false
+    },
+    "transition": {
+      "type": "object",
+      "required": ["learningEpoch", "sequence", "beforeLevel", "afterLevel", "acceptedAt", "nextDue", "reducerId", "reducerVersion", "configId", "configHash"],
+      "properties": {
+        "learningEpoch": {"type": "string"}, "sequence": {"type": "string"},
+        "beforeLevel": {"type": "integer"}, "afterLevel": {"type": "integer"},
+        "acceptedAt": {"type": "string"}, "nextDue": {"type": "string"},
+        "reducerId": {"type": "string"}, "reducerVersion": {"type": "string"},
+        "configId": {"$ref": "#/$defs/identifier"}, "configHash": {"type": "string"}
+      },
+      "additionalProperties": false
+    },
+    "objectiveState": {
+      "type": "object",
+      "required": ["objectiveId", "learningEpoch", "level", "correctStreak", "lapseCount", "lastAssessedAt", "nextDue"],
+      "properties": {
+        "objectiveId": {"$ref": "#/$defs/identifier"}, "learningEpoch": {"type": "string"},
+        "level": {"type": "integer"}, "correctStreak": {"type": "integer"}, "lapseCount": {"type": "integer"},
+        "lastAssessedAt": {"$ref": "#/$defs/nullableString"}, "nextDue": {"$ref": "#/$defs/nullableString"}
+      },
+      "additionalProperties": false
+    },
+    "progressPage": {
+      "type": "object",
+      "required": ["asOf", "items", "nextCursor"],
+      "properties": {
+        "asOf": {"type": "string"},
+        "items": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["memberKey", "itemRevisionId", "state", "objectiveCoverage", "lastAssessedAt", "nextDue"],
+            "properties": {
+              "memberKey": {"$ref": "#/$defs/identifier"}, "itemRevisionId": {"$ref": "#/$defs/identifier"},
+              "state": {"enum": ["NOT_STARTED", "LEARNING", "DUE", "ON_TRACK"]},
+              "objectiveCoverage": {
+                "type": "object", "required": ["enabled", "introduced", "assessed"],
+                "properties": {"enabled": {"type": "integer"}, "introduced": {"type": "integer"}, "assessed": {"type": "integer"}},
+                "additionalProperties": false
+              },
+              "lastAssessedAt": {"$ref": "#/$defs/nullableString"}, "nextDue": {"$ref": "#/$defs/nullableString"}
+            },
+            "additionalProperties": false
+          }
+        },
+        "nextCursor": {"$ref": "#/$defs/nullableString"}
+      },
+      "additionalProperties": false
+    },
+    "binding": {
+      "type": "object",
+      "required": ["bindingId", "role", "memberKey", "itemRevisionId", "ordinal"],
+      "properties": {
+        "bindingId": {"$ref": "#/$defs/identifier"},
+        "role": {"enum": ["ASSESSED", "CUE", "OPTION", "CONTEXT"]},
+        "memberKey": {"$ref": "#/$defs/identifier"},
+        "itemRevisionId": {"$ref": "#/$defs/identifier"},
+        "nodeIds": {"type": "array", "items": {"$ref": "#/$defs/identifier"}},
+        "display": {"type": "object", "required": ["kind"], "properties": {"kind": {"type": "string"}}, "additionalProperties": false},
+        "ordinal": {"type": "integer"}
+      },
+      "additionalProperties": false
+    },
+    "authoringDocument": {
+      "type": "object",
+      "required": ["createTyped", "acknowledgement", "reuseObjective", "reviseObjective"],
+      "properties": {
+        "createTyped": {
+          "type": "object",
+          "required": ["commandId", "expectedDeckRevisionId", "objective", "exercise"],
+          "properties": {
+            "commandId": {"$ref": "#/$defs/identifier"},
+            "expectedDeckRevisionId": {"$ref": "#/$defs/identifier"},
+            "objective": {
+              "type": "object", "required": ["operation", "answerContract"],
+              "properties": {"operation": {"const": "create"}, "answerContract": {"$ref": "#/$defs/answerContract"}},
+              "additionalProperties": false
+            },
+            "exercise": {
+              "type": "object",
+              "required": ["type", "schemaVersion", "enabled", "prompt", "bindings", "evaluatorPolicy"],
+              "properties": {
+                "type": {"enum": ["SELF_CHECK", "TYPED", "CLOZE_SINGLE", "SINGLE_CHOICE"]},
+                "schemaVersion": {"type": "integer"},
+                "enabled": {"type": "boolean"},
+                "prompt": {
+                  "type": "object", "required": ["kind", "memberKey", "itemRevisionId", "nodeId"],
+                  "properties": {
+                    "kind": {"const": "NODE_TEXT"}, "memberKey": {"$ref": "#/$defs/identifier"},
+                    "itemRevisionId": {"$ref": "#/$defs/identifier"}, "nodeId": {"$ref": "#/$defs/identifier"}
+                  },
+                  "additionalProperties": false
+                },
+                "bindings": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/binding"}},
+                "evaluatorPolicy": {"$ref": "#/$defs/evaluator"}
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "acknowledgement": {
+          "type": "object",
+          "required": ["commandId", "deckId", "deckRevisionId", "deckVersion", "objectiveId", "objectiveKey", "objectiveRevisionId", "exerciseId", "exerciseRevisionId", "enabled"],
+          "properties": {
+            "commandId": {"$ref": "#/$defs/identifier"}, "deckId": {"$ref": "#/$defs/identifier"},
+            "deckRevisionId": {"$ref": "#/$defs/identifier"}, "deckVersion": {"type": "string"},
+            "objectiveId": {"$ref": "#/$defs/identifier"}, "objectiveKey": {"$ref": "#/$defs/identifier"},
+            "objectiveRevisionId": {"$ref": "#/$defs/identifier"}, "exerciseId": {"$ref": "#/$defs/identifier"},
+            "exerciseRevisionId": {"$ref": "#/$defs/identifier"}, "enabled": {"type": "boolean"}
+          },
+          "additionalProperties": false
+        },
+        "reuseObjective": {
+          "type": "object", "required": ["operation", "objectiveId", "objectiveRevisionId"],
+          "properties": {"operation": {"const": "reuse"}, "objectiveId": {"$ref": "#/$defs/identifier"}, "objectiveRevisionId": {"$ref": "#/$defs/identifier"}},
+          "additionalProperties": false
+        },
+        "reviseObjective": {
+          "type": "object", "required": ["operation", "objectiveId", "expectedObjectiveRevisionId", "answerContract"],
+          "properties": {
+            "operation": {"const": "revise"}, "objectiveId": {"$ref": "#/$defs/identifier"},
+            "expectedObjectiveRevisionId": {"$ref": "#/$defs/identifier"}, "answerContract": {"$ref": "#/$defs/answerContract"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "startCommand": {
+      "oneOf": [
+        {
+          "type": "object", "required": ["commandId", "mode", "budget"],
+          "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "mode": {"const": "SCHEDULED"}, "budget": {"$ref": "#/$defs/budget"}},
+          "additionalProperties": false
+        },
+        {
+          "type": "object", "required": ["commandId", "mode", "sourceSessionId", "budget"],
+          "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "mode": {"const": "REPLAY"}, "sourceSessionId": {"$ref": "#/$defs/identifier"}, "budget": {"$ref": "#/$defs/budget"}},
+          "additionalProperties": false
+        },
+        {
+          "type": "object", "required": ["commandId", "mode", "includeNew", "order", "budget"],
+          "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "mode": {"const": "PRACTICE"}, "includeNew": {"type": "boolean"}, "order": {"enum": ["SEEDED", "WEAKEST_FIRST"]}, "budget": {"$ref": "#/$defs/budget"}},
+          "additionalProperties": false
+        }
+      ]
+    },
+    "sessionDocument": {
+      "type": "object",
+      "required": ["startScheduled", "startReplay", "startPractice", "active", "activeReplay", "activePractice", "preparing"],
+      "properties": {
+        "startScheduled": {"$ref": "#/$defs/startCommand"},
+        "startReplay": {"$ref": "#/$defs/startCommand"},
+        "startPractice": {"$ref": "#/$defs/startCommand"},
+        "active": {
+          "type": "object",
+          "required": ["sessionId", "deckId", "mode", "status", "timezone", "localStudyDate", "deckRevisionId", "exerciseGenerationId", "selectionPolicyVersion", "reducer", "seed", "nextCursor", "expiresAt", "presentations"],
+          "properties": {
+            "sessionId": {"$ref": "#/$defs/identifier"},
+            "deckId": {"$ref": "#/$defs/identifier"},
+            "mode": {"enum": ["SCHEDULED", "REPLAY", "PRACTICE"]},
+            "status": {"enum": ["ACTIVE", "EMPTY", "COMPLETE"]},
+            "timezone": {"type": "string"},
+            "localStudyDate": {"type": "string"},
+            "deckRevisionId": {"$ref": "#/$defs/identifier"},
+            "exerciseGenerationId": {"$ref": "#/$defs/identifier"},
+            "selectionPolicyVersion": {"type": "string"},
+            "reducer": {"$ref": "#/$defs/reducerReference"},
+            "seed": {"type": "string"},
+            "nextCursor": {"$ref": "#/$defs/nullableString"},
+            "expiresAt": {"type": "string"},
+            "presentations": {
+              "type": "array",
+              "maxItems": 20,
+              "items": {
+                "type": "object",
+                "required": ["presentationId", "nonce", "ordinal", "exerciseRevisionId", "type", "objectiveId", "objectiveRevisionId", "learningEpoch", "prompt", "options", "bindings", "evaluator"],
+                "properties": {
+                  "presentationId": {"$ref": "#/$defs/identifier"},
+                  "nonce": {"type": "string"},
+                  "ordinal": {"type": "integer"},
+                  "exerciseRevisionId": {"$ref": "#/$defs/identifier"},
+                  "type": {"enum": ["SELF_CHECK", "TYPED", "CLOZE_SINGLE", "SINGLE_CHOICE"]},
+                  "objectiveId": {"$ref": "#/$defs/identifier"},
+                  "objectiveRevisionId": {"$ref": "#/$defs/identifier"},
+                  "learningEpoch": {"type": "string"},
+                  "prompt": {"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string"}}, "additionalProperties": false},
+                  "options": {"type": "array"},
+                  "bindings": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/binding"}},
+                  "evaluator": {"$ref": "#/$defs/evaluator"}
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "additionalProperties": false
+        },
+        "activeReplay": {"$ref": "#/$defs/sessionDocument/properties/active"},
+        "activePractice": {"$ref": "#/$defs/sessionDocument/properties/active"},
+        "preparing": {
+          "type": "object",
+          "required": ["sessionId", "mode", "status", "statusUrl"],
+          "properties": {
+            "sessionId": {"$ref": "#/$defs/identifier"},
+            "mode": {"enum": ["SCHEDULED", "REPLAY", "PRACTICE"]},
+            "status": {"const": "PREPARING"},
+            "statusUrl": {"type": "string"}
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "submitCommand": {
+      "type": "object",
+      "required": ["attemptId", "presentationId", "nonce", "response", "hintsUsed", "confidence", "durationMs"],
+      "properties": {
+        "attemptId": {"$ref": "#/$defs/identifier"},
+        "presentationId": {"$ref": "#/$defs/identifier"},
+        "nonce": {"type": "string"},
+        "response": {"$ref": "#/$defs/submitResponse"},
+        "hintsUsed": {"type": "array", "items": {"type": "string"}},
+        "confidence": {"type": ["string", "null"]},
+        "durationMs": {"type": "integer"}
+      },
+      "additionalProperties": false
+    },
+    "attemptOutcome": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["attemptId", "presentationId", "mode", "status", "evidence", "feedback", "transition"],
+          "properties": {
+            "attemptId": {"$ref": "#/$defs/identifier"}, "presentationId": {"$ref": "#/$defs/identifier"},
+            "mode": {"const": "SCHEDULED"}, "status": {"const": "ASSESSED"},
+            "evidence": {"$ref": "#/$defs/evidence"}, "feedback": {"$ref": "#/$defs/feedback"},
+            "transition": {"$ref": "#/$defs/transition"}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["attemptId", "presentationId", "mode", "status", "evidence", "feedback", "transition", "canonicalEffects"],
+          "properties": {
+            "attemptId": {"$ref": "#/$defs/identifier"}, "presentationId": {"$ref": "#/$defs/identifier"},
+            "mode": {"enum": ["REPLAY", "PRACTICE"]}, "status": {"const": "ASSESSED"},
+            "evidence": {"type": "null"}, "feedback": {"$ref": "#/$defs/feedback"},
+            "transition": {"type": "null"}, "canonicalEffects": {"const": false}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["attemptId", "presentationId", "mode", "status", "evidence", "feedback", "transition"],
+          "properties": {
+            "attemptId": {"$ref": "#/$defs/identifier"}, "presentationId": {"$ref": "#/$defs/identifier"},
+            "mode": {"const": "SCHEDULED"}, "status": {"enum": ["NOT_ASSESSED", "UNAVAILABLE"]},
+            "evidence": {"type": "null"}, "feedback": {"$ref": "#/$defs/feedback"},
+            "transition": {"type": "null"}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "attemptsDocument": {
+      "type": "object",
+      "required": ["typedSubmit", "selfCheckSubmit", "choiceSubmit", "cancelSubmit", "scheduledOutcome", "practiceOutcome", "notAssessedOutcome"],
+      "properties": {
+        "typedSubmit": {"$ref": "#/$defs/submitCommand"},
+        "selfCheckSubmit": {"$ref": "#/$defs/submitCommand"},
+        "choiceSubmit": {"$ref": "#/$defs/submitCommand"},
+        "cancelSubmit": {"$ref": "#/$defs/submitCommand"},
+        "scheduledOutcome": {"$ref": "#/$defs/attemptOutcome"},
+        "practiceOutcome": {"$ref": "#/$defs/attemptOutcome"},
+        "notAssessedOutcome": {"$ref": "#/$defs/attemptOutcome"}
+      },
+      "additionalProperties": false
+    },
+    "reducerDocument": {
+      "type": "object",
+      "required": ["reducerId", "reducerVersion", "configId", "intervals", "transitions", "goldenCases"],
+      "properties": {
+        "reducerId": {"const": "mnema-baseline"},
+        "reducerVersion": {"const": "1"},
+        "configId": {"$ref": "#/$defs/identifier"},
+        "intervals": {"type": "array", "minItems": 8, "maxItems": 8, "items": {"type": "string"}},
+        "transitions": {
+          "type": "array", "minItems": 12, "maxItems": 12,
+          "items": {
+            "type": "object",
+            "required": ["result", "evidenceClass", "operation", "levels", "cap", "streak", "lapse"],
+            "properties": {
+              "result": {"enum": ["CORRECT", "PARTIAL", "UNSURE", "INCORRECT"]},
+              "evidenceClass": {"enum": ["HIGH", "MEDIUM", "LOW"]},
+              "operation": {"enum": ["ADD", "SUBTRACT", "SET"]},
+              "levels": {"type": "integer"},
+              "cap": {"type": "integer"},
+              "streak": {"enum": ["INCREMENT", "RESET"]},
+              "lapse": {"enum": ["KEEP", "INCREMENT"]}
+            },
+            "additionalProperties": false
+          }
+        },
+        "goldenCases": {
+          "type": "array", "minItems": 7,
+          "items": {
+            "type": "object",
+            "required": ["name", "beforeLevel", "result", "evidenceClass", "afterLevel", "acceptedAt", "nextDue"],
+            "properties": {
+              "name": {"type": "string"}, "beforeLevel": {"type": "integer"},
+              "result": {"enum": ["CORRECT", "PARTIAL", "UNSURE", "INCORRECT"]},
+              "evidenceClass": {"enum": ["HIGH", "MEDIUM", "LOW"]}, "afterLevel": {"type": "integer"},
+              "acceptedAt": {"type": "string"}, "nextDue": {"type": "string"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "adversarialDocument": {
+      "type": "object",
+      "required": ["cases"],
+      "properties": {
+        "cases": {
+          "type": "array", "minItems": 20,
+          "items": {
+            "type": "object",
+            "required": ["id", "event", "preconditions", "request", "persistedEffect", "response", "recovery"],
+            "properties": {
+              "id": {"type": "string", "pattern": "^A-[0-9]{2}$"},
+              "event": {"type": "string"},
+              "preconditions": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+              "request": {"type": "object"},
+              "persistedEffect": {"type": "object"},
+              "response": {"type": "object"},
+              "recovery": {"type": "string"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "flowsDocument": {
+      "type": "object",
+      "required": ["flows"],
+      "properties": {
+        "flows": {
+          "type": "array", "minItems": 10,
+          "items": {
+            "type": "object",
+            "required": ["id", "preconditions", "event", "requestFixture", "persistedEffect", "responseFixture", "errorOrRecovery"],
+            "properties": {
+              "id": {"type": "string", "pattern": "^F-[A-Z0-9-]+$"},
+              "preconditions": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+              "event": {"type": "string"},
+              "requestFixture": {"type": "string"},
+              "persistedEffect": {"type": "string"},
+              "responseFixture": {"type": "string"},
+              "errorOrRecovery": {"type": "string"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "progressDocument": {
+      "type": "object",
+      "required": ["request", "response", "emptyResponse"],
+      "properties": {
+        "request": {
+          "type": "object", "required": ["deckId", "limit", "cursor"],
+          "properties": {"deckId": {"$ref": "#/$defs/identifier"}, "limit": {"type": "integer"}, "cursor": {"$ref": "#/$defs/nullableString"}},
+          "additionalProperties": false
+        },
+        "response": {"$ref": "#/$defs/progressPage"},
+        "emptyResponse": {"$ref": "#/$defs/progressPage"}
+      },
+      "additionalProperties": false
+    },
+    "restartDocument": {
+      "type": "object",
+      "required": ["precondition", "request", "persistedEffect", "response", "recovery"],
+      "properties": {
+        "precondition": {
+          "type": "object", "required": ["ownerAuthorized", "objectiveStates"],
+          "properties": {"ownerAuthorized": {"type": "boolean"}, "objectiveStates": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/objectiveState"}}},
+          "additionalProperties": false
+        },
+        "request": {
+          "type": "object", "required": ["commandId", "memberKeys"],
+          "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "memberKeys": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/identifier"}}},
+          "additionalProperties": false
+        },
+        "persistedEffect": {
+          "type": "object", "required": ["objectiveStates", "historyRowsDeleted", "restartAuditRows"],
+          "properties": {"objectiveStates": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/objectiveState"}}, "historyRowsDeleted": {"type": "integer"}, "restartAuditRows": {"type": "integer"}},
+          "additionalProperties": false
+        },
+        "response": {
+          "type": "object", "required": ["commandId", "restartedAt", "objectiveCount", "learningEpochs"],
+          "properties": {
+            "commandId": {"$ref": "#/$defs/identifier"}, "restartedAt": {"type": "string"}, "objectiveCount": {"type": "integer"},
+            "learningEpochs": {"type": "array", "items": {"type": "object", "required": ["objectiveId", "learningEpoch"], "properties": {"objectiveId": {"$ref": "#/$defs/identifier"}, "learningEpoch": {"type": "string"}}, "additionalProperties": false}}
+          },
+          "additionalProperties": false
+        },
+        "recovery": {
+          "type": "object", "required": ["exactRetry", "oldPresentationSubmit", "foreignMember"],
+          "properties": {"exactRetry": {"type": "string"}, "oldPresentationSubmit": {"type": "string"}, "foreignMember": {"type": "string"}},
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

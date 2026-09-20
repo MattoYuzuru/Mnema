@@ -1,0 +1,94 @@
+{
+  "flows": [
+    {
+      "id": "F-AUTHOR-P0",
+      "preconditions": ["owner has a current deck/item revision and stable selected node IDs"],
+      "event": "publish one SELF_CHECK, TYPED, CLOZE_SINGLE or SINGLE_CHOICE exercise",
+      "requestFixture": "authoring.json#/createTyped",
+      "persistedEffect": "one stable objective, immutable objective/exercise revisions, bindings and a new deck exercise root commit atomically",
+      "responseFixture": "authoring.json#/acknowledgement",
+      "errorOrRecovery": "foreign resources are opaque 404; stale pins are VERSION_CONFLICT; reload and republish"
+    },
+    {
+      "id": "F-START-SCHEDULED",
+      "preconditions": ["owner is authenticated", "READY candidate generation exists for the current exercise root"],
+      "event": "start bounded scheduled Study",
+      "requestFixture": "session.json#/startScheduled",
+      "persistedEffect": "session pins deck revision, generation, reducer, account timezone, seed and budget; issued objectives gain current-epoch exposure",
+      "responseFixture": "session.json#/active",
+      "errorOrRecovery": "missing generation returns 202 PREPARING; poll status without a full scan"
+    },
+    {
+      "id": "F-SUBMIT-SCHEDULED",
+      "preconditions": ["active scheduled presentation and current learning epoch"],
+      "event": "submit typed, cloze, self-check or choice response",
+      "requestFixture": "attempts.json#/typedSubmit",
+      "persistedEffect": "terminal receipt, normalized evidence, one reducer transition and 30-day raw child row commit atomically",
+      "responseFixture": "attempts.json#/scheduledOutcome",
+      "errorOrRecovery": "exact retry returns stored outcome; conflict or expiry never adds a transition"
+    },
+    {
+      "id": "F-CANCEL",
+      "preconditions": ["presentation has no terminal receipt"],
+      "event": "cancel explicitly",
+      "requestFixture": "attempts.json#/cancelSubmit",
+      "persistedEffect": "terminal receipt records NOT_ASSESSED without evidence or StudyState transition",
+      "responseFixture": "attempts.json#/notAssessedOutcome",
+      "errorOrRecovery": "continue to the next presentation"
+    },
+    {
+      "id": "F-TIMEOUT",
+      "preconditions": ["presentation expiresAt is before the server clock"],
+      "event": "submit after presentation expiry",
+      "requestFixture": "adversarial.json#/cases/16/request",
+      "persistedEffect": "no receipt, evidence or state transition is written",
+      "responseFixture": "adversarial.json#/cases/16/response",
+      "errorOrRecovery": "request a current presentation; timeout is never incorrect evidence"
+    },
+    {
+      "id": "F-START-REPLAY",
+      "preconditions": ["a completed source session exists for the same account, deck and account-local date"],
+      "event": "replay the pinned presentation sequence without prior responses",
+      "requestFixture": "session.json#/startReplay",
+      "persistedEffect": "bounded replay session only; no exposure, evidence or StudyState",
+      "responseFixture": "session.json#/activeReplay",
+      "errorOrRecovery": "missing eligible source session returns a stable validation error and suggests scheduled/practice"
+    },
+    {
+      "id": "F-START-PRACTICE",
+      "preconditions": ["owner is authenticated; introduced objectives exist unless includeNew is true"],
+      "event": "start bounded weak-first or seeded practice",
+      "requestFixture": "session.json#/startPractice",
+      "persistedEffect": "bounded practice session only; no canonical exposure or state",
+      "responseFixture": "session.json#/activePractice",
+      "errorOrRecovery": "empty eligible pool returns EMPTY and allows leaving or explicit includeNew"
+    },
+    {
+      "id": "F-SUBMIT-PRACTICE-REPLAY",
+      "preconditions": ["server-issued session mode is PRACTICE or REPLAY"],
+      "event": "submit an assessed response for feedback",
+      "requestFixture": "attempts.json#/choiceSubmit",
+      "persistedEffect": "short-lived compact receipt only; no raw, evidence, transition, exposure or experiment result",
+      "responseFixture": "attempts.json#/practiceOutcome",
+      "errorOrRecovery": "retry is idempotent during receipt window; expired ID remains tombstoned"
+    },
+    {
+      "id": "F-PROGRESS",
+      "preconditions": ["owner is authorized for the deck"],
+      "event": "read a bounded material-progress page",
+      "requestFixture": "progress.json#/request",
+      "persistedEffect": "none",
+      "responseFixture": "progress.json#/response",
+      "errorOrRecovery": "foreign deck is opaque 404; empty deck returns an empty page"
+    },
+    {
+      "id": "F-RESTART",
+      "preconditions": ["owner selects one or more current deck members"],
+      "event": "restart learning for selected materials",
+      "requestFixture": "restart.json#/request",
+      "persistedEffect": "objective locks in UUID order, epoch increment and zeroed current state; history retained",
+      "responseFixture": "restart.json#/response",
+      "errorOrRecovery": "exact retry returns stored response; old presentations become NOT_ASSESSED"
+    }
+  ]
+}

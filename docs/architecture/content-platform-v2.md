@@ -5,7 +5,7 @@ artifact:
   title: "Mnema greenfield content and study platform"
   status: accepted
   created_at: "2026-08-15"
-  updated_at: "2026-09-19"
+  updated_at: "2026-09-20"
   owners: ["project-owner"]
   source_tasks: ["project architecture and product review"]
   supersedes: []
@@ -16,9 +16,8 @@ artifact:
     - "PostgreSQL remains the primary transactional store."
     - "Real multi-author merge is not required in the first v2 release."
   unresolved_questions:
-    - "Which exercise directions deserve independent memory objectives after the first instrumented cohort?"
-    - "What compact/aggregate review retention policy meets product analytics needs before archival is required?"
-    - "Should multi-target attempts be a P1 feature, or should P0 restrict every scheduler-affecting attempt to one assessed objective?"
+    - "Which additional direction pairs deserve independent objectives after the first instrumented cohort?"
+    - "What archive/aggregate policy is needed if retained compact evidence outgrows the initial unpartitioned design?"
   evidence:
     - "backend/services/core schema, services, repositories and tests at 8e0c83d"
     - "official Git and Flyway documentation, accessed 2026-08-15"
@@ -333,7 +332,8 @@ erDiagram
     EXERCISE_REVISION ||--o{ DECK_EXERCISE_POLICY : selected_by
     DECK ||--o{ STUDY_STATE : scopes
     MEMORY_OBJECTIVE ||--o{ STUDY_STATE : scheduled_as
-    EXERCISE_ATTEMPT ||--|{ ATTEMPT_EVIDENCE : produces
+    ATTEMPT_RECEIPT ||--o| SCHEDULED_RESPONSE_RAW : retains_temporarily
+    ATTEMPT_RECEIPT ||--o| ATTEMPT_EVIDENCE : produces
     OBJECTIVE_REVISION ||--o{ ATTEMPT_EVIDENCE : evaluates
 
     EXERCISE_DEFINITION {
@@ -395,8 +395,9 @@ erDiagram
         boolean suspended
         bigint row_version
     }
-    EXERCISE_ATTEMPT {
+    ATTEMPT_RECEIPT {
         uuid attempt_id PK
+        uuid presentation_id UK
         uuid account_id
         uuid deck_id FK
         uuid deck_revision_id FK
@@ -404,10 +405,14 @@ erDiagram
         uuid exercise_revision_id FK
         text session_mode
         text payload_hash
-        jsonb raw_response
         text evaluator_version
         int response_ms
         timestamptz submitted_at
+    }
+    SCHEDULED_RESPONSE_RAW {
+        uuid attempt_id PK
+        jsonb raw_response
+        timestamptz expires_at
     }
     ATTEMPT_EVIDENCE {
         uuid evidence_id PK
@@ -426,8 +431,9 @@ immutable objective/exercise revisions, unique binding ordinals/roles, namespace
 validation for all referenced members, and
 `STUDY_STATE PRIMARY KEY(account_id, deck_id, objective_id)`. Objective/exercise
 keys inherited by a fork resolve in its deck namespace, like member keys.
-`EXERCISE_ATTEMPT.attempt_id` is a client-generated global idempotency key. Reuse
-with the same owner and payload hash returns the stored result; conflicting
+`ATTEMPT_RECEIPT.attempt_id` is a client-generated global idempotency key and its
+`presentation_id` is unique, preventing a second ID from applying another
+transition. Reuse with the same owner and payload hash returns the stored result; conflicting
 reuse returns an idempotency conflict.
 
 `ExerciseDefinition` is stable deck-local identity; `ExerciseRevision` pins prompt,
@@ -465,7 +471,7 @@ retains previous attempts.
 - A focal matching exercise may pin one `ASSESSED` item plus several options. A group matching submission may return several `ATTEMPT_EVIDENCE` rows, but each row needs an observable response for its own objective.
 - Aggregate `4/4` feedback is not copied to all items. If a mechanic cannot produce valid per-objective evidence, it is feedback-only and rejected as scheduler-affecting.
 - A directional relation updates only its declared direction. Showing or matching one pair does not automatically credit the reverse objective.
-- For P0, prefer one assessed objective per attempt. A later atomic multi-target submission locks study-state rows in deterministic objective-ID order and commits all transitions or none; it never leaves partial progress on failure.
+- P0 requires exactly one assessed objective per attempt. A later P1 atomic multi-target submission locks study-state rows in deterministic objective-ID order and commits all transitions or none; it never leaves partial progress on failure.
 - The full presented set is immutable for the attempt. A concurrent deck edit affects future sessions, not a session already pinned to its effective snapshot.
 
 Do not select neighbors with `ORDER BY random()` or compute/sort a hash for every
@@ -493,15 +499,20 @@ Track actual scheduled first exposure sparsely (for example
 rather than relying on one reorder-sensitive cursor. Practice/replay do not update
 canonical exposure. Source insertion/reorder must not silently skip unseen items.
 
-Each attempt records all item/exercise revisions actually shown, evaluator version,
-normalized evidence and scheduler/config assignment so the transition remains
-explainable after content changes. Both presentation and answer edits retain state;
+Each presentation/receipt records all item/exercise revisions actually shown,
+evaluator version, normalized evidence and scheduler/config assignment so the
+transition remains explainable after content changes. Both presentation and answer edits retain state;
 there is no automatic revalidation. Normal scheduled sessions, today's replay and
 whole-deck practice are one product study experience with different server-enforced
 effects: replay/practice never write canonical scheduler state, due dates, streaks
 or experiment outcomes. They may record separately classified diagnostic events.
+Scheduled raw response lives in a separate TTL row for exactly 30 days; deleting
+it leaves the compact receipt, normalized evidence and before/after transition
+explainable. Replay/practice never persist raw response or canonical evidence.
 The post-session screen permits leaving, replaying today's completed selection or
 practicing the deck beyond today's selection. Preparation/prefetch stays bounded.
+The exact wire contract, baseline reducer table and adversarial fixtures are in
+[`contracts/study`](../../contracts/study/README.md).
 
 ## API boundaries
 
@@ -540,15 +551,19 @@ into a v1 remediation backlog unless a defect blocks the greenfield cutover itse
 
 ### Idempotent review
 
-`EXERCISE_ATTEMPT.attempt_id` is a client-generated idempotency key. For a scheduled
-attempt, within one transaction:
+`ATTEMPT_RECEIPT.attempt_id` is a client-generated idempotency key. Evaluation is
+deterministic and may run before the state transaction. Within that transaction:
 
-1. Insert missing study state with `ON CONFLICT DO NOTHING`.
-2. Lock the state row.
-3. If `attempt_id` already exists for the same account/deck/mode and payload hash,
-   return its stored transition result; if scope or payload differs, return an
-   idempotency conflict.
-4. Insert the attempt/evidence and update state atomically.
+1. Read the owner-scoped receipt first; exact retry returns its stored outcome
+   before evaluation and changed reuse returns an idempotency conflict.
+2. Authorize/read the immutable presentation and evaluate without a Study-state lock.
+3. In one transaction, lock/recheck the receipt identity, then lock and terminalize
+   the presentation; `UNIQUE(presentation_id)` rejects a
+   second attempt ID for the same presentation.
+4. Only for scheduled mode, insert/lock current-epoch Study state, reduce it and
+   write evidence, transition, raw TTL row and receipt atomically.
+5. Replay/practice writes only its compact short-lived receipt and never locks or
+   creates Study state.
 
 This closes the current first-answer race and duplicate retry risk.
 Practice/replay uses its mode-specific receipt path and must not create, lock for
@@ -596,7 +611,7 @@ forecast:
 The high case is dominated by append/index/vacuum/retention rather than ordinary
 API RPS. Bound a multi-target attempt (initial proposal: at most 20 objectives),
 lock state rows in objective-ID order and keep the compact idempotency receipt
-separate from bulky/raw response retention.
+separate from the 30-day raw scheduled-response row.
 
 Initial hot indexes:
 
@@ -605,7 +620,7 @@ Initial hot indexes:
 - exercise policy/candidates: `(deck_revision_id, enabled, exercise_revision_id)`;
 - bindings: primary keys by revision/binding key plus reverse indexes on
   `item_revision_id` and `objective_revision_id`;
-- idempotency: `exercise_attempt(attempt_id)` primary key;
+- idempotency: `attempt_receipt(attempt_id)` primary key and unique `presentation_id`;
 - replay/audit: `(account_id, deck_id, objective_id, submitted_at, evidence_id)`.
 
 Start unpartitioned. Prepare monthly partitions for append-only evidence/transition

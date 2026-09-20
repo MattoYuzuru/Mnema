@@ -5,7 +5,7 @@ artifact:
   title: "Mnema repository guide"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-09-19"
+  updated_at: "2026-09-20"
   owners: ["project-owner"]
   evidence_revision: "933da3e60add2102ed7480342dfd3de95a8a255b"
 ---
@@ -245,20 +245,11 @@ projection capabilities; command idempotency; row-version CAS; owner ACL; stable
 Problem Details; fail-closed Identity; counted membership/storage roots. Do not
 redefine them during Study refinement without evidence of a conflict.
 
-Open product/architecture decisions that keep Epic #75 in `Backlog`:
-
-- exact `MemoryObjective` granularity and forward/reverse independence;
-- whether P0 scheduler-affecting attempts may assess multiple objectives;
-- evidence decomposition, hint/confidence semantics and reducer inputs;
-- first algorithm/config and replay/versioning policy before cohort calibration;
-- session snapshot/budget/restart rules and concurrent attempt ordering;
-- evidence retention/aggregation and privacy/metrics boundaries;
-- P0 mechanic subset and exact accessible interaction/error flows.
-
-Recommended 1–3 day task boundaries: (1) contract/refinement + adversarial fixtures;
-(2) objective/exercise immutable schema; (3) session snapshot/candidate pool;
-(4) one attempt→evaluation→evidence→reducer vertical; (5) accessible Angular
-vertical; (6) replay/concurrency/load evidence. Do not make the whole epic Ready.
+Owner decisions are accepted in [Epic #75 refinement](./epic-75-refinement.md), and
+the exact shared examples live in [`contracts/study`](../../contracts/study/README.md).
+The epic is split into reviewable issues #212–#219, #58 and #221; related local
+developer usability is #220. Move only the active slice through `In progress` and
+`In review`; a later slice stays Backlog until its dependencies are merged.
 
 The first implementation vertical should be one deck-scoped, single assessed
 objective, deterministic typed-answer or behavioral-self-check flow using a pinned

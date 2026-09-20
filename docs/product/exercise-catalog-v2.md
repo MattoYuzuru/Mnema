@@ -3,9 +3,9 @@ artifact:
   id: exercise-catalog-v2
   type: product-requirements
   title: "Mnema exercise and learning-evidence contracts"
-  status: proposed
+  status: accepted
   created_at: "2026-08-15"
-  updated_at: "2026-09-06"
+  updated_at: "2026-09-20"
   owners: ["project-owner"]
 ---
 
@@ -58,42 +58,32 @@ unhinted retrieval и versioned experiment, не по субъективной �
 
 ## Общий контракт попытки
 
-Клиент отправляет один идемпотентный envelope, привязанный к зафиксированным
-revision:
+Клиент отправляет минимальный идемпотентный envelope. Все revision, роли, mode,
+evaluator и правильный ответ берутся из server-issued presentation:
 
 ```json
 {
   "attemptId": "client-generated-uuid",
-  "sessionId": "server-issued-session-id",
   "presentationId": "server-issued-question-id",
-  "deckId": "personal-deck-uuid",
-  "deckRevisionId": "uuid",
-  "effectiveSnapshotId": "uuid",
-  "exerciseRevisionId": "uuid",
-  "presentedBindings": [
-    {"memberKey": "uuid", "itemRevisionId": "uuid", "role": "ASSESSED|CUE|OPTION|CONTEXT"}
-  ],
-  "response": {},
+  "nonce": "server-issued-nonce",
+  "response": {"kind": "TEXT", "text": "..."},
   "hintsUsed": [],
   "confidence": "KNEW|UNSURE|GUESSED|null",
   "durationMs": 4200
 }
 ```
 
-Evaluator сохраняет raw response, exact revisions, evaluator version и возвращает
-per-objective results:
+Evaluator возвращает outcome одного P0 objective:
 
 ```json
 {
   "status": "ASSESSED|NOT_ASSESSED|UNAVAILABLE",
-  "objectiveEvidence": [
-    {
-      "objectiveId": "uuid",
-      "result": "CORRECT|PARTIAL|INCORRECT|UNSURE",
-      "evidenceClass": "HIGH|MEDIUM|LOW|NONE",
-      "reasonCodes": ["UNHINTED", "DETERMINISTIC"]
-    }
-  ],
+  "evidence": {
+    "objectiveId": "uuid",
+    "result": "CORRECT|PARTIAL|INCORRECT|UNSURE",
+    "evidenceClass": "HIGH|MEDIUM|LOW",
+    "reasonCodes": ["UNHINTED", "DETERMINISTIC"]
+  },
   "feedback": {}
 }
 ```
@@ -107,6 +97,12 @@ study state, introduction/exposure, due, streak или experiment outcome. По�
 отправка того же `attemptId` и payload возвращает сохранённый outcome; повторное
 использование ID с другим payload — idempotency conflict. Cancel, navigation away,
 timeout или evaluator failure не становятся incorrect attempt.
+
+Точный API, reducer `mnema-baseline-v1`, golden cases и adversarial examples — в
+[`contracts/study`](../../contracts/study/README.md). P0 всегда оценивает один
+objective. Scheduled raw response хранится отдельно 30 дней; receipt, normalized
+evidence и transition audit сохраняются до удаления аккаунта. Replay/practice не
+пишут raw response, evidence или scheduler state.
 
 Проверка выполняется слоями:
 
