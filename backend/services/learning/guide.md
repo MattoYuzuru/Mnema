@@ -4,8 +4,9 @@
 Gradle project dependency on legacy `core`, `media`, `import` or `ai`. Epic #74
 added the canonical private Deck, deck-local LearningItem, native content,
 EditingDraft and CaptureNote domains. Epic #75 now also owns immutable objectives,
-P0 exercise revisions and explicit content bindings; sessions/attempts/scheduling
-are delivered by the subsequent Study slices. Greenfield media lifecycle remains #76.
+P0 exercise revisions, explicit content bindings and bounded Study session
+snapshots. Attempts and scheduling state are delivered by the subsequent Study
+slices. Greenfield media lifecycle remains #76.
 
 ## Runtime contract
 
@@ -40,7 +41,7 @@ are delivered by the subsequent Study slices. Greenfield media lifecycle remains
   changed row or raises `VERSION_CONFLICT`.
 - API failures use `application/problem+json` (RFC 9457). Stable machine codes are
   `IDEMPOTENCY_CONFLICT`, `VERSION_CONFLICT`, `PRECONDITION_REQUIRED`, `INVALID_REQUEST`,
-  `RESOURCE_NOT_FOUND`, `METHOD_NOT_ALLOWED` and `INTERNAL_ERROR`. Public details
+  `RESOURCE_NOT_FOUND`, `SESSION_EXPIRED`, `METHOD_NOT_ALLOWED` and `INTERNAL_ERROR`. Public details
   never contain exception messages, SQL or stored command data.
 
 PostgreSQL integration tests are fail-closed: Docker absence or container startup
@@ -95,6 +96,12 @@ capacity evidence.
   publication of stable objectives, immutable answer/exercise revisions, exact
   current item/node pins and one assessed binding. Supported P0 types are
   `SELF_CHECK`, `TYPED`, `CLOZE_SINGLE` and `SINGLE_CHOICE`.
+- `/api/decks/{deckId}/study-sessions` starts and resumes owner-only
+  `SCHEDULED`, `REPLAY` and `PRACTICE` snapshots. Candidate preparation reads at
+  most 500 exercise rows per poll, selection scans at most 80 candidates and a
+  response contains at most 20 immutable presentations. The authenticated
+  `zoneinfo` claim determines the local study date; invalid or absent values fall
+  back to UTC, and clients cannot submit a timezone.
 - `/api/editing-drafts` owns bounded acknowledged server drafts; autosave never
   publishes.
 - `/api/capture-notes` owns durable quick notes and idempotent conversion while
@@ -104,7 +111,7 @@ capacity evidence.
   Deck CAS and receipt in the same transaction. They do not yet imply attempts or
   `StudyState`.
 
-Fresh Learning migrations V1–V6 are the database source of truth. Do not append
+Fresh Learning migrations V1–V7 are the database source of truth. Do not append
 Study tables to legacy `core` migrations or port old review algorithms.
 
 Sources: [Spring Security 6.5 JWT](https://docs.spring.io/spring-security/reference/6.5/servlet/oauth2/resource-server/jwt.html)
