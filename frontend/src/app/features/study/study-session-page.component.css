@@ -1,9 +1,10 @@
 :host { display: block; min-inline-size: 0; color: var(--body, #342e44); font-family: system-ui, sans-serif; }
 * { box-sizing: border-box; }
-.study-page { inline-size: min(62rem, 100%); margin-inline: auto; padding: clamp(1.25rem, 6vw, 5rem) clamp(1rem, 5vw, 4rem); }
+.study-page { min-inline-size: 0; inline-size: min(62rem, 100%); margin-inline: auto; padding: clamp(1.25rem, 6vw, 5rem) clamp(1rem, 5vw, 4rem); overflow-wrap: anywhere; }
 .study-header { margin-block-end: clamp(2rem, 6vw, 5rem); border-block-end: 1px solid var(--line, #c9c0ce); padding-block-end: 1.5rem; }
 .back-link { min-block-size: 2.75rem; display: inline-flex; align-items: center; margin-block-end: 1rem; color: var(--ink, #281378); text-underline-offset: .22em; }
 .heading-row { display: flex; align-items: end; justify-content: space-between; gap: 2rem; }
+.heading-row > *, form, .completion-actions { min-inline-size: 0; }
 .eyebrow { margin: 0 0 .5rem; color: var(--ink, #281378); font-size: .75rem; font-weight: 750; letter-spacing: .14em; text-transform: uppercase; }
 h1, h2, legend { color: var(--ink, #281378); font-family: Georgia, 'Times New Roman', serif; font-weight: 500; overflow-wrap: anywhere; }
 h1 { max-inline-size: 18ch; margin: 0; font-size: clamp(2.3rem, 7vw, 5.5rem); line-height: .98; }
@@ -13,7 +14,7 @@ h2 { margin-block: .5rem 2.5rem; font-size: clamp(1.8rem, 5vw, 3.8rem); line-hei
 form { display: grid; gap: .8rem; }
 label, legend { font-size: 1.05rem; font-weight: 700; }
 textarea { inline-size: 100%; min-inline-size: 0; border: 1px solid var(--line, #c9c0ce); border-radius: 2px; padding: 1rem; color: inherit; background: #fffdf7; font: 1.1rem/1.55 system-ui, sans-serif; resize: vertical; }
-.button { min-block-size: 2.75rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--ink, #281378); border-radius: 2px; padding: .75rem 1rem; color: var(--ink, #281378); background: transparent; font: 650 1rem/1.2 system-ui, sans-serif; text-align: center; text-decoration: none; cursor: pointer; }
+.button { min-inline-size: 0; max-inline-size: 100%; min-block-size: 2.75rem; display: inline-flex; align-items: center; justify-content: center; border: 1px solid var(--ink, #281378); border-radius: 2px; padding: .75rem 1rem; color: var(--ink, #281378); background: transparent; font: 650 1rem/1.2 system-ui, sans-serif; overflow-wrap: anywhere; text-align: center; text-decoration: none; white-space: normal; cursor: pointer; }
 .button.primary { color: #fff; background: var(--ink, #281378); }
 .button:disabled { cursor: not-allowed; opacity: .58; }
 form .button, .reveal { justify-self: end; margin-block-start: 1rem; }
