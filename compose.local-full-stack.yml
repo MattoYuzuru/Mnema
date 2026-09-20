@@ -1,0 +1,125 @@
+name: mnema-local-v2
+
+services:
+  postgres:
+    image: postgres:18@sha256:06cad38a5d9f5d24b4d83d86def30795d5e4b757fedbf5281172b576dedcd941
+    environment:
+      POSTGRES_DB: ${MNEMA_LOCAL_POSTGRES_DB:-mnema}
+      POSTGRES_USER: ${MNEMA_LOCAL_POSTGRES_USER:-mnema}
+      POSTGRES_PASSWORD: ${MNEMA_LOCAL_POSTGRES_PASSWORD:?Local launcher did not provide its PostgreSQL password}
+    volumes:
+      - local_postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  identity-account:
+    build:
+      context: ./backend
+      dockerfile: ../deploy/local-full-stack/backend-runtime.Dockerfile
+      target: identity-account-runtime
+    environment:
+      PORT: "8081"
+      APP_ENV: local-full-stack
+      MNEMA_BUILD_ID: ${MNEMA_LOCAL_BUILD_ID:?Local launcher did not provide a build id}
+      MNEMA_IDENTITY_ISSUER: https://localhost:${MNEMA_LOCAL_IDENTITY_PORT:-3444}
+      MNEMA_IDENTITY_FRONTEND_ORIGIN: https://localhost:${MNEMA_LOCAL_WEB_PORT:-3443}
+      MNEMA_IDENTITY_REDIRECT_URI: https://localhost:${MNEMA_LOCAL_WEB_PORT:-3443}/auth/callback
+      MNEMA_IDENTITY_TRUSTED_PROXY_CIDRS: 127.0.0.0/8,::1/128
+      MNEMA_IDENTITY_SIGNING_JWK_SET_FILE: /run/secrets/mnema_identity_signing_jwk
+      MNEMA_IDENTITY_SIGNING_ACTIVE_KID: blackbox
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${MNEMA_LOCAL_POSTGRES_DB:-mnema}
+      SPRING_DATASOURCE_USERNAME: ${MNEMA_LOCAL_POSTGRES_USER:-mnema}
+      SPRING_DATASOURCE_PASSWORD: ${MNEMA_LOCAL_POSTGRES_PASSWORD:?Local launcher did not provide its PostgreSQL password}
+    depends_on:
+      postgres: {condition: service_healthy}
+    secrets:
+      - mnema_identity_signing_jwk
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,uid=10001,gid=10001
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+
+  learning:
+    build:
+      context: ./backend
+      dockerfile: ../deploy/local-full-stack/backend-runtime.Dockerfile
+      target: learning-runtime
+    environment:
+      APP_ENV: local-full-stack
+      MNEMA_BUILD_ID: ${MNEMA_LOCAL_BUILD_ID:?Local launcher did not provide a build id}
+      MNEMA_IDENTITY_ISSUER: https://localhost:${MNEMA_LOCAL_IDENTITY_PORT:-3444}
+      LEARNING_IDENTITY_TRANSPORT_BASE: https://frontend:8444
+      JAVA_TOOL_OPTIONS: >-
+        -Djavax.net.ssl.trustStore=/run/secrets/mnema_local_truststore
+        -Djavax.net.ssl.trustStorePassword=changeit
+        -Djavax.net.ssl.trustStoreType=PKCS12
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${MNEMA_LOCAL_POSTGRES_DB:-mnema}
+      SPRING_DATASOURCE_USERNAME: ${MNEMA_LOCAL_POSTGRES_USER:-mnema}
+      SPRING_DATASOURCE_PASSWORD: ${MNEMA_LOCAL_POSTGRES_PASSWORD:?Local launcher did not provide its PostgreSQL password}
+    depends_on:
+      postgres: {condition: service_healthy}
+    secrets:
+      - mnema_local_truststore
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m,uid=10001,gid=10001
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: deploy/local-full-stack/frontend.Dockerfile
+    environment:
+      MNEMA_APP_ENV: development
+      MNEMA_PUBLIC_ORIGIN: https://localhost:${MNEMA_LOCAL_WEB_PORT:-3443}
+      MNEMA_AUTH_SERVER_URL: https://localhost:${MNEMA_LOCAL_IDENTITY_PORT:-3444}
+      MNEMA_IDENTITY_REDIRECT_URI: https://localhost:${MNEMA_LOCAL_WEB_PORT:-3443}/auth/callback
+      MNEMA_LEARNING_API_BASE_URL: /api
+      MNEMA_CLIENT_ID: mnema-web
+      MNEMA_BUILD_ID: ${MNEMA_LOCAL_BUILD_ID:?Local launcher did not provide a build id}
+      MNEMA_FEATURE_FEDERATED_AUTH_ENABLED: "false"
+      MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING: "false"
+      MNEMA_FEATURE_AI_ENABLED: "false"
+      MNEMA_FEATURE_AI_SYSTEM_PROVIDER_ENABLED: "false"
+    depends_on:
+      identity-account: {condition: service_started}
+      learning: {condition: service_started}
+    ports:
+      - "127.0.0.1:${MNEMA_LOCAL_WEB_PORT:-3443}:8443"
+      - "127.0.0.1:${MNEMA_LOCAL_IDENTITY_PORT:-3444}:8444"
+    secrets:
+      - mnema_local_tls_cert
+      - mnema_local_tls_key
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          wget --no-check-certificate -qO /dev/null https://127.0.0.1:8443/api/actuator/health/readiness
+          && wget --no-check-certificate -qO /dev/null https://127.0.0.1:8444/api/actuator/health/readiness
+      interval: 3s
+      timeout: 5s
+      retries: 60
+      start_period: 20s
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+
+secrets:
+  mnema_identity_signing_jwk:
+    file: ${MNEMA_LOCAL_IDENTITY_SIGNING_JWK_SET_FILE:?Local signing JWKSet path is required}
+  mnema_local_tls_cert:
+    file: ${MNEMA_LOCAL_TLS_CERT_FILE:?Local TLS certificate path is required}
+  mnema_local_tls_key:
+    file: ${MNEMA_LOCAL_TLS_KEY_FILE:?Local TLS private key path is required}
+  mnema_local_truststore:
+    file: ${MNEMA_LOCAL_TRUSTSTORE_FILE:?Local Learning truststore path is required}
+
+volumes:
+  local_postgres_data:

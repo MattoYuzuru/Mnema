@@ -10,7 +10,7 @@
 Current launchers refuse before filesystem or container mutation. These instructions
 require a separate checkout of `v1-apache-final`; obtaining a license does not make
 the old launchers compatible with current maintenance runtimes. For private local
-replacement shells, use the [current local runbook](selfhost-local.md#current-replacement-setup--143).
+replacement shells, use the [current local runbook](selfhost-local.md#supported-full-stack-launcher--220).
 
 Этот режим предназначен для собственного домена/сервера, когда к Mnema подключаются пользователи через интернет.
 

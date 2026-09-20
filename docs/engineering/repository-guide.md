@@ -68,6 +68,7 @@ Mnema/
 ├── design/prototype/                    historical design evidence
 ├── k8s/, deploy/                        paused/restoration operational sources
 ├── docker-compose.yml                   replacement backend maintenance runtime
+├── compose.local-full-stack.yml         persistent local HTTPS product runtime
 └── .github/workflows/                   protected quality and dormant operations
 ```
 
@@ -133,7 +134,7 @@ Legacy `my-study` is not a fallback.
 | Modules and dependency versions | `backend/settings.gradle.kts`, service build files, `frontend/package.json` |
 | Database shape | ordered migrations under each runtime's `src/main/resources/db` |
 | HTTP routes | Spring controllers/security tests and `frontend/src/app/app.routes.ts` |
-| Local replacement topology | `docker-compose.yml` |
+| Local replacement topology | `compose.local-full-stack.yml`, `scripts/mnema-local-full-stack.sh` |
 | Protected CI | `.github/workflows/pull-request.yaml`, `.github/workflows/deploy.yaml` |
 | Coverage floors | `backend/coverage-baseline.json` |
 | Documentation entry | `docs/README.md` |
@@ -192,7 +193,8 @@ The real browser harness is proportional for auth/authoring changes, not a subst
 for unit gates:
 
 ```bash
-python3 scripts/browser-identity/run.py --authoring --output /tmp/mnema-authoring-evidence
+python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend \
+  --node /absolute/path/to/node22 --authoring
 ```
 
 It uses disposable local services and a real HTTPS Chrome flow. Follow
