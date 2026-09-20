@@ -44,6 +44,7 @@ class StudySessionRepository {
                         JsonNode bindings, JsonNode evaluator, JsonNode answerContract, Instant issuedAt,
                         Instant expiresAt) { }
     record Material(UUID memberKey, UUID itemRevisionId, UUID scopeId, UUID contentRootId) { }
+    record ReplaySource(UUID sessionId, Instant completedAt, int presentationCount) { }
 
     private static final RowMapper<DeckHead> DECK = (row, ignored) -> new DeckHead(
             row.getObject("deck_id", UUID.class), row.getObject("owner_id", UUID.class),
@@ -231,6 +232,56 @@ class StudySessionRepository {
                         json(row.getString("evaluator_policy")), json(row.getString("answer_contract")))).list();
     }
 
+    List<Candidate> eligibleCandidates(Session session, int start, int limit, Instant asOf) {
+        String eligibility = switch (session.mode()) {
+            case SCHEDULED -> " AND (state.objective_id IS NULL OR state.transition_sequence=0 OR state.next_due<=:asOf)";
+            case PRACTICE -> session.includeNew() ? "" : " AND state.objective_id IS NOT NULL";
+            case REPLAY -> throw new IllegalArgumentException("Replay copies its source presentations");
+        };
+        String order = session.mode() == StudySessionCommand.Mode.PRACTICE
+                && "WEAKEST_FIRST".equals(session.practiceOrder())
+                ? "COALESCE(state.level,-1),COALESCE(state.lapse_count,0) DESC,chosen.candidate_ordinal"
+                : session.mode() == StudySessionCommand.Mode.SCHEDULED
+                    ? "CASE WHEN state.next_due<=:asOf THEN 0 ELSE 1 END,chosen.candidate_ordinal"
+                    : "(chosen.candidate_ordinal<:start),chosen.candidate_ordinal";
+        return jdbc.sql("""
+                WITH chosen AS (
+                    SELECT DISTINCT ON (candidate.objective_id)
+                           candidate.candidate_ordinal,candidate.exercise_id,candidate.exercise_revision_id,
+                           candidate.objective_id,candidate.objective_revision_id,candidate.member_key
+                      FROM app_learning.study_candidate candidate
+                     WHERE candidate.generation_id=:generation
+                     ORDER BY candidate.objective_id,candidate.candidate_ordinal
+                )
+                SELECT chosen.candidate_ordinal,chosen.exercise_id,chosen.exercise_revision_id,revision.exercise_type,
+                       chosen.objective_id,chosen.objective_revision_id,chosen.member_key,revision.prompt_spec,
+                       revision.evaluator_policy,objective.answer_contract
+                  FROM chosen
+                  JOIN app_learning.exercise_revision revision
+                    ON revision.deck_id=:deck AND revision.exercise_id=chosen.exercise_id
+                   AND revision.revision_id=chosen.exercise_revision_id
+                  JOIN app_learning.objective_revision objective
+                    ON objective.deck_id=:deck AND objective.objective_id=chosen.objective_id
+                   AND objective.revision_id=chosen.objective_revision_id
+                  LEFT JOIN app_learning.study_state state
+                    ON state.account_id=:actor AND state.deck_id=:deck AND state.objective_id=chosen.objective_id
+                 WHERE NOT EXISTS (
+                       SELECT 1 FROM app_learning.study_presentation presented
+                        WHERE presented.account_id=:actor AND presented.session_id=:session
+                          AND presented.objective_id=chosen.objective_id
+                 )
+                """ + eligibility + " ORDER BY " + order + " LIMIT :limit")
+                .param("generation", session.generationId()).param("deck", session.deckId())
+                .param("actor", session.accountId()).param("session", session.sessionId())
+                .param("asOf", Timestamp.from(asOf)).param("start", start).param("limit", limit)
+                .query((row, ignored) -> new Candidate(row.getInt("candidate_ordinal"),
+                        row.getObject("exercise_id", UUID.class), row.getObject("exercise_revision_id", UUID.class),
+                        row.getString("exercise_type"), row.getObject("objective_id", UUID.class),
+                        row.getObject("objective_revision_id", UUID.class), row.getObject("member_key", UUID.class),
+                        json(row.getString("prompt_spec")), json(row.getString("evaluator_policy")),
+                        json(row.getString("answer_contract")))).list();
+    }
+
     List<JsonNode> bindings(UUID deck, UUID exercise, UUID revision) {
         return jdbc.sql("""
                 SELECT jsonb_build_object('bindingId',binding_id::text,'role',role,'memberKey',member_key::text,
@@ -362,6 +413,21 @@ class StudySessionRepository {
                 .query(PRESENTATION).list();
     }
 
+    List<ReplaySource> replaySources(UUID actor, UUID deck, LocalDate localDate, int limit) {
+        return jdbc.sql("""
+                SELECT session.session_id,session.completed_at,count(presentation.presentation_id)::integer AS count
+                  FROM app_learning.study_session session
+                  JOIN app_learning.study_presentation presentation
+                    ON presentation.account_id=session.account_id AND presentation.session_id=session.session_id
+                 WHERE session.account_id=:actor AND session.deck_id=:deck AND session.mode='SCHEDULED'
+                   AND session.status='COMPLETE' AND session.local_study_date=:studyDate
+                 GROUP BY session.session_id,session.completed_at
+                 ORDER BY session.completed_at DESC,session.session_id DESC LIMIT :limit
+                """).param("actor", actor).param("deck", deck).param("studyDate", localDate).param("limit", limit)
+                .query((row, ignored) -> new ReplaySource(row.getObject("session_id", UUID.class),
+                        row.getTimestamp("completed_at").toInstant(), row.getInt("count"))).list();
+    }
+
     void updateSessionBatch(Session session, String status, int issued, int batchStart, int batchSize,
                             int scanCursor, boolean wrapped) {
         jdbc.sql("""
@@ -372,6 +438,15 @@ class StudySessionRepository {
                 .param("batchSize", batchSize).param("cursor", scanCursor).param("wrapped", wrapped)
                 .param("actor", session.accountId()).param("session", session.sessionId())
                 .param("version", session.rowVersion()).update();
+    }
+
+    void complete(Session session, Instant now) {
+        jdbc.sql("""
+                UPDATE app_learning.study_session SET status='COMPLETE',completed_at=:now,
+                    batch_start=issued_count,batch_size=0,wrapped=TRUE,row_version=row_version+1
+                 WHERE account_id=:actor AND session_id=:session AND row_version=:version
+                """).param("now", Timestamp.from(now)).param("actor", session.accountId())
+                .param("session", session.sessionId()).param("version", session.rowVersion()).update();
     }
 
     Instant now() { return jdbc.sql("SELECT statement_timestamp()").query(Timestamp.class).single().toInstant(); }

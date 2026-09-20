@@ -98,7 +98,9 @@ deck-local item identity, counted pages, native content, stable objectives,
 versioned P0 exercise bindings, pinned session presentations, deterministic
 all four P0 attempts, durable evidence, explicit restart and the baseline
 `StudyState` reducer. Progress, additional session modes and retention cleanup
-follow in the remaining #75 slices.
+are now part of the canonical Learning runtime: progress is cursor-bounded,
+selection is server-enforced for scheduled/replay/practice, and cleanup preserves
+durable evidence and attempt tombstones.
 
 ### Frontend
 
@@ -117,9 +119,10 @@ implements all four scheduled P0 presentations (`SELF_CHECK`, `TYPED`, one-blank
 validation, account-bound 24-hour session recovery and an
 exact-attempt retry after an unknown network outcome. Reference answers remain
 hidden until a production attempt is accepted. Choice option IDs are checked
-against pinned server bindings and never credit distractors. Replay, practice and
-progress are owned by the remaining #75 slices rather than legacy
-`my-study` code.
+against pinned server bindings and never credit distractors. The same route now
+owns replay from a selected completed session, introduced-only practice by default,
+material progress and explicit restart confirmation; non-scheduled modes state that
+they do not change canonical progress. Legacy `my-study` is not a fallback.
 
 ## Canonical executable sources
 

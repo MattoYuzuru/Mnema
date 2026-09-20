@@ -65,8 +65,13 @@ class StudySessionControllerTest {
         ObjectNode active = preparing.deepCopy().put("status", "ACTIVE");
         when(service.read(actor, deck, session)).thenReturn(active);
         when(service.presentations(actor, deck, session)).thenReturn(active);
+        when(service.replaySources(actor, deck, "Europe/Moscow")).thenReturn(JSON.createObjectNode()
+                .put("asOf", "2026-09-20T10:00:00Z").put("localStudyDate", "2026-09-20")
+                .set("items", JSON.createArrayNode()));
         mvc.perform(get("/decks/" + deck + "/study-sessions/" + session)).andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", "private, no-store"));
+        mvc.perform(get("/decks/" + deck + "/study-sessions/replay-sources"))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "private, no-store"));
         mvc.perform(post("/decks/" + deck + "/study-sessions/" + session + "/presentations"))
                 .andExpect(status().isOk());
     }

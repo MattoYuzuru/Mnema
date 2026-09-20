@@ -10,6 +10,11 @@
     </div>
   </header>
 
+  @if (session()?.mode === 'REPLAY' || session()?.mode === 'PRACTICE') {
+    <p class="mode-note" role="status"><strong>Без изменения прогресса.</strong>
+      {{ session()?.mode === 'REPLAY' ? 'Повторяем сохранённую сессию.' : 'Это дополнительная практика.' }}</p>
+  }
+
   @if (phase() === 'loading') { <p class="notice" role="status">Восстанавливаем точное состояние с сервера…</p> }
   @if (phase() === 'preparing') { <p class="notice" role="status">Собираем ограниченную очередь этой колоды…</p> }
 
@@ -129,14 +134,82 @@
   @if (phase() === 'empty' || phase() === 'complete') {
     <section class="completion" aria-labelledby="completion-title">
       <p class="eyebrow">{{ phase() === 'empty' ? 'Очередь пуста' : 'Сессия завершена' }}</p>
-      <h2 id="completion-title">{{ phase() === 'empty' ? 'На сейчас всё повторено' : 'Хорошая работа' }}</h2>
-      <p>Дополнительные режимы не меняют обычный прогресс. Они станут доступны после следующего среза эпика.</p>
+      <h2 id="completion-title">{{ phase() === 'empty' && session()?.mode === 'PRACTICE'
+        ? 'В выбранной практике пока нет заданий'
+        : phase() === 'empty' ? 'На сейчас всё повторено' : 'Хорошая работа' }}</h2>
+      <p>Можно повторить одну из сегодняшних завершённых сессий или потренироваться без изменения расписания.</p>
       <div class="completion-actions">
         <a class="button primary" [routerLink]="['/decks', deckId]">Вернуться в колоду</a>
-        <button class="button secondary" type="button" disabled aria-describedby="extra-mode-note">Повторить эту сессию</button>
-        <button class="button secondary" type="button" disabled aria-describedby="extra-mode-note">Практика по колоде</button>
       </div>
-      <p id="extra-mode-note" class="hint">Replay и Practice будут подключены отдельно; сейчас недоступные действия не создают скрытых попыток.</p>
+
+      <div class="mode-grid">
+        <section class="mode-panel" aria-labelledby="replay-title">
+          <h3 id="replay-title">Повторить сегодняшнюю сессию</h3>
+          <p class="hint">Те же задания и редакции, но без старых ответов и без изменения прогресса.</p>
+          @if (replaySources().length > 0) {
+            <label for="replay-source">Завершённая сессия</label>
+            <select id="replay-source" [value]="selectedReplayId()"
+                    (change)="chooseReplay($any($event.target).value)">
+              @for (source of replaySources(); track source.sessionId) {
+                <option [value]="source.sessionId">{{ formatDate(source.completedAt) }} · {{ source.presentationCount }} заданий</option>
+              }
+            </select>
+            <button class="button secondary" type="button" (click)="startReplay()">Повторить без прогресса</button>
+          } @else {
+            <p class="empty-note">Сегодня ещё нет завершённой обычной сессии для повтора.</p>
+          }
+        </section>
+
+        <section class="mode-panel" aria-labelledby="practice-title">
+          <h3 id="practice-title">Практика по колоде</h3>
+          <p class="hint">По умолчанию — только уже встречавшиеся материалы.</p>
+          <label class="check-row">
+            <input type="checkbox" [checked]="includeNewPractice()"
+                   (change)="setIncludeNewPractice($any($event.target).checked)" />
+            <span>Включить ещё не начатые материалы</span>
+          </label>
+          <label for="practice-order">Порядок</label>
+          <select id="practice-order" [value]="practiceOrder()"
+                  (change)="setPracticeOrder($any($event.target).value)">
+            <option value="SEEDED">Случайно</option>
+            <option value="WEAKEST_FIRST">Сначала трудные</option>
+          </select>
+          <button class="button secondary" type="button" (click)="startPractice()">Начать практику</button>
+        </section>
+      </div>
+      @if (supportLoading()) { <p class="hint" role="status">Обновляем доступные повторы и прогресс…</p> }
+    </section>
+
+    <section class="progress-section" aria-labelledby="material-progress-title">
+      <div class="section-heading">
+        <div><p class="eyebrow">Объективное состояние</p><h2 id="material-progress-title">Прогресс материалов</h2></div>
+        <p class="hint">Без условного процента «освоения».</p>
+      </div>
+      @if (progressUnavailable()) {
+        <p class="notice error" role="status">Не удалось загрузить прогресс. Учебная сессия от этого не изменена.</p>
+      } @else if (progress().length === 0) {
+        <p class="empty-note">В колоде пока нет материалов с учебными целями.</p>
+      } @else {
+        <ul class="progress-list">
+          @for (material of progress(); track material.memberKey) {
+            <li>
+              <div>
+                <strong>Материал {{ material.memberKey.slice(-8) }}</strong>
+                <span class="state-badge" [attr.data-state]="material.state">{{ progressLabel(material.state) }}</span>
+              </div>
+              <p>{{ material.objectiveCoverage.assessed }} оценено · {{ material.objectiveCoverage.introduced }} начато ·
+                {{ material.objectiveCoverage.enabled }} доступно</p>
+              <p class="hint">Последняя оценка: {{ formatDate(material.lastAssessedAt) }} · ближайший срок: {{ formatDate(material.nextDue) }}</p>
+              @if (material.objectiveCoverage.enabled > 0 && material.state !== 'NOT_STARTED') {
+                <button class="button tertiary" type="button" (click)="restartMaterial(material)">Учить этот материал заново</button>
+              }
+            </li>
+          }
+        </ul>
+        @if (progressNextCursor() !== null) {
+          <button class="button tertiary" type="button" (click)="loadMoreProgress()">Показать ещё материалы</button>
+        }
+      }
     </section>
   }
 

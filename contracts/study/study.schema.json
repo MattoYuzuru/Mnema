@@ -450,6 +450,38 @@
       },
       "additionalProperties": false
     },
+    "replaySourcesPage": {
+      "type": "object",
+      "required": ["asOf", "localStudyDate", "items"],
+      "properties": {
+        "asOf": {"type": "string"},
+        "localStudyDate": {"type": "string"},
+        "items": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "required": ["sessionId", "completedAt", "presentationCount"],
+            "properties": {
+              "sessionId": {"$ref": "#/$defs/identifier"},
+              "completedAt": {"type": "string"},
+              "presentationCount": {"type": "integer"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "replaySourcesDocument": {
+      "type": "object",
+      "required": ["response", "emptyResponse"],
+      "properties": {
+        "response": {"$ref": "#/$defs/replaySourcesPage"},
+        "emptyResponse": {"$ref": "#/$defs/replaySourcesPage"}
+      },
+      "additionalProperties": false
+    },
     "restartDocument": {
       "type": "object",
       "required": ["precondition", "request", "persistedEffect", "response", "recovery"],
