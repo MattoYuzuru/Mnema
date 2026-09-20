@@ -309,7 +309,9 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
         ObjectNode request = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString()).put("mode", mode);
         if (mode.equals("PRACTICE")) request.put("includeNew", true).put("order", "SEEDED");
         if (mode.equals("REPLAY")) request.put("sourceSessionId", sourceSession.toString());
-        request.set("budget", JSON.createObjectNode().put("maxPresentations", 20));
+        ObjectNode budget = JSON.createObjectNode().put("maxPresentations", 20);
+        if (mode.equals("SCHEDULED")) budget.put("maxNewObjectives", 20);
+        request.set("budget", budget);
         StudySessionService.StartResult started = sessions.start(fixture.actor(), fixture.deck(), "UTC",
                 StudySessionCommand.read(bytes(request)));
         UUID session = UUID.fromString(started.body().path("sessionId").textValue());

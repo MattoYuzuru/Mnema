@@ -3,9 +3,10 @@ export type StudyStatus = 'ACTIVE' | 'EMPTY' | 'COMPLETE';
 export type StudyExerciseType = 'SELF_CHECK' | 'TYPED' | 'CLOZE_SINGLE' | 'SINGLE_CHOICE';
 export type SelfRating = 'NOT_RECALLED' | 'HINTED' | 'PARTIAL' | 'FULL';
 export type PracticeOrder = 'SEEDED' | 'WEAKEST_FIRST';
+export type ScheduledStudyPreset = 'QUICK' | 'STANDARD';
 
 export type StudyStartIntent =
-    | { readonly mode: 'SCHEDULED' }
+    | { readonly mode: 'SCHEDULED'; readonly preset: ScheduledStudyPreset }
     | { readonly mode: 'REPLAY'; readonly sourceSessionId: string }
     | { readonly mode: 'PRACTICE'; readonly includeNew: boolean; readonly order: PracticeOrder };
 
@@ -52,6 +53,8 @@ export interface ReadyStudySession {
     readonly deckRevisionId: string;
     readonly exerciseGenerationId: string;
     readonly selectionPolicyVersion: string;
+    readonly budget: { readonly maxPresentations: number; readonly maxNewObjectives: number };
+    readonly issuedCount: number;
     readonly reducer: {
         readonly id: string;
         readonly version: string;

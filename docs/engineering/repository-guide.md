@@ -86,7 +86,7 @@ Identity `/userinfo`; it never reads Identity tables.
 
 ### Learning
 
-Read [its guide](../../backend/services/learning/guide.md). Fresh migrations V1–V8
+Read [its guide](../../backend/services/learning/guide.md). Fresh migrations V1–V9
 own platform/storage, private Deck, deck-local LearningItem, EditingDraft,
 CaptureNote, immutable objective/exercise authoring and bounded Study session
 snapshots. API paths are canonical
@@ -122,7 +122,9 @@ hidden until a production attempt is accepted. Choice option IDs are checked
 against pinned server bindings and never credit distractors. The same route now
 owns replay from a selected completed session, introduced-only practice by default,
 material progress and explicit restart confirmation; non-scheduled modes state that
-they do not change canonical progress. Legacy `my-study` is not a fallback.
+they do not change canonical progress. Before scheduled start, quick 10/2 and
+standard 20/5 budgets are explicit; both remain one scheduler/attempt contract.
+Legacy `my-study` is not a fallback.
 
 ## Canonical executable sources
 

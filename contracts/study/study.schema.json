@@ -26,6 +26,15 @@
       "properties": {"maxPresentations": {"type": "integer"}},
       "additionalProperties": false
     },
+    "scheduledBudget": {
+      "type": "object",
+      "required": ["maxPresentations", "maxNewObjectives"],
+      "properties": {
+        "maxPresentations": {"type": "integer"},
+        "maxNewObjectives": {"type": "integer"}
+      },
+      "additionalProperties": false
+    },
     "reducerReference": {
       "type": "object",
       "required": ["id", "version", "configId", "configHash"],
@@ -199,7 +208,7 @@
       "oneOf": [
         {
           "type": "object", "required": ["commandId", "mode", "budget"],
-          "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "mode": {"const": "SCHEDULED"}, "budget": {"$ref": "#/$defs/budget"}},
+          "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "mode": {"const": "SCHEDULED"}, "budget": {"$ref": "#/$defs/scheduledBudget"}},
           "additionalProperties": false
         },
         {
@@ -223,7 +232,7 @@
         "startPractice": {"$ref": "#/$defs/startCommand"},
         "active": {
           "type": "object",
-          "required": ["sessionId", "deckId", "mode", "status", "timezone", "localStudyDate", "deckRevisionId", "exerciseGenerationId", "selectionPolicyVersion", "reducer", "seed", "nextCursor", "expiresAt", "presentations"],
+          "required": ["sessionId", "deckId", "mode", "status", "timezone", "localStudyDate", "deckRevisionId", "exerciseGenerationId", "selectionPolicyVersion", "budget", "issuedCount", "reducer", "seed", "nextCursor", "expiresAt", "presentations"],
           "properties": {
             "sessionId": {"$ref": "#/$defs/identifier"},
             "deckId": {"$ref": "#/$defs/identifier"},
@@ -234,6 +243,8 @@
             "deckRevisionId": {"$ref": "#/$defs/identifier"},
             "exerciseGenerationId": {"$ref": "#/$defs/identifier"},
             "selectionPolicyVersion": {"type": "string"},
+            "budget": {"$ref": "#/$defs/scheduledBudget"},
+            "issuedCount": {"type": "integer"},
             "reducer": {"$ref": "#/$defs/reducerReference"},
             "seed": {"type": "string"},
             "nextCursor": {"$ref": "#/$defs/nullableString"},

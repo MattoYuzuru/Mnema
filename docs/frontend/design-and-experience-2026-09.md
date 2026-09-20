@@ -329,6 +329,12 @@ mastery percentage, может выбрать сегодняшнюю завер�
 а состояния loading/empty/error и управление клавиатурой остаются доступными на
 mobile, при увеличенном тексте, reduced motion и forced colors.
 
+Slice #58 добавляет перед scheduled start компактный выбор границы, не новый режим:
+«Короткая» — до 10 заданий и двух новых objectives с честным ориентиром 10–15 минут,
+«Стандартная» — до 20 и пяти новых. Во время работы folio показывает текущую позицию
+и максимальную границу server-pinned budget. Карточки выбора складываются в одну
+колонку на узком экране; увеличенный текст может переносить folio без overflow.
+
 Измерять first useful content, route bytes, LCP/INP/CLS, request fan-out и p95/p99 API
 при явном профиле устройства/сети. Предлагаемые web quality ориентиры — p75 LCP ≤2.5 s,
 INP ≤200 ms, CLS ≤0.1; это [Core Web Vitals](https://web.dev/articles/vitals), не

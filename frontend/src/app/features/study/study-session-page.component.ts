@@ -14,6 +14,7 @@ import {
     PracticeOrder,
     ReadyStudySession,
     ReplaySource,
+    ScheduledStudyPreset,
     SelfRating,
     StudyPresentation,
     StudyResponse,
@@ -22,7 +23,7 @@ import {
 } from './study.models';
 import { StudyRecoveryService } from './study-recovery.service';
 
-type Phase = 'loading' | 'preparing' | 'answering' | 'revealed' | 'submitting' | 'feedback'
+type Phase = 'setup' | 'loading' | 'preparing' | 'answering' | 'revealed' | 'submitting' | 'feedback'
     | 'unknown' | 'conflict' | 'empty' | 'complete' | 'expired' | 'unavailable' | 'error';
 
 @Component({
@@ -49,12 +50,14 @@ export class StudySessionPageComponent {
     readonly selectedReplayId = signal<string | null>(null);
     readonly includeNewPractice = signal(false);
     readonly practiceOrder = signal<PracticeOrder>('SEEDED');
+    readonly scheduledPreset = signal<ScheduledStudyPreset>('STANDARD');
     readonly supportLoading = signal(true);
     readonly current = computed(() => this.session()?.presentations[0] ?? null);
     readonly position = computed(() => {
         const current = this.current();
         const session = this.session();
-        return current === null || session === null ? null : `${current.ordinal + 1} из ${current.ordinal + session.presentations.length}`;
+        return current === null || session === null ? null
+            : `${current.ordinal + 1} из максимум ${session.budget.maxPresentations}`;
     });
 
     private readonly route = inject(ActivatedRoute);
@@ -78,7 +81,7 @@ export class StudySessionPageComponent {
         });
         this.loadSupportingState();
         const recovered = this.recovery.restore(this.deckId);
-        if (recovered === null) this.start();
+        if (recovered === null) this.phase.set('setup');
         else {
             this.pending.set(recovered.pending);
             if (recovered.pending?.response.kind === 'TEXT') this.typedAnswer.set(recovered.pending.response.text);
@@ -159,10 +162,14 @@ export class StudySessionPageComponent {
         this.apply({ ...session, presentations: remaining }, false);
     }
 
-    retryStart(): void { this.recovery.clear(); this.start(); }
+    retryStart(): void { this.recovery.clear(); this.startScheduled(this.scheduledPreset()); }
     pause(): void { void this.router.navigate(['/decks', this.deckId]); }
 
     chooseReplay(sessionId: string): void { this.selectedReplayId.set(sessionId); }
+    startScheduled(preset: ScheduledStudyPreset): void {
+        this.scheduledPreset.set(preset);
+        this.start({ mode: 'SCHEDULED', preset });
+    }
     setIncludeNewPractice(value: boolean): void { this.includeNewPractice.set(value); }
     setPracticeOrder(value: string): void {
         if (value === 'SEEDED' || value === 'WEAKEST_FIRST') this.practiceOrder.set(value);
@@ -230,7 +237,7 @@ export class StudySessionPageComponent {
             PARTIAL: 'Вспомнил частично', FULL: 'Вспомнил полностью' })[rating];
     }
 
-    private start(intent: StudyStartIntent = { mode: 'SCHEDULED' }): void {
+    private start(intent: StudyStartIntent): void {
         this.recovery.clear();
         this.pending.set(null);
         this.feedback.set(null);

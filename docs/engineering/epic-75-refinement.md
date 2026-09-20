@@ -34,6 +34,9 @@ contract и исполняемые примеры находятся в [`contra
   last assessed и nearest due. Процент «выучено» не вычисляется.
 - Явный restart увеличивает learning epoch, обнуляет текущее состояние выбранных
   objectives и сохраняет историю. Ответ от старой epoch становится `NOT_ASSESSED`.
+- Scheduled budget — параметр одной очереди: quick 10 presentations/2 new objectives,
+  standard 20/5. Due и уже введённые выбираются раньше новых; 10–15 минут остаётся
+  UI-ориентиром, а не серверным временем остановки.
 
 ## Транзакционная граница
 

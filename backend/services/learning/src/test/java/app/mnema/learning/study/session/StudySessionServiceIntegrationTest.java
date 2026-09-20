@@ -19,6 +19,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -49,6 +51,9 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
         JsonNode presentation = active.path("presentations").get(0);
         assertThat(active.path("status").textValue()).isEqualTo("ACTIVE");
         assertThat(active.path("timezone").textValue()).isEqualTo("Europe/Moscow");
+        assertThat(active.path("budget").path("maxPresentations").intValue()).isEqualTo(20);
+        assertThat(active.path("budget").path("maxNewObjectives").intValue()).isEqualTo(20);
+        assertThat(active.path("issuedCount").intValue()).isOne();
         assertThat(active.path("presentations")).hasSize(1);
         assertThat(presentation.path("type").textValue()).isEqualTo("TYPED");
         assertThat(presentation.path("prompt").path("text").textValue()).isEqualTo("memory");
@@ -110,10 +115,42 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
                 .isInstanceOf(StudySessionExpiredException.class);
     }
 
+    @Test
+    void quickBudgetSelectsKnownFirstAndIntroducesAtMostTwoObjectives() {
+        UUID actor = UUID.randomUUID();
+        UUID deck = createDeck(actor);
+        for (int index = 0; index < 12; index++) addMaterialWithExercise(actor, deck);
+
+        StudySessionService.StartResult introduction = service.start(actor, deck, "UTC",
+                scheduled(UUID.randomUUID(), 8, 8));
+        JsonNode introduced = service.read(actor, deck,
+                UUID.fromString(introduction.body().path("sessionId").textValue()));
+        Set<String> known = new HashSet<>();
+        introduced.path("presentations").forEach(value -> known.add(value.path("objectiveId").textValue()));
+        assertThat(known).hasSize(8);
+
+        StudySessionService.StartResult quickStart = service.start(actor, deck, "UTC",
+                scheduled(UUID.randomUUID(), 10, 2));
+        JsonNode quick = quickStart.preparing() ? service.read(actor, deck,
+                UUID.fromString(quickStart.body().path("sessionId").textValue())) : quickStart.body();
+        assertThat(quick.path("budget").path("maxPresentations").intValue()).isEqualTo(10);
+        assertThat(quick.path("budget").path("maxNewObjectives").intValue()).isEqualTo(2);
+        assertThat(quick.path("presentations")).hasSize(10);
+        assertThat(quick.path("presentations").findValuesAsText("objectiveId").stream()
+                .filter(value -> !known.contains(value))).hasSize(2);
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.study_transition WHERE account_id=:actor")
+                .param("actor", actor).query(Long.class).single()).isZero();
+    }
+
     private Fixture materialWithExercise() {
         UUID actor = UUID.randomUUID();
         UUID deck = createDeck(actor);
+        return addMaterialWithExercise(actor, deck);
+    }
+
+    private Fixture addMaterialWithExercise(UUID actor, UUID deck) {
         JsonNode deckHead = decks.read(actor, deck);
+        long itemExpectedVersion = Long.parseLong(deckHead.path("rowVersion").textValue());
         UUID answerNode = UUID.randomUUID();
         ObjectNode document = JSON.createObjectNode().put("formatVersion", 1);
         ObjectNode root = document.putObject("root").put("id", UUID.randomUUID().toString())
@@ -129,11 +166,12 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
         ObjectNode itemBody = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
                 .put("expectedDeckRevisionId", deckHead.path("revisionId").textValue());
         itemBody.set("document", document);
-        JsonNode item = items.publish(actor, deck, 0, ItemPublicationCommand.readCreate(bytes(itemBody)))
+        JsonNode item = items.publish(actor, deck, itemExpectedVersion, ItemPublicationCommand.readCreate(bytes(itemBody)))
                 .acknowledgement().path("changes").get(0);
         Fixture initial = new Fixture(actor, deck, UUID.fromString(item.path("memberKey").textValue()),
                 UUID.fromString(item.path("itemRevisionId").textValue()), answerNode, null, null, null);
-        ExerciseService.WriteResult published = exercises.publish(actor, deck, null, 1,
+        long exerciseExpectedVersion = Long.parseLong(decks.read(actor, deck).path("rowVersion").textValue());
+        ExerciseService.WriteResult published = exercises.publish(actor, deck, null, exerciseExpectedVersion,
                 ExerciseCommand.readCreate(bytes(exerciseBody(initial, "create", null, null, null))));
         JsonNode result = published.acknowledgement();
         return new Fixture(actor, deck, initial.member(), initial.itemRevision(), answerNode,
@@ -188,8 +226,13 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
     }
 
     private static StudySessionCommand scheduled(UUID command, int budget) {
+        return scheduled(command, budget, budget);
+    }
+
+    private static StudySessionCommand scheduled(UUID command, int budget, int maxNew) {
         return read(JSON.createObjectNode().put("commandId", command.toString()).put("mode", "SCHEDULED")
-                .set("budget", JSON.createObjectNode().put("maxPresentations", budget)));
+                .set("budget", JSON.createObjectNode().put("maxPresentations", budget)
+                        .put("maxNewObjectives", maxNew)));
     }
 
     private static StudySessionCommand practice(UUID command, boolean includeNew) {

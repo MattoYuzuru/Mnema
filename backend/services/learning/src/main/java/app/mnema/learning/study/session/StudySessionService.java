@@ -181,7 +181,7 @@ public class StudySessionService {
         }
         if (generation.candidateCount() == 0) {
             if (refill) repository.complete(session, now);
-            else repository.updateSessionBatch(session, "EMPTY", 0, 0, 0, 0, true);
+            else repository.updateSessionBatch(session, "EMPTY", 0, 0, 0, 0, 0, true);
             return;
         }
         int remaining = session.budget() - session.issuedCount();
@@ -192,21 +192,23 @@ public class StudySessionService {
         List<StudySessionRepository.Candidate> candidates = repository.eligibleCandidates(session, start,
                 target * BoundedCandidatePlanner.SCAN_MULTIPLIER, now);
         int batch = 0;
+        int newObjectives = 0;
         int cursor = session.scanCursor();
         for (StudySessionRepository.Candidate candidate : candidates) {
             cursor = candidate.ordinal() + 1;
             if (cursor >= generation.candidateCount()) cursor = 0;
             insert(session, candidate, session.issuedCount() + batch++, now);
+            if (!candidate.introduced()) newObjectives++;
             if (batch == target) break;
         }
         if (batch == 0) {
             if (refill) repository.complete(session, now);
-            else repository.updateSessionBatch(session, "EMPTY", 0, 0, 0, cursor, true);
+            else repository.updateSessionBatch(session, "EMPTY", 0, 0, 0, 0, cursor, true);
             return;
         }
         boolean exhausted = batch < target;
         repository.updateSessionBatch(session, "ACTIVE", session.issuedCount() + batch,
-                session.issuedCount(), batch, cursor, exhausted);
+                session.issuedNewObjectives() + newObjectives, session.issuedCount(), batch, cursor, exhausted);
     }
 
     private void issueReplay(StudySessionRepository.Session session, StudySessionRepository.Session source, Instant now,
@@ -225,11 +227,12 @@ public class StudySessionService {
         }
         if (originals.isEmpty()) {
             if (refill) repository.complete(session, now);
-            else repository.updateSessionBatch(session, "EMPTY", 0, 0, 0, 0, true);
+            else repository.updateSessionBatch(session, "EMPTY", 0, 0, 0, 0, 0, true);
             return;
         }
         repository.updateSessionBatch(session, "ACTIVE", session.issuedCount() + originals.size(),
-                session.issuedCount(), originals.size(), session.issuedCount() + originals.size(),
+                session.issuedNewObjectives(), session.issuedCount(), originals.size(),
+                session.issuedCount() + originals.size(),
                 originals.size() < target);
     }
 
@@ -323,7 +326,10 @@ public class StudySessionService {
                 .put("deckRevisionId", session.deckRevisionId().toString())
                 .put("exerciseGenerationId", session.generationId().toString())
                 .put("selectionPolicyVersion", session.policyVersion())
-                .put("seed", Long.toUnsignedString(session.seed())).put("expiresAt", session.expiresAt().toString());
+                .put("seed", Long.toUnsignedString(session.seed())).put("issuedCount", session.issuedCount())
+                .put("expiresAt", session.expiresAt().toString());
+        result.putObject("budget").put("maxPresentations", session.budget())
+                .put("maxNewObjectives", session.maxNewObjectives());
         result.set("reducer", JsonNodeFactory.instance.objectNode().put("id", session.reducerId())
                 .put("version", session.reducerVersion()).put("configId", session.configId().toString())
                 .put("configHash", session.configHash()));

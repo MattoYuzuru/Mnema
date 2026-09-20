@@ -30,6 +30,33 @@
     </section>
   }
 
+  @if (phase() === 'setup') {
+    <section class="session-setup" aria-labelledby="session-size-title">
+      <p class="eyebrow">Граница сессии</p>
+      <h2 id="session-size-title">Сколько учим сейчас?</h2>
+      <p>Оба варианта используют одно расписание этой колоды. Незавершённые задания не считаются попытками.</p>
+      <div class="preset-grid">
+        <article class="preset-card">
+          <p class="eyebrow">10–15 минут · ориентир</p>
+          <h3>Короткая</h3>
+          <p>До 10 заданий: сначала знакомые, затем не больше двух новых целей.</p>
+          <button class="button primary" data-answer-control type="button" (click)="startScheduled('QUICK')">
+            Начать короткую
+          </button>
+        </article>
+        <article class="preset-card">
+          <p class="eyebrow">Обычный темп</p>
+          <h3>Стандартная</h3>
+          <p>До 20 заданий: повторения по сроку и не больше пяти новых целей.</p>
+          <button class="button secondary" type="button" (click)="startScheduled('STANDARD')">
+            Начать стандартную
+          </button>
+        </article>
+      </div>
+      <p class="hint">Время — ориентир: точная длительность зависит от содержания ответов.</p>
+    </section>
+  }
+
   @if (current(); as presentation) {
     @if (phase() === 'answering' || phase() === 'revealed' || phase() === 'submitting') {
       <article class="study-card" [attr.aria-busy]="phase() === 'submitting'">
