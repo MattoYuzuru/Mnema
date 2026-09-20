@@ -109,6 +109,9 @@ capacity evidence.
   back to UTC, and clients cannot submit a timezone. Resume returns only
   presentations without a terminal attempt and each presentation carries the
   answer-contract reference needed by the accessible Study feedback flow.
+  A scheduled snapshot pins total and new-objective limits; the current presets are
+  quick 10/2 and standard 20/5. Selection uses the same reducer and attempt path for
+  both, prioritizing due, then introduced, then allowed new objectives.
 - `/api/decks/{deckId}/study-sessions/replay-sources` returns at most 20 completed
   scheduled sessions from the authenticated account's current local study date.
   Scheduled selection is due-first and then introduces new objectives. Practice
@@ -144,7 +147,7 @@ capacity evidence.
   back both material and exercise membership roots. Exercise writes advance the
   Deck CAS and receipt in the same transaction.
 
-Fresh Learning migrations V1–V8 are the database source of truth. Do not append
+Fresh Learning migrations V1–V9 are the database source of truth. Do not append
 Study tables to legacy `core` migrations or port old review algorithms.
 
 Sources: [Spring Security 6.5 JWT](https://docs.spring.io/spring-security/reference/6.5/servlet/oauth2/resource-server/jwt.html)

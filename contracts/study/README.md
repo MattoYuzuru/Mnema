@@ -55,11 +55,16 @@ one assessed focal binding and 2..6 distinct options from the same pinned snapsh
 
 The client requests only intent. Start accepts a server-enforced mode and bounded
 budget; timezone/local study date are resolved from the authenticated account and
-stored in the session. The response owns snapshot, exercise/objective revisions, roles, mode,
-evaluator, nonce and selection-policy identity. Submit therefore contains no
+stored in the session. A scheduled budget pins both total presentations and the
+maximum number of previously unseen objectives. The current UI maps `QUICK` to
+10/2 and `STANDARD` to 20/5; 10–15 minutes is guidance, not a time guarantee.
+The response owns snapshot, exercise/objective revisions, roles, mode, evaluator,
+nonce, budget and selection-policy identity. Submit therefore contains no
 client-selected Deck revision, binding roles, correct answer or scheduler flag.
 
-`SCHEDULED` selects due objectives before not-yet-introduced objectives.
+`SCHEDULED` selects due objectives, then introduced unassessed objectives, then at
+most the remaining new-objective allowance. Stopping early creates no attempt and
+does not remove the objective from a future session.
 `REPLAY` requires a completed source session from the same account/deck/local day
 and reuses its presentation revisions/order without old responses. `PRACTICE`
 selects introduced objectives by default; `includeNew=true` is explicit. A batch

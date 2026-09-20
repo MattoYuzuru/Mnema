@@ -29,7 +29,7 @@ export class StudyApiService {
     private readonly baseUrl = appConfig.learningApiBaseUrl.replace(/\/$/, '');
 
     start(deckId: string, commandId: string,
-          intent: StudyStartIntent = { mode: 'SCHEDULED' }): Observable<StudyWriteResult<StudySession>> {
+          intent: StudyStartIntent = { mode: 'SCHEDULED', preset: 'STANDARD' }): Observable<StudyWriteResult<StudySession>> {
         return defer(() => {
             const deck = entity(deckId);
             const command = commandIdValue(commandId);
@@ -132,7 +132,13 @@ export class StudyApiService {
 }
 
 function startCommand(commandId: string, intent: StudyStartIntent): Record<string, unknown> {
-    if (intent.mode === 'SCHEDULED') return { commandId, mode: intent.mode, budget: { maxPresentations: 20 } };
+    if (intent.mode === 'SCHEDULED') {
+        if (intent.preset !== 'QUICK' && intent.preset !== 'STANDARD') throw protocol('Invalid scheduled preset.');
+        const budget = intent.preset === 'QUICK'
+            ? { maxPresentations: 10, maxNewObjectives: 2 }
+            : { maxPresentations: 20, maxNewObjectives: 5 };
+        return { commandId, mode: intent.mode, budget };
+    }
     if (intent.mode === 'REPLAY') return { commandId, mode: intent.mode,
         sourceSessionId: entity(intent.sourceSessionId), budget: { maxPresentations: 20 } };
     if (intent.order !== 'SEEDED' && intent.order !== 'WEAKEST_FIRST') throw protocol('Invalid practice order.');
@@ -205,11 +211,16 @@ function parseSession(value: unknown, expectedDeck: string, expectedSession?: st
     }
     const object = exact(value, [
         'sessionId', 'deckId', 'mode', 'status', 'timezone', 'localStudyDate', 'deckRevisionId',
-        'exerciseGenerationId', 'selectionPolicyVersion', 'seed', 'expiresAt', 'reducer', 'nextCursor', 'presentations'
+        'exerciseGenerationId', 'selectionPolicyVersion', 'budget', 'issuedCount', 'seed', 'expiresAt', 'reducer',
+        'nextCursor', 'presentations'
     ]);
     const status = object['status'];
     if (status !== 'ACTIVE' && status !== 'EMPTY' && status !== 'COMPLETE') throw protocol('Invalid session status.');
     const reducer = exact(object['reducer'], ['id', 'version', 'configId', 'configHash']);
+    const budget = exact(object['budget'], ['maxPresentations', 'maxNewObjectives']);
+    const maxPresentations = count(budget['maxPresentations'], 100);
+    if (maxPresentations < 1) throw protocol('Invalid session budget.');
+    const maxNewObjectives = count(budget['maxNewObjectives'], maxPresentations);
     if (!Array.isArray(object['presentations']) || object['presentations'].length > 20) {
         throw protocol('Invalid presentation page.');
     }
@@ -218,6 +229,7 @@ function parseSession(value: unknown, expectedDeck: string, expectedSession?: st
         timezone: text(object['timezone'], 80), localStudyDate: localDate(object['localStudyDate']),
         deckRevisionId: entity(object['deckRevisionId']), exerciseGenerationId: entity(object['exerciseGenerationId']),
         selectionPolicyVersion: text(object['selectionPolicyVersion'], 100),
+        budget: { maxPresentations, maxNewObjectives }, issuedCount: count(object['issuedCount'], maxPresentations),
         reducer: { id: text(reducer['id'], 100), version: text(reducer['version'], 100),
             configId: entity(reducer['configId']), configHash: hash(reducer['configHash']) },
         seed: unsigned(object['seed']), nextCursor: cursor(object['nextCursor']), expiresAt: instant(object['expiresAt']),

@@ -9,8 +9,8 @@
 h1, h2, legend { color: var(--ink, #281378); font-family: Georgia, 'Times New Roman', serif; font-weight: 500; overflow-wrap: anywhere; }
 h1 { max-inline-size: 18ch; margin: 0; font-size: clamp(2.3rem, 7vw, 5.5rem); line-height: .98; }
 h2 { margin-block: .5rem 2.5rem; font-size: clamp(1.8rem, 5vw, 3.8rem); line-height: 1.08; }
-.folio { margin: 0; color: var(--muted, #625c70); white-space: nowrap; }
-.study-card, .completion, .progress-section { min-inline-size: 0; border: 1px solid var(--line, #c9c0ce); padding: clamp(1.25rem, 5vw, 3.5rem); background: var(--sheet, #fbf8ef); box-shadow: .4rem .4rem 0 var(--soft, #e8e1ed); }
+.folio { margin: 0; color: var(--muted, #625c70); text-align: end; }
+.study-card, .completion, .progress-section, .session-setup { min-inline-size: 0; border: 1px solid var(--line, #c9c0ce); padding: clamp(1.25rem, 5vw, 3.5rem); background: var(--sheet, #fbf8ef); box-shadow: .4rem .4rem 0 var(--soft, #e8e1ed); }
 form { display: grid; gap: .8rem; }
 label, legend { font-size: 1.05rem; font-weight: 700; }
 textarea, input[type='text'], select { inline-size: 100%; min-inline-size: 0; border: 1px solid var(--line, #c9c0ce); border-radius: 2px; padding: 1rem; color: inherit; background: #fffdf7; font: 1rem/1.4 system-ui, sans-serif; }
@@ -42,6 +42,10 @@ details { margin-block: 1.5rem; border-block: 1px solid var(--line, #c9c0ce); pa
 summary { color: var(--ink, #281378); font-weight: 700; cursor: pointer; }
 .progress-note, .hint { color: var(--muted, #625c70); line-height: 1.55; }
 .completion-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+.preset-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-block: 1.25rem; }
+.preset-card { min-inline-size: 0; border: 1px solid var(--line, #c9c0ce); border-radius: 2px; padding: 1rem; background: #fffdf7; }
+.preset-card h3 { margin-block: .25rem .5rem; color: var(--ink, #281378); font: 1.5rem/1.2 Georgia, 'Times New Roman', serif; }
+.preset-card .button { margin-block-start: .75rem; }
 .mode-note { margin-block: -3rem 2rem; border: 1px solid var(--ink, #281378); padding: .8rem 1rem; color: var(--ink, #281378); background: #fffdf7; }
 .mode-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; margin-block-start: 2rem; }
 .mode-panel { min-inline-size: 0; display: grid; align-content: start; gap: .75rem; border-block-start: 1px solid var(--line, #c9c0ce); padding-block-start: 1rem; }
@@ -64,9 +68,9 @@ summary { color: var(--ink, #281378); font-weight: 700; cursor: pointer; }
 :where(a, button, input, textarea, select, summary, h1, h2):focus-visible { outline: 3px solid var(--ink, #281378); outline-offset: 3px; }
 @media (max-width: 36rem) {
   .heading-row { align-items: start; flex-direction: column; gap: 1rem; }
-  .ratings, .comparison, .mode-grid { grid-template-columns: 1fr; }
+  .ratings, .comparison, .mode-grid, .preset-grid { grid-template-columns: 1fr; }
   .section-heading { align-items: start; flex-direction: column; }
   form .button, .reveal, .completion-actions .button { inline-size: 100%; justify-self: stretch; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
-@media (forced-colors: active) { .study-card, .completion, .progress-section, .choice-option, input, textarea, select { border-color: CanvasText; } }
+@media (forced-colors: active) { .study-card, .completion, .progress-section, .session-setup, .preset-card, .choice-option, input, textarea, select { border-color: CanvasText; } }

@@ -34,6 +34,7 @@ class StudySessionCommandTest {
 
         assertThat(scheduled.mode()).isEqualTo(StudySessionCommand.Mode.SCHEDULED);
         assertThat(scheduled.maxPresentations()).isEqualTo(20);
+        assertThat(scheduled.maxNewObjectives()).isEqualTo(5);
         assertThat(replay.sourceSessionId()).isNotNull();
         assertThat(practice.includeNew()).isFalse();
         assertThat(practice.practiceOrder()).isEqualTo(StudySessionCommand.PracticeOrder.WEAKEST_FIRST);
@@ -48,6 +49,10 @@ class StudySessionCommandTest {
         ObjectNode oversized = fixture.path("startScheduled").deepCopy();
         oversized.withObject("budget").put("maxPresentations", 101);
         assertThatThrownBy(() -> read(oversized)).isInstanceOf(InvalidRequestException.class);
+
+        ObjectNode excessiveNew = fixture.path("startScheduled").deepCopy();
+        excessiveNew.withObject("budget").put("maxNewObjectives", 21);
+        assertThatThrownBy(() -> read(excessiveNew)).isInstanceOf(InvalidRequestException.class);
 
         ObjectNode missingSource = fixture.path("startReplay").deepCopy();
         missingSource.remove("sourceSessionId");

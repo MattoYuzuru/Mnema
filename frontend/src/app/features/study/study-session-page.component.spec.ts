@@ -41,7 +41,7 @@ describe('StudySessionPageComponent', () => {
     it('keeps the typed reference hidden until the exact response is committed, then explains checking', () => {
         api.start.and.returnValue(of({ value: session('TYPED'), replayed: false }));
         api.submit.and.returnValue(of({ value: outcome('CORRECT'), replayed: false }));
-        fixture = TestBed.createComponent(StudySessionPageComponent); fixture.detectChanges();
+        createStarted();
         const root = fixture.nativeElement as HTMLElement;
         expect(root.textContent).toContain('What remains?');
         expect(root.textContent).not.toContain('memory');
@@ -60,7 +60,7 @@ describe('StudySessionPageComponent', () => {
     it('reveals self-check reference before offering four behavioral ratings', () => {
         api.start.and.returnValue(of({ value: session('SELF_CHECK'), replayed: false }));
         api.submit.and.returnValue(of({ value: outcome('PARTIAL'), replayed: false }));
-        fixture = TestBed.createComponent(StudySessionPageComponent); fixture.detectChanges();
+        createStarted();
         expect(api.submit).not.toHaveBeenCalled();
         fixture.componentInstance.reveal(); fixture.detectChanges();
         const root = fixture.nativeElement as HTMLElement;
@@ -77,7 +77,7 @@ describe('StudySessionPageComponent', () => {
     it('renders one cloze blank and caps the exact attempt after a grapheme hint', () => {
         api.start.and.returnValue(of({ value: session('CLOZE_SINGLE'), replayed: false }));
         api.submit.and.returnValue(of({ value: outcome('CORRECT'), replayed: false }));
-        fixture = TestBed.createComponent(StudySessionPageComponent); fixture.detectChanges();
+        createStarted();
         const root = fixture.nativeElement as HTMLElement;
         expect(root.querySelector('label[for="cloze-answer"]')).not.toBeNull();
         expect(root.textContent).not.toContain('memory');
@@ -94,7 +94,7 @@ describe('StudySessionPageComponent', () => {
     it('uses native single-choice radios and submits only the selected server option', () => {
         api.start.and.returnValue(of({ value: session('SINGLE_CHOICE'), replayed: false }));
         api.submit.and.returnValue(of({ value: outcome('CORRECT'), replayed: false }));
-        fixture = TestBed.createComponent(StudySessionPageComponent); fixture.detectChanges();
+        createStarted();
         const root = fixture.nativeElement as HTMLElement;
         const radios = root.querySelectorAll<HTMLInputElement>('input[type="radio"]');
         expect(radios.length).toBe(2);
@@ -110,7 +110,7 @@ describe('StudySessionPageComponent', () => {
     it('retains and replays the exact command after an unknown network outcome', () => {
         api.start.and.returnValue(of({ value: session('TYPED'), replayed: false }));
         api.submit.and.returnValue(throwError(() => new HttpErrorResponse({ status: 0 })));
-        fixture = TestBed.createComponent(StudySessionPageComponent); fixture.detectChanges();
+        createStarted();
         fixture.componentInstance.setTypedAnswer('memory'); fixture.componentInstance.submitTyped(); fixture.detectChanges();
         const first = api.submit.calls.mostRecent().args[2];
         expect(fixture.nativeElement.textContent).toContain('безопасно повторите ту же попытку');
@@ -136,7 +136,7 @@ describe('StudySessionPageComponent', () => {
                 { objectiveId: id('23'), learningEpoch: '1' }] }, replayed: false }));
         spyOn(window, 'confirm').and.returnValue(true);
 
-        fixture = TestBed.createComponent(StudySessionPageComponent); fixture.detectChanges();
+        createStarted();
         const root = fixture.nativeElement as HTMLElement;
         expect(root.textContent).toContain('Без условного процента');
         expect(root.textContent).toContain('Пора повторить');
@@ -157,7 +157,7 @@ describe('StudySessionPageComponent', () => {
 
     it('renders labelled controls without horizontal overflow at 320/390/1440 and RTL', () => {
         api.start.and.returnValue(of({ value: session('TYPED'), replayed: false }));
-        fixture = TestBed.createComponent(StudySessionPageComponent); fixture.detectChanges();
+        createStarted();
         const root = fixture.nativeElement as HTMLElement; root.style.display = 'block'; root.dir = 'rtl';
         expect(root.querySelector('label[for="typed-answer"]')).not.toBeNull();
         for (const width of [320, 390, 1440]) {
@@ -166,6 +166,24 @@ describe('StudySessionPageComponent', () => {
         }
         document.documentElement.style.fontSize = ''; root.removeAttribute('dir');
     });
+
+    it('offers honest session presets before issuing a scheduled command', () => {
+        api.start.and.returnValue(of({ value: session('TYPED'), replayed: false }));
+        fixture = TestBed.createComponent(StudySessionPageComponent); fixture.detectChanges();
+        expect(api.start).not.toHaveBeenCalled();
+        expect(fixture.nativeElement.textContent).toContain('До 10 заданий');
+        expect(fixture.nativeElement.textContent).toContain('не больше двух новых');
+
+        fixture.componentInstance.startScheduled('QUICK');
+        expect(api.start.calls.mostRecent().args[2]).toEqual({ mode: 'SCHEDULED', preset: 'QUICK' });
+    });
+
+    function createStarted(): void {
+        fixture = TestBed.createComponent(StudySessionPageComponent);
+        fixture.detectChanges();
+        fixture.componentInstance.startScheduled('STANDARD');
+        fixture.detectChanges();
+    }
 
     function presentation(type: StudyPresentation['type']): StudyPresentation {
         const assessed = { bindingId: id('7'), role: 'ASSESSED' as const, memberKey: id('8'),
@@ -186,7 +204,8 @@ describe('StudySessionPageComponent', () => {
     function session(type: StudyPresentation['type']): ReadyStudySession {
         return { sessionId, deckId: deck.deckId, mode: 'SCHEDULED', status: 'ACTIVE', timezone: 'Europe/Moscow',
             localStudyDate: '2026-09-20', deckRevisionId: id('11'), exerciseGenerationId: id('12'),
-            selectionPolicyVersion: 'deck-due-new-v1', reducer: { id: 'mnema-baseline', version: '1',
+            selectionPolicyVersion: 'deck-due-new-v2', budget: { maxPresentations: 20, maxNewObjectives: 5 },
+            issuedCount: 1, reducer: { id: 'mnema-baseline', version: '1',
                 configId: id('13'), configHash: `sha256:${'a'.repeat(64)}` }, seed: '42', nextCursor: null,
             expiresAt: '2026-09-21T10:00:00Z', presentations: [presentation(type)] };
     }
