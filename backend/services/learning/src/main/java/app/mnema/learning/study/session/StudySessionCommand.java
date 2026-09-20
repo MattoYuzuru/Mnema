@@ -12,7 +12,8 @@ import java.util.Set;
 import java.util.UUID;
 
 /** Strict server-owned Study mode and bounded budget request. */
-public record StudySessionCommand(UUID commandId, Mode mode, int maxPresentations, UUID sourceSessionId,
+public record StudySessionCommand(UUID commandId, Mode mode, int maxPresentations, int maxNewObjectives,
+                                  UUID sourceSessionId,
                                   boolean includeNew, PracticeOrder practiceOrder, ObjectNode payload) {
     private static final int MAX_BYTES = 8_192;
     private static final ContentJsonReader JSON = new ContentJsonReader(MAX_BYTES, 8, 80);
@@ -42,10 +43,14 @@ public record StudySessionCommand(UUID commandId, Mode mode, int maxPresentation
             };
             fields(body, expected);
             JsonNode budget = body.path("budget");
-            fields(budget, Set.of("maxPresentations"));
+            fields(budget, mode == Mode.SCHEDULED ? Set.of("maxPresentations", "maxNewObjectives")
+                    : Set.of("maxPresentations"));
             if (!budget.path("maxPresentations").canConvertToInt()) throw invalid();
             int maximum = budget.path("maxPresentations").intValue();
             if (maximum < 1 || maximum > 100) throw invalid();
+            int maximumNew = mode == Mode.SCHEDULED && budget.path("maxNewObjectives").canConvertToInt()
+                    ? budget.path("maxNewObjectives").intValue() : 0;
+            if (maximumNew < 0 || maximumNew > maximum) throw invalid();
             UUID source = mode == Mode.REPLAY ? id(body.path("sourceSessionId")) : null;
             boolean includeNew = false;
             PracticeOrder order = null;
@@ -54,7 +59,7 @@ public record StudySessionCommand(UUID commandId, Mode mode, int maxPresentation
                 includeNew = body.path("includeNew").booleanValue();
                 order = PracticeOrder.valueOf(body.path("order").textValue());
             }
-            return new StudySessionCommand(id(body.path("commandId")), mode, maximum, source,
+            return new StudySessionCommand(id(body.path("commandId")), mode, maximum, maximumNew, source,
                     includeNew, order, (ObjectNode) body);
         } catch (IOException | IllegalArgumentException exception) { throw invalid(); }
     }

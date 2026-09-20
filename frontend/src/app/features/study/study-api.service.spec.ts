@@ -24,13 +24,24 @@ describe('StudyApiService', () => {
     afterEach(() => http.verify());
 
     it('starts only a bounded scheduled session and validates its deck-scoped snapshot', async () => {
-        const result = firstValueFrom(api.start(deckId, commandId));
+        const result = firstValueFrom(api.start(deckId, commandId, { mode: 'SCHEDULED', preset: 'STANDARD' }));
         const request = http.expectOne(`/api/decks/${deckId}/study-sessions`);
-        expect(request.request.body).toEqual({ commandId, mode: 'SCHEDULED', budget: { maxPresentations: 20 } });
+        expect(request.request.body).toEqual({ commandId, mode: 'SCHEDULED',
+            budget: { maxPresentations: 20, maxNewObjectives: 5 } });
         request.flush(active('TYPED'), { status: 201, statusText: 'Created', headers: {
             ...privateHeaders, Location: `/api/decks/${deckId}/study-sessions/${sessionId}`
         } });
         expect((await result).value.status).toBe('ACTIVE');
+    });
+
+    it('maps the quick preset to one bounded scheduler budget', () => {
+        api.start(deckId, commandId, { mode: 'SCHEDULED', preset: 'QUICK' }).subscribe();
+        const request = http.expectOne(`/api/decks/${deckId}/study-sessions`);
+        expect(request.request.body).toEqual({ commandId, mode: 'SCHEDULED',
+            budget: { maxPresentations: 10, maxNewObjectives: 2 } });
+        request.flush(active('TYPED'), { status: 201, statusText: 'Created', headers: {
+            ...privateHeaders, Location: `/api/decks/${deckId}/study-sessions/${sessionId}`
+        } });
     });
 
     it('submits an exact attempt and accepts a truthful deterministic feedback receipt', async () => {
@@ -141,7 +152,8 @@ describe('StudyApiService', () => {
         ] : [assessed];
         return { sessionId, deckId, mode: 'SCHEDULED', status: 'ACTIVE', timezone: 'Europe/Moscow',
             localStudyDate: '2026-09-20', deckRevisionId: id('5'), exerciseGenerationId: id('6'),
-            selectionPolicyVersion: 'deck-due-new-v1', reducer: { id: 'mnema-baseline', version: '1',
+            selectionPolicyVersion: 'deck-due-new-v2', budget: { maxPresentations: 20, maxNewObjectives: 5 },
+            issuedCount: 1, reducer: { id: 'mnema-baseline', version: '1',
                 configId: id('9'), configHash: `sha256:${'a'.repeat(64)}` }, seed: '42', nextCursor: null,
             expiresAt: '2026-09-21T10:00:00Z', presentations: [{ presentationId, nonce: 'abcdefghijklmnop', ordinal: 0,
                 exerciseRevisionId: id('10'), type, objectiveId: id('7'), objectiveRevisionId: id('8'), learningEpoch: '0',

@@ -6,7 +6,7 @@ artifact:
   status: current
   updated_at: "2026-09-20"
   owners: ["project-owner"]
-  evidence_revision: "d25e29ee162dfddd79109c6f058494ec2c29d7be"
+  evidence_revision: "29a0e9b2bc73b995aef9c62dfb03ca6e7f671890"
 ---
 
 # Mnema: текущий обзор системы
@@ -16,8 +16,9 @@ Mnema напрямую заменяет v1 платформой вокруг ver
 Angular SPA. Epic #75 добавил objective/exercise authoring, bounded Study session
 snapshots, deterministic attempts, baseline scheduler state и production exercise
 inspector. Канонический Study runner уже проводит все четыре scheduled P0-механики:
-self-check, typed, single-blank cloze и single choice; progress и replay/practice
-добавляются текущим slice #219. Media lifecycle относится к #76.
+self-check, typed, single-blank cloze и single choice, показывает progress и даёт
+replay/practice; текущий slice #58 добавляет явные session budgets. Media lifecycle
+относится к #76.
 
 ## Shipping и local replacement boundary
 
@@ -58,6 +59,7 @@ Identity и Learning — отдельные deployables без Gradle dependency
   атомарно завершает bounded batch, а resume не возвращает решённые presentation;
 - due-first scheduled selection, replay выбранной завершённой сессии текущего
   локального дня и practice по уже введённым objective с явным opt-in новых;
+- единый scheduled scheduler с server-pinned quick 10/2 и standard 20/5 budgets;
 - cursor-bounded material progress без фиктивного mastery percentage, exact restart
   нового learning epoch и bounded retention raw/compact attempt payloads;
 - UUID, canonical JSON, command receipts, RFC 9457 Problem Details, row-version CAS;
@@ -86,6 +88,8 @@ completion/expiry/error и account-bound recovery точной pending attempt �
 неопределённого сетевого результата. Terminal flow также включает replay из
 выбранной сегодняшней сессии, practice с явной политикой новых материалов,
 объяснимый progress и подтверждаемое «Учить заново».
+Перед scheduled start пользователь выбирает короткую или стандартную границу, видит
+её во время сессии и не получает ложной гарантии длительности по часам.
 
 В исходниках всё ещё есть legacy components/services для public decks, old review,
 templates, import, media и AI. Их наличие не делает поведение текущим и не разрешает

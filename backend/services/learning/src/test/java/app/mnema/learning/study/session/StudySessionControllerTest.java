@@ -54,7 +54,7 @@ class StudySessionControllerTest {
         when(service.start(eq(actor), eq(deck), eq("Europe/Moscow"), any()))
                 .thenReturn(new StudySessionService.StartResult(preparing, false, true));
         String body = "{\"commandId\":\"" + UUID.randomUUID()
-                + "\",\"mode\":\"SCHEDULED\",\"budget\":{\"maxPresentations\":20}}";
+                + "\",\"mode\":\"SCHEDULED\",\"budget\":{\"maxPresentations\":20,\"maxNewObjectives\":5}}";
 
         mvc.perform(post("/api/decks/" + deck + "/study-sessions").contextPath("/api")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
