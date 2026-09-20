@@ -3,8 +3,11 @@
 `services:learning` is the standalone greenfield Learning API runtime. It has no
 Gradle project dependency on legacy `core`, `media`, `import` or `ai`. Epic #74
 added the canonical private Deck, deck-local LearningItem, native content,
-EditingDraft and CaptureNote domains. Study/exercises/scheduler remain Epic #75;
-greenfield media lifecycle remains #76.
+EditingDraft and CaptureNote domains. Epic #75 now also owns immutable objectives,
+P0 exercise revisions, explicit content bindings, bounded Study session snapshots,
+deterministic attempts, the baseline Study state reducer, material progress,
+scheduled/replay/practice selection and retention cleanup.
+Greenfield media lifecycle remains #76.
 
 ## Runtime contract
 
@@ -39,7 +42,8 @@ greenfield media lifecycle remains #76.
   changed row or raises `VERSION_CONFLICT`.
 - API failures use `application/problem+json` (RFC 9457). Stable machine codes are
   `IDEMPOTENCY_CONFLICT`, `VERSION_CONFLICT`, `PRECONDITION_REQUIRED`, `INVALID_REQUEST`,
-  `RESOURCE_NOT_FOUND`, `METHOD_NOT_ALLOWED` and `INTERNAL_ERROR`. Public details
+  `RESOURCE_NOT_FOUND`, `SESSION_EXPIRED`, `PRESENTATION_EXPIRED`, `METHOD_NOT_ALLOWED`
+  and `INTERNAL_ERROR`. Public details
   never contain exception messages, SQL or stored command data.
 
 PostgreSQL integration tests are fail-closed: Docker absence or container startup
@@ -90,17 +94,62 @@ capacity evidence.
   updates with global command receipts.
 - `/api/decks/{deckId}/items` owns deck-local logical identity, immutable revisions,
   current/historical reads and atomic publication.
+- `/api/decks/{deckId}/exercises` owns owner-only bounded reads and atomic
+  publication of stable objectives, immutable answer/exercise revisions, exact
+  current item/node pins and one assessed binding. Supported P0 types are
+  `SELF_CHECK`, `TYPED`, `CLOZE_SINGLE` and `SINGLE_CHOICE`. The optional
+  `memberKey` list filter remains cursor-bounded and returns each current
+  exercise with its current objective summary so authoring clients can reuse a
+  direction without scanning every exercise or exposing identifiers for input.
+- `/api/decks/{deckId}/study-sessions` starts and resumes owner-only
+  `SCHEDULED`, `REPLAY` and `PRACTICE` snapshots. Candidate preparation reads at
+  most 500 exercise rows per poll, selection scans at most 80 candidates and a
+  response contains at most 20 immutable presentations. The authenticated
+  `zoneinfo` claim determines the local study date; invalid or absent values fall
+  back to UTC, and clients cannot submit a timezone. Resume returns only
+  presentations without a terminal attempt and each presentation carries the
+  answer-contract reference needed by the accessible Study feedback flow.
+- `/api/decks/{deckId}/study-sessions/replay-sources` returns at most 20 completed
+  scheduled sessions from the authenticated account's current local study date.
+  Scheduled selection is due-first and then introduces new objectives. Practice
+  defaults to already introduced objectives, supports deterministic seeded or
+  weakest-first order, and admits new objectives only when explicitly requested.
+- `/api/decks/{deckId}/study-sessions/{sessionId}/attempts` terminalizes one
+  server-issued presentation. All four P0 evaluators are deterministic;
+  only `SCHEDULED` writes evidence and one versioned `mnema-baseline-v1`
+  transition. `TYPED` and single-blank `CLOZE_SINGLE` normalize the pinned answer
+  contract; a first-grapheme hint caps only a correct result at `MEDIUM`.
+  `SINGLE_CHOICE` accepts only a server-issued `OPTION` binding matching the pinned
+  focal target and always produces `LOW` recognition evidence. Exact retries
+  return the durable outcome, conflicting attempt IDs
+  never add transitions, and raw scheduled response JSON expires separately after
+  30 days. The first terminal receipt atomically removes that presentation from
+  the resumable batch; after its last presentation, the bounded session becomes
+  `COMPLETE` in the same transaction.
+- `/api/decks/{deckId}/study-restarts` starts a new learning epoch for objectives
+  under explicitly selected current materials. It locks objectives in UUID order,
+  keeps prior evidence/transitions and makes old presentations non-assessing.
+- `/api/decks/{deckId}/study-progress` returns a cursor-bounded current-material
+  projection with `NOT_STARTED`, `LEARNING`, `DUE` or `ON_TRACK`, exact objective
+  coverage and relevant timestamps. It deliberately exposes no mastery percentage.
+- The scheduled retention worker deletes expired raw scheduled responses in locked
+  batches of 500 and clears expired replay/practice outcomes while preserving their
+  global attempt-ID tombstones. `mnema.study.retention.initial-delay` and
+  `mnema.study.retention.fixed-delay` default to `PT1H`.
 - `/api/editing-drafts` owns bounded acknowledged server drafts; autosave never
   publishes.
 - `/api/capture-notes` owns durable quick notes and idempotent conversion while
   retaining source/provenance.
-- Native document v1, immutable block/page storage and counted structural edits are
-  shared #75 inputs. They do not yet imply exercises, attempts or StudyState.
+- Native document v1, immutable block/page storage and counted structural edits
+  back both material and exercise membership roots. Exercise writes advance the
+  Deck CAS and receipt in the same transaction.
 
-Fresh Learning migrations V1–V5 are the database source of truth. Do not append
+Fresh Learning migrations V1–V8 are the database source of truth. Do not append
 Study tables to legacy `core` migrations or port old review algorithms.
 
 Sources: [Spring Security 6.5 JWT](https://docs.spring.io/spring-security/reference/6.5/servlet/oauth2/resource-server/jwt.html)
 for signature/claims/scope boundaries; the exact 6.5.11 source establishes claim
 conversion behavior; [Java 21 HTTP](https://docs.oracle.com/en/java/javase/21/docs/api/java.net.http/java/net/http/HttpRequest.Builder.html)
-for request deadlines, supplemented by explicit bounded body completion/cancellation.
+for request deadlines, supplemented by explicit bounded body completion/cancellation;
+[Spring scheduling](https://docs.spring.io/spring-framework/reference/integration/scheduling.html)
+for the enabled fixed-delay retention worker and duration-based configuration.

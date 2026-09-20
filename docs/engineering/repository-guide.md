@@ -87,22 +87,43 @@ Identity `/userinfo`; it never reads Identity tables.
 
 ### Learning
 
-Read [its guide](../../backend/services/learning/guide.md). Fresh migrations V1–V5
-own platform/storage, private Deck, deck-local LearningItem, EditingDraft and
-CaptureNote. API paths are canonical under `/api`; there is no `/v2` or v1 alias.
+Read [its guide](../../backend/services/learning/guide.md). Fresh migrations V1–V8
+own platform/storage, private Deck, deck-local LearningItem, EditingDraft,
+CaptureNote, immutable objective/exercise authoring and bounded Study session
+snapshots. API paths are canonical
+under `/api`; there is no `/v2` or v1 alias.
 
 The important #75 inputs already implemented are UUID identity, canonical JSON,
 global command receipts, CAS, RFC 9457 errors, owner ACL, immutable revisions,
-deck-local item identity, counted pages, native content and versioned projection/media
-seams. Study concepts themselves do not exist yet.
+deck-local item identity, counted pages, native content, stable objectives,
+versioned P0 exercise bindings, pinned session presentations, deterministic
+all four P0 attempts, durable evidence, explicit restart and the baseline
+`StudyState` reducer. Progress, additional session modes and retention cleanup
+are now part of the canonical Learning runtime: progress is cursor-bounded,
+selection is server-enforced for scheduled/replay/practice, and cleanup preserves
+durable evidence and attempt tombstones.
 
 ### Frontend
 
 `app.routes.ts` is the route source of truth. `/decks` authoring routes are current
-and lazy. `my-study`, public-deck, template, old review/import/media/AI services and
-components are legacy or deferred; inspect them only as deletion/research evidence.
+and lazy. Material Browse/editor links to a separate lazy exercise inspector for
+all four P0 mechanics; the inspector uses current node projections, strict
+exercise envelopes and recoverable conflict/retry state without loading Study.
+`my-study`, public-deck, template, old review/import/media/AI services and components
+are legacy or deferred; inspect them only as deletion/research evidence.
 The accepted visual direction is
 [paper/antiquity/indigo](../frontend/design-and-experience-2026-09.md).
+
+The canonical `/decks/:deckId/study` route is lazy and deck-scoped. It currently
+implements all four scheduled P0 presentations (`SELF_CHECK`, `TYPED`, one-blank
+`CLOZE_SINGLE` and `SINGLE_CHOICE`), PREPARING polling, strict server-envelope
+validation, account-bound 24-hour session recovery and an
+exact-attempt retry after an unknown network outcome. Reference answers remain
+hidden until a production attempt is accepted. Choice option IDs are checked
+against pinned server bindings and never credit distractors. The same route now
+owns replay from a selected completed session, introduced-only practice by default,
+material progress and explicit restart confirmation; non-scheduled modes state that
+they do not change canonical progress. Legacy `my-study` is not a fallback.
 
 ## Canonical executable sources
 

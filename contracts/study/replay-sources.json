@@ -1,0 +1,18 @@
+{
+  "response": {
+    "asOf": "2026-09-20T09:30:00Z",
+    "localStudyDate": "2026-09-20",
+    "items": [
+      {
+        "sessionId": "018f65b5-7c00-7a10-8f00-000000000061",
+        "completedAt": "2026-09-20T09:12:00Z",
+        "presentationCount": 12
+      }
+    ]
+  },
+  "emptyResponse": {
+    "asOf": "2026-09-20T09:30:00Z",
+    "localStudyDate": "2026-09-20",
+    "items": []
+  }
+}

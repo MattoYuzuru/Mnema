@@ -295,8 +295,10 @@ archive/trash/copies, число лимитов, цена и состав под
 
 Editor engine, storage representation и измеренные лимиты, cohort calibration,
 multi-device ordering и долгосрочное архивирование compact evidence — последующая
-инженерная работа. Точные P0 schemas, material progress, reducer и retention
-приняты в [Epic #75 refinement](../engineering/epic-75-refinement.md). Matching — обязательная
+инженерная работа. Точные P0 schemas, material progress, reducer, replay/practice
+policy и live-row retention реализованы по
+[Epic #75 refinement](../engineering/epic-75-refinement.md); интегрированная
+browser-проверка replacement loop остаётся acceptance slice #221. Matching — обязательная
 целевая механика и часть prototype проверки; перенос из P1 в первый production slice
 не подразумевается автоматически одним наличием в макете. Community и paid packaging
 получают отдельный refinement после полезного own-deck loop.

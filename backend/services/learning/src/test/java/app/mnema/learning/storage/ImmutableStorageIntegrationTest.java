@@ -51,7 +51,17 @@ class ImmutableStorageIntegrationTest extends PostgresIntegrationTest {
         jdbc.sql("CREATE TABLE IF NOT EXISTS app_learning.storage_publication_fixture (id UUID PRIMARY KEY, version BIGINT NOT NULL, root_id UUID)").update();
         jdbc.sql("CREATE TABLE IF NOT EXISTS app_learning.storage_projection_fixture (id UUID PRIMARY KEY)").update();
         // Explicit complete graph in this disposable test database; never cascade into unknown tables.
-        jdbc.sql("TRUNCATE app_learning.capture_note, app_learning.editing_draft, app_learning.deck_head_item, "
+        jdbc.sql("TRUNCATE app_learning.study_raw_response, app_learning.study_transition, "
+                + "app_learning.study_evidence, app_learning.study_attempt_tombstone, "
+                + "app_learning.study_exposure, app_learning.study_restart_audit, app_learning.study_state, "
+                + "app_learning.study_policy_assignment, "
+                + "app_learning.study_presentation, app_learning.study_session, "
+                + "app_learning.study_candidate, app_learning.study_candidate_generation, "
+                + "app_learning.capture_note, app_learning.editing_draft, "
+                + "app_learning.exercise_content_binding, app_learning.deck_head_exercise, "
+                + "app_learning.deck_exercise_change, app_learning.exercise_revision, "
+                + "app_learning.exercise_definition, app_learning.objective_head, "
+                + "app_learning.objective_revision, app_learning.memory_objective, app_learning.deck_head_item, "
                 + "app_learning.deck_item_change, app_learning.item_revision, "
                 + "app_learning.learning_item, app_learning.deck, app_learning.deck_revision, app_learning.storage_edge, "
                 + "app_learning.storage_pin, app_learning.storage_gc_candidate, app_learning.storage_object, "

@@ -289,8 +289,45 @@ API needs: список колод возвращает cursor page компак
 handle и первую bounded batch; job status и optional statistics загружаются независимо.
 Никакого per-deck N+1 ради счётчиков и одного общего loading gate на весь экран.
 Ошибка вспомогательной статистики не скрывает сохранённый материал/основное действие.
-Authoring URLs/DTOs реализованы в #74 и описаны в current runtime guides; точные
-Study URLs/DTOs остаются #75 LLD, а не прототиповым публичным API.
+Authoring URLs/DTOs реализованы в #74, а exercise/session/attempt contracts — в
+последовательных slices #75; их точная форма описана в current runtime guides и
+`contracts/study`, а не в прототиповом публичном API.
+
+Exercise authoring slice #216 переносит это правило в production Angular: inspector
+загружается отдельным `loadComponent`, работает с cursor-bounded material-scoped
+exercise summaries и не входит в initial bundle или ordinary Browse bundle. Поля
+показывают человеку текст проекции, а UUID остаются transport identity. Ошибка,
+conflict и uncertain retry сохраняют ввод; deleted/stale/too-long projection,
+duplicate choice и отсутствующий correct answer блокируют публикацию с focusable
+field-level explanation. Container-based reflow проверяется в Chromium на 320, 390
+и 1440 px, включая 200% root text, RTL/multilingual input и отсутствие horizontal
+overflow; reduced-motion и forced-colors fallbacks заданы в scoped stylesheet.
+
+Study slice #217 добавляет production lazy route для scheduled `SELF_CHECK` и
+`TYPED`. В typed-механике эталон скрыт до подтверждённого ответа; self-check явно
+разделяет recall и reveal, после чего предлагает четыре подписанные поведенческие
+оценки. Неопределённый сетевой результат сохраняет exact attempt для безопасного
+retry, а account-bound recovery живёт не более 24 часов и не переносит данные между
+пользователями. Focus order, touch targets, 320/390/1440 px, RTL, 200% text,
+reduced-motion и forced-colors покрыты компонентными проверками; это не заменяет
+ручную проверку screen reader и физического touch-устройства.
+
+Slice #218 расширяет тот же shell single-blank cloze и single choice. Cloze
+показывает ровно один подписанный native input; первая графема раскрывается только
+явной кнопкой и передаётся как hint в exact attempt. Choice использует native radio
+group, 2–6 pinned вариантов и недоступный submit до выбора. Corrective feedback
+остаётся серверным, option IDs сверяются с `OPTION` bindings, а recognition evidence
+не превышает `LOW`; distractor не получает собственный progress.
+
+Slice #219 завершает terminal flow в том же Study shell. После scheduled-сессии
+пользователь видит material states и точную objective coverage без псевдоточного
+mastery percentage, может выбрать сегодняшнюю завершённую сессию для replay или
+запустить practice. Practice по умолчанию повторяет уже введённое; включение новых
+материалов и weakest-first — явные настройки. Replay/practice постоянно помечены
+как режимы без изменения основного прогресса. «Учить заново» требует подтверждения,
+называет область действия и сохранение истории. Progress догружается cursor-page,
+а состояния loading/empty/error и управление клавиатурой остаются доступными на
+mobile, при увеличенном тексте, reduced motion и forced colors.
 
 Измерять first useful content, route bytes, LCP/INP/CLS, request fan-out и p95/p99 API
 при явном профиле устройства/сети. Предлагаемые web quality ориентиры — p75 LCP ≤2.5 s,

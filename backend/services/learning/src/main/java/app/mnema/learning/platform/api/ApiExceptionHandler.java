@@ -3,6 +3,8 @@ package app.mnema.learning.platform.api;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
+import app.mnema.learning.study.session.StudySessionExpiredException;
+import app.mnema.learning.study.attempt.PresentationExpiredException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +34,22 @@ public class ApiExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(ResourceNotFoundException.class)
     ResponseEntity<Object> handleResourceNotFound(ResourceNotFoundException exception, HttpServletRequest request) {
         return response(ApiErrorCode.RESOURCE_NOT_FOUND, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(StudySessionExpiredException.class)
+    ResponseEntity<Object> handleStudySessionExpired(
+            StudySessionExpiredException exception,
+            HttpServletRequest request
+    ) {
+        return response(ApiErrorCode.SESSION_EXPIRED, request.getRequestURI(), new HttpHeaders());
+    }
+
+    @ExceptionHandler(PresentationExpiredException.class)
+    ResponseEntity<Object> handlePresentationExpired(
+            PresentationExpiredException exception,
+            HttpServletRequest request
+    ) {
+        return response(ApiErrorCode.PRESENTATION_EXPIRED, request.getRequestURI(), new HttpHeaders());
     }
 
     @ExceptionHandler(IdempotencyConflictException.class)

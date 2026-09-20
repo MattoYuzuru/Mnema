@@ -4,16 +4,20 @@ artifact:
   type: architecture-overview
   title: "Mnema current system overview"
   status: current
-  updated_at: "2026-09-19"
+  updated_at: "2026-09-20"
   owners: ["project-owner"]
-  evidence_revision: "933da3e60add2102ed7480342dfd3de95a8a255b"
+  evidence_revision: "d25e29ee162dfddd79109c6f058494ec2c29d7be"
 ---
 
 # Mnema: текущий обзор системы
 
 Mnema напрямую заменяет v1 платформой вокруг versioned `LearningItem`. После Epic
 #74 канонический authoring runtime уже находится в `identity-account`, `learning` и
-Angular SPA. Study/scheduler из Epic #75 и media lifecycle из #76 ещё не реализованы.
+Angular SPA. Epic #75 добавил objective/exercise authoring, bounded Study session
+snapshots, deterministic attempts, baseline scheduler state и production exercise
+inspector. Канонический Study runner уже проводит все четыре scheduled P0-механики:
+self-check, typed, single-blank cloze и single choice; progress и replay/practice
+добавляются текущим slice #219. Media lifecycle относится к #76.
 
 ## Shipping и local replacement boundary
 
@@ -47,18 +51,41 @@ Identity и Learning — отдельные deployables без Gradle dependency
 - Mnema-owned native document v1, безопасный renderer contract, immutable
   block/page storage и counted-page edits;
 - acknowledged server `EditingDraft` и durable `CaptureNote` с idempotent conversion;
+- immutable `MemoryObjective`/Exercise revisions и bounded owner-scoped
+  `SCHEDULED`/`REPLAY`/`PRACTICE` session snapshots;
+- deterministic typed/self-check attempts, durable evidence, versioned baseline
+  reducer и explicit material restart без удаления истории; terminal attempt
+  атомарно завершает bounded batch, а resume не возвращает решённые presentation;
+- due-first scheduled selection, replay выбранной завершённой сессии текущего
+  локального дня и practice по уже введённым objective с явным opt-in новых;
+- cursor-bounded material progress без фиктивного mastery percentage, exact restart
+  нового learning epoch и bounded retention raw/compact attempt payloads;
 - UUID, canonical JSON, command receipts, RFC 9457 Problem Details, row-version CAS;
 - bearer scope enforcement и fail-closed current-account validation через Identity.
 
-Эти contracts являются входом для #75. В Learning пока нет `MemoryObjective`,
-Exercise/Attempt/Evidence, StudySession, `StudyState` или нового reducer/scheduler.
+Session закрепляет reducer/config identity и immutable presentations, а scheduled
+attempt атомарно пишет одну transition только assessed objective. Replay/practice
+оставляют canonical exposure, evidence и state неизменными; durable receipts и
+tombstones сохраняют retry/conflict semantics после очистки payload.
 
 ## Frontend boundary
 
 Replacement routes `/decks`, `/decks/:deckId`, deck-scoped
 `/decks/:deckId/materials/...`, `/decks/:deckId/capture` и editor реализуют выбранное
-paper/antiquity/indigo направление. Native editor state не является persisted
-format; frontend валидирует серверные envelopes и ETag/command contracts.
+paper/antiquity/indigo направление. Отдельный lazy exercise inspector позволяет
+выбрать актуальные node projections или короткий prompt, создать/переиспользовать/
+изменить одну явную objective, настроить четыре P0 mechanics и preview без работы с
+UUID/JSON. Native editor state не является persisted format; frontend валидирует
+серверные envelopes и ETag/command contracts.
+
+Lazy route `/decks/:deckId/study` запускается основной кнопкой «Учить» из своей
+колоды. Реализованы PREPARING polling, typed answer без показа эталона до принятого
+ответа, self-check reveal с четырьмя поведенческими оценками, one-blank cloze с
+явно учитываемой first-grapheme подсказкой и native-radio single choice, явные состояния
+completion/expiry/error и account-bound recovery точной pending attempt после
+неопределённого сетевого результата. Terminal flow также включает replay из
+выбранной сегодняшней сессии, practice с явной политикой новых материалов,
+объяснимый progress и подтверждаемое «Учить заново».
 
 В исходниках всё ещё есть legacy components/services для public decks, old review,
 templates, import, media и AI. Их наличие не делает поведение текущим и не разрешает

@@ -1,0 +1,222 @@
+<main class="study-page" aria-labelledby="study-title">
+  <header class="study-header">
+    <a class="back-link" [routerLink]="['/decks', deckId]" (click)="$event.preventDefault(); pause()">← К колоде</a>
+    <div class="heading-row">
+      <div>
+        <p class="eyebrow">Study · {{ deck()?.metadata?.title || 'выбранная колода' }}</p>
+        <h1 id="study-title" tabindex="-1">Одна мысль за раз</h1>
+      </div>
+      @if (position(); as value) { <p class="folio" aria-label="Позиция в сессии">{{ value }}</p> }
+    </div>
+  </header>
+
+  @if (session()?.mode === 'REPLAY' || session()?.mode === 'PRACTICE') {
+    <p class="mode-note" role="status"><strong>Без изменения прогресса.</strong>
+      {{ session()?.mode === 'REPLAY' ? 'Повторяем сохранённую сессию.' : 'Это дополнительная практика.' }}</p>
+  }
+
+  @if (phase() === 'loading') { <p class="notice" role="status">Восстанавливаем точное состояние с сервера…</p> }
+  @if (phase() === 'preparing') { <p class="notice" role="status">Собираем ограниченную очередь этой колоды…</p> }
+
+  @if (message(); as currentMessage) {
+    <section class="notice" [class.error]="phase() === 'error' || phase() === 'conflict' || phase() === 'unknown'"
+             [attr.role]="phase() === 'error' || phase() === 'conflict' || phase() === 'unknown' ? 'alert' : 'status'">
+      <p>{{ currentMessage }}</p>
+      @if (phase() === 'unknown') { <button class="button primary" type="button" (click)="retryPending()">Повторить ту же попытку</button> }
+      @if (phase() === 'unknown' || phase() === 'conflict' || phase() === 'unavailable') {
+        <button class="button secondary" type="button" (click)="reconcile()">Свериться с сервером</button>
+      }
+      @if (phase() === 'error') { <button class="button secondary" type="button" (click)="retryStart()">Начать заново</button> }
+    </section>
+  }
+
+  @if (current(); as presentation) {
+    @if (phase() === 'answering' || phase() === 'revealed' || phase() === 'submitting') {
+      <article class="study-card" [attr.aria-busy]="phase() === 'submitting'">
+        <p class="eyebrow">Вспомните без подсказки</p>
+        <h2>{{ presentation.prompt.text }}</h2>
+
+        @if (presentation.type === 'TYPED' || presentation.type === 'CLOZE_SINGLE') {
+          <form (submit)="$event.preventDefault(); submitTyped()" novalidate>
+            @if (presentation.type === 'CLOZE_SINGLE') {
+              <p class="cloze-blank"><span aria-hidden="true">_____</span><span class="visually-hidden">Один пропуск</span></p>
+              <label for="cloze-answer">Ответ в пропуск</label>
+              <input id="cloze-answer" data-answer-control type="text" autocomplete="off" autocapitalize="off"
+                     [value]="typedAnswer()" [readOnly]="phase() === 'submitting'"
+                     (input)="setTypedAnswer($any($event.target).value)" />
+              @if (clozeHintUsed()) {
+                <p class="hint" role="status">Подсказка: ответ начинается с «{{ firstGrapheme(presentation.reference) }}».</p>
+              } @else {
+                <button class="button secondary hint-action" type="button" (click)="showClozeHint()">Показать первую букву</button>
+              }
+            } @else {
+              <label for="typed-answer">Ваш ответ</label>
+              <textarea id="typed-answer" data-answer-control rows="4" autocomplete="off" autocapitalize="off"
+                        [value]="typedAnswer()" [readOnly]="phase() === 'submitting'"
+                        (input)="setTypedAnswer($any($event.target).value)"></textarea>
+            }
+            <button class="button primary" type="submit" [disabled]="phase() === 'submitting'">
+              {{ phase() === 'submitting' ? 'Проверяем…' : 'Проверить ответ' }}
+            </button>
+          </form>
+        }
+
+        @if (presentation.type === 'SINGLE_CHOICE') {
+          <form (submit)="$event.preventDefault(); submitChoice()">
+            <fieldset [disabled]="phase() === 'submitting'">
+              <legend>Выберите один ответ</legend>
+              <div class="choice-list">
+                @for (option of presentation.options; track option.optionId; let first = $first) {
+                  <label class="choice-option">
+                    <input type="radio" name="study-choice" [value]="option.optionId"
+                           [attr.data-answer-control]="first ? '' : null"
+                           [checked]="selectedOptionId() === option.optionId"
+                           (change)="selectOption(option.optionId)" />
+                    <span>{{ option.text }}</span>
+                  </label>
+                }
+              </div>
+            </fieldset>
+            <button class="button primary" type="submit"
+                    [disabled]="phase() === 'submitting' || selectedOptionId() === null">
+              {{ phase() === 'submitting' ? 'Проверяем…' : 'Подтвердить выбор' }}
+            </button>
+          </form>
+        }
+
+        @if (presentation.type === 'SELF_CHECK') {
+          @if (phase() === 'answering') {
+            <button class="button primary reveal" data-answer-control type="button" (click)="reveal()">Показать ответ</button>
+          } @else {
+            <section class="reference" aria-labelledby="reference-title">
+              <p class="eyebrow" id="reference-title">Эталон</p>
+              <p>{{ presentation.reference }}</p>
+            </section>
+            <fieldset [disabled]="phase() === 'submitting'">
+              <legend>Как получилось на самом деле?</legend>
+              <div class="ratings">
+                @for (rating of ['NOT_RECALLED', 'HINTED', 'PARTIAL', 'FULL']; track rating; let first = $first) {
+                  <button class="button secondary" [attr.data-first-rating]="first ? '' : null" type="button"
+                          (click)="rate($any(rating))">{{ ratingLabel($any(rating)) }}</button>
+                }
+              </div>
+            </fieldset>
+          }
+        }
+      </article>
+    }
+
+    @if (phase() === 'feedback' && feedback(); as outcome) {
+      <article class="study-card feedback-card" [class.correct]="outcome.feedback.result === 'CORRECT'">
+        <p class="eyebrow">Ответ подтверждён сервером</p>
+        <h2 id="feedback-title" tabindex="-1">{{ feedbackTitle(outcome) }}</h2>
+        @if (presentation.type === 'TYPED' || presentation.type === 'CLOZE_SINGLE') {
+          <dl class="comparison">
+            <div><dt>Ваш ответ</dt><dd>{{ typedAnswer() || 'Пустой ответ' }}</dd></div>
+            <div><dt>Эталон</dt><dd>{{ outcome.feedback.reference || presentation.reference }}</dd></div>
+          </dl>
+        } @else {
+          <p class="reference-line"><strong>Эталон:</strong> {{ presentation.reference }}</p>
+        }
+        @if (outcome.feedback.appliedRules.length > 0) {
+          <details><summary>Как проверялся ответ</summary>
+            <ul>@for (rule of outcome.feedback.appliedRules; track rule) { <li>{{ ruleName(rule) }}</li> }</ul>
+          </details>
+        }
+        @if (outcome.transition; as transition) {
+          <p class="progress-note">Уровень цели: {{ transition.beforeLevel }} → {{ transition.afterLevel }}. Следующее повторение назначено сервером.</p>
+        }
+        <button class="button primary" type="button" (click)="next()">Продолжить</button>
+      </article>
+    }
+  }
+
+  @if (phase() === 'empty' || phase() === 'complete') {
+    <section class="completion" aria-labelledby="completion-title">
+      <p class="eyebrow">{{ phase() === 'empty' ? 'Очередь пуста' : 'Сессия завершена' }}</p>
+      <h2 id="completion-title">{{ phase() === 'empty' && session()?.mode === 'PRACTICE'
+        ? 'В выбранной практике пока нет заданий'
+        : phase() === 'empty' ? 'На сейчас всё повторено' : 'Хорошая работа' }}</h2>
+      <p>Можно повторить одну из сегодняшних завершённых сессий или потренироваться без изменения расписания.</p>
+      <div class="completion-actions">
+        <a class="button primary" [routerLink]="['/decks', deckId]">Вернуться в колоду</a>
+      </div>
+
+      <div class="mode-grid">
+        <section class="mode-panel" aria-labelledby="replay-title">
+          <h3 id="replay-title">Повторить сегодняшнюю сессию</h3>
+          <p class="hint">Те же задания и редакции, но без старых ответов и без изменения прогресса.</p>
+          @if (replaySources().length > 0) {
+            <label for="replay-source">Завершённая сессия</label>
+            <select id="replay-source" [value]="selectedReplayId()"
+                    (change)="chooseReplay($any($event.target).value)">
+              @for (source of replaySources(); track source.sessionId) {
+                <option [value]="source.sessionId">{{ formatDate(source.completedAt) }} · {{ source.presentationCount }} заданий</option>
+              }
+            </select>
+            <button class="button secondary" type="button" (click)="startReplay()">Повторить без прогресса</button>
+          } @else {
+            <p class="empty-note">Сегодня ещё нет завершённой обычной сессии для повтора.</p>
+          }
+        </section>
+
+        <section class="mode-panel" aria-labelledby="practice-title">
+          <h3 id="practice-title">Практика по колоде</h3>
+          <p class="hint">По умолчанию — только уже встречавшиеся материалы.</p>
+          <label class="check-row">
+            <input type="checkbox" [checked]="includeNewPractice()"
+                   (change)="setIncludeNewPractice($any($event.target).checked)" />
+            <span>Включить ещё не начатые материалы</span>
+          </label>
+          <label for="practice-order">Порядок</label>
+          <select id="practice-order" [value]="practiceOrder()"
+                  (change)="setPracticeOrder($any($event.target).value)">
+            <option value="SEEDED">Случайно</option>
+            <option value="WEAKEST_FIRST">Сначала трудные</option>
+          </select>
+          <button class="button secondary" type="button" (click)="startPractice()">Начать практику</button>
+        </section>
+      </div>
+      @if (supportLoading()) { <p class="hint" role="status">Обновляем доступные повторы и прогресс…</p> }
+    </section>
+
+    <section class="progress-section" aria-labelledby="material-progress-title">
+      <div class="section-heading">
+        <div><p class="eyebrow">Объективное состояние</p><h2 id="material-progress-title">Прогресс материалов</h2></div>
+        <p class="hint">Без условного процента «освоения».</p>
+      </div>
+      @if (progressUnavailable()) {
+        <p class="notice error" role="status">Не удалось загрузить прогресс. Учебная сессия от этого не изменена.</p>
+      } @else if (progress().length === 0) {
+        <p class="empty-note">В колоде пока нет материалов с учебными целями.</p>
+      } @else {
+        <ul class="progress-list">
+          @for (material of progress(); track material.memberKey) {
+            <li>
+              <div>
+                <strong>Материал {{ material.memberKey.slice(-8) }}</strong>
+                <span class="state-badge" [attr.data-state]="material.state">{{ progressLabel(material.state) }}</span>
+              </div>
+              <p>{{ material.objectiveCoverage.assessed }} оценено · {{ material.objectiveCoverage.introduced }} начато ·
+                {{ material.objectiveCoverage.enabled }} доступно</p>
+              <p class="hint">Последняя оценка: {{ formatDate(material.lastAssessedAt) }} · ближайший срок: {{ formatDate(material.nextDue) }}</p>
+              @if (material.objectiveCoverage.enabled > 0 && material.state !== 'NOT_STARTED') {
+                <button class="button tertiary" type="button" (click)="restartMaterial(material)">Учить этот материал заново</button>
+              }
+            </li>
+          }
+        </ul>
+        @if (progressNextCursor() !== null) {
+          <button class="button tertiary" type="button" (click)="loadMoreProgress()">Показать ещё материалы</button>
+        }
+      }
+    </section>
+  }
+
+  @if (phase() === 'expired') {
+    <section class="completion" aria-labelledby="expired-title">
+      <p class="eyebrow">Срок сессии истёк</p><h2 id="expired-title">Старый ответ не будет отправлен в новую очередь</h2>
+      <button class="button primary" type="button" (click)="retryStart()">Начать актуальную сессию</button>
+    </section>
+  }
+</main>

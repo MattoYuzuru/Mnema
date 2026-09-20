@@ -49,6 +49,7 @@ one assessed focal binding and 2..6 distinct options from the same pinned snapsh
 | Read/resume | `GET /api/decks/{deckId}/study-sessions/{sessionId}` | 200 current bounded batch |
 | Refill | `POST /api/decks/{deckId}/study-sessions/{sessionId}/presentations` | 200 next bounded batch |
 | Submit | `POST /api/decks/{deckId}/study-sessions/{sessionId}/attempts` | 200 stored outcome |
+| Today's replay sources | `GET /api/decks/{deckId}/study-sessions/replay-sources` | 200 bounded completed sessions |
 | Restart items | `POST /api/decks/{deckId}/study-restarts` | 200 restart acknowledgement |
 | Material progress | `GET /api/decks/{deckId}/study-progress?limit=...&cursor=...` | 200 explainable page |
 
@@ -181,7 +182,8 @@ private content or receipt payload.
 
 Exact examples: [authoring.json](authoring.json), [session.json](session.json),
 [attempts.json](attempts.json), [progress.json](progress.json),
-[restart.json](restart.json), [flows.json](flows.json),
+[replay-sources.json](replay-sources.json), [restart.json](restart.json),
+[flows.json](flows.json),
 [reducer-v1.json](reducer-v1.json) and
 [adversarial.json](adversarial.json). Each fixture validates against the matching
 definition in [study.schema.json](study.schema.json); public wire DTOs reject unknown

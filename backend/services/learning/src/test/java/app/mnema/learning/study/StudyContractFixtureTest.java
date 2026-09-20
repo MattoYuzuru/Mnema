@@ -62,6 +62,7 @@ class StudyContractFixtureTest {
                 "adversarial.json", "adversarialDocument",
                 "flows.json", "flowsDocument",
                 "progress.json", "progressDocument",
+                "replay-sources.json", "replaySourcesDocument",
                 "restart.json", "restartDocument");
 
         definitions.forEach((file, definition) -> validate(fixtureUnchecked(file),
@@ -175,6 +176,12 @@ class StudyContractFixtureTest {
         assertThat(progress.path("response").path("items").get(1).path("state").textValue())
                 .isEqualTo("NOT_STARTED");
         assertThat(progress.path("response").has("percentage")).isFalse();
+
+        JsonNode replaySources = fixture("replay-sources.json");
+        assertThat(replaySources.path("response").path("items")).hasSize(1);
+        assertThat(replaySources.path("response").path("localStudyDate").textValue())
+                .isEqualTo("2026-09-20");
+        assertThat(replaySources.path("emptyResponse").path("items")).isEmpty();
 
         JsonNode restart = fixture("restart.json");
         assertThat(restart.path("precondition").path("objectiveStates").get(0).path("learningEpoch").textValue())

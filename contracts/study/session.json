@@ -46,6 +46,7 @@
         "objectiveId": "77777777-7777-4777-8777-777777777771",
         "objectiveRevisionId": "77777777-7777-4777-8777-777777777773",
         "learningEpoch": "0",
+        "reference": "память",
         "prompt": {"kind": "TEXT", "text": "Как называется способность сохранять знания?"},
         "options": [],
         "bindings": [
@@ -54,6 +55,8 @@
             "role": "ASSESSED",
             "memberKey": "44444444-4444-4444-8444-444444444444",
             "itemRevisionId": "55555555-5555-4555-8555-555555555555",
+            "nodeIds": ["66666666-6666-4666-8666-666666666662"],
+            "display": {"kind": "NODE_TEXT"},
             "ordinal": 0
           }
         ],

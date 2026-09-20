@@ -61,7 +61,8 @@
       "properties": {
         "result": {"enum": ["CORRECT", "PARTIAL", "INCORRECT", "UNSURE", "NOT_ASSESSED", "UNAVAILABLE"]},
         "reference": {"type": "string"},
-        "appliedRules": {"type": "array", "items": {"type": "string"}}
+        "appliedRules": {"type": "array", "items": {"type": "string"}},
+        "reasonCodes": {"type": "array", "items": {"type": "string"}}
       },
       "additionalProperties": false
     },
@@ -116,7 +117,7 @@
     },
     "binding": {
       "type": "object",
-      "required": ["bindingId", "role", "memberKey", "itemRevisionId", "ordinal"],
+      "required": ["bindingId", "role", "memberKey", "itemRevisionId", "nodeIds", "display", "ordinal"],
       "properties": {
         "bindingId": {"$ref": "#/$defs/identifier"},
         "role": {"enum": ["ASSESSED", "CUE", "OPTION", "CONTEXT"]},
@@ -242,7 +243,7 @@
               "maxItems": 20,
               "items": {
                 "type": "object",
-                "required": ["presentationId", "nonce", "ordinal", "exerciseRevisionId", "type", "objectiveId", "objectiveRevisionId", "learningEpoch", "prompt", "options", "bindings", "evaluator"],
+                "required": ["presentationId", "nonce", "ordinal", "exerciseRevisionId", "type", "objectiveId", "objectiveRevisionId", "learningEpoch", "reference", "prompt", "options", "bindings", "evaluator"],
                 "properties": {
                   "presentationId": {"$ref": "#/$defs/identifier"},
                   "nonce": {"type": "string"},
@@ -252,6 +253,7 @@
                   "objectiveId": {"$ref": "#/$defs/identifier"},
                   "objectiveRevisionId": {"$ref": "#/$defs/identifier"},
                   "learningEpoch": {"type": "string"},
+                  "reference": {"type": "string"},
                   "prompt": {"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string"}}, "additionalProperties": false},
                   "options": {"type": "array"},
                   "bindings": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/binding"}},
@@ -311,7 +313,7 @@
           "required": ["attemptId", "presentationId", "mode", "status", "evidence", "feedback", "transition", "canonicalEffects"],
           "properties": {
             "attemptId": {"$ref": "#/$defs/identifier"}, "presentationId": {"$ref": "#/$defs/identifier"},
-            "mode": {"enum": ["REPLAY", "PRACTICE"]}, "status": {"const": "ASSESSED"},
+            "mode": {"enum": ["REPLAY", "PRACTICE"]}, "status": {"enum": ["ASSESSED", "NOT_ASSESSED", "UNAVAILABLE"]},
             "evidence": {"type": "null"}, "feedback": {"$ref": "#/$defs/feedback"},
             "transition": {"type": "null"}, "canonicalEffects": {"const": false}
           },
@@ -445,6 +447,38 @@
         },
         "response": {"$ref": "#/$defs/progressPage"},
         "emptyResponse": {"$ref": "#/$defs/progressPage"}
+      },
+      "additionalProperties": false
+    },
+    "replaySourcesPage": {
+      "type": "object",
+      "required": ["asOf", "localStudyDate", "items"],
+      "properties": {
+        "asOf": {"type": "string"},
+        "localStudyDate": {"type": "string"},
+        "items": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "type": "object",
+            "required": ["sessionId", "completedAt", "presentationCount"],
+            "properties": {
+              "sessionId": {"$ref": "#/$defs/identifier"},
+              "completedAt": {"type": "string"},
+              "presentationCount": {"type": "integer"}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "replaySourcesDocument": {
+      "type": "object",
+      "required": ["response", "emptyResponse"],
+      "properties": {
+        "response": {"$ref": "#/$defs/replaySourcesPage"},
+        "emptyResponse": {"$ref": "#/$defs/replaySourcesPage"}
       },
       "additionalProperties": false
     },

@@ -229,6 +229,13 @@ effects. Новые due позже в тот же день не блокирую
 Multiple select перенесён из P0 в P1: он добавляет partial-scoring semantics, но не
 доказывает новый loop сверх single choice.
 
+Реализованный P0 contract использует один native input для single-blank cloze и
+native radio group для single choice. Cloze без подсказки может дать `HIGH`, а
+явная first-grapheme подсказка ограничивает правильный результат до `MEDIUM`.
+Single choice всегда `LOW`; правильность определяется совпадением server-issued
+`OPTION` target с единственным pinned `ASSESSED` target, поэтому подменённый option
+отклоняется, а distractor не становится learned alias и не получает transition.
+
 ### P1 — разнообразие без AI
 
 - multiple select и true/false + correction;
