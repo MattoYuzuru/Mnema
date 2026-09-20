@@ -72,9 +72,12 @@ The retained OAuth redirect and issuer then use those ports.
 The smoke creates one private random local account, completes real S256 PKCE through
 the HTTPS issuer, and creates/reloads a Deck and Capture through the frontend's
 same-origin `/api`. Its owner-only credentials remain beside the other local state so
-the second smoke proves restart persistence. Until #219 is merged, the Study check is
-deliberately only a fail-closed route probe (anonymous `401`, authenticated `404`);
-this is not Study E2E evidence and must be replaced before #220 is completed.
+the second smoke proves restart persistence. It also publishes one retained native
+material and typed exercise, completes a real scheduled attempt and observes material
+progress. The smoke then restarts that material and runs replay plus introduced-only
+practice, requiring both feedback-only modes to report `canonicalEffects: false` and
+leave the restarted progress projection unchanged. Anonymous Study start still has to
+fail closed with `401`.
 
 `stop` retains PostgreSQL, accounts, content, JWK and certificates. A clean data reset
 is destructive and requires the exact opt-in:

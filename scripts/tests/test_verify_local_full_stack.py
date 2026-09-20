@@ -1,6 +1,8 @@
 """Contract and negative checks for the persistent local full-stack launcher."""
 
 import hashlib
+import importlib.util
+import json
 import os
 from pathlib import Path
 import stat
@@ -12,6 +14,14 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 LAUNCHER = ROOT / "scripts/mnema-local-full-stack.sh"
 COMPOSE = ROOT / "compose.local-full-stack.yml"
+SMOKE = ROOT / "scripts/local-full-stack/smoke.py"
+
+
+def load_smoke_module():
+    spec = importlib.util.spec_from_file_location("mnema_local_full_stack_smoke", SMOKE)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 class LocalFullStackTest(unittest.TestCase):
@@ -161,11 +171,54 @@ class LocalFullStackTest(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertNotEqual(old_ca, hashlib.sha256((self.state / "local-ca.crt").read_bytes()).hexdigest())
 
-    def test_smoke_keeps_study_dependency_fail_closed_and_explicit(self):
-        smoke = (ROOT / "scripts/local-full-stack/smoke.py").read_text()
-        self.assertIn('anonymous == 401 and authenticated == 404', smoke)
-        self.assertIn('#219 not integrated', smoke)
+    def test_smoke_exercises_real_study_modes_and_canonical_effect_boundary(self):
+        smoke = SMOKE.read_text()
+        self.assertIn('anonymous == 401', smoke)
+        self.assertNotIn('#219 not integrated', smoke)
+        self.assertIn('start_session(web, access, deck_id, "SCHEDULED")', smoke)
+        self.assertIn('start_session(web, access, deck_id, "REPLAY"', smoke)
+        self.assertIn('start_session(web, access, deck_id, "PRACTICE")', smoke)
+        self.assertIn('"canonicalEffects"', smoke)
         self.assertIn('"persistentAuthoring": True', smoke)
+
+        module = load_smoke_module()
+        module.require_feedback_only({
+            "mode": "REPLAY", "status": "ASSESSED", "canonicalEffects": False,
+            "evidence": None, "transition": None,
+        }, "REPLAY")
+
+    def test_feedback_only_attempt_rejects_canonical_state(self):
+        module = load_smoke_module()
+        for outcome in ({
+            "mode": "PRACTICE", "status": "ASSESSED", "canonicalEffects": True,
+            "evidence": None, "transition": None,
+        }, {
+            "mode": "REPLAY", "status": "ASSESSED", "canonicalEffects": False,
+            "evidence": {"result": "CORRECT"}, "transition": None,
+        }):
+            with self.assertRaisesRegex(AssertionError, "claimed canonical effects"):
+                module.require_feedback_only(outcome, outcome["mode"])
+
+    def test_legacy_smoke_state_upgrades_without_rotating_credentials(self):
+        module = load_smoke_module()
+        state = self.state / "smoke-account.json"
+        self.state.mkdir(mode=0o700)
+        legacy = {
+            "email": "smoke@example.invalid", "login": "smoke", "password": "retained",
+            "deckId": "11111111-1111-4111-8111-111111111111",
+            "captureId": "22222222-2222-4222-8222-222222222222",
+        }
+        state.write_text(json.dumps(legacy))
+        state.chmod(0o600)
+
+        upgraded, fresh = module.load_or_create_account(state)
+
+        self.assertFalse(fresh)
+        self.assertEqual("retained", upgraded["password"])
+        self.assertEqual(2, upgraded["schemaVersion"])
+        self.assertIsNone(upgraded["studyExerciseId"])
+
+    def test_launcher_keeps_bounded_failure_diagnostics(self):
         launcher = LAUNCHER.read_text()
         self.assertIn("compose logs --tail=80", launcher)
         self.assertIn("compose stop >/dev/null", launcher)

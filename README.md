@@ -70,7 +70,9 @@ python3 -m unittest discover -s scripts/tests -p 'test_verify_*.py' -v
 Persistent local launcher поднимает PostgreSQL 18, Identity & Account, Learning и
 production Angular frontend с локальным HTTPS и same-origin `/api`; обычный restart
 сохраняет данные. Безопасный bootstrap, trust локального CA, start/stop/smoke/reset
-описаны в [local replacement runtime](docs/deploy/selfhost-local.md). Backend-only
+описаны в [local replacement runtime](docs/deploy/selfhost-local.md). Smoke проверяет
+реальные auth, authoring, scheduled Study, progress, restart, replay и practice API.
+Backend-only
 `docker-compose.yml` остаётся maintenance-контуром.
 
 Общий сервер недоступен. Текущая граница готовности:
