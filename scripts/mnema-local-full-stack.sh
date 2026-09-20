@@ -26,7 +26,9 @@ require_command() {
 
 private_mode() {
   local mode
-  mode="$(stat -f '%Lp' "$1" 2>/dev/null || stat -c '%a' "$1" 2>/dev/null)" || return 1
+  # GNU stat accepts -f with different semantics and can emit filesystem details
+  # before failing on the BSD format operand, so try its -c form first.
+  mode="$(stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1" 2>/dev/null)" || return 1
   (( (8#$mode & 077) == 0 ))
 }
 

@@ -55,6 +55,23 @@ class LocalFullStackTest(unittest.TestCase):
         self.assertIn("CA:TRUE", ca_text)
         self.assertIn("Certificate Sign", ca_text)
 
+    def test_bootstrap_prefers_the_gnu_stat_mode_form(self):
+        fake_bin = Path(self.temp.name) / "bin"
+        fake_bin.mkdir()
+        fake_stat = fake_bin / "stat"
+        fake_stat.write_text(
+            "#!/bin/sh\n"
+            "if [ \"$1\" = -c ]; then printf '600\\n'; exit 0; fi\n"
+            "if [ \"$1\" = -f ]; then printf 'File: fixture\\n600\\n'; exit 0; fi\n"
+            "exit 2\n"
+        )
+        fake_stat.chmod(0o700)
+        self.environment["PATH"] = f"{fake_bin}{os.pathsep}{os.environ['PATH']}"
+
+        self.bootstrap()
+
+        self.assertTrue((self.state / "runtime.env").is_file())
+
     def test_compose_contract_renders_without_exposing_plaintext_apps(self):
         self.bootstrap()
         values = dict(line.split("=", 1) for line in (self.state / "runtime.env").read_text().splitlines())
