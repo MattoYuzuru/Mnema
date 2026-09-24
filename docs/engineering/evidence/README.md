@@ -4,7 +4,7 @@ artifact:
   type: evidence-index
   title: "Engineering evidence index"
   status: current
-  updated_at: "2026-09-19"
+  updated_at: "2026-09-24"
   owners: ["project-owner"]
 ---
 
@@ -21,6 +21,12 @@ override current code, accepted contracts or the local-only delivery boundary.
   from the retained pre-implementation strategy.
 - [Acceptance matrix](./epic-74/verification/acceptance-matrix.md) maps adversarial
   cases; [quality gates](./epic-74/verification/quality-gates.md) records exact runs.
+
+## Epic #75 closure
+
+- [Integrated Study acceptance](./epic-75/verification/integrated-main-2026-09-24.md)
+  maps every P0 criterion to executable evidence, records local full-stack and
+  browser results, and names the remaining device/cohort/production limits.
 
 ## Storage и content
 

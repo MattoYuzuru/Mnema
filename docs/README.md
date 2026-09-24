@@ -4,9 +4,9 @@ artifact:
   type: navigator
   title: "Mnema documentation"
   status: current
-  updated_at: "2026-09-20"
+  updated_at: "2026-09-24"
   owners: ["project-owner"]
-  evidence_revision: "933da3e60add2102ed7480342dfd3de95a8a255b"
+  evidence_revision: "d7fd1b1d509a0ab598976f87af88101bfc3945ac"
 ---
 
 # Mnema Docs
@@ -21,15 +21,15 @@ artifact:
 1. **Current:** корневой [`AGENTS.md`](../AGENTS.md) — нормативные engineering,
    UX, security, quality и delivery rules. Других нормативных agent-guides нет.
 2. **Current:** [System overview](./system-overview.md) — что реально работает после
-   #74 и что остаётся legacy.
+   #74/#75 и что остаётся legacy.
 3. **Current:** [Repository guide](./engineering/repository-guide.md) — версии,
    каталоги, runtime boundaries, harnesses и полный gate.
 4. **Current:** [Local-only delivery](./operations/local-development-delivery.md) —
    почему merge не требует deployment и не является production verification.
 5. **Historical acceptance evidence:**
    [закрытие Epic #74](./engineering/evidence/epic-74/verification/integrated-main-2026-09-19.md).
-6. **Accepted / in delivery:** [Epic #75](https://github.com/MattoYuzuru/Mnema/issues/75),
-   [refinement](./engineering/epic-75-refinement.md) и исполняемый
+6. **Study:** [acceptance evidence Epic #75](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md),
+   [принятый refinement](./engineering/epic-75-refinement.md) и исполняемый
    [`contracts/study`](../contracts/study/README.md).
 
 ## Product
@@ -37,7 +37,7 @@ artifact:
 | Статус | Документ | Назначение |
 |---|---|---|
 | accepted | [Owner decisions](./decisions/owner-decisions-2026-08.md) | Решения владельца и явно открытые вопросы. |
-| accepted | [Authoring and Study workflows](./product/authoring-and-study-workflows.md) | Product contract для authoring, Capture, exercises и режимов практики; #74 реализует authoring subset. |
+| accepted | [Authoring and Study workflows](./product/authoring-and-study-workflows.md) | Product contract для authoring, Capture, exercises и режимов практики; P0 реализован в #74/#75. |
 | accepted | [Exercise catalog](./product/exercise-catalog-v2.md) | Принятые mechanics, attempt/evidence, reducer и retention boundaries для #75. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
 | proposed | [Launch economics](./product/russia-launch-economics-2026.md) | Коммерческие гипотезы. |
@@ -48,12 +48,12 @@ artifact:
 | Статус | Документ | Назначение |
 |---|---|---|
 | current | [System overview](./system-overview.md) | Replacement topology и legacy boundary. |
-| accepted | [Content and Study platform](./architecture/content-platform-v2.md) | Общая модель; content реализован в #74, Study остаётся #75. |
+| accepted | [Content and Study platform](./architecture/content-platform-v2.md) | Общая модель; content и P0 Study реализованы в #74/#75, P1/P2 остаются границами будущей работы. |
 | accepted | [Native content format](./architecture/learning-content-format-v2.md) | Persisted native document contract; базовый формат реализован в #74. |
 | current | [Revision storage and runtime boundaries](./architecture/revision-storage-and-runtime-boundaries.md) | Выбранное и реализованное storage-направление с остаточными границами. |
 | current | [Counted-page contract](./architecture/counted-page-contract.md) | Реализованные counted-page/structural invariants. |
 | current | [Identity & Account guide](../backend/services/identity-account/guide.md) | Текущий identity runtime. |
-| current | [Learning API guide](../backend/services/learning/guide.md) | Текущий platform, Deck, LearningItem, Draft и Capture runtime. |
+| current | [Learning API guide](../backend/services/learning/guide.md) | Текущий content, exercise и Study runtime. |
 | legacy | [`core`, `media`, `import`, `ai` guides](#legacy-и-superseded) | Replacement input; не шаблон для #75/#76. |
 
 ## Frontend
@@ -75,7 +75,7 @@ artifact:
 | current | [Capability inventory](./engineering/capability-inventory.yaml) | Машиночитаемый список команд и harnesses. |
 | current | [Documentation/evidence index](./engineering/evidence/README.md) | Короткий вход в большие evidence-наборы. |
 | historical | [Epic #74 refinement](./engineering/epic-74-refinement.md) | Выполненный план #74; не backlog #75. |
-| accepted | [Epic #75 refinement](./engineering/epic-75-refinement.md) | Принятые решения, delivery slices и completion boundary текущего эпика. |
+| accepted | [Epic #75 refinement](./engineering/epic-75-refinement.md) | Принятые решения и реализованные delivery slices. |
 | historical | [Epic #74 dependency decisions](./engineering/epic-74-dependency-decisions.md) | Принятые зависимости и rationale. |
 | historical | [Epic #74 hardware handoff](./engineering/epic-74-hardware-handoff.md) | Machine/session handoff завершённого этапа. |
 | historical | [Epic #74 execution prompt](./engineering/prompts/epic-74-end-to-end.md) | Исходное поручение; не текущая инструкция. |
@@ -86,6 +86,7 @@ artifact:
 | Статус | Документ | Назначение |
 |---|---|---|
 | current | [Local-only delivery](./operations/local-development-delivery.md) | Действующая completion boundary. |
+| current | [Persistent local runtime](./deploy/selfhost-local.md) | HTTPS запуск Identity, Learning, Angular и сохранение данных между стартами; ниже отдельно отмечена historical v1 часть. |
 | current | [Security automation triage](./operations/security-triage.md) | Dependabot/dependency review/CodeQL policy. |
 | current | [CI artifact boundary](./operations/ci-artifact-security-boundary.md) | Artifact and token policy, хотя image publication сейчас paused. |
 | current | [Browser security headers](./operations/browser-security-headers.md) | Проверяемый response-security contract. |
@@ -103,7 +104,7 @@ infrastructure task; никакие прошлые staging результаты 
 
 ## Historical evidence
 
-- **historical:** [Epic #74 evidence index](./engineering/evidence/README.md) —
+- **historical:** [Epic #74/#75 evidence index](./engineering/evidence/README.md) —
   acceptance, storage, browser, security и research evidence с короткими маршрутами.
 - **historical:** [Project review](./reviews/project-review-2026-08.md) и
   [September refinement research](./reviews/product-refinement-2026-09.md) —

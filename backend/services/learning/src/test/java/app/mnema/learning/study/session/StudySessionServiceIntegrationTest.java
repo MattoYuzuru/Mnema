@@ -19,6 +19,7 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 
 import java.io.ByteArrayInputStream;
 import java.nio.charset.StandardCharsets;
+import java.time.Instant;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
@@ -33,6 +34,7 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
     @Autowired private ExerciseService exercises;
+    @Autowired private StudySessionRepository sessions;
     @Autowired private JdbcClient jdbc;
 
     @Test
@@ -140,6 +142,49 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
                 .filter(value -> !known.contains(value))).hasSize(2);
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.study_transition WHERE account_id=:actor")
                 .param("actor", actor).query(Long.class).single()).isZero();
+    }
+
+    @Test
+    void selectionReadsOnlyTheSeededBoundedWindowIncludingWrap() {
+        UUID actor = UUID.randomUUID();
+        UUID deck = createDeck(actor);
+        for (int index = 0; index < 12; index++) addMaterialWithExercise(actor, deck);
+
+        StudySessionService.StartResult started = service.start(actor, deck, "UTC",
+                scheduled(UUID.randomUUID(), 1, 1));
+        UUID sessionId = UUID.fromString(started.body().path("sessionId").textValue());
+        service.read(actor, deck, sessionId);
+        // The first presentation initializes the generation; restore the new quota for this repository probe.
+        jdbc.sql("UPDATE app_learning.study_session SET issued_new_objectives=0 "
+                + "WHERE account_id=:actor AND session_id=:session")
+                .param("actor", actor).param("session", sessionId).update();
+        StudySessionRepository.Session session = sessions.session(actor, deck, sessionId).orElseThrow();
+
+        assertThat(sessions.eligibleCandidates(session, 10, 4, Instant.now()))
+                .extracting(StudySessionRepository.Candidate::ordinal)
+                .isNotEmpty()
+                .hasSizeLessThanOrEqualTo(4)
+                .allSatisfy(ordinal -> assertThat(ordinal).isIn(10, 11, 0, 1));
+        assertThat(sessions.eligibleCandidates(session, 4, 4, Instant.now()))
+                .extracting(StudySessionRepository.Candidate::ordinal)
+                .isNotEmpty()
+                .hasSizeLessThanOrEqualTo(4)
+                .allSatisfy(ordinal -> assertThat(ordinal).isBetween(4, 7));
+
+        UUID knownOutsideWindow = jdbc.sql("""
+                SELECT candidate.objective_id FROM app_learning.study_candidate candidate
+                 WHERE candidate.generation_id=:generation AND candidate.candidate_ordinal>=10
+                   AND NOT EXISTS (
+                       SELECT 1 FROM app_learning.study_presentation presented
+                        WHERE presented.session_id=:session AND presented.objective_id=candidate.objective_id
+                   )
+                 ORDER BY candidate.candidate_ordinal LIMIT 1
+                """).param("generation", session.generationId()).param("session", sessionId)
+                .query(UUID.class).single();
+        sessions.ensureState(actor, deck, knownOutsideWindow, session.configId(), Instant.now());
+        assertThat(sessions.eligibleCandidates(session, 4, 4, Instant.now()))
+                .extracting(StudySessionRepository.Candidate::objectiveId)
+                .contains(knownOutsideWindow);
     }
 
     private Fixture materialWithExercise() {

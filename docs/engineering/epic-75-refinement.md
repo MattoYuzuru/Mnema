@@ -5,7 +5,7 @@ artifact:
   title: "Epic #75 Study refinement"
   status: accepted
   created_at: "2026-09-20"
-  updated_at: "2026-09-20"
+  updated_at: "2026-09-24"
   owners: ["project-owner"]
   source_tasks: ["GitHub Epic #75"]
 ---
@@ -35,7 +35,8 @@ contract и исполняемые примеры находятся в [`contra
 - Явный restart увеличивает learning epoch, обнуляет текущее состояние выбранных
   objectives и сохраняет историю. Ответ от старой epoch становится `NOT_ASSESSED`.
 - Scheduled budget — параметр одной очереди: quick 10 presentations/2 new objectives,
-  standard 20/5. Due и уже введённые выбираются раньше новых; 10–15 минут остаётся
+  standard 20/5. Due и уже введённые выбираются через индекс состояния раньше
+  новых из bounded seeded-окна (без глобального full-deck sort); 10–15 минут остаётся
   UI-ориентиром, а не серверным временем остановки.
 
 ## Транзакционная граница
@@ -75,6 +76,6 @@ receipt recheck, terminalization presentation и только затем lock/re
 | `AC-A11Y-01`…`03` | #216 authoring; #217 self-check/typed; #218 cloze/choice; #221 integrated verification |
 | `AC-LEGACY-01` | #213–#219 implementation; #221 integrated dependency/route check |
 
-Каждый slice проходит отдельный protected squash PR. Epic считается завершённым
-только после integrated backend/frontend/browser verification на объединённом
-`main`, обновления документации и закрытия всех P0 acceptance gates.
+Каждый implementation slice прошёл отдельный protected squash PR. Финальная
+интеграционная проверка и остаточные границы зафиксированы в
+[Epic #75 acceptance evidence](./evidence/epic-75/verification/integrated-main-2026-09-24.md).

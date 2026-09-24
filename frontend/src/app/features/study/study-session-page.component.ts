@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -66,6 +66,7 @@ export class StudySessionPageComponent {
     private readonly api = inject(StudyApiService);
     private readonly recovery = inject(StudyRecoveryService);
     private readonly destroyRef = inject(DestroyRef);
+    private readonly injector = inject(Injector);
     private readonly element: ElementRef<HTMLElement> = inject(ElementRef);
     readonly deckId: string;
     private presentedAt = 0;
@@ -98,7 +99,7 @@ export class StudySessionPageComponent {
     reveal(): void {
         if (this.phase() !== 'answering' || this.current()?.type !== 'SELF_CHECK') return;
         this.phase.set('revealed');
-        queueMicrotask(() => this.element.nativeElement.querySelector<HTMLElement>('[data-first-rating]')?.focus());
+        this.focusAfterRender('[data-first-rating]');
     }
 
     submitTyped(): void {
@@ -314,7 +315,7 @@ export class StudySessionPageComponent {
         }
         const type = session.presentations[0].type;
         this.phase.set('answering');
-        queueMicrotask(() => this.element.nativeElement.querySelector<HTMLElement>('[data-answer-control]')?.focus());
+        this.focusAfterRender('[data-answer-control]');
     }
 
     private submit(response: StudyResponse, hintsUsed: readonly string[]): void {
@@ -340,7 +341,7 @@ export class StudySessionPageComponent {
                 this.recovery.save({ deckId: this.deckId, sessionId, pending: null });
                 this.feedback.set(result.value);
                 this.phase.set('feedback');
-                queueMicrotask(() => this.element.nativeElement.querySelector<HTMLElement>('#feedback-title')?.focus());
+                this.focusAfterRender('#feedback-title');
             },
             error: error => {
                 const code = this.errorCode(error);
@@ -355,6 +356,11 @@ export class StudySessionPageComponent {
                 } else this.handle(error, 'Сервер отклонил попытку. Ответ сохранён в этой вкладке.');
             }
         });
+    }
+
+    private focusAfterRender(selector: string): void {
+        afterNextRender({ write: () => this.element.nativeElement.querySelector<HTMLElement>(selector)?.focus() },
+            { injector: this.injector });
     }
 
     private handle(error: unknown, fallback: string): void {
