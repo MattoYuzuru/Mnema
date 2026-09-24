@@ -5,14 +5,14 @@ artifact:
   title: "Mnema repository guide"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-09-20"
+  updated_at: "2026-09-24"
   owners: ["project-owner"]
-  evidence_revision: "933da3e60add2102ed7480342dfd3de95a8a255b"
+  evidence_revision: "d7fd1b1d509a0ab598976f87af88101bfc3945ac"
 ---
 
 # Repository guide
 
-This guide describes the checkout after Epic #74. Root [`AGENTS.md`](../../AGENTS.md)
+This guide describes the checkout after Epics #74/#75. Root [`AGENTS.md`](../../AGENTS.md)
 is normative; [docs/README.md](../README.md) owns documentation status/navigation.
 
 ## First read
@@ -22,7 +22,8 @@ is normative; [docs/README.md](../README.md) owns documentation status/navigatio
 3. The current guide for the owning runtime and its nearby tests.
 4. [Local-only delivery](../operations/local-development-delivery.md) before any
    delivery decision.
-5. For #75, use the [handoff below](#handoff-для-epic-75), not legacy review code.
+5. For Study, use the [implemented contract below](#epic-75-study-contract) and
+   [integrated acceptance](./evidence/epic-75/verification/integrated-main-2026-09-24.md).
 
 ## Platform baseline
 
@@ -57,10 +58,12 @@ Mnema/
 │   ├── content/                         native document/editor/renderer
 │   ├── features/authoring/              Capture, Draft, editor and Browse
 │   ├── features/own-decks/              canonical private Deck UI
+│   ├── features/study/                  canonical deck-scoped Study UI
 │   └── core/, shared/, other features/  mixed current shell and legacy input
 ├── contracts/                           shared native/content/deck/item fixtures
 ├── scripts/
 │   ├── browser-identity/                real local HTTPS browser/E2E harness
+│   ├── local-full-stack/                persistent local API smoke
 │   ├── learning-security/               real Identity↔Learning harness
 │   ├── backup/, smoke/, purge/          deterministic policy/integration tools
 │   └── tests/                           repository policy tests
@@ -189,7 +192,7 @@ commands in the `frontend-quality` job of
 disposable no-snapshot purge rehearsal. Operational contract tests do not perform a
 deployment.
 
-The real browser harness is proportional for auth/authoring changes, not a substitute
+The real browser harness covers auth, authoring and one typed Study interaction; it is not a substitute
 for unit gates:
 
 ```bash
@@ -253,7 +256,7 @@ outside local delivery.
 - Hosted operations are paused; passing workflow contract tests does not prove a
   server, backup, image or deployment exists.
 
-## Handoff для Epic #75
+## Epic #75 Study contract
 
 Canonical reading order:
 
@@ -272,21 +275,13 @@ redefine them during Study refinement without evidence of a conflict.
 
 Owner decisions are accepted in [Epic #75 refinement](./epic-75-refinement.md), and
 the exact shared examples live in [`contracts/study`](../../contracts/study/README.md).
-The epic is split into reviewable issues #212–#219, #58 and #221; related local
-developer usability is #220. Move only the active slice through `In progress` and
-`In review`; a later slice stays Backlog until its dependencies are merged.
-
-The first implementation vertical should be one deck-scoped, single assessed
-objective, deterministic typed-answer or behavioral-self-check flow using a pinned
-Deck/Item revision and exact retry receipt. It should prove no cross-deck candidate,
-no state change on browse/cancel/failure, one transition on retry, replayable
-algorithm/config identity and accessible feedback before adding M:N mechanics.
-
-Run the full gate above plus focused PostgreSQL concurrency/idempotency tests and the
-real browser harness. Residual risks that unit tests cannot hide: false mastery from
-wrong objective attribution, duplicate/out-of-order attempts, stale session pools,
-unbounded fan-out/locking, inaccessible mechanics and lack of production/device/
-cohort calibration evidence.
+The epic was split into protected slices #212–#219, #58 and closure #221;
+#220 supplies the persistent local launcher. The
+[integrated acceptance record](./evidence/epic-75/verification/integrated-main-2026-09-24.md)
+maps every P0 criterion to its executable test or real local flow. Run the gate
+above plus the persistent smoke and real browser harness when changing Study.
+Manual device/assistive-technology testing, live 50k database latency and cohort
+calibration remain explicit evidence limits.
 
 ## Documentation contract
 

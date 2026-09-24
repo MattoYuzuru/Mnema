@@ -76,8 +76,11 @@ the second smoke proves restart persistence. It also publishes one retained nati
 material and typed exercise, completes a real scheduled attempt and observes material
 progress. The smoke then restarts that material and runs replay plus introduced-only
 practice, requiring both feedback-only modes to report `canonicalEffects: false` and
-leave the restarted progress projection unchanged. Anonymous Study start still has to
-fail closed with `401`.
+leave the restarted progress projection unchanged. Three additional retained fixture
+Decks exercise `SELF_CHECK`, `CLOZE_SINGLE` and `SINGLE_CHOICE` through real scheduled
+API attempts, exact retries and progress reads; the original Deck covers `TYPED`.
+Conservative self-check/choice evidence may leave progress in `LEARNING`. Anonymous
+Study start still has to fail closed with `401`.
 
 `stop` retains PostgreSQL, accounts, content, JWK and certificates. A clean data reset
 is destructive and requires the exact opt-in:

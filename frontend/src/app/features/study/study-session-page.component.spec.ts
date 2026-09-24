@@ -57,6 +57,28 @@ describe('StudySessionPageComponent', () => {
         expect(root.querySelector('#feedback-title')).not.toBeNull();
     });
 
+    it('moves focus after each rendered Study state change', async () => {
+        api.start.and.returnValue(of({ value: session('SELF_CHECK'), replayed: false }));
+        api.submit.and.returnValue(of({ value: outcome('CORRECT'), replayed: false }));
+        fixture = TestBed.createComponent(StudySessionPageComponent);
+        const host = fixture.nativeElement as HTMLElement;
+        document.body.appendChild(host);
+        try {
+            fixture.detectChanges();
+            fixture.componentInstance.startScheduled('STANDARD'); fixture.detectChanges();
+            await fixture.whenStable();
+            expect(document.activeElement).toBe(host.querySelector('[data-answer-control]'));
+
+            fixture.componentInstance.reveal(); fixture.detectChanges();
+            await fixture.whenStable();
+            expect(document.activeElement).toBe(host.querySelector('[data-first-rating]'));
+
+            fixture.componentInstance.rate('FULL'); fixture.detectChanges();
+            await fixture.whenStable();
+            expect(document.activeElement).toBe(host.querySelector('#feedback-title'));
+        } finally { host.remove(); }
+    });
+
     it('reveals self-check reference before offering four behavioral ratings', () => {
         api.start.and.returnValue(of({ value: session('SELF_CHECK'), replayed: false }));
         api.submit.and.returnValue(of({ value: outcome('PARTIAL'), replayed: false }));

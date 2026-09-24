@@ -193,10 +193,9 @@ public class StudySessionService {
                 target * BoundedCandidatePlanner.SCAN_MULTIPLIER, now);
         int batch = 0;
         int newObjectives = 0;
-        int cursor = session.scanCursor();
+        int scanSize = Math.min(generation.candidateCount(), target * BoundedCandidatePlanner.SCAN_MULTIPLIER);
+        int cursor = (int) (((long) start + scanSize) % generation.candidateCount());
         for (StudySessionRepository.Candidate candidate : candidates) {
-            cursor = candidate.ordinal() + 1;
-            if (cursor >= generation.candidateCount()) cursor = 0;
             insert(session, candidate, session.issuedCount() + batch++, now);
             if (!candidate.introduced()) newObjectives++;
             if (batch == target) break;

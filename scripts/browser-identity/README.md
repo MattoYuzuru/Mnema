@@ -22,6 +22,9 @@ Pass `--authoring` to extend the same real HTTPS composition through Deck creati
 Capture conversion, acknowledged draft reload, explicit LearningItem publication and
 Browse. The extended check also confirms that adversarial note text remains inert and
 that the retained Capture source/conversion can be read from the real Learning API.
+It publishes a typed exercise through the same authenticated API, starts short Study
+with a real keyboard Space event, verifies answer/feedback focus and a server transition,
+and captures 1440/390/320 CSS px Study views (320 at DPR 2) with reduced motion.
 
 Use `--chrome` for another existing Chrome executable. The page contract defaults to
 `[data-testid="identity-profile"]`, `[data-testid="logout"]`, and `[role="alert"]`;

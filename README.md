@@ -24,10 +24,12 @@ replacement runtime содержит:
 Study-системы и удаляются только в границах
 [#146](https://github.com/MattoYuzuru/Mnema/issues/146) после готовности #74–#76.
 
-Следующий продуктовый этап —
-[Epic #75: deck-scoped Study, M:N exercises и новый scheduler](https://github.com/MattoYuzuru/Mnema/issues/75).
-Его реализация ещё не начата; Epic остаётся в Backlog до отдельного refinement и
-разбиения на reviewable задачи.
+Deck-scoped Study из [Epic #75](https://github.com/MattoYuzuru/Mnema/issues/75)
+реализован: четыре P0-механики, versioned objectives/exercises, объяснимое
+расписание, короткая/стандартная сессии, progress, restart, replay и practice.
+Локальный HTTPS launcher позволяет пройти полный авторизованный путь; границы
+проверки и оставшиеся платформенные ограничения записаны в
+[acceptance evidence](docs/engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).
 
 ## С чего начать
 

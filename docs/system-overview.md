@@ -4,9 +4,9 @@ artifact:
   type: architecture-overview
   title: "Mnema current system overview"
   status: current
-  updated_at: "2026-09-20"
+  updated_at: "2026-09-24"
   owners: ["project-owner"]
-  evidence_revision: "29a0e9b2bc73b995aef9c62dfb03ca6e7f671890"
+  evidence_revision: "d7fd1b1d509a0ab598976f87af88101bfc3945ac"
 ---
 
 # Mnema: текущий обзор системы
@@ -17,8 +17,8 @@ Angular SPA. Epic #75 добавил objective/exercise authoring, bounded Study
 snapshots, deterministic attempts, baseline scheduler state и production exercise
 inspector. Канонический Study runner уже проводит все четыре scheduled P0-механики:
 self-check, typed, single-blank cloze и single choice, показывает progress и даёт
-replay/practice; текущий slice #58 добавляет явные session budgets. Media lifecycle
-относится к #76.
+replay/practice и явные session budgets. Persistent local HTTPS runtime также
+реализован. Media lifecycle относится к #76.
 
 ## Shipping и local replacement boundary
 
@@ -37,9 +37,9 @@ Angular 22 SPA
   contracts, immutable storage и личным content/authoring доменом.
 - Angular SPA использует standalone components и lazy routes. Канонический #74 flow:
   Deck → Capture/«На потом» → EditingDraft → явная публикация → Browse.
-- `docker-compose.yml` запускает только PostgreSQL, Identity & Account и Learning.
-  Frontend собирается и тестируется отдельно; compose — backend maintenance runtime,
-  а не полный deployed product.
+- `compose.local-full-stack.yml` запускает persistent PostgreSQL, Identity,
+  Learning и production Angular через localhost HTTPS; обычный stop/start сохраняет
+  локальные данные. `docker-compose.yml` остаётся backend maintenance runtime.
 
 У replacement нет `/v2`, aliases к v1, dual write/read или scheduler fallback.
 Identity и Learning — отдельные deployables без Gradle dependency на legacy modules.
@@ -125,7 +125,8 @@ Acceptance #74: [integrated main evidence](./engineering/evidence/epic-74/verifi
 
 ## Следующие этапы
 
-1. #75 — refinement и реализация deck-scoped Study, exercises/evidence и scheduler.
-2. #76 — отдельный greenfield media lifecycle.
-3. #146 — удаление оставшегося legacy runtime/build wiring после #74–#76.
-4. #147 — отдельный production cutover/purge gate; сейчас не разрешён и не готов.
+1. #76 — отдельный greenfield media lifecycle.
+2. #146 — удаление оставшегося legacy runtime/build wiring после #74–#76.
+3. #147 — отдельный production cutover/purge gate; сейчас не разрешён и не готов.
+
+Интеграционная проверка #75 и её пределы: [acceptance evidence](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).

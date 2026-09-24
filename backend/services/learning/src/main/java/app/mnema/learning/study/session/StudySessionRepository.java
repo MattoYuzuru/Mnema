@@ -204,7 +204,7 @@ class StudySessionRepository {
                     batch_size,scan_cursor,wrapped,include_new,practice_order,source_session_id,row_version,created_at,
                     expires_at,completed_at)
                 VALUES (:actor,:session,:deck,:command,:mode,:status,:timezone,:localDate,:deckRevision,:deckSequence,
-                    :generation,'deck-due-new-v2','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',:seed,:budget,:maxNew,0,0,0,0,
+                    :generation,'deck-due-new-v3','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1',:seed,:budget,:maxNew,0,0,0,0,
                     0,FALSE,:includeNew,:practiceOrder,:source,0,:now,:expires,NULL)
                 """).param("actor", actor).param("session", session).param("deck", deck).param("command", command)
                 .param("mode", mode.name()).param("status", status).param("timezone", timezone)
@@ -218,6 +218,10 @@ class StudySessionRepository {
     }
 
     List<Candidate> eligibleCandidates(Session session, int start, int limit, Instant asOf) {
+        if (limit < 1 || limit > BoundedCandidatePlanner.PRESENTATION_LIMIT
+                * BoundedCandidatePlanner.SCAN_MULTIPLIER) {
+            throw new IllegalArgumentException("Candidate scan limit is outside the bounded window");
+        }
         String eligibility = switch (session.mode()) {
             case SCHEDULED -> " AND (NOT introduced OR transition_sequence=0 OR next_due<=:asOf)";
             case PRACTICE -> session.includeNew() ? "" : " AND introduced";
@@ -230,12 +234,70 @@ class StudySessionRepository {
                     ? "CASE WHEN next_due<=:asOf THEN 0 WHEN introduced THEN 1 ELSE 2 END,candidate_ordinal"
                     : "(candidate_ordinal<:start),candidate_ordinal";
         return jdbc.sql("""
-                WITH chosen AS (
+                WITH candidate_window AS MATERIALIZED (
+                    SELECT candidate_ordinal,exercise_id,exercise_revision_id,objective_id,
+                           objective_revision_id,member_key
+                      FROM app_learning.study_candidate
+                     WHERE generation_id=:generation AND candidate_ordinal>=:start
+                     ORDER BY candidate_ordinal LIMIT :limit
+                ), wrapped_window AS MATERIALIZED (
+                    SELECT candidate_ordinal,exercise_id,exercise_revision_id,objective_id,
+                           objective_revision_id,member_key
+                      FROM app_learning.study_candidate
+                     WHERE generation_id=:generation AND candidate_ordinal<:start
+                     ORDER BY candidate_ordinal LIMIT :limit
+                ), bounded AS MATERIALIZED (
+                    SELECT * FROM (
+                        SELECT * FROM candidate_window
+                        UNION ALL
+                        SELECT * FROM wrapped_window
+                    ) candidates
+                    ORDER BY (candidate_ordinal<:start),candidate_ordinal LIMIT :limit
+                ), due AS MATERIALIZED (
+                    SELECT candidate.*
+                      FROM app_learning.study_state state
+                      JOIN LATERAL (
+                          SELECT candidate_ordinal,exercise_id,exercise_revision_id,objective_id,
+                                 objective_revision_id,member_key
+                            FROM app_learning.study_candidate
+                           WHERE generation_id=:generation AND objective_id=state.objective_id
+                           ORDER BY candidate_ordinal LIMIT 1
+                      ) candidate ON TRUE
+                     WHERE :scheduled AND state.account_id=:actor AND state.deck_id=:deck
+                       AND state.next_due<=:asOf
+                       AND NOT EXISTS (
+                           SELECT 1 FROM app_learning.study_presentation presented
+                            WHERE presented.account_id=:actor AND presented.session_id=:session
+                              AND presented.objective_id=state.objective_id
+                       )
+                     ORDER BY state.next_due,state.objective_id LIMIT :limit
+                ), introduced_unassessed AS MATERIALIZED (
+                    SELECT candidate.*
+                      FROM app_learning.study_state state
+                      JOIN LATERAL (
+                          SELECT candidate_ordinal,exercise_id,exercise_revision_id,objective_id,
+                                 objective_revision_id,member_key
+                            FROM app_learning.study_candidate
+                           WHERE generation_id=:generation AND objective_id=state.objective_id
+                           ORDER BY candidate_ordinal LIMIT 1
+                      ) candidate ON TRUE
+                     WHERE :scheduled AND state.account_id=:actor AND state.deck_id=:deck
+                       AND state.next_due IS NULL AND state.transition_sequence=0
+                       AND NOT EXISTS (
+                           SELECT 1 FROM app_learning.study_presentation presented
+                            WHERE presented.account_id=:actor AND presented.session_id=:session
+                              AND presented.objective_id=state.objective_id
+                       )
+                     ORDER BY state.objective_id LIMIT :limit
+                ), candidate_pool AS (
+                    SELECT * FROM bounded
+                    UNION ALL SELECT * FROM due
+                    UNION ALL SELECT * FROM introduced_unassessed
+                ), chosen AS (
                     SELECT DISTINCT ON (candidate.objective_id)
                            candidate.candidate_ordinal,candidate.exercise_id,candidate.exercise_revision_id,
                            candidate.objective_id,candidate.objective_revision_id,candidate.member_key
-                      FROM app_learning.study_candidate candidate
-                     WHERE candidate.generation_id=:generation
+                      FROM candidate_pool candidate
                      ORDER BY candidate.objective_id,candidate.candidate_ordinal
                 ), eligible AS (
                     SELECT chosen.candidate_ordinal,chosen.exercise_id,chosen.exercise_revision_id,

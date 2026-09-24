@@ -505,6 +505,7 @@ try {
     await until(async () => /^\/decks\/[0-9a-f-]{36}\/materials\/[0-9a-f-]{36}$/.test(
       await sanitizedLocation(second)) && await bodyIncludes(editedText, second),
     'publication did not reach Browse');
+    const materialPath = await sanitizedLocation(second);
     require(await second.callFunction(`function() {
       return !globalThis.__mnemaXss && !document.querySelector('img[src="x"]');
     }`), 'published content executed as markup');
@@ -532,6 +533,83 @@ try {
       acknowledgedDraftRestored: true,
       unsafeMarkupExecuted: false
     });
+
+    step = 'study_browser_provision';
+    const studyFixture = await second.callFunction(`async function(base, authorization, deckPath, materialPath) {
+      const headers = { Authorization: authorization };
+      const deck = await fetch(base + '/api' + deckPath, { credentials: 'omit', headers });
+      const memberKey = materialPath.split('/').at(-1);
+      const item = await fetch(base + '/api' + deckPath + '/items/' + memberKey,
+        { credentials: 'omit', headers });
+      if (!deck.ok || !item.ok) return { ready: false };
+      const deckBody = await deck.json(), itemBody = await item.json();
+      const node = itemBody.document?.root?.content?.find(candidate => candidate.type === 'paragraph');
+      if (!node?.id || !itemBody.memberKey || !itemBody.itemRevisionId || !deckBody.revisionId)
+        return { ready: false };
+      const exercise = await fetch(base + '/api' + deckPath + '/exercises', {
+        method: 'POST', credentials: 'omit', headers: { ...headers, 'Content-Type': 'application/json',
+          'If-Match': deck.headers.get('etag') },
+        body: JSON.stringify({
+          commandId: crypto.randomUUID(), expectedDeckRevisionId: deckBody.revisionId,
+          objective: { operation: 'create', answerContract: { schemaVersion: 1,
+            normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'], accepted: ['memory'] } },
+          exercise: { type: 'TYPED', schemaVersion: 1, enabled: true,
+            prompt: { kind: 'CUSTOM_TEXT', text: 'Введите memory' },
+            bindings: [{ bindingId: crypto.randomUUID(), role: 'ASSESSED',
+              memberKey: itemBody.memberKey, itemRevisionId: itemBody.itemRevisionId,
+              nodeIds: [node.id], display: { kind: 'NODE_TEXT' }, ordinal: 0 }],
+            evaluatorPolicy: { id: 'deterministic-text', version: '1' } }
+        })
+      });
+      return { ready: exercise.status === 201 };
+    }`, [config.frontend, 'Bearer ' + secondBearer, deckPath, materialPath]);
+    require(studyFixture?.ready, 'real browser Study fixture publication failed');
+
+    step = 'study_browser_ui';
+    await navigate(deckPath + '/study', second);
+    await until(() => exists('.session-setup', second), 'Study preset setup did not load');
+    require(await second.callFunction(`function() {
+      const button = document.querySelector('.session-setup [data-answer-control]');
+      if (!(button instanceof HTMLButtonElement)) return false;
+      button.focus();
+      return document.activeElement === button;
+    }`), 'Study preset cannot receive keyboard focus');
+    await pressKey(' ', 'Space', 32, 0, second);
+    await until(async () => await exists('#typed-answer', second) || await exists('.completion', second)
+      || await exists('.notice.error', second), 'keyboard did not change Study state');
+    require(await exists('#typed-answer', second), 'keyboard Study start reached empty or error state');
+    await until(() => second.callFunction(`function() {
+      return document.activeElement?.id === 'typed-answer';
+    }`), 'Study answer did not receive focus');
+    require(!(await bodyIncludes('Эталон: memory', second)), 'Study leaked the reference before an accepted answer');
+    await second.call('Emulation.setEmulatedMedia',
+      { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    for (const [width, height, dpr, name] of [
+      [1440, 900, 1, 'study-1440.png'], [390, 844, 1, 'study-390.png'],
+      [320, 900, 2, 'study-320-at-200-percent.png']]) {
+      await second.call('Emulation.setDeviceMetricsOverride',
+        { width, height, deviceScaleFactor: dpr, mobile: width === 390 });
+      require(await second.callFunction(`function() {
+        const action = document.querySelector('.study-card .button.primary');
+        return matchMedia('(prefers-reduced-motion: reduce)').matches
+          && document.documentElement.scrollWidth <= document.documentElement.clientWidth
+          && action instanceof HTMLElement && action.getBoundingClientRect().height >= 44;
+      }`), 'Study layout or touch target failed under responsive reduced-motion emulation');
+      await saveScreenshot(name, second);
+    }
+    await second.call('Emulation.setDeviceMetricsOverride',
+      { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
+    await fill('#typed-answer', 'memory', second);
+    require(await clickText('button', 'Проверить ответ', second), 'Study submit action absent');
+    await until(() => exists('#feedback-title', second), 'Study feedback did not arrive from the real API');
+    require(await second.callFunction(`function() {
+      return document.activeElement?.id === 'feedback-title'
+        && document.body.innerText.includes('Следующее повторение назначено сервером.');
+    }`), 'Study feedback focus or canonical transition missing');
+    await saveScreenshot('study-feedback-1440.png', second);
+    record('real_https_study_browser', { scheduled: 'TYPED', keyboardStart: true,
+      feedbackFocus: true, widths: [1440, 390, 320], deviceScaleFactor: 2,
+      reducedMotion: true, noHorizontalOverflow: true, primaryActionMinimumPx: 44 });
   }
   require(await authenticated(), 'first tab lost its independent profile');
   require(await cdp.callFunction(`async function(firstUrl, firstAuthorization, secondUrl, secondAuthorization, sessionUrl) {

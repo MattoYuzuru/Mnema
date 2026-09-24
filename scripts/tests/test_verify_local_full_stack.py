@@ -216,8 +216,27 @@ class LocalFullStackTest(unittest.TestCase):
 
         self.assertFalse(fresh)
         self.assertEqual("retained", upgraded["password"])
-        self.assertEqual(2, upgraded["schemaVersion"])
+        self.assertEqual(3, upgraded["schemaVersion"])
         self.assertIsNone(upgraded["studyExerciseId"])
+        self.assertEqual({}, upgraded["p0Mechanics"])
+
+    def test_v2_smoke_state_preserves_identity_when_adding_p0_fixtures(self):
+        module = load_smoke_module()
+        state = self.state / "smoke-account.json"
+        self.state.mkdir(mode=0o700)
+        state.write_text(json.dumps({
+            "schemaVersion": 2, "email": "smoke@example.invalid", "login": "smoke",
+            "password": "retained", "deckId": "deck", "captureId": "capture",
+            "studyMemberKey": "member", "studyItemRevisionId": "revision",
+            "studyAnswerNodeId": "node", "studyExerciseId": "exercise",
+        }))
+
+        upgraded, fresh = module.load_or_create_account(state)
+
+        self.assertFalse(fresh)
+        self.assertEqual(3, upgraded["schemaVersion"])
+        self.assertEqual("exercise", upgraded["studyExerciseId"])
+        self.assertEqual({}, upgraded["p0Mechanics"])
 
     def test_launcher_keeps_bounded_failure_diagnostics(self):
         launcher = LAUNCHER.read_text()

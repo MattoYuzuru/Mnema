@@ -68,6 +68,7 @@ summary { color: var(--ink, #281378); font-weight: 700; cursor: pointer; }
 :where(a, button, input, textarea, select, summary, h1, h2):focus-visible { outline: 3px solid var(--ink, #281378); outline-offset: 3px; }
 @media (max-width: 36rem) {
   .heading-row { align-items: start; flex-direction: column; gap: 1rem; }
+  .folio { text-align: start; }
   .ratings, .comparison, .mode-grid, .preset-grid { grid-template-columns: 1fr; }
   .section-heading { align-items: start; flex-direction: column; }
   form .button, .reveal, .completion-actions .button { inline-size: 100%; justify-self: stretch; }
