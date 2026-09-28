@@ -31,7 +31,7 @@ export class NativeDocumentRendererComponent {
     readonly document = input.required<NativeDocument>();
     /** Authorized, short-lived URLs supplied by the owning Browse/editor/Study surface. */
     readonly assetSources = input<Readonly<Record<string, string | AssetPlaybackSource>>>({});
-    readonly assetStatuses = input<Readonly<Record<string, string>>>({});
+    readonly assetStatuses = input<Readonly<Record<string, string | undefined>>>({});
     readonly assetFailed = output<string>();
     protected readonly sources = computed(() => new Map(Object.entries(this.assetSources())
         .map(([id, source]) => [id.toLowerCase(), typeof source === 'string' ? { url: source } : source])));
