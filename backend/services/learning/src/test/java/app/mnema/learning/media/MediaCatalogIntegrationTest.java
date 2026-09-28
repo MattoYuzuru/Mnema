@@ -39,10 +39,52 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     @Autowired private MediaCatalog catalog;
+    @Autowired private MediaManifestCatalog manifests;
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
     @Autowired private JdbcClient jdbc;
     @Autowired private PlatformTransactionManager transactions;
+
+    @Test
+    void offlineManifestPinsVerifiedBytesAndVersionsAssetStateWithoutLeakingStorageKeys() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID itemRevision = publish(owner, deck);
+        UUID member = jdbc.sql("SELECT member_key FROM app_learning.item_revision WHERE deck_id=:deck")
+                .param("deck", deck).query(UUID.class).single();
+        UUID asset = reserve(owner);
+        attach(owner, deck, member, itemRevision,
+                List.of(new MediaCatalog.Reference(UUID.randomUUID(), asset)));
+
+        var pending = manifests.current(owner, deck);
+        assertThat(pending.version()).isEqualTo(1);
+        assertThat(pending.body()).contains("PENDING_UPLOAD", asset.toString(), itemRevision.toString());
+        assertThat(pending.body()).doesNotContain("object_key", "verified/");
+        assertThat(manifests.current(owner, deck).id()).isEqualTo(pending.id());
+        assertThatThrownBy(() -> manifests.current(UUID.randomUUID(), deck))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> manifests.read(UUID.randomUUID(), deck, pending.id()))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        UUID blob = verifiedBlob();
+        processing(asset);
+        UUID variant = UUID.randomUUID();
+        jdbc.sql("INSERT INTO app_learning.media_variant(variant_id,asset_id,asset_generation,purpose,profile,blob_id,"
+                        + "created_at) VALUES (:variant,:asset,0,'playback','image_webp_2048_v1',:blob,CURRENT_TIMESTAMP)")
+                .param("variant", variant).param("asset", asset).param("blob", blob).update();
+        assertThat(catalog.ready(asset, 0, blob)).isTrue();
+        var ready = manifests.current(owner, deck);
+        assertThat(ready.version()).isEqualTo(2);
+        assertThat(ready.id()).isNotEqualTo(pending.id());
+        assertThat(ready.body()).contains("READY", "sha256", variant.toString(), blob.toString());
+        assertThat(ready.body()).doesNotContain("verified/", "objectKey", "https://");
+        assertThat(manifests.read(owner, deck, pending.id()).body()).isEqualTo(pending.body());
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.media_manifest_blob_ref WHERE manifest_id=:manifest")
+                .param("manifest", ready.id()).query(Long.class).single()).isOne();
+        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.media_manifest SET version=4 "
+                        + "WHERE manifest_id=:manifest").param("manifest", ready.id()).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
 
     @Test
     void ownerAndRevisionReferencesAuthorizeSharedBlobWithoutMakingItsHashPublic() throws Exception {
