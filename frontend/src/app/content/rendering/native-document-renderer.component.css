@@ -1,24 +1,17 @@
 :host {
     display: block;
-    min-width: 0;
+    min-inline-size: 0;
 }
 
 .native-document,
 .native-message {
-    --native-paper: #fbf8ef;
-    --native-ink: #281378;
-    --native-body: #342e44;
-    --native-muted: #625c70;
-    --native-line: #c9c0ce;
-    --native-soft: #e8e1ed;
-
-    max-width: 72ch;
+    max-inline-size: 72ch;
     margin-inline: auto;
     padding: clamp(1.25rem, 4vw, 2.75rem);
-    border: 1px solid var(--native-line);
-    border-radius: 0.125rem;
-    background: var(--native-paper);
-    color: var(--native-body);
+    border: 1px solid var(--mn-rule);
+    border-radius: var(--mn-radius, 2px);
+    background: var(--mn-sheet);
+    color: var(--mn-body);
     overflow-wrap: anywhere;
     word-break: normal;
 }
@@ -27,7 +20,7 @@
     font-family: Georgia, "Times New Roman", serif;
     font-size: clamp(1rem, 0.97rem + 0.15vw, 1.075rem);
     line-height: 1.72;
-    box-shadow: 0 0.5rem 1.75rem rgb(40 19 120 / 8%);
+    border-block-start: 2px solid var(--mn-ink);
 }
 
 .native-document > :first-child {
@@ -46,8 +39,8 @@
 
 .native-heading {
     margin-block: 1.65em 0.55em;
-    color: var(--native-ink);
-    font-family: Georgia, "Times New Roman", serif;
+    color: var(--mn-ink);
+    font-family: var(--mn-font-display, Georgia, serif);
     font-weight: 600;
     line-height: 1.16;
     text-wrap: balance;
@@ -84,8 +77,8 @@
 .native-quote {
     margin-block: 1.4rem;
     padding-inline-start: clamp(1rem, 4vw, 1.75rem);
-    border-inline-start: 3px double var(--native-ink);
-    color: color-mix(in srgb, var(--native-body) 88%, var(--native-ink));
+    border-inline-start: 3px double var(--mn-ink);
+    color: color-mix(in srgb, var(--mn-body) 88%, var(--mn-ink));
 }
 
 .native-list {
@@ -103,7 +96,7 @@
 }
 
 .native-list-item::marker {
-    color: var(--native-ink);
+    color: var(--mn-ink);
     font-weight: 600;
 }
 
@@ -116,13 +109,13 @@
 }
 
 .native-ruby rt {
-    color: var(--native-muted);
+    color: var(--mn-muted);
     font-family: system-ui, sans-serif;
     font-size: 0.58em;
 }
 
 .native-link {
-    color: var(--native-ink);
+    color: var(--mn-ink);
     text-decoration-line: underline;
     text-decoration-thickness: 0.08em;
     text-underline-offset: 0.16em;
@@ -135,17 +128,17 @@
 
 .native-link:focus-visible {
     border-radius: 0.1rem;
-    outline: 3px solid var(--native-ink);
+    outline: 3px solid var(--mn-ink);
     outline-offset: 3px;
     box-shadow: none;
 }
 
 .native-document code {
     padding: 0.08em 0.26em;
-    border: 1px solid color-mix(in srgb, var(--native-line) 78%, transparent);
+    border: 1px solid color-mix(in srgb, var(--mn-rule) 78%, transparent);
     border-radius: 0.1rem;
-    background: color-mix(in srgb, var(--native-soft) 58%, var(--native-paper));
-    color: var(--native-ink);
+    background: color-mix(in srgb, var(--mn-soft) 58%, var(--mn-sheet));
+    color: var(--mn-ink);
     font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
     font-size: 0.86em;
     box-decoration-break: clone;
@@ -156,7 +149,7 @@
     height: 0;
     margin: 2rem auto;
     border: 0;
-    border-block-start: 1px solid var(--native-ink);
+    border-block-start: 1px solid var(--mn-ink);
     overflow: visible;
 }
 
@@ -165,8 +158,8 @@
     display: block;
     width: 2rem;
     margin: -0.85rem auto 0;
-    background: var(--native-paper);
-    color: var(--native-ink);
+    background: var(--mn-sheet);
+    color: var(--mn-ink);
     text-align: center;
 }
 
@@ -174,34 +167,34 @@
 .native-table-figure {
     min-inline-size: 0;
     margin: 1.5rem 0;
-    border: 1px solid var(--native-line);
-    background: var(--native-paper);
+    border: 1px solid var(--mn-rule);
+    background: var(--mn-sheet);
 }
 
-.native-media { padding: clamp(.75rem, 3vw, 1.25rem); }
-.native-media figcaption { margin-block-end: .6rem; color: var(--native-ink); font-weight: 650; }
+.native-media { padding: clamp(.75rem, 3vw, 1.25rem); border-block-start-color: var(--mn-ink); }
+.native-media figcaption { margin-block-end: .6rem; color: var(--mn-ink); font-weight: 650; }
 .native-image { display: block; inline-size: auto; max-inline-size: 100%; block-size: auto; max-block-size: 70vh; margin-inline: auto; }
 .native-media audio,
 .native-media video { display: block; inline-size: 100%; max-inline-size: 100%; }
-.native-media video { max-block-size: 70vh; background: #281378; }
-.native-media-pending { margin: 0; border-inline-start: 3px solid var(--native-line); padding: .75rem; color: var(--native-muted); font: .9rem/1.5 system-ui, sans-serif; }
+.native-media video { max-block-size: 70vh; background: var(--mn-ink); }
+.native-media-pending { margin: 0; border-inline-start: 3px solid var(--mn-ink); padding: .75rem; color: var(--mn-muted); font: .9rem/1.5 var(--mn-font-body, system-ui, sans-serif); }
 .native-media-description { margin: .75rem 0 0; white-space: pre-wrap; }
-.native-media details { margin-block-start: .75rem; border-block-start: 1px solid var(--native-line); font: .95rem/1.5 system-ui, sans-serif; }
-.native-media summary { min-block-size: 2.75rem; padding-block: .6rem; color: var(--native-ink); cursor: pointer; }
+.native-media details { margin-block-start: .75rem; border-block-start: 1px solid var(--mn-rule); font: .95rem/1.5 var(--mn-font-body, system-ui, sans-serif); }
+.native-media summary { min-block-size: var(--mn-touch-min, 2.75rem); padding-block: .6rem; color: var(--mn-ink); cursor: pointer; }
 .native-media details p { white-space: pre-wrap; }
 .native-table-scroll { max-inline-size: 100%; overflow-x: auto; }
 .native-table-scroll:focus-visible,
-.native-media summary:focus-visible { outline: 3px solid var(--native-ink); outline-offset: 3px; }
+.native-media summary:focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
 .native-table-figure table { inline-size: 100%; border-collapse: collapse; font: .95rem/1.5 system-ui, sans-serif; }
-.native-table-figure caption { padding: .75rem; color: var(--native-ink); font-weight: 700; text-align: start; }
+.native-table-figure caption { padding: .75rem; color: var(--mn-ink); font-weight: 700; text-align: start; }
 .native-table-figure th,
-.native-table-figure td { min-inline-size: 8rem; border-block-start: 1px solid var(--native-line); padding: .65rem .75rem; text-align: start; vertical-align: top; overflow-wrap: anywhere; }
-.native-table-figure th { background: var(--native-soft); color: var(--native-ink); }
-.native-table-figure figcaption { border-block-start: 1px solid var(--native-line); padding: .75rem; font: .9rem/1.5 system-ui, sans-serif; }
+.native-table-figure td { min-inline-size: 8rem; border-block-start: 1px solid var(--mn-rule); padding: .65rem .75rem; text-align: start; vertical-align: top; overflow-wrap: anywhere; }
+.native-table-figure th { background: var(--mn-soft); color: var(--mn-ink); }
+.native-table-figure figcaption { border-block-start: 1px solid var(--mn-rule); padding: .75rem; font: .9rem/1.5 system-ui, sans-serif; }
 
 .native-unsupported,
 .native-message {
-    font-family: system-ui, sans-serif;
+    font-family: var(--mn-font-body, system-ui, sans-serif);
     font-size: 0.925rem;
     line-height: 1.5;
 }
@@ -209,9 +202,9 @@
 .native-unsupported {
     margin-block: 1rem;
     padding: 0.75rem 0.9rem;
-    border-inline-start: 2px solid var(--native-line);
-    color: var(--native-muted);
-    background: color-mix(in srgb, var(--native-soft) 38%, transparent);
+    border-inline-start: 3px solid var(--mn-ink);
+    color: var(--mn-muted);
+    background: color-mix(in srgb, var(--mn-soft) 38%, transparent);
 }
 
 .native-unsupported--inline {
@@ -224,12 +217,12 @@
 }
 
 .native-message {
-    color: var(--native-muted);
+    color: var(--mn-muted);
 }
 
 .native-message--error {
-    border-inline-start: 3px solid var(--native-ink);
-    color: var(--native-body);
+    border-inline-start: 3px solid var(--mn-danger);
+    color: var(--mn-body);
 }
 
 @media (max-width: 30rem) {
@@ -239,9 +232,7 @@
         border-inline: 0;
     }
 
-    .native-document {
-        box-shadow: none;
-    }
+    .native-document { border-block-start-width: 2px; }
 }
 
 @media (forced-colors: active) {

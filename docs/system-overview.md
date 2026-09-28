@@ -76,8 +76,12 @@ tombstones сохраняют retry/conflict semantics после очистки
 ## Frontend boundary
 
 Replacement routes `/decks`, `/decks/:deckId`, deck-scoped
-`/decks/:deckId/materials/...`, `/decks/:deckId/capture` и editor реализуют выбранное
-paper/antiquity/indigo направление. Отдельный lazy exercise inspector позволяет
+`/decks/:deckId/materials/...`, `/decks/:deckId/capture` и editor используют
+выбранное paper/antiquity/indigo оформление. Главная `/` включает гравюру
+Мнемозины и композицию принятого макета с реальными маршрутами и русским текстом.
+Семантические CSS-токены находятся в `frontend/src/theme/tokens.css`, правила
+оформления и проверки — в [бренд-контракте](./frontend/mnema-brand-and-ui-contract.md).
+Прототип остаётся визуальным свидетельством, не Angular runtime. Отдельный lazy exercise inspector позволяет
 выбрать актуальные node projections или короткий prompt, создать/переиспользовать/
 изменить одну явную objective, настроить четыре P0 mechanics и preview без работы с
 UUID/JSON. Native editor state не является persisted format; frontend валидирует

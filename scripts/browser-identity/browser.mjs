@@ -119,7 +119,8 @@ try {
       const url = new URL(event.request.url);
       networkRequests++;
       if (url.origin === config.identity) identityRequests++;
-      if (networkRequests > (config.media ? 750 : config.authoring ? 600 : 500)
+      // Media UI now loads local brand font and SVG on repeated full navigations.
+      if (networkRequests > (config.media ? 850 : config.authoring ? 600 : 500)
           || identityRequests > 150) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;

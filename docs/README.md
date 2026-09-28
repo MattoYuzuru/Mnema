@@ -62,8 +62,10 @@ artifact:
 
 | Статус | Документ | Назначение |
 |---|---|---|
+| current | [Mnema brand and UI contract](./frontend/mnema-brand-and-ui-contract.md) | Канонические правила оформления и проверки изменений в действующем Angular UI. |
 | accepted | [Design and experience](./frontend/design-and-experience-2026-09.md) | Выбранное paper/antiquity/indigo направление и a11y boundaries. |
 | historical | [Epic #74 UI evidence](./engineering/evidence/README.md#frontend-и-browser) | Снимки, browser и component evidence завершённого этапа. |
+| current | [Frontend brand restoration evidence](./engineering/evidence/frontend-brand-2026-09-28/README.md) | Снимки production Angular на desktop/mobile и результат реального HTTPS-сценария. |
 | superseded | [Experience audit 2026-08](./frontend/experience-audit-2026-08.md) | Findings сохранены, Liquid Glass/Focused Study Desk direction отклонено. |
 | historical | [Interactive prototype](../design/prototype/README.md) | Design evidence, не production architecture. |
 

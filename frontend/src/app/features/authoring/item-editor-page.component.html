@@ -13,7 +13,7 @@
       } @else if (phase() === 'conflict' && conflict() === 'publication') { <a class="button" [routerLink]="['/decks', deck()?.deckId, 'materials']">Открыть актуальный Browse</a> }
     </section>
   }
-  @if (phase() === 'loading') { <p role="status">Готовим серверный черновик…</p> }
+  @if (phase() === 'loading') { <p class="notice" role="status">Готовим черновик…</p> }
   @if (document(); as currentDocument) {
     <nav class="editor-mobile-nav" aria-label="Разделы материала">
       <button class="button" type="button" [attr.aria-pressed]="mobilePanel() === 'material'" (click)="mobilePanel.set('material')">Материал</button>
@@ -27,7 +27,7 @@
     </div>
     <app-native-media-upload [document]="currentDocument" [disabled]="phase() === 'publishing' || phase() === 'conflict'"
       (chooseAsset)="prepareMedia($event.kind, $event.assetId)" />
-    <section class="page-heading" aria-label="Сохранение">
+    <section class="save-panel" aria-label="Сохранение">
       <p class="muted" aria-live="polite">@switch (phase()) { @case ('saving-draft') { Сохраняем черновик… } @case ('publishing') { Публикуем… } @default { {{ dirty() ? 'Есть изменения без подтверждения сервера' : 'Черновик подтверждён сервером' }} } }</p>
       <div class="actions"><button class="button" type="button" [disabled]="!dirty() || phase() === 'saving-draft' || phase() === 'publishing'" (click)="saveDraft()">Сохранить черновик</button><button class="button primary" type="button" [disabled]="dirty() || phase() !== 'ready'" (click)="publish()">Опубликовать</button></div>
     </section>

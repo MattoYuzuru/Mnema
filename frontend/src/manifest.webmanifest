@@ -1,15 +1,15 @@
 {
   "name": "Mnema",
   "short_name": "Mnema",
-  "description": "Веб-приложение для эффективного запоминания информации с помощью интерактивных карт",
+  "description": "Личные учебные материалы, упражнения и занятия",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#111827",
+  "background_color": "#f4f0e5",
+  "theme_color": "#f4f0e5",
   "icons": [
     {
-      "src": "/assets/og-image.png",
+      "src": "/assets/brand/app-icon-512.png",
       "sizes": "512x512",
       "type": "image/png"
     }

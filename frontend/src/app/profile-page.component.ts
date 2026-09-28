@@ -54,8 +54,12 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
               <form [formGroup]="form" (ngSubmit)="save()">
                 <label for="profile-username">Имя пользователя</label>
                 <input id="profile-username" formControlName="profileUsername" autocomplete="nickname"
-                       aria-describedby="username-hint" />
+                       [attr.aria-describedby]="form.controls.profileUsername.touched && form.controls.profileUsername.invalid ? 'username-hint username-error' : 'username-hint'"
+                       [attr.aria-invalid]="form.controls.profileUsername.touched && form.controls.profileUsername.invalid" />
                 <p id="username-hint" class="hint">3–50 символов: латинские буквы, цифры, точка, дефис или подчёркивание.</p>
+                @if (form.controls.profileUsername.touched && form.controls.profileUsername.invalid) {
+                  <p id="username-error" class="error field-error" role="alert">Введите имя пользователя из 3–50 допустимых символов.</p>
+                }
                 <label for="display-name">Отображаемое имя</label>
                 <input id="display-name" formControlName="displayName" autocomplete="name" maxlength="200" />
                 <label for="profile-bio">О себе</label>
@@ -75,10 +79,11 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
                 <input id="current-password" type="password" formControlName="currentPassword" autocomplete="current-password" />
                 <label for="new-password">Новый пароль</label>
                 <input id="new-password" type="password" formControlName="newPassword" autocomplete="new-password"
-                       aria-describedby="password-hint" [attr.aria-invalid]="passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid" />
+                       [attr.aria-describedby]="passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid ? 'password-hint password-error' : 'password-hint'"
+                       [attr.aria-invalid]="passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid" />
                 <p id="password-hint" class="hint">От 12 до 128 символов, не более 72 байт UTF-8.</p>
                 @if (passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid) {
-                  <p class="error" role="alert">Новый пароль: минимум 12 символов и максимум 72 байта UTF-8.</p>
+                  <p id="password-error" class="error field-error" role="alert">Новый пароль: минимум 12 символов и максимум 72 байта UTF-8.</p>
                 }
                 <label for="confirm-password">Повторите новый пароль</label>
                 <input id="confirm-password" type="password" formControlName="confirmPassword" autocomplete="new-password" />
@@ -94,46 +99,44 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
       </section>
     `,
     styles: [`
-      :host { display: block; color: #342e44; }
-      .profile-page { max-width: 72rem; margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem); }
-      .back-link { color: #281378; text-underline-offset: .2em; }
-      header { max-width: 42rem; padding-block: 1.7rem 2rem; }
-      .eyebrow { margin: 0; color: #655b80; font-size: .8rem; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
-      h1, h2 { color: #281378; font-family: Georgia, 'Times New Roman', serif; }
-      h1 { margin: .35rem 0 .75rem; font-size: clamp(2.4rem, 6vw, 4rem); }
-      h2 { margin: 0 0 1.5rem; font-size: 1.55rem; }
-      .profile-grid { display: grid; grid-template-columns: minmax(15rem, .75fr) minmax(0, 1.5fr); gap: 1rem; align-items: start; }
-      .sheet { min-width: 0; padding: clamp(1.25rem, 3vw, 2rem); border: 1px solid #c9c0ce; background: #fbf8ef; }
-      .password-sheet { margin-top: 1rem; max-width: 40rem; }
-      .avatar-preview { display: grid; place-items: center; width: 7rem; height: 7rem; margin-bottom: 1.25rem;
-        border: 1px solid #c9c0ce; border-radius: 50%; overflow: hidden; background: #e8e1ed; color: #281378;
-        font: 3rem Georgia, serif; }
-      .avatar-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
-      label:not(.file-label) { display: block; margin-bottom: .4rem; font-weight: 650; }
-      .file-input { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
-        overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
-      .file-label { display: inline-flex; align-items: center; min-height: 2.75rem; margin-bottom: .4rem;
-        padding: .65rem 1rem; border: 1px solid #281378; border-radius: .25rem;
-        color: #281378; background: #fffdf8; font-weight: 650; cursor: pointer; }
-      .file-label:hover { background: #e8e1ed; }
-      .file-input:focus-visible + .file-label { outline: 3px solid #6c55b8; outline-offset: 3px; }
-      .file-input:disabled + .file-label { opacity: .55; cursor: wait; }
-      input:not([type=file]), textarea { box-sizing: border-box; width: 100%; min-height: 2.75rem; padding: .65rem .75rem; margin-bottom: 1rem;
-        border: 1px solid #9788aa; border-radius: .3rem; background: #fffdf8; color: #342e44; font: inherit; }
+      :host { display: block; min-inline-size: 0; color: var(--mn-body); }
+      * { box-sizing: border-box; }
+      .profile-page { inline-size: min(100%, 76rem); margin-inline: auto; padding: clamp(1.5rem, 5vw, 4rem) clamp(1.125rem, 5vw, 3rem); }
+      .back-link { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 46px); color: var(--mn-ink); text-underline-offset: .22em; }
+      header { max-inline-size: 45rem; padding-block: clamp(1.75rem, 5vw, 3rem); }
+      .eyebrow { margin: 0 0 .45rem; color: var(--mn-ink); font: 700 .75rem/1.4 var(--mn-font-mono, ui-monospace, monospace); letter-spacing: .12em; text-transform: uppercase; }
+      h1, h2 { color: var(--mn-ink); font-family: var(--mn-font-display, Georgia, serif); font-weight: 500; overflow-wrap: anywhere; }
+      h1 { margin: .35rem 0 .75rem; font-size: clamp(2.7rem, 7vw, 5rem); line-height: .98; }
+      h2 { margin: 0 0 1.5rem; font-size: clamp(1.8rem, 3vw, 2.25rem); line-height: 1.05; }
+      header > p:last-child { max-inline-size: 52ch; color: var(--mn-muted); }
+      .profile-grid { display: grid; grid-template-columns: minmax(16rem, .8fr) minmax(0, 1.5fr); gap: clamp(1rem, 3vw, 2.5rem); align-items: start; }
+      .sheet { min-inline-size: 0; border-block-start: 1px solid var(--mn-ink); border-block-end: 1px solid var(--mn-rule); padding: clamp(1.25rem, 3vw, 2rem); background: var(--mn-sheet); }
+      .password-sheet { max-inline-size: 46rem; margin-block-start: clamp(1.5rem, 4vw, 3rem); }
+      .avatar-preview { display: grid; place-items: center; inline-size: 7rem; block-size: 7rem; margin-block-end: 1.25rem; border: 1px solid var(--mn-field-border); border-radius: 50%; overflow: hidden; background: var(--mn-soft); color: var(--mn-ink); font: 3rem var(--mn-font-display, Georgia, serif); }
+      .avatar-preview img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+      label:not(.file-label) { display: block; margin-block-end: .4rem; font-weight: 650; }
+      .file-input { position: absolute; inline-size: 1px; block-size: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+      .file-label { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 46px); margin-block-end: .4rem; border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .65rem 1rem; color: var(--mn-ink); background: transparent; font-weight: 650; cursor: pointer; }
+      .file-label:hover { background: var(--mn-soft); }
+      .file-input:focus-visible + .file-label { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
+      .file-input:disabled + .file-label { opacity: .65; cursor: wait; }
+      input:not([type=file]), textarea { inline-size: 100%; min-inline-size: 0; min-block-size: var(--mn-touch-min, 46px); margin-block-end: 1rem; border: 1px solid var(--mn-field-border); border-radius: var(--mn-radius, 2px); padding: .65rem .75rem; background: var(--mn-sheet); color: var(--mn-body); font: 1rem/1.5 var(--mn-font-body, system-ui, sans-serif); }
       textarea { resize: vertical; }
-      input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid #6c55b8; outline-offset: 3px; }
-      button { min-height: 2.75rem; padding: .65rem 1.25rem; border: 1px solid #281378; border-radius: .25rem;
-        background: #281378; color: white; font: inherit; font-weight: 650; cursor: pointer; }
-      button:hover:not(:disabled) { background: #442a9c; }
-      button:disabled { opacity: .55; cursor: not-allowed; }
-      .hint, .email { color: #625c70; font-size: .9rem; }
-      .hint { margin: .25rem 0 1.3rem; }
-      .email { margin: -.6rem 0 1.5rem; }
-      .error { color: #9b1b30; }
-      .success { color: #236149; }
-      .notice { padding: 1rem 1.25rem; margin: 0 0 1.5rem; border-inline-start: 4px solid #b68428;
-        background: #fff4d9; color: #4f3b1a; }
-      @media (max-width: 45rem) { .profile-grid { grid-template-columns: minmax(0, 1fr); } }
+      input[aria-invalid=true] { border: 2px solid var(--mn-danger); }
+      input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
+      button { min-block-size: var(--mn-touch-min, 46px); border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .65rem 1.25rem; background: var(--mn-ink); color: var(--mn-on-ink); font: 650 1rem/1.4 var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
+      button:hover:not(:disabled) { background: var(--mn-body); }
+      button:disabled { opacity: .65; cursor: not-allowed; }
+      .hint, .email { color: var(--mn-muted); font-size: .9rem; }
+      .hint { margin: .25rem 0 1.25rem; }
+      .email { margin: -.6rem 0 1.5rem; overflow-wrap: anywhere; }
+      .error { color: var(--mn-danger); }
+      .field-error { margin: -.7rem 0 1rem; }
+      .success { color: var(--mn-positive); }
+      .notice { margin: 0 0 1.5rem; border-inline-start: 3px solid var(--mn-caution); padding: 1rem 1.25rem; background: var(--mn-sheet); color: var(--mn-body); }
+      @media (max-width: 48rem) { .profile-grid { grid-template-columns: minmax(0, 1fr); } }
+      @media (max-width: 36rem) { .sheet { padding-inline: 0; background: transparent; } }
+      @media (forced-colors: active) { .sheet, .file-label, button, .notice { border-color: CanvasText; } input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible, .file-input:focus-visible + .file-label { outline-color: Highlight; } }
     `],
     changeDetection: ChangeDetectionStrategy.OnPush
 })

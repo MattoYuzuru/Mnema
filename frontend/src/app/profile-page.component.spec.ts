@@ -76,6 +76,23 @@ describe('ProfilePageComponent', () => {
         fixture.detectChanges();
         expect(passwordButton.disabled).toBeTrue();
         expect(newPassword.getAttribute('aria-invalid')).toBe('true');
+        expect(newPassword.getAttribute('aria-describedby')).toBe('password-hint password-error');
         expect(root.querySelector('.password-sheet .error')?.textContent).toContain('72 байта');
+    });
+
+    it('associates an invalid profile username with its field guidance', async () => {
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.componentInstance.form.controls.profileUsername.setValue('!');
+        fixture.componentInstance.form.controls.profileUsername.markAsTouched();
+        fixture.detectChanges();
+
+        const root = fixture.nativeElement as HTMLElement;
+        const input = root.querySelector<HTMLInputElement>('#profile-username')!;
+        expect(input.getAttribute('aria-invalid')).toBe('true');
+        expect(input.getAttribute('aria-describedby')).toBe('username-hint username-error');
+        expect(root.querySelector('#username-error')?.textContent).toContain('3–50');
+        expect(root.querySelector<HTMLButtonElement>('.profile-grid button[type=submit]')?.disabled).toBeTrue();
     });
 });

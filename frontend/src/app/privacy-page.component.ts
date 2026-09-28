@@ -45,56 +45,56 @@ import { TranslatePipe } from './shared/pipes/translate.pipe';
       .legal-page {
         max-width: 56rem;
         margin: 0 auto;
-        padding: var(--spacing-xl) 0;
+        padding: var(--mn-space-7) var(--mn-page-gutter);
       }
 
       h1 {
-        font-size: 2rem;
-        margin: 0 0 var(--spacing-sm) 0;
+        font-size: clamp(2.5rem, 5vw, 3.5rem);
+        margin: 0 0 var(--mn-space-2) 0;
       }
 
       .last-updated {
         font-size: 0.9rem;
-        color: var(--color-text-muted);
-        margin: 0 0 var(--spacing-2xl) 0;
+        color: var(--mn-muted);
+        margin: 0 0 var(--mn-space-7) 0;
       }
 
       section {
-        margin-bottom: var(--spacing-xl);
+        margin-bottom: var(--mn-space-7);
       }
 
       h2 {
-        font-size: 1.5rem;
-        margin: 0 0 var(--spacing-md) 0;
+        font-size: 2rem;
+        margin: 0 0 var(--mn-space-4) 0;
       }
 
       p {
         line-height: 1.6;
-        color: var(--color-text-secondary);
-        margin: 0 0 var(--spacing-md) 0;
+        color: var(--mn-body);
+        margin: 0 0 var(--mn-space-4) 0;
       }
 
       @media (max-width: 768px) {
         .legal-page {
-          padding: var(--spacing-lg) var(--spacing-md);
+          padding-block: var(--mn-space-5);
         }
 
         h1 {
-          font-size: 1.5rem;
+          font-size: 2.5rem;
         }
 
         h2 {
-          font-size: 1.25rem;
+          font-size: 1.75rem;
         }
       }
 
       @media (max-width: 480px) {
         .legal-page {
-          padding: var(--spacing-md) var(--spacing-sm);
+          padding-block: var(--mn-space-4);
         }
 
         h1 {
-          font-size: 1.35rem;
+          font-size: 2.25rem;
         }
       }
     `]

@@ -2,7 +2,7 @@
   @if (deck(); as currentDeck) { <a class="back-link" [routerLink]="['/decks', currentDeck.deckId]">← К колоде</a> }
   <header class="page-heading"><div><p class="eyebrow">Быстрый ввод</p><h1 id="capture-title" tabindex="-1">На потом</h1><p class="lede">Сохраните мысль без разметки, а структуру добавьте позже.</p></div></header>
   @if (error(); as message) { <section class="notice error" role="alert"><p>{{ message }}</p><button class="button" type="button" (click)="recovery() === 'retry' ? retry() : load()">{{ recovery() === 'retry' ? 'Повторить ту же команду' : 'Обновить' }}</button></section> }
-  @if (loading()) { <p role="status">Загружаем заметки…</p> }
+  @if (loading()) { <p class="notice" role="status">Загружаем заметки…</p> }
   @if (deck(); as currentDeck) {
     <form class="sheet" [formGroup]="form" (ngSubmit)="capture()">
       <div class="field"><label for="capture-text">Заметка</label><textarea id="capture-text" maxlength="32768" formControlName="text" [readonly]="recovery() === 'retry'" placeholder="Что важно не потерять?" aria-describedby="capture-help capture-error"></textarea>

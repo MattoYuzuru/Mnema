@@ -4,7 +4,7 @@
   }
 
   @if (editable()) {
-    <div class="editor-toolbar" role="toolbar" aria-label="Форматирование материала">
+    <div class="editor-toolbar" role="group" aria-label="Форматирование материала">
       <button type="button" [disabled]="disabled()" (click)="paragraph()">Текст</button>
       <button type="button" [disabled]="disabled()" (click)="heading(2)">Заголовок</button>
       <button type="button" [disabled]="disabled()" [attr.aria-pressed]="activeMarks().has('strong')" (click)="toggle('strong')"><strong>Жирный</strong></button>

@@ -1,0 +1,123 @@
+<article class="home" aria-labelledby="home-title">
+  <section class="hero" aria-labelledby="home-title">
+    <div class="hero-copy">
+      <p class="eyebrow">Для любопытства, которое остаётся с вами</p>
+      <h1 id="home-title" tabindex="-1">Учиться.<br>Понимать.<br>Помнить.</h1>
+      <p class="hero-description">
+        Ваши материалы и упражнения — в одном месте. Собирайте важное,
+        учитесь по-своему и возвращайтесь к знаниям вовремя.
+      </p>
+      <div class="hero-actions">
+        @if (auth.status() === 'authenticated') {
+          <a class="button primary" routerLink="/decks">Начать с моей колоды <span aria-hidden="true">→</span></a>
+        } @else {
+          <a class="button primary" routerLink="/login">Начать с моей колоды <span aria-hidden="true">→</span></a>
+        }
+        <a class="text-link" href="#materials">Как это устроено</a>
+      </div>
+      <span class="constellation" aria-hidden="true"></span>
+    </div>
+
+    <div class="art">
+      <picture>
+        <source srcset="/assets/brand/mnemosyne-640.avif 640w, /assets/brand/mnemosyne-1024.avif 1024w"
+                sizes="(max-width: 700px) 100vw, (max-width: 1000px) 50vw, 48vw" type="image/avif">
+        <source srcset="/assets/brand/mnemosyne-640.webp 640w, /assets/brand/mnemosyne-1024.webp 1024w"
+                sizes="(max-width: 700px) 100vw, (max-width: 1000px) 50vw, 48vw" type="image/webp">
+        <img src="/assets/brand/mnemosyne-1024.png" width="1024" height="1536"
+             alt="Мнемозина в индиговой гравюре" fetchpriority="high" decoding="async">
+      </picture>
+      <span class="art-label">MNEMOSYNE<br>БОГИНЯ ПАМЯТИ</span>
+      <span class="art-caption" aria-hidden="true">ΜΝΗΜΟΣΎΝΗ</span>
+      <span class="art-star" aria-hidden="true">✧</span>
+
+      <div class="hero-note note">
+        <span class="eyebrow">Вы выбираете способ</span>
+        <p>Ваши знания.<br>Ваши упражнения.<br>Ваш ритм.</p>
+        <span class="note-tail">Учиться по-своему <span aria-hidden="true">→</span></span>
+      </div>
+      <p class="small-note note">✧ Память — это больше, чем хранение.<br>Это понимание.</p>
+    </div>
+  </section>
+
+  <nav class="feature-strip" aria-label="Возможности Mnema">
+    <a href="#materials"><span class="feature-icon" aria-hidden="true">☼</span><span><strong>Всё важное рядом</strong>Слова, контекст и примеры в ваших колодах.</span></a>
+    <a href="#exercises"><span class="feature-icon" aria-hidden="true">◎</span><span><strong>Упражнения под вас</strong>Один материал. Несколько способов понять.</span></a>
+    <a href="#rhythm"><span class="feature-icon" aria-hidden="true">✳</span><span><strong>Помнить надолго</strong>Повторяйте вовремя. Практикуйтесь, когда хочется.</span></a>
+  </nav>
+
+  <section id="materials" class="landing-section" aria-labelledby="materials-title">
+    <div class="section-copy">
+      <p class="eyebrow">01 / Собирайте</p>
+      <h2 id="materials-title">Мысль — короткая.<br>Знание — глубокое.</h2>
+      <p>Сохраните находку «на потом», пока идёт урок. Позже добавьте примеры, пояснения и собственные связи. В одной колоде могут жить слова, грамматика и большой конспект.</p>
+      @if (auth.status() === 'authenticated') {
+        <a class="button secondary" routerLink="/decks">Открыть мои колоды <span aria-hidden="true">→</span></a>
+      } @else {
+        <a class="button secondary" routerLink="/login">Создать свою колоду <span aria-hidden="true">→</span></a>
+      }
+    </div>
+    <div class="specimen material-specimen" aria-label="Пример учебного материала">
+      <span class="eyebrow">Пример материала</span>
+      <span class="specimen-star" aria-hidden="true">✦</span>
+      <h3>Serendipity<br><span>Счастливая случайность.</span></h3>
+      <p lang="en">Finding that little bookshop was pure serendipity.</p>
+      <div class="ruled-row"><strong>Мой контекст</strong><span>заметка</span></div>
+      <p>Тот книжный магазин, на который я наткнулся по дороге домой.</p>
+    </div>
+  </section>
+
+  <section id="exercises" class="landing-section reverse" aria-labelledby="exercises-title">
+    <div class="specimen exercises-specimen" aria-label="Примеры форматов упражнений">
+      <span class="eyebrow">Один материал · разные упражнения</span>
+      <span class="specimen-star" aria-hidden="true">✦</span>
+      <div class="ruled-row"><strong>Вспомнить перевод</strong><span aria-hidden="true">↔</span></div>
+      <div class="ruled-row"><strong>Соединить пары</strong><span aria-hidden="true">◎</span></div>
+      <div class="ruled-row"><strong>Заполнить пропуск</strong><span aria-hidden="true">—</span></div>
+      <p>В упражнение попадает выбранный фрагмент. Полный материал всегда остаётся рядом.</p>
+    </div>
+    <div class="section-copy">
+      <p class="eyebrow">02 / Развивайтесь</p>
+      <h2 id="exercises-title">Не всё знание<br>помещается на карточке.</h2>
+      <p>Сам материал может быть большим. Для упражнения выберите самое нужное: слово и перевод, вопрос и объяснение, короткий пример. Содержание и способ тренировки выбираете вы.</p>
+      @if (auth.status() === 'authenticated') {
+        <a class="button secondary" routerLink="/decks">Перейти к материалам <span aria-hidden="true">→</span></a>
+      } @else {
+        <a class="button secondary" routerLink="/login">Попробовать Mnema <span aria-hidden="true">→</span></a>
+      }
+    </div>
+  </section>
+
+  <section id="rhythm" class="landing-section" aria-labelledby="rhythm-title">
+    <div class="section-copy">
+      <p class="eyebrow">03 / Возвращайтесь</p>
+      <h2 id="rhythm-title">В своём темпе.<br>С местом для повторения.</h2>
+      <p>Занимайтесь внутри выбранной колоды. После занятия можно повторить ту же сессию или потренировать всю колоду — столько раз, сколько нужно.</p>
+      <p>Дополнительная практика не меняет расписание повторений. А если хочется начать материал заново, вы решаете это сами.</p>
+      @if (auth.status() === 'authenticated') {
+        <a class="button secondary" routerLink="/decks">Выбрать колоду <span aria-hidden="true">→</span></a>
+      } @else {
+        <a class="button secondary" routerLink="/login">Начать учиться <span aria-hidden="true">→</span></a>
+      }
+    </div>
+    <div class="specimen rhythm-specimen" aria-label="Варианты после занятия">
+      <span class="eyebrow">Когда занятие закончено</span>
+      <span class="specimen-star" aria-hidden="true">✦</span>
+      <h3>Можно остаться ещё.</h3>
+      <div class="ruled-row"><strong>Повторить сегодняшнее</strong><span aria-hidden="true">↻</span></div>
+      <div class="ruled-row"><strong>Потренировать всю колоду</strong><span aria-hidden="true">✧</span></div>
+      <div class="ruled-row"><strong>Вернуться к материалам</strong><span aria-hidden="true">→</span></div>
+    </div>
+  </section>
+
+  <section class="final-cta" aria-labelledby="final-title">
+    <span aria-hidden="true">✦</span>
+    <h2 id="final-title">Оставьте место любопытству.</h2>
+    <p>Начните с одной колоды. Наполните её тем, что важно вам.</p>
+    @if (auth.status() === 'authenticated') {
+      <a class="button primary" routerLink="/decks/new">Создать свою колоду <span aria-hidden="true">→</span></a>
+    } @else {
+      <a class="button primary" routerLink="/login">Начать с колоды <span aria-hidden="true">→</span></a>
+    }
+  </section>
+</article>
