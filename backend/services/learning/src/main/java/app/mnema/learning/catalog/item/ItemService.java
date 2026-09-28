@@ -1,6 +1,7 @@
 package app.mnema.learning.catalog.item;
 
 import app.mnema.learning.catalog.content.NativeDocument;
+import app.mnema.learning.catalog.content.NativeMediaReferences;
 import app.mnema.learning.catalog.content.pages.CountedPages;
 import app.mnema.learning.catalog.content.pages.CountedPageTypes.Entry;
 import app.mnema.learning.catalog.content.pages.CountedPageTypes.PageEdit;
@@ -20,6 +21,7 @@ import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.idempotency.CommandIdentity;
 import app.mnema.learning.platform.idempotency.CommandReceiptService;
+import app.mnema.learning.media.MediaCatalog;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.storage.StorageTypes.NewEdge;
 import app.mnema.learning.storage.StorageTypes.NewObject;
@@ -54,6 +56,7 @@ public class ItemService {
     private final CommandReceiptService receipts;
     private final CompareAndSetExecutor cas;
     private final ImmutableStorage storage;
+    private final MediaCatalog mediaCatalog;
     private final NativeSnapshotCodec codec = new NativeSnapshotCodec();
     private final NativeStructuralEditor structuralEditor = new NativeStructuralEditor();
     private final NativeStorageBatches nativeBatches;
@@ -62,11 +65,12 @@ public class ItemService {
     private final TransactionTemplate cleanupTransaction;
 
     public ItemService(ItemRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas,
-                       ImmutableStorage storage, PlatformTransactionManager transactions) {
+                       ImmutableStorage storage, MediaCatalog mediaCatalog, PlatformTransactionManager transactions) {
         this.repository = repository;
         this.receipts = receipts;
         this.cas = cas;
         this.storage = storage;
+        this.mediaCatalog = mediaCatalog;
         this.nativeBatches = new NativeStorageBatches(storage);
         this.preparationBoundary = new TransactionTemplate(transactions);
         preparationBoundary.setPropagationBehavior(TransactionDefinition.PROPAGATION_NOT_SUPPORTED);
@@ -211,7 +215,7 @@ public class ItemService {
                     shiftForInsert(currentOrdinals, ordinal);
                     currentOrdinals.put(member, ordinal);
                     preparedChanges.add(new PreparedCreate(member, itemRevision, content.root().objectId(),
-                            descriptor.root().objectId(), ordinal));
+                            descriptor.root().objectId(), ordinal, NativeMediaReferences.from(create.document())));
                 }
                 case ItemPublicationCommand.Save save -> {
                     ItemRecord current = currentItems.get(member);
@@ -234,7 +238,8 @@ public class ItemService {
                         ordinal = save.ordinal();
                     }
                     preparedChanges.add(new PreparedSave(member, current.revisionId(), itemRevision, itemSequence,
-                            content.root().objectId(), descriptor.root().objectId(), fromOrdinal, ordinal));
+                            content.root().objectId(), descriptor.root().objectId(), fromOrdinal, ordinal,
+                            NativeMediaReferences.from(save.document())));
                 }
                 case ItemPublicationCommand.Delete delete -> {
                     ItemRecord current = currentItems.get(member);
@@ -281,6 +286,7 @@ public class ItemService {
                     repository.insertItemRevision(deckId, create.member(), create.revision(), before.scopeId(), actor, 0,
                             null, prepared.deckRevision(), deckSequence, command.commandId(), create.contentRoot(),
                             create.descriptorRoot(), time);
+                    mediaCatalog.attachRevision(actor, deckId, create.member(), create.revision(), create.mediaReferences());
                     repository.insertHead(deckId, create.member(), create.revision(), 0, time);
                     pendingChanges.add(new PendingChange("create", create.member(), null, create.revision(),
                             create.revision(), 0, null));
@@ -293,6 +299,7 @@ public class ItemService {
                     repository.insertItemRevision(deckId, save.member(), save.revision(), before.scopeId(), actor,
                             save.itemSequence(), current.revisionId(), prepared.deckRevision(), deckSequence,
                             command.commandId(), save.contentRoot(), save.descriptorRoot(), time);
+                    mediaCatalog.attachRevision(actor, deckId, save.member(), save.revision(), save.mediaReferences());
                     repository.updateHead(deckId, save.member(), save.revision(), save.itemSequence(), time);
                     pendingChanges.add(new PendingChange("save", save.member(), current.revisionId(), save.revision(),
                             save.revision(), save.itemSequence(), save.fromOrdinal()));
@@ -484,11 +491,13 @@ public class ItemService {
         UUID member();
     }
 
-    private record PreparedCreate(UUID member, UUID revision, UUID contentRoot, UUID descriptorRoot, int ordinal)
+    private record PreparedCreate(UUID member, UUID revision, UUID contentRoot, UUID descriptorRoot, int ordinal,
+                                  List<MediaCatalog.Reference> mediaReferences)
             implements PreparedChange { }
 
     private record PreparedSave(UUID member, UUID expectedRevision, UUID revision, long itemSequence,
-                                UUID contentRoot, UUID descriptorRoot, int fromOrdinal, int toOrdinal)
+                                UUID contentRoot, UUID descriptorRoot, int fromOrdinal, int toOrdinal,
+                                List<MediaCatalog.Reference> mediaReferences)
             implements PreparedChange { }
 
     private record PreparedDelete(UUID member, UUID expectedRevision, long itemSequence, int fromOrdinal)

@@ -20,6 +20,64 @@
 
     <div #editorHost class="editor-host"></div>
 
+    <details class="rich-tools">
+      <summary>Изображение, аудио, видео, схема или таблица</summary>
+      <div class="rich-kind-picker" role="group" aria-label="Тип содержимого">
+        @for (kind of ['image', 'audio', 'video', 'mermaid', 'table']; track kind) {
+          <button type="button" [disabled]="disabled()" [attr.aria-pressed]="richKind() === kind"
+                  (click)="selectRichKind($any(kind))">
+            {{ kind === 'image' ? 'Изображение' : kind === 'audio' ? 'Аудио' : kind === 'video' ? 'Видео' : kind === 'mermaid' ? 'Схема' : 'Таблица' }}
+          </button>
+        }
+      </div>
+      <div class="rich-fields">
+        @if (richKind() === 'image' || richKind() === 'audio' || richKind() === 'video') {
+          <label>ID загруженного файла
+            <input type="text" [disabled]="disabled()" [value]="richAssetId()" (input)="richAssetId.set($any($event.target).value)" autocomplete="off" />
+          </label>
+        }
+        @if (richKind() !== 'table') {
+          <label>{{ richKind() === 'image' ? 'Краткое описание изображения' : 'Название' }}
+            <input type="text" [disabled]="disabled()" [value]="richTitle()" (input)="richTitle.set($any($event.target).value)" />
+          </label>
+        }
+        @if (richKind() === 'image' || richKind() === 'table') {
+          <label>Подпись
+            <input type="text" [disabled]="disabled()" [value]="richCaption()" (input)="richCaption.set($any($event.target).value)" />
+          </label>
+        }
+        @if (richKind() === 'image' || richKind() === 'mermaid') {
+          <label>{{ richKind() === 'mermaid' ? 'Текстовое описание связей' : 'Подробное описание, если на изображении схема или график' }}
+            <textarea rows="3" [disabled]="disabled()" [value]="richDescription()" (input)="richDescription.set($any($event.target).value)"></textarea>
+          </label>
+        }
+        @if (richKind() === 'audio' || richKind() === 'video') {
+          <label>Текстовая расшифровка
+            <textarea rows="3" [disabled]="disabled()" [value]="richTranscript()" (input)="richTranscript.set($any($event.target).value)"></textarea>
+          </label>
+        }
+        @if (richKind() === 'mermaid') {
+          <label>Исходный текст Mermaid
+            <textarea rows="6" spellcheck="false" [disabled]="disabled()" [value]="richSource()" (input)="richSource.set($any($event.target).value)"></textarea>
+          </label>
+        }
+        @if (richKind() === 'table') {
+          <label>Заголовки столбцов, по одному в строке
+            <textarea rows="3" [disabled]="disabled()" [value]="richColumns()" (input)="richColumns.set($any($event.target).value)"></textarea>
+          </label>
+          <label>Строки таблицы: ячейки разделяются Tab, строки — переводом строки
+            <textarea rows="5" [disabled]="disabled()" [value]="richRows()" (input)="richRows.set($any($event.target).value)"></textarea>
+          </label>
+          <label>Пояснение таблицы
+            <textarea rows="3" [disabled]="disabled()" [value]="richSummary()" (input)="richSummary.set($any($event.target).value)"></textarea>
+          </label>
+        }
+        <button class="rich-apply" type="button" [disabled]="disabled()" (click)="applyRichNode()">
+          {{ richSelected() ? 'Обновить выбранный блок' : 'Вставить блок в материал' }}
+        </button>
+      </div>
+    </details>
+
     <fieldset class="ruby-fields">
       <legend>Добавить чтение над текстом</legend>
       <label>Текст <input type="text" maxlength="256" [disabled]="disabled()" [value]="rubyBase()" (input)="rubyBase.set($any($event.target).value)"></label>

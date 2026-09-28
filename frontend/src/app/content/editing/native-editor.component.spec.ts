@@ -1,6 +1,8 @@
 import { TestBed } from '@angular/core/testing';
 
 import { mixedNativeDocumentFixture } from '../rendering/native-renderer.fixtures';
+import { NativeDocument } from '../native-document';
+import { createEmptyNativeDocument } from './native-editor-adapter';
 import { NativeEditorComponent } from './native-editor.component';
 
 describe('NativeEditorComponent', () => {
@@ -42,5 +44,33 @@ describe('NativeEditorComponent', () => {
 
         const surface = fixture.nativeElement.querySelector('[role="textbox"]') as HTMLElement;
         expect(surface.innerText).toContain('Свежая версия сервера');
+    });
+
+    it('inserts a validated Mermaid block and rejects incomplete media references', () => {
+        TestBed.configureTestingModule({ imports: [NativeEditorComponent] });
+        const fixture = TestBed.createComponent(NativeEditorComponent);
+        fixture.componentRef.setInput('document', createEmptyNativeDocument());
+        fixture.detectChanges();
+        const emitted: NativeDocument[] = [];
+        fixture.componentInstance.documentChange.subscribe(document => emitted.push(document));
+
+        fixture.componentInstance.selectRichKind('image');
+        fixture.componentInstance.richTitle.set('Схема сервиса');
+        fixture.componentInstance.applyRichNode();
+        fixture.detectChanges();
+        expect(emitted.length).toBe(0);
+        expect(fixture.nativeElement.querySelector('[role="alert"]')?.textContent).toContain('ID файла');
+
+        fixture.componentInstance.selectRichKind('mermaid');
+        fixture.componentInstance.richTitle.set('Путь запроса');
+        fixture.componentInstance.richDescription.set('Клиент обращается к API.');
+        fixture.componentInstance.richSource.set('flowchart LR\nClient --> API');
+        fixture.componentInstance.applyRichNode();
+        fixture.detectChanges();
+
+        expect(emitted.length).toBe(1);
+        expect(emitted[0]?.root.content.some(node => node.type === 'mermaid')).toBeTrue();
+        expect(fixture.nativeElement.querySelector('.mnema-rich-atom')?.textContent).toContain('Путь запроса');
+        expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
     });
 });

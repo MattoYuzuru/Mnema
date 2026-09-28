@@ -29,12 +29,27 @@
 .mnema-native-editor .mnema-editor-surface a { color: var(--ink, #281378); text-decoration-thickness: .09em; text-underline-offset: .18em; }
 .mnema-native-editor .mnema-editor-surface blockquote { margin-inline: 0; border-inline-start: 3px solid var(--line, #c9c0ce); padding-inline-start: 1rem; }
 .mnema-native-editor .mnema-unsupported { display: inline-block; border: 1px dashed var(--ink, #281378); padding: .4rem .55rem; background: var(--soft, #e8e1ed); font: .8rem/1.3 system-ui, sans-serif; }
+.mnema-native-editor .mnema-rich-atom { display: block; margin-block: .75rem; border: 1px solid var(--line, #c9c0ce); border-inline-start: 3px solid var(--ink, #281378); padding: .7rem 1rem; background: var(--soft, #e8e1ed); color: var(--ink, #281378); font: .9rem/1.4 system-ui, sans-serif; }
+.mnema-native-editor .mnema-rich-atom.ProseMirror-selectednode { outline: 3px solid var(--ink, #281378); outline-offset: 2px; }
+.mnema-native-editor .rich-tools { margin-block: 1rem; border: 1px solid var(--line, #c9c0ce); padding: .75rem 1rem; background: var(--sheet, #fbf8ef); }
+.mnema-native-editor .rich-tools summary { min-block-size: 2.75rem; color: var(--ink, #281378); font: 600 .95rem/2.75rem system-ui, sans-serif; cursor: pointer; }
+.mnema-native-editor .rich-kind-picker { display: flex; flex-wrap: wrap; gap: .4rem; margin-block: .75rem 1rem; }
+.mnema-native-editor .rich-kind-picker button,
+.mnema-native-editor .rich-apply { min-block-size: 2.75rem; border: 1px solid var(--ink, #281378); border-radius: 2px; padding: .55rem .8rem; color: var(--ink, #281378); background: transparent; font: 600 .875rem/1.2 system-ui, sans-serif; cursor: pointer; }
+.mnema-native-editor .rich-kind-picker button[aria-pressed='true'],
+.mnema-native-editor .rich-apply { color: var(--sheet, #fbf8ef); background: var(--ink, #281378); }
+.mnema-native-editor .rich-fields { display: grid; gap: .85rem; }
+.mnema-native-editor .rich-fields label { display: grid; gap: .3rem; color: var(--ink, #281378); font: 600 .85rem/1.35 system-ui, sans-serif; }
+.mnema-native-editor .rich-fields input,
+.mnema-native-editor .rich-fields textarea { inline-size: 100%; min-inline-size: 0; border: 1px solid var(--line, #c9c0ce); border-radius: 2px; padding: .65rem; color: var(--body, #342e44); background: #fffdf7; font: 1rem/1.45 system-ui, sans-serif; }
+.mnema-native-editor .rich-fields textarea { resize: vertical; }
+.mnema-native-editor .rich-apply { justify-self: start; }
 .mnema-native-editor .ruby-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto; gap: .75rem; align-items: end; border: 1px solid var(--line, #c9c0ce); padding: 1rem; }
 .mnema-native-editor .ruby-fields legend { padding-inline: .35rem; color: var(--muted, #625c70); font: .8rem system-ui, sans-serif; }
 .mnema-native-editor .ruby-fields label { display: grid; gap: .35rem; font: .8rem system-ui, sans-serif; }
 .mnema-native-editor .ruby-fields input { min-block-size: 2.75rem; min-inline-size: 0; border: 1px solid var(--line, #c9c0ce); border-radius: 2px; padding: .55rem; font-size: 1rem; }
 .mnema-native-editor .editor-error { border-inline-start: 4px solid #9b3140; padding: .8rem 1rem; background: rgb(155 49 64 / 7%); }
 .mnema-native-editor .editor-note { color: var(--muted, #625c70); }
-.mnema-native-editor :where(button, input):focus-visible { outline: 3px solid var(--ink, #281378); outline-offset: 3px; }
+.mnema-native-editor :where(button, input, textarea, summary):focus-visible { outline: 3px solid var(--ink, #281378); outline-offset: 3px; }
 @media (max-width: 42rem) { .mnema-native-editor .ruby-fields { grid-template-columns: 1fr; } }
-@media (forced-colors: active) { .mnema-native-editor .editor-toolbar button, .mnema-native-editor .ruby-fields, .mnema-native-editor .ruby-fields input { border-color: CanvasText; } }
+@media (forced-colors: active) { .mnema-native-editor .editor-toolbar button, .mnema-native-editor .ruby-fields, .mnema-native-editor .ruby-fields input, .mnema-native-editor .rich-tools, .mnema-native-editor .rich-fields input, .mnema-native-editor .rich-fields textarea, .mnema-native-editor .mnema-rich-atom { border-color: CanvasText; } }

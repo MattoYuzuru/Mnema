@@ -54,6 +54,43 @@ export interface RenderDividerNode extends RenderNodeBase {
     readonly kind: 'divider';
 }
 
+export interface RenderImageNode extends RenderNodeBase {
+    readonly kind: 'image';
+    readonly assetId: string;
+    readonly alt: string;
+    readonly caption?: string;
+    readonly description?: string;
+}
+
+export interface RenderAudioNode extends RenderNodeBase {
+    readonly kind: 'audio';
+    readonly assetId: string;
+    readonly title: string;
+    readonly transcript?: string;
+}
+
+export interface RenderVideoNode extends RenderNodeBase {
+    readonly kind: 'video';
+    readonly assetId: string;
+    readonly title: string;
+    readonly transcript?: string;
+}
+
+export interface RenderMermaidNode extends RenderNodeBase {
+    readonly kind: 'mermaid';
+    readonly source: string;
+    readonly title: string;
+    readonly description: string;
+}
+
+export interface RenderTableNode extends RenderNodeBase {
+    readonly kind: 'table';
+    readonly caption: string;
+    readonly summary?: string;
+    readonly columns: readonly string[];
+    readonly rows: readonly (readonly string[])[];
+}
+
 export interface RenderOpaqueNode extends RenderNodeBase {
     readonly kind: 'opaque';
     readonly display: 'block' | 'inline' | 'list-item';
@@ -66,6 +103,11 @@ export type NativeRenderNode = RenderContainerNode
     | RenderRubyNode
     | RenderLinkNode
     | RenderDividerNode
+    | RenderImageNode
+    | RenderAudioNode
+    | RenderVideoNode
+    | RenderMermaidNode
+    | RenderTableNode
     | RenderOpaqueNode;
 
 export interface RenderTextValue {
@@ -101,13 +143,18 @@ const SUPPORTED_TYPES = new Set([
     'text',
     'ruby',
     'link',
-    'divider'
+    'divider',
+    'image', 'audio', 'video', 'mermaid', 'table'
 ]);
-const BLOCK_TYPES = new Set(['paragraph', 'heading', 'blockquote', 'bullet_list', 'ordered_list', 'divider']);
+const BLOCK_TYPES = new Set(['paragraph', 'heading', 'blockquote', 'bullet_list', 'ordered_list', 'divider',
+    'image', 'audio', 'video', 'mermaid', 'table']);
 const INLINE_TYPES = new Set(['text', 'ruby', 'link']);
 const CORE_KEYS = new Set(['id', 'type', 'version', 'attrs', 'content']);
 const COMMON_ATTR_KEYS = new Set(['lang', 'dir']);
 const encoder = new TextEncoder();
+// Mirrors Java Character.isWhitespace used by the canonical backend's String.isBlank.
+// eslint-disable-next-line no-control-regex -- Java whitespace includes ASCII control separators.
+const NON_JAVA_WHITESPACE = /[^\u0009-\u000d\u001c-\u001f\u0020\u1680\u2000-\u2006\u2008-\u200a\u2028\u2029\u205f\u3000]/u;
 
 class InvalidNativeDocument extends Error {}
 
@@ -319,9 +366,82 @@ function buildNode(
             assertAttrs(attrs, COMMON_ATTR_KEYS);
             assertEmpty(content);
             return { kind: 'divider', id, ...metadata };
+        case 'image':
+            assertAttrs(attrs, new Set([...COMMON_ATTR_KEYS, 'assetId', 'alt', 'caption', 'description']));
+            assertEmpty(content);
+            return { kind: 'image', id, ...metadata,
+                assetId: readUuid(attrs, 'assetId', context.budget),
+                alt: readBoundedText(attrs, 'alt', 4096, context.budget),
+                ...optionalText(attrs, 'caption', 1024, context.budget),
+                ...optionalText(attrs, 'description', 8192, context.budget) };
+        case 'audio':
+        case 'video':
+            assertAttrs(attrs, new Set([...COMMON_ATTR_KEYS, 'assetId', 'title', 'transcript']));
+            assertEmpty(content);
+            return { kind: type, id, ...metadata,
+                assetId: readUuid(attrs, 'assetId', context.budget),
+                title: readBoundedText(attrs, 'title', 1024, context.budget),
+                ...optionalText(attrs, 'transcript', 16384, context.budget) };
+        case 'mermaid':
+            assertAttrs(attrs, new Set([...COMMON_ATTR_KEYS, 'source', 'title', 'description']));
+            assertEmpty(content);
+            return { kind: 'mermaid', id, ...metadata,
+                source: readBoundedText(attrs, 'source', 16384, context.budget),
+                title: readBoundedText(attrs, 'title', 1024, context.budget),
+                description: readBoundedText(attrs, 'description', 8192, context.budget) };
+        case 'table': {
+            assertAttrs(attrs, new Set([...COMMON_ATTR_KEYS, 'caption', 'summary', 'columns', 'rows']));
+            assertEmpty(content);
+            const columns = readTextArray(attrs['columns'], 1, 12, 1024, true, context.budget);
+            const rowsValue = attrs['rows'];
+            if (!Array.isArray(rowsValue) || rowsValue.length > 100) throw new InvalidNativeDocument();
+            const rows = rowsValue.map(row => readTextArray(row, columns.length, columns.length,
+                4096, false, context.budget));
+            return { kind: 'table', id, ...metadata,
+                caption: readBoundedText(attrs, 'caption', 1024, context.budget),
+                ...optionalText(attrs, 'summary', 8192, context.budget), columns, rows };
+        }
         default:
             throw new InvalidNativeDocument();
     }
+}
+
+function readBoundedText(attrs: Record<string, unknown>, key: string, maxLength: number,
+    budget: RenderBudget): string {
+    const value = attrs[key];
+    if (typeof value !== 'string' || !NON_JAVA_WHITESPACE.test(value) || value.length > maxLength) {
+        throw new InvalidNativeDocument();
+    }
+    return budget.scalar(value);
+}
+
+function optionalText(attrs: Record<string, unknown>, key: string, maxLength: number,
+    budget: RenderBudget): Record<string, string> {
+    const value = attrs[key];
+    if (value === undefined) return {};
+    if (typeof value !== 'string' || !NON_JAVA_WHITESPACE.test(value) || value.length > maxLength) {
+        throw new InvalidNativeDocument();
+    }
+    return { [key]: budget.scalar(value) };
+}
+
+function readUuid(attrs: Record<string, unknown>, key: string, budget: RenderBudget): string {
+    const value = attrs[key];
+    if (typeof value !== 'string' || !UUID_V4.test(value)) throw new InvalidNativeDocument();
+    return budget.scalar(value);
+}
+
+function readTextArray(value: unknown, minimum: number, maximum: number, maxLength: number,
+    required: boolean, budget: RenderBudget): readonly string[] {
+    if (!Array.isArray(value) || value.length < minimum || value.length > maximum) {
+        throw new InvalidNativeDocument();
+    }
+    return value.map(cell => {
+        if (typeof cell !== 'string' || cell.length > maxLength || (required && !NON_JAVA_WHITESPACE.test(cell))) {
+            throw new InvalidNativeDocument();
+        }
+        return budget.scalar(cell);
+    });
 }
 
 function buildChildren(

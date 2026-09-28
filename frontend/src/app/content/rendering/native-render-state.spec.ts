@@ -1,4 +1,6 @@
 import lexicalVectors from '../../../../../contracts/content/native-v1/lexical-vectors.json';
+import richTextVectors from '../../../../../contracts/content/native-v1/rich-text-vectors.json';
+import richDocumentJson from '../../../../../contracts/content/native-v1/valid/rich.json';
 import { NativeJson, NativeNode } from '../native-document';
 import {
     NATIVE_RENDER_LIMITS,
@@ -9,6 +11,39 @@ import {
 import { documentOf, nativeNode } from './native-renderer.fixtures';
 
 describe('native render boundary', () => {
+    it('accepts the shared rich fixture and exposes only typed, bounded fields', () => {
+        const state = buildNativeRenderState(richDocumentJson as unknown as import('../native-document').NativeDocument);
+        expect(state.status).toBe('ready');
+        if (state.status === 'ready') {
+            expect(state.root.content.map(node => node.kind)).toEqual(['image', 'audio', 'video', 'mermaid', 'table']);
+            expect(state.root.content[4]?.kind).toBe('table');
+        }
+    });
+
+    it('rejects malformed known rich nodes while retaining future versions as opaque', () => {
+        const invalid = documentOf([nativeNode('image', { assetId: 'javascript:alert(1)', alt: 'Unsafe' })]);
+        expect(buildNativeRenderState(invalid).status).toBe('invalid');
+        const blankCaption = documentOf([nativeNode('image', {
+            assetId: '31901995-16ea-4f8b-8301-5d8e03004c72', alt: 'Scheme', caption: ' '
+        })]);
+        expect(buildNativeRenderState(blankCaption).status).toBe('invalid');
+        const future = documentOf([nativeNode('image', { payload: '<script>unsafe</script>' }, [], { version: 2 })]);
+        const state = buildNativeRenderState(future);
+        expect(state.status).toBe('ready');
+        if (state.status === 'ready') expect(state.root.content[0]?.kind).toBe('opaque');
+    });
+
+    it('matches Java isBlank for required rich text and table headers', () => {
+        const assetId = '31901995-16ea-4f8b-8301-5d8e03004c72';
+        for (const vector of richTextVectors.cases) {
+            const expected = vector.valid ? 'ready' : 'invalid';
+            expect(buildNativeRenderState(documentOf([nativeNode('image', { assetId, alt: vector.value })])).status)
+                .toBe(expected);
+            expect(buildNativeRenderState(documentOf([nativeNode('table', {
+                caption: 'Таблица', columns: [vector.value], rows: []
+            })])).status).toBe(expected);
+        }
+    });
     it('matches every shared native-v1 language vector', () => {
         expect(lexicalVectors.lang.accept.every(isAllowedNativeLang)).toBeTrue();
         expect(lexicalVectors.lang.reject.filter(isAllowedNativeLang)).toEqual([]);

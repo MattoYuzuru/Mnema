@@ -86,6 +86,10 @@ public final class NativeDocumentReader {
         return node.isIntegralNumber() && node.canConvertToInt() && node.intValue() > 0;
     }
 
+    static boolean uuidV4(String value) {
+        return UUID_V4.matcher(value).matches();
+    }
+
     private static boolean hasExactly(JsonNode node, Set<String> fields) {
         return node.isObject() && node.size() == fields.size()
                 && node.properties().stream().allMatch(property -> fields.contains(property.getKey()));

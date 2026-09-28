@@ -1,0 +1,7 @@
+{"cases": [
+  { "value": "\u00a0", "valid": true },
+  { "value": "\u2007", "valid": true },
+  { "value": "\ufeff", "valid": true },
+  { "value": "\u2000", "valid": false },
+  { "value": " ", "valid": false }
+]}
