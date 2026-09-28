@@ -305,7 +305,24 @@
 
 @media (max-width: 22.5rem) {
     .hero h1 { font-size: min(3rem, 14vw); }
-    .hero-note { inline-size: min(9.6rem, 60vw); }
-    .hero-note p { font-size: min(1.4rem, 8vw); }
-    .small-note { max-inline-size: 10rem; }
+    .art {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        gap: .75rem;
+        min-block-size: 0;
+        margin: 0;
+        padding: max(20rem, 110vw) .5rem .5rem;
+    }
+    .hero-note,
+    .small-note {
+        position: relative;
+        inset: auto;
+        inline-size: 100%;
+        max-inline-size: none;
+        margin: 0;
+        padding: .75rem;
+        overflow-wrap: normal;
+    }
+    .hero-note p { font-size: clamp(1.1rem, 7vw, 1.4rem); }
 }

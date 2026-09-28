@@ -13,7 +13,7 @@ prototype. The public landing was captured in headless Chrome 154 from a local s
 build. The account, deck, editor, Browse and Study screens were captured by the
 disposable real HTTPS Identity + Learning browser harness with synthetic data.
 The PR records the exact head SHA used for review. The 320 px captures include a
-200% root text-size check; the landing image shows the first 2800 vertical pixels
+200% root text-size check; the landing image shows the first 3500 vertical pixels
 of that long reflowed page. All measured page `scrollWidth` values stayed within the
 CSS viewport. Emulation and screenshots do not replace a physical-device or
 assistive-technology check.
