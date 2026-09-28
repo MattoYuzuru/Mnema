@@ -43,5 +43,8 @@
     "type-fest": "5.10.0",
     "typescript": "6.0.3",
     "typescript-eslint": "8.58.0"
+  },
+  "overrides": {
+    "lodash-es": "4.18.1"
   }
 }
