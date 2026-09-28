@@ -1,0 +1,57 @@
+<section class="media-workbench" aria-labelledby="media-workbench-title">
+  <div class="media-heading"><div><p class="media-kicker">Медиатека материала</p><h3 id="media-workbench-title">Файлы и запись</h3></div><p>Файл можно вставить в материал сразу после начала загрузки. Читатель увидит его, когда проверка завершится.</p></div>
+  <div class="media-drop" [class.is-over]="dropActive()" (dragenter)="onDragOver($event)"
+       (dragover)="onDragOver($event)" (dragleave)="dropActive.set(false)" (drop)="onDrop($event)">
+    <span class="media-drop-mark" aria-hidden="true">＋</span>
+    <strong>Перетащите файлы сюда</strong><span>или выберите их с устройства</span>
+    <div class="media-actions">
+      <label class="media-button primary">Выбрать файлы
+        <input type="file" multiple [accept]="fileAccept" [disabled]="disabled()" (change)="onFiles($any($event.target).files); $any($event.target).value = ''" />
+      </label>
+      <label class="media-button">Открыть камеру
+        <input type="file" accept="image/*,video/mp4,video/quicktime,video/webm" capture="environment"
+               [disabled]="disabled()" (change)="onFiles($any($event.target).files); $any($event.target).value = ''" />
+      </label>
+      @if (!recording()) { <button class="media-button" type="button" [disabled]="disabled()" (click)="startRecording()">Записать аудио</button> }
+      @else { <button class="media-button stop" type="button" (click)="stopRecording()">Остановить запись</button> }
+    </div>
+    <small>JPEG, PNG, WebP, GIF, MP3, M4A, MP4, MOV и WebM. Камера откроется, если устройство это поддерживает.</small>
+  </div>
+  @if (message(); as notice) { <p class="media-notice" role="alert">{{ notice }}</p> }
+  @if (recordPreview(); as preview) {
+    <div class="record-preview"><strong>Прослушайте запись</strong><audio [src]="preview" controls preload="metadata"></audio>
+      <div class="media-actions"><button class="media-button primary" type="button" (click)="useRecording()">Загрузить запись</button><button class="media-button" type="button" (click)="discardRecording()">Перезаписать</button></div>
+    </div>
+  }
+  <input #replacePicker class="visually-hidden" type="file" [accept]="fileAccept"
+         (change)="onFiles($any($event.target).files); $any($event.target).value = ''" />
+  @if (entries().length > 0) {
+    <ol class="media-queue" aria-label="Очередь медиафайлов">
+      @for (entry of entries(); track entry.id) {
+        <li class="media-row">
+          <span class="media-type" aria-hidden="true">{{ entry.kind === 'image' ? '▧' : entry.kind === 'audio' ? '♫' : '▶' }}</span>
+          <div class="media-row-main"><strong>{{ entry.name }}</strong>
+            <span class="media-status" [attr.role]="entry.phase === 'error' ? 'alert' : 'status'">
+              @switch (entry.phase) {
+                @case ('selected') { В очереди }
+                @case ('uploading') { Загружается · {{ entry.progress }}% }
+                @case ('finalizing') { Проверяем передачу… }
+                @case ('waiting') { {{ entry.assetState === 'PROCESSING' ? 'Обрабатываем файл…' : 'Проверяем файл…' }} }
+                @case ('ready') { Готов к просмотру }
+                @case ('needs-file') { Выберите файл снова, чтобы продолжить }
+                @case ('error') { {{ entry.error ?? 'Файл пока недоступен' }} }
+                @case ('cancelled') { Загрузка отменена }
+              }
+            </span>
+            @if (entry.phase === 'uploading') { <progress [value]="entry.progress" max="100" [attr.aria-label]="'Загрузка ' + entry.name"></progress> }
+          </div>
+          <div class="media-row-actions">
+            @if (entry.assetId !== null && entry.phase !== 'cancelled') { <button type="button" (click)="choose(entry)">Вставить</button> }
+            @if (entry.phase === 'error' || entry.phase === 'needs-file') { <button type="button" (click)="retry(entry)">Повторить</button> }
+            @if (entry.phase === 'uploading' || entry.phase === 'selected') { <button type="button" (click)="cancel(entry)">Отменить</button> }
+          </div>
+        </li>
+      }
+    </ol>
+  }
+</section>

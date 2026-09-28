@@ -20,7 +20,7 @@
 
     <div #editorHost class="editor-host"></div>
 
-    <details class="rich-tools">
+    <details #richTools class="rich-tools">
       <summary>Изображение, аудио, видео, схема или таблица</summary>
       <div class="rich-kind-picker" role="group" aria-label="Тип содержимого">
         @for (kind of ['image', 'audio', 'video', 'mermaid', 'table']; track kind) {

@@ -6,6 +6,7 @@ import app.mnema.learning.catalog.deck.DeckCommand;
 import app.mnema.learning.catalog.deck.DeckService;
 import app.mnema.learning.catalog.item.ItemPublicationCommand;
 import app.mnema.learning.catalog.item.ItemService;
+import app.mnema.learning.media.MediaCatalog;
 import app.mnema.learning.platform.api.ResourceLimitExceededException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
@@ -15,6 +16,7 @@ import app.mnema.learning.support.PostgresIntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -43,6 +45,7 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
     @Autowired CaptureService captures;
     @Autowired DeckService decks;
     @Autowired ItemService items;
+    @Autowired MediaCatalog mediaCatalog;
     @Autowired AuthoringRepository repository;
     @Autowired JdbcClient jdbc;
     @Autowired PlatformTransactionManager transactions;
@@ -83,6 +86,35 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
                 .isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> drafts.read(UUID.randomUUID(), left.draftId()))
                 .isInstanceOf(ResourceNotFoundException.class);
+    }
+
+    @Test
+    void draftMediaHoldsFollowSavedDocumentAndFailedSavePreservesPreviousHolds() {
+        UUID actor = UUID.randomUUID();
+        DeckHead deck = createDeck(actor);
+        UUID first = mediaCatalog.reserve(actor, UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
+        UUID second = mediaCatalog.reserve(actor, UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
+        UUID foreign = mediaCatalog.reserve(UUID.randomUUID(), UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
+        NativeDocument firstDocument = imageDocument(first);
+        DraftRecord draft = draft(actor, drafts.create(actor,
+                draftCreate(deck.id(), null, null, firstDocument)).acknowledgement());
+        assertThat(draftAssets(draft.draftId())).containsExactly(first);
+
+        NativeDocument secondDocument = imageDocument(second);
+        drafts.update(actor, draft.draftId(), 0,
+                new AuthoringCommands.DraftUpdate(UUID.randomUUID(), secondDocument));
+        assertThat(draftAssets(draft.draftId())).containsExactly(second);
+        assertNativeJson(drafts.read(actor, draft.draftId()).path("document"), secondDocument.toJson());
+
+        assertThatThrownBy(() -> drafts.update(actor, draft.draftId(), 1,
+                new AuthoringCommands.DraftUpdate(UUID.randomUUID(), imageDocument(foreign))))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(draftAssets(draft.draftId())).containsExactly(second);
+        assertNativeJson(drafts.read(actor, draft.draftId()).path("document"), secondDocument.toJson());
+        assertThat(drafts.read(actor, draft.draftId()).path("rowVersion").textValue()).isEqualTo("1");
+
+        drafts.delete(actor, draft.draftId(), 1);
+        assertThat(draftAssets(draft.draftId())).isEmpty();
     }
 
     @Test
@@ -282,6 +314,25 @@ class AuthoringServiceIntegrationTest extends PostgresIntegrationTest {
 
     private static NativeDocument nativeDocument(String text) {
         return new NativeDocumentReader().read(CANONICAL.canonicalBytes(document(text)));
+    }
+
+    private static NativeDocument imageDocument(UUID asset) {
+        ObjectNode json = document("media");
+        ArrayNode content = (ArrayNode) json.path("root").path("content");
+        content.removeAll();
+        ObjectNode image = content.addObject();
+        image.put("id", UUID.randomUUID().toString());
+        image.put("type", "image");
+        image.put("version", 1);
+        image.putObject("attrs").put("assetId", asset.toString()).put("alt", "Схема сервиса")
+                .put("description", "Схема соединяет API и базу данных.");
+        image.putArray("content");
+        return new NativeDocumentReader().read(CANONICAL.canonicalBytes(json));
+    }
+
+    private List<UUID> draftAssets(UUID draft) {
+        return jdbc.sql("SELECT asset_id FROM app_learning.draft_media_ref WHERE draft_id=:draft")
+                .param("draft", draft).query(UUID.class).list();
     }
 
     private static ObjectNode document(String text) { return AuthoringCommandsTest.document(text); }

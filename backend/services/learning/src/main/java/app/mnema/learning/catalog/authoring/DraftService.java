@@ -1,5 +1,7 @@
 package app.mnema.learning.catalog.authoring;
 
+import app.mnema.learning.catalog.content.NativeMediaReferences;
+import app.mnema.learning.media.MediaCatalog;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceLimitExceededException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
@@ -24,11 +26,14 @@ public class DraftService {
     private final AuthoringRepository repository;
     private final CommandReceiptService receipts;
     private final CompareAndSetExecutor cas;
+    private final MediaCatalog mediaCatalog;
 
-    public DraftService(AuthoringRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas) {
+    public DraftService(AuthoringRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas,
+                        MediaCatalog mediaCatalog) {
         this.repository = repository;
         this.receipts = receipts;
         this.cas = cas;
+        this.mediaCatalog = mediaCatalog;
     }
 
     @Transactional(readOnly = true, timeout = 10)
@@ -70,6 +75,7 @@ public class DraftService {
             requireDraftCapacity(actor, null, bytes, true);
             UUID id = UuidPolicy.newPortableId();
             repository.insertDraft(id, actor, command, repository.now());
+            mediaCatalog.replaceDraft(actor, id, NativeMediaReferences.from(command.document()));
             ObjectNode result = JsonNodeFactory.instance.objectNode().put("commandId", command.commandId().toString());
             result.set("draft", repository.draft(actor, id).orElseThrow().summary());
             return result;
@@ -94,6 +100,7 @@ public class DraftService {
             requireDraftCapacity(actor, draftId, bytes, false);
             long next = cas.updateOne(expected,
                     () -> repository.updateDraft(actor, draftId, expected, command.document().toJson(), repository.now()));
+            mediaCatalog.replaceDraft(actor, draftId, NativeMediaReferences.from(command.document()));
             DraftRecord row = repository.draft(actor, draftId).orElseThrow();
             if (row.rowVersion() != next) throw new IllegalStateException("Draft CAS result mismatch");
             ObjectNode result = JsonNodeFactory.instance.objectNode().put("commandId", command.commandId().toString());

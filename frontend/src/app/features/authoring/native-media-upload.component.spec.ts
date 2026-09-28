@@ -1,0 +1,85 @@
+import { TestBed, fakeAsync, flushMicrotasks } from '@angular/core/testing';
+
+import { createEmptyNativeDocument } from '../../content/editing/native-editor-adapter';
+import { NativeMediaUploadApi, UploadView } from './native-media-upload.api';
+import { NativeMediaUploadComponent } from './native-media-upload.component';
+
+describe('NativeMediaUploadComponent', () => {
+    const assetId = '0c2f05ec-8e16-464a-95d7-8fd97602d12d';
+    const open: UploadView = {
+        assetId, generation: 0, currentGeneration: 0, state: 'OPEN', assetState: 'PENDING_UPLOAD',
+        method: 'SINGLE', declaredLength: 3, declaredMime: 'image/png', expiresAt: '2026-09-29T00:00:00Z',
+        partSize: null, partCount: null, url: 'https://storage.example/signed', headers: { 'content-length': '3' },
+        urlExpiresAt: '2099-01-01T00:00:00Z', parts: []
+    };
+
+    function setup() {
+        const api = jasmine.createSpyObj<NativeMediaUploadApi>('NativeMediaUploadApi', [
+            'intent', 'status', 'partUrls', 'completedParts', 'finalize', 'retry', 'cancel', 'renewSingle', 'put'
+        ]);
+        api.intent.and.resolveTo(open);
+        api.put.and.resolveTo();
+        api.finalize.and.resolveTo({ ...open, state: 'SEALED', assetState: 'VERIFYING', url: null });
+        api.status.and.resolveTo({ ...open, state: 'SEALED', assetState: 'READY', url: null });
+        TestBed.configureTestingModule({ providers: [{ provide: NativeMediaUploadApi, useValue: api }] });
+        const fixture = TestBed.createComponent(NativeMediaUploadComponent);
+        fixture.componentRef.setInput('document', createEmptyNativeDocument());
+        fixture.detectChanges();
+        return { fixture, component: fixture.componentInstance, api };
+    }
+
+    it('reserves an asset before upload completes and keeps it available for insertion', fakeAsync(() => {
+        const { fixture, component, api } = setup();
+        const selected: string[] = [];
+        component.chooseAsset.subscribe(value => selected.push(value.assetId));
+        component.onFiles([new File(['png'], 'diagram.png', { type: 'image/png' })]);
+        flushMicrotasks();
+
+        expect(api.intent).toHaveBeenCalledOnceWith(jasmine.any(String), 'upload', 'image', 'image/png', 3);
+        expect(api.put).toHaveBeenCalled();
+        expect(api.finalize).toHaveBeenCalled();
+        expect(component.entries()[0].phase).toBe('waiting');
+        component.choose(component.entries()[0]);
+        expect(selected).toEqual([assetId]);
+        fixture.destroy();
+    }));
+
+    it('rejects unknown files before reserving storage', () => {
+        const { fixture, component, api } = setup();
+        component.onFiles([new File(['bad'], 'diagram.svg', { type: 'image/svg+xml' })]);
+        expect(component.entries()[0].phase).toBe('error');
+        expect(api.intent).not.toHaveBeenCalled();
+        fixture.destroy();
+    });
+
+    it('recovers an asset reference from a server draft without inventing local file bytes', fakeAsync(() => {
+        const { fixture, component, api } = setup();
+        const documentValue = createEmptyNativeDocument();
+        fixture.componentRef.setInput('document', {
+            ...documentValue, root: { ...documentValue.root, content: [{
+                id: '0983ec5d-722e-4ea5-af04-2d331c7c545e', type: 'image', version: 1,
+                attrs: { assetId, alt: 'Схема API' }, content: []
+            }] }
+        });
+        fixture.detectChanges();
+        flushMicrotasks();
+        expect(component.entries()[0].assetId).toBe(assetId);
+        expect(component.entries()[0].file).toBeNull();
+        expect(component.entries()[0].phase).toBe('needs-file');
+        expect(api.intent).not.toHaveBeenCalled();
+        fixture.destroy();
+    }));
+
+    it('finishes an active byte transfer after SPA navigation from the editor', fakeAsync(() => {
+        const { fixture, component, api } = setup();
+        let finishPut: (() => void) | undefined;
+        api.put.and.returnValue(new Promise<void>(resolve => { finishPut = resolve; }));
+        component.onFiles([new File(['png'], 'diagram.png', { type: 'image/png' })]);
+        flushMicrotasks();
+        expect(api.put).toHaveBeenCalled();
+        fixture.destroy();
+        finishPut?.();
+        flushMicrotasks();
+        expect(api.finalize).toHaveBeenCalledOnceWith(assetId, 0, jasmine.any(String));
+    }));
+});

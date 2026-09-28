@@ -63,6 +63,7 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
     readonly richSelected = signal(false);
 
     private readonly editorHost = viewChild.required<ElementRef<HTMLElement>>('editorHost');
+    private readonly richTools = viewChild<ElementRef<HTMLDetailsElement>>('richTools');
     private editorView: EditorView | null = null;
     private viewInitialized = false;
     private readonly disabledSync = effect(() => {
@@ -214,6 +215,11 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
     prepareMedia(kind: 'image' | 'audio' | 'video', assetId: string): void {
         this.selectRichKind(kind);
         this.richAssetId.set(assetId);
+        const tools = this.richTools()?.nativeElement;
+        if (tools) {
+            tools.open = true;
+            tools.scrollIntoView({ block: 'nearest' });
+        }
     }
 
     applyRichNode(): void {
