@@ -227,6 +227,9 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
         assertThat(ready.version()).isEqualTo(2);
         assertThat(ready.id()).isNotEqualTo(pending.id());
         assertThat(ready.body()).contains("READY", "sha256", variant.toString(), blob.toString());
+        assertThat(ready.etag()).isEqualTo("\"" + java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(ready.body().getBytes(java.nio.charset.StandardCharsets.UTF_8))) + "\"");
         assertThat(ready.body()).doesNotContain("verified/", "objectKey", "https://");
         assertThat(manifests.read(owner, deck, pending.id()).body()).isEqualTo(pending.body());
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.media_manifest_blob_ref WHERE manifest_id=:manifest")

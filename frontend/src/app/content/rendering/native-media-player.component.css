@@ -11,4 +11,10 @@
 .mnema-player-note { margin: 0; padding: .4rem .7rem .7rem; font: .85rem system-ui, sans-serif; }
 .mnema-player-note.error { color: #9b3140; }
 :where(button,input,select):focus-visible { outline: 3px solid var(--ink, #281378); outline-offset: 2px; }
+@media (max-width: 25rem) {
+  .mnema-player-controls { gap: .25rem; padding: .5rem; }
+  .mnema-player-action { min-inline-size: 2.5rem; min-block-size: 2.5rem; }
+  .mnema-player-controls input[type='range'] { flex-basis: 3.5rem; min-inline-size: 3.5rem; }
+  .mnema-player-time { font-size: .75rem; }
+}
 @media (forced-colors: active) { .mnema-player { border-color: CanvasText; } }
