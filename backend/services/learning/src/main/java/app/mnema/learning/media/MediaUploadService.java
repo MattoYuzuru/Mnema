@@ -60,6 +60,18 @@ public final class MediaUploadService {
         return view(repository.own(owner, asset), null, List.of());
     }
 
+    /** Reissues a short-lived single PUT URL after a tab reload, without changing the asset generation. */
+    public UploadView singleUrl(UUID owner, UUID asset, long generation) {
+        var session = repository.own(owner, asset);
+        if (session.generation() != generation || !session.method().equals("SINGLE")
+                || !session.state().equals("OPEN") || !session.expiresAt().isAfter(Instant.now())) {
+            throw new MediaUploadConflictException();
+        }
+        var signed = objects.singleUrl(session.stagingKey(), session.length());
+        session = repository.issue(owner, asset, generation, signed.expiresAt());
+        return view(session, signed, List.of());
+    }
+
     /** Internal #236 handoff: one immutable source for the current asset generation. */
     public SealedSource sealedSource(UUID asset, long generation) {
         UuidPolicy.requireEntityId(asset, "assetId");
@@ -138,9 +150,7 @@ public final class MediaUploadService {
             }
         }
         if (session.state().equals("OPEN") && session.method().equals("SINGLE")) {
-            var signed = objects.singleUrl(session.stagingKey(), session.length());
-            session = repository.issue(session.ownerId(), session.assetId(), session.generation(), signed.expiresAt());
-            return view(session, signed, List.of());
+            return singleUrl(session.ownerId(), session.assetId(), session.generation());
         }
         return view(session, null, List.of());
     }

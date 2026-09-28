@@ -62,6 +62,24 @@ class MediaUploadControllerTest {
     }
 
     @Test
+    void renewSingleUrlUsesGenerationBodyAndPrivateResponse() throws Exception {
+        when(service.singleUrl(eq(owner), eq(asset), eq(0L)))
+                .thenReturn(new MediaUploadService.UploadView(asset, 0, "OPEN", 0, "PENDING_UPLOAD",
+                        "SINGLE", 3, "image/png", Instant.parse("2026-09-29T00:00:00Z"), null, null,
+                        "https://storage.example/renewed", Map.of("content-length", "3"),
+                        Instant.parse("2026-09-28T12:00:00Z"), List.of()));
+        mvc.perform(post("/media-assets/" + asset + "/upload/url").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"generation\":0}"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(jsonPath("$.url").value("https://storage.example/renewed"))
+                .andExpect(jsonPath("$.headers.content-length").value("3"));
+        mvc.perform(post("/media-assets/" + asset + "/upload/url").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"generation\":0,\"ignored\":true}"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
     void invalidPathAndUploadConflictUseStableProblemCodes() throws Exception {
         mvc.perform(post("/media-assets/upload-intents").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"origin\":\"upload\",\"kind\":\"image\",\"mime\":\"image/png\",\"byteLength\":3}"))

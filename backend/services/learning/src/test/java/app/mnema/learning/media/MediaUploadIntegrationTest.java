@@ -29,6 +29,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -110,6 +111,35 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
                         + "WHERE asset_id=:asset")
                 .param("asset", start.assetId()).update();
         assertThat(uploads.status(owner, start.assetId()).assetState()).isEqualTo("REJECTED");
+    }
+
+    @Test
+    void singlePutUrlCanBeRenewedAfterReloadOnlyWhileOwnerSessionIsOpen() throws Exception {
+        UUID owner = UUID.randomUUID();
+        var start = uploads.start(owner, UUID.randomUUID(), "upload", "image", "image/png", 3);
+        assertThat(uploads.status(owner, start.assetId()).url()).isNull();
+        var renewed = uploads.singleUrl(owner, start.assetId(), start.generation());
+        assertThat(renewed.assetId()).isEqualTo(start.assetId());
+        assertThat(renewed.generation()).isEqualTo(start.generation());
+        assertThat(renewed.url()).isNotBlank();
+        assertThat(renewed.headers()).containsEntry("content-length", "3");
+        assertThat(renewed.urlExpiresAt()).isAfter(Instant.now());
+        assertThatThrownBy(() -> uploads.singleUrl(UUID.randomUUID(), start.assetId(), 0))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> uploads.singleUrl(owner, start.assetId(), 1))
+                .isInstanceOf(MediaUploadConflictException.class);
+        put(renewed.url(), renewed.headers(), new byte[] {1, 2, 3});
+        uploads.finalizeUpload(owner, start.assetId(), 0, UUID.randomUUID());
+        assertThatThrownBy(() -> uploads.singleUrl(owner, start.assetId(), 0))
+                .isInstanceOf(MediaUploadConflictException.class);
+
+        var expiring = uploads.start(owner, UUID.randomUUID(), "upload", "image", "image/png", 3);
+        jdbc.sql("UPDATE app_learning.media_upload_session SET created_at=CURRENT_TIMESTAMP-interval '2 days',"
+                        + "expires_at=CURRENT_TIMESTAMP-interval '1 second' "
+                        + "WHERE asset_id=:asset")
+                .param("asset", expiring.assetId()).update();
+        assertThatThrownBy(() -> uploads.singleUrl(owner, expiring.assetId(), 0))
+                .isInstanceOf(MediaUploadConflictException.class);
     }
 
     @Test

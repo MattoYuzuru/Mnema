@@ -14,6 +14,7 @@ presigned URLs as short-lived bearer capabilities and never log or persist them.
 | --- | --- |
 | `POST /upload-intents` `{intentId,origin,kind,mime,byteLength}` | Reserve a stable asset and return its first transfer. Exact owner/intent replay returns the original attempt; changed body returns 409. |
 | `GET /{assetId}/upload` | Current-generation upload state and live asset lifecycle state for bounded polling. |
+| `POST /{assetId}/upload/url` `{generation}` | Reissue a signed single PUT URL while the owner's current session is `OPEN`, including after a tab reload. |
 | `GET /{assetId}/upload/parts?generation=N` | Server-observed part numbers for multipart resume. |
 | `POST /{assetId}/upload/part-urls` `{generation,firstPart,count}` | Issue up to 16 signed part URLs. |
 | `POST /{assetId}/upload/finalize` `{generation,commandId}` | Freeze a complete source, then atomically mark the session `SEALED` and asset `VERIFYING`. |
@@ -29,6 +30,11 @@ while the asset is `VERIFYING` or `PROCESSING`; it can later show `READY`,
 `REJECTED`, or `FAILED_RETRYABLE` without a page reload. The asset's
 `PENDING_UPLOAD → VERIFYING` transition is in the same DB
 transaction as session sealing. No S3 request runs inside that transaction.
+The status response never includes a signed URL. A resumed client reads the
+current generation from status, then requests `/upload/url` for `SINGLE` or
+`/upload/parts` plus `/upload/part-urls` for `MULTIPART`. Renewal does not
+change the asset generation and fails for another owner, a stale generation,
+an expired session, or a finalized transfer.
 
 The server signs `Content-Length` for each PUT; the browser must send exactly the
 declared `Blob` or part slice. The server still checks actual object/part lengths

@@ -49,6 +49,12 @@ public final class MediaUploadController {
         return privateOk(uploads.status(actor(identity), id(assetId)));
     }
 
+    @PostMapping(value = "/{assetId}/upload/url", consumes = MediaType.APPLICATION_JSON_VALUE)
+    ResponseEntity<MediaUploadService.UploadView> singleUrl(@AuthenticationPrincipal Jwt identity,
+                                                             @PathVariable String assetId, InputStream body) {
+        return privateOk(uploads.singleUrl(actor(identity), id(assetId), MediaUploadCommand.generation(body)));
+    }
+
     @GetMapping("/{assetId}/upload/parts")
     ResponseEntity<List<Integer>> uploadedParts(@AuthenticationPrincipal Jwt identity, @PathVariable String assetId,
                                                  @RequestParam long generation) {

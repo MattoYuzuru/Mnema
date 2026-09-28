@@ -39,6 +39,10 @@ final class MediaUploadCommand {
         return new PartRange(number(body, "generation"), (int) first, (int) count);
     }
 
+    static long generation(InputStream input) {
+        return number(read(input, Set.of("generation")), "generation");
+    }
+
     static Finalize finalizeCommand(InputStream input) {
         JsonNode body = read(input, Set.of("commandId", "generation"));
         return new Finalize(id(body, "commandId"), number(body, "generation"));
