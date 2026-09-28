@@ -2,6 +2,7 @@ import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import mixedDocumentJson from '../../../../../contracts/content/native-v1/valid/mixed.json';
 import richDocumentJson from '../../../../../contracts/content/native-v1/valid/rich.json';
+import youtubeDocumentJson from '../../../../../contracts/content/native-v1/valid/youtube.json';
 import { NativeDocument } from '../native-document';
 import { NativeDocumentRendererComponent } from './native-document-renderer.component';
 import { NATIVE_RENDER_LIMITS } from './native-render-state';
@@ -41,9 +42,23 @@ describe('NativeDocumentRendererComponent', () => {
         fixture.detectChanges();
         const host = fixture.nativeElement as HTMLElement;
 
-        expect(host.querySelector('img.native-image')?.getAttribute('alt')).toBe('Схема пути запроса');
+        expect(host.querySelector('app-native-media-image .image-open img')?.getAttribute('alt'))
+            .toBe('Схема пути запроса');
         expect(host.querySelector('audio')?.getAttribute('src')).toBe('https://example.test/authorized-audio');
         expect(host.querySelector('video')).toBeNull();
+    });
+
+    it('keeps a YouTube block inert until a reader opens the provider player', () => {
+        fixture.componentRef.setInput('document', youtubeDocumentJson as unknown as NativeDocument);
+        fixture.detectChanges();
+        const host = fixture.nativeElement as HTMLElement;
+        expect(host.querySelector('iframe')).toBeNull();
+        expect(host.querySelector('app-native-youtube a')?.getAttribute('href'))
+            .toBe('https://www.youtube.com/watch?v=M7lc1UVf-VE');
+        (host.querySelector('app-native-youtube button') as HTMLButtonElement).click();
+        fixture.detectChanges();
+        expect(host.querySelector('iframe')?.getAttribute('src'))
+            .toBe('https://www.youtube-nocookie.com/embed/M7lc1UVf-VE');
     });
 
     it('renders the complete baseline fixture with semantic structure and original metadata', () => {

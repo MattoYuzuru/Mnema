@@ -1,0 +1,22 @@
+{
+  "formatVersion": 1,
+  "root": {
+    "id": "18e0c3b2-35ab-437b-a884-91cccb4a1940",
+    "type": "doc",
+    "version": 1,
+    "attrs": {},
+    "content": [
+      {
+        "id": "a90b5c32-b451-47fd-8796-80cc65c49db0",
+        "type": "youtube",
+        "version": 1,
+        "attrs": {
+          "videoId": "M7lc1UVf-VE",
+          "title": "Пояснение схемы",
+          "transcript": "Автор объясняет архитектуру сервиса."
+        },
+        "content": []
+      }
+    ]
+  }
+}

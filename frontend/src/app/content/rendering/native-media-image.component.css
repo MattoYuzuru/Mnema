@@ -1,0 +1,17 @@
+:host { display: block; }
+* { box-sizing: border-box; }
+.image-frame { display: grid; justify-items: start; gap: .5rem; }
+.image-open { display: grid; gap: .35rem; max-inline-size: 100%; padding: 0; border: 0; background: transparent; color: var(--ink, #281378); text-align: start; cursor: zoom-in; }
+.image-open img { display: block; max-inline-size: 100%; max-block-size: min(70vh, 42rem); object-fit: contain; }
+.image-open span { font: 600 .8rem system-ui, sans-serif; }
+.image-action, .image-actions :where(button,a) { display: inline-flex; align-items: center; min-block-size: 2.75rem; padding: .5rem .7rem; border: 1px solid currentColor; background: var(--sheet, #fbf8ef); color: var(--ink, #281378); font: 600 .85rem system-ui, sans-serif; text-decoration: none; cursor: pointer; }
+.image-dialog { inline-size: min(96vw, 90rem); max-inline-size: none; max-block-size: 94vh; border: 1px solid var(--ink, #281378); padding: 0; background: var(--sheet, #fbf8ef); color: var(--body, #342e44); }
+.image-dialog::backdrop { background: rgb(20 15 35 / 80%); }
+.image-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .6rem; padding: .7rem; border-block-end: 1px solid var(--line, #c9c0ce); }
+.image-toolbar strong { overflow-wrap: anywhere; }
+.image-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
+.image-canvas { display: block; min-block-size: 10rem; max-block-size: calc(94vh - 5rem); overflow: auto; padding: 1.5rem; }
+.image-canvas img { display: block; max-inline-size: none; block-size: auto; object-fit: contain; }
+:where(button,a):focus-visible { outline: 3px solid var(--ink, #281378); outline-offset: 3px; }
+@media (max-width: 40rem) { .image-dialog { inline-size: 100vw; max-block-size: 100vh; } .image-canvas { max-block-size: calc(100vh - 9rem); } }
+@media (forced-colors: active) { .image-dialog { border-color: CanvasText; } }

@@ -100,12 +100,14 @@ export class OwnDecksStore {
     private mutationEpoch = 0;
     private deckContextEpoch = 0;
     private listSubscription: Subscription | null = null;
+    private listRefreshSubscription: Subscription | null = null;
     private detailSubscription: Subscription | null = null;
     private mutationSubscription: Subscription | null = null;
 
     constructor() {
         this.destroyRef.onDestroy(() => {
             this.listSubscription?.unsubscribe();
+            this.listRefreshSubscription?.unsubscribe();
             this.detailSubscription?.unsubscribe();
             this.mutationSubscription?.unsubscribe();
         });
@@ -113,6 +115,21 @@ export class OwnDecksStore {
 
     loadList(): void {
         this.requestList(null, 'replace');
+    }
+
+    /** Recheck the visible page without moving the pagination cursor or hiding its rows. */
+    refreshVisibleList(): void {
+        if (this.listSignal().phase !== 'ready' || this.listRefreshSubscription?.closed === false) return;
+        const epoch = this.listEpoch;
+        const cursor = this.listCursors[this.listCursorIndex];
+        this.listRefreshSubscription = this.api.list(cursor).subscribe({
+            next: page => {
+                if (epoch !== this.listEpoch || this.listSignal().phase !== 'ready') return;
+                this.listSignal.set({ phase: 'ready', items: page.items, nextCursor: page.nextCursor,
+                    operation: null, failure: null });
+            },
+            error: () => { /* Keep the last confirmed page; the next visible recheck retries. */ }
+        });
     }
 
     loadMore(): void {
@@ -230,6 +247,7 @@ export class OwnDecksStore {
     private requestList(cursor: string | null, operation: 'replace' | 'next' | 'previous'): void {
         const epoch = ++this.listEpoch;
         this.listSubscription?.unsubscribe();
+        this.listRefreshSubscription?.unsubscribe();
         const previous = this.listSignal();
         this.listSignal.set({
             phase: 'loading',

@@ -133,6 +133,33 @@ public class MediaCatalog {
                 .optional().orElseThrow(ResourceNotFoundException::new);
     }
 
+    /** Read-only playback projection. READY bytes still pass through the canonical reachability check. */
+    @Transactional(readOnly = true)
+    public PlaybackDescriptor playback(UUID actor, UUID asset) {
+        UuidPolicy.requireEntityId(actor, "actor");
+        UuidPolicy.requireEntityId(asset, "assetId");
+        AssetVersion version = jdbc.sql("SELECT state,generation FROM app_learning.media_asset "
+                        + "WHERE asset_id=:asset AND owner_id=:owner")
+                .param("asset", asset).param("owner", actor)
+                .query((row, ignored) -> new AssetVersion(row.getString("state"), row.getLong("generation")))
+                .optional().orElseThrow(ResourceNotFoundException::new);
+        if (!"READY".equals(version.state())) return new PlaybackDescriptor(version.state(), null, null, null);
+        List<VariantIdentity> variants = jdbc.sql("SELECT variant_id,purpose,profile FROM app_learning.media_variant "
+                        + "WHERE asset_id=:asset AND asset_generation=:generation ORDER BY purpose,profile")
+                .param("asset", asset).param("generation", version.generation())
+                .query((row, ignored) -> new VariantIdentity((UUID) row.getObject("variant_id"),
+                        row.getString("purpose"), row.getString("profile"))).list();
+        UUID playbackVariant = variants.stream().filter(value -> "playback".equals(value.purpose()))
+                .map(VariantIdentity::id).findFirst().orElseThrow(MediaStorageUnavailableException::new);
+        UUID posterVariant = variants.stream().filter(value -> "poster".equals(value.purpose())
+                        || "thumbnail".equals(value.purpose()))
+                .map(VariantIdentity::id).findFirst().orElse(null);
+        BlobLocation playable = resolve(actor, asset, playbackVariant);
+        BlobLocation poster = posterVariant == null ? null : resolve(actor, asset, posterVariant);
+        BlobLocation original = resolve(actor, asset, null);
+        return new PlaybackDescriptor("READY", playable, poster, original);
+    }
+
     /** Tombstone only assets whose owner hold elapsed and which no content or draft still reaches. */
     @Transactional
     public int expireUnattached(int limit) {
@@ -184,6 +211,12 @@ public class MediaCatalog {
     }
 
     public record BlobLocation(UUID blobId, String objectKey, long byteLength, String mimeType) { }
+
+    public record PlaybackDescriptor(String state, BlobLocation playable, BlobLocation poster,
+                                     BlobLocation original) { }
+
+    private record AssetVersion(String state, long generation) { }
+    private record VariantIdentity(UUID id, String purpose, String profile) { }
 
     private record Reservation(UUID assetId, String origin) { }
 

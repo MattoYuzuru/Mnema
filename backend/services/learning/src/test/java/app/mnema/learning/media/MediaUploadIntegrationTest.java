@@ -17,11 +17,13 @@ import org.testcontainers.utility.DockerImageName;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.CreateBucketRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.net.URI;
@@ -80,7 +82,26 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
 
     @Autowired private MediaUploadService uploads;
     @Autowired private MediaObjectStore objects;
+    @Autowired private MediaPlaybackStore playbackStore;
     @Autowired private JdbcClient jdbc;
+
+    @Test
+    void signedPlaybackGetSupportsBrowserRangeSeekingAndAttachmentDownload() throws Exception {
+        String key = "verified/range-" + UUID.randomUUID();
+        admin.putObject(PutObjectRequest.builder().bucket(BUCKET).key(key).contentType("video/mp4").build(),
+                RequestBody.fromBytes(new byte[] {0, 1, 2, 3, 4, 5}));
+        var signed = playbackStore.read(key, false);
+        HttpResponse<byte[]> range = HTTP.send(HttpRequest.newBuilder(URI.create(signed.url()))
+                .header("Range", "bytes=2-4").GET().build(), HttpResponse.BodyHandlers.ofByteArray());
+        assertThat(range.statusCode()).isEqualTo(206);
+        assertThat(range.body()).containsExactly(2, 3, 4);
+        assertThat(range.headers().firstValue("Content-Range")).hasValue("bytes 2-4/6");
+        var download = playbackStore.read(key, true);
+        HttpResponse<Void> attachment = HTTP.send(HttpRequest.newBuilder(URI.create(download.url())).GET().build(),
+                HttpResponse.BodyHandlers.discarding());
+        assertThat(attachment.statusCode()).isEqualTo(200);
+        assertThat(attachment.headers().firstValue("Content-Disposition")).hasValue("attachment");
+    }
 
     @Test
     void singlePutIsFrozenBeforeVerificationAndOldPutCannotMutateIt() throws Exception {

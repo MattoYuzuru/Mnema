@@ -1,6 +1,7 @@
 import lexicalVectors from '../../../../../contracts/content/native-v1/lexical-vectors.json';
 import richTextVectors from '../../../../../contracts/content/native-v1/rich-text-vectors.json';
 import richDocumentJson from '../../../../../contracts/content/native-v1/valid/rich.json';
+import youtubeDocumentJson from '../../../../../contracts/content/native-v1/valid/youtube.json';
 import { NativeJson, NativeNode } from '../native-document';
 import {
     NATIVE_RENDER_LIMITS,
@@ -18,6 +19,17 @@ describe('native render boundary', () => {
             expect(state.root.content.map(node => node.kind)).toEqual(['image', 'audio', 'video', 'mermaid', 'table']);
             expect(state.root.content[4]?.kind).toBe('table');
         }
+    });
+
+    it('accepts an inert YouTube ID and rejects a direct iframe URL in the shared fixture', () => {
+        const document = youtubeDocumentJson as unknown as import('../native-document').NativeDocument;
+        const state = buildNativeRenderState(document);
+        expect(state.status).toBe('ready');
+        if (state.status === 'ready') expect(state.root.content[0]?.kind).toBe('youtube');
+        const hostile = structuredClone(document);
+        const attrs = hostile.root.content[0]!.attrs as Record<string, NativeJson>;
+        attrs['videoId'] = 'https://attacker.example/embed';
+        expect(buildNativeRenderState(hostile).status).toBe('invalid');
     });
 
     it('rejects malformed known rich nodes while retaining future versions as opaque', () => {

@@ -8,7 +8,7 @@ import { NativeDocument } from '../../content/native-document';
 import { createEmptyNativeDocument } from '../../content/editing/native-editor-adapter';
 import { NativeEditorComponent } from '../../content/editing/native-editor.component';
 import { NativeStructuralEdit, planNativeStructuralEdits } from '../../content/editing/native-structural-edits';
-import { NativeDocumentRendererComponent } from '../../content/rendering/native-document-renderer.component';
+import { NativeMediaSurfaceComponent } from '../../content/rendering/native-media-surface.component';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { AuthoringApiService } from './authoring-api.service';
@@ -20,7 +20,7 @@ type EditorPhase = 'loading' | 'ready' | 'saving-draft' | 'publishing' | 'confli
 
 @Component({
     selector: 'app-item-editor-page',
-    imports: [RouterLink, NativeEditorComponent, NativeDocumentRendererComponent, NativeMediaUploadComponent],
+    imports: [RouterLink, NativeEditorComponent, NativeMediaSurfaceComponent, NativeMediaUploadComponent],
     templateUrl: './item-editor-page.component.html',
     styleUrl: './authoring-page.css',
     changeDetection: ChangeDetectionStrategy.OnPush

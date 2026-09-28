@@ -22,7 +22,7 @@
     </nav>
     <div class="editor-layout">
       <section class="sheet editor-mobile-panel" [class.is-active]="mobilePanel() === 'material'" aria-labelledby="material-editor-heading"><h2 id="material-editor-heading">Материал</h2><app-native-editor [document]="currentDocument" [disabled]="phase() === 'publishing' || phase() === 'error' || phase() === 'conflict'" (documentChange)="changeDocument($event)" /></section>
-      <aside class="sheet preview editor-mobile-panel" [class.is-active]="mobilePanel() === 'preview'" aria-labelledby="preview-heading"><h2 id="preview-heading">Как будет выглядеть</h2><app-native-document-renderer [document]="currentDocument" /></aside>
+      <aside class="sheet preview editor-mobile-panel" [class.is-active]="mobilePanel() === 'preview'" aria-labelledby="preview-heading"><h2 id="preview-heading">Как будет выглядеть</h2><app-native-media-surface [document]="currentDocument" /></aside>
       @if (mobilePanel() === 'exercises') { <section class="sheet editor-exercises-panel" aria-labelledby="exercise-nav-heading"><h2 id="exercise-nav-heading">Упражнения</h2><p>Сначала опубликуйте материал, затем настройте упражнения для этой версии.</p>@if (item(); as currentItem) { <a class="button" [routerLink]="['/decks', deck()?.deckId, 'materials', currentItem.memberKey, 'exercises', 'new']">Настроить упражнения</a> }</section> }
     </div>
     <app-native-media-upload [document]="currentDocument" [disabled]="phase() === 'publishing' || phase() === 'conflict'"

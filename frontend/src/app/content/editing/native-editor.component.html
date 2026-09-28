@@ -21,12 +21,12 @@
     <div #editorHost class="editor-host"></div>
 
     <details #richTools class="rich-tools">
-      <summary>Изображение, аудио, видео, схема или таблица</summary>
+      <summary>Изображение, аудио, видео, YouTube, схема или таблица</summary>
       <div class="rich-kind-picker" role="group" aria-label="Тип содержимого">
-        @for (kind of ['image', 'audio', 'video', 'mermaid', 'table']; track kind) {
+        @for (kind of ['image', 'audio', 'video', 'youtube', 'mermaid', 'table']; track kind) {
           <button type="button" [disabled]="disabled()" [attr.aria-pressed]="richKind() === kind"
                   (click)="selectRichKind($any(kind))">
-            {{ kind === 'image' ? 'Изображение' : kind === 'audio' ? 'Аудио' : kind === 'video' ? 'Видео' : kind === 'mermaid' ? 'Схема' : 'Таблица' }}
+            {{ kind === 'image' ? 'Изображение' : kind === 'audio' ? 'Аудио' : kind === 'video' ? 'Видео' : kind === 'youtube' ? 'YouTube' : kind === 'mermaid' ? 'Схема' : 'Таблица' }}
           </button>
         }
       </div>
@@ -35,6 +35,13 @@
           <label>ID загруженного файла
             <input type="text" [disabled]="disabled()" [value]="richAssetId()" (input)="richAssetId.set($any($event.target).value)" autocomplete="off" />
           </label>
+        }
+        @if (richKind() === 'youtube') {
+          <label>Ссылка на видео YouTube
+            <input type="url" inputmode="url" placeholder="https://www.youtube.com/watch?v=…" [disabled]="disabled()"
+              [value]="richYoutubeUrl()" (input)="richYoutubeUrl.set($any($event.target).value)" />
+          </label>
+          <p class="editor-note">Сохраняется только ID видео. Просмотрщик покажет плеер после согласия зрителя и ссылку на YouTube.</p>
         }
         @if (richKind() !== 'table') {
           <label>{{ richKind() === 'image' ? 'Краткое описание изображения' : 'Название' }}
@@ -51,7 +58,7 @@
             <textarea rows="3" [disabled]="disabled()" [value]="richDescription()" (input)="richDescription.set($any($event.target).value)"></textarea>
           </label>
         }
-        @if (richKind() === 'audio' || richKind() === 'video') {
+        @if (richKind() === 'audio' || richKind() === 'video' || richKind() === 'youtube') {
           <label>Текстовая расшифровка
             <textarea rows="3" [disabled]="disabled()" [value]="richTranscript()" (input)="richTranscript.set($any($event.target).value)"></textarea>
           </label>

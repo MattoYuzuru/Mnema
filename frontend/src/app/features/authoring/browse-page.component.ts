@@ -4,7 +4,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
-import { NativeDocumentRendererComponent } from '../../content/rendering/native-document-renderer.component';
+import { NativeMediaSurfaceComponent } from '../../content/rendering/native-media-surface.component';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { ItemApiService } from './item-api.service';
@@ -12,7 +12,7 @@ import { ItemDetail, ItemPage } from './authoring.models';
 
 @Component({
     selector: 'app-browse-page',
-    imports: [DatePipe, RouterLink, NativeDocumentRendererComponent],
+    imports: [DatePipe, RouterLink, NativeMediaSurfaceComponent],
     templateUrl: './browse-page.component.html',
     styleUrl: './authoring-page.css',
     changeDetection: ChangeDetectionStrategy.OnPush

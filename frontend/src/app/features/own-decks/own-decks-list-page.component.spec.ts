@@ -1,5 +1,5 @@
 import { signal } from '@angular/core';
-import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { ComponentFixture, TestBed, fakeAsync, tick } from '@angular/core/testing';
 import { provideRouter } from '@angular/router';
 
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
@@ -21,7 +21,7 @@ describe('OwnDecksListPageComponent', () => {
             operation: null, failure: null
         });
         store = jasmine.createSpyObj<OwnDecksStore>('OwnDecksStore', [
-            'loadList', 'loadMore', 'loadPrevious', 'retryList'
+            'loadList', 'loadMore', 'loadPrevious', 'retryList', 'refreshVisibleList'
         ]);
         Object.defineProperty(store, 'listState', { value: state.asReadonly() });
         Object.defineProperty(store, 'canGoBack', { value: signal(false).asReadonly() });
@@ -57,4 +57,14 @@ describe('OwnDecksListPageComponent', () => {
         expect(fixture.nativeElement.querySelectorAll('.deck-row').length).toBe(1);
         expect(fixture.nativeElement.textContent).toContain('Ответ сервера не получен');
     });
+
+    it('rechecks a visible library on focus and on its bounded timer, then stops on teardown', fakeAsync(() => {
+        window.dispatchEvent(new Event('focus'));
+        expect(store.refreshVisibleList).toHaveBeenCalledTimes(1);
+        tick(45_000);
+        expect(store.refreshVisibleList).toHaveBeenCalledTimes(2);
+        fixture.destroy();
+        tick(90_000);
+        expect(store.refreshVisibleList).toHaveBeenCalledTimes(2);
+    }));
 });

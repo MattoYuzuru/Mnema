@@ -23,8 +23,8 @@ COMMON_HEADERS = {
     "x-content-type-options": "nosniff",
     "referrer-policy": "strict-origin-when-cross-origin",
     "permissions-policy": (
-        "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), "
-        "microphone=(), payment=(), usb=()"
+        "accelerometer=(), camera=(self), geolocation=(), gyroscope=(), magnetometer=(), "
+        "microphone=(self), payment=(), usb=()"
     ),
 }
 
@@ -52,7 +52,8 @@ def full_policy(auth_origin: str, storage_origin: str) -> str:
         "https://avatars.githubusercontent.com https://github.com https://avatars.yandex.net; "
         f"media-src 'self' blob: {storage_origin}; "
         f"connect-src 'self' {auth_origin} {storage_origin} https://challenges.cloudflare.com; "
-        "frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; manifest-src 'self'"
+        "frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com; "
+        "worker-src 'self' blob:; manifest-src 'self'"
     )
 
 

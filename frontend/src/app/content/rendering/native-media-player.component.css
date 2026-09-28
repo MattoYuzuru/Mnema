@@ -1,0 +1,14 @@
+:host { display: block; }
+* { box-sizing: border-box; }
+.mnema-player { border: 1px solid var(--line, #c9c0ce); background: var(--sheet, #fbf8ef); color: var(--ink, #281378); }
+.mnema-player-screen { display: block; inline-size: 100%; max-block-size: 65vh; background: #211d30; object-fit: contain; }
+.mnema-player-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; padding: .65rem; }
+.mnema-player-action { display: inline-grid; place-items: center; min-inline-size: 2.75rem; min-block-size: 2.75rem; border: 1px solid currentColor; background: transparent; color: inherit; font: 600 1.2rem system-ui, sans-serif; cursor: pointer; }
+.mnema-player-controls input[type='range'] { flex: 1 1 7rem; min-inline-size: 5rem; accent-color: currentColor; }
+.mnema-player-time { font: 600 .83rem system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+.mnema-player-speed { display: inline-flex; align-items: center; gap: .3rem; font: 600 .75rem system-ui, sans-serif; }
+.mnema-player-speed select { min-block-size: 2.75rem; border: 1px solid currentColor; background: transparent; color: inherit; font: inherit; }
+.mnema-player-note { margin: 0; padding: .4rem .7rem .7rem; font: .85rem system-ui, sans-serif; }
+.mnema-player-note.error { color: #9b3140; }
+:where(button,input,select):focus-visible { outline: 3px solid var(--ink, #281378); outline-offset: 2px; }
+@media (forced-colors: active) { .mnema-player { border-color: CanvasText; } }

@@ -109,6 +109,36 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void playbackProjectionRequiresTheOwnerAndReachableReadyVariants() {
+        UUID owner = UUID.randomUUID();
+        UUID stranger = UUID.randomUUID();
+        UUID asset = reserve(owner);
+        assertThat(catalog.playback(owner, asset).state()).isEqualTo("PENDING_UPLOAD");
+        assertThatThrownBy(() -> catalog.playback(stranger, asset))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        UUID source = verifiedBlob();
+        UUID variant = UUID.randomUUID();
+        processing(asset);
+        jdbc.sql("INSERT INTO app_learning.media_variant(variant_id,asset_id,asset_generation,purpose,profile,blob_id,"
+                        + "created_at) VALUES (:variant,:asset,0,'playback','image_webp_2048_v1',:blob,CURRENT_TIMESTAMP)")
+                .param("variant", variant).param("asset", asset).param("blob", source).update();
+        assertThat(catalog.ready(asset, 0, source)).isTrue();
+        var view = catalog.playback(owner, asset);
+        assertThat(view.state()).isEqualTo("READY");
+        assertThat(view.playable().blobId()).isEqualTo(source);
+        assertThat(view.original().blobId()).isEqualTo(source);
+        assertThatThrownBy(() -> catalog.playback(stranger, asset))
+                .isInstanceOf(ResourceNotFoundException.class);
+        jdbc.sql("UPDATE app_learning.media_asset SET owner_hold_until=CURRENT_TIMESTAMP-interval '1 day' "
+                        + "WHERE asset_id=:asset").param("asset", asset).update();
+        assertThatThrownBy(() -> catalog.playback(owner, asset))
+                .isInstanceOf(ResourceNotFoundException.class);
+        jdbc.sql("UPDATE app_learning.media_asset SET state='DELETED',updated_at=CURRENT_TIMESTAMP "
+                        + "WHERE asset_id=:asset").param("asset", asset).update();
+    }
+
+    @Test
     void draftReplacementAndFailedBatchKeepReferencesAtomic() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID deck = deck(owner);

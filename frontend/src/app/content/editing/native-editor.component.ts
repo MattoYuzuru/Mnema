@@ -21,6 +21,7 @@ import { EditorView } from 'prosemirror-view';
 
 import { NativeDocument, NativeNode } from '../native-document';
 import { buildNativeRenderState } from '../rendering/native-render-state';
+import { youtubeVideoId } from '../youtube-video-id';
 import {
     NativeEditorAdapterError,
     exportNativeDocument,
@@ -50,13 +51,14 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
     readonly rubyReading = signal('');
     readonly activeMarks = signal<ReadonlySet<string>>(new Set());
     readonly canInsertRuby = computed(() => this.rubyBase().trim().length > 0 && this.rubyReading().trim().length > 0);
-    readonly richKind = signal<'image' | 'audio' | 'video' | 'mermaid' | 'table'>('image');
+    readonly richKind = signal<'image' | 'audio' | 'video' | 'youtube' | 'mermaid' | 'table'>('image');
     readonly richAssetId = signal('');
     readonly richTitle = signal('');
     readonly richCaption = signal('');
     readonly richDescription = signal('');
     readonly richTranscript = signal('');
     readonly richSource = signal('');
+    readonly richYoutubeUrl = signal('');
     readonly richColumns = signal('');
     readonly richRows = signal('');
     readonly richSummary = signal('');
@@ -196,7 +198,7 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
         view.focus();
     }
 
-    selectRichKind(kind: 'image' | 'audio' | 'video' | 'mermaid' | 'table'): void {
+    selectRichKind(kind: 'image' | 'audio' | 'video' | 'youtube' | 'mermaid' | 'table'): void {
         this.richKind.set(kind);
         this.richSelected.set(false);
         this.richAssetId.set('');
@@ -205,6 +207,7 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
         this.richDescription.set('');
         this.richTranscript.set('');
         this.richSource.set('');
+        this.richYoutubeUrl.set('');
         this.richColumns.set('');
         this.richRows.set('');
         this.richSummary.set('');
@@ -262,6 +265,13 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
             if (this.richTranscript().length > 0) attrs['transcript'] = this.richTranscript();
             return attrs;
         }
+        if (kind === 'youtube') {
+            const attrs: Record<string, string> = {
+                videoId: youtubeVideoId(this.richYoutubeUrl()) ?? '', title: this.richTitle()
+            };
+            if (this.richTranscript().length > 0) attrs['transcript'] = this.richTranscript();
+            return attrs;
+        }
         if (kind === 'mermaid') return { source: this.richSource(), title: this.richTitle(),
             description: this.richDescription() };
         const columns = this.richColumns().split('\n').map(value => value.trimEnd());
@@ -301,11 +311,11 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
         const selection = state.selection;
         if (!(selection instanceof NodeSelection)) { this.richSelected.set(false); return; }
         const node = selection.node;
-        if (!['image', 'audio', 'video', 'mermaid', 'table'].includes(node.type.name)) {
+        if (!['image', 'audio', 'video', 'youtube', 'mermaid', 'table'].includes(node.type.name)) {
             this.richSelected.set(false);
             return;
         }
-        const kind = node.type.name as 'image' | 'audio' | 'video' | 'mermaid' | 'table';
+        const kind = node.type.name as 'image' | 'audio' | 'video' | 'youtube' | 'mermaid' | 'table';
         this.richKind.set(kind);
         this.richSelected.set(true);
         this.richAssetId.set(String(node.attrs['assetId'] ?? ''));
@@ -314,6 +324,7 @@ export class NativeEditorComponent implements AfterViewInit, OnDestroy {
         this.richDescription.set(String(node.attrs['description'] ?? ''));
         this.richTranscript.set(String(node.attrs['transcript'] ?? ''));
         this.richSource.set(String(node.attrs['source'] ?? ''));
+        this.richYoutubeUrl.set(node.attrs['videoId'] ? `https://www.youtube.com/watch?v=${node.attrs['videoId']}` : '');
         this.richColumns.set(Array.isArray(node.attrs['columns']) ? node.attrs['columns'].join('\n') : '');
         this.richRows.set(Array.isArray(node.attrs['rows'])
             ? node.attrs['rows'].map((row: string[]) => row.join('\t')).join('\n') : '');
