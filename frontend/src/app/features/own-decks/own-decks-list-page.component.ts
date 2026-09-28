@@ -5,6 +5,8 @@ import { RouterLink } from '@angular/router';
 import { deckFailureMessage } from './own-decks.store';
 import { OwnDecksStore } from './own-decks.store';
 
+const VISIBLE_RECHECK_MS = 10_000;
+
 @Component({
     selector: 'app-own-decks-list-page',
     imports: [DatePipe, RouterLink],
@@ -44,7 +46,7 @@ export class OwnDecksListPageComponent implements OnInit {
             this.timer = null;
             this.store.refreshVisibleList();
             this.schedule();
-        }, 45_000);
+        }, VISIBLE_RECHECK_MS);
     }
 
     private clearTimer(): void {

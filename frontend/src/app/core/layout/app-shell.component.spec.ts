@@ -65,6 +65,18 @@ describe('AppShellComponent', () => {
         expect(auth.logout).not.toHaveBeenCalled();
     });
 
+    it('starts a button fill at the pointer entry position', () => {
+        const button = (fixture.nativeElement as HTMLElement).querySelector<HTMLButtonElement>('.quiet-action')!;
+        const bounds = button.getBoundingClientRect();
+
+        button.dispatchEvent(new PointerEvent('pointerover', {
+            bubbles: true, clientX: bounds.left + 4, clientY: bounds.top + 6
+        }));
+
+        expect(button.style.getPropertyValue('--mn-wave-x')).toBe('4px');
+        expect(button.style.getPropertyValue('--mn-wave-y')).toBe('6px');
+    });
+
     it('keeps the current route and focuses main when the skip link is activated', () => {
         const link = (fixture.nativeElement as HTMLElement).querySelector<HTMLAnchorElement>('.skip-link')!;
         const event = new MouseEvent('click', { bubbles: true, cancelable: true });

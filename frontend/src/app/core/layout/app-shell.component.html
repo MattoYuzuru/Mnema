@@ -9,9 +9,9 @@
 
     <nav class="primary-nav" aria-label="Основная навигация">
       @if (status() === 'authenticated') {
-        <a routerLink="/decks" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Мои колоды</a>
-        <a routerLink="/decks/new" routerLinkActive="active">Новая колода</a>
-        <a routerLink="/profile" routerLinkActive="active">Профиль</a>
+        <a routerLink="/decks" routerLinkActive="active" ariaCurrentWhenActive="page" [routerLinkActiveOptions]="{ exact: true }">Мои колоды</a>
+        <a routerLink="/decks/new" routerLinkActive="active" ariaCurrentWhenActive="page">Новая колода</a>
+        <a routerLink="/profile" routerLinkActive="active" ariaCurrentWhenActive="page">Профиль</a>
       } @else {
         <a routerLink="/" fragment="materials">Материалы</a>
         <a routerLink="/" fragment="exercises">Упражнения</a>

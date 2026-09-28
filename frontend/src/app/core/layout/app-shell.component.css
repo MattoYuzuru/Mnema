@@ -75,6 +75,7 @@
 .primary-nav { justify-content: center; }
 
 .primary-nav a {
+    position: relative;
     display: inline-flex;
     align-items: center;
     min-block-size: var(--mn-touch-min);
@@ -85,11 +86,26 @@
     white-space: nowrap;
 }
 
-.primary-nav a:hover,
-.primary-nav a.active {
-    text-decoration: underline;
-    text-underline-offset: .35em;
+.primary-nav a::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 .35rem;
+    block-size: 2px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0;
+    transform: scaleX(0);
+    transform-origin: center;
+    transition: transform .36s .18s ease, opacity .08s .54s ease;
 }
+
+.primary-nav a:is(:hover, :focus-visible)::after {
+    opacity: 1;
+    transform: scaleX(1);
+    transition: transform .42s .07s ease, opacity .08s ease;
+}
+
+.primary-nav a.active { font-weight: 700; }
 
 .session { justify-content: flex-end; min-inline-size: 0; }
 
@@ -117,8 +133,6 @@
     cursor: pointer;
     white-space: nowrap;
 }
-
-.quiet-action:hover { background: var(--mn-soft); }
 
 main {
     min-inline-size: 0;

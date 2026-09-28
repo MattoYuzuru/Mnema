@@ -50,7 +50,7 @@ export function identityErrorMessage(error: unknown): string {
             <label for="password">Пароль</label>
             <input id="password" name="password" type="password" [attr.autocomplete]="registering ? 'new-password' : 'current-password'" [minlength]="registering ? 12 : 1" maxlength="128" [(ngModel)]="password" required [attr.aria-describedby]="registering ? 'password-help' : null" [disabled]="busy()" />
             @if (registering) {
-              <p class="field-help" id="password-help">От 12 до 128 символов, не более 72 байт UTF-8. Русские буквы и эмодзи занимают несколько байт.</p>
+              <p class="field-help" id="password-help">Не менее 12 символов. Если пароль окажется слишком длинным, попробуйте сократить его.</p>
             }
             <button class="primary-action" type="submit" [disabled]="busy()">{{ busy() ? 'Подтверждаем…' : (registering ? 'Создать аккаунт →' : 'Войти →') }}</button>
           </form>

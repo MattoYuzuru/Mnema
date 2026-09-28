@@ -37,6 +37,9 @@ describe('HomePageComponent', () => {
         expect(root.querySelector('picture img')?.getAttribute('width')).toBe('1024');
         expect(root.textContent).not.toContain('Прогресс');
         expect(root.querySelectorAll('[role="progressbar"]').length).toBe(0);
+        expect(root.textContent).toContain('Повторяйте с интервалами');
+        expect(root.textContent).toContain('изображения, произношение, диаграммы');
+        expect(root.textContent).toContain('больше шаблонов упражнений');
     });
 
     it('offers login instead of a protected deck route to an anonymous visitor', () => {

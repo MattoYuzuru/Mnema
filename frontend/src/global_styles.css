@@ -92,9 +92,46 @@ textarea::placeholder {
     outline-offset: 3px;
 }
 
+/* Component styles also define focus rings; keep every form field on one edge. */
+html body :is(input, textarea, select):focus-visible {
+    outline: 2px solid var(--mn-focus) !important;
+    outline-offset: -2px !important;
+}
+
 /* Route headings receive programmatic focus; they are not interactive controls. */
-h1[tabindex="-1"]:focus-visible {
+html body h1[tabindex="-1"]:focus-visible {
     outline: none;
+}
+
+/* The origin is supplied on pointer entry by the shell; keyboard focus uses the centre. */
+:is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a) {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+}
+
+:is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a)::before {
+    content: '';
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--mn-wave-fill, var(--mn-soft));
+    clip-path: circle(0 at var(--mn-wave-x, 50%) var(--mn-wave-y, 50%));
+    pointer-events: none;
+    transition: clip-path .55s cubic-bezier(.19, 1, .22, 1);
+}
+
+:is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a):is(:hover, :focus-visible):not(:disabled)::before {
+    clip-path: circle(150% at var(--mn-wave-x, 50%) var(--mn-wave-y, 50%));
+}
+
+:is(.button.primary, .primary-action, .profile-page button) {
+    --mn-wave-fill: var(--mn-body);
+}
+
+.feature-strip a {
+    --mn-wave-fill: var(--mn-sheet);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -114,5 +151,13 @@ h1[tabindex="-1"]:focus-visible {
 @media (forced-colors: active) {
     :focus-visible {
         outline-color: Highlight;
+    }
+
+    html body :is(input, textarea, select):focus-visible {
+        outline-color: Highlight !important;
+    }
+
+    :is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a)::before {
+        display: none;
     }
 }

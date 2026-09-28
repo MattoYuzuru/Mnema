@@ -80,7 +80,6 @@ input.ng-invalid.ng-touched { border: 2px solid var(--mn-danger); }
     cursor: pointer;
 }
 
-.primary-action:hover:not(:disabled) { background: var(--mn-body); }
 .primary-action:disabled { cursor: wait; opacity: .68; }
 a { color: var(--mn-ink); text-underline-offset: .22em; }
 .text-action {

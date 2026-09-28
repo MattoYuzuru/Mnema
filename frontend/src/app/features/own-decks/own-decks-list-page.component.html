@@ -25,10 +25,6 @@
       <a class="text-link" routerLink="/decks/new">Создать первую колоду</a>
     </section>
   } @else {
-    <div class="list-toolbar">
-      <button class="text-button" type="button" (click)="store.loadList()"
-        [disabled]="state.phase === 'loading'">Обновить список</button>
-    </div>
     <ol class="deck-list">
       @for (deck of state.items; track deck.deckId) {
         <li>
