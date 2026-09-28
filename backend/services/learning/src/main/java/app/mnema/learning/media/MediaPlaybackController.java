@@ -46,6 +46,15 @@ public final class MediaPlaybackController {
                 new SignedSource(original.url(), original.expiresAt(), descriptor.original().mimeType())));
     }
 
+    /** Offline clients request each pinned variant just in time; URLs never enter a manifest. */
+    @GetMapping("/{assetId}/variants/{variantId}/download")
+    ResponseEntity<SignedSource> variant(@AuthenticationPrincipal Jwt identity,
+                                         @PathVariable String assetId, @PathVariable String variantId) {
+        var location = catalog.resolve(id(identity.getSubject()), id(assetId), id(variantId));
+        var signed = store.read(location.objectKey(), true);
+        return privateOk(new SignedSource(signed.url(), signed.expiresAt(), location.mimeType()));
+    }
+
     private static <T> ResponseEntity<T> privateOk(T body) {
         return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "private, no-store").body(body);
     }
