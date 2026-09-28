@@ -49,6 +49,9 @@ class NativeDocumentReaderTest {
         image.withObject("attrs").put("assetId", "not-an-asset");
         invalid(source);
         image.withObject("attrs").put("assetId", UUID.randomUUID().toString());
+        image.withObject("attrs").put("caption", " ");
+        invalid(source);
+        image.withObject("attrs").put("caption", "Изображение");
         image.withObject("attrs").put("src", "https://attacker.test/file");
         invalid(source);
         image.withObject("attrs").remove("src");

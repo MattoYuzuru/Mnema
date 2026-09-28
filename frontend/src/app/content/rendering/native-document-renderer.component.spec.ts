@@ -1,6 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 
 import mixedDocumentJson from '../../../../../contracts/content/native-v1/valid/mixed.json';
+import richDocumentJson from '../../../../../contracts/content/native-v1/valid/rich.json';
 import { NativeDocument } from '../native-document';
 import { NativeDocumentRendererComponent } from './native-document-renderer.component';
 import { NATIVE_RENDER_LIMITS } from './native-render-state';
@@ -14,6 +15,35 @@ describe('NativeDocumentRendererComponent', () => {
             imports: [NativeDocumentRendererComponent]
         }).compileComponents();
         fixture = TestBed.createComponent(NativeDocumentRendererComponent);
+    });
+
+    it('renders rich blocks semantically without deriving a URL from an asset ID', () => {
+        fixture.componentRef.setInput('document', richDocumentJson as unknown as NativeDocument);
+        fixture.detectChanges();
+        const host = fixture.nativeElement as HTMLElement;
+
+        expect(host.querySelector('figure img.native-image')).toBeNull();
+        expect(host.querySelector('audio, video')).toBeNull();
+        expect(host.querySelectorAll('.native-media-pending').length).toBe(3);
+        expect(host.querySelector('table caption')?.textContent).toBe('Сравнение хранилищ');
+        expect(host.querySelectorAll('table thead th[scope="col"]').length).toBe(2);
+        expect(host.querySelectorAll('table tbody tr').length).toBe(2);
+        expect(host.querySelector('app-native-mermaid figcaption')?.textContent).toContain('Клиент передаёт запрос');
+        expect(host.querySelector('script, iframe')).toBeNull();
+    });
+
+    it('uses only separately supplied authorized URLs for assets', () => {
+        fixture.componentRef.setInput('document', richDocumentJson as unknown as NativeDocument);
+        fixture.componentRef.setInput('assetSources', {
+            '31901995-16ea-4f8b-8301-5d8e03004c72': 'https://example.test/authorized-image',
+            '948ef76d-68ab-4a79-9f83-f3a45ffb3eda': 'https://example.test/authorized-audio'
+        });
+        fixture.detectChanges();
+        const host = fixture.nativeElement as HTMLElement;
+
+        expect(host.querySelector('img.native-image')?.getAttribute('alt')).toBe('Схема пути запроса');
+        expect(host.querySelector('audio')?.getAttribute('src')).toBe('https://example.test/authorized-audio');
+        expect(host.querySelector('video')).toBeNull();
     });
 
     it('renders the complete baseline fixture with semantic structure and original metadata', () => {
