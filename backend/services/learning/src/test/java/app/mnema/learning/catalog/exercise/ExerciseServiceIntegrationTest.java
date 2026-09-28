@@ -82,6 +82,10 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
             UUID revision = UUID.fromString(published.acknowledgement().path("exerciseRevisionId").textValue());
             assertThat(count("exercise_media_ref", "exercise_revision_id", revision))
                     .isEqualTo(type.equals("AUDIO_TEXT_MATCH") ? 2 : 1);
+            assertThatThrownBy(() -> jdbc.sql("DELETE FROM app_learning.exercise_media_ref "
+                            + "WHERE deck_id=:deck AND exercise_revision_id=:revision")
+                    .param("deck", fixture.deck()).param("revision", revision).update())
+                    .isInstanceOf(DataIntegrityViolationException.class);
             assertThat(media.exerciseReady(fixture.actor(), fixture.deck(),
                     UUID.fromString(published.acknowledgement().path("exerciseId").textValue()), revision)).isFalse();
         }
@@ -110,6 +114,10 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
                 .isEqualTo("memory");
         assertThat(studies.read(fixture.actor(), fixture.deck(), readySession).path("presentations")
                 .findValuesAsText("transcript")).contains("memory");
+        assertThatThrownBy(() -> jdbc.sql("DELETE FROM app_learning.study_audio_accommodation "
+                        + "WHERE account_id=:actor AND presentation_id=:presentation")
+                .param("actor", fixture.actor()).param("presentation", typedPresentation).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
         jdbc.sql("UPDATE app_learning.media_asset SET state='DELETED',updated_at=CURRENT_TIMESTAMP "
                 + "WHERE asset_id=:asset").param("asset", firstAsset).update();
         ObjectNode attempt = JSON.createObjectNode().put("attemptId", UUID.randomUUID().toString())

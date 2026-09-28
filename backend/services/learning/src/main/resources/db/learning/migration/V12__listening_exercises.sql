@@ -30,7 +30,7 @@ BEGIN
     RAISE EXCEPTION 'Immutable published exercise media reference' USING ERRCODE = '23514';
 END;
 $$;
-CREATE TRIGGER exercise_media_ref_guard BEFORE UPDATE ON app_learning.exercise_media_ref
+CREATE TRIGGER exercise_media_ref_guard BEFORE UPDATE OR DELETE ON app_learning.exercise_media_ref
     FOR EACH ROW EXECUTE FUNCTION app_learning.exercise_media_ref_guard();
 
 -- One canonical readiness predicate is used by selection and attempt submission. The verified
@@ -61,5 +61,5 @@ CREATE TABLE app_learning.study_audio_accommodation (
     FOREIGN KEY (account_id, session_id, presentation_id)
         REFERENCES app_learning.study_presentation(account_id, session_id, presentation_id)
 );
-CREATE TRIGGER study_audio_accommodation_immutable BEFORE UPDATE ON app_learning.study_audio_accommodation
+CREATE TRIGGER study_audio_accommodation_immutable BEFORE UPDATE OR DELETE ON app_learning.study_audio_accommodation
     FOR EACH ROW EXECUTE FUNCTION app_learning.study_snapshot_immutable_guard();
