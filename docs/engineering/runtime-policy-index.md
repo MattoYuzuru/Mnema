@@ -16,8 +16,9 @@ artifact:
 области действия**. Значения по умолчанию сохраняют уже принятое поведение.
 Проверка границ происходит при старте backend или при создании bounded client
 policy. Изменение policy влияет только на новые операции; опубликованные
-ревизии и сохранённые evidence не переписываются. Вводимый отдельно media
-transport (#235), processor (#236) и playback (#239) имеют отдельные namespaces.
+ревизии и сохранённые evidence не переписываются. Media transport (#235),
+processor (#236), playback (#239) и offline manifest (#242) имеют отдельные
+namespaces.
 
 | Ключ / место | Владелец и влияние | Единица; default; допустимый диапазон |
 |---|---|---|
@@ -52,10 +53,17 @@ transport (#235), processor (#236) и playback (#239) имеют отдельн�
 | `learning.media.processing.heartbeat` | Обновление claim | Duration; `PT30S`; 5 s и 2×heartbeat < lease |
 | `learning.media.processing.retry-base` / `retry-maximum` | Exponential retry delay | Duration; `PT1M` / `PT30M`; base ≥10 s, max ≥base и ≤2 h |
 | `learning.media.playback.url-ttl` | Срок signed GET для READY playback/poster/download | Duration; `PT1H`; 5 min–2 h |
+| `learning.media.manifest.retention` | Offline manifest: удержание immutable snapshot и связанных bytes | Duration; `P90D`; 1–365 дней |
+| `learning.media.manifest.max-references` | Offline manifest: максимум ссылок на revisions/variants в snapshot | Count; `50000`; 1–50000 |
+| `learning.media.manifest.max-assets` | Offline manifest: максимум уникальных assets в snapshot | Count; `10000`; 1–`max-references` |
+| `learning.media.manifest.max-document-bytes` | Offline manifest: размер сериализованного документа | Bytes; `8388608` (8 MiB); 1 KiB–8 MiB |
 
 S3 endpoint, region, bucket и credentials находятся в том же namespace
 `learning.media.upload`, но относятся к подключению, а не к пользовательским
 лимитам. `allow-loopback-http` разрешает HTTP только для локального MinIO.
+`GET /api/media-assets/upload-policy` возвращает авторизованному browser
+актуальные per-kind byte caps для проверки перед резервированием asset;
+`MediaUploadSettings.validate` остаётся обязательной серверной проверкой.
 Медиа transport принимает файл как входные байты: фактический codec и
 длительность проверяет processor. Изменение `max-video-bytes` не меняет
 допустимые пять минут; это отдельная настройка обработки. Processor включается
@@ -64,6 +72,8 @@ S3 endpoint, region, bucket и credentials находятся в том же nam
 а не продуктовый лимит. Browser media polling: очередь upload 2 одновременных
 transfer, 2–15 s backoff; reader 2–15 s для pending и renewal до истечения URL;
 список колод — 45 s на видимой вкладке. Все три клиента имеют разные owners.
+Manifest keys введены в ветке #242; до её слияния строкам соответствует
+контракт этой ветки, а не поведение текущего `main`.
 
 `max-active-per-account` draft допускает рост до 1000. Web list aggregation
 запрашивает страницы по 20 и обнаруживает превышение 50 страниц,

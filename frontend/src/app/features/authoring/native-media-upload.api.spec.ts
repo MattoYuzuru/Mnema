@@ -23,6 +23,15 @@ describe('NativeMediaUploadApi', () => {
 
     afterEach(() => http.verify());
 
+    it('reads the current server upload caps for browser preflight', fakeAsync(() => {
+        void api.policy();
+        const request = http.expectOne('/api/media-assets/upload-policy');
+        expect(request.request.method).toBe('GET');
+        request.flush({ maxImageBytes: 67_108_864, maxAudioBytes: 536_870_912,
+            maxVideoBytes: 4_294_967_296 });
+        flushMicrotasks();
+    }));
+
     it('creates an owner-scoped Learning upload intent with an immutable client command identity', fakeAsync(() => {
         let received: UploadView | undefined;
         void api.intent('0c2f05ec-8e16-464a-95d7-8fd97602d12e', 'upload', 'image', 'image/png', 3)

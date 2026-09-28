@@ -23,8 +23,18 @@ import java.util.UUID;
 @RequestMapping(value = "/media-assets", produces = MediaType.APPLICATION_JSON_VALUE)
 public final class MediaUploadController {
     private final MediaUploadService uploads;
+    private final MediaUploadSettings settings;
 
-    MediaUploadController(MediaUploadService uploads) { this.uploads = uploads; }
+    MediaUploadController(MediaUploadService uploads, MediaUploadSettings settings) {
+        this.uploads = uploads;
+        this.settings = settings;
+    }
+
+    @GetMapping("/upload-policy")
+    ResponseEntity<MediaUploadSettings.ClientPolicy> policy(@AuthenticationPrincipal Jwt identity) {
+        actor(identity);
+        return privateOk(settings.clientPolicy());
+    }
 
     @PostMapping(value = "/upload-intents", consumes = MediaType.APPLICATION_JSON_VALUE)
     ResponseEntity<MediaUploadService.UploadView> start(@AuthenticationPrincipal Jwt identity,

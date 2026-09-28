@@ -15,8 +15,10 @@ describe('NativeMediaUploadComponent', () => {
 
     function setup() {
         const api = jasmine.createSpyObj<NativeMediaUploadApi>('NativeMediaUploadApi', [
-            'intent', 'status', 'partUrls', 'completedParts', 'finalize', 'retry', 'cancel', 'renewSingle', 'put'
+            'policy', 'intent', 'status', 'partUrls', 'completedParts', 'finalize', 'retry', 'cancel', 'renewSingle', 'put'
         ]);
+        api.policy.and.resolveTo({ maxImageBytes: 67_108_864, maxAudioBytes: 536_870_912,
+            maxVideoBytes: 4_294_967_296 });
         api.intent.and.resolveTo(open);
         api.put.and.resolveTo();
         api.finalize.and.resolveTo({ ...open, state: 'SEALED', assetState: 'VERIFYING', url: null });
@@ -51,6 +53,17 @@ describe('NativeMediaUploadComponent', () => {
         expect(api.intent).not.toHaveBeenCalled();
         fixture.destroy();
     });
+
+    it('uses the live server video cap before reserving an upload intent', fakeAsync(() => {
+        const { fixture, component, api } = setup();
+        api.policy.and.resolveTo({ maxImageBytes: 10, maxAudioBytes: 10, maxVideoBytes: 2 });
+        component.onFiles([new File(['clip'], 'clip.mov', { type: 'video/quicktime' })]);
+        flushMicrotasks();
+        expect(component.entries()[0].phase).toBe('error');
+        expect(component.entries()[0].error).toContain('2 Б');
+        expect(api.intent).not.toHaveBeenCalled();
+        fixture.destroy();
+    }));
 
     it('recovers an asset reference from a server draft without inventing local file bytes', fakeAsync(() => {
         const { fixture, component, api } = setup();

@@ -230,6 +230,16 @@ export class NativeMediaUploadComponent {
         const abort = new AbortController();
         this.aborts.set(id, abort);
         try {
+            const policy = await this.api.policy();
+            const maxBytes = policy[entry.kind === 'image' ? 'maxImageBytes'
+                : entry.kind === 'audio' ? 'maxAudioBytes' : 'maxVideoBytes'];
+            if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+                throw new Error('Invalid media upload policy');
+            }
+            if (file.size > maxBytes) {
+                this.patch(id, { phase: 'error', error: `Файл превышает допустимый размер (${formatBytes(maxBytes)}). Выберите файл меньше.` });
+                return;
+            }
             let view = entry.transfer;
             if (view === null) {
                 view = entry.assetId === null
@@ -385,6 +395,12 @@ export class NativeMediaUploadComponent {
         this.recorder = null;
         this.recording.set(false);
     }
+}
+
+function formatBytes(bytes: number): string {
+    if (bytes < 1024 * 1024) return `${bytes} Б`;
+    if (bytes % (1024 * 1024) === 0) return `${bytes / (1024 * 1024)} МиБ`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} МиБ`;
 }
 
 function classify(file: File): { kind: NativeMediaKind; mime: string } | null {

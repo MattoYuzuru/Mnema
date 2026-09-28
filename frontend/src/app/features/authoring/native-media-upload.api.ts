@@ -10,6 +10,12 @@ export type AssetState = 'PENDING_UPLOAD' | 'VERIFYING' | 'PROCESSING' | 'READY'
 export type UploadState = 'INITIATING' | 'OPEN' | 'FINALIZING' | 'SEALED'
     | 'ABORTING' | 'ABORTED' | 'EXPIRED';
 
+export interface UploadPolicy {
+    maxImageBytes: number;
+    maxAudioBytes: number;
+    maxVideoBytes: number;
+}
+
 export interface UploadPart {
     number: number;
     length: number;
@@ -41,6 +47,10 @@ export interface UploadView {
 export class NativeMediaUploadApi {
     private readonly http = inject(HttpClient);
     private readonly base = `${appConfig.learningApiBaseUrl.replace(/\/$/, '')}/media-assets`;
+
+    policy(): Promise<UploadPolicy> {
+        return firstValueFrom(this.http.get<UploadPolicy>(`${this.base}/upload-policy`));
+    }
 
     intent(intentId: string, origin: 'upload' | 'recording', kind: NativeMediaKind,
            mime: string, byteLength: number): Promise<UploadView> {
