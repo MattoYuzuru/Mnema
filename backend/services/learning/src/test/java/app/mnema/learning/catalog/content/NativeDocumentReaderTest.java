@@ -64,7 +64,7 @@ class NativeDocumentReaderTest {
     void richRequiredTextUsesSharedJavaWhitespaceProfile() throws Exception {
         JsonNode vectors = new ContentJsonReader(16_384, 16, 1_000)
                 .read(Files.readAllBytes(contractRoot().resolve("rich-text-vectors.json")));
-        for (JsonNode vector : vectors) {
+        for (JsonNode vector : vectors.path("cases")) {
             ObjectNode document = (ObjectNode) new ContentJsonReader(1_048_576, 128, 250_000)
                     .read(Files.readAllBytes(contractRoot().resolve("valid/rich.json")));
             ((ObjectNode) document.path("root").path("content").get(0).path("attrs"))

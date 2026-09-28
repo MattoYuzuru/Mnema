@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
-/** Baseline editable capabilities only; later renderers must explicitly register their schemas. */
+/** Explicit version-one capabilities; unknown and future versions remain inert native data. */
 final class NativeNodeSchema {
 
     private static final Map<String, Set<String>> ATTRIBUTES = Map.ofEntries(

@@ -35,7 +35,7 @@ describe('native render boundary', () => {
 
     it('matches Java isBlank for required rich text and table headers', () => {
         const assetId = '31901995-16ea-4f8b-8301-5d8e03004c72';
-        for (const vector of richTextVectors) {
+        for (const vector of richTextVectors.cases) {
             const expected = vector.valid ? 'ready' : 'invalid';
             expect(buildNativeRenderState(documentOf([nativeNode('image', { assetId, alt: vector.value })])).status)
                 .toBe(expected);
