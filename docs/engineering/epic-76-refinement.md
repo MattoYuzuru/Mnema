@@ -91,6 +91,23 @@ SHA-256, особенно при multipart. Сервер потоково про
 signature/container/codec, размер, длительность, опасные decoder dimensions и
 полный SHA-256, затем переводит validated source в неизменяемый blob. Dedup
 происходит только за логическими ACL-ссылками, с защитой от конкурентной записи.
+Повтор `upload-intent` с тем же `(owner, intentId)` возвращает прежний `assetId`
+лишь при том же происхождении; изменённый повтор — conflict. #235 расширяет
+этот envelope типом, размером и другими параметрами загрузки.
+Производный variant имеет отдельный стабильный `profile` в пределах поколения
+asset, поэтому возможны несколько размеров и форматов одной цели (`thumbnail`,
+`playback` и т. п.).
+
+Первая миграция каталога — `V10__media_catalog.sql`. `content_media_ref` и
+`draft_media_ref` хранят `owner_id` вместе с составными FK на revision/draft и
+asset: чужой asset невозможно привязать даже ошибочным SQL вызовом сервиса.
+`MediaCatalog` принимает только внутренние вызовы; HTTP endpoints загрузки и
+извлечение ссылок из поддерживаемых native nodes добавляются в #235/#237.
+Владелец управляет сроком удержания готового, ещё не привязанного asset через
+`learning.media.unattached-ready-hold` (по умолчанию `P7D`, допустимо 1–30 дней).
+Истечение срока не удаляет bytes: удаление выполняет отдельный GC после
+проверки всех ссылок. Rollback до первых media writes — пересоздание disposable
+local DB из предыдущего коммита; после writes — только forward migration.
 
 Состояния: `PENDING_UPLOAD → VERIFYING → PROCESSING → READY`, а также
 `FAILED_RETRYABLE`, `REJECTED`, `DELETED`. Операции Object Storage и media encoder
@@ -221,3 +238,6 @@ refinement не принят, и затем In progress до integrated acceptan
   descriptions, captions and transcripts.
 - [YouTube minimum functionality](https://developers.google.com/youtube/terms/required-minimum-functionality):
   embed size/controls/branding boundary.
+- [PostgreSQL constraints](https://www.postgresql.org/docs/18/ddl-constraints.html),
+  [row locking](https://www.postgresql.org/docs/18/explicit-locking.html):
+  составные owner FK и сериализация attach/expiry без глобальной блокировки.

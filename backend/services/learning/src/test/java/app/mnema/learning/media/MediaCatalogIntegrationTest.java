@@ -5,6 +5,7 @@ import app.mnema.learning.catalog.deck.DeckService;
 import app.mnema.learning.catalog.item.ItemPublicationCommand;
 import app.mnema.learning.catalog.item.ItemService;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
+import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.support.PostgresIntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -12,8 +13,10 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.IllegalTransactionStateException;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.io.ByteArrayInputStream;
@@ -24,6 +27,9 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -46,8 +52,8 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
         UUID revision = publish(owner, deck);
         UUID member = jdbc.sql("SELECT member_key FROM app_learning.item_revision WHERE deck_id=:deck")
                 .param("deck", deck).query(UUID.class).single();
-        UUID asset = catalog.reserve(owner);
-        UUID otherAsset = catalog.reserve(stranger);
+        UUID asset = reserve(owner);
+        UUID otherAsset = reserve(stranger);
         UUID blob = verifiedBlob();
         processing(asset);
         processing(otherAsset);
@@ -57,18 +63,33 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
         assertThat(catalog.resolve(owner, asset, null).blobId()).isEqualTo(blob);
         assertThatThrownBy(() -> catalog.resolve(stranger, asset, null))
                 .isInstanceOf(ResourceNotFoundException.class);
-        assertThatThrownBy(() -> catalog.attachRevision(owner, deck, member, revision,
+        UUID variant = UUID.randomUUID();
+        jdbc.sql("INSERT INTO app_learning.media_variant(variant_id,asset_id,asset_generation,purpose,profile,blob_id,"
+                        + "created_at) VALUES (:variant,:asset,0,'thumbnail','image_320_webp',:blob,CURRENT_TIMESTAMP)")
+                .param("variant", variant).param("asset", asset).param("blob", blob).update();
+        UUID largerVariant = UUID.randomUUID();
+        jdbc.sql("INSERT INTO app_learning.media_variant(variant_id,asset_id,asset_generation,purpose,profile,blob_id,"
+                        + "created_at) VALUES (:variant,:asset,0,'thumbnail','image_1024_webp',:blob,CURRENT_TIMESTAMP)")
+                .param("variant", largerVariant).param("asset", asset).param("blob", blob).update();
+        assertThat(catalog.resolve(owner, asset, variant).blobId()).isEqualTo(blob);
+        assertThat(catalog.resolve(owner, asset, largerVariant).blobId()).isEqualTo(blob);
+        assertThatThrownBy(() -> catalog.resolve(stranger, asset, variant))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.media_variant SET purpose='poster' "
+                        + "WHERE variant_id=:variant").param("variant", variant).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> attach(owner, deck, member, revision,
                 List.of(new MediaCatalog.Reference(UUID.randomUUID(), otherAsset))))
                 .isInstanceOf(ResourceNotFoundException.class);
-        assertThatThrownBy(() -> catalog.attachRevision(owner, deck, member, UUID.randomUUID(),
+        assertThatThrownBy(() -> attach(owner, deck, member, UUID.randomUUID(),
                 List.of(new MediaCatalog.Reference(UUID.randomUUID(), asset))))
                 .isInstanceOf(ResourceNotFoundException.class);
 
         UUID node = UUID.randomUUID();
-        catalog.attachRevision(owner, deck, member, revision, List.of(new MediaCatalog.Reference(node, asset)));
+        attach(owner, deck, member, revision, List.of(new MediaCatalog.Reference(node, asset)));
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE asset_id=:asset")
                 .param("asset", asset).query(Long.class).single()).isOne();
-        assertThatThrownBy(() -> catalog.attachRevision(stranger, deck, member, revision, List.of()))
+        assertThatThrownBy(() -> attach(stranger, deck, member, revision, List.of()))
                 .isInstanceOf(ResourceNotFoundException.class);
 
         jdbc.sql("UPDATE app_learning.media_asset SET owner_hold_until=CURRENT_TIMESTAMP-interval '1 day' "
@@ -94,21 +115,21 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
                 .param("draft", draft).param("owner", owner).param("deck", deck)
                 .param("now", Timestamp.from(now))
                 .param("expires", Timestamp.from(now.plus(30, ChronoUnit.DAYS))).update();
-        UUID first = catalog.reserve(owner);
-        UUID second = catalog.reserve(owner);
-        UUID foreign = catalog.reserve(UUID.randomUUID());
+        UUID first = reserve(owner);
+        UUID second = reserve(owner);
+        UUID foreign = reserve(UUID.randomUUID());
         UUID node = UUID.randomUUID();
-        catalog.replaceDraft(owner, draft, List.of(new MediaCatalog.Reference(node, first)));
-        assertThatThrownBy(() -> catalog.replaceDraft(owner, draft, List.of(
+        replaceDraft(owner, draft, List.of(new MediaCatalog.Reference(node, first)));
+        assertThatThrownBy(() -> replaceDraft(owner, draft, List.of(
                 new MediaCatalog.Reference(UUID.randomUUID(), second),
                 new MediaCatalog.Reference(UUID.randomUUID(), foreign))))
                 .isInstanceOf(ResourceNotFoundException.class);
         assertThat(jdbc.sql("SELECT asset_id FROM app_learning.draft_media_ref WHERE draft_id=:draft")
                 .param("draft", draft).query(UUID.class).single()).isEqualTo(first);
-        catalog.replaceDraft(owner, draft, List.of(new MediaCatalog.Reference(node, second)));
+        replaceDraft(owner, draft, List.of(new MediaCatalog.Reference(node, second)));
         assertThat(jdbc.sql("SELECT asset_id FROM app_learning.draft_media_ref WHERE draft_id=:draft")
                 .param("draft", draft).query(UUID.class).single()).isEqualTo(second);
-        assertThatThrownBy(() -> catalog.replaceDraft(UUID.randomUUID(), draft, List.of()))
+        assertThatThrownBy(() -> replaceDraft(UUID.randomUUID(), draft, List.of()))
                 .isInstanceOf(ResourceNotFoundException.class);
     }
 
@@ -119,7 +140,9 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
         UUID revision = publish(owner, deck);
         UUID member = jdbc.sql("SELECT member_key FROM app_learning.item_revision WHERE deck_id=:deck")
                 .param("deck", deck).query(UUID.class).single();
-        UUID asset = catalog.reserve(owner);
+        UUID asset = reserve(owner);
+        assertThatThrownBy(() -> catalog.attachRevision(owner, deck, member, revision, List.of()))
+                .isInstanceOf(IllegalTransactionStateException.class);
         new TransactionTemplate(transactions).executeWithoutResult(status -> {
             catalog.attachRevision(owner, deck, member, revision,
                     List.of(new MediaCatalog.Reference(UUID.randomUUID(), asset)));
@@ -129,9 +152,130 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
                 .param("asset", asset).query(Long.class).single()).isZero();
     }
 
+    @Test
+    void databaseGuardsKeepLogicalOwnerAndVerifiedBytesStable() {
+        UUID owner = UUID.randomUUID();
+        UUID intent = UUID.randomUUID();
+        UUID asset = catalog.reserve(owner, intent, MediaCatalog.Origin.UPLOAD);
+        assertThat(catalog.reserve(owner, intent, MediaCatalog.Origin.UPLOAD)).isEqualTo(asset);
+        assertThatThrownBy(() -> catalog.reserve(owner, intent, MediaCatalog.Origin.RECORDING))
+                .isInstanceOf(IdempotencyConflictException.class);
+        UUID blob = verifiedBlob();
+        processing(asset);
+        assertThat(catalog.ready(asset, 0, blob)).isTrue();
+        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.media_asset SET owner_id=:other "
+                        + "WHERE asset_id=:asset").param("other", UUID.randomUUID())
+                .param("asset", asset).update()).isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.media_asset SET generation=1,state='PENDING_UPLOAD' "
+                        + "WHERE asset_id=:asset").param("asset", asset).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
+        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.media_blob SET object_key='changed' "
+                        + "WHERE blob_id=:blob").param("blob", blob).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void concurrentIdenticalIntentReservesOnlyOneAsset() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID intent = UUID.randomUUID();
+        CountDownLatch start = new CountDownLatch(1);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var first = executor.submit(() -> {
+                start.await();
+                return catalog.reserve(owner, intent, MediaCatalog.Origin.UPLOAD);
+            });
+            var second = executor.submit(() -> {
+                start.await();
+                return catalog.reserve(owner, intent, MediaCatalog.Origin.UPLOAD);
+            });
+            start.countDown();
+            assertThat(first.get(10, TimeUnit.SECONDS)).isEqualTo(second.get(10, TimeUnit.SECONDS));
+        }
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.media_asset "
+                        + "WHERE owner_id=:owner AND upload_intent_id=:intent")
+                .param("owner", owner).param("intent", intent).query(Long.class).single()).isOne();
+    }
+
+    @Test
+    void expiredDraftDoesNotRetainOrAuthorizeReadyAsset() {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID draft = UUID.randomUUID();
+        UUID asset = reserve(owner);
+        UUID blob = verifiedBlob();
+        processing(asset);
+        assertThat(catalog.ready(asset, 0, blob)).isTrue();
+        Instant acknowledged = Instant.now().minus(31, ChronoUnit.DAYS).truncatedTo(ChronoUnit.MICROS);
+        jdbc.sql("INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,row_version,document,"
+                        + "created_at,acknowledged_at,expires_at) "
+                        + "VALUES (:draft,:owner,:deck,0,'{}'::jsonb,:time,:time,:expires)")
+                .param("draft", draft).param("owner", owner).param("deck", deck)
+                .param("time", Timestamp.from(acknowledged))
+                .param("expires", Timestamp.from(acknowledged.plus(30, ChronoUnit.DAYS))).update();
+        jdbc.sql("INSERT INTO app_learning.draft_media_ref(draft_id,node_id,owner_id,asset_id) "
+                        + "VALUES (:draft,:node,:owner,:asset)")
+                .param("draft", draft).param("node", UUID.randomUUID())
+                .param("owner", owner).param("asset", asset).update();
+        jdbc.sql("UPDATE app_learning.media_asset SET owner_hold_until=CURRENT_TIMESTAMP-interval '1 day' "
+                        + "WHERE asset_id=:asset").param("asset", asset).update();
+        assertThatThrownBy(() -> catalog.resolve(owner, asset, null))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> replaceDraft(owner, draft, List.of()))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(catalog.expireUnattached(10)).isEqualTo(1);
+    }
+
+    @Test
+    void reverseReferenceOrdersUseTheSameAssetLockOrder() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID revision = publish(owner, deck);
+        UUID member = jdbc.sql("SELECT member_key FROM app_learning.item_revision WHERE deck_id=:deck")
+                .param("deck", deck).query(UUID.class).single();
+        UUID first = reserve(owner);
+        UUID second = reserve(owner);
+        CountDownLatch start = new CountDownLatch(1);
+        try (var executor = Executors.newVirtualThreadPerTaskExecutor()) {
+            var left = executor.submit(() -> {
+                start.await();
+                attach(owner, deck, member, revision, List.of(
+                        new MediaCatalog.Reference(UUID.randomUUID(), first),
+                        new MediaCatalog.Reference(UUID.randomUUID(), second)));
+                return true;
+            });
+            var right = executor.submit(() -> {
+                start.await();
+                attach(owner, deck, member, revision, List.of(
+                        new MediaCatalog.Reference(UUID.randomUUID(), second),
+                        new MediaCatalog.Reference(UUID.randomUUID(), first)));
+                return true;
+            });
+            start.countDown();
+            assertThat(left.get(10, TimeUnit.SECONDS)).isTrue();
+            assertThat(right.get(10, TimeUnit.SECONDS)).isTrue();
+        }
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE deck_id=:deck")
+                .param("deck", deck).query(Long.class).single()).isEqualTo(4);
+    }
+
     private UUID deck(UUID owner) {
         return UUID.fromString(decks.create(owner, new DeckCommand(UUID.randomUUID(), "Deck", "Description"))
                 .acknowledgement().path("deck").path("deckId").textValue());
+    }
+
+    private void attach(UUID owner, UUID deck, UUID member, UUID revision,
+                        List<MediaCatalog.Reference> references) {
+        new TransactionTemplate(transactions).executeWithoutResult(ignored ->
+                catalog.attachRevision(owner, deck, member, revision, references));
+    }
+
+    private void replaceDraft(UUID owner, UUID draft, List<MediaCatalog.Reference> references) {
+        new TransactionTemplate(transactions).executeWithoutResult(ignored ->
+                catalog.replaceDraft(owner, draft, references));
+    }
+
+    private UUID reserve(UUID owner) {
+        return catalog.reserve(owner, UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
     }
 
     private UUID publish(UUID owner, UUID deck) throws Exception {

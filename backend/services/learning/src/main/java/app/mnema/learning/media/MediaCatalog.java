@@ -3,13 +3,16 @@ package app.mnema.learning.media;
 import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.id.UuidPolicy;
+import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.annotation.Propagation;
 
 import java.util.Collection;
 import java.util.HashSet;
 import java.util.List;
+import java.util.TreeSet;
 import java.util.UUID;
 
 /** Transactional identities, references and owner authorization; object transfer lives outside this boundary. */
@@ -25,13 +28,25 @@ public class MediaCatalog {
 
     /** Reserve a server-selected identity before any bytes are transferred. */
     @Transactional
-    public UUID reserve(UUID owner) {
+    public UUID reserve(UUID owner, UUID uploadIntent, Origin origin) {
         UuidPolicy.requireEntityId(owner, "owner");
+        UuidPolicy.requireEntityId(uploadIntent, "uploadIntentId");
+        if (origin == null) throw new InvalidRequestException();
         UUID asset = UUID.randomUUID();
-        jdbc.sql("INSERT INTO app_learning.media_asset(asset_id,owner_id,created_at,updated_at) "
-                        + "VALUES (:asset,:owner,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP)")
-                .param("asset", asset).param("owner", owner).update();
-        return asset;
+        jdbc.sql("INSERT INTO app_learning.media_asset(asset_id,owner_id,upload_intent_id,origin,created_at,updated_at) "
+                        + "VALUES (:asset,:owner,:intent,:origin,CURRENT_TIMESTAMP,CURRENT_TIMESTAMP) "
+                        + "ON CONFLICT (owner_id,upload_intent_id) DO NOTHING")
+                .param("asset", asset).param("owner", owner).param("intent", uploadIntent)
+                .param("origin", origin.name().toLowerCase(java.util.Locale.ROOT)).update();
+        Reservation reservation = jdbc.sql("SELECT asset_id,origin FROM app_learning.media_asset "
+                        + "WHERE owner_id=:owner AND upload_intent_id=:intent")
+                .param("owner", owner).param("intent", uploadIntent)
+                .query((row, ignored) -> new Reservation((UUID) row.getObject("asset_id"), row.getString("origin")))
+                .single();
+        if (!reservation.origin().equals(origin.name().toLowerCase(java.util.Locale.ROOT))) {
+            throw new IdempotencyConflictException();
+        }
+        return reservation.assetId();
     }
 
     /** A stale worker generation must never replace bytes from a newer upload attempt. */
@@ -49,8 +64,8 @@ public class MediaCatalog {
                 .param("holdSeconds", settings.unattachedReadyHold().toSeconds()).update() == 1;
     }
 
-    /** Caller must invoke this in the same transaction that inserts the immutable item revision. */
-    @Transactional
+    /** #237 must call this inside the transaction that inserts the item revision. */
+    @Transactional(propagation = Propagation.MANDATORY)
     public void attachRevision(UUID actor, UUID deck, UUID member, UUID revision, Collection<Reference> references) {
         UuidPolicy.requireEntityId(actor, "actor");
         UuidPolicy.requireEntityId(deck, "deckId");
@@ -68,12 +83,13 @@ public class MediaCatalog {
                 .param("node", reference.nodeId()).param("owner", actor).param("asset", reference.assetId()).update();
     }
 
-    /** Replace draft holds atomically with a saved draft document. */
-    @Transactional
+    /** #238 must call this inside the transaction that saves the draft document. */
+    @Transactional(propagation = Propagation.MANDATORY)
     public void replaceDraft(UUID actor, UUID draft, Collection<Reference> references) {
         UuidPolicy.requireEntityId(actor, "actor");
         UuidPolicy.requireEntityId(draft, "draftId");
-        if (!jdbc.sql("SELECT 1 FROM app_learning.editing_draft WHERE draft_id=:draft AND owner_id=:owner")
+        if (!jdbc.sql("SELECT 1 FROM app_learning.editing_draft WHERE draft_id=:draft "
+                        + "AND owner_id=:owner AND expires_at>CURRENT_TIMESTAMP FOR UPDATE")
                 .param("draft", draft).param("owner", actor).query(Integer.class).optional().isPresent()) {
             throw new ResourceNotFoundException();
         }
@@ -99,7 +115,8 @@ public class MediaCatalog {
                     + "WHERE a.asset_id=:asset AND a.owner_id=:owner AND a.state='READY' "
                     + "AND (a.owner_hold_until>CURRENT_TIMESTAMP OR EXISTS "
                     + "(SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
-                    + "(SELECT 1 FROM app_learning.draft_media_ref r WHERE r.asset_id=a.asset_id))"
+                    + "(SELECT 1 FROM app_learning.draft_media_ref r JOIN app_learning.editing_draft d "
+                    + "ON d.draft_id=r.draft_id WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP))"
                 : "SELECT b.blob_id,b.object_key,b.byte_length,b.mime_type FROM app_learning.media_asset a "
                     + "JOIN app_learning.media_variant v ON v.asset_id=a.asset_id "
                     + "AND v.asset_generation=a.generation AND v.variant_id=:variant "
@@ -107,7 +124,8 @@ public class MediaCatalog {
                     + "WHERE a.asset_id=:asset AND a.owner_id=:owner AND a.state='READY' "
                     + "AND (a.owner_hold_until>CURRENT_TIMESTAMP OR EXISTS "
                     + "(SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
-                    + "(SELECT 1 FROM app_learning.draft_media_ref r WHERE r.asset_id=a.asset_id))";
+                    + "(SELECT 1 FROM app_learning.draft_media_ref r JOIN app_learning.editing_draft d "
+                    + "ON d.draft_id=r.draft_id WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP))";
         var query = jdbc.sql(sql).param("asset", asset).param("owner", actor);
         if (variant != null) query = query.param("variant", variant);
         return query.query((row, ignored) -> new BlobLocation((UUID) row.getObject("blob_id"),
@@ -122,7 +140,9 @@ public class MediaCatalog {
         List<UUID> candidates = jdbc.sql("SELECT a.asset_id FROM app_learning.media_asset a "
                         + "WHERE a.state='READY' AND a.owner_hold_until<CURRENT_TIMESTAMP "
                         + "AND NOT EXISTS (SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) "
-                        + "AND NOT EXISTS (SELECT 1 FROM app_learning.draft_media_ref r WHERE r.asset_id=a.asset_id) "
+                        + "AND NOT EXISTS (SELECT 1 FROM app_learning.draft_media_ref r "
+                        + "JOIN app_learning.editing_draft d ON d.draft_id=r.draft_id "
+                        + "WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP) "
                         + "ORDER BY a.owner_hold_until,a.asset_id LIMIT :limit FOR UPDATE OF a SKIP LOCKED")
                 .param("limit", limit).query(UUID.class).list();
         for (UUID candidate : candidates) {
@@ -136,15 +156,22 @@ public class MediaCatalog {
     private void validateReferences(UUID actor, Collection<Reference> references) {
         if (references == null || references.size() > 1_000) throw new InvalidRequestException();
         var nodes = new HashSet<UUID>();
+        var assets = new TreeSet<UUID>();
         for (Reference reference : references) {
             if (reference == null || !nodes.add(reference.nodeId())) throw new InvalidRequestException();
+            assets.add(reference.assetId());
+        }
+        // Stable lock ordering avoids deadlocks when two documents reuse the same assets in a different node order.
+        for (UUID asset : assets) {
             if (!jdbc.sql("SELECT 1 FROM app_learning.media_asset a WHERE a.asset_id=:asset "
                             + "AND a.owner_id=:owner AND a.state NOT IN ('DELETED','REJECTED') AND "
                             + "(a.state<>'READY' OR a.owner_hold_until>CURRENT_TIMESTAMP "
                             + "OR EXISTS (SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) "
-                            + "OR EXISTS (SELECT 1 FROM app_learning.draft_media_ref r WHERE r.asset_id=a.asset_id)) "
+                            + "OR EXISTS (SELECT 1 FROM app_learning.draft_media_ref r "
+                            + "JOIN app_learning.editing_draft d ON d.draft_id=r.draft_id "
+                            + "WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP)) "
                             + "FOR UPDATE OF a")
-                    .param("asset", reference.assetId()).param("owner", actor)
+                    .param("asset", asset).param("owner", actor)
                     .query(Integer.class).optional().isPresent()) throw new ResourceNotFoundException();
         }
     }
@@ -157,4 +184,8 @@ public class MediaCatalog {
     }
 
     public record BlobLocation(UUID blobId, String objectKey, long byteLength, String mimeType) { }
+
+    private record Reservation(UUID assetId, String origin) { }
+
+    public enum Origin { UPLOAD, RECORDING, IMPORT }
 }
