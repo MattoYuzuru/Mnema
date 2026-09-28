@@ -1,7 +1,7 @@
 :host { display: block; }
 * { box-sizing: border-box; }
 .media-workbench { margin-block: 1.5rem; color: var(--body, #342e44); font-family: system-ui, sans-serif; }
-.media-heading { display: flex; justify-content: space-between; align-items: end; gap: 1.5rem; border-block-end: 1px solid var(--line, #c9c0ce); margin-block-end: 1rem; }
+.media-heading { display: flex; justify-content: space-between; align-items: end; gap: 1.5rem; border-block-end: 1px solid var(--line, #c9c0ce); padding-block-end: .75rem; margin-block-end: 1rem; }
 .media-heading h3 { margin: .2rem 0 .8rem; color: var(--ink, #281378); font: 500 clamp(1.4rem, 3vw, 2rem)/1.15 Georgia, serif; }
 .media-heading p:last-child { max-inline-size: 40ch; color: var(--muted, #625c70); line-height: 1.5; }
 .media-kicker { margin: 0; color: var(--ink, #281378); font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; }
@@ -15,12 +15,11 @@
 .media-button.primary { background: var(--ink, #281378); color: #fff; }
 .media-button.stop { border-color: #9b3140; color: #9b3140; }
 .media-button input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; }
-.media-button:focus-within, :where(button, audio):focus-visible { outline: 3px solid var(--ink, #281378); outline-offset: 3px; }
+.media-button:focus-within, button:focus-visible { outline: 3px solid var(--ink, #281378); outline-offset: 3px; }
 .media-button:has(input:disabled) { opacity: .55; cursor: default; }
 .visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
 .media-notice { border-inline-start: 3px solid #9b3140; padding: .7rem 1rem; background: rgb(155 49 64 / 7%); }
 .record-preview { display: grid; gap: .5rem; margin-block: 1rem; padding: 1rem; background: var(--sheet, #fbf8ef); border: 1px solid var(--line, #c9c0ce); }
-.record-preview audio { max-inline-size: 100%; }
 .media-queue { margin: 1rem 0 0; padding: 0; list-style: none; border-block-start: 1px solid var(--line, #c9c0ce); }
 .media-row { display: flex; gap: 1rem; align-items: center; border-block-end: 1px solid var(--line, #c9c0ce); padding: .9rem .2rem; }
 .media-type { color: var(--ink, #281378); font: 1.5rem Georgia, serif; }
