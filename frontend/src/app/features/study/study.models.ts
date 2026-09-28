@@ -1,6 +1,15 @@
 export type StudyMode = 'SCHEDULED' | 'REPLAY' | 'PRACTICE';
 export type StudyStatus = 'ACTIVE' | 'EMPTY' | 'COMPLETE';
-export type StudyExerciseType = 'SELF_CHECK' | 'TYPED' | 'CLOZE_SINGLE' | 'SINGLE_CHOICE';
+export type StudyExerciseType = 'SELF_CHECK' | 'TYPED' | 'CLOZE_SINGLE' | 'SINGLE_CHOICE'
+    | 'LISTEN_CHOICE' | 'AUDIO_TEXT_MATCH' | 'LISTEN_TYPE';
+export type StudyPrompt = { readonly kind: 'TEXT'; readonly text: string }
+    | { readonly kind: 'AUDIO_ASSET'; readonly assetId: string; readonly title: string;
+        readonly instruction: string; readonly transcriptAvailable: boolean; readonly transcriptRevealed: boolean;
+        readonly transcript?: string }
+    | { readonly kind: 'AUDIO_MATCH'; readonly instruction: string;
+        readonly cues: readonly { readonly cueId: string; readonly assetId: string;
+            readonly title: string; readonly transcript?: string }[];
+        readonly transcriptAvailable: boolean; readonly transcriptRevealed: boolean };
 export type SelfRating = 'NOT_RECALLED' | 'HINTED' | 'PARTIAL' | 'FULL';
 export type PracticeOrder = 'SEEDED' | 'WEAKEST_FIRST';
 export type ScheduledStudyPreset = 'QUICK' | 'STANDARD';
@@ -19,8 +28,8 @@ export interface StudyPresentation {
     readonly objectiveId: string;
     readonly objectiveRevisionId: string;
     readonly learningEpoch: string;
-    readonly reference: string;
-    readonly prompt: { readonly kind: 'TEXT'; readonly text: string };
+    readonly reference: string | null;
+    readonly prompt: StudyPrompt;
     readonly options: readonly { readonly optionId: string; readonly text: string }[];
     readonly bindings: readonly StudyBinding[];
     readonly evaluator: { readonly id: string; readonly version: string };
@@ -73,6 +82,7 @@ export type StudyResponse =
     | { readonly kind: 'TEXT'; readonly text: string }
     | { readonly kind: 'SELF_CHECK'; readonly rating: SelfRating }
     | { readonly kind: 'CHOICE'; readonly optionId: string }
+    | { readonly kind: 'MATCH'; readonly pairs: readonly { readonly cueId: string; readonly optionId: string }[] }
     | { readonly kind: 'CANCEL' };
 
 export interface AttemptCommand {
@@ -90,6 +100,8 @@ export interface AttemptFeedback {
     readonly reference: string | null;
     readonly appliedRules: readonly string[];
     readonly reasonCodes: readonly string[];
+    readonly pairResults: readonly { readonly cueId: string; readonly selectedOptionId: string;
+        readonly correctOptionId: string; readonly correct: boolean }[];
 }
 
 export interface AttemptOutcome {

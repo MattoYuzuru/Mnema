@@ -27,6 +27,14 @@ interface PendingWrite {
     readonly exercise: Record<string, unknown>;
 }
 
+interface MatchRow {
+    readonly cueId: string;
+    readonly assetId: string;
+    readonly title: string;
+    readonly transcript: string;
+    readonly optionNodeId: string;
+}
+
 @Component({
     selector: 'app-exercise-authoring-page',
     imports: [RouterLink, NativeMediaSurfaceComponent],
@@ -52,6 +60,11 @@ export class ExerciseAuthoringPageComponent {
     readonly answerNodeId = signal<string | null>(null);
     readonly aliasesText = signal('');
     readonly optionNodeIds = signal<readonly string[]>([]);
+    readonly audioAssetId = signal('');
+    readonly audioTitle = signal('');
+    readonly audioInstruction = signal('');
+    readonly audioTranscript = signal('');
+    readonly matchRows = signal<readonly MatchRow[]>([newMatchRow(), newMatchRow()]);
     readonly objectiveMode = signal<ObjectiveMode>('create');
     readonly selectedObjectiveId = signal<string | null>(null);
 
@@ -59,7 +72,8 @@ export class ExerciseAuthoringPageComponent {
     readonly objectives = computed(() => uniqueObjectives(this.page()?.exercises.map(value => value.objective) ?? []));
     readonly selectedObjective = computed(() => this.objectives()
         .find(value => value.objectiveId === this.selectedObjectiveId()) ?? null);
-    readonly previewPrompt = computed(() => this.promptMode() === 'custom'
+    readonly previewPrompt = computed(() => this.isListening() ? this.audioInstruction().trim() || 'Прослушайте запись'
+        : this.promptMode() === 'custom'
         ? this.customPrompt().trim() : this.projection(this.promptNodeId())?.text ?? 'Выберите фрагмент вопроса');
     readonly previewAnswer = computed(() => this.projection(this.answerNodeId())?.text ?? 'Выберите проверяемый ответ');
     readonly staleProjection = computed(() => {
@@ -138,7 +152,7 @@ export class ExerciseAuthoringPageComponent {
     setAnswerNode(value: string): void {
         const previous = this.answerNodeId();
         this.answerNodeId.set(value);
-        if (this.type() === 'SINGLE_CHOICE') {
+        if (this.type() === 'SINGLE_CHOICE' || this.type() === 'LISTEN_CHOICE') {
             this.optionNodeIds.update(options => [...new Set(options.filter(id => id !== previous).concat(value))]);
         }
         const projection = this.projection(value);
@@ -146,13 +160,31 @@ export class ExerciseAuthoringPageComponent {
         this.changed();
     }
     setAliases(value: string): void { this.aliasesText.set(value); this.changed(); }
+    isListening(): boolean { return this.type() === 'LISTEN_CHOICE' || this.type() === 'LISTEN_TYPE'
+        || this.type() === 'AUDIO_TEXT_MATCH'; }
+    setAudio(field: 'assetId' | 'title' | 'instruction' | 'transcript', value: string): void {
+        ({ assetId: this.audioAssetId, title: this.audioTitle, instruction: this.audioInstruction,
+            transcript: this.audioTranscript })[field].set(value);
+        this.changed();
+    }
+    setMatchRow(index: number, field: 'assetId' | 'title' | 'transcript' | 'optionNodeId', value: string): void {
+        this.matchRows.update(rows => rows.map((row, position) => position === index ? { ...row, [field]: value } : row));
+        this.changed();
+    }
+    addMatchRow(): void {
+        if (this.matchRows().length < 6) { this.matchRows.update(rows => [...rows, newMatchRow()]); this.changed(); }
+    }
+    removeMatchRow(index: number): void {
+        if (this.matchRows().length > 2) { this.matchRows.update(rows => rows.filter((_, position) => position !== index));
+            this.changed(); }
+    }
 
     setObjectiveMode(value: ObjectiveMode): void {
         this.objectiveMode.set(value);
         if (value === 'reuse' || value === 'revise') {
             const selected = this.selectedObjective() ?? this.objectives()[0] ?? null;
             this.selectedObjectiveId.set(selected?.objectiveId ?? null);
-            if (selected !== null) this.aliasesText.set(selected.answerContract.accepted.join('\n'));
+            if (selected?.answerContract.schemaVersion === 1) this.aliasesText.set(selected.answerContract.accepted.join('\n'));
         }
         this.changed();
     }
@@ -160,7 +192,7 @@ export class ExerciseAuthoringPageComponent {
     selectObjective(value: string): void {
         this.selectedObjectiveId.set(value);
         const selected = this.objectives().find(objective => objective.objectiveId === value);
-        if (selected !== undefined) this.aliasesText.set(selected.answerContract.accepted.join('\n'));
+        if (selected?.answerContract.schemaVersion === 1) this.aliasesText.set(selected.answerContract.accepted.join('\n'));
         this.changed();
     }
 
@@ -185,7 +217,8 @@ export class ExerciseAuthoringPageComponent {
                 queueMicrotask(() => this.focusFirstError());
                 return;
             }
-            pending = { commandId: newCommandId(), objective: this.objectivePayload(), exercise: this.exercisePayload(item) };
+            const exercise = this.exercisePayload(item);
+            pending = { commandId: newCommandId(), objective: this.objectivePayload(exercise), exercise };
             this.pending = pending;
         }
         this.phase.set('saving');
@@ -211,12 +244,15 @@ export class ExerciseAuthoringPageComponent {
     }
 
     exerciseName(type: ExerciseType): string {
-        return ({ SELF_CHECK: 'Вспомнить и сверить', TYPED: 'Ввести ответ', CLOZE_SINGLE: 'Заполнить пропуск',
-            SINGLE_CHOICE: 'Выбрать один вариант' } satisfies Record<ExerciseType, string>)[type];
+        const names: Record<ExerciseType, string> = { SELF_CHECK: 'Вспомнить и сверить', TYPED: 'Ввести ответ', CLOZE_SINGLE: 'Заполнить пропуск',
+            SINGLE_CHOICE: 'Выбрать один вариант', LISTEN_CHOICE: 'Аудирование · выбор',
+            AUDIO_TEXT_MATCH: 'Аудирование · пары', LISTEN_TYPE: 'Аудирование · написать' };
+        return names[type];
     }
 
     objectiveName(objective: ExerciseObjective): string {
-        return objective.answerContract.accepted[0] ?? 'Цель без подписи';
+        return objective.answerContract.schemaVersion === 1 ? objective.answerContract.accepted[0] ?? 'Цель без подписи'
+            : 'Соотнесение записей и текста';
     }
 
     projection(id: string | null): ExerciseProjection | null {
@@ -228,13 +264,24 @@ export class ExerciseAuthoringPageComponent {
         this.type.set('TYPED'); this.enabled.set(true); this.promptMode.set('node');
         this.promptNodeId.set(null); this.customPrompt.set(''); this.answerNodeId.set(null);
         this.aliasesText.set(''); this.optionNodeIds.set([]); this.objectiveMode.set('create');
+        this.audioAssetId.set(''); this.audioTitle.set(''); this.audioInstruction.set(''); this.audioTranscript.set('');
+        this.matchRows.set([newMatchRow(), newMatchRow()]);
         this.selectedObjectiveId.set(null); this.pending = null; this.dirty.set(false); this.phase.set('ready');
     }
 
     private openExisting(deck: OwnDeck, item: ItemDetail, page: ExercisePage, detail: ExerciseDetail): void {
         this.deck.set(deck); this.item.set(item); this.page.set(page); this.exercise.set(detail);
         this.type.set(detail.type); this.enabled.set(detail.enabled);
-        if (detail.prompt.kind === 'CUSTOM_TEXT') {
+        if (detail.prompt.kind === 'AUDIO_ASSET') {
+            this.audioAssetId.set(detail.prompt.assetId); this.audioTitle.set(detail.prompt.title);
+            this.audioInstruction.set(detail.prompt.instruction); this.audioTranscript.set(detail.prompt.transcript);
+        } else if (detail.prompt.kind === 'AUDIO_MATCH') {
+            this.audioInstruction.set(detail.prompt.instruction);
+            const pairs = detail.objective.answerContract.schemaVersion === 2 ? detail.objective.answerContract.pairs : [];
+            this.matchRows.set(detail.prompt.cues.map(cue => ({ ...cue, optionNodeId: detail.bindings
+                .find(binding => binding.bindingId === pairs.find(pair => pair.cueId === cue.cueId)?.optionId)
+                ?.nodeIds[0] ?? '' })));
+        } else if (detail.prompt.kind === 'CUSTOM_TEXT') {
             this.promptMode.set('custom'); this.customPrompt.set(detail.prompt.text); this.promptNodeId.set(null);
         } else {
             this.promptMode.set('node'); this.promptNodeId.set(detail.prompt.nodeId); this.customPrompt.set('');
@@ -243,8 +290,10 @@ export class ExerciseAuthoringPageComponent {
         this.answerNodeId.set(assessed?.nodeIds[0] ?? null);
         this.optionNodeIds.set(detail.bindings.filter(binding => binding.role === 'OPTION')
             .flatMap(binding => binding.nodeIds));
-        this.aliasesText.set(detail.objective.answerContract.accepted.join('\n'));
-        this.objectiveMode.set('reuse'); this.selectedObjectiveId.set(detail.objective.objectiveId);
+        this.aliasesText.set(detail.objective.answerContract.schemaVersion === 1
+            ? detail.objective.answerContract.accepted.join('\n') : '');
+        this.objectiveMode.set(detail.type === 'AUDIO_TEXT_MATCH' ? 'revise' : 'reuse');
+        this.selectedObjectiveId.set(detail.objective.objectiveId);
         this.pending = null; this.dirty.set(false); this.phase.set('ready');
         if (this.route.snapshot.queryParamMap.get('saved') === '1') {
             this.phase.set('saved'); this.message.set('Упражнение подтверждено сервером.');
@@ -258,6 +307,28 @@ export class ExerciseAuthoringPageComponent {
 
     private validate(): Record<string, string> {
         const errors: Record<string, string> = {};
+        if (this.isListening()) {
+            if (!this.audioInstruction().trim() || [...this.audioInstruction()].length > 80) {
+                errors['prompt'] = 'Добавьте инструкцию до 80 символов.';
+            }
+            const cues = this.type() === 'AUDIO_TEXT_MATCH' ? this.matchRows() : [{ assetId: this.audioAssetId(),
+                title: this.audioTitle(), transcript: this.audioTranscript() }];
+            if (cues.some(cue => !validUuid(cue.assetId) || !cue.title.trim()
+                || new TextEncoder().encode(cue.title).length > 1024
+                || new TextEncoder().encode(cue.transcript).length > 16384)
+                || new Set(cues.map(cue => cue.assetId)).size !== cues.length) {
+                errors['audio'] = 'Укажите разные ID доступных записей, названия и допустимые транскрипты.';
+            }
+            if (this.type() === 'AUDIO_TEXT_MATCH') {
+                const rows = this.matchRows();
+                if (rows.length < 2 || rows.length > 6 || rows.some(row => this.projection(row.optionNodeId) === null)
+                    || new Set(rows.map(row => row.optionNodeId)).size !== rows.length
+                    || !rows.some(row => row.optionNodeId === this.answerNodeId())) {
+                    errors['options'] = 'Соотнесите 2–6 разных записей с разными фрагментами, включая проверяемый.';
+                }
+                if (this.objectiveMode() === 'reuse') errors['objective'] = 'Для пар создайте или обновите цель.';
+            }
+        } else {
         const prompt = this.promptMode() === 'node' ? this.projection(this.promptNodeId()) : null;
         if (this.promptMode() === 'node' && prompt === null) errors['prompt'] = 'Выберите актуальный фрагмент вопроса.';
         else if (prompt !== null && [...prompt.text].length > 80) {
@@ -268,26 +339,28 @@ export class ExerciseAuthoringPageComponent {
             if (text.length === 0) errors['prompt'] = 'Введите короткий вопрос.';
             else if ([...text].length > 80) errors['prompt'] = 'Сократите вопрос до 80 символов.';
         }
+        }
         const answer = this.projection(this.answerNodeId());
         if (answer === null) errors['answer'] = 'Выберите актуальный проверяемый фрагмент.';
         else if ([...answer.text].length > 80) errors['answer'] = 'Ответ слишком длинный; выберите более короткий фрагмент.';
         const aliases = this.aliases();
-        if (this.objectiveMode() !== 'reuse' && aliases.length === 0) errors['aliases'] = 'Добавьте хотя бы один допустимый ответ.';
+        if (this.type() !== 'AUDIO_TEXT_MATCH' && this.objectiveMode() !== 'reuse' && aliases.length === 0) errors['aliases'] = 'Добавьте хотя бы один допустимый ответ.';
         if (aliases.length > 20) errors['aliases'] = 'Допустимо не более 20 вариантов ответа.';
         if (aliases.some(value => new TextEncoder().encode(value).length > 512)) errors['aliases'] = 'Один из ответов слишком длинный.';
-        if (answer !== null && this.objectiveMode() !== 'reuse'
+        if (this.type() !== 'AUDIO_TEXT_MATCH' && answer !== null && this.objectiveMode() !== 'reuse'
             && !aliases.some(value => normalized(value) === normalized(answer.text))) {
             errors['aliases'] = 'Допустимые ответы должны включать текст выбранного правильного фрагмента.';
         }
         if ((this.objectiveMode() === 'reuse' || this.objectiveMode() === 'revise') && this.selectedObjective() === null) {
             errors['objective'] = 'Выберите существующую цель.';
         }
-        if (answer !== null && this.objectiveMode() === 'reuse' && this.selectedObjective() !== null
-            && !this.selectedObjective()!.answerContract.accepted
-                .some(value => normalized(value) === normalized(answer.text))) {
+        const existingAnswer = this.selectedObjective()?.answerContract;
+        if (answer !== null && this.objectiveMode() === 'reuse' && existingAnswer !== undefined
+            && (existingAnswer.schemaVersion !== 1
+                || !existingAnswer.accepted.some(value => normalized(value) === normalized(answer.text)))) {
             errors['objective'] = 'Этот фрагмент не соответствует сохранённому ответу цели. Обновите цель или создайте отдельную.';
         }
-        if (this.type() === 'SINGLE_CHOICE') {
+        if (this.type() === 'SINGLE_CHOICE' || this.type() === 'LISTEN_CHOICE') {
             const options = this.optionNodeIds().map(id => this.projection(id)).filter(value => value !== null);
             if (options.length < 2 || options.length > 6) errors['options'] = 'Выберите от 2 до 6 вариантов.';
             if (answer !== null && !options.some(value => value.nodeId === answer.nodeId)) {
@@ -306,36 +379,52 @@ export class ExerciseAuthoringPageComponent {
         return [...new Set(this.aliasesText().split(/\r?\n/u).map(value => value.trim()).filter(Boolean))];
     }
 
-    private answerContract(): AnswerContract {
+    private answerContract(exercise: Record<string, unknown>): AnswerContract {
+        if (this.type() === 'AUDIO_TEXT_MATCH') {
+            const bindings = exercise['bindings'] as Record<string, unknown>[];
+            return { schemaVersion: 2, pairs: this.matchRows().map((row, index) => ({ cueId: row.cueId,
+                optionId: bindings[index + 1]['bindingId'] as string })) };
+        }
         return { schemaVersion: 1, normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'], accepted: this.aliases() };
     }
 
-    private objectivePayload(): Record<string, unknown> {
+    private objectivePayload(exercise: Record<string, unknown>): Record<string, unknown> {
         const selected = this.selectedObjective();
         if (this.objectiveMode() === 'reuse') return {
             operation: 'reuse', objectiveId: selected!.objectiveId, objectiveRevisionId: selected!.objectiveRevisionId
         };
         if (this.objectiveMode() === 'revise') return {
             operation: 'revise', objectiveId: selected!.objectiveId,
-            expectedObjectiveRevisionId: selected!.objectiveRevisionId, answerContract: this.answerContract()
+            expectedObjectiveRevisionId: selected!.objectiveRevisionId, answerContract: this.answerContract(exercise)
         };
-        return { operation: 'create', answerContract: this.answerContract() };
+        return { operation: 'create', answerContract: this.answerContract(exercise) };
     }
 
     private exercisePayload(item: ItemDetail): Record<string, unknown> {
-        const prompt = this.promptMode() === 'custom'
+        const prompt = this.type() === 'AUDIO_TEXT_MATCH'
+            ? { kind: 'AUDIO_MATCH', instruction: this.audioInstruction().trim(), cues: this.matchRows().map(row => ({
+                cueId: row.cueId, assetId: row.assetId.trim(), title: row.title.trim(), transcript: row.transcript
+            })) }
+            : this.isListening() ? { kind: 'AUDIO_ASSET', assetId: this.audioAssetId().trim(),
+                title: this.audioTitle().trim(), instruction: this.audioInstruction().trim(),
+                transcript: this.audioTranscript() }
+            : this.promptMode() === 'custom'
             ? { kind: 'CUSTOM_TEXT', text: this.customPrompt().trim() }
             : { kind: 'NODE_TEXT', memberKey: item.memberKey, itemRevisionId: item.itemRevisionId,
                 nodeId: this.promptNodeId()! };
         const bindings: Record<string, unknown>[] = [{ bindingId: crypto.randomUUID(), role: 'ASSESSED',
             memberKey: item.memberKey, itemRevisionId: item.itemRevisionId, nodeIds: [this.answerNodeId()!],
             display: { kind: 'NODE_TEXT' }, ordinal: 0 }];
-        if (this.type() === 'SINGLE_CHOICE') this.optionNodeIds().forEach((nodeId, index) => bindings.push({
+        const optionNodes = this.type() === 'AUDIO_TEXT_MATCH' ? this.matchRows().map(row => row.optionNodeId)
+            : this.optionNodeIds();
+        if (this.type() === 'SINGLE_CHOICE' || this.type() === 'LISTEN_CHOICE'
+            || this.type() === 'AUDIO_TEXT_MATCH') optionNodes.forEach((nodeId, index) => bindings.push({
             bindingId: crypto.randomUUID(), role: 'OPTION', memberKey: item.memberKey,
             itemRevisionId: item.itemRevisionId, nodeIds: [nodeId], display: { kind: 'NODE_TEXT' }, ordinal: index + 1
         }));
         const evaluator = this.type() === 'SELF_CHECK' ? 'self-check'
-            : this.type() === 'SINGLE_CHOICE' ? 'deterministic-choice' : 'deterministic-text';
+            : this.type() === 'SINGLE_CHOICE' || this.type() === 'LISTEN_CHOICE' ? 'deterministic-choice'
+            : this.type() === 'AUDIO_TEXT_MATCH' ? 'deterministic-audio-match' : 'deterministic-text';
         return { type: this.type(), schemaVersion: 1, enabled: this.enabled(), prompt, bindings,
             evaluatorPolicy: { id: evaluator, version: '1' } };
     }
@@ -385,4 +474,12 @@ function uniqueObjectives(values: readonly ExerciseObjective[]): readonly Exerci
 
 function normalized(value: string): string {
     return value.normalize('NFC').trim().toLowerCase();
+}
+
+function newMatchRow(): MatchRow {
+    return { cueId: crypto.randomUUID(), assetId: '', title: '', transcript: '', optionNodeId: '' };
+}
+
+function validUuid(value: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u.test(value.trim());
 }

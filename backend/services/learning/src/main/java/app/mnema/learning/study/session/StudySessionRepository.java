@@ -42,8 +42,8 @@ class StudySessionRepository {
     record Presentation(UUID presentationId, int ordinal, String nonce, int candidateOrdinal,
                         UUID exerciseId, UUID exerciseRevisionId, String type, UUID objectiveId,
                         UUID objectiveRevisionId, long learningEpoch, JsonNode prompt, JsonNode options,
-                        JsonNode bindings, JsonNode evaluator, JsonNode answerContract, Instant issuedAt,
-                        Instant expiresAt) { }
+                        JsonNode bindings, JsonNode evaluator, JsonNode answerContract, boolean transcriptRevealed,
+                        Instant issuedAt, Instant expiresAt) { }
     record Material(UUID memberKey, UUID itemRevisionId, UUID scopeId, UUID contentRootId) { }
     record ReplaySource(UUID sessionId, Instant completedAt, int presentationCount) { }
 
@@ -78,7 +78,8 @@ class StudySessionRepository {
             row.getObject("objective_id", UUID.class), row.getObject("objective_revision_id", UUID.class),
             row.getLong("learning_epoch"), json(row.getString("prompt")), json(row.getString("options")),
             json(row.getString("bindings")), json(row.getString("evaluator")),
-            json(row.getString("answer_contract")), row.getTimestamp("issued_at").toInstant(),
+            json(row.getString("answer_contract")), row.getBoolean("transcript_revealed"),
+            row.getTimestamp("issued_at").toInstant(),
             row.getTimestamp("expires_at").toInstant());
 
     Optional<DeckHead> deck(UUID actor, UUID deck) {
@@ -257,11 +258,17 @@ class StudySessionRepository {
                     SELECT candidate.*
                       FROM app_learning.study_state state
                       JOIN LATERAL (
-                          SELECT candidate_ordinal,exercise_id,exercise_revision_id,objective_id,
-                                 objective_revision_id,member_key
-                            FROM app_learning.study_candidate
-                           WHERE generation_id=:generation AND objective_id=state.objective_id
-                           ORDER BY candidate_ordinal LIMIT 1
+                          SELECT choice.candidate_ordinal,choice.exercise_id,choice.exercise_revision_id,
+                                 choice.objective_id,choice.objective_revision_id,choice.member_key
+                            FROM app_learning.study_candidate choice
+                            JOIN app_learning.exercise_revision selected
+                              ON selected.deck_id=:deck AND selected.exercise_id=choice.exercise_id
+                             AND selected.revision_id=choice.exercise_revision_id
+                           WHERE choice.generation_id=:generation AND choice.objective_id=state.objective_id
+                             AND (selected.exercise_type NOT IN ('LISTEN_CHOICE','AUDIO_TEXT_MATCH','LISTEN_TYPE')
+                                  OR app_learning.exercise_audio_ready(:actor,:deck,choice.exercise_id,
+                                      choice.exercise_revision_id))
+                           ORDER BY choice.candidate_ordinal LIMIT 1
                       ) candidate ON TRUE
                      WHERE :scheduled AND state.account_id=:actor AND state.deck_id=:deck
                        AND state.next_due<=:asOf
@@ -275,11 +282,17 @@ class StudySessionRepository {
                     SELECT candidate.*
                       FROM app_learning.study_state state
                       JOIN LATERAL (
-                          SELECT candidate_ordinal,exercise_id,exercise_revision_id,objective_id,
-                                 objective_revision_id,member_key
-                            FROM app_learning.study_candidate
-                           WHERE generation_id=:generation AND objective_id=state.objective_id
-                           ORDER BY candidate_ordinal LIMIT 1
+                          SELECT choice.candidate_ordinal,choice.exercise_id,choice.exercise_revision_id,
+                                 choice.objective_id,choice.objective_revision_id,choice.member_key
+                            FROM app_learning.study_candidate choice
+                            JOIN app_learning.exercise_revision selected
+                              ON selected.deck_id=:deck AND selected.exercise_id=choice.exercise_id
+                             AND selected.revision_id=choice.exercise_revision_id
+                           WHERE choice.generation_id=:generation AND choice.objective_id=state.objective_id
+                             AND (selected.exercise_type NOT IN ('LISTEN_CHOICE','AUDIO_TEXT_MATCH','LISTEN_TYPE')
+                                  OR app_learning.exercise_audio_ready(:actor,:deck,choice.exercise_id,
+                                      choice.exercise_revision_id))
+                           ORDER BY choice.candidate_ordinal LIMIT 1
                       ) candidate ON TRUE
                      WHERE :scheduled AND state.account_id=:actor AND state.deck_id=:deck
                        AND state.next_due IS NULL AND state.transition_sequence=0
@@ -293,11 +306,19 @@ class StudySessionRepository {
                     SELECT * FROM bounded
                     UNION ALL SELECT * FROM due
                     UNION ALL SELECT * FROM introduced_unassessed
+                ), available_pool AS (
+                    SELECT candidate.* FROM candidate_pool candidate
+                    JOIN app_learning.exercise_revision selected ON selected.deck_id=:deck
+                     AND selected.exercise_id=candidate.exercise_id
+                     AND selected.revision_id=candidate.exercise_revision_id
+                    WHERE selected.exercise_type NOT IN ('LISTEN_CHOICE','AUDIO_TEXT_MATCH','LISTEN_TYPE')
+                       OR app_learning.exercise_audio_ready(:actor,:deck,candidate.exercise_id,
+                           candidate.exercise_revision_id)
                 ), chosen AS (
                     SELECT DISTINCT ON (candidate.objective_id)
                            candidate.candidate_ordinal,candidate.exercise_id,candidate.exercise_revision_id,
                            candidate.objective_id,candidate.objective_revision_id,candidate.member_key
-                      FROM candidate_pool candidate
+                      FROM available_pool candidate
                      ORDER BY candidate.objective_id,candidate.candidate_ordinal
                 ), eligible AS (
                     SELECT chosen.candidate_ordinal,chosen.exercise_id,chosen.exercise_revision_id,
@@ -450,16 +471,22 @@ class StudySessionRepository {
 
     List<Presentation> presentations(UUID actor, UUID session, int start, int limit) {
         return jdbc.sql("""
-                SELECT * FROM app_learning.study_presentation
-                 WHERE account_id=:actor AND session_id=:session AND presentation_ordinal>=:start
-                 ORDER BY presentation_ordinal LIMIT :limit
+                SELECT p.*, EXISTS(SELECT 1 FROM app_learning.study_audio_accommodation a
+                    WHERE a.account_id=p.account_id AND a.session_id=p.session_id
+                      AND a.presentation_id=p.presentation_id) AS transcript_revealed
+                  FROM app_learning.study_presentation p
+                 WHERE p.account_id=:actor AND p.session_id=:session AND p.presentation_ordinal>=:start
+                 ORDER BY p.presentation_ordinal LIMIT :limit
                 """).param("actor", actor).param("session", session).param("start", start).param("limit", limit)
                 .query(PRESENTATION).list();
     }
 
     List<Presentation> pendingPresentations(UUID actor, UUID session, int start, int limit) {
         return jdbc.sql("""
-                SELECT p.* FROM app_learning.study_presentation p
+                SELECT p.*, EXISTS(SELECT 1 FROM app_learning.study_audio_accommodation a
+                    WHERE a.account_id=p.account_id AND a.session_id=p.session_id
+                      AND a.presentation_id=p.presentation_id) AS transcript_revealed
+                  FROM app_learning.study_presentation p
                  WHERE p.account_id=:actor AND p.session_id=:session AND p.presentation_ordinal>=:start
                    AND NOT EXISTS (
                        SELECT 1 FROM app_learning.study_attempt_tombstone t
@@ -469,6 +496,34 @@ class StudySessionRepository {
                  ORDER BY p.presentation_ordinal LIMIT :limit
                 """).param("actor", actor).param("session", session).param("start", start).param("limit", limit)
                 .query(PRESENTATION).list();
+    }
+
+    Optional<Presentation> pendingForAccommodation(UUID actor, UUID deck, UUID session, UUID presentation,
+                                                   String nonce, Instant now) {
+        return jdbc.sql("""
+                SELECT p.*, EXISTS(SELECT 1 FROM app_learning.study_audio_accommodation a
+                    WHERE a.account_id=p.account_id AND a.session_id=p.session_id
+                      AND a.presentation_id=p.presentation_id) AS transcript_revealed
+                  FROM app_learning.study_presentation p
+                 WHERE p.account_id=:actor AND p.deck_id=:deck AND p.session_id=:session
+                   AND p.presentation_id=:presentation AND p.nonce=:nonce AND p.expires_at>:now
+                   AND p.exercise_type IN ('LISTEN_CHOICE','AUDIO_TEXT_MATCH','LISTEN_TYPE')
+                   AND NOT EXISTS (SELECT 1 FROM app_learning.study_attempt_tombstone t
+                       WHERE t.account_id=p.account_id AND t.session_id=p.session_id
+                         AND t.presentation_id=p.presentation_id)
+                """).param("actor", actor).param("deck", deck).param("session", session)
+                .param("presentation", presentation).param("nonce", nonce).param("now", Timestamp.from(now))
+                .query(PRESENTATION).optional();
+    }
+
+    void recordAccommodation(UUID actor, UUID session, UUID presentation, Instant now) {
+        jdbc.sql("""
+                INSERT INTO app_learning.study_audio_accommodation
+                    (account_id,session_id,presentation_id,revealed_at)
+                VALUES (:actor,:session,:presentation,:now)
+                ON CONFLICT DO NOTHING
+                """).param("actor", actor).param("session", session).param("presentation", presentation)
+                .param("now", Timestamp.from(now)).update();
     }
 
     List<ReplaySource> replaySources(UUID actor, UUID deck, LocalDate localDate, int limit) {

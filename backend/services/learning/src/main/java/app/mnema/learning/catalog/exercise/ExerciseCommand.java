@@ -16,12 +16,13 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
-/** Strict P0 exercise publication command; wire DTOs do not accept unknown fields. */
+/** Strict versioned exercise publication command; wire DTOs do not accept unknown fields. */
 public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID expectedExerciseRevisionId,
                               Objective objective, Exercise exercise, ObjectNode payload) {
     private static final int MAX_BYTES = 262_144;
     private static final ContentJsonReader JSON = new ContentJsonReader(MAX_BYTES, 32, 20_000);
-    private static final Set<String> TYPES = Set.of("SELF_CHECK", "TYPED", "CLOZE_SINGLE", "SINGLE_CHOICE");
+    private static final Set<String> TYPES = Set.of("SELF_CHECK", "TYPED", "CLOZE_SINGLE", "SINGLE_CHOICE",
+            "LISTEN_CHOICE", "AUDIO_TEXT_MATCH", "LISTEN_TYPE");
     private static final Set<String> ROLES = Set.of("ASSESSED", "CUE", "OPTION", "CONTEXT");
     private static final Set<String> NORMALIZATIONS = Set.of("UNICODE_NFC", "TRIM", "CASE_FOLD");
 
@@ -56,9 +57,12 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
             fields(body, update
                     ? Set.of("commandId", "expectedDeckRevisionId", "expectedExerciseRevisionId", "objective", "exercise")
                     : Set.of("commandId", "expectedDeckRevisionId", "objective", "exercise"));
+            Objective objective = objective(body.path("objective"));
+            Exercise exercise = exercise(body.path("exercise"));
+            validateAnswerCompatibility(objective, exercise);
             return new ExerciseCommand(id(body, "commandId"), id(body, "expectedDeckRevisionId"),
                     update ? id(body, "expectedExerciseRevisionId") : null,
-                    objective(body.path("objective")), exercise(body.path("exercise")), (ObjectNode) body);
+                    objective, exercise, (ObjectNode) body);
         } catch (IOException | IllegalArgumentException exception) {
             throw new InvalidRequestException();
         }
@@ -86,6 +90,18 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
     }
 
     private static ObjectNode answer(JsonNode value) {
+        if (value.path("schemaVersion").isIntegralNumber() && value.path("schemaVersion").intValue() == 2) {
+            fields(value, Set.of("schemaVersion", "pairs"));
+            JsonNode pairs = value.path("pairs");
+            if (!pairs.isArray() || pairs.size() < 2 || pairs.size() > 6) throw invalid();
+            var cues = new HashSet<UUID>();
+            var options = new HashSet<UUID>();
+            pairs.forEach(pair -> {
+                fields(pair, Set.of("cueId", "optionId"));
+                if (!cues.add(id(pair, "cueId")) || !options.add(id(pair, "optionId"))) throw invalid();
+            });
+            return ((ObjectNode) value).deepCopy();
+        }
         fields(value, Set.of("schemaVersion", "normalization", "accepted"));
         if (!value.path("schemaVersion").canConvertToInt() || value.path("schemaVersion").intValue() != 1
                 || !value.path("normalization").isArray() || value.path("normalization").isEmpty()
@@ -109,16 +125,46 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
         String type = text(value, "type", 32);
         if (!TYPES.contains(type) || !value.path("schemaVersion").canConvertToInt()
                 || value.path("schemaVersion").intValue() != 1 || !value.path("enabled").isBoolean()) throw invalid();
-        ObjectNode prompt = prompt(value.path("prompt"));
+        ObjectNode prompt = prompt(value.path("prompt"), type);
         List<Binding> bindings = bindings(value.path("bindings"));
         ObjectNode evaluator = evaluator(value.path("evaluatorPolicy"), type);
         long assessed = bindings.stream().filter(binding -> binding.role().equals("ASSESSED")).count();
         long options = bindings.stream().filter(binding -> binding.role().equals("OPTION")).count();
-        if (assessed != 1 || (type.equals("SINGLE_CHOICE") ? options < 2 || options > 6 : options != 0)) {
+        boolean choices = type.equals("SINGLE_CHOICE") || type.equals("LISTEN_CHOICE")
+                || type.equals("AUDIO_TEXT_MATCH");
+        if (assessed != 1 || (choices ? options < 2 || options > 6 : options != 0)) {
             throw invalid();
         }
-        if (type.equals("SINGLE_CHOICE")) validateChoiceTargets(bindings);
+        if (choices) validateChoiceTargets(bindings);
         return new Exercise(type, value.path("enabled").booleanValue(), prompt, bindings, evaluator);
+    }
+
+    private static void validateAnswerCompatibility(Objective objective, Exercise exercise) {
+        String type = exercise.type();
+        if (type.equals("AUDIO_TEXT_MATCH") && objective instanceof ReuseObjective) throw invalid();
+        ObjectNode answer = switch (objective) {
+            case CreateObjective create -> create.answerContract();
+            case ReviseObjective revise -> revise.answerContract();
+            case ReuseObjective ignored -> null;
+        };
+        if (answer == null) return;
+        if (!type.equals("AUDIO_TEXT_MATCH")) {
+            if (answer.path("schemaVersion").intValue() != 1) throw invalid();
+            return;
+        }
+        if (answer.path("schemaVersion").intValue() != 2) throw invalid();
+        var cues = new HashSet<UUID>();
+        exercise.prompt().path("cues").forEach(cue -> cues.add(id(cue, "cueId")));
+        var options = new HashSet<UUID>();
+        exercise.bindings().stream().filter(binding -> binding.role().equals("OPTION"))
+                .forEach(binding -> options.add(binding.bindingId()));
+        var mappedCues = new HashSet<UUID>();
+        var mappedOptions = new HashSet<UUID>();
+        answer.path("pairs").forEach(pair -> {
+            mappedCues.add(id(pair, "cueId"));
+            mappedOptions.add(id(pair, "optionId"));
+        });
+        if (!cues.equals(mappedCues) || !options.equals(mappedOptions)) throw invalid();
     }
 
     private static void validateChoiceTargets(List<Binding> bindings) {
@@ -134,17 +180,50 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
         if (!options.contains(assessedTarget)) throw invalid();
     }
 
-    private static ObjectNode prompt(JsonNode value) {
+    private static ObjectNode prompt(JsonNode value, String type) {
         String kind = text(value, "kind", 32);
-        if (kind.equals("NODE_TEXT")) {
+        boolean listening = type.equals("LISTEN_CHOICE") || type.equals("LISTEN_TYPE")
+                || type.equals("AUDIO_TEXT_MATCH");
+        if (kind.equals("AUDIO_ASSET") && listening && !type.equals("AUDIO_TEXT_MATCH")) {
+            audioCue(value, false);
+        } else if (kind.equals("AUDIO_MATCH") && type.equals("AUDIO_TEXT_MATCH")) {
+            fields(value, Set.of("kind", "instruction", "cues"));
+            shortText(value.path("instruction"));
+            JsonNode cues = value.path("cues");
+            if (!cues.isArray() || cues.size() < 2 || cues.size() > 6) throw invalid();
+            var ids = new HashSet<UUID>();
+            var assets = new HashSet<UUID>();
+            cues.forEach(cue -> {
+                audioCue(cue, true);
+                if (!ids.add(id(cue, "cueId")) || !assets.add(id(cue, "assetId"))) throw invalid();
+            });
+        } else if (kind.equals("NODE_TEXT") && !listening) {
             fields(value, Set.of("kind", "memberKey", "itemRevisionId", "nodeId"));
             id(value, "memberKey"); id(value, "itemRevisionId"); id(value, "nodeId");
-        } else if (kind.equals("CUSTOM_TEXT")) {
+        } else if (kind.equals("CUSTOM_TEXT") && !listening) {
             fields(value, Set.of("kind", "text"));
-            if (!boundedText(value.path("text"), 320)) throw invalid();
-            if (value.path("text").textValue().codePoints().count() > 80) throw invalid();
+            shortText(value.path("text"));
         } else throw invalid();
         return ((ObjectNode) value).deepCopy();
+    }
+
+    private static void audioCue(JsonNode value, boolean matching) {
+        Set<String> required = matching
+                ? Set.of("cueId", "assetId", "title", "transcript")
+                : Set.of("kind", "assetId", "title", "instruction", "transcript");
+        fields(value, required);
+        if (matching) id(value, "cueId");
+        id(value, "assetId");
+        if (!boundedText(value.path("title"), 1_024)
+                || !value.path("transcript").isTextual()
+                || value.path("transcript").textValue().getBytes(StandardCharsets.UTF_8).length > 16_384) {
+            throw invalid();
+        }
+        if (!matching) shortText(value.path("instruction"));
+    }
+
+    private static void shortText(JsonNode value) {
+        if (!boundedText(value, 320) || value.textValue().codePoints().count() > 80) throw invalid();
     }
 
     private static List<Binding> bindings(JsonNode values) {
@@ -191,8 +270,9 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
         String version = text(value, "version", 16);
         String expected = switch (type) {
             case "SELF_CHECK" -> "self-check";
-            case "TYPED", "CLOZE_SINGLE" -> "deterministic-text";
-            case "SINGLE_CHOICE" -> "deterministic-choice";
+            case "TYPED", "CLOZE_SINGLE", "LISTEN_TYPE" -> "deterministic-text";
+            case "SINGLE_CHOICE", "LISTEN_CHOICE" -> "deterministic-choice";
+            case "AUDIO_TEXT_MATCH" -> "deterministic-audio-match";
             default -> throw invalid();
         };
         if (!id.equals(expected) || !version.equals("1")) throw invalid();
@@ -266,6 +346,18 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
         }
         @Override public ObjectNode prompt() { return prompt.deepCopy(); }
         @Override public ObjectNode evaluatorPolicy() { return evaluatorPolicy.deepCopy(); }
+
+        public List<UUID> audioAssets() {
+            if (type.equals("AUDIO_TEXT_MATCH")) {
+                var assets = new ArrayList<UUID>();
+                prompt.path("cues").forEach(cue -> assets.add(UUID.fromString(cue.path("assetId").textValue())));
+                return List.copyOf(assets);
+            }
+            if (type.equals("LISTEN_CHOICE") || type.equals("LISTEN_TYPE")) {
+                return List.of(UUID.fromString(prompt.path("assetId").textValue()));
+            }
+            return List.of();
+        }
     }
     public record Binding(UUID bindingId, String role, UUID memberKey, UUID itemRevisionId,
                           List<UUID> nodeIds, ObjectNode display, int ordinal) {

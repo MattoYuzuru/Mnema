@@ -8,6 +8,9 @@ import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
+import app.mnema.learning.media.MediaCatalog;
+import app.mnema.learning.study.session.StudySessionCommand;
+import app.mnema.learning.study.session.StudySessionService;
 import app.mnema.learning.support.PostgresIntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -33,6 +36,90 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
     @Autowired private JdbcClient jdbc;
+    @Autowired private MediaCatalog media;
+    @Autowired private StudySessionService studies;
+
+    @Test
+    void listeningPublicationsPinOwnedAssetsAndRejectForeignCueAtomically() {
+        Fixture fixture = material(UUID.randomUUID());
+        UUID firstAsset = media.reserve(fixture.actor(), UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
+        UUID secondAsset = media.reserve(fixture.actor(), UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
+        for (String type : new String[] { "LISTEN_CHOICE", "LISTEN_TYPE", "AUDIO_TEXT_MATCH" }) {
+            JsonNode head = decks.read(fixture.actor(), fixture.deck());
+            ObjectNode body = body(UUID.randomUUID(), head, fixture, type, "create", null, null);
+            ObjectNode exercise = body.withObject("exercise");
+            exercise.set("evaluatorPolicy", JSON.createObjectNode().put("id", type.equals("AUDIO_TEXT_MATCH")
+                    ? "deterministic-audio-match" : type.equals("LISTEN_CHOICE")
+                    ? "deterministic-choice" : "deterministic-text").put("version", "1"));
+            ArrayNode bindings = exercise.withArray("bindings");
+            if (!type.equals("LISTEN_TYPE")) {
+                bindings.add(binding("OPTION", 1, fixture));
+                bindings.add(binding("OPTION", 2, fixture, fixture.distractor()));
+            }
+            if (type.equals("AUDIO_TEXT_MATCH")) {
+                UUID firstCue = UUID.randomUUID(), secondCue = UUID.randomUUID();
+                ObjectNode prompt = JSON.createObjectNode().put("kind", "AUDIO_MATCH")
+                        .put("instruction", "Соотнесите записи и текст");
+                prompt.putArray("cues").addObject().put("cueId", firstCue.toString())
+                        .put("assetId", firstAsset.toString()).put("title", "Первая").put("transcript", "");
+                prompt.withArray("cues").addObject().put("cueId", secondCue.toString())
+                        .put("assetId", secondAsset.toString()).put("title", "Вторая").put("transcript", "");
+                exercise.set("prompt", prompt);
+                ObjectNode answer = JSON.createObjectNode().put("schemaVersion", 2);
+                answer.putArray("pairs").addObject().put("cueId", firstCue.toString())
+                        .put("optionId", bindings.get(1).path("bindingId").textValue());
+                answer.withArray("pairs").addObject().put("cueId", secondCue.toString())
+                        .put("optionId", bindings.get(2).path("bindingId").textValue());
+                body.withObject("objective").set("answerContract", answer);
+            } else exercise.set("prompt", JSON.createObjectNode().put("kind", "AUDIO_ASSET")
+                    .put("assetId", firstAsset.toString()).put("title", "Первая")
+                    .put("instruction", "Прослушайте запись").put("transcript", "memory"));
+            var published = service.publish(fixture.actor(), fixture.deck(), null,
+                    Long.parseLong(head.path("rowVersion").textValue()), ExerciseCommand.readCreate(bytes(body)));
+            UUID revision = UUID.fromString(published.acknowledgement().path("exerciseRevisionId").textValue());
+            assertThat(count("exercise_media_ref", "exercise_revision_id", revision))
+                    .isEqualTo(type.equals("AUDIO_TEXT_MATCH") ? 2 : 1);
+            assertThat(media.exerciseReady(fixture.actor(), fixture.deck(),
+                    UUID.fromString(published.acknowledgement().path("exerciseId").textValue()), revision)).isFalse();
+        }
+
+        UUID waitingSession = UUID.fromString(studies.start(fixture.actor(), fixture.deck(), "UTC",
+                scheduled()).body().path("sessionId").textValue());
+        assertThat(studies.read(fixture.actor(), fixture.deck(), waitingSession).path("status").textValue())
+                .isEqualTo("EMPTY");
+        readyAudio(firstAsset);
+        readyAudio(secondAsset);
+        UUID readySession = UUID.fromString(studies.start(fixture.actor(), fixture.deck(), "UTC",
+                scheduled()).body().path("sessionId").textValue());
+        JsonNode study = studies.read(fixture.actor(), fixture.deck(), readySession);
+        assertThat(study.path("presentations")).hasSize(3);
+        study.path("presentations").forEach(row -> {
+            assertThat(row.path("bindings")).isEmpty();
+            assertThat(row.path("reference").isNull()).isTrue();
+        });
+        JsonNode typed = java.util.stream.StreamSupport.stream(study.path("presentations").spliterator(), false)
+                .filter(row -> row.path("type").asText().equals("LISTEN_TYPE")).findFirst().orElseThrow();
+        assertThat(typed.path("reference").isNull()).isTrue();
+        assertThat(typed.path("prompt").has("transcript")).isFalse();
+        UUID typedPresentation = UUID.fromString(typed.path("presentationId").textValue());
+        assertThat(studies.revealTranscript(fixture.actor(), fixture.deck(), readySession, typedPresentation,
+                typed.path("nonce").textValue()).path("prompt").path("transcript").textValue())
+                .isEqualTo("memory");
+        assertThat(studies.read(fixture.actor(), fixture.deck(), readySession).path("presentations")
+                .findValuesAsText("transcript")).contains("memory");
+
+        UUID foreignAsset = media.reserve(UUID.randomUUID(), UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
+        JsonNode head = decks.read(fixture.actor(), fixture.deck());
+        ObjectNode foreign = body(UUID.randomUUID(), head, fixture, "LISTEN_TYPE", "create", null, null);
+        foreign.withObject("exercise").set("prompt", JSON.createObjectNode().put("kind", "AUDIO_ASSET")
+                .put("assetId", foreignAsset.toString()).put("title", "Чужая запись")
+                .put("instruction", "Прослушайте запись").put("transcript", ""));
+        assertThatThrownBy(() -> service.publish(fixture.actor(), fixture.deck(), null,
+                Long.parseLong(head.path("rowVersion").textValue()), ExerciseCommand.readCreate(bytes(foreign))))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(decks.read(fixture.actor(), fixture.deck()).path("rowVersion").textValue())
+                .isEqualTo(head.path("rowVersion").textValue());
+    }
 
     @Test
     void ownerCreatesReusesAndRevisesImmutableObjectiveAndExerciseHistory() {
@@ -238,6 +325,26 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         return jdbc.sql("SELECT count(*) FROM app_learning." + table + " WHERE " + column + "=:value")
                 .param("value", value).query(Long.class).single();
     }
+
+    private void readyAudio(UUID asset) {
+        UUID blob = UUID.randomUUID();
+        byte[] hash = new byte[32];
+        java.nio.ByteBuffer.wrap(hash).putLong(blob.getMostSignificantBits()).putLong(blob.getLeastSignificantBits());
+        jdbc.sql("INSERT INTO app_learning.media_blob(blob_id,sha256,byte_length,mime_type,object_key,verified_at) "
+                + "VALUES (:blob,:hash,32,'audio/mpeg',:key,CURRENT_TIMESTAMP)")
+                .param("blob", blob).param("hash", hash).param("key", "audio/" + blob).update();
+        jdbc.sql("UPDATE app_learning.media_asset SET state='PROCESSING',updated_at=CURRENT_TIMESTAMP "
+                + "WHERE asset_id=:asset").param("asset", asset).update();
+        assertThat(media.ready(asset, 0, blob)).isTrue();
+    }
+
+    private static StudySessionCommand scheduled() {
+        ObjectNode command = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
+                .put("mode", "SCHEDULED");
+        command.putObject("budget").put("maxPresentations", 20).put("maxNewObjectives", 5);
+        return StudySessionCommand.read(bytes(command));
+    }
+
 
     private static ByteArrayInputStream bytes(JsonNode value) {
         return new ByteArrayInputStream(value.toString().getBytes(StandardCharsets.UTF_8));

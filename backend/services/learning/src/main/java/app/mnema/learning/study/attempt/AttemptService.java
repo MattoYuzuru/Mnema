@@ -4,6 +4,7 @@ import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
+import app.mnema.learning.media.MediaCatalog;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -20,11 +21,13 @@ public class AttemptService {
     private static final Duration COMPACT_RECEIPT_RETENTION = Duration.ofHours(24);
     private final AttemptRepository repository;
     private final CanonicalJsonHasher hasher;
+    private final MediaCatalog mediaCatalog;
     private final BaselineReducer reducer = new BaselineReducer();
 
-    public AttemptService(AttemptRepository repository, CanonicalJsonHasher hasher) {
+    public AttemptService(AttemptRepository repository, CanonicalJsonHasher hasher, MediaCatalog mediaCatalog) {
         this.repository = repository;
         this.hasher = hasher;
+        this.mediaCatalog = mediaCatalog;
     }
 
     @Transactional(timeout = 10)
@@ -50,8 +53,12 @@ public class AttemptService {
             throw new IdempotencyConflictException();
         }
 
-        AttemptEvaluation evaluation = AttemptEvaluation.evaluate(presentation.exerciseType(),
-                presentation.evaluator(), presentation.answerContract(), presentation.bindings(), command);
+        AttemptEvaluation evaluation = isListening(presentation.exerciseType())
+                && !mediaCatalog.exerciseReady(actor, deck, presentation.exerciseId(), presentation.exerciseRevisionId())
+                ? AttemptEvaluation.mediaNotReady()
+                : AttemptEvaluation.evaluate(presentation.exerciseType(), presentation.evaluator(),
+                        presentation.answerContract(), presentation.bindings(), command,
+                        presentation.transcriptRevealed());
         if (!presentation.mode().equals("SCHEDULED")) {
             ObjectNode outcome = feedbackOnly(command, presentation, evaluation);
             repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(),
@@ -99,6 +106,10 @@ public class AttemptService {
             throw new IdempotencyConflictException();
         }
         return new SubmitResult(receipt.outcome(), true);
+    }
+
+    private static boolean isListening(String type) {
+        return type.equals("LISTEN_CHOICE") || type.equals("AUDIO_TEXT_MATCH") || type.equals("LISTEN_TYPE");
     }
 
     private static ObjectNode assessed(AttemptCommand command, AttemptRepository.Presentation presentation,

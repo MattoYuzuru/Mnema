@@ -235,7 +235,8 @@ describe('StudySessionPageComponent', () => {
     function outcome(result: 'CORRECT' | 'PARTIAL', command?: AttemptCommand): AttemptOutcome {
         return { attemptId: command?.attemptId ?? id('14'), presentationId, mode: 'SCHEDULED', status: 'ASSESSED',
             feedback: { result, reference: result === 'CORRECT' ? 'memory' : null,
-                appliedRules: result === 'CORRECT' ? ['TRIM', 'CASE_FOLD'] : ['SELF_REPORT'], reasonCodes: [] },
+                appliedRules: result === 'CORRECT' ? ['TRIM', 'CASE_FOLD'] : ['SELF_REPORT'],
+                reasonCodes: [], pairResults: [] },
             canonicalEffects: true, transition: { beforeLevel: 0, afterLevel: 1, nextDue: '2026-09-21T10:00:00Z' } };
     }
 });

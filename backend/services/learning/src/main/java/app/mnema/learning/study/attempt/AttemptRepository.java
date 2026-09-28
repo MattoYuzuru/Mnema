@@ -20,9 +20,11 @@ class AttemptRepository {
     AttemptRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
 
     record Presentation(UUID accountId, UUID sessionId, UUID presentationId, UUID deckId, String mode,
-                        String sessionStatus, String nonce, String exerciseType, UUID objectiveId,
+                        String sessionStatus, String nonce, UUID exerciseId, UUID exerciseRevisionId,
+                        String exerciseType, UUID objectiveId,
                         UUID objectiveRevisionId, long learningEpoch, JsonNode bindings, JsonNode evaluator,
-                        JsonNode answerContract, UUID configId, String reducerId, String reducerVersion,
+                        JsonNode answerContract, boolean transcriptRevealed,
+                        UUID configId, String reducerId, String reducerVersion,
                         String configHash, Instant expiresAt) { }
     record Receipt(UUID attemptId, UUID accountId, UUID sessionId, UUID presentationId, UUID deckId,
                    byte[] payloadHash, String mode, String status, JsonNode outcome, Instant receiptExpiresAt) {
@@ -79,7 +81,9 @@ class AttemptRepository {
     Optional<Presentation> presentationForUpdate(UUID actor, UUID deck, UUID session, UUID presentation) {
         return jdbc.sql("""
                 SELECT p.*,s.mode,s.status AS session_status,s.reducer_config_id,c.reducer_id,c.reducer_version,
-                       c.config_hash
+                       c.config_hash, EXISTS(SELECT 1 FROM app_learning.study_audio_accommodation a
+                           WHERE a.account_id=p.account_id AND a.session_id=p.session_id
+                             AND a.presentation_id=p.presentation_id) AS transcript_revealed
                   FROM app_learning.study_presentation p
                   JOIN app_learning.study_session s ON s.account_id=p.account_id AND s.session_id=p.session_id
                   JOIN app_learning.scheduler_config c ON c.config_id=s.reducer_config_id
@@ -91,10 +95,11 @@ class AttemptRepository {
                         row.getObject("account_id", UUID.class), row.getObject("session_id", UUID.class),
                         row.getObject("presentation_id", UUID.class), row.getObject("deck_id", UUID.class),
                         row.getString("mode"), row.getString("session_status"), row.getString("nonce"),
+                        row.getObject("exercise_id", UUID.class), row.getObject("exercise_revision_id", UUID.class),
                         row.getString("exercise_type"), row.getObject("objective_id", UUID.class),
                         row.getObject("objective_revision_id", UUID.class), row.getLong("learning_epoch"),
                         json(row.getString("bindings")), json(row.getString("evaluator")),
-                        json(row.getString("answer_contract")),
+                        json(row.getString("answer_contract")), row.getBoolean("transcript_revealed"),
                         row.getObject("reducer_config_id", UUID.class), row.getString("reducer_id"),
                         row.getString("reducer_version"), row.getString("config_hash"),
                         row.getTimestamp("expires_at").toInstant())).optional();

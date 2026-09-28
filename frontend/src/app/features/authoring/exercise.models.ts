@@ -2,14 +2,20 @@ import { NativeDocument, NativeNode } from '../../content/native-document';
 
 export const EXERCISE_PAGE_SIZE = 20;
 
-export type ExerciseType = 'SELF_CHECK' | 'TYPED' | 'CLOZE_SINGLE' | 'SINGLE_CHOICE';
+export type ExerciseType = 'SELF_CHECK' | 'TYPED' | 'CLOZE_SINGLE' | 'SINGLE_CHOICE'
+    | 'LISTEN_CHOICE' | 'AUDIO_TEXT_MATCH' | 'LISTEN_TYPE';
 export type BindingRole = 'ASSESSED' | 'CUE' | 'OPTION' | 'CONTEXT';
 
-export interface AnswerContract {
+export interface TextAnswerContract {
     readonly schemaVersion: 1;
     readonly normalization: readonly ('UNICODE_NFC' | 'TRIM' | 'CASE_FOLD')[];
     readonly accepted: readonly string[];
 }
+export interface MatchAnswerContract {
+    readonly schemaVersion: 2;
+    readonly pairs: readonly { readonly cueId: string; readonly optionId: string }[];
+}
+export type AnswerContract = TextAnswerContract | MatchAnswerContract;
 
 export interface ExerciseObjective {
     readonly objectiveId: string;
@@ -50,7 +56,21 @@ export interface NodePrompt {
 }
 
 export interface CustomPrompt { readonly kind: 'CUSTOM_TEXT'; readonly text: string; }
-export type ExercisePrompt = NodePrompt | CustomPrompt;
+export interface AudioAssetPrompt {
+    readonly kind: 'AUDIO_ASSET';
+    readonly assetId: string;
+    readonly title: string;
+    readonly instruction: string;
+    readonly transcript: string;
+}
+export interface AudioMatchPrompt {
+    readonly kind: 'AUDIO_MATCH';
+    readonly instruction: string;
+    readonly cues: readonly {
+        readonly cueId: string; readonly assetId: string; readonly title: string; readonly transcript: string;
+    }[];
+}
+export type ExercisePrompt = NodePrompt | CustomPrompt | AudioAssetPrompt | AudioMatchPrompt;
 
 export interface ExerciseBinding {
     readonly bindingId: string;

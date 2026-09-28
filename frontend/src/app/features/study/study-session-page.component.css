@@ -25,6 +25,15 @@ form .button, .reveal { justify-self: end; margin-block-start: 1rem; }
 .choice-option { min-inline-size: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: .75rem; border: 1px solid var(--line, #c9c0ce); padding: 1rem; background: #fffdf7; cursor: pointer; overflow-wrap: anywhere; }
 .choice-option:has(input:checked) { border-color: var(--ink, #281378); box-shadow: inset 0 0 0 1px var(--ink, #281378); }
 .choice-option input { inline-size: 1.25rem; block-size: 1.25rem; margin: .1rem 0 0; accent-color: var(--ink, #281378); }
+.audio-cue { min-inline-size: 0; margin-block: 1.25rem; border: 1px solid var(--line, #c9c0ce); border-inline-start: 4px solid var(--ink, #281378); padding: clamp(1rem, 3vw, 1.5rem); background: #fffdf7; }
+.audio-cue h3 { margin: .2rem 0 1rem; color: var(--ink, #281378); font: 1.4rem/1.2 Georgia, 'Times New Roman', serif; }
+.audio-cue audio { display: block; inline-size: 100%; max-inline-size: 32rem; }
+.transcript { margin: 1rem 0 0; border-block-start: 1px solid var(--line, #c9c0ce); padding-block-start: .8rem; white-space: pre-wrap; }
+.transcript-action { margin-block: 0 1.25rem; }
+.match-list { display: grid; gap: 1rem; margin-block-start: 1rem; }
+.match-row { min-inline-size: 0; border-block-end: 1px solid var(--line, #c9c0ce); padding-block-end: 1rem; }
+.match-row .audio-cue { margin-block: .5rem 1rem; }
+.pair-feedback { display: grid; gap: .6rem; margin: 0 0 2rem; padding-inline-start: 1.2rem; }
 .visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .reference { margin-block: 2rem; border-inline-start: 4px solid var(--ink, #281378); padding: 1.25rem; background: var(--soft, #e8e1ed); }
 .reference p:last-child { margin: 0; font: 1.45rem/1.5 Georgia, 'Times New Roman', serif; }

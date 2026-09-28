@@ -89,6 +89,47 @@ describe('StudyApiService', () => {
         await expectAsync(rejected).toBeRejectedWithError(StudyProtocolError);
     });
 
+    it('keeps listening transcripts hidden until the explicit accommodation response', async () => {
+        const pending = active('TYPED');
+        const presentation = pending.presentations[0];
+        const listening = { ...pending, presentations: [{ ...presentation, type: 'LISTEN_TYPE', reference: null,
+            bindings: [],
+            prompt: { kind: 'AUDIO_ASSET', assetId: id('30'), title: 'Example', instruction: 'Listen',
+                transcriptAvailable: true, transcriptRevealed: false } }] };
+        const result = firstValueFrom(api.read(deckId, sessionId));
+        http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}`).flush(listening,
+            { headers: privateHeaders });
+        const parsed = await result;
+        expect(parsed.status).toBe('ACTIVE');
+        if (parsed.status !== 'PREPARING') expect(parsed.presentations[0].prompt).not.toEqual(jasmine.objectContaining({
+            transcript: jasmine.any(String) }));
+
+        const revealed = firstValueFrom(api.revealTranscript(deckId, sessionId, presentationId, 'abcdefghijklmnop'));
+        const request = http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}`
+            + `/presentations/${presentationId}/transcript`);
+        expect(request.request.body).toEqual({ nonce: 'abcdefghijklmnop' });
+        request.flush({ presentationId, prompt: { kind: 'AUDIO_ASSET', assetId: id('30'), title: 'Example',
+            instruction: 'Listen', transcriptAvailable: true, transcriptRevealed: true, transcript: 'memory' } },
+        { headers: privateHeaders });
+        expect((await revealed).kind).toBe('AUDIO_ASSET');
+    });
+
+    it('accepts a bounded matching map and pair-specific feedback', async () => {
+        const command: AttemptCommand = { attemptId: commandId, presentationId, nonce: 'abcdefghijklmnop',
+            response: { kind: 'MATCH', pairs: [{ cueId: id('30'), optionId: id('15') },
+                { cueId: id('31'), optionId: id('16') }] }, hintsUsed: [], confidence: null, durationMs: 1000 };
+        const result = firstValueFrom(api.submit(deckId, sessionId, command));
+        http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}/attempts`).flush({
+            attemptId: commandId, presentationId, mode: 'REPLAY', status: 'ASSESSED', canonicalEffects: false,
+            evidence: null, transition: null,
+            feedback: { result: 'CORRECT', appliedRules: ['SERVER_ISSUED_PAIR_MAP'], pairResults: [
+                { cueId: id('30'), selectedOptionId: id('15'), correctOptionId: id('15'), correct: true },
+                { cueId: id('31'), selectedOptionId: id('16'), correctOptionId: id('16'), correct: true }
+            ] }
+        }, { headers: privateHeaders });
+        expect((await result).value.feedback.pairResults).toHaveSize(2);
+    });
+
     it('sends server-owned replay/practice intents and validates refilled sessions', async () => {
         const replayResult = firstValueFrom(api.start(deckId, commandId,
             { mode: 'REPLAY', sourceSessionId: sessionId }));
