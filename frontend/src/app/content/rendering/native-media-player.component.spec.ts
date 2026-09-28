@@ -39,4 +39,26 @@ describe('NativeMediaPlayerComponent', () => {
         expect(media.muted).toBeTrue();
         fixture.destroy();
     });
+
+    it('clears a signed-source failure once renewed media loads', () => {
+        const fixture = TestBed.createComponent(NativeMediaPlayerComponent);
+        fixture.componentRef.setInput('kind', 'audio');
+        fixture.componentRef.setInput('title', 'Фраза');
+        fixture.componentRef.setInput('source', 'https://storage.example/expired');
+        fixture.detectChanges();
+        const media = fixture.nativeElement.querySelector('audio') as HTMLAudioElement;
+        Object.defineProperty(media, 'error', { configurable: true, value: { code: 4 } });
+        media.dispatchEvent(new Event('error'));
+        fixture.detectChanges();
+        expect(fixture.componentInstance.error()).toBeTrue();
+        fixture.componentRef.setInput('source', 'https://storage.example/renewed');
+        Object.defineProperty(media, 'error', { configurable: true, value: null });
+        Object.defineProperty(media, 'readyState', { configurable: true, value: HTMLMediaElement.HAVE_METADATA });
+        fixture.detectChanges();
+        media.dispatchEvent(new Event('loadedmetadata'));
+        fixture.detectChanges();
+        expect(fixture.componentInstance.error()).toBeFalse();
+        expect(fixture.nativeElement.querySelector('[role="alert"]')).toBeNull();
+        fixture.destroy();
+    });
 });

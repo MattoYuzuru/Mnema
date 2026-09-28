@@ -3,7 +3,7 @@ artifact:
   id: runtime-policy-index
   type: reference
   title: "Learning runtime policy index"
-  status: proposed
+  status: current
   created_at: "2026-09-28"
   updated_at: "2026-09-28"
   owners: ["learning-api", "web"]
@@ -57,6 +57,12 @@ namespaces.
 | `learning.media.manifest.max-references` | Offline manifest: максимум ссылок на revisions/variants в snapshot | Count; `50000`; 1–50000 |
 | `learning.media.manifest.max-assets` | Offline manifest: максимум уникальных assets в snapshot | Count; `10000`; 1–`max-references` |
 | `learning.media.manifest.max-document-bytes` | Offline manifest: размер сериализованного документа | Bytes; `8388608` (8 MiB); 1 KiB–8 MiB |
+| `learning.media.gc.enabled` | Физическая очистка недостижимых S3 объектов; включать после локальной настройки bucket | Boolean; `false` |
+| `learning.media.gc.grace` | Время после первого безудержного сканирования до удаления | Duration; `P1D`; 1–30 дней |
+| `learning.media.gc.scan-gap` | Минимальный промежуток между двумя успешными сканами | Duration; `PT1H`; ≥1 час и меньше grace |
+| `learning.media.gc.scan-batch` / `delete-batch` | Число ledger keys на скан и удалений за проход | Count; `32` (1–100) / `4` (1–20) |
+| `learning.media.gc.delete-lease` | Время владения claim физического удаления | Duration; `PT15M`; 15–60 минут |
+| `learning.media.gc.retry-delay` | Повтор после неопределённого результата S3 DELETE | Duration; `PT1H`; 15 минут–1 день |
 
 S3 endpoint, region, bucket и credentials находятся в том же namespace
 `learning.media.upload`, но относятся к подключению, а не к пользовательским
@@ -72,8 +78,10 @@ S3 endpoint, region, bucket и credentials находятся в том же nam
 а не продуктовый лимит. Browser media polling: очередь upload 2 одновременных
 transfer, 2–15 s backoff; reader 2–15 s для pending и renewal до истечения URL;
 список колод — 45 s на видимой вкладке. Все три клиента имеют разные owners.
-Manifest keys введены в ветке #242; до её слияния строкам соответствует
-контракт этой ветки, а не поведение текущего `main`.
+Manifest и GC contracts описаны в
+[`media-offline-manifest.md`](media-offline-manifest.md) и
+[`media-gc.md`](media-gc.md). GC scan interval задаётся отдельно
+`learning.media.gc.scan-interval` (`PT10M`) и влияет только на частоту scheduler.
 
 `max-active-per-account` draft допускает рост до 1000. Web list aggregation
 запрашивает страницы по 20 и обнаруживает превышение 50 страниц,

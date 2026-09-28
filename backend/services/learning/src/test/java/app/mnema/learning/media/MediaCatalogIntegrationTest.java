@@ -39,10 +39,242 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
     private static final JsonMapper JSON = JsonMapper.builder().build();
 
     @Autowired private MediaCatalog catalog;
+    @Autowired private MediaManifestCatalog manifests;
+    @Autowired private MediaGcRepository gc;
     @Autowired private DeckService decks;
     @Autowired private ItemService items;
     @Autowired private JdbcClient jdbc;
     @Autowired private PlatformTransactionManager transactions;
+
+    @Test
+    void gcRootChecksRetainPublishedRevisionAndActiveDraftAfterAssetTombstone() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID revision = publish(owner, deck);
+        UUID member = jdbc.sql("SELECT member_key FROM app_learning.item_revision WHERE deck_id=:deck")
+                .param("deck", deck).query(UUID.class).single();
+        UUID publishedAsset = reserve(owner);
+        UUID publishedBlob = verifiedBlob();
+        processing(publishedAsset);
+        assertThat(catalog.ready(publishedAsset, 0, publishedBlob)).isTrue();
+        attach(owner, deck, member, revision,
+                List.of(new MediaCatalog.Reference(UUID.randomUUID(), publishedAsset)));
+        tombstone(publishedAsset);
+        String publishedKey = "verified/" + publishedBlob;
+        gc.discover(1000);
+        gc.scanKey(publishedKey, 0);
+        assertThat(gcState(publishedKey)).isEqualTo("TRACKED");
+        jdbc.sql("DELETE FROM app_learning.content_media_ref WHERE asset_id=:asset")
+                .param("asset", publishedAsset).update();
+        gc.scanKey(publishedKey, 0);
+        assertThat(gcState(publishedKey)).isEqualTo("FIRST");
+
+        UUID draftAsset = reserve(owner);
+        UUID draftBlob = verifiedBlob();
+        processing(draftAsset);
+        assertThat(catalog.ready(draftAsset, 0, draftBlob)).isTrue();
+        UUID draft = UUID.randomUUID();
+        Instant now = Instant.now().truncatedTo(ChronoUnit.MICROS);
+        jdbc.sql("INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,row_version,document,"
+                        + "created_at,acknowledged_at,expires_at) "
+                        + "VALUES (:draft,:owner,:deck,0,'{}'::jsonb,:now,:now,:expires)")
+                .param("draft", draft).param("owner", owner).param("deck", deck)
+                .param("now", Timestamp.from(now))
+                .param("expires", Timestamp.from(now.plus(30, ChronoUnit.DAYS))).update();
+        replaceDraft(owner, draft, List.of(new MediaCatalog.Reference(UUID.randomUUID(), draftAsset)));
+        tombstone(draftAsset);
+        String draftKey = "verified/" + draftBlob;
+        gc.discover(1000);
+        gc.scanKey(draftKey, 0);
+        assertThat(gcState(draftKey)).isEqualTo("TRACKED");
+        jdbc.sql("DELETE FROM app_learning.editing_draft WHERE draft_id=:draft")
+                .param("draft", draft).update();
+        gc.scanKey(draftKey, 0);
+        assertThat(gcState(draftKey)).isEqualTo("FIRST");
+    }
+
+
+    @Test
+    void newManifestPinResetsGcCandidateAndExpiredManifestDoesNotHold() {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID deckRevision = jdbc.sql("SELECT revision_id FROM app_learning.deck_revision "
+                        + "WHERE deck_id=:deck ORDER BY sequence DESC LIMIT 1")
+                .param("deck", deck).query(UUID.class).single();
+        UUID asset = reserve(owner);
+        UUID blob = verifiedBlob();
+        processing(asset);
+        assertThat(catalog.ready(asset, 0, blob)).isTrue();
+        tombstone(asset);
+        String key = "verified/" + blob;
+        gc.discover(1000);
+        gc.scanKey(key, 0);
+        assertThat(gcState(key)).isEqualTo("FIRST");
+        UUID manifest = UUID.randomUUID();
+        byte[] digest = new byte[32];
+        jdbc.sql("INSERT INTO app_learning.media_manifest(manifest_id,deck_id,deck_revision_id,owner_id,"
+                        + "version,content_sha256,etag,document_json,created_at,expires_at) "
+                        + "VALUES (:id,:deck,:revision,:owner,1,:sha,:etag,'{}',"
+                        + "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP+interval '1 day')")
+                .param("id", manifest).param("deck", deck).param("revision", deckRevision)
+                .param("owner", owner).param("sha", digest).param("etag", "x".repeat(66)).update();
+        jdbc.sql("INSERT INTO app_learning.media_manifest_blob_ref(manifest_id,blob_id) VALUES (:manifest,:blob)")
+                .param("manifest", manifest).param("blob", blob).update();
+        assertThat(gcState(key)).isEqualTo("TRACKED");
+        gc.scanKey(key, 1);
+        assertThat(gcState(key)).isEqualTo("TRACKED");
+
+        UUID expiredAsset = reserve(owner);
+        UUID expiredBlob = verifiedBlob();
+        processing(expiredAsset);
+        assertThat(catalog.ready(expiredAsset, 0, expiredBlob)).isTrue();
+        tombstone(expiredAsset);
+        UUID expired = UUID.randomUUID();
+        jdbc.sql("INSERT INTO app_learning.media_manifest(manifest_id,deck_id,deck_revision_id,owner_id,"
+                        + "version,content_sha256,etag,document_json,created_at,expires_at) "
+                        + "VALUES (:id,:deck,:revision,:owner,2,:sha,:etag,'{}',"
+                        + "CURRENT_TIMESTAMP-interval '3 days',CURRENT_TIMESTAMP-interval '1 day')")
+                .param("id", expired).param("deck", deck).param("revision", deckRevision)
+                .param("owner", owner).param("sha", digest).param("etag", "y".repeat(66)).update();
+        jdbc.sql("INSERT INTO app_learning.media_manifest_blob_ref(manifest_id,blob_id) VALUES (:manifest,:blob)")
+                .param("manifest", expired).param("blob", expiredBlob).update();
+        String expiredKey = "verified/" + expiredBlob;
+        gc.discover(1000);
+        gc.scanKey(expiredKey, 0);
+        assertThat(gcState(expiredKey)).isEqualTo("FIRST");
+        jdbc.sql("UPDATE app_learning.media_gc_object SET first_scan_at=CURRENT_TIMESTAMP-interval '2 days' "
+                        + "WHERE object_key=:key").param("key", expiredKey).update();
+        gc.scanKey(expiredKey, 1);
+        assertThat(gcState(expiredKey)).isEqualTo("SECOND");
+        var deleting = gc.claimDeletion(expiredKey);
+        assertThat(deleting.key()).isEqualTo(expiredKey);
+        UUID late = UUID.randomUUID();
+        jdbc.sql("INSERT INTO app_learning.media_manifest(manifest_id,deck_id,deck_revision_id,owner_id,"
+                        + "version,content_sha256,etag,document_json,created_at,expires_at) "
+                        + "VALUES (:id,:deck,:revision,:owner,3,:sha,:etag,'{}',"
+                        + "CURRENT_TIMESTAMP,CURRENT_TIMESTAMP+interval '1 day')")
+                .param("id", late).param("deck", deck).param("revision", deckRevision)
+                .param("owner", owner).param("sha", digest).param("etag", "z".repeat(66)).update();
+        assertThatThrownBy(() -> jdbc.sql("INSERT INTO app_learning.media_manifest_blob_ref"
+                        + "(manifest_id,blob_id) VALUES (:manifest,:blob)")
+                .param("manifest", late).param("blob", expiredBlob).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void boundedCursorRequiresACompletedNewEpochForSecondScan() {
+        String key = "derived/" + UUID.randomUUID() + "/0/" + UUID.randomUUID()
+                + "/image_webp_320_v1/" + "a".repeat(64);
+        jdbc.sql("INSERT INTO app_learning.media_gc_object(object_key,origin,asset_id,asset_generation,"
+                        + "processing_token,created_at,state,updated_at) "
+                        + "VALUES (:key,'derived',:asset,0,:token,CURRENT_TIMESTAMP,'TRACKED',CURRENT_TIMESTAMP)")
+                .param("key", key).param("asset", UUID.randomUUID())
+                .param("token", UUID.randomUUID()).update();
+        jdbc.sql("UPDATE app_learning.media_gc_scan_cursor SET last_key='',epoch=0 WHERE singleton=TRUE")
+                .update();
+        assertThat(gc.scan(1000)).isPositive();
+        assertThat(gcState(key)).isEqualTo("FIRST");
+        assertThat(gc.scan(1000)).isZero();
+        assertThat(jdbc.sql("SELECT epoch FROM app_learning.media_gc_scan_cursor WHERE singleton=TRUE")
+                .query(Long.class).single()).isEqualTo(1);
+        jdbc.sql("UPDATE app_learning.media_gc_object SET first_scan_at=CURRENT_TIMESTAMP-interval '2 days' "
+                        + "WHERE object_key=:key").param("key", key).update();
+        assertThat(gc.scan(1000)).isPositive();
+        assertThat(gcState(key)).isEqualTo("SECOND");
+    }
+
+    private String gcState(String key) {
+        return jdbc.sql("SELECT state FROM app_learning.media_gc_object WHERE object_key=:key")
+                .param("key", key).query(String.class).single();
+    }
+
+    private void tombstone(UUID asset) {
+        jdbc.sql("UPDATE app_learning.media_asset SET owner_hold_until=CURRENT_TIMESTAMP-interval '1 day',"
+                        + "state='DELETED',updated_at=CURRENT_TIMESTAMP WHERE asset_id=:asset")
+                .param("asset", asset).update();
+    }
+
+
+    @Test
+    void offlineManifestPinsVerifiedBytesAndVersionsAssetStateWithoutLeakingStorageKeys() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID itemRevision = publish(owner, deck);
+        UUID member = jdbc.sql("SELECT member_key FROM app_learning.item_revision WHERE deck_id=:deck")
+                .param("deck", deck).query(UUID.class).single();
+        UUID asset = reserve(owner);
+        attach(owner, deck, member, itemRevision,
+                List.of(new MediaCatalog.Reference(UUID.randomUUID(), asset)));
+
+        var pending = manifests.current(owner, deck);
+        assertThat(pending.version()).isEqualTo(1);
+        assertThat(pending.body()).contains("PENDING_UPLOAD", asset.toString(), itemRevision.toString());
+        assertThat(pending.body()).doesNotContain("object_key", "verified/");
+        assertThat(manifests.current(owner, deck).id()).isEqualTo(pending.id());
+        assertThatThrownBy(() -> manifests.current(UUID.randomUUID(), deck))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThatThrownBy(() -> manifests.read(UUID.randomUUID(), deck, pending.id()))
+                .isInstanceOf(ResourceNotFoundException.class);
+
+        UUID blob = verifiedBlob();
+        processing(asset);
+        UUID variant = UUID.randomUUID();
+        jdbc.sql("INSERT INTO app_learning.media_variant(variant_id,asset_id,asset_generation,purpose,profile,blob_id,"
+                        + "created_at) VALUES (:variant,:asset,0,'playback','image_webp_2048_v1',:blob,CURRENT_TIMESTAMP)")
+                .param("variant", variant).param("asset", asset).param("blob", blob).update();
+        assertThat(catalog.ready(asset, 0, blob)).isTrue();
+        var ready = manifests.current(owner, deck);
+        assertThat(ready.version()).isEqualTo(2);
+        assertThat(ready.id()).isNotEqualTo(pending.id());
+        assertThat(ready.body()).contains("READY", "sha256", variant.toString(), blob.toString());
+        assertThat(ready.etag()).isEqualTo("\"" + java.util.HexFormat.of().formatHex(
+                java.security.MessageDigest.getInstance("SHA-256")
+                        .digest(ready.body().getBytes(java.nio.charset.StandardCharsets.UTF_8))) + "\"");
+        assertThat(ready.body()).doesNotContain("verified/", "objectKey", "https://");
+        assertThat(manifests.read(owner, deck, pending.id()).body()).isEqualTo(pending.body());
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.media_manifest_blob_ref WHERE manifest_id=:manifest")
+                .param("manifest", ready.id()).query(Long.class).single()).isOne();
+        long deckVersion = Long.parseLong(decks.read(owner, deck).path("rowVersion").textValue());
+        decks.save(owner, deck, deckVersion, new DeckCommand(UUID.randomUUID(), "Renamed", "Description"));
+        var revised = manifests.current(owner, deck);
+        assertThat(revised.version()).isEqualTo(3);
+        assertThat(revised.etag()).isNotEqualTo(ready.etag());
+        assertThat(manifests.read(owner, deck, ready.id()).body()).isEqualTo(ready.body());
+        assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.media_manifest SET version=4 "
+                        + "WHERE manifest_id=:manifest").param("manifest", ready.id()).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
+    }
+
+    @Test
+    void liveOfflineManifestKeepsFormerContentAssetDownloadableAfterOwnerHoldEnds() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID revision = publish(owner, deck);
+        UUID member = jdbc.sql("SELECT member_key FROM app_learning.item_revision WHERE deck_id=:deck")
+                .param("deck", deck).query(UUID.class).single();
+        UUID asset = reserve(owner);
+        UUID blob = verifiedBlob();
+        processing(asset);
+        UUID variant = UUID.randomUUID();
+        jdbc.sql("INSERT INTO app_learning.media_variant(variant_id,asset_id,asset_generation,purpose,profile,blob_id,"
+                        + "created_at) VALUES (:variant,:asset,0,'playback','image_webp_2048_v1',:blob,CURRENT_TIMESTAMP)")
+                .param("variant", variant).param("asset", asset).param("blob", blob).update();
+        assertThat(catalog.ready(asset, 0, blob)).isTrue();
+        attach(owner, deck, member, revision,
+                List.of(new MediaCatalog.Reference(UUID.randomUUID(), asset)));
+        var snapshot = manifests.current(owner, deck);
+        assertThat(snapshot.body()).contains(asset.toString(), variant.toString());
+        jdbc.sql("DELETE FROM app_learning.content_media_ref WHERE asset_id=:asset")
+                .param("asset", asset).update();
+        jdbc.sql("UPDATE app_learning.media_asset SET owner_hold_until=CURRENT_TIMESTAMP-interval '1 day' "
+                        + "WHERE asset_id=:asset").param("asset", asset).update();
+        assertThat(catalog.expireUnattached(10)).isZero();
+        assertThat(catalog.resolve(owner, asset, null).blobId()).isEqualTo(blob);
+        assertThat(catalog.resolve(owner, asset, variant).blobId()).isEqualTo(blob);
+        assertThatThrownBy(() -> catalog.resolve(UUID.randomUUID(), asset, variant))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(manifests.read(owner, deck, snapshot.id()).body()).isEqualTo(snapshot.body());
+    }
 
     @Test
     void ownerAndRevisionReferencesAuthorizeSharedBlobWithoutMakingItsHashPublic() throws Exception {

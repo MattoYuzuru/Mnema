@@ -3,6 +3,7 @@ import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, effect, inj
 import { HttpErrorResponse } from '@angular/common/http';
 
 import { NativeDocument, NativeNode } from '../../content/native-document';
+import { NativeMediaPlayerComponent } from '../../content/rendering/native-media-player.component';
 import { AssetState, NativeMediaKind, NativeMediaUploadApi, UploadView } from './native-media-upload.api';
 
 type QueuePhase = 'selected' | 'uploading' | 'finalizing' | 'waiting' | 'ready' | 'needs-file' | 'error' | 'cancelled';
@@ -37,6 +38,7 @@ const MIME_BY_EXTENSION: Readonly<Record<string, { kind: NativeMediaKind; mime: 
 
 @Component({
     selector: 'app-native-media-upload',
+    imports: [NativeMediaPlayerComponent],
     templateUrl: './native-media-upload.component.html',
     styleUrl: './native-media-upload.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush

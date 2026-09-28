@@ -77,4 +77,22 @@ class MediaPlaybackControllerTest {
                 .andExpect(status().isNotFound());
         verifyNoInteractions(store);
     }
+
+    @Test
+    void offlineVariantDownloadStillChecksOwnerAndReachability() throws Exception {
+        UUID variant = UUID.randomUUID();
+        var location = new MediaCatalog.BlobLocation(UUID.randomUUID(), "private/variant", 20, "image/webp");
+        when(catalog.resolve(owner, asset, variant)).thenReturn(location);
+        when(store.read("private/variant", true)).thenReturn(new MediaPlaybackStore.SignedRead(
+                "https://s3.test/variant", Instant.parse("2026-09-28T12:00:00Z")));
+        mvc.perform(get("/media-assets/" + asset + "/variants/" + variant + "/download"))
+                .andExpect(status().isOk()).andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(jsonPath("$.url").value("https://s3.test/variant"))
+                .andExpect(jsonPath("$.mimeType").value("image/webp"));
+        UUID foreign = UUID.randomUUID();
+        when(catalog.resolve(owner, asset, foreign)).thenThrow(new ResourceNotFoundException());
+        mvc.perform(get("/media-assets/" + asset + "/variants/" + foreign + "/download"))
+                .andExpect(status().isNotFound());
+        verify(store, times(1)).read(anyString(), anyBoolean());
+    }
 }

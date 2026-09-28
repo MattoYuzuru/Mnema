@@ -53,7 +53,9 @@ class ImmutableStorageIntegrationTest extends PostgresIntegrationTest {
         // Explicit complete graph in this disposable test database; never cascade into unknown tables.
         jdbc.sql("TRUNCATE app_learning.content_media_ref, app_learning.draft_media_ref, "
                 + "app_learning.exercise_media_ref, app_learning.study_audio_accommodation, "
-                + "app_learning.media_variant, app_learning.media_upload_session, "
+                + "app_learning.media_manifest_asset_ref, app_learning.media_manifest_blob_ref, "
+                + "app_learning.media_manifest, "
+                + "app_learning.media_gc_object, app_learning.media_variant, app_learning.media_upload_session, "
                 + "app_learning.media_asset, app_learning.media_blob, "
                 + "app_learning.study_raw_response, app_learning.study_transition, "
                 + "app_learning.study_evidence, app_learning.study_attempt_tombstone, "

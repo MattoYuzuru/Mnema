@@ -25,15 +25,18 @@ final class MediaProcessingService {
     private final MediaUploadService uploads;
     private final MediaObjectStore objects;
     private final MediaWorkerGateway worker;
+    private final MediaGcRepository gc;
     private final MediaProcessingSettings settings;
     private final AtomicInteger active = new AtomicInteger();
 
     MediaProcessingService(MediaProcessingRepository repository, MediaUploadService uploads,
-                           MediaObjectStore objects, MediaWorkerGateway worker, MediaProcessingSettings settings) {
+                           MediaObjectStore objects, MediaWorkerGateway worker, MediaGcRepository gc,
+                           MediaProcessingSettings settings) {
         this.repository = repository;
         this.uploads = uploads;
         this.objects = objects;
         this.worker = worker;
+        this.gc = gc;
         this.settings = settings;
     }
 
@@ -108,7 +111,9 @@ final class MediaProcessingService {
             var variants = new ArrayList<MediaProcessingRepository.Variant>();
             for (var variant : result.variants()) {
                 if (lost.get()) return;
-                String key = "derived/sha256/" + variant.sha256().substring(0, 2) + "/" + variant.sha256();
+                String key = "derived/" + claim.assetId() + "/" + claim.generation() + "/"
+                        + claim.token() + "/" + variant.profile() + "/" + variant.sha256();
+                gc.recordDerivedIntent(claim, key);
                 objects.putVerified(key, variant.path(), variant.byteLength(), variant.sha256(), variant.mimeType());
                 variants.add(new MediaProcessingRepository.Variant(variant.purpose(), variant.profile(),
                         new MediaProcessingRepository.Blob(variant.sha256(), variant.byteLength(),

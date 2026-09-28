@@ -190,6 +190,13 @@ describe('StudySessionPageComponent', () => {
         createStarted();
         const root = fixture.nativeElement as HTMLElement;
         expect(root.querySelectorAll('audio')).toHaveSize(2);
+        const labels = [...root.querySelectorAll<HTMLLabelElement>('.match-row > label')];
+        expect(labels.map(label => label.textContent?.trim())).toEqual([
+            'Соответствующий текст для записи 1 — Первая',
+            'Соответствующий текст для записи 2 — Вторая'
+        ]);
+        expect(labels.every(label => [...root.querySelectorAll<HTMLSelectElement>('.match-row select')]
+            .some(select => select.id === label.htmlFor))).toBeTrue();
         fixture.componentInstance.selectMatch(id('40'), id('15'));
         fixture.componentInstance.selectMatch(id('41'), id('16'));
         fixture.componentInstance.submitMatch();

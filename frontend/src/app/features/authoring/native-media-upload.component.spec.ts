@@ -65,6 +65,16 @@ describe('NativeMediaUploadComponent', () => {
         fixture.destroy();
     }));
 
+    it('previews a recorded clip with the shared accessible audio player', () => {
+        const { fixture, component } = setup();
+        component.recordPreview.set('blob:recording-preview');
+        fixture.detectChanges();
+        const player = fixture.nativeElement.querySelector('app-native-media-player');
+        expect(player).not.toBeNull();
+        expect(player.querySelector('audio')).not.toBeNull();
+        fixture.destroy();
+    });
+
     it('recovers an asset reference from a server draft without inventing local file bytes', fakeAsync(() => {
         const { fixture, component, api } = setup();
         const documentValue = createEmptyNativeDocument();

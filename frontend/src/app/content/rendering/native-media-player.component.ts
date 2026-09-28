@@ -70,6 +70,7 @@ export class NativeMediaPlayerComponent {
         this.position.set(Number.isFinite(media.currentTime) ? media.currentTime : 0);
         this.duration.set(Number.isFinite(media.duration) ? media.duration : 0);
         if (media.error) { this.error.set(true); this.sourceFailed.emit(); }
+        else if (media.readyState >= HTMLMediaElement.HAVE_METADATA) this.error.set(false);
     }
 
     private media(): HTMLMediaElement | undefined {
