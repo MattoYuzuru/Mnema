@@ -8,7 +8,7 @@ Every environment sends:
 
 - `X-Content-Type-Options: nosniff`;
 - `Referrer-Policy: strict-origin-when-cross-origin`;
-- a deny-by-default `Permissions-Policy` for unused sensor, media-capture, payment, and USB capabilities;
+- a deny-by-default `Permissions-Policy` for unused sensors, payment, and USB capabilities; camera and microphone are limited to `self` for the user-initiated media recorder;
 - an enforced CSP baseline with `base-uri 'self'`, `object-src 'none'`, and `frame-ancestors 'none'`;
 - no nginx version in the `Server` response token.
 
@@ -17,6 +17,7 @@ Hosted policies use only `self`, data/blob where the application needs them, and
 - the environment-specific auth and object-storage origins;
 - `https://fonts.googleapis.com` and `https://fonts.gstatic.com`;
 - `https://challenges.cloudflare.com` for Turnstile scripts, frames, and connections;
+- `https://www.youtube-nocookie.com` for a viewer-initiated privacy-enhanced YouTube iframe;
 - the exact Google, GitHub, and Yandex avatar origins already emitted by the three supported federated identity mappers.
 
 Production media uses the Yandex Object Storage path-style form `https://storage.yandexcloud.net/<bucket>/<key>`, so browser-facing presigned uploads and downloads stay on the exact CSP origin instead of moving to a bucket-specific subdomain. Both URL forms are supported by [Yandex Object Storage](https://yandex.cloud/en/docs/storage/concepts/object); the renderer and AWS SDK presigner regression test bind this choice.

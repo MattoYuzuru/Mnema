@@ -23,7 +23,7 @@ describe('NativeMediaImageComponent', () => {
         expect(dialog.open).toBeTrue();
         fixture.nativeElement.querySelector('button[aria-label="Увеличить"]').click();
         fixture.detectChanges();
-        expect(dialog.querySelector('.image-canvas img')?.getAttribute('style')).toContain('scale(1.25)');
+        expect(dialog.querySelector('.image-canvas img')?.getAttribute('style')).toContain('width: 125%');
         fixture.nativeElement.querySelector('.image-actions button:last-child').click();
         expect(dialog.open).toBeFalse();
         fixture.destroy();

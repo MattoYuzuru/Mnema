@@ -131,7 +131,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
         assertThat(applicationContext.getBeanNamesForAnnotation(RestController.class))
                 .containsExactlyInAnyOrder("deckController", "itemController", "draftController", "captureController",
                         "exerciseController", "studySessionController", "attemptController", "studyRestartController",
-                        "studyProgressController", "mediaUploadController");
+                        "studyProgressController", "mediaUploadController", "mediaPlaybackController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
                 .allSatisfy(route -> {

@@ -10,8 +10,8 @@
 .image-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: .6rem; padding: .7rem; border-block-end: 1px solid var(--line, #c9c0ce); }
 .image-toolbar strong { overflow-wrap: anywhere; }
 .image-actions { display: flex; flex-wrap: wrap; gap: .4rem; }
-.image-canvas { display: grid; place-items: center; min-block-size: 10rem; max-block-size: calc(94vh - 5rem); overflow: auto; padding: 1.5rem; }
-.image-canvas img { display: block; max-inline-size: 100%; max-block-size: calc(94vh - 8rem); object-fit: contain; transform-origin: center; }
+.image-canvas { display: block; min-block-size: 10rem; max-block-size: calc(94vh - 5rem); overflow: auto; padding: 1.5rem; }
+.image-canvas img { display: block; max-inline-size: none; block-size: auto; object-fit: contain; }
 :where(button,a):focus-visible { outline: 3px solid var(--ink, #281378); outline-offset: 3px; }
 @media (max-width: 40rem) { .image-dialog { inline-size: 100vw; max-block-size: 100vh; } .image-canvas { max-block-size: calc(100vh - 9rem); } }
 @media (forced-colors: active) { .image-dialog { border-color: CanvasText; } }

@@ -18,6 +18,6 @@
       <button type="button" autofocus (click)="close()">Закрыть</button>
     </div>
   </div>
-  <div class="image-canvas"><img [src]="visibleSource()" [alt]="alt()" [style.transform]="'scale(' + zoom() + ')'"
+  <div class="image-canvas"><img [src]="visibleSource()" [alt]="alt()" [style.width.%]="zoom() * 100"
     (error)="sourceFailed.emit()" /></div>
 </dialog>
