@@ -19,8 +19,8 @@ artifact:
 картинку или редактируемый Mermaid source. Медиа красиво и доступно отображается
 в принятом бумажно-индиговом интерфейсе. Ошибка загрузки не теряет место вставки.
 Байты хранятся в приватном S3-compatible Object Storage, а доступ определяется
-правами на логический asset и материал. Первый web-выпуск включает два упражнения
-на аудирование.
+правами на логический asset и материал. Первый web-выпуск включает три варианта
+аудирования.
 
 Это расширение [greenfield content model](../architecture/learning-content-format-v2.md),
 [Study contract](../../contracts/study/README.md) и
@@ -33,10 +33,14 @@ Learning runtime. Production deployment и native offline apps здесь отс
 
 1. Первый upload-набор: JPEG, PNG, WebP, GIF; MP3, M4A; MP4. Для короткого
    телефонного видео и браузерной записи дополнительно принимаются MOV/HEVC и
-   WebM как **вход** при наличии безопасного декодера; совместимый вариант
-   воспроизведения создаётся отдельно. Оригинал сохраняется. Произвольный SVG
-   не входит в upload-набор: активное содержимое требует отдельного безопасного
-   контракта. Ошибка неподдерживаемого codec/format объясняется до публикации.
+   WebM как **вход**. Обязательные fixture-профили: MOV/MP4 с HEVC Main и Main10
+   (включая orientation/HDR metadata), WebM с VP8/Opus и VP9/Opus, MP4 с
+   H.264/AAC. Для каждого создаётся MP4 H.264/AAC variant; оригинал сохраняется.
+   Безопасный декодер, его упаковка и лицензия — gate задачи #236. Произвольный
+   SVG не входит в upload-набор: активное содержимое требует отдельного
+   безопасного контракта. Известные клиенту тип и размер проверяются до upload;
+   фактический codec может быть отклонён только после серверной проверки, даже
+   если материал с pending asset уже опубликован.
 2. Длительность загруженного видео — не более 300 секунд. Исходный лимит
    4 GiB — явная начальная policy, а не утверждение о типичном размере телефона:
    100 Mb/s × 300 s ≈ 3.49 GiB. Квоты аккаунта, число одновременных загрузок,
@@ -51,7 +55,9 @@ Learning runtime. Production deployment и native offline apps здесь отс
 4. `LISTEN_CHOICE`: одно аудио и один верный ответ из 2–6 вариантов.
    `AUDIO_TEXT_MATCH`: 2–6 закреплённых пар «аудио ↔ короткий текст» с выбором
    кнопками, без обязательного drag. Ответ отправляется атомарной картой пар.
-   Оба типа имеют versioned presentation/evaluator, pinned references,
+   `LISTEN_TYPE`: аудио как условие ручной расшифровки/короткого ответа, без STT;
+   здесь переиспользуется проверенная текстовая нормализация, но аудио cue и
+   presentation имеют свою версию. Все три варианта имеют pinned references,
    idempotent attempt и явный evidence policy. Больше упражнений добавляется
    после проверки учебной пользы, а не ради числа типов.
 5. Автор может вставить зарезервированный `assetId` и опубликовать материал во
@@ -90,21 +96,31 @@ signature/container/codec, размер, длительность, опасны�
 `FAILED_RETRYABLE`, `REJECTED`, `DELETED`. Операции Object Storage и media encoder
 не выполняются внутри транзакции БД. Durable jobs имеют lease, bounded retry,
 backoff и terminal error. Черновики, опубликованные revisions и jobs удерживают
-asset через разные ссылки. Если S3 недоступен или заполнен, сервер сохраняет
+asset через разные ссылки. Готовый, но ещё не вставленный asset имеет отдельное
+owner-scoped удержание на семь суток после успешной проверки; до истечения срока
+он доступен для вставки. По истечении срока неиспользованный asset переводится
+в tombstone, UI предлагает повторную загрузку, а bytes ждут обычного GC. Эта
+политика не сокращает удержание опубликованных revisions или активных drafts.
+Если S3 недоступен или заполнен, сервер сохраняет
 `assetId` и позицию узла, но **не обещает отсутствующие байты**. Клиентский hash
 может помочь узнать повторно выбранный файл; источник истины — серверная проверка.
 
 `resolve` проверяет owner/content reachability до выдачи короткоживущей ссылки
 на source/variant. Знание hash, assetId или object key не авторизует чтение.
-Видео поддерживает HTTP Range. Offline manifest содержит pinned revision IDs,
-asset/variant IDs, hash, size и явное состояние `unavailable`, без presigned URL;
-контракт проверяется синтетическим скачиванием и атомарной установкой, без
-создания native клиента.
+Видео поддерживает HTTP Range. Offline media manifest — отдельный immutable
+snapshot с собственным ID/version/ETag поверх pinned content revision. Каждая
+смена asset generation/status или выбранного variant создаёт новую версию
+manifest; старый snapshot не меняется. Он содержит revision IDs, asset/variant
+IDs, hash, size и явное состояние `unavailable`, без presigned URL. Клиент
+скачивает и проверяет конкретную версию, устанавливает её атомарно; переход
+`PENDING → READY` требует нового snapshot/ETag. Контракт проверяется синтетическим
+скачиванием и установкой, без создания native клиента.
 
 Удаление сначала снимает content reference/tombstone. Staging и незавершённые
 multipart имеют отдельную TTL-очистку. Source/variant blob удаляется лишь после
 grace period, двух успешных полных reachability scans и отсутствия revision,
-draft, upload, job и retention holds. Повторная очистка идемпотентна и аудируется.
+draft, owner-scoped asset, upload, job и retention holds. Повторная очистка
+идемпотентна и аудируется.
 
 ## UX и доступность
 
@@ -155,15 +171,15 @@ refinement не принят, и затем In progress до integrated acceptan
 | № | Issue | Outcome | Основная граница |
 |---:|---|---|---|
 | 1 | [#233](https://github.com/MattoYuzuru/Mnema/issues/233) | Зафиксировать контракты, UX states, format/size policies и acceptance fixtures | Docs/contracts, без production behavior |
-| 2 | [#234](https://github.com/MattoYuzuru/Mnema/issues/234) | Создать schema/ACL для `blob/asset/variant/ref`, привязку к pinned revisions | PostgreSQL и owner authorization |
-| 3 | [#235](https://github.com/MattoYuzuru/Mnema/issues/235) | Реализовать single/multipart presigned upload, finalize/retry и MinIO protocol tests | Transfer API, staging, idempotency |
-| 4 | [#236](https://github.com/MattoYuzuru/Mnema/issues/236) | Проверять оригиналы, создавать bounded variants, безопасно очищать staging и blobs | Jobs, decoder limits, two-scan GC |
+| 2 | [#234](https://github.com/MattoYuzuru/Mnema/issues/234) | Создать schema/ACL для `blob/asset/variant/ref` и owner hold, привязку к pinned revisions | PostgreSQL и owner authorization |
+| 3 | [#235](https://github.com/MattoYuzuru/Mnema/issues/235) | Реализовать single/multipart presigned upload, finalize/retry, staging cleanup и MinIO tests | Transfer API, staging, idempotency |
+| 4 | [#236](https://github.com/MattoYuzuru/Mnema/issues/236) | Проверять оригиналы и создавать совместимые bounded image/audio/video variants | Jobs, decoder/codec limits и fixture matrix |
 | 5 | [#237](https://github.com/MattoYuzuru/Mnema/issues/237) | Добавить versioned native image/audio/video/Mermaid/table nodes и renderer contracts | Content reader/editor adapter, opaque preservation |
 | 6 | [#238](https://github.com/MattoYuzuru/Mnema/issues/238) | Дать автору batch/drop/file/record/camera workflow с автообновлением asset status | Editor UX и recovery |
 | 7 | [#239](https://github.com/MattoYuzuru/Mnema/issues/239) | Показать готовые media в Browse/Study с доступными плеерами, zoom, YouTube и обновлением списка колод | Viewer UX, permission/error states |
-| 8 | [#240](https://github.com/MattoYuzuru/Mnema/issues/240) | Ввести `LISTEN_CHOICE` и `AUDIO_TEXT_MATCH` с authoring, Study и evidence semantics | Exercise/session/attempt contract |
+| 8 | [#240](https://github.com/MattoYuzuru/Mnema/issues/240) | Ввести `LISTEN_CHOICE`, `AUDIO_TEXT_MATCH`, `LISTEN_TYPE` с authoring, Study и evidence semantics | Exercise/session/attempt contract |
 | 9 | [#241](https://github.com/MattoYuzuru/Mnema/issues/241) | Инвентаризировать и централизовать изменяемые policies, описать scope каждого параметра | Config/doc audit, без смены learning policy |
-| 10 | [#242](https://github.com/MattoYuzuru/Mnema/issues/242) | Проверить offline manifest/install contract и полный local integrated journey | PostgreSQL/MinIO/Chrome, a11y, cleanup of legacy paths |
+| 10 | [#242](https://github.com/MattoYuzuru/Mnema/issues/242) | Реализовать delayed two-scan GC, offline manifest/install contract и integrated acceptance | PostgreSQL/MinIO/Chrome, a11y, legacy targets |
 
 ## Общие acceptance gates
 
@@ -174,17 +190,20 @@ refinement не принят, и затем In progress до integrated acceptan
 - Concurrent finalize, duplicate command, multipart interruption, upload failure,
   failed transform, publish-during-processing и GC с удерживаемым blob проверены
   реальным PostgreSQL + MinIO; Range работает на видео.
-- JPEG/PNG/WebP/GIF, MP3/M4A и MP4 играют/рендерятся; MOV/HEVC и WebM имеют
-  совместимый output или понятный отказ при отсутствии декодера. SVG/враждебные
-  payloads не выполняются. Большой 5-минутный телефонный fixture проходит при
-  пределах policy без загрузки всего файла в память API.
+- JPEG/PNG/WebP/GIF и MP3/M4A рендерятся; каждый обязательный video fixture
+  MOV/MP4 HEVC Main/Main10, WebM VP8/Opus и VP9/Opus, MP4 H.264/AAC создаёт
+  совместимый MP4 H.264/AAC variant. Неподдерживаемый профиль вне матрицы и
+  повреждённые bytes получают объяснимый отказ. SVG/враждебные payloads не
+  выполняются. Большой 5-минутный телефонный fixture проходит при пределах
+  policy без загрузки всего файла в память API.
 - Mermaid и таблицы проходят source/save/render/plain-text/unsupported-version
   round trip; схемы имеют содержательные текстовые альтернативы.
 - Keyboard, screen reader, touch, 320/390/768/1440 CSS px, 200% zoom, reduced
   motion, forced colors и YouTube fallback имеют наблюдаемое evidence. Реальные
   устройства отмечаются как проверенные только после запуска на них.
-- Backend `quality`, frontend `lint`, `test`, `build`, hosted quality checks и
-  protected squash проходят на точном commit. Нет требования деплоя.
+- Backend `quality`, frontend `lint`, `test`, `build` и hosted quality checks
+  проходят на точном PR head до merge. Protected squash создаёт новый SHA;
+  integrated main checks повторяются после merge. Нет требования деплоя.
 
 ## Источники для реализации
 
