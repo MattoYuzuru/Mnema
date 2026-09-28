@@ -81,6 +81,12 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
         assertThat(manifests.read(owner, deck, pending.id()).body()).isEqualTo(pending.body());
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.media_manifest_blob_ref WHERE manifest_id=:manifest")
                 .param("manifest", ready.id()).query(Long.class).single()).isOne();
+        long deckVersion = Long.parseLong(decks.read(owner, deck).path("rowVersion").textValue());
+        decks.save(owner, deck, deckVersion, new DeckCommand(UUID.randomUUID(), "Renamed", "Description"));
+        var revised = manifests.current(owner, deck);
+        assertThat(revised.version()).isEqualTo(3);
+        assertThat(revised.etag()).isNotEqualTo(ready.etag());
+        assertThat(manifests.read(owner, deck, ready.id()).body()).isEqualTo(ready.body());
         assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.media_manifest SET version=4 "
                         + "WHERE manifest_id=:manifest").param("manifest", ready.id()).update())
                 .isInstanceOf(DataIntegrityViolationException.class);

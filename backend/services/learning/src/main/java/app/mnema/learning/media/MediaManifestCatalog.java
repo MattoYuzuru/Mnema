@@ -18,7 +18,6 @@ import java.security.NoSuchAlgorithmException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Timestamp;
-import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HexFormat;
@@ -32,16 +31,14 @@ import java.util.UUID;
 /** Immutable offline inventory. A manifest names verified bytes, never a signed URL or storage key. */
 @Service
 public class MediaManifestCatalog {
-    private static final int MAX_REFERENCES = 50_000;
-    private static final int MAX_ASSETS = 10_000;
-    private static final int MAX_DOCUMENT_BYTES = 8 * 1024 * 1024;
-    private static final Duration RETENTION = Duration.ofDays(90);
     private final JdbcClient jdbc;
     private final ObjectMapper mapper;
+    private final MediaManifestSettings settings;
 
-    MediaManifestCatalog(JdbcClient jdbc, ObjectMapper mapper) {
+    MediaManifestCatalog(JdbcClient jdbc, ObjectMapper mapper, MediaManifestSettings settings) {
         this.jdbc = jdbc;
         this.mapper = mapper;
+        this.settings = settings;
     }
 
     @Transactional(isolation = Isolation.REPEATABLE_READ)
@@ -64,14 +61,14 @@ public class MediaManifestCatalog {
                         + "AND h.exercise_id=r.exercise_id AND h.revision_id=r.exercise_revision_id "
                         + "WHERE r.deck_id=:deck AND r.owner_id=:owner "
                         + "ORDER BY asset_id,kind,subject_id,revision_id,node_id LIMIT :limit")
-                .param("deck", deck).param("owner", owner).param("limit", MAX_REFERENCES + 1)
+                .param("deck", deck).param("owner", owner).param("limit", settings.maxReferences() + 1)
                 .query((row, ignored) -> new Pin((UUID) row.getObject("asset_id"), row.getString("kind"),
                         (UUID) row.getObject("subject_id"), (UUID) row.getObject("revision_id"),
                         (UUID) row.getObject("node_id"))).list();
-        if (pins.size() > MAX_REFERENCES) throw new InvalidRequestException();
+        if (pins.size() > settings.maxReferences()) throw new InvalidRequestException();
         Map<UUID, List<Pin>> byAsset = new LinkedHashMap<>();
         pins.forEach(pin -> byAsset.computeIfAbsent(pin.assetId(), ignored -> new ArrayList<>()).add(pin));
-        if (byAsset.size() > MAX_ASSETS) throw new InvalidRequestException();
+        if (byAsset.size() > settings.maxAssets()) throw new InvalidRequestException();
         ObjectNode content = mapper.createObjectNode();
         content.put("schemaVersion", 1);
         content.put("deckId", deck.toString());
@@ -135,9 +132,9 @@ public class MediaManifestCatalog {
         document.put("version", version);
         document.setAll(content);
         String body = new String(json(document), StandardCharsets.UTF_8);
-        if (body.getBytes(StandardCharsets.UTF_8).length > MAX_DOCUMENT_BYTES) throw new InvalidRequestException();
+        if (body.getBytes(StandardCharsets.UTF_8).length > settings.maxDocumentBytes()) throw new InvalidRequestException();
         Instant now = Instant.now();
-        Instant expires = now.plus(RETENTION);
+        Instant expires = now.plus(settings.retention());
         jdbc.sql("INSERT INTO app_learning.media_manifest "
                         + "(manifest_id,deck_id,deck_revision_id,owner_id,version,content_sha256,etag,document_json,created_at,expires_at) "
                         + "VALUES (:id,:deck,:revision,:owner,:version,:digest,:etag,:document,:created,:expires)")
