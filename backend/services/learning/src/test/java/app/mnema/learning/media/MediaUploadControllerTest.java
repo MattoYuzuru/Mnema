@@ -27,19 +27,32 @@ class MediaUploadControllerTest {
     private final UUID owner = UUID.randomUUID();
     private final UUID asset = UUID.randomUUID();
     private final MediaUploadService service = mock(MediaUploadService.class);
+    private final MediaUploadSettings settings = mock(MediaUploadSettings.class);
     private MockMvc mvc;
 
     @BeforeEach
     void setUp() {
         Jwt jwt = Jwt.withTokenValue("test-only").header("alg", "RS256").subject(owner.toString()).build();
         SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt));
-        mvc = MockMvcBuilders.standaloneSetup(new MediaUploadController(service))
+        mvc = MockMvcBuilders.standaloneSetup(new MediaUploadController(service, settings))
                 .setControllerAdvice(new ApiExceptionHandler())
                 .setCustomArgumentResolvers(new AuthenticationPrincipalArgumentResolver()).build();
     }
 
     @AfterEach
     void clearIdentity() { SecurityContextHolder.clearContext(); }
+
+    @Test
+    void browserPreflightReadsScopedServerCapsWithoutStorageConfiguration() throws Exception {
+        when(settings.clientPolicy()).thenReturn(new MediaUploadSettings.ClientPolicy(67_108_864, 536_870_912,
+                4_294_967_296L));
+        mvc.perform(get("/media-assets/upload-policy"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "private, no-store"))
+                .andExpect(jsonPath("$.maxImageBytes").value(67_108_864))
+                .andExpect(jsonPath("$.maxVideoBytes").value(4_294_967_296L))
+                .andExpect(jsonPath("$.bucket").doesNotExist());
+    }
 
     @Test
     void intentAndPartUrlsArePrivateAndNeverExposeStorageKeys() throws Exception {

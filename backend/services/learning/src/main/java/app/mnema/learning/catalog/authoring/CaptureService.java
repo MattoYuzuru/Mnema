@@ -22,22 +22,21 @@ import java.util.UUID;
 
 @Service
 public class CaptureService {
-    static final int MAX_NOTES = 10_000;
-    static final long MAX_ACCOUNT_BYTES = 64L * 1024 * 1024;
-
     private final AuthoringRepository repository;
     private final CommandReceiptService receipts;
     private final CompareAndSetExecutor cas;
     private final CaptureItemPublisher items;
     private final CanonicalJsonHasher canonical;
+    private final AuthoringSettings settings;
 
     public CaptureService(AuthoringRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas,
-                          CaptureItemPublisher items, CanonicalJsonHasher canonical) {
+                          CaptureItemPublisher items, CanonicalJsonHasher canonical, AuthoringSettings settings) {
         this.repository = repository;
         this.receipts = receipts;
         this.cas = cas;
         this.items = items;
         this.canonical = canonical;
+        this.settings = settings;
     }
 
     @Transactional(readOnly = true, timeout = 10)
@@ -164,8 +163,8 @@ public class CaptureService {
     }
 
     private void requireCaptureCapacity(UUID actor, UUID except, int bytes, boolean creating) {
-        if ((creating && repository.captureCount(actor) >= MAX_NOTES)
-                || repository.captureBytes(actor, except) + bytes > MAX_ACCOUNT_BYTES) {
+        if ((creating && repository.captureCount(actor) >= settings.maxActiveCaptureNotes())
+                || repository.captureBytes(actor, except) + bytes > settings.maxCaptureBytesPerAccount()) {
             throw new ResourceLimitExceededException();
         }
     }

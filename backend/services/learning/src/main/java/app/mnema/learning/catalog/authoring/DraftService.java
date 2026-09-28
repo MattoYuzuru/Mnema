@@ -20,20 +20,19 @@ import java.util.UUID;
 
 @Service
 public class DraftService {
-    static final int MAX_ACTIVE_DRAFTS = 200;
-    static final long MAX_ACCOUNT_BYTES = 20L * 1024 * 1024;
-
     private final AuthoringRepository repository;
     private final CommandReceiptService receipts;
     private final CompareAndSetExecutor cas;
     private final MediaCatalog mediaCatalog;
+    private final AuthoringSettings settings;
 
     public DraftService(AuthoringRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas,
-                        MediaCatalog mediaCatalog) {
+                        MediaCatalog mediaCatalog, AuthoringSettings settings) {
         this.repository = repository;
         this.receipts = receipts;
         this.cas = cas;
         this.mediaCatalog = mediaCatalog;
+        this.settings = settings;
     }
 
     @Transactional(readOnly = true, timeout = 10)
@@ -117,8 +116,8 @@ public class DraftService {
     }
 
     private void requireDraftCapacity(UUID actor, UUID except, int bytes, boolean creating) {
-        if ((creating && repository.activeDraftCount(actor) >= MAX_ACTIVE_DRAFTS)
-                || repository.activeDraftBytes(actor, except) + bytes > MAX_ACCOUNT_BYTES) {
+        if ((creating && repository.activeDraftCount(actor) >= settings.maxActiveDrafts())
+                || repository.activeDraftBytes(actor, except) + bytes > settings.maxDraftBytesPerAccount()) {
             throw new ResourceLimitExceededException();
         }
     }

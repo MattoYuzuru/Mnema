@@ -7,7 +7,7 @@ import { NativeDocument } from '../../content/native-document';
 import { readNativeDocument } from '../../content/native-document-boundary';
 import { expectedEtag } from '../own-decks/own-deck.models';
 import {
-    AUTHORING_PAGE_SIZE, AuthoringProtocolError, CaptureAcknowledgement, CaptureConversion,
+    AUTHORING_MAX_DRAFT_SCAN, AUTHORING_PAGE_SIZE, AuthoringProtocolError, CaptureAcknowledgement, CaptureConversion,
     CaptureConversionAcknowledgement, CaptureNote, CapturePage, CaptureWriteResult, DraftAcknowledgement,
     DraftDetail, DraftPage, DraftSummary, DraftWriteResult, ItemAcknowledgement, ItemChangeResult,
     requireCommand, requireCount, requireCursor, requireEntity, requireInstant, requireObject, requireVersion
@@ -25,11 +25,20 @@ export class AuthoringApiService {
     }
 
     listAllDrafts(): Observable<DraftPage> {
+        // Backend validates at most 1,000 active drafts per account; 20 per page needs up to 50 pages.
+        // A further cursor is a protocol/policy drift error, never a successful partial recovery list.
+        const maxPages = Math.ceil(AUTHORING_MAX_DRAFT_SCAN / AUTHORING_PAGE_SIZE);
         return this.listDrafts().pipe(
             expand(page => page.nextCursor === null ? EMPTY : this.listDrafts(page.nextCursor)),
-            take(10),
+            take(maxPages),
             reduce((all, page) => ({ items: [...all.items, ...page.items], nextCursor: page.nextCursor }),
-                { items: [] as readonly DraftSummary[], nextCursor: null } as DraftPage)
+                { items: [] as readonly DraftSummary[], nextCursor: null } as DraftPage),
+            map(all => {
+                if (all.nextCursor !== null || all.items.length > AUTHORING_MAX_DRAFT_SCAN) {
+                    throw new AuthoringProtocolError('Draft list exceeds the account policy.');
+                }
+                return all;
+            })
         );
     }
 

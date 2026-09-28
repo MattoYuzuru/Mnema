@@ -8,6 +8,7 @@ import org.springframework.stereotype.Component;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /** The upload policy is deliberately separate from Study limits and verified-blob retention. */
@@ -59,6 +60,12 @@ public final class MediaUploadSettings {
             @Value("${learning.media.upload.storage-timeout:PT10M}") Duration storageTimeout,
             @Value("${learning.media.upload.finalize-lease:PT15M}") Duration finalizeLease,
             @Value("${learning.media.upload.cleanup-grace:PT15M}") Duration cleanupGrace) {
+        Objects.requireNonNull(endpoint, "Media upload endpoint");
+        Objects.requireNonNull(urlTtl, "Media upload URL TTL");
+        Objects.requireNonNull(sessionTtl, "Media upload session TTL");
+        Objects.requireNonNull(storageTimeout, "Media upload storage timeout");
+        Objects.requireNonNull(finalizeLease, "Media upload finalize lease");
+        Objects.requireNonNull(cleanupGrace, "Media upload cleanup grace");
         boolean plainEndpoint = endpoint.getHost() != null && endpoint.getRawUserInfo() == null
                 && endpoint.getRawQuery() == null && endpoint.getRawFragment() == null
                 && (endpoint.getRawPath() == null || endpoint.getRawPath().isEmpty()
@@ -110,6 +117,13 @@ public final class MediaUploadSettings {
     boolean configured() {
         return !bucket.isBlank() && !accessKey.isBlank() && !secretKey.isBlank();
     }
+
+    /** Safe browser preflight values; upload validation below remains authoritative. */
+    public ClientPolicy clientPolicy() {
+        return new ClientPolicy(maxImageBytes, maxAudioBytes, maxVideoBytes);
+    }
+
+    public record ClientPolicy(long maxImageBytes, long maxAudioBytes, long maxVideoBytes) { }
 
     void validate(String kind, String mime, long length) {
         if (kind == null || mime == null || !TYPES.getOrDefault(kind, Set.of()).contains(mime)
