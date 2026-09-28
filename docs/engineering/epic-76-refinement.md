@@ -31,7 +31,8 @@ Learning runtime. Production deployment и native offline apps здесь отс
 
 ## Принятые продуктовые решения
 
-1. Первый upload-набор: JPEG, PNG, WebP, GIF; MP3, M4A; MP4. Для короткого
+1. Первый upload-набор: JPEG, PNG, WebP, GIF; MP3, M4A, WebM/Opus как вход
+   браузерной аудиозаписи; MP4. Для короткого
    телефонного видео и браузерной записи дополнительно принимаются MOV/HEVC и
    WebM как **вход**. Обязательные fixture-профили: MOV/MP4 с HEVC Main и Main10
    (включая orientation/HDR metadata), WebM с VP8/Opus и VP9/Opus, MP4 с
@@ -82,6 +83,9 @@ media_asset   = stable assetId + owner, provenance, generation, state, source bl
 media_variant = source asset + purpose/format/dimensions + derived immutable blob
 content_ref   = item revision + stable nodeId + authorized assetId
 ```
+
+Транспортный API, состояния и scoped policy описаны в
+[media upload transport](media-upload-transport.md).
 
 `assetId` выдаётся при `upload-intent` до получения байтов. Номер `generation`
 ограждает ассет от запоздалого завершения прежней попытки. Новая попытка

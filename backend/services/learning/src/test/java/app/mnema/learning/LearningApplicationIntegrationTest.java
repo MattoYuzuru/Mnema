@@ -70,7 +70,8 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "6:immutable objectives and exercises:SUCCESS",
                         "7:bounded study sessions:SUCCESS",
                         "8:attempt evidence and study state:SUCCESS",
-                        "9:study session budgets:SUCCESS", "10:media catalog:SUCCESS");
+                        "9:study session budgets:SUCCESS", "10:media catalog:SUCCESS",
+                        "11:media upload transport:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name
@@ -130,12 +131,13 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
         assertThat(applicationContext.getBeanNamesForAnnotation(RestController.class))
                 .containsExactlyInAnyOrder("deckController", "itemController", "draftController", "captureController",
                         "exerciseController", "studySessionController", "attemptController", "studyRestartController",
-                        "studyProgressController");
+                        "studyProgressController", "mediaUploadController");
         assertThat(requestMappings.getHandlerMethods().keySet())
                 .flatExtracting(mapping -> mapping.getPatternValues())
                 .allSatisfy(route -> {
                     assertThat(route).doesNotContain("/v2");
-                    assertThat(LEGACY_ROUTE_PREFIXES).noneMatch(route::startsWith);
+                    assertThat(LEGACY_ROUTE_PREFIXES).noneMatch(prefix ->
+                            route.equals(prefix) || route.startsWith(prefix + "/"));
                 });
 
         mockMvc.perform(get("/api/v2").contextPath("/api"))
