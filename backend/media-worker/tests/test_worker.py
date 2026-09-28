@@ -107,6 +107,14 @@ class WorkerTests(unittest.TestCase):
                     self.assertEqual(target.stat().st_size, variant["byteLength"])
                     if kind == "image" and variant["purpose"] == "thumbnail":
                         self.assertLessEqual(max(variant["width"], variant["height"]), 320)
+                        if name == "gif":
+                            self.assertEqual(variant["profile"], "image_gif_poster_webp_320_v1")
+                            self.assertEqual(variant["mimeType"], "image/webp")
+                            frames = subprocess.run(["ffprobe", "-v", "error", "-count_frames",
+                                                     "-select_streams", "v:0", "-show_entries",
+                                                     "stream=nb_read_frames", "-of", "csv=p=0", str(target)],
+                                                    check=True, capture_output=True, text=True).stdout.strip()
+                            self.assertEqual(frames, "1")
                     if kind == "video" and variant["purpose"] == "poster":
                         self.assertLessEqual(max(variant["width"], variant["height"]), 960)
                 self.source.unlink()

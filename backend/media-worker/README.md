@@ -72,6 +72,42 @@ read-only. On local Colima, `/tmp` on macOS was not bind-shared into Linux; use 
 Docker named volume/`docker cp` or a verified shared host path for fixture staging.
 The app's upload limits may be narrower than these independent safety ceilings.
 
+## Learning service integration
+
+The Java reconciler is disabled until `learning.media.processing.enabled=true`. Build
+the local image above, configure the same `learning.media.upload.*` S3 credentials
+used for uploads, and set `learning.media.processing.work-root` to a private host
+directory shared with Docker (default `~/.mnema/media-processing`). The service
+runs at most one local job at a time. The container sees only a read-only source
+and manifest plus a writable output directory; it has no object-store credentials
+or network. The runner watches job disk usage and kills work above 7 GiB. Use an
+operator-enforced filesystem quota and an immutable image digest for any external
+deployment; the default `:local` tag is a development convenience.
+
+`SEALED` plus `VERIFYING` is the durable queue. Migration V13 stores a claim token,
+lease, attempt count and next attempt time. Heartbeats renew the lease. Database
+publication checks the token, lease, asset generation and state. The backend
+streams the frozen S3 object to a private file and checks its exact length and full
+SHA-256 before invoking the worker. Java independently verifies the result's exact
+profile set, output paths, sizes and hashes. Derived objects use content-addressed
+keys and conditional `If-None-Match: *` PUT; an uncertain PUT is reconciled by HEAD
+with length, MIME and SHA metadata. One transaction stores source/variant blobs and
+marks the asset READY. The sealed source remains available for retry.
+
+After five transient attempts, the asset is `FAILED_RETRYABLE`. Its owner can call
+`POST /media-assets/{assetId}/processing/retry` with `{ "generation": 0 }` to
+requeue the same bytes. `REJECTED` is terminal for invalid media and requires a new
+upload. Processing settings include `worker-timeout` (30 minutes), `lease` (2
+minutes), `heartbeat` (30 seconds), `retry-base` (1 minute), `retry-maximum` (30
+minutes), `max-attempts` (5), `max-audio-duration` (1 hour), `max-video-duration`
+(5 minutes), and a 15-second scan interval. Upload byte ceilings live separately
+under `learning.media.upload.*`; codec and frame ceilings are fixed worker policy.
+
+The S3 choices follow the [AWS SDK Java 2 streaming guide](https://docs.aws.amazon.com/sdk-for-java/latest/developer-guide/migration-streaming-ops.html),
+[Amazon S3 conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html),
+and [Yandex Object Storage PUT conditions](https://yandex.cloud/en/docs/storage/s3/api-ref/object/upload).
+The container limit follows [Docker's resource constraint documentation](https://docs.docker.com/engine/containers/resource_constraints/).
+
 The deterministic codec contract matrix is `python3 -m unittest discover -s tests -v`
 inside the built image. For a bounded local run, supply `--network none --read-only
 --cap-drop ALL --memory 3g --cpus 2 --tmpfs /tmp:rw,size=512m,mode=1777` to
@@ -88,7 +124,7 @@ privately and run through this same bounded container before promising an SLA.
 | Input | Playback | Auxiliary |
 | --- | --- | --- |
 | JPEG, PNG, WebP | WebP, longest edge at most 2048 | WebP thumbnail, 320 |
-| GIF (animated, max 600 frames / 60 s) | GIF, longest edge at most 2048 | WebP thumbnail, 320 |
+| GIF (animated, max 600 frames / 60 s) | GIF, longest edge at most 2048 | Static first-frame WebP poster/thumbnail, 320 |
 | MP3, M4A/AAC, WebM/Opus | M4A/AAC, stereo, 48 kHz | — |
 | MP4 H.264/AAC, MOV HEVC Main/Main10, WebM VP8/VP9+Opus | MP4 H.264/AAC, SDR, 1080p, max 30 fps | WebP poster |
 

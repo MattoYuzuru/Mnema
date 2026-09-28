@@ -3,6 +3,7 @@ package app.mnema.learning.media;
 import org.springframework.stereotype.Component;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -14,6 +15,7 @@ import software.amazon.awssdk.services.s3.model.CompletedPart;
 import software.amazon.awssdk.services.s3.model.CopyObjectRequest;
 import software.amazon.awssdk.services.s3.model.CreateMultipartUploadRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.ListPartsRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -25,7 +27,15 @@ import software.amazon.awssdk.services.s3.presigner.model.UploadPartPresignReque
 
 import java.time.Duration;
 import java.time.Instant;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 
@@ -151,6 +161,50 @@ final class MediaObjectStore implements AutoCloseable {
         requireConfigured();
         try { s3.deleteObject(DeleteObjectRequest.builder().bucket(settings.bucket).key(key).build()); }
         catch (SdkException failure) { throw new MediaStorageUnavailableException(); }
+    }
+
+    /** Private backend read of frozen bytes, with an independent full-byte digest. */
+    String downloadVerified(String key, Path target, long expectedLength) throws IOException {
+        requireConfigured();
+        try (var input = s3.getObject(GetObjectRequest.builder().bucket(settings.bucket).key(key).build());
+             OutputStream output = Files.newOutputStream(target, StandardOpenOption.CREATE_NEW,
+                     StandardOpenOption.WRITE)) {
+            if (input.response().contentLength() != expectedLength) throw new MediaProcessingRejectedException("source_size_mismatch");
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] buffer = new byte[1024 * 1024];
+            long total = 0;
+            int count;
+            while ((count = input.read(buffer)) != -1) {
+                total += count;
+                if (total > expectedLength) throw new MediaProcessingRejectedException("source_size_mismatch");
+                digest.update(buffer, 0, count);
+                output.write(buffer, 0, count);
+            }
+            if (total != expectedLength) throw new MediaProcessingRejectedException("source_size_mismatch");
+            return HexFormat.of().formatHex(digest.digest());
+        } catch (SdkException failure) {
+            throw new MediaStorageUnavailableException();
+        } catch (NoSuchAlgorithmException impossible) {
+            throw new IllegalStateException(impossible);
+        }
+    }
+
+    /** Derived keys are content-addressed; a timed-out PUT is reconciled by HEAD. */
+    void putVerified(String key, Path source, long length, String sha256, String mimeType) {
+        requireConfigured();
+        try {
+            s3.putObject(PutObjectRequest.builder().bucket(settings.bucket).key(key)
+                            .contentLength(length).contentType(mimeType)
+                            .metadata(Map.of("sha256", sha256)).ifNoneMatch("*").build(),
+                    RequestBody.fromFile(source));
+        } catch (SdkException failure) {
+            try {
+                var existing = s3.headObject(HeadObjectRequest.builder().bucket(settings.bucket).key(key).build());
+                if (existing.contentLength() == length && mimeType.equals(existing.contentType())
+                        && sha256.equals(existing.metadata().get("sha256"))) return;
+            } catch (SdkException ignored) { /* An absent or unavailable object is retryable. */ }
+            throw new MediaStorageUnavailableException();
+        }
     }
 
     private void requireConfigured() {

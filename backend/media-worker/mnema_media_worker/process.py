@@ -439,10 +439,12 @@ class MediaProcessor:
             if profile.animated:
                 variants.append(self._encode(source, output, created, "playback", "image_gif_2048_v1", "gif",
                     "image/gif", "gif", self._image_args(IMAGE_PLAYBACK_MAX_EDGE, animated=True), request))
+                thumbnail_profile = "image_gif_poster_webp_320_v1"
             else:
                 variants.append(self._encode(source, output, created, "playback", "image_webp_2048_v1", "webp",
                     "image/webp", "webp", self._image_args(IMAGE_PLAYBACK_MAX_EDGE), request))
-            variants.append(self._encode(source, output, created, "thumbnail", "image_webp_320_v1", "webp",
+                thumbnail_profile = "image_webp_320_v1"
+            variants.append(self._encode(source, output, created, "thumbnail", thumbnail_profile, "webp",
                 "image/webp", "webp", self._image_args(IMAGE_THUMBNAIL_MAX_EDGE), request))
         elif request.kind == "audio":
             variants.append(self._encode(source, output, created, "playback", "audio_aac_m4a_v1", "m4a",
