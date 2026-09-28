@@ -15,7 +15,7 @@
         @if (selectedOrdinal() !== null) { <a class="button primary" [routerLink]="['/decks', currentDeck.deckId, 'materials', currentItem.memberKey, 'edit']" [queryParams]="{ ordinal: selectedOrdinal() }">Редактировать</a> }</div>
       </header>
       @if (selectedOrdinal() === null) { <p class="notice">Для безопасного редактирования откройте материал из списка: ссылка должна содержать позицию в текущей версии колоды.</p> }
-      <article class="sheet"><app-native-document-renderer [document]="currentItem.document" /></article>
+      <article class="sheet"><app-native-media-surface [document]="currentItem.document" /></article>
     } @else if (page(); as currentPage) {
       <header class="page-heading"><div><p class="eyebrow">Просмотр колоды</p><h1 id="browse-title" tabindex="-1">{{ currentDeck.metadata.title }}</h1><p class="lede">{{ currentPage.total }} материалов</p></div><div class="actions"><a class="button" [routerLink]="['/decks', currentDeck.deckId, 'capture']">На потом</a><a class="button primary" [routerLink]="['/decks', currentDeck.deckId, 'materials', 'new']">Новый материал</a></div></header>
       @if (currentPage.items.length === 0) { <section class="notice"><h2>Здесь пока пусто</h2><p>Создайте первый материал или перенесите заметку из «На потом».</p></section> }

@@ -40,6 +40,21 @@ class NativeDocumentReaderTest {
     }
 
     @Test
+    void youtubeFixtureStoresOnlyAnInertVideoIdAndRejectsUntrustedUrls() throws Exception {
+        ObjectNode fixture = (ObjectNode) new ContentJsonReader(1_048_576, 128, 250_000)
+                .read(Files.readAllBytes(contractRoot().resolve("valid/youtube.json")));
+        NativeDocument document = read(fixture);
+        assertThat(document.nodeCount()).isEqualTo(2);
+        assertThat(NativeMediaReferences.from(document)).isEmpty();
+        ObjectNode attrs = (ObjectNode) fixture.path("root").path("content").get(0).path("attrs");
+        attrs.put("videoId", "https://www.youtube.com/watch?v=M7lc1UVf-VE");
+        invalid(fixture);
+        attrs.put("videoId", "M7lc1UVf-VE");
+        attrs.put("src", "https://attacker.example/embed");
+        invalid(fixture);
+    }
+
+    @Test
     void richNodesRejectForeignAttrsBadAssetsAndRaggedTables() throws Exception {
         ObjectNode source = (ObjectNode) new ContentJsonReader(1_048_576, 128, 250_000)
                 .read(Files.readAllBytes(contractRoot().resolve("valid/rich.json")));

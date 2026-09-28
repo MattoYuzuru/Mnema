@@ -1,0 +1,13 @@
+:host { display: block; }
+.youtube-card { margin: 1.5rem 0; border-inline-start: 3px solid var(--ink, #281378); padding: 1rem; background: var(--sheet, #fbf8ef); color: var(--body, #342e44); }
+.youtube-card figcaption { margin-block-end: .7rem; color: var(--ink, #281378); font: 500 1.25rem Georgia, serif; }
+.youtube-consent { display: grid; justify-items: center; gap: .5rem; min-block-size: 12rem; place-content: center; padding: 1rem; border: 1px solid var(--line, #c9c0ce); text-align: center; }
+.youtube-consent span { color: var(--ink, #281378); font-size: 2rem; }
+.youtube-consent p { max-inline-size: 48ch; margin: 0; line-height: 1.5; }
+.youtube-consent button { min-block-size: 2.75rem; border: 1px solid var(--ink, #281378); padding: .5rem 1rem; background: var(--ink, #281378); color: #fff; font: 600 .9rem system-ui, sans-serif; cursor: pointer; }
+.youtube-frame { position: relative; inline-size: 100%; aspect-ratio: 16 / 9; min-block-size: 200px; }
+.youtube-frame iframe { position: absolute; inline-size: 100%; block-size: 100%; border: 0; }
+.youtube-card a { display: inline-block; margin-block-start: .7rem; color: var(--ink, #281378); text-underline-offset: .2em; }
+.youtube-card details { margin-block-start: .7rem; }
+:where(button,a,summary):focus-visible { outline: 3px solid var(--ink, #281378); outline-offset: 3px; }
+@media (forced-colors: active) { .youtube-card { border-color: CanvasText; } }

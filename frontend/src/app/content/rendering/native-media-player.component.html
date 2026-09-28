@@ -1,0 +1,30 @@
+<div class="mnema-player" [class.is-video]="kind() === 'video'">
+  @if (kind() === 'video') {
+    <video #video class="mnema-player-screen" [src]="source()" [attr.poster]="poster()" preload="metadata" playsinline
+      [attr.aria-label]="title()" (loadedmetadata)="sync()" (durationchange)="sync()"
+      (timeupdate)="sync()" (play)="sync()" (pause)="sync()" (ended)="sync()"
+      (waiting)="sync()" (playing)="sync()" (error)="sync()"></video>
+  } @else {
+    <audio #audio [src]="source()" preload="metadata" [attr.aria-label]="title()"
+      (loadedmetadata)="sync()" (durationchange)="sync()" (timeupdate)="sync()"
+      (play)="sync()" (pause)="sync()" (ended)="sync()" (waiting)="sync()"
+      (playing)="sync()" (error)="sync()"></audio>
+  }
+  <div class="mnema-player-controls" role="group" [attr.aria-label]="'Управление: ' + title()">
+    <button type="button" class="mnema-player-action" [attr.aria-label]="playing() ? 'Пауза' : 'Воспроизвести'"
+      (click)="toggle()">{{ playing() ? 'Ⅱ' : '▶' }}</button>
+    <span class="mnema-player-time" aria-hidden="true">{{ elapsedText() }}</span>
+    <input type="range" min="0" [max]="seekMax()" step="1" [value]="position()"
+      [disabled]="seekMax() === 0" [attr.aria-label]="'Позиция: ' + title()"
+      [attr.aria-valuetext]="elapsedText() + ' из ' + durationText()" (input)="seek($any($event.target).value)" />
+    <span class="mnema-player-time" aria-hidden="true">{{ durationText() }}</span>
+    <button type="button" class="mnema-player-action" [attr.aria-label]="muted() ? 'Включить звук' : 'Выключить звук'"
+      (click)="toggleMute()">{{ muted() ? '◌' : '♪' }}</button>
+    <label class="mnema-player-speed">Скорость <select [value]="speed()" (change)="changeSpeed($any($event.target).value)">
+      <option value="0.75">0,75×</option><option value="1">1×</option><option value="1.25">1,25×</option><option value="1.5">1,5×</option>
+    </select></label>
+    @if (kind() === 'video') { <button type="button" class="mnema-player-action" aria-label="На весь экран" (click)="fullscreen()">⛶</button> }
+  </div>
+  @if (waiting()) { <p class="mnema-player-note" role="status">Загружаем продолжение…</p> }
+  @if (error()) { <p class="mnema-player-note error" role="alert">Файл пока не воспроизводится. Обновляем доступ…</p> }
+</div>

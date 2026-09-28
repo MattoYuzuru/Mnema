@@ -76,6 +76,13 @@ export interface RenderVideoNode extends RenderNodeBase {
     readonly transcript?: string;
 }
 
+export interface RenderYoutubeNode extends RenderNodeBase {
+    readonly kind: 'youtube';
+    readonly videoId: string;
+    readonly title: string;
+    readonly transcript?: string;
+}
+
 export interface RenderMermaidNode extends RenderNodeBase {
     readonly kind: 'mermaid';
     readonly source: string;
@@ -106,6 +113,7 @@ export type NativeRenderNode = RenderContainerNode
     | RenderImageNode
     | RenderAudioNode
     | RenderVideoNode
+    | RenderYoutubeNode
     | RenderMermaidNode
     | RenderTableNode
     | RenderOpaqueNode;
@@ -144,10 +152,10 @@ const SUPPORTED_TYPES = new Set([
     'ruby',
     'link',
     'divider',
-    'image', 'audio', 'video', 'mermaid', 'table'
+    'image', 'audio', 'video', 'youtube', 'mermaid', 'table'
 ]);
 const BLOCK_TYPES = new Set(['paragraph', 'heading', 'blockquote', 'bullet_list', 'ordered_list', 'divider',
-    'image', 'audio', 'video', 'mermaid', 'table']);
+    'image', 'audio', 'video', 'youtube', 'mermaid', 'table']);
 const INLINE_TYPES = new Set(['text', 'ruby', 'link']);
 const CORE_KEYS = new Set(['id', 'type', 'version', 'attrs', 'content']);
 const COMMON_ATTR_KEYS = new Set(['lang', 'dir']);
@@ -382,6 +390,17 @@ function buildNode(
                 assetId: readUuid(attrs, 'assetId', context.budget),
                 title: readBoundedText(attrs, 'title', 1024, context.budget),
                 ...optionalText(attrs, 'transcript', 16384, context.budget) };
+        case 'youtube': {
+            assertAttrs(attrs, new Set([...COMMON_ATTR_KEYS, 'videoId', 'title', 'transcript']));
+            assertEmpty(content);
+            const videoId = attrs['videoId'];
+            if (typeof videoId !== 'string' || !/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+                throw new InvalidNativeDocument();
+            }
+            return { kind: 'youtube', id, ...metadata, videoId: context.budget.scalar(videoId),
+                title: readBoundedText(attrs, 'title', 1024, context.budget),
+                ...optionalText(attrs, 'transcript', 16384, context.budget) };
+        }
         case 'mermaid':
             assertAttrs(attrs, new Set([...COMMON_ATTR_KEYS, 'source', 'title', 'description']));
             assertEmpty(content);

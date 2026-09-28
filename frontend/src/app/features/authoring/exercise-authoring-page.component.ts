@@ -5,7 +5,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
-import { NativeDocumentRendererComponent } from '../../content/rendering/native-document-renderer.component';
+import { NativeMediaSurfaceComponent } from '../../content/rendering/native-media-surface.component';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { newCommandId } from './authoring.models';
@@ -29,7 +29,7 @@ interface PendingWrite {
 
 @Component({
     selector: 'app-exercise-authoring-page',
-    imports: [RouterLink, NativeDocumentRendererComponent],
+    imports: [RouterLink, NativeMediaSurfaceComponent],
     templateUrl: './exercise-authoring-page.component.html',
     styleUrl: './exercise-authoring-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush

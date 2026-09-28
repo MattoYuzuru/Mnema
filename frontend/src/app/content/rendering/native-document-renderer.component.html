@@ -130,10 +130,12 @@
     }
     @case ('image') {
       <figure class="native-media" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
-        @if (assetSources()[node.assetId]; as source) {
-          <img class="native-image" [src]="source" [alt]="node.alt" loading="lazy" />
+        @if (sources().get(node.assetId.toLowerCase()); as source) {
+          <app-native-media-image [source]="source.url" [poster]="source.posterUrl ?? null"
+            [download]="source.downloadUrl ?? source.url" [alt]="node.alt"
+            [animated]="source.mimeType === 'image/gif'" (sourceFailed)="assetFailed.emit(node.assetId)" />
         } @else {
-          <p class="native-media-pending" role="status">Изображение пока недоступно: {{ node.alt }}</p>
+          <p class="native-media-pending" role="status">{{ assetStatuses()[node.assetId.toLowerCase()] ?? 'Изображение пока недоступно' }}: {{ node.alt }}</p>
         }
         @if (node.caption) { <figcaption>{{ node.caption }}</figcaption> }
         @if (node.description) { <p class="native-media-description">{{ node.description }}</p> }
@@ -142,20 +144,25 @@
     @case ('audio') {
       <figure class="native-media" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
         <figcaption>{{ node.title }}</figcaption>
-        @if (assetSources()[node.assetId]; as source) {
-          <audio controls preload="metadata" [src]="source" [attr.aria-label]="node.title"></audio>
-        } @else { <p class="native-media-pending" role="status">Аудио пока недоступно.</p> }
+        @if (sources().get(node.assetId.toLowerCase()); as source) {
+          <app-native-media-player kind="audio" [source]="source.url" [title]="node.title"
+            (sourceFailed)="assetFailed.emit(node.assetId)" />
+        } @else { <p class="native-media-pending" role="status">{{ assetStatuses()[node.assetId.toLowerCase()] ?? 'Аудио пока недоступно.' }}</p> }
         @if (node.transcript) { <details><summary>Текст аудио</summary><p>{{ node.transcript }}</p></details> }
       </figure>
     }
     @case ('video') {
       <figure class="native-media" [attr.lang]="node.lang ?? null" [attr.dir]="node.dir ?? null">
         <figcaption>{{ node.title }}</figcaption>
-        @if (assetSources()[node.assetId]; as source) {
-          <video controls preload="metadata" playsinline [src]="source" [attr.aria-label]="node.title"></video>
-        } @else { <p class="native-media-pending" role="status">Видео пока недоступно.</p> }
+        @if (sources().get(node.assetId.toLowerCase()); as source) {
+          <app-native-media-player kind="video" [source]="source.url" [poster]="source.posterUrl ?? null"
+            [title]="node.title" (sourceFailed)="assetFailed.emit(node.assetId)" />
+        } @else { <p class="native-media-pending" role="status">{{ assetStatuses()[node.assetId.toLowerCase()] ?? 'Видео пока недоступно.' }}</p> }
         @if (node.transcript) { <details><summary>Текст видео</summary><p>{{ node.transcript }}</p></details> }
       </figure>
+    }
+    @case ('youtube') {
+      <app-native-youtube [videoId]="node.videoId" [title]="node.title" [transcript]="node.transcript ?? null" />
     }
     @case ('mermaid') {
       <app-native-mermaid [source]="node.source" [title]="node.title" [description]="node.description" />

@@ -1,0 +1,23 @@
+<div class="image-frame">
+  <button class="image-open" type="button" [attr.aria-label]="'Увеличить изображение: ' + alt()" (click)="open()">
+    <img [src]="visibleSource()" [alt]="alt()" loading="lazy" (error)="sourceFailed.emit()" />
+    <span aria-hidden="true">Увеличить ↗</span>
+  </button>
+  @if (animated() && poster()) {
+    <button class="image-action" type="button" (click)="toggleAnimation()">{{ playing() ? 'Остановить GIF' : 'Воспроизвести GIF' }}</button>
+  }
+</div>
+<dialog #dialog class="image-dialog" [attr.aria-label]="'Изображение: ' + alt()">
+  <div class="image-toolbar">
+    <strong>{{ alt() }}</strong>
+    <div class="image-actions">
+      <button type="button" aria-label="Уменьшить" (click)="changeZoom(-0.25)">−</button>
+      <button type="button" (click)="reset()">{{ (zoom() * 100).toFixed(0) }}%</button>
+      <button type="button" aria-label="Увеличить" (click)="changeZoom(0.25)">＋</button>
+      <a [href]="download()" download>Сохранить</a>
+      <button type="button" autofocus (click)="close()">Закрыть</button>
+    </div>
+  </div>
+  <div class="image-canvas"><img [src]="visibleSource()" [alt]="alt()" [style.transform]="'scale(' + zoom() + ')'"
+    (error)="sourceFailed.emit()" /></div>
+</dialog>

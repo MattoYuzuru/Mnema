@@ -36,7 +36,7 @@ write_security_headers() {
   cat > "$security_tmp" <<'NGINX'
 add_header X-Content-Type-Options "nosniff" always;
 add_header Referrer-Policy "strict-origin-when-cross-origin" always;
-add_header Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()" always;
+add_header Permissions-Policy "accelerometer=(), camera=(self), geolocation=(), gyroscope=(), magnetometer=(), microphone=(self), payment=(), usb=()" always;
 NGINX
 
   baseline_csp="base-uri 'self'; object-src 'none'; frame-ancestors 'none'"
@@ -48,7 +48,7 @@ NGINX
       validate_https_origin "MNEMA_PUBLIC_ORIGIN" "$PUBLIC_ORIGIN"
       validate_https_origin "MNEMA_AUTH_SERVER_URL" "$AUTH_ORIGIN"
       validate_https_origin "MNEMA_STORAGE_ORIGIN" "$STORAGE_ORIGIN"
-      full_csp="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'sha256-dPpiNzPhacWONZyOECmbuE9hUJqG63dY8JOD/zBnn5Q=' https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: $STORAGE_ORIGIN https://lh3.googleusercontent.com https://avatars.githubusercontent.com https://github.com https://avatars.yandex.net; media-src 'self' blob: $STORAGE_ORIGIN; connect-src 'self' $AUTH_ORIGIN $STORAGE_ORIGIN https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; worker-src 'self' blob:; manifest-src 'self'"
+      full_csp="default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; form-action 'self'; script-src 'self' 'sha256-dPpiNzPhacWONZyOECmbuE9hUJqG63dY8JOD/zBnn5Q=' https://challenges.cloudflare.com; script-src-attr 'none'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: $STORAGE_ORIGIN https://lh3.googleusercontent.com https://avatars.githubusercontent.com https://github.com https://avatars.yandex.net; media-src 'self' blob: $STORAGE_ORIGIN; connect-src 'self' $AUTH_ORIGIN $STORAGE_ORIGIN https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com https://www.youtube-nocookie.com; worker-src 'self' blob:; manifest-src 'self'"
       if [ "$APP_ENV" = "staging" ]; then
         printf 'add_header Content-Security-Policy "%s" always;\n' "$baseline_csp" >> "$security_tmp"
         printf 'add_header Content-Security-Policy-Report-Only "%s" always;\n' "$full_csp" >> "$security_tmp"
