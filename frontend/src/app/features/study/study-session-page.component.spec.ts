@@ -10,6 +10,7 @@ import { StudyApiService } from './study-api.service';
 import { AttemptCommand, AttemptOutcome, ReadyStudySession, StudyPresentation } from './study.models';
 import { StudyRecoveryService } from './study-recovery.service';
 import { StudySessionPageComponent } from './study-session-page.component';
+import { MEDIA_PLAYBACK_RESOLVER } from './media-playback-resolver';
 
 describe('StudySessionPageComponent', () => {
     const id = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, '0')}`;
@@ -25,7 +26,7 @@ describe('StudySessionPageComponent', () => {
         const decks = jasmine.createSpyObj<OwnDecksApiService>('OwnDecksApiService', ['detail']);
         decks.detail.and.returnValue(of(deck));
         api = jasmine.createSpyObj<StudyApiService>('StudyApiService',
-            ['start', 'read', 'refill', 'submit', 'progress', 'replaySources', 'restart']);
+            ['start', 'read', 'refill', 'submit', 'progress', 'replaySources', 'restart', 'revealTranscript']);
         api.progress.and.returnValue(of({ asOf: '2026-09-20T10:00:00Z', items: [], nextCursor: null }));
         api.replaySources.and.returnValue(of({ asOf: '2026-09-20T10:00:00Z', localStudyDate: '2026-09-20', items: [] }));
         recovery = jasmine.createSpyObj<StudyRecoveryService>('StudyRecoveryService', ['restore', 'save', 'clear', 'now']);
@@ -34,7 +35,8 @@ describe('StudySessionPageComponent', () => {
         TestBed.configureTestingModule({ providers: [
             { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ deckId: deck.deckId }) } } },
             { provide: Router, useValue: router }, { provide: OwnDecksApiService, useValue: decks },
-            { provide: StudyApiService, useValue: api }, { provide: StudyRecoveryService, useValue: recovery }
+            { provide: StudyApiService, useValue: api }, { provide: StudyRecoveryService, useValue: recovery },
+            { provide: MEDIA_PLAYBACK_RESOLVER, useValue: { resolve: (assetId: string) => of(`/media/${assetId}`) } }
         ] });
     });
 
@@ -127,6 +129,48 @@ describe('StudySessionPageComponent', () => {
         expect(api.submit.calls.mostRecent().args[2].response)
             .toEqual({ kind: 'CHOICE', optionId: radios[0].value });
         expect(api.submit.calls.mostRecent().args[2].hintsUsed).toEqual([]);
+    });
+
+    it('requires playback and audits transcript disclosure before a listening typed answer', () => {
+        const base = session('TYPED');
+        const presentation = { ...base.presentations[0], type: 'LISTEN_TYPE' as const, reference: null,
+            bindings: [], prompt: { kind: 'AUDIO_ASSET' as const, assetId: id('40'), title: 'Короткая запись',
+                instruction: 'Напишите услышанное', transcriptAvailable: true, transcriptRevealed: false } };
+        api.start.and.returnValue(of({ value: { ...base, presentations: [presentation] }, replayed: false }));
+        api.revealTranscript.and.returnValue(of({ ...presentation.prompt, transcriptRevealed: true,
+            transcript: 'memory' }));
+        api.submit.and.returnValue(of({ value: outcome('CORRECT'), replayed: false }));
+        createStarted();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('audio')?.getAttribute('src')).toBe(`/media/${id('40')}`);
+        expect(root.textContent).not.toContain('memory');
+        fixture.componentInstance.revealTranscript(); fixture.detectChanges();
+        expect(api.revealTranscript).toHaveBeenCalledWith(deck.deckId, sessionId, presentationId,
+            presentation.nonce);
+        expect(root.textContent).toContain('memory');
+        fixture.componentInstance.setTypedAnswer('memory'); fixture.componentInstance.submitTyped();
+        expect(api.submit.calls.mostRecent().args[2].response).toEqual({ kind: 'TEXT', text: 'memory' });
+    });
+
+    it('submits the complete audio-text map as one attempt', () => {
+        const base = session('SINGLE_CHOICE');
+        const presentation = { ...base.presentations[0], type: 'AUDIO_TEXT_MATCH' as const, reference: null,
+            bindings: [], prompt: { kind: 'AUDIO_MATCH' as const, instruction: 'Сопоставьте',
+                transcriptAvailable: false, transcriptRevealed: false, cues: [
+                    { cueId: id('40'), assetId: id('50'), title: 'Первая' },
+                    { cueId: id('41'), assetId: id('51'), title: 'Вторая' }
+                ] } };
+        api.start.and.returnValue(of({ value: { ...base, presentations: [presentation] }, replayed: false }));
+        api.submit.and.returnValue(of({ value: outcome('CORRECT'), replayed: false }));
+        createStarted();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelectorAll('audio')).toHaveSize(2);
+        fixture.componentInstance.selectMatch(id('40'), id('15'));
+        fixture.componentInstance.selectMatch(id('41'), id('16'));
+        fixture.componentInstance.submitMatch();
+        expect(api.submit.calls.mostRecent().args[2].response).toEqual({ kind: 'MATCH', pairs: [
+            { cueId: id('40'), optionId: id('15') }, { cueId: id('41'), optionId: id('16') }
+        ] });
     });
 
     it('retains and replays the exact command after an unknown network outcome', () => {

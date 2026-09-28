@@ -37,8 +37,12 @@ CREATE TRIGGER exercise_media_ref_guard BEFORE UPDATE ON app_learning.exercise_m
 -- source must really be audio; a READY image asset must never become a listening cue.
 CREATE FUNCTION app_learning.exercise_audio_ready(p_owner UUID, p_deck UUID, p_exercise UUID,
     p_revision UUID) RETURNS BOOLEAN LANGUAGE sql STABLE AS $$
-    SELECT count(*) > 0 AND COALESCE(bool_and(asset.state = 'READY'
-        AND blob.mime_type LIKE 'audio/%'), FALSE)
+    SELECT count(*) = COALESCE((SELECT CASE WHEN revision.exercise_type = 'AUDIO_TEXT_MATCH'
+                                   THEN jsonb_array_length(revision.prompt_spec -> 'cues') ELSE 1 END
+                                 FROM app_learning.exercise_revision revision
+                                WHERE revision.deck_id = p_deck AND revision.exercise_id = p_exercise
+                                  AND revision.revision_id = p_revision), -1)
+           AND COALESCE(bool_and(asset.state = 'READY' AND blob.mime_type LIKE 'audio/%'), FALSE)
       FROM app_learning.exercise_media_ref ref
       JOIN app_learning.media_asset asset ON asset.asset_id = ref.asset_id AND asset.owner_id = ref.owner_id
       LEFT JOIN app_learning.media_blob blob ON blob.blob_id = asset.source_blob_id

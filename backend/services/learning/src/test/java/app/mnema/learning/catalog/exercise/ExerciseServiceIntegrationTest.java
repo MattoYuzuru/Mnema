@@ -11,6 +11,8 @@ import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.media.MediaCatalog;
 import app.mnema.learning.study.session.StudySessionCommand;
 import app.mnema.learning.study.session.StudySessionService;
+import app.mnema.learning.study.attempt.AttemptCommand;
+import app.mnema.learning.study.attempt.AttemptService;
 import app.mnema.learning.support.PostgresIntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -38,6 +40,7 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
     @Autowired private JdbcClient jdbc;
     @Autowired private MediaCatalog media;
     @Autowired private StudySessionService studies;
+    @Autowired private AttemptService attempts;
 
     @Test
     void listeningPublicationsPinOwnedAssetsAndRejectForeignCueAtomically() {
@@ -107,6 +110,18 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
                 .isEqualTo("memory");
         assertThat(studies.read(fixture.actor(), fixture.deck(), readySession).path("presentations")
                 .findValuesAsText("transcript")).contains("memory");
+        jdbc.sql("UPDATE app_learning.media_asset SET state='DELETED',updated_at=CURRENT_TIMESTAMP "
+                + "WHERE asset_id=:asset").param("asset", firstAsset).update();
+        ObjectNode attempt = JSON.createObjectNode().put("attemptId", UUID.randomUUID().toString())
+                .put("presentationId", typedPresentation.toString()).put("nonce", typed.path("nonce").textValue())
+                .putNull("confidence").put("durationMs", 100);
+        attempt.putObject("response").put("kind", "TEXT").put("text", "memory");
+        attempt.putArray("hintsUsed");
+        JsonNode blocked = attempts.submit(fixture.actor(), fixture.deck(), readySession,
+                AttemptCommand.read(bytes(attempt))).outcome();
+        assertThat(blocked.path("status").textValue()).isEqualTo("NOT_ASSESSED");
+        assertThat(blocked.path("feedback").path("reasonCodes").get(0).textValue()).isEqualTo("MEDIA_NOT_READY");
+        assertThat(blocked.path("transition").isNull()).isTrue();
 
         UUID foreignAsset = media.reserve(UUID.randomUUID(), UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
         JsonNode head = decks.read(fixture.actor(), fixture.deck());
