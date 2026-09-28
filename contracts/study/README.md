@@ -15,8 +15,9 @@ Deck/Item contracts.
   evidence or progress.
 - One stable objective may be evidenced by several exercise kinds. Editing its
   answer creates an immutable objective revision without resetting `StudyState`.
-- Cross-item assessed objectives, group matching and aggregate multi-target credit
-  are P1. The persisted binding model remains M:N so P1 needs no replacement schema.
+- Cross-item assessed objectives and aggregate multi-target credit remain P1.
+  Audio-text matching in #240 is one assessable objective with one atomic pair map
+  and partial feedback; it does not assign separate progress to each pair.
 
 ## Authoring resources
 
@@ -41,6 +42,19 @@ bounded custom text. The initial compact custom text boundary is 80 grapheme
 clusters; full material remains available through Browse. `SINGLE_CHOICE` requires
 one assessed focal binding and 2..6 distinct options from the same pinned snapshot.
 
+Epic #76 adds `LISTEN_CHOICE`, `AUDIO_TEXT_MATCH` and `LISTEN_TYPE` as immutable
+exercise revisions. Audio cues use owner-scoped logical `assetId` references pinned
+in `exercise_media_ref` within the publication transaction. `LISTEN_CHOICE` and
+`LISTEN_TYPE` use an `AUDIO_ASSET` prompt and v1 text answer contract; matching
+uses an `AUDIO_MATCH` prompt with 2..6 unique cue/assets and v2 answer contract
+`{schemaVersion:2,pairs:[{cueId,optionId}]}`. The correct pair map stays in the
+private objective revision, never in a pending presentation. Matching requires
+2..6 distinct text options and one assessed focal binding among them.
+The exercise editor reuses the native media upload/recording queue and binds the
+chosen logical asset to the selected cue. The Study client resolves playable
+sources through the typed `MEDIA_PLAYBACK_RESOLVER` integration point owned by
+#239; it does not construct object-storage URLs from asset IDs.
+
 ## Session resources
 
 | Operation | Request | Success |
@@ -48,6 +62,7 @@ one assessed focal binding and 2..6 distinct options from the same pinned snapsh
 | Start | `POST /api/decks/{deckId}/study-sessions` | 201 ACTIVE/EMPTY or 202 PREPARING |
 | Read/resume | `GET /api/decks/{deckId}/study-sessions/{sessionId}` | 200 current bounded batch |
 | Refill | `POST /api/decks/{deckId}/study-sessions/{sessionId}/presentations` | 200 next bounded batch |
+| Reveal transcript | `POST /api/decks/{deckId}/study-sessions/{sessionId}/presentations/{presentationId}/transcript` with `{nonce}` | 200 pinned prompt with transcript |
 | Submit | `POST /api/decks/{deckId}/study-sessions/{sessionId}/attempts` | 200 stored outcome |
 | Today's replay sources | `GET /api/decks/{deckId}/study-sessions/replay-sources` | 200 bounded completed sessions |
 | Restart items | `POST /api/decks/{deckId}/study-restarts` | 200 restart acknowledgement |
@@ -71,6 +86,15 @@ selects introduced objectives by default; `includeNew=true` is explicit. A batch
 contains at most 20 presentations. A READY candidate generation is keyed by the
 pinned exercise root; absent preparation returns `PREPARING`, never an unbounded
 fallback scan. Retry/resume uses an opaque cursor and deterministic seed.
+
+Listening candidates are eligible only when every pinned asset is READY with a
+verified `audio/*` source. Issued presentations expose asset IDs and titles; the
+playback URL is resolved separately under owner authorization. Before submission
+`reference` is `null` and transcript text is absent. The transcript route requires
+the same owner/session/nonce and an unassessed presentation; it records an
+append-only accommodation before returning text. Read/resume then shows the same
+disclosure state. Attempt submission rechecks readiness, returning `NOT_ASSESSED`
+and `MEDIA_NOT_READY` without evidence or transition if a cue is unavailable.
 
 Session mode is immutable. `SCHEDULED` presentations may create current-epoch
 exposure when issued and evidence when submitted. `REPLAY`/`PRACTICE` never write
@@ -106,12 +130,18 @@ Responses use these shapes:
 - `TEXT` for `TYPED`/`CLOZE_SINGLE`;
 - `SELF_CHECK` with `NOT_RECALLED`, `HINTED`, `PARTIAL` or `FULL`;
 - `CHOICE` with a server-issued option ID;
+- `MATCH` with an exact one-to-one map of all server-issued cue and option IDs;
 - `CANCEL`, which terminalizes as `NOT_ASSESSED` without a transition.
 
 `confidence` is optional calibration metadata and has no reducer effect in v1.
 `durationMs` is bounded diagnostic metadata and never changes correctness/evidence.
 Self-check is always `LOW`; deterministic unhinted production is `HIGH`; a valid
 hint caps positive typed/cloze evidence at `MEDIUM`; single choice is always `LOW`.
+Unhinted `LISTEN_TYPE` uses deterministic text normalization and `HIGH` evidence.
+Choice and matching use `LOW` recognition evidence; matching returns pair-specific
+feedback and `PARTIAL` for some correct pairs. An explicitly revealed transcript
+caps a correct typed result at `LOW`, with `TRANSCRIPT_ACCOMMODATION` in the
+server-owned evidence reasons. Audio exercise requests reject client hint claims.
 Deterministic incorrect production can be `HIGH`: result describes direction,
 while evidence class describes reliability of the observation.
 

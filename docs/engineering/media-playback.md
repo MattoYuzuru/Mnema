@@ -30,6 +30,13 @@ The CSP permits that one frame origin. The author-provided transcript is shown
 as a separate text alternative; it is not synchronized captions. Listening
 exercise answer disclosure follows its separate evidence policy.
 
+Listening Study resolves each pinned audio cue through the same owner-authorized
+API. It renders the shared Mnema player, blocks answer submission until every
+cue has a playable URL, renews before `expiresAt`, and rechecks on focus or media
+error. A pending or failed source keeps the answer unavailable and retries with
+a bounded visible timer. The signed source never enters the exercise snapshot
+or local recovery record.
+
 Local rollback: revert the playback controller, reader components, and the
 YouTube native node in one protected squash change. Existing immutable media
 objects remain reachable through the catalog and do not require deletion.

@@ -63,7 +63,8 @@ class StudyContractFixtureTest {
                 "flows.json", "flowsDocument",
                 "progress.json", "progressDocument",
                 "replay-sources.json", "replaySourcesDocument",
-                "restart.json", "restartDocument");
+                "restart.json", "restartDocument",
+                "listening.json", "listeningDocument");
 
         definitions.forEach((file, definition) -> validate(fixtureUnchecked(file),
                 schema.path("$defs").path(definition), schema, "$"));

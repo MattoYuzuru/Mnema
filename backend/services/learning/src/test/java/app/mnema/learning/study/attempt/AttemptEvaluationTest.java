@@ -84,6 +84,56 @@ class AttemptEvaluationTest {
                 choiceCommand(UUID.randomUUID()))).isInstanceOf(app.mnema.learning.platform.api.InvalidRequestException.class);
     }
 
+    @Test
+    void listeningChoiceAndTypeUseServerTranscriptStateForEvidence() {
+        UUID answerOption = UUID.randomUUID();
+        UUID distractor = UUID.randomUUID();
+        var options = choiceBindings(answerOption, distractor);
+        ObjectNode choiceEvaluator = JSON.createObjectNode().put("id", "deterministic-choice").put("version", "1");
+        AttemptEvaluation choice = AttemptEvaluation.evaluate("LISTEN_CHOICE", choiceEvaluator, answer, options,
+                choiceCommand(answerOption), true);
+        AttemptEvaluation production = AttemptEvaluation.evaluate("LISTEN_TYPE", evaluator, answer, bindings(),
+                command("mémoire", List.of(), null), false);
+        AttemptEvaluation accommodated = AttemptEvaluation.evaluate("LISTEN_TYPE", evaluator, answer, bindings(),
+                command("mémoire", List.of(), null), true);
+
+        assertThat(choice.result()).isEqualTo(AttemptEvaluation.Result.CORRECT);
+        assertThat(choice.evidenceClass()).isEqualTo(AttemptEvaluation.EvidenceClass.LOW);
+        assertThat(choice.reasonCodes()).contains("TRANSCRIPT_ACCOMMODATION");
+        assertThat(production.evidenceClass()).isEqualTo(AttemptEvaluation.EvidenceClass.HIGH);
+        assertThat(accommodated.evidenceClass()).isEqualTo(AttemptEvaluation.EvidenceClass.LOW);
+        assertThat(accommodated.reasonCodes()).contains("TRANSCRIPT_ACCOMMODATION");
+        assertThatThrownBy(() -> AttemptEvaluation.evaluate("LISTEN_TYPE", evaluator, answer, bindings(),
+                command("mémoire", List.of("REVEAL_FIRST_GRAPHEME"), null), false))
+                .isInstanceOf(app.mnema.learning.platform.api.InvalidRequestException.class);
+    }
+
+    @Test
+    void audioTextMatchChecksWholeMapAndReturnsPairFeedback() {
+        UUID firstCue = UUID.randomUUID(), secondCue = UUID.randomUUID();
+        UUID firstOption = UUID.randomUUID(), secondOption = UUID.randomUUID();
+        ObjectNode matchAnswer = JSON.createObjectNode().put("schemaVersion", 2);
+        matchAnswer.putArray("pairs")
+                .addObject().put("cueId", firstCue.toString()).put("optionId", firstOption.toString());
+        matchAnswer.withArray("pairs").addObject().put("cueId", secondCue.toString())
+                .put("optionId", secondOption.toString());
+        var matchBindings = choiceBindings(firstOption, secondOption);
+        ObjectNode matchEvaluator = JSON.createObjectNode().put("id", "deterministic-audio-match")
+                .put("version", "1");
+        AttemptEvaluation correct = AttemptEvaluation.evaluate("AUDIO_TEXT_MATCH", matchEvaluator, matchAnswer,
+                matchBindings, matchCommand(firstCue, firstOption, secondCue, secondOption), false);
+        AttemptEvaluation wrong = AttemptEvaluation.evaluate("AUDIO_TEXT_MATCH", matchEvaluator, matchAnswer,
+                matchBindings, matchCommand(firstCue, secondOption, secondCue, firstOption), true);
+
+        assertThat(correct.result()).isEqualTo(AttemptEvaluation.Result.CORRECT);
+        assertThat(correct.feedback().path("pairResults")).hasSize(2);
+        assertThat(wrong.result()).isEqualTo(AttemptEvaluation.Result.INCORRECT);
+        assertThat(wrong.reasonCodes()).contains("TRANSCRIPT_ACCOMMODATION");
+        assertThatThrownBy(() -> AttemptEvaluation.evaluate("AUDIO_TEXT_MATCH", matchEvaluator, matchAnswer,
+                matchBindings, matchCommand(firstCue, UUID.randomUUID(), secondCue, secondOption), false))
+                .isInstanceOf(app.mnema.learning.platform.api.InvalidRequestException.class);
+    }
+
     private static com.fasterxml.jackson.databind.node.ArrayNode bindings() {
         return JSON.createArrayNode();
     }
@@ -109,6 +159,13 @@ class AttemptEvaluationTest {
     private static AttemptCommand choiceCommand(UUID option) {
         return new AttemptCommand(UUID.randomUUID(), UUID.randomUUID(), "1234567890123456",
                 new AttemptCommand.ChoiceResponse(option), List.of(), null, 100, JSON.createObjectNode());
+    }
+
+    private static AttemptCommand matchCommand(UUID firstCue, UUID firstOption, UUID secondCue, UUID secondOption) {
+        return new AttemptCommand(UUID.randomUUID(), UUID.randomUUID(), "1234567890123456",
+                new AttemptCommand.MatchResponse(List.of(new AttemptCommand.MatchPair(firstCue, firstOption),
+                        new AttemptCommand.MatchPair(secondCue, secondOption))), List.of(), null, 100,
+                JSON.createObjectNode());
     }
 
     private AttemptCommand command(String text, List<String> hints, String confidence) {

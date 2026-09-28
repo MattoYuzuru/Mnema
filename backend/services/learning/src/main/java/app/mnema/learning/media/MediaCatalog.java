@@ -83,6 +83,47 @@ public class MediaCatalog {
                 .param("node", reference.nodeId()).param("owner", actor).param("asset", reference.assetId()).update();
     }
 
+    /** Pin direct audio cues atomically with one immutable exercise revision. */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void attachExerciseRevision(UUID actor, UUID deck, UUID exercise, UUID revision,
+                                       Collection<UUID> assetIds) {
+        UuidPolicy.requireEntityId(actor, "actor");
+        UuidPolicy.requireEntityId(deck, "deckId");
+        UuidPolicy.requireEntityId(exercise, "exerciseId");
+        UuidPolicy.requireEntityId(revision, "revisionId");
+        if (assetIds == null || assetIds.isEmpty() || assetIds.size() > 6
+                || assetIds.stream().anyMatch(java.util.Objects::isNull)) {
+            throw new InvalidRequestException();
+        }
+        if (!jdbc.sql("SELECT 1 FROM app_learning.exercise_revision r "
+                        + "JOIN app_learning.exercise_definition e ON e.deck_id=r.deck_id "
+                        + "AND e.exercise_id=r.exercise_id WHERE r.deck_id=:deck AND r.exercise_id=:exercise "
+                        + "AND r.revision_id=:revision AND e.owner_id=:owner")
+                .param("deck", deck).param("exercise", exercise).param("revision", revision)
+                .param("owner", actor).query(Integer.class).optional().isPresent()) {
+            throw new ResourceNotFoundException();
+        }
+        var unique = new TreeSet<>(assetIds);
+        validateAssets(actor, unique);
+        for (UUID asset : unique) jdbc.sql("INSERT INTO app_learning.exercise_media_ref "
+                        + "(deck_id,exercise_id,exercise_revision_id,owner_id,asset_id) "
+                        + "VALUES (:deck,:exercise,:revision,:owner,:asset)")
+                .param("deck", deck).param("exercise", exercise).param("revision", revision)
+                .param("owner", actor).param("asset", asset).update();
+    }
+
+    /** An issued listening cue can be assessed only while every pinned asset is ready. */
+    @Transactional(readOnly = true)
+    public boolean exerciseReady(UUID actor, UUID deck, UUID exercise, UUID revision) {
+        UuidPolicy.requireEntityId(actor, "actor");
+        UuidPolicy.requireEntityId(deck, "deckId");
+        UuidPolicy.requireEntityId(exercise, "exerciseId");
+        UuidPolicy.requireEntityId(revision, "revisionId");
+        return jdbc.sql("SELECT app_learning.exercise_audio_ready(:owner,:deck,:exercise,:revision)")
+                .param("deck", deck).param("exercise", exercise).param("revision", revision)
+                .param("owner", actor).query(Boolean.class).single();
+    }
+
     /** #238 must call this inside the transaction that saves the draft document. */
     @Transactional(propagation = Propagation.MANDATORY)
     public void replaceDraft(UUID actor, UUID draft, Collection<Reference> references) {
@@ -115,6 +156,7 @@ public class MediaCatalog {
                     + "WHERE a.asset_id=:asset AND a.owner_id=:owner AND a.state='READY' "
                     + "AND (a.owner_hold_until>CURRENT_TIMESTAMP OR EXISTS "
                     + "(SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
+                    + "(SELECT 1 FROM app_learning.exercise_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
                     + "(SELECT 1 FROM app_learning.draft_media_ref r JOIN app_learning.editing_draft d "
                     + "ON d.draft_id=r.draft_id WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP))"
                 : "SELECT b.blob_id,b.object_key,b.byte_length,b.mime_type FROM app_learning.media_asset a "
@@ -124,6 +166,7 @@ public class MediaCatalog {
                     + "WHERE a.asset_id=:asset AND a.owner_id=:owner AND a.state='READY' "
                     + "AND (a.owner_hold_until>CURRENT_TIMESTAMP OR EXISTS "
                     + "(SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
+                    + "(SELECT 1 FROM app_learning.exercise_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
                     + "(SELECT 1 FROM app_learning.draft_media_ref r JOIN app_learning.editing_draft d "
                     + "ON d.draft_id=r.draft_id WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP))";
         var query = jdbc.sql(sql).param("asset", asset).param("owner", actor);
@@ -167,6 +210,7 @@ public class MediaCatalog {
         List<UUID> candidates = jdbc.sql("SELECT a.asset_id FROM app_learning.media_asset a "
                         + "WHERE a.state='READY' AND a.owner_hold_until<CURRENT_TIMESTAMP "
                         + "AND NOT EXISTS (SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) "
+                        + "AND NOT EXISTS (SELECT 1 FROM app_learning.exercise_media_ref r WHERE r.asset_id=a.asset_id) "
                         + "AND NOT EXISTS (SELECT 1 FROM app_learning.draft_media_ref r "
                         + "JOIN app_learning.editing_draft d ON d.draft_id=r.draft_id "
                         + "WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP) "
@@ -188,12 +232,17 @@ public class MediaCatalog {
             if (reference == null || !nodes.add(reference.nodeId())) throw new InvalidRequestException();
             assets.add(reference.assetId());
         }
-        // Stable lock ordering avoids deadlocks when two documents reuse the same assets in a different node order.
+        validateAssets(actor, assets);
+    }
+
+    private void validateAssets(UUID actor, Collection<UUID> assets) {
+        // Stable lock ordering avoids deadlocks when documents and exercises reuse the same assets.
         for (UUID asset : assets) {
             if (!jdbc.sql("SELECT 1 FROM app_learning.media_asset a WHERE a.asset_id=:asset "
                             + "AND a.owner_id=:owner AND a.state NOT IN ('DELETED','REJECTED') AND "
                             + "(a.state<>'READY' OR a.owner_hold_until>CURRENT_TIMESTAMP "
                             + "OR EXISTS (SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) "
+                            + "OR EXISTS (SELECT 1 FROM app_learning.exercise_media_ref r WHERE r.asset_id=a.asset_id) "
                             + "OR EXISTS (SELECT 1 FROM app_learning.draft_media_ref r "
                             + "JOIN app_learning.editing_draft d ON d.draft_id=r.draft_id "
                             + "WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP)) "

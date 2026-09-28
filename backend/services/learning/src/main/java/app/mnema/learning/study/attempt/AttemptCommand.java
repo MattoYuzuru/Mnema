@@ -78,6 +78,22 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
                 fields(value, Set.of("kind", "optionId"));
                 yield new ChoiceResponse(id(value.path("optionId"), false));
             }
+            case "MATCH" -> {
+                fields(value, Set.of("kind", "pairs"));
+                JsonNode pairs = value.path("pairs");
+                if (!pairs.isArray() || pairs.size() < 2 || pairs.size() > 6) throw invalid();
+                List<MatchPair> result = new ArrayList<>();
+                Set<UUID> cues = new HashSet<>();
+                Set<UUID> options = new HashSet<>();
+                for (JsonNode pair : pairs) {
+                    fields(pair, Set.of("cueId", "optionId"));
+                    UUID cue = id(pair.path("cueId"), false);
+                    UUID option = id(pair.path("optionId"), false);
+                    if (!cues.add(cue) || !options.add(option)) throw invalid();
+                    result.add(new MatchPair(cue, option));
+                }
+                yield new MatchResponse(List.copyOf(result));
+            }
             case "CANCEL" -> {
                 fields(value, Set.of("kind"));
                 yield new CancelResponse();
@@ -109,10 +125,13 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
 
     private static InvalidRequestException invalid() { return new InvalidRequestException(); }
 
-    public sealed interface Response permits TextResponse, SelfCheckResponse, ChoiceResponse, CancelResponse { }
+    public sealed interface Response permits TextResponse, SelfCheckResponse, ChoiceResponse, MatchResponse,
+            CancelResponse { }
     public record TextResponse(String text) implements Response { }
     public record SelfCheckResponse(SelfRating rating) implements Response { }
     public record ChoiceResponse(UUID optionId) implements Response { }
+    public record MatchPair(UUID cueId, UUID optionId) { }
+    public record MatchResponse(List<MatchPair> pairs) implements Response { }
     public record CancelResponse() implements Response { }
     public enum SelfRating { NOT_RECALLED, HINTED, PARTIAL, FULL }
 }

@@ -8,6 +8,7 @@ import reducer from '../../../../../contracts/study/reducer-v1.json';
 import restart from '../../../../../contracts/study/restart.json';
 import schemaDocument from '../../../../../contracts/study/study.schema.json';
 import session from '../../../../../contracts/study/session.json';
+import listening from '../../../../../contracts/study/listening.json';
 
 type JsonObject = Record<string, unknown>;
 
@@ -24,7 +25,8 @@ describe('Study shared contract', () => {
             [flows, 'flowsDocument'],
             [progress, 'progressDocument'],
             [replaySources, 'replaySourcesDocument'],
-            [restart, 'restartDocument']
+            [restart, 'restartDocument'],
+            [listening, 'listeningDocument']
         ];
         fixtures.forEach(([fixture, definition]) => validate(fixture, asObject(definitions[definition]), root));
 

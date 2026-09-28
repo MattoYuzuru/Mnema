@@ -19,6 +19,9 @@ textarea { resize: vertical; }
 .choice-card { display: flex; gap: .65rem; align-items: center; min-block-size: 3.5rem; border: 1px solid var(--line, #c9c0ce); padding: .75rem; cursor: pointer; }
 .choice-card span, .segmented button, .option-list label { min-inline-size: 0; overflow-wrap: anywhere; }
 .choice-card:has(input:checked) { border-color: var(--ink, #281378); background: color-mix(in srgb, var(--soft, #e8e1ed) 70%, transparent); }
+.audio-cue-row { min-inline-size: 0; display: grid; gap: .65rem; border: 1px solid var(--line, #c9c0ce); border-inline-start: 3px solid var(--ink, #281378); padding: 1rem; background: #fffdf7; }
+.audio-cue-row h3 { margin: 0; color: var(--ink, #281378); font: 1.3rem/1.2 Georgia, 'Times New Roman', serif; }
+.audio-cue-row .button { justify-self: start; }
 .radio-line, .enable-line, .option-list label { display: flex; gap: .65rem; align-items: start; min-block-size: 2.75rem; padding-block: .45rem; }
 .enable-line { margin: 1rem; }
 .segmented { display: grid; grid-template-columns: 1fr 1fr; border: 1px solid var(--ink, #281378); }

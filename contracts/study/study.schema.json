@@ -4,16 +4,50 @@
   "$defs": {
     "identifier": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
     "nullableString": {"type": ["string", "null"]},
-    "answerContract": {
-      "type": "object",
-      "required": ["schemaVersion", "normalization", "accepted"],
-      "properties": {
-        "schemaVersion": {"type": "integer"},
-        "normalization": {"type": "array", "minItems": 1, "items": {"type": "string"}},
-        "accepted": {"type": "array", "minItems": 1, "items": {"type": "string"}}
-      },
-      "additionalProperties": false
-    },
+    "answerContract": {"oneOf": [
+      {"type": "object", "required": ["schemaVersion", "normalization", "accepted"],
+       "properties": {"schemaVersion": {"const": 1}, "normalization": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+         "accepted": {"type": "array", "minItems": 1, "items": {"type": "string"}}}, "additionalProperties": false},
+      {"type": "object", "required": ["schemaVersion", "pairs"],
+       "properties": {"schemaVersion": {"const": 2}, "pairs": {"type": "array", "minItems": 2, "maxItems": 6,
+         "items": {"type": "object", "required": ["cueId", "optionId"],
+           "properties": {"cueId": {"$ref": "#/$defs/identifier"}, "optionId": {"$ref": "#/$defs/identifier"}},
+           "additionalProperties": false}}}, "additionalProperties": false}
+    ]},
+    "studyPrompt": {"oneOf": [
+      {"type": "object", "required": ["kind", "text"],
+       "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string"}}, "additionalProperties": false},
+      {"type": "object", "required": ["kind", "assetId", "title", "instruction", "transcriptAvailable", "transcriptRevealed"],
+       "properties": {"kind": {"const": "AUDIO_ASSET"}, "assetId": {"$ref": "#/$defs/identifier"},
+         "title": {"type": "string"}, "instruction": {"type": "string"}, "transcriptAvailable": {"type": "boolean"},
+         "transcriptRevealed": {"type": "boolean"}, "transcript": {"type": "string"}}, "additionalProperties": false},
+      {"type": "object", "required": ["kind", "instruction", "cues", "transcriptAvailable", "transcriptRevealed"],
+       "properties": {"kind": {"const": "AUDIO_MATCH"}, "instruction": {"type": "string"},
+         "transcriptAvailable": {"type": "boolean"}, "transcriptRevealed": {"type": "boolean"},
+         "cues": {"type": "array", "minItems": 2, "maxItems": 6, "items": {"type": "object",
+           "required": ["cueId", "assetId", "title"], "properties": {"cueId": {"$ref": "#/$defs/identifier"},
+             "assetId": {"$ref": "#/$defs/identifier"}, "title": {"type": "string"}, "transcript": {"type": "string"}},
+           "additionalProperties": false}}}, "additionalProperties": false}
+    ]},
+    "authoringPrompt": {"oneOf": [
+      {"type": "object", "required": ["kind", "memberKey", "itemRevisionId", "nodeId"],
+       "properties": {"kind": {"const": "NODE_TEXT"}, "memberKey": {"$ref": "#/$defs/identifier"},
+         "itemRevisionId": {"$ref": "#/$defs/identifier"}, "nodeId": {"$ref": "#/$defs/identifier"}},
+       "additionalProperties": false},
+      {"type": "object", "required": ["kind", "text"],
+       "properties": {"kind": {"const": "CUSTOM_TEXT"}, "text": {"type": "string"}}, "additionalProperties": false},
+      {"type": "object", "required": ["kind", "assetId", "title", "instruction", "transcript"],
+       "properties": {"kind": {"const": "AUDIO_ASSET"}, "assetId": {"$ref": "#/$defs/identifier"},
+         "title": {"type": "string"}, "instruction": {"type": "string"}, "transcript": {"type": "string"}},
+       "additionalProperties": false},
+      {"type": "object", "required": ["kind", "instruction", "cues"],
+       "properties": {"kind": {"const": "AUDIO_MATCH"}, "instruction": {"type": "string"},
+         "cues": {"type": "array", "minItems": 2, "maxItems": 6, "items": {"type": "object",
+           "required": ["cueId", "assetId", "title", "transcript"],
+           "properties": {"cueId": {"$ref": "#/$defs/identifier"}, "assetId": {"$ref": "#/$defs/identifier"},
+             "title": {"type": "string"}, "transcript": {"type": "string"}}, "additionalProperties": false}}},
+       "additionalProperties": false}
+    ]},
     "evaluator": {
       "type": "object",
       "required": ["id", "version"],
@@ -49,8 +83,21 @@
         {"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string"}}, "additionalProperties": false},
         {"type": "object", "required": ["kind", "rating"], "properties": {"kind": {"const": "SELF_CHECK"}, "rating": {"enum": ["NOT_RECALLED", "HINTED", "PARTIAL", "FULL"]}}, "additionalProperties": false},
         {"type": "object", "required": ["kind", "optionId"], "properties": {"kind": {"const": "CHOICE"}, "optionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false},
+        {"type": "object", "required": ["kind", "pairs"], "properties": {"kind": {"const": "MATCH"},
+          "pairs": {"type": "array", "minItems": 2, "maxItems": 6, "items": {"type": "object",
+            "required": ["cueId", "optionId"], "properties": {"cueId": {"$ref": "#/$defs/identifier"},
+              "optionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}}}, "additionalProperties": false},
         {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "CANCEL"}}, "additionalProperties": false}
       ]
+    },
+    "transcriptRevealCommand": {
+      "type": "object", "required": ["nonce"],
+      "properties": {"nonce": {"type": "string"}}, "additionalProperties": false
+    },
+    "transcriptRevealResponse": {
+      "type": "object", "required": ["presentationId", "prompt"],
+      "properties": {"presentationId": {"$ref": "#/$defs/identifier"},
+        "prompt": {"$ref": "#/$defs/studyPrompt"}}, "additionalProperties": false
     },
     "evidence": {
       "type": "object",
@@ -60,7 +107,13 @@
         "objectiveRevisionId": {"$ref": "#/$defs/identifier"},
         "result": {"enum": ["CORRECT", "PARTIAL", "INCORRECT", "UNSURE"]},
         "evidenceClass": {"enum": ["HIGH", "MEDIUM", "LOW"]},
-        "reasonCodes": {"type": "array", "items": {"type": "string"}}
+        "reasonCodes": {"type": "array", "items": {"type": "string"}},
+        "pairResults": {"type": "array", "maxItems": 6, "items": {"type": "object",
+          "required": ["cueId", "selectedOptionId", "correctOptionId", "correct"],
+          "properties": {"cueId": {"$ref": "#/$defs/identifier"},
+            "selectedOptionId": {"$ref": "#/$defs/identifier"},
+            "correctOptionId": {"$ref": "#/$defs/identifier"}, "correct": {"type": "boolean"}},
+          "additionalProperties": false}}
       },
       "additionalProperties": false
     },
@@ -157,17 +210,10 @@
               "type": "object",
               "required": ["type", "schemaVersion", "enabled", "prompt", "bindings", "evaluatorPolicy"],
               "properties": {
-                "type": {"enum": ["SELF_CHECK", "TYPED", "CLOZE_SINGLE", "SINGLE_CHOICE"]},
+                "type": {"enum": ["SELF_CHECK", "TYPED", "CLOZE_SINGLE", "SINGLE_CHOICE", "LISTEN_CHOICE", "AUDIO_TEXT_MATCH", "LISTEN_TYPE"]},
                 "schemaVersion": {"type": "integer"},
                 "enabled": {"type": "boolean"},
-                "prompt": {
-                  "type": "object", "required": ["kind", "memberKey", "itemRevisionId", "nodeId"],
-                  "properties": {
-                    "kind": {"const": "NODE_TEXT"}, "memberKey": {"$ref": "#/$defs/identifier"},
-                    "itemRevisionId": {"$ref": "#/$defs/identifier"}, "nodeId": {"$ref": "#/$defs/identifier"}
-                  },
-                  "additionalProperties": false
-                },
+                "prompt": {"$ref": "#/$defs/authoringPrompt"},
                 "bindings": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/binding"}},
                 "evaluatorPolicy": {"$ref": "#/$defs/evaluator"}
               },
@@ -201,6 +247,20 @@
           },
           "additionalProperties": false
         }
+      },
+      "additionalProperties": false
+    },
+    "listeningDocument": {
+      "type": "object",
+      "required": ["createChoice", "createMatch", "createType", "pending", "revealCommand", "revealResponse", "matchResponse"],
+      "properties": {
+        "createChoice": {"$ref": "#/$defs/authoringDocument/properties/createTyped"},
+        "createMatch": {"$ref": "#/$defs/authoringDocument/properties/createTyped"},
+        "createType": {"$ref": "#/$defs/authoringDocument/properties/createTyped"},
+        "pending": {"$ref": "#/$defs/sessionDocument/properties/active"},
+        "revealCommand": {"$ref": "#/$defs/transcriptRevealCommand"},
+        "revealResponse": {"$ref": "#/$defs/transcriptRevealResponse"},
+        "matchResponse": {"$ref": "#/$defs/submitResponse"}
       },
       "additionalProperties": false
     },
@@ -260,14 +320,14 @@
                   "nonce": {"type": "string"},
                   "ordinal": {"type": "integer"},
                   "exerciseRevisionId": {"$ref": "#/$defs/identifier"},
-                  "type": {"enum": ["SELF_CHECK", "TYPED", "CLOZE_SINGLE", "SINGLE_CHOICE"]},
+                  "type": {"enum": ["SELF_CHECK", "TYPED", "CLOZE_SINGLE", "SINGLE_CHOICE", "LISTEN_CHOICE", "AUDIO_TEXT_MATCH", "LISTEN_TYPE"]},
                   "objectiveId": {"$ref": "#/$defs/identifier"},
                   "objectiveRevisionId": {"$ref": "#/$defs/identifier"},
                   "learningEpoch": {"type": "string"},
-                  "reference": {"type": "string"},
-                  "prompt": {"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string"}}, "additionalProperties": false},
+                  "reference": {"type": ["string", "null"]},
+                  "prompt": {"$ref": "#/$defs/studyPrompt"},
                   "options": {"type": "array"},
-                  "bindings": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/binding"}},
+                  "bindings": {"type": "array", "items": {"$ref": "#/$defs/binding"}},
                   "evaluator": {"$ref": "#/$defs/evaluator"}
                 },
                 "additionalProperties": false

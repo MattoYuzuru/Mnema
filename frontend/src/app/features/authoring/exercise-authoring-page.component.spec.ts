@@ -109,6 +109,57 @@ describe('ExerciseAuthoringPageComponent', () => {
         expect(component.dirty()).toBeTrue();
     });
 
+    it('authors an independent audio-text match map with pinned cue IDs', () => {
+        const { api } = configure();
+        api.create.and.returnValue(of({ acknowledgement: { commandId: id('30'), deckId: deck.deckId,
+            deckRevisionId: id('31'), deckVersion: '4', objectiveId: id('32'), objectiveKey: id('33'),
+            objectiveRevisionId: id('34'), exerciseId: id('35'), exerciseRevisionId: id('36'), enabled: true },
+            replayed: false }));
+        const component = TestBed.runInInjectionContext(() => new ExerciseAuthoringPageComponent());
+        component.setType('AUDIO_TEXT_MATCH'); component.setAudio('instruction', 'Соотнесите записи');
+        component.setAnswerNode(id('13'));
+        component.setMatchRow(0, 'assetId', id('40')); component.setMatchRow(0, 'title', 'Memory');
+        component.setMatchRow(0, 'optionNodeId', id('13'));
+        component.setMatchRow(1, 'assetId', id('41')); component.setMatchRow(1, 'title', 'Attention');
+        component.setMatchRow(1, 'optionNodeId', id('15'));
+        component.save();
+        const args = api.create.calls.mostRecent().args;
+        const prompt = (args[4]['prompt'] as Record<string, unknown>);
+        const cues = prompt['cues'] as Record<string, unknown>[];
+        const bindings = args[4]['bindings'] as Record<string, unknown>[];
+        const answer = args[3]['answerContract'] as Record<string, unknown>;
+        expect(prompt['kind']).toBe('AUDIO_MATCH');
+        expect(cues).toHaveSize(2);
+        expect(answer['schemaVersion']).toBe(2);
+        expect(answer['pairs']).toEqual([
+            { cueId: cues[0]['cueId'], optionId: bindings[1]['bindingId'] },
+            { cueId: cues[1]['cueId'], optionId: bindings[2]['bindingId'] }
+        ]);
+    });
+
+    it('routes the shared upload queue to the selected audio cue', () => {
+        configure();
+        const component = TestBed.runInInjectionContext(() => new ExerciseAuthoringPageComponent());
+        component.setType('AUDIO_TEXT_MATCH');
+        component.selectAudioTarget(1);
+        component.chooseUploadedAudio({ kind: 'audio', assetId: id('42') });
+        expect(component.matchRows()[1].assetId).toBe(id('42'));
+        expect(component.matchRows()[0].assetId).toBe('');
+        component.chooseUploadedAudio({ kind: 'image', assetId: id('43') });
+        expect(component.matchRows()[1].assetId).toBe(id('42'));
+    });
+
+    it('keeps audio authoring and recording controls usable on a narrow viewport', () => {
+        configure();
+        const fixture = TestBed.createComponent(ExerciseAuthoringPageComponent);
+        const host = fixture.nativeElement as HTMLElement;
+        host.style.display = 'block'; host.style.width = '320px';
+        fixture.componentInstance.setType('LISTEN_TYPE'); fixture.detectChanges();
+        expect(host.querySelector('label[for="audio-asset"]')).not.toBeNull();
+        expect(host.querySelector('app-native-media-upload')).not.toBeNull();
+        expect(host.scrollWidth).toBeLessThanOrEqual(321);
+    });
+
     it('renders labelled controls without leaking IDs and reflows at accepted viewport and text sizes', async () => {
         configure();
         const fixture = TestBed.createComponent(ExerciseAuthoringPageComponent);

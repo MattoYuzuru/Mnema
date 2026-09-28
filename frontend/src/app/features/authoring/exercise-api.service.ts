@@ -153,6 +153,22 @@ function parseObjective(value: unknown): ExerciseObjective {
 }
 
 function parseAnswer(value: unknown): AnswerContract {
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)
+        && (value as Record<string, unknown>)['schemaVersion'] === 2) {
+        const object = requireObject(value, ['schemaVersion', 'pairs']);
+        if (!Array.isArray(object['pairs']) || object['pairs'].length < 2 || object['pairs'].length > 6) {
+            throw new AuthoringProtocolError('Invalid match answer contract.');
+        }
+        const pairs = object['pairs'].map(pair => {
+            const entry = requireObject(pair, ['cueId', 'optionId']);
+            return { cueId: requireEntity(entry['cueId']), optionId: requireEntity(entry['optionId']) };
+        });
+        if (new Set(pairs.map(pair => pair.cueId)).size !== pairs.length
+            || new Set(pairs.map(pair => pair.optionId)).size !== pairs.length) {
+            throw new AuthoringProtocolError('Duplicate match pair.');
+        }
+        return { schemaVersion: 2, pairs };
+    }
     const object = requireObject(value, ['schemaVersion', 'normalization', 'accepted']);
     if (object['schemaVersion'] !== 1 || !Array.isArray(object['normalization'])
         || !Array.isArray(object['accepted']) || object['accepted'].length === 0 || object['accepted'].length > 20) {
@@ -163,7 +179,8 @@ function parseAnswer(value: unknown): AnswerContract {
         || object['accepted'].some(answer => typeof answer !== 'string' || answer.trim().length === 0)) {
         throw new AuthoringProtocolError('Invalid answer contract values.');
     }
-    return { schemaVersion: 1, normalization: object['normalization'] as AnswerContract['normalization'], accepted: object['accepted'] as string[] };
+    return { schemaVersion: 1, normalization: object['normalization'] as ('UNICODE_NFC' | 'TRIM' | 'CASE_FOLD')[],
+        accepted: object['accepted'] as string[] };
 }
 
 function parsePrompt(value: unknown): ExercisePrompt {
@@ -173,6 +190,29 @@ function parsePrompt(value: unknown): ExercisePrompt {
         const object = requireObject(value, ['kind', 'text']);
         if (typeof object['text'] !== 'string') throw new AuthoringProtocolError('Invalid custom prompt.');
         return { kind, text: object['text'] };
+    }
+    if (kind === 'AUDIO_ASSET') {
+        const object = requireObject(value, ['kind', 'assetId', 'title', 'instruction', 'transcript']);
+        if (typeof object['title'] !== 'string' || typeof object['instruction'] !== 'string'
+            || typeof object['transcript'] !== 'string') throw new AuthoringProtocolError('Invalid audio cue.');
+        return { kind, assetId: requireEntity(object['assetId']), title: object['title'],
+            instruction: object['instruction'], transcript: object['transcript'] };
+    }
+    if (kind === 'AUDIO_MATCH') {
+        const object = requireObject(value, ['kind', 'instruction', 'cues']);
+        if (typeof object['instruction'] !== 'string' || !Array.isArray(object['cues'])
+            || object['cues'].length < 2 || object['cues'].length > 6) {
+            throw new AuthoringProtocolError('Invalid audio match prompt.');
+        }
+        const cues = object['cues'].map(cue => {
+            const entry = requireObject(cue, ['cueId', 'assetId', 'title', 'transcript']);
+            if (typeof entry['title'] !== 'string' || typeof entry['transcript'] !== 'string') {
+                throw new AuthoringProtocolError('Invalid audio match cue.');
+            }
+            return { cueId: requireEntity(entry['cueId']), assetId: requireEntity(entry['assetId']),
+                title: entry['title'], transcript: entry['transcript'] };
+        });
+        return { kind, instruction: object['instruction'], cues };
     }
     const object = requireObject(value, ['kind', 'memberKey', 'itemRevisionId', 'nodeId']);
     if (object['kind'] !== 'NODE_TEXT') throw new AuthoringProtocolError('Unsupported prompt.');
@@ -222,7 +262,8 @@ function parseWrite(response: HttpResponse<unknown>, status: number, commandId: 
 }
 
 function exerciseType(value: unknown): ExerciseType {
-    if (value !== 'SELF_CHECK' && value !== 'TYPED' && value !== 'CLOZE_SINGLE' && value !== 'SINGLE_CHOICE') {
+    if (value !== 'SELF_CHECK' && value !== 'TYPED' && value !== 'CLOZE_SINGLE' && value !== 'SINGLE_CHOICE'
+        && value !== 'LISTEN_CHOICE' && value !== 'AUDIO_TEXT_MATCH' && value !== 'LISTEN_TYPE') {
         throw new AuthoringProtocolError('Invalid exercise type.');
     }
     return value;

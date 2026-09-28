@@ -29,7 +29,7 @@
         <fieldset>
           <legend>1. Механика</legend>
           <div class="choice-grid">
-            @for (candidate of ['SELF_CHECK', 'TYPED', 'CLOZE_SINGLE', 'SINGLE_CHOICE']; track candidate) {
+            @for (candidate of ['SELF_CHECK', 'TYPED', 'CLOZE_SINGLE', 'SINGLE_CHOICE', 'LISTEN_CHOICE', 'AUDIO_TEXT_MATCH', 'LISTEN_TYPE']; track candidate) {
               <label class="choice-card">
                 <input type="radio" name="type" [value]="candidate" [checked]="type() === candidate"
                        (change)="setType($any(candidate))" />
@@ -41,6 +41,63 @@
 
         <fieldset [attr.aria-describedby]="fieldErrors()['prompt'] ? 'prompt-error' : null">
           <legend>2. Вопрос</legend>
+          @if (isListening()) {
+            <label for="audio-instruction">Инструкция <span class="hint">до 80 символов</span></label>
+            <input id="audio-instruction" type="text" [value]="audioInstruction()"
+                   [attr.aria-invalid]="fieldErrors()['prompt'] ? 'true' : null"
+                   (input)="setAudio('instruction', $any($event.target).value)" />
+            @if (type() === 'AUDIO_TEXT_MATCH') {
+              <p class="hint">Для каждой записи выберите текст, который ей соответствует. ID берётся из медиатеки.</p>
+              @for (row of matchRows(); track row.cueId; let index = $index) {
+                <div class="audio-cue-row">
+                  <h3>Запись {{ index + 1 }}</h3>
+                  <label [for]="'match-asset-' + index">ID аудио</label>
+                  <input [id]="'match-asset-' + index" type="text" [value]="row.assetId"
+                         [attr.aria-invalid]="fieldErrors()['audio'] ? 'true' : null"
+                         (input)="setMatchRow(index, 'assetId', $any($event.target).value)" />
+                  <button class="button" type="button" [attr.aria-pressed]="audioTargetIndex() === index"
+                          (click)="selectAudioTarget(index)">Выбрать файл для записи {{ index + 1 }}</button>
+                  <label [for]="'match-title-' + index">Название записи</label>
+                  <input [id]="'match-title-' + index" type="text" [value]="row.title"
+                         (input)="setMatchRow(index, 'title', $any($event.target).value)" />
+                  <label [for]="'match-option-' + index">Правильный текст</label>
+                  <select [id]="'match-option-' + index" [value]="row.optionNodeId"
+                          [attr.aria-invalid]="fieldErrors()['options'] ? 'true' : null"
+                          (change)="setMatchRow(index, 'optionNodeId', $any($event.target).value)">
+                    <option value="">Выберите фрагмент</option>
+                    @for (projection of projections(); track projection.nodeId) {
+                      <option [value]="projection.nodeId">{{ projection.label }}</option>
+                    }
+                  </select>
+                  <label [for]="'match-transcript-' + index">Транскрипт для явного раскрытия <span class="hint">необязательно</span></label>
+                  <textarea [id]="'match-transcript-' + index" rows="2" [value]="row.transcript"
+                            (input)="setMatchRow(index, 'transcript', $any($event.target).value)"></textarea>
+                  <button class="button" type="button" [disabled]="matchRows().length <= 2"
+                          (click)="removeMatchRow(index)">Убрать запись</button>
+                </div>
+              }
+              <button class="button" type="button" [disabled]="matchRows().length >= 6" (click)="addMatchRow()">Добавить запись</button>
+            } @else {
+              <label for="audio-asset">ID аудио из медиатеки</label>
+              <input id="audio-asset" type="text" [value]="audioAssetId()"
+                     [attr.aria-invalid]="fieldErrors()['audio'] ? 'true' : null"
+                     (input)="setAudio('assetId', $any($event.target).value)" />
+              <label for="audio-title">Название записи</label>
+              <input id="audio-title" type="text" [value]="audioTitle()"
+                     (input)="setAudio('title', $any($event.target).value)" />
+              <label for="audio-transcript">Транскрипт для явного раскрытия <span class="hint">необязательно</span></label>
+              <textarea id="audio-transcript" rows="3" [value]="audioTranscript()"
+                        (input)="setAudio('transcript', $any($event.target).value)"></textarea>
+            }
+            <div class="exercise-audio-upload">
+              <p class="hint">{{ type() === 'AUDIO_TEXT_MATCH'
+                ? 'Выбрана запись ' + (audioTargetIndex() + 1) + '. После загрузки нажмите «Вставить» в очереди.'
+                : 'Загрузите аудиофайл или запишите голос, затем нажмите «Вставить» в очереди.' }}</p>
+              <app-native-media-upload [document]="currentItem.document" (chooseAsset)="chooseUploadedAudio($event)" />
+            </div>
+            @if (fieldErrors()['audio']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
+            @if (fieldErrors()['options']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
+          } @else {
           <div class="segmented" role="group" aria-label="Источник вопроса">
             <button type="button" [class.active]="promptMode() === 'node'" (click)="setPromptMode('node')">Фрагмент материала</button>
             <button type="button" [class.active]="promptMode() === 'custom'" (click)="setPromptMode('custom')">Короткий текст</button>
@@ -57,6 +114,7 @@
             <textarea id="custom-prompt" rows="3" [value]="customPrompt()" [attr.aria-invalid]="fieldErrors()['prompt'] ? 'true' : null"
                       (input)="setCustomPrompt($any($event.target).value)"></textarea>
           }
+          }
           @if (fieldErrors()['prompt']; as error) { <p class="field-error" id="prompt-error">{{ error }}</p> }
         </fieldset>
 
@@ -69,7 +127,7 @@
             @for (projection of projections(); track projection.nodeId) { <option [value]="projection.nodeId">{{ projection.label }}</option> }
           </select>
           @if (fieldErrors()['answer']; as error) { <p class="field-error" id="answer-error">{{ error }}</p> }
-          @if (type() !== 'SELF_CHECK') {
+          @if (type() !== 'SELF_CHECK' && type() !== 'AUDIO_TEXT_MATCH') {
             <label for="aliases">Допустимые ответы <span class="hint">один вариант на строку</span></label>
             <textarea id="aliases" rows="4" [value]="aliasesText()" [disabled]="objectiveMode() === 'reuse'"
                       [attr.aria-invalid]="fieldErrors()['aliases'] ? 'true' : null"
@@ -82,7 +140,7 @@
           <legend>4. Направление знания</legend>
           <p class="hint">Обратное направление — отдельная цель. Оно не получает прогресс автоматически.</p>
           <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'create'" (change)="setObjectiveMode('create')" /> Создать отдельную цель</label>
-          @if (objectives().length > 0) {
+          @if (objectives().length > 0 && type() !== 'AUDIO_TEXT_MATCH') {
             <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'reuse'" (change)="setObjectiveMode('reuse')" /> Использовать существующую цель без изменения ответа</label>
             <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'revise'" (change)="setObjectiveMode('revise')" /> Обновить ответ существующей цели</label>
           }
@@ -97,7 +155,7 @@
           @if (fieldErrors()['objective']; as error) { <p class="field-error" id="objective-error">{{ error }}</p> }
         </fieldset>
 
-        @if (type() === 'SINGLE_CHOICE') {
+        @if (type() === 'SINGLE_CHOICE' || type() === 'LISTEN_CHOICE') {
           <fieldset [attr.aria-describedby]="fieldErrors()['options'] ? 'options-error' : null">
             <legend>5. Варианты ответа</legend>
             <p class="hint">Выберите 2–6 разных фрагментов, включая правильный.</p>
@@ -122,9 +180,13 @@
         <section class="preview-card">
           <p class="eyebrow">Предпросмотр · {{ exerciseName(type()) }}</p>
           <h2>{{ previewPrompt() }}</h2>
-          @if (type() === 'TYPED' || type() === 'CLOZE_SINGLE') { <label>Ответ <input type="text" disabled placeholder="Поле ученика" /></label> }
-          @if (type() === 'SINGLE_CHOICE') {
+          @if (isListening()) { <p class="hint">{{ type() === 'AUDIO_TEXT_MATCH' ? matchRows().length + ' аудиозаписи' : audioTitle() || 'Аудиозапись' }}</p> }
+          @if (type() === 'TYPED' || type() === 'CLOZE_SINGLE' || type() === 'LISTEN_TYPE') { <label>Ответ <input type="text" disabled placeholder="Поле ученика" /></label> }
+          @if (type() === 'SINGLE_CHOICE' || type() === 'LISTEN_CHOICE') {
             <div class="preview-options">@for (nodeId of optionNodeIds(); track nodeId) { <span>{{ projection(nodeId)?.label }}</span> }</div>
+          }
+          @if (type() === 'AUDIO_TEXT_MATCH') {
+            <div class="preview-options">@for (row of matchRows(); track row.cueId) { <span>{{ row.title || 'Запись' }} ↔ {{ projection(row.optionNodeId)?.label || 'Текст' }}</span> }</div>
           }
           @if (type() === 'SELF_CHECK') { <button class="reveal" type="button" disabled>Показать ответ</button> }
           <details><summary>Эталон ответа</summary><p>{{ previewAnswer() }}</p></details>

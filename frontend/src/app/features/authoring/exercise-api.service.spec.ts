@@ -40,7 +40,9 @@ describe('ExerciseApiService', () => {
         http.expectOne(`/api/decks/${deckId}/exercises?memberKey=${memberKey}&limit=20`).flush({
             deckId, deckRevisionId, deckVersion: '3', total: 1, exercises: [summary], nextCursor: null
         }, { headers });
-        expect((await page).exercises[0]?.objective.answerContract.accepted).toEqual(['memory']);
+        const answer = (await page).exercises[0]?.objective.answerContract;
+        expect(answer?.schemaVersion).toBe(1);
+        if (answer?.schemaVersion === 1) expect(answer.accepted).toEqual(['memory']);
 
         const detail = firstValueFrom(api.read(deckId, exerciseId));
         http.expectOne(`/api/decks/${deckId}/exercises/${exerciseId}`).flush({

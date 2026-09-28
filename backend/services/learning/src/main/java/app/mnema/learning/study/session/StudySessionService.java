@@ -129,6 +129,23 @@ public class StudySessionService {
         return response(session);
     }
 
+    /** Records a deliberate accessibility accommodation before disclosing pinned transcript text. */
+    @Transactional(timeout = 10)
+    public ObjectNode revealTranscript(UUID actor, UUID deckId, UUID sessionId, UUID presentationId, String nonce) {
+        own(actor, deckId);
+        StudySessionRepository.Session session = repository.sessionForUpdate(actor, deckId, sessionId)
+                .orElseThrow(ResourceNotFoundException::new);
+        Instant now = repository.now();
+        requireCurrent(session, now);
+        if (!session.status().equals("ACTIVE")) throw new ResourceNotFoundException();
+        StudySessionRepository.Presentation row = repository.pendingForAccommodation(actor, deckId, sessionId,
+                presentationId, nonce, now).orElseThrow(ResourceNotFoundException::new);
+        if (!hasTranscript(row.prompt())) throw new InvalidRequestException();
+        repository.recordAccommodation(actor, sessionId, presentationId, now);
+        return JsonNodeFactory.instance.objectNode().put("presentationId", presentationId.toString())
+                .set("prompt", promptForClient(row.prompt(), true));
+    }
+
     @Transactional(readOnly = true, timeout = 10)
     public ObjectNode replaySources(UUID actor, UUID deckId, String trustedTimezone) {
         own(actor, deckId);
@@ -243,7 +260,8 @@ public class StudySessionService {
         bindingRows.forEach(binding -> bindings.add(binding.deepCopy()));
         ObjectNode prompt = resolvePrompt(session.deckId(), candidate.prompt());
         ArrayNode options = JsonNodeFactory.instance.arrayNode();
-        if (candidate.type().equals("SINGLE_CHOICE")) {
+        if (candidate.type().equals("SINGLE_CHOICE") || candidate.type().equals("LISTEN_CHOICE")
+                || candidate.type().equals("AUDIO_TEXT_MATCH")) {
             bindingRows.stream().filter(binding -> binding.path("role").textValue().equals("OPTION"))
                     .forEach(binding -> options.addObject().put("optionId", binding.path("bindingId").textValue())
                             .put("text", resolveBindingText(session.deckId(), binding)));
@@ -263,6 +281,10 @@ public class StudySessionService {
     }
 
     private ObjectNode resolvePrompt(UUID deck, JsonNode spec) {
+        if (spec.path("kind").textValue().equals("AUDIO_ASSET")
+                || spec.path("kind").textValue().equals("AUDIO_MATCH")) {
+            return ((ObjectNode) spec).deepCopy();
+        }
         if (spec.path("kind").textValue().equals("CUSTOM_TEXT")) {
             return JsonNodeFactory.instance.objectNode().put("kind", "TEXT").put("text", spec.path("text").textValue());
         }
@@ -348,11 +370,15 @@ public class StudySessionService {
                 .put("exerciseRevisionId", row.exerciseRevisionId().toString()).put("type", row.type())
                 .put("objectiveId", row.objectiveId().toString())
                 .put("objectiveRevisionId", row.objectiveRevisionId().toString())
-                .put("learningEpoch", Long.toString(row.learningEpoch()))
-                .put("reference", reference(row.answerContract()));
-        result.set("prompt", row.prompt().deepCopy());
+                .put("learningEpoch", Long.toString(row.learningEpoch()));
+        if (isListening(row.type())) result.putNull("reference");
+        else result.put("reference", reference(row.answerContract()));
+        result.set("prompt", isListening(row.type())
+                ? promptForClient(row.prompt(), row.transcriptRevealed()) : row.prompt().deepCopy());
         result.set("options", row.options().deepCopy());
-        result.set("bindings", row.bindings().deepCopy());
+        // Assessed and option targets are private evaluation authority for listening tasks.
+        result.set("bindings", isListening(row.type()) ? JsonNodeFactory.instance.arrayNode()
+                : row.bindings().deepCopy());
         result.set("evaluator", row.evaluator().deepCopy());
         return result;
     }
@@ -363,6 +389,31 @@ public class StudySessionService {
             throw new IllegalStateException("Pinned answer contract has no reference answer");
         }
         return accepted.get(0).textValue();
+    }
+
+    private static boolean isListening(String type) {
+        return type.equals("LISTEN_CHOICE") || type.equals("AUDIO_TEXT_MATCH") || type.equals("LISTEN_TYPE");
+    }
+
+    private static boolean hasTranscript(JsonNode prompt) {
+        if (prompt.path("kind").asText().equals("AUDIO_ASSET")) {
+            return !prompt.path("transcript").asText("").isBlank();
+        }
+        for (JsonNode cue : prompt.path("cues")) {
+            if (!cue.path("transcript").asText("").isBlank()) return true;
+        }
+        return false;
+    }
+
+    private static ObjectNode promptForClient(JsonNode source, boolean revealed) {
+        ObjectNode prompt = ((ObjectNode) source).deepCopy();
+        prompt.put("transcriptAvailable", hasTranscript(source));
+        prompt.put("transcriptRevealed", revealed);
+        if (!revealed) {
+            prompt.remove("transcript");
+            prompt.path("cues").forEach(cue -> ((ObjectNode) cue).remove("transcript"));
+        }
+        return prompt;
     }
 
     private void requireCurrent(StudySessionRepository.Session session, Instant now) {

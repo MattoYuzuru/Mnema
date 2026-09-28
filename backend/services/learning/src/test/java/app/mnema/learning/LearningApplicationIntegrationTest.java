@@ -71,7 +71,7 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
                         "7:bounded study sessions:SUCCESS",
                         "8:attempt evidence and study state:SUCCESS",
                         "9:study session budgets:SUCCESS", "10:media catalog:SUCCESS",
-                        "11:media upload transport:SUCCESS");
+                        "11:media upload transport:SUCCESS", "12:listening exercises:SUCCESS");
 
         assertThat(jdbcClient.sql("""
                         SELECT schema_name

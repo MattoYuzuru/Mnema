@@ -16,6 +16,7 @@ import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.idempotency.CommandIdentity;
 import app.mnema.learning.platform.idempotency.CommandReceiptService;
+import app.mnema.learning.media.MediaCatalog;
 import app.mnema.learning.storage.ImmutableStorage;
 import app.mnema.learning.storage.StorageTypes.NewObject;
 import app.mnema.learning.storage.StorageTypes.ObjectKind;
@@ -53,16 +54,18 @@ public class ExerciseService {
     private final CommandReceiptService receipts;
     private final CompareAndSetExecutor cas;
     private final ImmutableStorage storage;
+    private final MediaCatalog mediaCatalog;
     private final NativeStorageBatches nativeBatches;
     private final TransactionTemplate publication;
     private final TransactionTemplate cleanup;
 
     public ExerciseService(ExerciseRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas,
-                           ImmutableStorage storage, PlatformTransactionManager transactions) {
+                           ImmutableStorage storage, MediaCatalog mediaCatalog, PlatformTransactionManager transactions) {
         this.repository = repository;
         this.receipts = receipts;
         this.cas = cas;
         this.storage = storage;
+        this.mediaCatalog = mediaCatalog;
         this.nativeBatches = new NativeStorageBatches(storage);
         this.publication = new TransactionTemplate(transactions);
         publication.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
@@ -174,6 +177,10 @@ public class ExerciseService {
         Map<ItemKey, Set<UUID>> nodes = validateBindings(actor, deckId, command.exercise());
         validatePrompt(command.exercise().prompt(), nodes);
         ObjectivePlan objective = prepareObjective(actor, deckId, command.objective(), assessed.memberKey());
+        int answerVersion = objective.answerContract().path("schemaVersion").intValue();
+        if (answerVersion != (command.exercise().type().equals("AUDIO_TEXT_MATCH") ? 2 : 1)) {
+            throw new InvalidRequestException();
+        }
 
         UUID exerciseRevision = UUID.randomUUID();
         UUID deckRevision = UUID.randomUUID();
@@ -290,6 +297,10 @@ public class ExerciseService {
                 prepared.exerciseSequence(), prepared.previous() == null ? null : prepared.previous().revisionId(),
                 prepared.deckRevision(), deckSequence, command.commandId(), command.exercise(),
                 prepared.descriptor().root().objectId(), time);
+        if (!command.exercise().audioAssets().isEmpty()) {
+            mediaCatalog.attachExerciseRevision(actor, deckId, prepared.exerciseId(), prepared.exerciseRevision(),
+                    command.exercise().audioAssets());
+        }
         for (ExerciseCommand.Binding binding : command.exercise().bindings()) {
             boolean assessed = binding.role().equals("ASSESSED");
             repository.insertBinding(deckId, prepared.exerciseId(), prepared.exerciseRevision(), binding,

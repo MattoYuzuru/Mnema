@@ -4,6 +4,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { timer } from 'rxjs';
 
+import { SignedMediaSource } from '../../content/rendering/media-playback.api';
+import { NativeMediaPlayerComponent } from '../../content/rendering/native-media-player.component';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { StudyApiService } from './study-api.service';
@@ -22,13 +24,14 @@ import {
     StudyStartIntent
 } from './study.models';
 import { StudyRecoveryService } from './study-recovery.service';
+import { MEDIA_PLAYBACK_RESOLVER } from './media-playback-resolver';
 
 type Phase = 'setup' | 'loading' | 'preparing' | 'answering' | 'revealed' | 'submitting' | 'feedback'
     | 'unknown' | 'conflict' | 'empty' | 'complete' | 'expired' | 'unavailable' | 'error';
 
 @Component({
     selector: 'app-study-session-page',
-    imports: [RouterLink],
+    imports: [RouterLink, NativeMediaPlayerComponent],
     templateUrl: './study-session-page.component.html',
     styleUrl: './study-session-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -39,6 +42,9 @@ export class StudySessionPageComponent {
     readonly phase = signal<Phase>('loading');
     readonly typedAnswer = signal('');
     readonly selectedOptionId = signal<string | null>(null);
+    readonly matchSelections = signal<Readonly<Partial<Record<string, string>>>>({});
+    readonly audioUrls = signal<Readonly<Record<string, SignedMediaSource>>>({});
+    readonly transcriptLoading = signal(false);
     readonly clozeHintUsed = signal(false);
     readonly feedback = signal<AttemptOutcome | null>(null);
     readonly message = signal<string | null>(null);
@@ -65,14 +71,29 @@ export class StudySessionPageComponent {
     private readonly decks = inject(OwnDecksApiService);
     private readonly api = inject(StudyApiService);
     private readonly recovery = inject(StudyRecoveryService);
+    private readonly playback = inject(MEDIA_PLAYBACK_RESOLVER);
     private readonly destroyRef = inject(DestroyRef);
     private readonly injector = inject(Injector);
     private readonly element: ElementRef<HTMLElement> = inject(ElementRef);
     readonly deckId: string;
     private presentedAt = 0;
     private pollCount = 0;
+    private audioTimer: ReturnType<typeof setTimeout> | null = null;
+    private audioEpoch = 0;
 
     constructor() {
+        const recheckAudio = () => {
+            if (document.visibilityState === 'visible' && navigator.onLine) this.refreshAudio();
+        };
+        document.addEventListener('visibilitychange', recheckAudio);
+        window.addEventListener('focus', recheckAudio);
+        window.addEventListener('online', recheckAudio);
+        this.destroyRef.onDestroy(() => {
+            document.removeEventListener('visibilitychange', recheckAudio);
+            window.removeEventListener('focus', recheckAudio);
+            window.removeEventListener('online', recheckAudio);
+            this.clearAudioTimer();
+        });
         const deckId = this.route.snapshot.paramMap.get('deckId');
         if (deckId === null) throw new Error('Study route requires deckId.');
         this.deckId = deckId.toLowerCase();
@@ -89,6 +110,10 @@ export class StudySessionPageComponent {
             if (recovered.pending?.response.kind === 'CHOICE') {
                 this.selectedOptionId.set(recovered.pending.response.optionId);
             }
+            if (recovered.pending?.response.kind === 'MATCH') {
+                this.matchSelections.set(Object.fromEntries(recovered.pending.response.pairs
+                    .map(pair => [pair.cueId, pair.optionId])));
+            }
             this.clozeHintUsed.set(recovered.pending?.hintsUsed.includes('REVEAL_FIRST_GRAPHEME') ?? false);
             this.resume(recovered.sessionId, recovered.pending !== null);
         }
@@ -104,7 +129,8 @@ export class StudySessionPageComponent {
 
     submitTyped(): void {
         const type = this.current()?.type;
-        if (this.phase() !== 'answering' || (type !== 'TYPED' && type !== 'CLOZE_SINGLE')) return;
+        if (this.phase() !== 'answering' || (type !== 'TYPED' && type !== 'CLOZE_SINGLE'
+            && type !== 'LISTEN_TYPE')) return;
         this.submit({ kind: 'TEXT', text: this.typedAnswer() },
             type === 'CLOZE_SINGLE' && this.clozeHintUsed() ? ['REVEAL_FIRST_GRAPHEME'] : []);
     }
@@ -122,8 +148,67 @@ export class StudySessionPageComponent {
 
     submitChoice(): void {
         const optionId = this.selectedOptionId();
-        if (this.phase() !== 'answering' || this.current()?.type !== 'SINGLE_CHOICE' || optionId === null) return;
+        if (this.phase() !== 'answering' || (this.current()?.type !== 'SINGLE_CHOICE'
+            && this.current()?.type !== 'LISTEN_CHOICE') || optionId === null) return;
         this.submit({ kind: 'CHOICE', optionId }, []);
+    }
+
+    selectMatch(cueId: string, optionId: string): void {
+        this.matchSelections.update(current => ({ ...Object.fromEntries(Object.entries(current)
+            .filter(([key, value]) => key === cueId || value !== optionId)), [cueId]: optionId }));
+    }
+
+    submitMatch(): void {
+        const current = this.current();
+        if (this.phase() !== 'answering' || current?.type !== 'AUDIO_TEXT_MATCH'
+            || current.prompt.kind !== 'AUDIO_MATCH') return;
+        const pairs = current.prompt.cues.map(cue => ({ cueId: cue.cueId,
+            optionId: this.matchSelections()[cue.cueId] ?? '' }));
+        if (pairs.some(pair => !pair.optionId) || new Set(pairs.map(pair => pair.optionId)).size !== pairs.length) return;
+        this.submit({ kind: 'MATCH', pairs }, []);
+    }
+
+    revealTranscript(): void {
+        const current = this.current();
+        const session = this.session();
+        if (this.phase() !== 'answering' || current === null || session === null
+            || current.prompt.kind === 'TEXT' || !current.prompt.transcriptAvailable
+            || current.prompt.transcriptRevealed || this.transcriptLoading()) return;
+        this.transcriptLoading.set(true);
+        this.api.revealTranscript(this.deckId, session.sessionId, current.presentationId, current.nonce)
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: prompt => {
+                    this.session.update(value => value === null ? null : { ...value,
+                        presentations: value.presentations.map(item => item.presentationId === current.presentationId
+                            ? { ...item, prompt } : item) });
+                    this.transcriptLoading.set(false);
+                },
+                error: () => { this.transcriptLoading.set(false);
+                    this.message.set('Не удалось открыть транскрипт. Попробуйте ещё раз.'); }
+            });
+    }
+
+    promptTitle(presentation: StudyPresentation): string {
+        return presentation.prompt.kind === 'TEXT' ? presentation.prompt.text : presentation.prompt.instruction;
+    }
+
+    audioAssetIds(presentation: StudyPresentation): readonly string[] {
+        return presentation.prompt.kind === 'AUDIO_ASSET' ? [presentation.prompt.assetId]
+            : presentation.prompt.kind === 'AUDIO_MATCH' ? presentation.prompt.cues.map(cue => cue.assetId) : [];
+    }
+    audioReady(presentation: StudyPresentation): boolean {
+        return this.audioAssetIds(presentation).every(id => !!this.audioUrls()[id]);
+    }
+    matchComplete(presentation: StudyPresentation): boolean {
+        return presentation.prompt.kind === 'AUDIO_MATCH'
+            && presentation.prompt.cues.every(cue => !!this.matchSelections()[cue.cueId]);
+    }
+    optionText(presentation: StudyPresentation, optionId: string): string {
+        return presentation.options.find(option => option.optionId === optionId)?.text ?? 'Вариант недоступен';
+    }
+    cueTitle(presentation: StudyPresentation, cueId: string): string {
+        return presentation.prompt.kind === 'AUDIO_MATCH'
+            ? presentation.prompt.cues.find(cue => cue.cueId === cueId)?.title ?? 'Запись' : 'Запись';
     }
 
     rate(rating: SelfRating): void {
@@ -149,6 +234,7 @@ export class StudySessionPageComponent {
         this.feedback.set(null);
         this.typedAnswer.set('');
         this.selectedOptionId.set(null);
+        this.matchSelections.set({});
         this.clozeHintUsed.set(false);
         const remaining = session.presentations.slice(1);
         if (remaining.length === 0) {
@@ -217,7 +303,8 @@ export class StudySessionPageComponent {
     }
 
     canLeave(): boolean {
-        if (this.phase() !== 'submitting' && this.phase() !== 'unknown' && this.typedAnswer().length === 0) return true;
+        if (this.phase() !== 'submitting' && this.phase() !== 'unknown' && this.typedAnswer().length === 0
+            && Object.keys(this.matchSelections()).length === 0) return true;
         return window.confirm('Сессия сохранена в этой вкладке. Выйти и продолжить её позже?');
     }
 
@@ -295,6 +382,7 @@ export class StudySessionPageComponent {
 
     private apply(session: ReadyStudySession, pendingUnknown: boolean): void {
         this.session.set(session);
+        this.resolveAudio(session.presentations[0] ?? null);
         this.presentedAt = this.recovery.now();
         if (session.status === 'EMPTY') {
             this.phase.set('empty'); this.recovery.clear(); this.loadSupportingState(); return;
@@ -313,9 +401,62 @@ export class StudySessionPageComponent {
             this.message.set('Исход предыдущего запроса неизвестен. Повторите ровно ту же попытку или сверьтесь с сервером.');
             return;
         }
-        const type = session.presentations[0].type;
         this.phase.set('answering');
         this.focusAfterRender('[data-answer-control]');
+    }
+
+    private resolveAudio(presentation: StudyPresentation | null): void {
+        this.audioEpoch += 1;
+        this.clearAudioTimer();
+        this.audioUrls.set({});
+        if (presentation !== null) this.refreshAudio();
+    }
+
+    retryAudio(assetId: string): void {
+        if (!this.audioUrls()[assetId]) return;
+        this.audioUrls.update(values => Object.fromEntries(Object.entries(values).filter(([id]) => id !== assetId)));
+        this.refreshAudio();
+    }
+
+    private refreshAudio(): void {
+        const presentation = this.current();
+        if (presentation === null || document.visibilityState !== 'visible' || !navigator.onLine) return;
+        const epoch = this.audioEpoch;
+        this.clearAudioTimer();
+        for (const assetId of this.audioAssetIds(presentation)) {
+            this.playback.resolve(assetId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: source => {
+                    if (epoch !== this.audioEpoch || this.current()?.presentationId !== presentation.presentationId) return;
+                    this.audioUrls.update(values => source === null
+                        ? Object.fromEntries(Object.entries(values).filter(([id]) => id !== assetId))
+                        : { ...values, [assetId]: source });
+                    this.scheduleAudioRefresh();
+                },
+                error: () => {
+                    if (epoch !== this.audioEpoch) return;
+                    this.audioUrls.update(values => Object.fromEntries(Object.entries(values).filter(([id]) => id !== assetId)));
+                    this.scheduleAudioRefresh();
+                }
+            });
+        }
+    }
+
+    private scheduleAudioRefresh(): void {
+        this.clearAudioTimer();
+        const presentation = this.current();
+        if (presentation === null || document.visibilityState !== 'visible' || !navigator.onLine) return;
+        const ids = this.audioAssetIds(presentation);
+        if (ids.length === 0) return;
+        const missing = ids.some(id => !this.audioUrls()[id]);
+        const expiry = ids.map(id => Date.parse(this.audioUrls()[id]?.expiresAt ?? '') - Date.now() - 60_000)
+            .filter(Number.isFinite);
+        const delay = missing ? 15_000 : Math.max(1_000, Math.min(15 * 60_000, ...expiry));
+        this.audioTimer = setTimeout(() => { this.audioTimer = null; this.refreshAudio(); }, delay);
+    }
+
+    private clearAudioTimer(): void {
+        if (this.audioTimer) clearTimeout(this.audioTimer);
+        this.audioTimer = null;
     }
 
     private submit(response: StudyResponse, hintsUsed: readonly string[]): void {

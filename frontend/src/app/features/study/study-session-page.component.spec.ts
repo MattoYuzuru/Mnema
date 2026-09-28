@@ -10,6 +10,7 @@ import { StudyApiService } from './study-api.service';
 import { AttemptCommand, AttemptOutcome, ReadyStudySession, StudyPresentation } from './study.models';
 import { StudyRecoveryService } from './study-recovery.service';
 import { StudySessionPageComponent } from './study-session-page.component';
+import { MEDIA_PLAYBACK_RESOLVER, MediaPlaybackResolver } from './media-playback-resolver';
 
 describe('StudySessionPageComponent', () => {
     const id = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, '0')}`;
@@ -18,6 +19,7 @@ describe('StudySessionPageComponent', () => {
     const presentationId = id('3');
     let api: jasmine.SpyObj<StudyApiService>;
     let recovery: jasmine.SpyObj<StudyRecoveryService>;
+    let playback: jasmine.SpyObj<MediaPlaybackResolver>;
     let fixture: ComponentFixture<StudySessionPageComponent>;
     let now = 1000;
 
@@ -25,16 +27,20 @@ describe('StudySessionPageComponent', () => {
         const decks = jasmine.createSpyObj<OwnDecksApiService>('OwnDecksApiService', ['detail']);
         decks.detail.and.returnValue(of(deck));
         api = jasmine.createSpyObj<StudyApiService>('StudyApiService',
-            ['start', 'read', 'refill', 'submit', 'progress', 'replaySources', 'restart']);
+            ['start', 'read', 'refill', 'submit', 'progress', 'replaySources', 'restart', 'revealTranscript']);
         api.progress.and.returnValue(of({ asOf: '2026-09-20T10:00:00Z', items: [], nextCursor: null }));
         api.replaySources.and.returnValue(of({ asOf: '2026-09-20T10:00:00Z', localStudyDate: '2026-09-20', items: [] }));
         recovery = jasmine.createSpyObj<StudyRecoveryService>('StudyRecoveryService', ['restore', 'save', 'clear', 'now']);
         recovery.restore.and.returnValue(null); recovery.now.and.callFake(() => now);
+        playback = jasmine.createSpyObj<MediaPlaybackResolver>('MediaPlaybackResolver', ['resolve']);
+        playback.resolve.and.callFake(assetId => of({ url: `/media/${assetId}`,
+            expiresAt: '2999-01-01T00:00:00Z', mimeType: 'audio/mp4' }));
         const router = jasmine.createSpyObj<Router>('Router', ['navigate']); router.navigate.and.resolveTo(true);
         TestBed.configureTestingModule({ providers: [
             { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ deckId: deck.deckId }) } } },
             { provide: Router, useValue: router }, { provide: OwnDecksApiService, useValue: decks },
-            { provide: StudyApiService, useValue: api }, { provide: StudyRecoveryService, useValue: recovery }
+            { provide: StudyApiService, useValue: api }, { provide: StudyRecoveryService, useValue: recovery },
+            { provide: MEDIA_PLAYBACK_RESOLVER, useValue: playback }
         ] });
     });
 
@@ -127,6 +133,69 @@ describe('StudySessionPageComponent', () => {
         expect(api.submit.calls.mostRecent().args[2].response)
             .toEqual({ kind: 'CHOICE', optionId: radios[0].value });
         expect(api.submit.calls.mostRecent().args[2].hintsUsed).toEqual([]);
+    });
+
+    it('requires playback and audits transcript disclosure before a listening typed answer', () => {
+        const base = session('TYPED');
+        const presentation = { ...base.presentations[0], type: 'LISTEN_TYPE' as const, reference: null,
+            bindings: [], prompt: { kind: 'AUDIO_ASSET' as const, assetId: id('40'), title: 'Короткая запись',
+                instruction: 'Напишите услышанное', transcriptAvailable: true, transcriptRevealed: false } };
+        api.start.and.returnValue(of({ value: { ...base, presentations: [presentation] }, replayed: false }));
+        api.revealTranscript.and.returnValue(of({ ...presentation.prompt, transcriptRevealed: true,
+            transcript: 'memory' }));
+        api.submit.and.returnValue(of({ value: outcome('CORRECT'), replayed: false }));
+        createStarted();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('audio')?.getAttribute('src')).toBe(`/media/${id('40')}`);
+        expect(root.textContent).not.toContain('memory');
+        fixture.componentInstance.revealTranscript(); fixture.detectChanges();
+        expect(api.revealTranscript).toHaveBeenCalledWith(deck.deckId, sessionId, presentationId,
+            presentation.nonce);
+        expect(root.textContent).toContain('memory');
+        fixture.componentInstance.setTypedAnswer('memory'); fixture.componentInstance.submitTyped();
+        expect(api.submit.calls.mostRecent().args[2].response).toEqual({ kind: 'TEXT', text: 'memory' });
+    });
+
+    it('uses the shared Mnema player and renews a failed Study source', () => {
+        const base = session('TYPED');
+        const assetId = id('40');
+        const cue = { ...base.presentations[0], type: 'LISTEN_TYPE' as const, reference: null,
+            bindings: [], prompt: { kind: 'AUDIO_ASSET' as const, assetId, title: 'Короткая запись',
+                instruction: 'Напишите услышанное', transcriptAvailable: false, transcriptRevealed: false } };
+        api.start.and.returnValue(of({ value: { ...base, presentations: [cue] }, replayed: false }));
+        playback.resolve.and.returnValues(
+            of({ url: '/signed/first', expiresAt: '2999-01-01T00:00:00Z', mimeType: 'audio/mp4' }),
+            of({ url: '/signed/renewed', expiresAt: '2999-01-01T00:00:00Z', mimeType: 'audio/mp4' })
+        );
+
+        createStarted();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('app-native-media-player button[aria-label="Воспроизвести"]')).not.toBeNull();
+        expect(root.querySelector('audio')?.getAttribute('src')).toBe('/signed/first');
+        fixture.componentInstance.retryAudio(assetId); fixture.detectChanges();
+        expect(root.querySelector('audio')?.getAttribute('src')).toBe('/signed/renewed');
+        expect(playback.resolve).toHaveBeenCalledTimes(2);
+    });
+
+    it('submits the complete audio-text map as one attempt', () => {
+        const base = session('SINGLE_CHOICE');
+        const presentation = { ...base.presentations[0], type: 'AUDIO_TEXT_MATCH' as const, reference: null,
+            bindings: [], prompt: { kind: 'AUDIO_MATCH' as const, instruction: 'Сопоставьте',
+                transcriptAvailable: false, transcriptRevealed: false, cues: [
+                    { cueId: id('40'), assetId: id('50'), title: 'Первая' },
+                    { cueId: id('41'), assetId: id('51'), title: 'Вторая' }
+                ] } };
+        api.start.and.returnValue(of({ value: { ...base, presentations: [presentation] }, replayed: false }));
+        api.submit.and.returnValue(of({ value: outcome('CORRECT'), replayed: false }));
+        createStarted();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelectorAll('audio')).toHaveSize(2);
+        fixture.componentInstance.selectMatch(id('40'), id('15'));
+        fixture.componentInstance.selectMatch(id('41'), id('16'));
+        fixture.componentInstance.submitMatch();
+        expect(api.submit.calls.mostRecent().args[2].response).toEqual({ kind: 'MATCH', pairs: [
+            { cueId: id('40'), optionId: id('15') }, { cueId: id('41'), optionId: id('16') }
+        ] });
     });
 
     it('retains and replays the exact command after an unknown network outcome', () => {
@@ -235,7 +304,8 @@ describe('StudySessionPageComponent', () => {
     function outcome(result: 'CORRECT' | 'PARTIAL', command?: AttemptCommand): AttemptOutcome {
         return { attemptId: command?.attemptId ?? id('14'), presentationId, mode: 'SCHEDULED', status: 'ASSESSED',
             feedback: { result, reference: result === 'CORRECT' ? 'memory' : null,
-                appliedRules: result === 'CORRECT' ? ['TRIM', 'CASE_FOLD'] : ['SELF_REPORT'], reasonCodes: [] },
+                appliedRules: result === 'CORRECT' ? ['TRIM', 'CASE_FOLD'] : ['SELF_REPORT'],
+                reasonCodes: [], pairResults: [] },
             canonicalEffects: true, transition: { beforeLevel: 0, afterLevel: 1, nextDue: '2026-09-21T10:00:00Z' } };
     }
 });
