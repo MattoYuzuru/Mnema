@@ -1,5 +1,5 @@
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, HostListener, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { Subject, debounceTime, forkJoin, of } from 'rxjs';
@@ -14,17 +14,20 @@ import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { AuthoringApiService } from './authoring-api.service';
 import { DraftDetail, DraftSummary, ItemDetail, ItemWriteResult, newCommandId } from './authoring.models';
 import { ItemApiService } from './item-api.service';
+import { NativeMediaUploadComponent } from './native-media-upload.component';
 
 type EditorPhase = 'loading' | 'ready' | 'saving-draft' | 'publishing' | 'conflict' | 'rejected' | 'error';
 
 @Component({
     selector: 'app-item-editor-page',
-    imports: [RouterLink, NativeEditorComponent, NativeDocumentRendererComponent],
+    imports: [RouterLink, NativeEditorComponent, NativeDocumentRendererComponent, NativeMediaUploadComponent],
     templateUrl: './item-editor-page.component.html',
     styleUrl: './authoring-page.css',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ItemEditorPageComponent {
+    readonly mobilePanel = signal<'material' | 'preview' | 'exercises'>('material');
+    private readonly editor = viewChild(NativeEditorComponent);
     readonly deck = signal<OwnDeck | null>(null);
     readonly item = signal<ItemDetail | null>(null);
     readonly draft = signal<DraftDetail | null>(null);
@@ -107,6 +110,11 @@ export class ItemEditorPageComponent {
         this.message.set(null);
         if (this.phase() === 'error' || this.phase() === 'rejected') this.phase.set('ready');
         this.changes.next(document);
+    }
+
+    prepareMedia(kind: 'image' | 'audio' | 'video', assetId: string): void {
+        this.mobilePanel.set('material');
+        queueMicrotask(() => this.editor()?.prepareMedia(kind, assetId));
     }
 
     saveDraft(retry = false): void {

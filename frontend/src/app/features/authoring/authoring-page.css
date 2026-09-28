@@ -22,6 +22,7 @@ h1 { max-inline-size: 28ch; margin: 0; font-size: clamp(2rem, 6vw, 4.5rem); line
 .editor-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, .8fr); gap: clamp(1rem, 4vw, 3rem); align-items: start; }
 .sheet { min-inline-size: 0; border: 1px solid var(--line, #c9c0ce); padding: clamp(1rem, 3vw, 2rem); background: var(--sheet, #fbf8ef); }
 .preview { position: sticky; inset-block-start: 1rem; }
+.editor-mobile-nav, .editor-exercises-panel { display: none; }
 .field { display: grid; gap: .5rem; margin-block: 1rem; }
 label { font-weight: 700; }
 .field-error { margin: 0; color: #8d1f2d; font-size: .9rem; }
@@ -34,6 +35,11 @@ textarea { min-block-size: 10rem; resize: vertical; }
 @media (max-width: 48rem) {
     .page-heading { align-items: stretch; flex-direction: column; }
     .editor-layout { grid-template-columns: 1fr; }
+    .editor-mobile-nav { display: flex; flex-wrap: wrap; gap: .5rem; margin-block-end: 1rem; }
+    .editor-mobile-nav .button { flex: 1 1 8rem; }
+    .editor-mobile-nav .button[aria-pressed='true'] { color: #fff; background: var(--ink, #281378); }
+    .editor-mobile-panel { display: none; }
+    .editor-mobile-panel.is-active, .editor-exercises-panel { display: block; }
     .preview { position: static; }
     .item-row { grid-template-columns: auto minmax(0, 1fr); }
     .item-row time { grid-column: 2; }
