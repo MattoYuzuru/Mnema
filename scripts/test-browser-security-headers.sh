@@ -131,13 +131,16 @@ fi
 run_container_contract() {
   mode="$1"
   mode_root="$TEST_ROOT/$mode"
-  CONTAINER_ID=$(docker run --detach --rm \
+  if ! CONTAINER_ID=$(docker run --detach --rm \
     --publish 127.0.0.1::80 \
     --volume "$REPO_ROOT/frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
     --volume "$mode_root/security-headers.inc:/etc/nginx/conf.d/security-headers.inc:ro" \
     --volume "$mode_root/ai-route.inc:/etc/nginx/conf.d/ai-route.inc:ro" \
     --volume "$mode_root/html:/usr/share/nginx/html:ro" \
-    "$NGINX_IMAGE")
+    "$NGINX_IMAGE"); then
+    echo "Could not start nginx contract container for $mode" >&2
+    return 1
+  fi
   published=$(docker port "$CONTAINER_ID" 80/tcp)
   port=${published##*:}
   base_url="http://127.0.0.1:$port"
