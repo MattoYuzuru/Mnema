@@ -465,6 +465,37 @@ class IdentitySecurityIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void bearerEditsUseTokenIdentityAndInvalidBearerCannotFallBackToCookie() throws Exception {
+        var account = account();
+        String access = token(account, "mnema-api", "https://identity.mnema.test", "at+jwt",
+                Instant.now().plusSeconds(120));
+        String edit = body(Map.of("profileUsername", "native-profile", "displayName", "Native profile",
+                "bio", "Bearer-only write"));
+        mvc.perform(put("/api/accounts/me").secure(true).header("Authorization", "Bearer " + access)
+                        .contentType("application/json").content(edit))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.bio").value("Bearer-only write"));
+
+        var other = account();
+        var cookie = login(other);
+        String blocked = body(Map.of("profileUsername", "forbidden-name", "displayName", "Forbidden", "bio", "No"));
+        mvc.perform(put("/api/accounts/me").secure(true).cookie(cookie).contentType("application/json")
+                        .content(blocked)).andExpect(status().isForbidden());
+        mvc.perform(put("/api/accounts/me").secure(true).cookie(cookie)
+                        .header("Cookie", cookie.getName() + "=" + cookie.getValue())
+                        .header("Authorization", "Bearer " + access).contentType("application/json")
+                        .content(blocked)).andExpect(status().isOk())
+                .andExpect(jsonPath("$.accountId").value(account.accountId().toString()));
+        mvc.perform(put("/api/accounts/me").secure(true).cookie(cookie)
+                        .header("Authorization", "Bearer invalid")
+                        .contentType("application/json").content(blocked)).andExpect(status().isUnauthorized());
+        mvc.perform(get("/api/accounts/me").secure(true).header("Authorization", "Bearer " + access))
+                .andExpect(jsonPath("$.profileUsername").value("forbidden-name"));
+        mvc.perform(get("/api/accounts/me").secure(true).cookie(cookie))
+                .andExpect(jsonPath("$.accountId").value(other.accountId().toString()))
+                .andExpect(jsonPath("$.profileUsername").value(org.hamcrest.Matchers.not("forbidden-name")));
+    }
+
+    @Test
     void publicProfileAndAvatarDoNotRevealHiddenAccountExistence() throws Exception {
         var hidden = account();
         jdbc.sql("UPDATE app_identity.account SET status='BANNED',banned_at=statement_timestamp() WHERE account_id=:id")

@@ -25,9 +25,9 @@ RUN apk add --no-cache --upgrade \
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY docker/40-gen-app-config.sh /docker-entrypoint.d/40-gen-app-config.sh
 RUN chmod +x /docker-entrypoint.d/40-gen-app-config.sh \
-    && MNEMA_FEATURE_AI_ENABLED=false /docker-entrypoint.d/40-gen-app-config.sh \
+    && /docker-entrypoint.d/40-gen-app-config.sh \
     && nginx -t \
-    && rm -f /usr/share/nginx/html/app-config.js /etc/nginx/conf.d/ai-route.inc
+    && rm -f /usr/share/nginx/html/app-config.js
 
 # Копируем выход Angular application builder: dist/<projectName>
 COPY --from=build /app/dist/mnema-frontend /usr/share/nginx/html

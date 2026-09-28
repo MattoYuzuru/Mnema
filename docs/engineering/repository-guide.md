@@ -5,14 +5,14 @@ artifact:
   title: "Mnema repository guide"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-09-24"
+  updated_at: "2026-09-28"
   owners: ["project-owner"]
-  evidence_revision: "d7fd1b1d509a0ab598976f87af88101bfc3945ac"
+  evidence_revision: "1879d9ae0cadde67bf8a0ccc74fbccb53f2acee5"
 ---
 
 # Repository guide
 
-This guide describes the checkout after Epics #74/#75. Root [`AGENTS.md`](../../AGENTS.md)
+This guide describes the checkout after Epics #74–#76. Root [`AGENTS.md`](../../AGENTS.md)
 is normative; [docs/README.md](../README.md) owns documentation status/navigation.
 
 ## First read
@@ -49,17 +49,13 @@ Mnema/
 │   ├── build.gradle.kts                 aggregate quality and coverage
 │   └── services/
 │       ├── identity-account/            current account/OAuth/OIDC runtime
-│       ├── learning/                    current content/authoring runtime
-│       ├── core/                        legacy deck/card/review input
-│       ├── media/                       legacy media input
-│       ├── import/                      legacy import input
-│       └── ai/                          legacy/deferred AI input
+│       └── learning/                    current content/authoring/Study/media runtime
 ├── frontend/src/app/
 │   ├── content/                         native document/editor/renderer
 │   ├── features/authoring/              Capture, Draft, editor and Browse
 │   ├── features/own-decks/              canonical private Deck UI
 │   ├── features/study/                  canonical deck-scoped Study UI
-│   └── core/, shared/, other features/  mixed current shell and legacy input
+│   └── core/, shared/                  current shell and translation helpers
 ├── contracts/                           shared native/content/deck/item fixtures
 ├── scripts/
 │   ├── browser-identity/                real local HTTPS browser/E2E harness
@@ -75,9 +71,8 @@ Mnema/
 └── .github/workflows/                   protected quality and dormant operations
 ```
 
-`settings.gradle.kts` intentionally still compiles six modules. Shipping/local
-replacement topology is only Identity & Account + Learning; remaining legacy module
-removal belongs to #146.
+`settings.gradle.kts` compiles only Identity & Account and Learning. Old service
+source/migrations are available through `v1-apache-final` and Git history.
 
 ## Current runtime contracts
 
@@ -90,7 +85,7 @@ Identity `/userinfo`; it never reads Identity tables.
 
 ### Learning
 
-Read [its guide](../../backend/services/learning/guide.md). Fresh migrations V1–V9
+Read [its guide](../../backend/services/learning/guide.md). Fresh migrations V1–V15
 own platform/storage, private Deck, deck-local LearningItem, EditingDraft,
 CaptureNote, immutable objective/exercise authoring and bounded Study session
 snapshots. API paths are canonical
@@ -112,8 +107,8 @@ durable evidence and attempt tombstones.
 and lazy. Material Browse/editor links to a separate lazy exercise inspector for
 all four P0 mechanics; the inspector uses current node projections, strict
 exercise envelopes and recoverable conflict/retry state without loading Study.
-`my-study`, public-deck, template, old review/import/media/AI services and components
-are legacy or deferred; inspect them only as deletion/research evidence.
+Old `my-study`, public-deck, template, review/import/media/AI services and routes
+were removed in #146; account profile uses native Identity API.
 The accepted visual direction is
 [paper/antiquity/indigo](../frontend/design-and-experience-2026-09.md).
 
@@ -128,7 +123,7 @@ owns replay from a selected completed session, introduced-only practice by defau
 material progress and explicit restart confirmation; non-scheduled modes state that
 they do not change canonical progress. Before scheduled start, quick 10/2 and
 standard 20/5 budgets are explicit; both remain one scheduler/attempt contract.
-Legacy `my-study` is not a fallback.
+There is no legacy `my-study` fallback.
 
 ## Canonical executable sources
 
@@ -222,14 +217,13 @@ infrastructure issue.
 - Keep content, exercise revision, attempt/evaluation/evidence and `StudyState`
   separate. Only explicitly `ASSESSED` objectives may receive scheduler evidence.
 - Reuse command receipts/CAS/problem details and Deck/LearningItem revision pins.
-- Add lazy Angular Study routes/components; do not build on legacy `my-study` or
-  old review services simply because they remain in source.
+- Keep Study routes/components on the current Learning contract.
 - Preserve keyboard, screen-reader, touch and non-drag alternatives from the accepted
   exercise catalog/a11y boundary.
 
 ### Epic #76: media lifecycle
 
-- The `media` module and v1 S3 rows/URLs are legacy evidence, not the target.
+- The removed v1 `media` module and S3 rows/URLs are historical evidence only.
 - New logical authorized references must integrate with native content capabilities
   without granting access by hash/object key.
 - Lifecycle, finalize races, variants, tombstones, GC and offline manifests require
@@ -237,18 +231,15 @@ infrastructure issue.
 
 ### Legacy removal
 
-Do not broaden feature work into global deletion. #146 owns remaining module/build/
-route removal only after #74–#76 gates. #147 owns production cutover/purge and is
-outside local delivery.
+Module/build/route removal belongs to #146. #147 owns production cutover/purge and
+is outside local delivery.
 
 ## High-risk areas
 
 - A green unit test cannot prove correct per-objective credit, deterministic replay,
   session snapshot isolation or bounded M:N fan-out for #75.
-- Existing `core` scheduler names and tables can accidentally bias the new model;
-  they are deletion/research evidence only.
-- Frontend still contains legacy routes/services next to canonical authoring code;
-  route imports and bundles must be checked when adding Study.
+- Historical `core` scheduler names and tables are research evidence in Git history,
+  not a model for new work.
 - PostgreSQL-backed integration tests are fail-closed. Docker/socket failure is an
   environment failure, not permission to accept skipped coverage.
 - Local browser evidence does not certify VoiceOver/TalkBack, physical touch, Safari,

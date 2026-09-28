@@ -63,13 +63,13 @@ Unknown workload inputs must not be disguised as measurements. The owner's zero-
 
 ### Confirmed current scaling behavior
 
-Adding or globally editing a card constructs a complete next snapshot: it loads the old version, copies its cards and saves them again ([CardService.java](../../backend/services/core/src/main/java/app/mnema/core/deck/service/CardService.java#L1054)). Adding `N` cards one by one therefore produces:
+Adding or globally editing a card constructs a complete next snapshot: it loads the old version, copies its cards and saves them again ([CardService.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/deck/service/CardService.java#L1054)). Adding `N` cards one by one therefore produces:
 
 ```text
 snapshot rows = 1 + 2 + ... + N = N × (N + 1) / 2
 ```
 
-The full-text GIN index also indexes every JSON copy ([V14__search_indexes.sql](../../backend/services/core/src/main/resources/db/migration/V14__search_indexes.sql#L13)). With an explicitly guessed 2–5 KiB physical cost per public-card row:
+The full-text GIN index also indexes every JSON copy ([V14__search_indexes.sql](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/resources/db/migration/V14__search_indexes.sql#L13)). With an explicitly guessed 2–5 KiB physical cost per public-card row:
 
 | Cards added one by one | Snapshot rows | Illustrative physical size |
 |---:|---:|---:|
@@ -79,7 +79,7 @@ The full-text GIN index also indexes every JSON copy ([V14__search_indexes.sql](
 
 The production PostgreSQL PVC currently requests 15 GiB ([postgres.yaml](../../k8s/postgres.yaml#L45)). This is a scale boundary, not a benchmark: actual row size and edit pattern must be measured.
 
-Subscribing also eagerly inserts a `user_cards` row for every active source card ([DeckService.java](../../backend/services/core/src/main/java/app/mnema/core/deck/service/DeckService.java#L630)). This grows as:
+Subscribing also eagerly inserts a `user_cards` row for every active source card ([DeckService.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/deck/service/DeckService.java#L630)). This grows as:
 
 ```text
 user rows = subscribers × cards per subscribed deck
@@ -89,7 +89,7 @@ Personal study state for every item actually studied is irreducible. What v2 rem
 
 ### Review events will eventually dominate
 
-An illustrative scenario of 100,000 DAU × 30 answers/day is 3 million events/day. At a guessed 300–800 bytes per event plus 150% heap/index overhead, one year is roughly 0.82–2.19 TB before backups, compression and replicas. The current log stores `state_before` and `state_after` JSON for every answer ([V1__initial_migration.sql](../../backend/services/core/src/main/resources/db/migration/V1__initial_migration.sql#L464)).
+An illustrative scenario of 100,000 DAU × 30 answers/day is 3 million events/day. At a guessed 300–800 bytes per event plus 150% heap/index overhead, one year is roughly 0.82–2.19 TB before backups, compression and replicas. The current log stores `state_before` and `state_after` JSON for every answer ([V1__initial_migration.sql](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/resources/db/migration/V1__initial_migration.sql#L464)).
 
 This makes event retention, compact columns and rollups a more important long-term capacity decision than adding Redis. Partitioning is a trigger-based option for a genuinely large table, not a default; PostgreSQL documents both its benefits and the cost of excessive partitions in [Table Partitioning](https://www.postgresql.org/docs/current/ddl-partitioning.html).
 
@@ -542,14 +542,14 @@ Large documents/media never ride in an unbounded deck response. Use pagination/p
 The following findings are evidence for deleting the old paths. Do not turn them
 into a v1 remediation backlog unless a defect blocks the greenfield cutover itself:
 
-- Browser/review paths sometimes fetch the latest `public_card` by `card_id` rather than the subscription's pinned deck/version ([DeckCardViewAdapter.java](../../backend/services/core/src/main/java/app/mnema/core/deck/adapter/DeckCardViewAdapter.java#L103)). Search and review can therefore disagree.
-- The database no longer enforces a source FK for `user_cards.public_card_id` ([V21__public_card_id_non_unique.sql](../../backend/services/core/src/main/resources/db/migration/V21__public_card_id_non_unique.sql#L1)).
-- Local editing writes the whole effective JSON as an override although reading supports patches ([CardService.java](../../backend/services/core/src/main/java/app/mnema/core/deck/service/CardService.java#L1442)).
-- The in-process `DeckAlgorithmUpdateBuffer` is unsafe with more than one core replica ([DeckAlgorithmUpdateBuffer.java](../../backend/services/core/src/main/java/app/mnema/core/review/service/DeckAlgorithmUpdateBuffer.java#L14)).
-- Publication calculates `latestVersion + 1` without a deck-head lock/CAS ([CardService.java](../../backend/services/core/src/main/java/app/mnema/core/deck/service/CardService.java#L1183)).
-- Some card mapping performs N+1 latest-card lookups ([CardService.java](../../backend/services/core/src/main/java/app/mnema/core/deck/service/CardService.java#L2044)); sync loads complete current/user/history collections in memory ([DeckService.java](../../backend/services/core/src/main/java/app/mnema/core/deck/service/DeckService.java#L384)).
-- Review keeps a state lock while calculating the next card ([ReviewService.java](../../backend/services/core/src/main/java/app/mnema/core/review/service/ReviewService.java#L203)).
-- Import can commit earlier batches before the job fails ([ImportProcessor.java](../../backend/services/import/src/main/java/app/mnema/importer/service/ImportProcessor.java#L152)); AI can change a requested global update into a local update based on exception text ([CoreApiClient.java](../../backend/services/ai/src/main/java/app/mnema/ai/client/core/CoreApiClient.java#L119)).
+- Browser/review paths sometimes fetch the latest `public_card` by `card_id` rather than the subscription's pinned deck/version ([DeckCardViewAdapter.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/deck/adapter/DeckCardViewAdapter.java#L103)). Search and review can therefore disagree.
+- The database no longer enforces a source FK for `user_cards.public_card_id` ([V21__public_card_id_non_unique.sql](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/resources/db/migration/V21__public_card_id_non_unique.sql#L1)).
+- Local editing writes the whole effective JSON as an override although reading supports patches ([CardService.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/deck/service/CardService.java#L1442)).
+- The in-process `DeckAlgorithmUpdateBuffer` is unsafe with more than one core replica ([DeckAlgorithmUpdateBuffer.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/review/service/DeckAlgorithmUpdateBuffer.java#L14)).
+- Publication calculates `latestVersion + 1` without a deck-head lock/CAS ([CardService.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/deck/service/CardService.java#L1183)).
+- Some card mapping performs N+1 latest-card lookups ([CardService.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/deck/service/CardService.java#L2044)); sync loads complete current/user/history collections in memory ([DeckService.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/deck/service/DeckService.java#L384)).
+- Review keeps a state lock while calculating the next card ([ReviewService.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/review/service/ReviewService.java#L203)).
+- Import can commit earlier batches before the job fails ([ImportProcessor.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/import/src/main/java/app/mnema/importer/service/ImportProcessor.java#L152)); AI can change a requested global update into a local update based on exception text ([CoreApiClient.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/ai/src/main/java/app/mnema/ai/client/core/CoreApiClient.java#L119)).
 
 ### Idempotent review
 
@@ -573,7 +573,7 @@ update or change canonical study-state rows. Mode validation precedes reduction.
 
 ### Later integration commands
 
-Remote service calls are not distributed transactions. When media/import/AI is introduced by later epics, every write carries `job_id + item/batch key`, returns a queryable command result and is safe to retry. These workers and their legacy behavior are not foundation dependencies; the current import worker's stale-lock defect is deletion evidence ([ImportJobWorker.java](../../backend/services/import/src/main/java/app/mnema/importer/service/ImportJobWorker.java#L78)).
+Remote service calls are not distributed transactions. When media/import/AI is introduced by later epics, every write carries `job_id + item/batch key`, returns a queryable command result and is safe to retry. These workers and their legacy behavior are not foundation dependencies; the current import worker's stale-lock defect is deletion evidence ([ImportJobWorker.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/import/src/main/java/app/mnema/importer/service/ImportJobWorker.java#L78)).
 
 ## Security and observability
 

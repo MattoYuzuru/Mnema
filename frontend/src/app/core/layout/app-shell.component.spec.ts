@@ -47,13 +47,13 @@ describe('AppShellComponent', () => {
         await fixture.whenStable();
     });
 
-    it('renders one main landmark, a skip link, and only real deck destinations', () => {
+    it('renders one main landmark, a skip link, and current deck/account destinations', () => {
         const root = fixture.nativeElement as HTMLElement;
 
         expect(root.querySelectorAll('main').length).toBe(1);
         expect(root.querySelector<HTMLAnchorElement>('.skip-link')?.getAttribute('href')).toBe('#main-content');
         expect(Array.from(root.querySelectorAll('.primary-nav a')).map(link => link.getAttribute('href')))
-            .toEqual(['/decks', '/decks/new']);
+            .toEqual(['/decks', '/decks/new', '/profile']);
         expect(root.textContent).not.toContain('Начать обучение');
     });
 

@@ -80,13 +80,13 @@ Move feature routes to `loadComponent` or lazy feature-route files, then set exp
 
 The mobile drawer remains in the DOM and uses `aria-hidden` when closed ([app-shell.component.ts](../../frontend/src/app/core/layout/app-shell.component.ts#L162)). Opening it changes only a signal/body overflow ([app-shell.component.ts](../../frontend/src/app/core/layout/app-shell.component.ts#L1134)). Lighthouse reported focusable content under `aria-hidden`; manual keyboard testing showed focus remaining on the external trigger and Tab moving outside the declared dialog.
 
-At least 14 feature files implement their own `.modal-overlay`. The shared confirmation dialog lacks complete dialog semantics, accessible naming, Escape and focus restoration ([confirmation-dialog.component.ts](../../frontend/src/app/shared/components/confirmation-dialog.component.ts#L10)).
+At least 14 feature files implement their own `.modal-overlay`. The shared confirmation dialog lacks complete dialog semantics, accessible naming, Escape and focus restoration ([confirmation-dialog.component.ts](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/frontend/src/app/shared/components/confirmation-dialog.component.ts#L10)).
 
 Create one accessible dialog primitive using the already installed CDK or native `<dialog>`. It must move focus inside, contain Tab, support Escape according to action safety, restore focus, expose a name and respect reduced motion. This follows the [W3C APG modal dialog pattern](https://www.w3.org/WAI/ARIA/apg/patterns/dialog-modal/). Model the mobile drawer as either a real modal with the same contract or a non-modal navigation surface; do not mix both semantics.
 
 ### P1 — searches and long-running work have lifecycle bugs
 
-- Public-card search filters only loaded pages and can stop prefetching on the first empty local result ([public-card-browser.component.ts](../../frontend/src/app/features/public-decks/public-card-browser.component.ts#L1175)). A later-page match can be reported absent. Use server search or explicitly state and correctly continue a loaded-only search.
+- Public-card search filters only loaded pages and can stop prefetching on the first empty local result ([public-card-browser.component.ts](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/frontend/src/app/features/public-decks/public-card-browser.component.ts#L1175)). A later-page match can be reported absent. Use server search or explicitly state and correctly continue a loaded-only search.
 - AI modals polled recursively with `setTimeout` and no destroy cancellation ([historical enhance modal](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/frontend/src/app/features/decks/ai-enhance-card-modal.component.ts#L1166), [historical import modal](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/frontend/src/app/features/decks/ai-import-modal.component.ts#L1502)). Closing a modal could leave callbacks/requests alive. The files were removed from the replacement UI; this finding remains historical evidence.
 
 ### P1 — unsupported Angular line and known dependency findings
@@ -178,7 +178,7 @@ to avoid, not a measured attribution of every observed slowdown.
 
 ## Exercise platform
 
-The v1 session was hard-coded as prompt → reveal → `AGAIN/HARD/GOOD/EASY` ([historical review session](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/frontend/src/app/features/decks/review-session.component.ts#L78)); the retained legacy answer model captures rating and response time, not an exercise attempt ([review.models.ts](../../frontend/src/app/core/models/review.models.ts#L29)).
+The v1 session was hard-coded as prompt → reveal → `AGAIN/HARD/GOOD/EASY` ([historical review session](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/frontend/src/app/features/decks/review-session.component.ts#L78)); the retained legacy answer model captures rating and response time, not an exercise attempt ([review.models.ts](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/frontend/src/app/core/models/review.models.ts#L29)).
 
 Use a bounded registry, not a plugin/microfrontend framework:
 

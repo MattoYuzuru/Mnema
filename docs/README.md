@@ -21,7 +21,7 @@ artifact:
 1. **Current:** корневой [`AGENTS.md`](../AGENTS.md) — нормативные engineering,
    UX, security, quality и delivery rules. Других нормативных agent-guides нет.
 2. **Current:** [System overview](./system-overview.md) — что реально работает после
-   #74/#75 и что остаётся legacy.
+   #74–#76 и текущий replacement boundary.
 3. **Current:** [Repository guide](./engineering/repository-guide.md) — версии,
    каталоги, runtime boundaries, harnesses и полный gate.
 4. **Current:** [Local-only delivery](./operations/local-development-delivery.md) —
@@ -32,7 +32,7 @@ artifact:
    [принятый refinement](./engineering/epic-75-refinement.md) и исполняемый
    [`contracts/study`](../contracts/study/README.md).
 7. **Media:** [refinement Epic #76](./engineering/epic-76-refinement.md) — принятый
-   scope, архитектурные границы и задачи; production media ещё не реализовано.
+   scope, архитектурные границы и задачи.
 
 ## Product
 
@@ -56,7 +56,7 @@ artifact:
 | current | [Counted-page contract](./architecture/counted-page-contract.md) | Реализованные counted-page/structural invariants. |
 | current | [Identity & Account guide](../backend/services/identity-account/guide.md) | Текущий identity runtime. |
 | current | [Learning API guide](../backend/services/learning/guide.md) | Текущий content, exercise и Study runtime. |
-| legacy | [`core`, `media`, `import`, `ai` guides](#legacy-и-superseded) | Replacement input; не шаблон для #75/#76. |
+| historical | [`v1-apache-final`](https://github.com/MattoYuzuru/Mnema/tree/v1-apache-final) | Последний полный срез старых сервисов и миграций. |
 
 ## Frontend
 
@@ -122,7 +122,7 @@ infrastructure task; никакие прошлые staging результаты 
 - `docs/services/{auth,user,core,media,import,ai}-service.md` — **legacy** v1;
 - `docs/services/frontend.md` — **legacy** UI overview;
 - `docs/deploy/selfhost-public.md` и `docs/deploy/model-matrix.md` — **legacy** v1;
-- historical section в [local self-host guide](./deploy/selfhost-local.md) —
+- historical pointer в [local self-host guide](./deploy/selfhost-local.md) —
   ссылка на Apache-срез, не исполняемый путь текущего checkout;
 - `docs/engineering/agent-guide.md` — **superseded**, тонкий pointer на `AGENTS.md`.
 

@@ -48,7 +48,7 @@ def full_policy(auth_origin: str, storage_origin: str) -> str:
         "script-src-attr 'none'; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src 'self' https://fonts.gstatic.com; "
-        f"img-src 'self' data: blob: {storage_origin} https://lh3.googleusercontent.com "
+        f"img-src 'self' data: blob: {auth_origin} {storage_origin} https://lh3.googleusercontent.com "
         "https://avatars.githubusercontent.com https://github.com https://avatars.yandex.net; "
         f"media-src 'self' blob: {storage_origin}; "
         f"connect-src 'self' {auth_origin} {storage_origin} https://challenges.cloudflare.com; "
@@ -187,7 +187,7 @@ def verify_hosted(args: argparse.Namespace) -> None:
         ("/", 200, "public, max-age=0, must-revalidate"),
         ("/login", 200, "public, max-age=0, must-revalidate"),
         ("/app-config.js", 200, "no-store"),
-        ("/api/ai", 503, "no-store"),
+        ("/api/ai", 404, "no-store"),
         ("/missing-browser-security-contract.js", 404, None),
     ]
 

@@ -1,689 +1,237 @@
-import { Component, OnInit, ViewChild, ElementRef, inject, ChangeDetectionStrategy } from '@angular/core';
-
-import { AbstractControl, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
+import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
+import { HttpErrorResponse } from '@angular/common/http';
+import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
-import { AuthService, PasswordStatus } from './auth.service';
-import { UserApiService, UserProfile } from './user-api.service';
-import { MediaApiService } from './core/services/media-api.service';
-import { ButtonComponent } from './shared/components/button.component';
-import { InputComponent } from './shared/components/input.component';
-import { TextareaComponent } from './shared/components/textarea.component';
-import { ReviewStatsPanelComponent } from './shared/components/review-stats-panel.component';
-
-import { TranslatePipe } from './shared/pipes/translate.pipe';
-import { I18nService } from './core/services/i18n.service';
-import { ToastService } from './core/services/toast.service';
+import { AccountProfile, AccountProfileApi } from './account-profile.api';
+import { AuthService } from './auth.service';
 import { appConfig } from './app.config';
+
+function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | null {
+    return new TextEncoder().encode(String(control.value ?? '')).length > 72 ? { passwordBytes: true } : null;
+}
 
 @Component({
     selector: 'app-profile-page',
-    imports: [ReactiveFormsModule, RouterLink, ButtonComponent, InputComponent, TextareaComponent, TranslatePipe, ReviewStatsPanelComponent],
+    imports: [ReactiveFormsModule, RouterLink],
     template: `
-    @if (auth.status() === 'authenticated') {
-      <section class="profile-page">
-        <div class="profile-container">
-          <h1>{{ 'profile.title' | translate }}</h1>
-          @if (loading) {
-            <div class="loading">{{ 'profile.loadingProfile' | translate }}</div>
+      <section class="profile-page" aria-labelledby="profile-title">
+        <a routerLink="/decks" class="back-link">← Мои колоды</a>
+        <header>
+          <p class="eyebrow">Личный кабинет</p>
+          <h1 id="profile-title" tabindex="-1">Профиль</h1>
+          <p>Имя и аватар видны там, где вы делитесь материалами.</p>
+        </header>
+
+        @if (loading()) {
+          <p role="status">Загружаем профиль…</p>
+        } @else if (profile(); as account) {
+          @if (showEmailWarning && !account.emailVerified) {
+            <p class="notice" role="status">Почта ещё не подтверждена. Проверьте письмо для подтверждения, чтобы сохранить доступ к аккаунту.</p>
           }
-          @if (!loading && profile) {
-            <div class="profile-content">
-              @if (config.features.showEmailVerificationWarning && auth.user()?.emailVerified === false) {
-                <div class="verification-warning">
-                  <h3>{{ 'profile.unverifiedTitle' | translate }}</h3>
-                  <p>{{ 'profile.unverifiedText' | translate }}</p>
-                </div>
-              }
-              <div class="profile-header">
-                <div class="avatar-section">
-                  <div class="avatar-container" (click)="triggerAvatarUpload()">
-                    @if (avatarDisplayUrl) {
-                      <img [src]="avatarDisplayUrl" [alt]="profile.username" class="avatar" />
-                    }
-                    @if (!avatarDisplayUrl) {
-                      <div class="avatar-placeholder">
-                        {{ profile.username.charAt(0).toUpperCase() }}
-                      </div>
-                    }
-                    <div class="avatar-overlay" [class.uploading]="uploading">
-                      @if (!uploading) {
-                        <span class="edit-icon">✎</span>
-                      }
-                      @if (uploading) {
-                        <span class="uploading-text">Uploading... {{ uploadProgress }}%</span>
-                      }
-                    </div>
-                  </div>
-                  <input
-                    #avatarInput
-                    type="file"
-                    accept="image/*"
-                    (change)="onAvatarSelected($event)"
-                    style="display: none;"
-                    />
-                </div>
-                <div class="profile-info">
-                  <h2>{{ profile.username }}</h2>
-                  <p class="email">{{ profile.email }}</p>
-                  <p class="member-since">{{ 'profile.memberSince' | translate }} {{ formatDate(profile.createdAt) }}</p>
-                  @if (profile.admin) {
-                    <span class="admin-badge">{{ 'profile.admin' | translate }}</span>
-                  }
-                </div>
+          <div class="profile-grid">
+            <section class="sheet" aria-labelledby="avatar-heading">
+              <h2 id="avatar-heading">Аватар</h2>
+              <div class="avatar-preview">
+                @if (account.avatarPresent && avatarUrl()) {
+                  <img [src]="avatarUrl()" alt="Ваш аватар" width="112" height="112" />
+                } @else {
+                  <span aria-hidden="true">{{ (account.displayName || account.profileUsername || account.email).charAt(0).toUpperCase() }}</span>
+                }
               </div>
-              <app-review-stats-panel titleKey="stats.accountTitle"></app-review-stats-panel>
-              <form [formGroup]="form" (ngSubmit)="save()" class="edit-form">
-                <h3>{{ 'profile.editProfile' | translate }}</h3>
-                <app-input
-                  [label]="'profile.username' | translate"
-                  type="text"
-                  formControlName="username"
-                  [placeholder]="'profile.enterUsername' | translate"
-                  [hasError]="form.get('username')?.invalid && form.get('username')?.touched || false"
-                  [errorMessage]="usernameErrorMessage() | translate"
-                  [maxLength]="maxUsernameLength"
-                ></app-input>
-                <app-textarea
-                  [label]="'profile.bio' | translate"
-                  formControlName="bio"
-                  [placeholder]="'profile.enterBio' | translate"
-                  [rows]="4"
-                  [hasError]="form.get('bio')?.invalid && form.get('bio')?.touched || false"
-                  [errorMessage]="bioErrorMessage() | translate"
-                  [maxLength]="maxBioLength"
-                ></app-textarea>
-                <div class="form-actions">
-                  <app-button
-                    type="submit"
-                    variant="primary"
-                    [disabled]="form.invalid || saving"
-                    >
-                    {{ (saving ? 'profile.saving' : 'profile.saveChanges') | translate }}
-                  </app-button>
-                </div>
+              <input id="avatar-file" class="file-input" type="file" accept="image/png,image/jpeg,image/webp"
+                     aria-describedby="avatar-hint"
+                     (change)="uploadAvatar($event)" [disabled]="avatarBusy()" />
+              <label for="avatar-file" class="file-label">Выбрать изображение</label>
+              <p id="avatar-hint" class="hint">PNG, JPEG или WebP, до 10 МБ и 1024 × 1024 пикселей.</p>
+              @if (avatarBusy()) { <p role="status">Сохраняем аватар…</p> }
+              @if (avatarError()) { <p class="error" role="alert">{{ avatarError() }}</p> }
+            </section>
+
+            <section class="sheet" aria-labelledby="details-heading">
+              <h2 id="details-heading">О вас</h2>
+              <p class="email">{{ account.email }}</p>
+              <form [formGroup]="form" (ngSubmit)="save()">
+                <label for="profile-username">Имя пользователя</label>
+                <input id="profile-username" formControlName="profileUsername" autocomplete="nickname"
+                       aria-describedby="username-hint" />
+                <p id="username-hint" class="hint">3–50 символов: латинские буквы, цифры, точка, дефис или подчёркивание.</p>
+                <label for="display-name">Отображаемое имя</label>
+                <input id="display-name" formControlName="displayName" autocomplete="name" maxlength="200" />
+                <label for="profile-bio">О себе</label>
+                <textarea id="profile-bio" formControlName="bio" maxlength="200" rows="4"></textarea>
+                @if (saveError()) { <p class="error" role="alert">{{ saveError() }}</p> }
+                @if (saveSuccess()) { <p class="success" role="status">Изменения сохранены.</p> }
+                <button type="submit" [disabled]="form.invalid || saving()">{{ saving() ? 'Сохраняем…' : 'Сохранить профиль' }}</button>
               </form>
-              @if (passwordStatus) {
-                <div class="password-panel">
-                  <h3>{{ 'profile.passwordTitle' | translate }}</h3>
-                  <p class="password-description">
-                    {{ (passwordStatus.hasPassword ? 'profile.passwordChangeHint' : 'profile.passwordSetHint') | translate }}
-                  </p>
-                  <form [formGroup]="passwordForm" (ngSubmit)="savePassword()" class="password-form">
-                    @if (passwordStatus.hasPassword) {
-                      <app-input
-                        [label]="'profile.passwordCurrent' | translate"
-                        type="password"
-                        formControlName="currentPassword"
-                        [placeholder]="'profile.passwordCurrentPlaceholder' | translate"
-                        [hasError]="passwordForm.get('currentPassword')?.invalid && passwordForm.get('currentPassword')?.touched || false"
-                        [errorMessage]="'profile.passwordRequired' | translate"
-                      ></app-input>
-                    }
-                    <app-input
-                      [label]="'profile.passwordNew' | translate"
-                      type="password"
-                      formControlName="newPassword"
-                      [placeholder]="'profile.passwordNewPlaceholder' | translate"
-                      [hasError]="passwordForm.get('newPassword')?.invalid && passwordForm.get('newPassword')?.touched || false"
-                      [errorMessage]="passwordErrorMessage('newPassword') | translate"
-                    ></app-input>
-                    <app-input
-                      [label]="'profile.passwordConfirm' | translate"
-                      type="password"
-                      formControlName="confirmPassword"
-                      [placeholder]="'profile.passwordConfirmPlaceholder' | translate"
-                      [hasError]="passwordForm.hasError('passwordMismatch') && passwordForm.get('confirmPassword')?.touched || false"
-                      [errorMessage]="'profile.passwordMismatch' | translate"
-                    ></app-input>
-                    <div class="form-actions">
-                      <app-button
-                        type="submit"
-                        variant="primary"
-                        [disabled]="passwordForm.invalid || passwordSaving"
-                        >
-                        {{ (passwordSaving ? 'profile.passwordSaving' : 'profile.passwordSave') | translate }}
-                      </app-button>
-                    </div>
-                  </form>
-                </div>
-              }
-            </div>
+            </section>
+          </div>
+          @if (account.hasPassword) {
+            <section class="sheet password-sheet" aria-labelledby="password-heading">
+              <h2 id="password-heading">Пароль</h2>
+              <p class="hint">После смены пароля нужно войти заново.</p>
+              <form [formGroup]="passwordForm" (ngSubmit)="changePassword()">
+                <label for="current-password">Текущий пароль</label>
+                <input id="current-password" type="password" formControlName="currentPassword" autocomplete="current-password" />
+                <label for="new-password">Новый пароль</label>
+                <input id="new-password" type="password" formControlName="newPassword" autocomplete="new-password"
+                       aria-describedby="password-hint" [attr.aria-invalid]="passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid" />
+                <p id="password-hint" class="hint">От 12 до 128 символов, не более 72 байт UTF-8.</p>
+                @if (passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid) {
+                  <p class="error" role="alert">Новый пароль: минимум 12 символов и максимум 72 байта UTF-8.</p>
+                }
+                <label for="confirm-password">Повторите новый пароль</label>
+                <input id="confirm-password" type="password" formControlName="confirmPassword" autocomplete="new-password" />
+                @if (passwordError()) { <p class="error" role="alert">{{ passwordError() }}</p> }
+                <button type="submit" [disabled]="passwordForm.invalid || passwordBusy()">Сменить пароль</button>
+              </form>
+            </section>
           }
-        </div>
+        } @else {
+          <p class="error" role="alert">{{ loadError() || 'Не удалось открыть профиль.' }}</p>
+          <button type="button" (click)="load()">Повторить</button>
+        }
       </section>
-    } @else {
-      <section class="profile-page">
-        <div class="profile-container">
-          <h1>{{ 'profile.title' | translate }}</h1>
-          <p>{{ 'profile.pleaseLogIn' | translate }}</p>
-          <a routerLink="/login">
-            <app-button variant="primary">{{ 'profile.logIn' | translate }}</app-button>
-          </a>
-        </div>
-      </section>
-    }
-
     `,
-    changeDetection: ChangeDetectionStrategy.Eager,
-    styles: [
-        `
-      .profile-page {
-        padding: var(--spacing-xl) var(--spacing-md);
-      }
-
-      .profile-container {
-        max-width: 800px;
-        margin: 0 auto;
-      }
-
-      h1 {
-        font-size: 2rem;
-        font-weight: 700;
-        margin-bottom: var(--spacing-xl);
-        color: var(--color-text-primary);
-      }
-
-      .loading {
-        color: var(--color-text-secondary);
-      }
-
-      .profile-content {
-        display: flex;
-        flex-direction: column;
-        gap: var(--spacing-xl);
-      }
-
-      .verification-warning {
-        position: relative;
-        padding: var(--spacing-lg) var(--spacing-lg) var(--spacing-lg) calc(var(--spacing-lg) + 8px);
-        border-radius: var(--border-radius-lg);
-        background: var(--color-card-background);
-        border: 1px solid rgba(14, 165, 233, 0.35);
-        box-shadow: var(--shadow-md);
-        color: var(--color-text-primary);
-        overflow: hidden;
-      }
-
-      .verification-warning::before {
-        content: '';
-        position: absolute;
-        top: 10px;
-        bottom: 10px;
-        left: 10px;
-        width: 4px;
-        border-radius: 999px;
-        background: linear-gradient(180deg, var(--color-primary-accent), var(--color-secondary-accent));
-      }
-
-      .verification-warning h3 {
-        margin: 0 0 var(--spacing-xs) 0;
-        font-size: 1.1rem;
-        color: var(--color-text-primary);
-      }
-
-      .verification-warning p {
-        margin: 0;
-        font-size: 0.95rem;
-        line-height: 1.5;
-        color: var(--color-text-secondary);
-      }
-
-      .password-panel {
-        padding: var(--spacing-xl);
-        background: var(--color-card-background);
-        border: 1px solid var(--border-color);
-        border-radius: var(--border-radius-lg);
-      }
-
-      .password-panel h3 {
-        margin: 0 0 var(--spacing-sm) 0;
-      }
-
-      .password-description {
-        margin: 0 0 var(--spacing-lg) 0;
-        color: var(--color-text-secondary);
-      }
-
-      .password-form {
-        display: flex;
-        flex-direction: column;
-        gap: var(--spacing-md);
-      }
-
-      .profile-header {
-        display: flex;
-        gap: var(--spacing-lg);
-        padding: var(--spacing-xl);
-        background: var(--color-card-background);
-        border: 1px solid var(--border-color);
-        border-radius: var(--border-radius-lg);
-      }
-
-      .avatar-section {
-        flex-shrink: 0;
-      }
-
-      .avatar-container {
-        position: relative;
-        cursor: pointer;
-        width: 96px;
-        height: 96px;
-      }
-
-      .avatar,
-      .avatar-placeholder {
-        width: 96px;
-        height: 96px;
-        border-radius: 50%;
-      }
-
-      .avatar {
-        object-fit: cover;
-        border: 2px solid var(--border-color);
-      }
-
-      .avatar-placeholder {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: #111827;
-        color: #fff;
-        font-size: 2.5rem;
-        font-weight: 600;
-      }
-
-      .avatar-overlay {
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        border-radius: 50%;
-        background: rgba(0, 0, 0, 0.5);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        opacity: 0;
-        transition: opacity 0.2s;
-      }
-
-      .avatar-container:hover .avatar-overlay {
-        opacity: 1;
-      }
-
-      .avatar-overlay.uploading {
-        opacity: 1;
-        flex-direction: column;
-        gap: var(--spacing-xs);
-        text-align: center;
-      }
-
-      .uploading-text {
-        color: #fff;
-        font-size: 0.85rem;
-        font-weight: 600;
-      }
-
-      .edit-icon {
-        color: white;
-        font-size: 1.5rem;
-      }
-
-      .profile-info {
-        flex: 1;
-      }
-
-      .profile-info h2 {
-        font-size: 1.5rem;
-        font-weight: 600;
-        margin: 0 0 var(--spacing-xs) 0;
-        color: var(--color-text-primary);
-      }
-
-      .email {
-        color: var(--color-text-secondary);
-        margin: 0 0 var(--spacing-xs) 0;
-      }
-
-      .member-since {
-        color: var(--color-text-tertiary);
-        font-size: 0.9rem;
-        margin: 0 0 var(--spacing-sm) 0;
-      }
-
-      .admin-badge {
-        display: inline-block;
-        padding: var(--spacing-xs) var(--spacing-sm);
-        background: #111827;
-        color: #fff;
-        border-radius: var(--border-radius-full);
-        font-size: 0.75rem;
-        font-weight: 600;
-        text-transform: uppercase;
-      }
-
-      .edit-form {
-        padding: var(--spacing-xl);
-        background: var(--color-card-background);
-        border: 1px solid var(--border-color);
-        border-radius: var(--border-radius-lg);
-        display: flex;
-        flex-direction: column;
-        gap: var(--spacing-lg);
-      }
-
-      .edit-form h3 {
-        font-size: 1.25rem;
-        font-weight: 600;
-        margin: 0 0 var(--spacing-md) 0;
-        color: var(--color-text-primary);
-      }
-
-      .form-actions {
-        display: flex;
-        gap: var(--spacing-md);
-        padding-top: var(--spacing-md);
-      }
-
-      @media (max-width: 768px) {
-        .profile-header {
-          flex-direction: column;
-          align-items: center;
-          text-align: center;
-        }
-
-        .profile-page {
-          padding: var(--spacing-lg) var(--spacing-md);
-        }
-
-        .form-actions {
-          flex-direction: column;
-          align-items: stretch;
-        }
-      }
-
-      @media (max-width: 480px) {
-        .profile-page {
-          padding: var(--spacing-md) var(--spacing-sm);
-        }
-      }
-    `
-    ]
+    styles: [`
+      :host { display: block; color: #342e44; }
+      .profile-page { max-width: 72rem; margin: 0 auto; padding: clamp(1.25rem, 4vw, 3rem); }
+      .back-link { color: #281378; text-underline-offset: .2em; }
+      header { max-width: 42rem; padding-block: 1.7rem 2rem; }
+      .eyebrow { margin: 0; color: #655b80; font-size: .8rem; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+      h1, h2 { color: #281378; font-family: Georgia, 'Times New Roman', serif; }
+      h1 { margin: .35rem 0 .75rem; font-size: clamp(2.4rem, 6vw, 4rem); }
+      h2 { margin: 0 0 1.5rem; font-size: 1.55rem; }
+      .profile-grid { display: grid; grid-template-columns: minmax(15rem, .75fr) minmax(0, 1.5fr); gap: 1rem; align-items: start; }
+      .sheet { min-width: 0; padding: clamp(1.25rem, 3vw, 2rem); border: 1px solid #c9c0ce; background: #fbf8ef; }
+      .password-sheet { margin-top: 1rem; max-width: 40rem; }
+      .avatar-preview { display: grid; place-items: center; width: 7rem; height: 7rem; margin-bottom: 1.25rem;
+        border: 1px solid #c9c0ce; border-radius: 50%; overflow: hidden; background: #e8e1ed; color: #281378;
+        font: 3rem Georgia, serif; }
+      .avatar-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
+      label:not(.file-label) { display: block; margin-bottom: .4rem; font-weight: 650; }
+      .file-input { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+        overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+      .file-label { display: inline-flex; align-items: center; min-height: 2.75rem; margin-bottom: .4rem;
+        padding: .65rem 1rem; border: 1px solid #281378; border-radius: .25rem;
+        color: #281378; background: #fffdf8; font-weight: 650; cursor: pointer; }
+      .file-label:hover { background: #e8e1ed; }
+      .file-input:focus-visible + .file-label { outline: 3px solid #6c55b8; outline-offset: 3px; }
+      .file-input:disabled + .file-label { opacity: .55; cursor: wait; }
+      input:not([type=file]), textarea { box-sizing: border-box; width: 100%; min-height: 2.75rem; padding: .65rem .75rem; margin-bottom: 1rem;
+        border: 1px solid #9788aa; border-radius: .3rem; background: #fffdf8; color: #342e44; font: inherit; }
+      textarea { resize: vertical; }
+      input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid #6c55b8; outline-offset: 3px; }
+      button { min-height: 2.75rem; padding: .65rem 1.25rem; border: 1px solid #281378; border-radius: .25rem;
+        background: #281378; color: white; font: inherit; font-weight: 650; cursor: pointer; }
+      button:hover:not(:disabled) { background: #442a9c; }
+      button:disabled { opacity: .55; cursor: not-allowed; }
+      .hint, .email { color: #625c70; font-size: .9rem; }
+      .hint { margin: .25rem 0 1.3rem; }
+      .email { margin: -.6rem 0 1.5rem; }
+      .error { color: #9b1b30; }
+      .success { color: #236149; }
+      .notice { padding: 1rem 1.25rem; margin: 0 0 1.5rem; border-inline-start: 4px solid #b68428;
+        background: #fff4d9; color: #4f3b1a; }
+      @media (max-width: 45rem) { .profile-grid { grid-template-columns: minmax(0, 1fr); } }
+    `],
+    changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class ProfilePageComponent implements OnInit {
-    auth = inject(AuthService);
-    private api = inject(UserApiService);
-    private mediaApi = inject(MediaApiService);
-    private fb = inject(FormBuilder);
-    private i18n = inject(I18nService);
-    private toast = inject(ToastService);
+    private readonly api = inject(AccountProfileApi);
+    private readonly auth = inject(AuthService);
+    private readonly fb = inject(FormBuilder);
+    readonly showEmailWarning = appConfig.features.showEmailVerificationWarning;
+    readonly profile = signal<AccountProfile | null>(null);
+    readonly avatarUrl = signal<string | null>(null);
+    readonly loading = signal(true);
+    readonly loadError = signal<string | null>(null);
+    readonly saving = signal(false);
+    readonly saveError = signal<string | null>(null);
+    readonly saveSuccess = signal(false);
+    readonly avatarBusy = signal(false);
+    readonly avatarError = signal<string | null>(null);
+    readonly passwordBusy = signal(false);
+    readonly passwordError = signal<string | null>(null);
+    readonly form = this.fb.nonNullable.group({
+        profileUsername: ['', [Validators.required, Validators.pattern(/^[A-Za-z0-9_.-]{3,50}$/u)]],
+        displayName: ['', Validators.maxLength(200)],
+        bio: ['', Validators.maxLength(200)]
+    });
+    readonly passwordForm = this.fb.nonNullable.group({
+        currentPassword: ['', Validators.required],
+        newPassword: ['', [Validators.required, Validators.minLength(12), Validators.maxLength(128), passwordByteLimit]],
+        confirmPassword: ['', Validators.required]
+    });
 
-    private static readonly MAX_USERNAME_LENGTH = 50;
-    private static readonly MAX_BIO_LENGTH = 200;
-    readonly maxUsernameLength = ProfilePageComponent.MAX_USERNAME_LENGTH;
-    readonly maxBioLength = ProfilePageComponent.MAX_BIO_LENGTH;
-    readonly config = appConfig;
-    @ViewChild('avatarInput') avatarInput!: ElementRef<HTMLInputElement>;
+    ngOnInit(): void { void this.load(); }
 
-    profile: UserProfile | null = null;
-    avatarDisplayUrl: string | null = null;
-    loading = false;
-    saving = false;
-    uploading = false;
-    uploadProgress = 0;
-    form: FormGroup;
-    passwordForm: FormGroup;
-    passwordStatus: PasswordStatus | null = null;
-    passwordSaving = false;
-
-    constructor() {
-        this.form = this.fb.group({
-            username: ['', [Validators.required, Validators.minLength(3), Validators.maxLength(ProfilePageComponent.MAX_USERNAME_LENGTH)]],
-            bio: ['', [Validators.maxLength(ProfilePageComponent.MAX_BIO_LENGTH)]]
-        });
-        this.passwordForm = this.fb.group(
-            {
-                currentPassword: [''],
-                newPassword: ['', [Validators.required, Validators.minLength(8)]],
-                confirmPassword: ['', [Validators.required]]
-            },
-            { validators: this.passwordMatchValidator }
-        );
+    async load(): Promise<void> {
+        this.loading.set(true);
+        this.loadError.set(null);
+        try {
+            const profile = await firstValueFrom(this.api.load());
+            this.profile.set(profile);
+            this.form.setValue({ profileUsername: profile.profileUsername ?? '', displayName: profile.displayName ?? '',
+                bio: profile.bio ?? '' });
+            this.avatarUrl.set(profile.avatarPresent ? this.api.avatarUrl(profile.accountId, Date.now()) : null);
+        } catch {
+            this.loadError.set('Проверьте соединение и попробуйте снова.');
+        } finally { this.loading.set(false); }
     }
 
-    ngOnInit(): void {
-        if (this.auth.status() !== 'authenticated') return;
-
-        this.loading = true;
-        this.api.getMe().subscribe({
-            next: async profile => {
-                this.profile = profile;
-                await this.resolveAvatarUrl(profile);
-                this.form.patchValue({
-                    username: profile.username,
-                    bio: profile.bio ?? ''
-                });
-                await this.loadPasswordStatus();
-            },
-            error: err => {
-                console.error('Failed to load profile', err);
-            },
-            complete: () => {
-                this.loading = false;
-            }
-        });
+    async save(): Promise<void> {
+        if (this.form.invalid || this.saving()) return;
+        this.saving.set(true);
+        this.saveError.set(null);
+        this.saveSuccess.set(false);
+        try {
+            const profile = await firstValueFrom(this.api.update(this.form.getRawValue()));
+            this.profile.set(profile);
+            this.saveSuccess.set(true);
+        } catch { this.saveError.set('Не удалось сохранить профиль. Проверьте данные и попробуйте снова.'); }
+        finally { this.saving.set(false); }
     }
 
-    private async resolveAvatarUrl(profile: UserProfile): Promise<void> {
-        if (profile.avatarMediaId) {
-            try {
-                const resolved = await firstValueFrom(this.mediaApi.resolve([profile.avatarMediaId]));
-                this.avatarDisplayUrl = resolved[0]?.url || null;
-            } catch (err) {
-                console.error('Failed to resolve avatar media', err);
-                this.avatarDisplayUrl = null;
-            }
+    async uploadAvatar(event: Event): Promise<void> {
+        const input = event.target as HTMLInputElement;
+        const file = input.files?.[0];
+        input.value = '';
+        if (!file || this.avatarBusy()) return;
+        this.avatarError.set(null);
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024 || !file.size) {
+            this.avatarError.set('Выберите PNG, JPEG или WebP размером до 10 МБ.');
             return;
         }
-        if (profile.avatarUrl) {
-            this.avatarDisplayUrl = profile.avatarUrl;
-        } else {
-            this.avatarDisplayUrl = null;
-        }
-    }
-
-    save(): void {
-        if (!this.profile || this.form.invalid) return;
-
-        this.saving = true;
-        const values = this.form.value;
-        this.api
-            .updateMe({
-                username: values.username,
-                bio: values.bio || null
-            })
-            .subscribe({
-                next: async profile => {
-                    this.profile = profile;
-                    await this.resolveAvatarUrl(profile);
-                    this.toast.success('profile.saveSuccess');
-                },
-                error: err => {
-                    console.error('Failed to save profile', err);
-                    this.toast.error('profile.saveError');
-                },
-                complete: () => {
-                    this.saving = false;
-                }
-            });
-    }
-
-    async loadPasswordStatus(): Promise<void> {
+        this.avatarBusy.set(true);
         try {
-            this.passwordStatus = await this.auth.getPasswordStatus();
-            this.applyPasswordValidators();
-        } catch (err) {
-            console.error('Failed to load password status', err);
-        }
+            await firstValueFrom(this.api.uploadAvatar(file));
+            const current = this.profile();
+            if (current) {
+                this.profile.set({ ...current, avatarPresent: true });
+                this.avatarUrl.set(this.api.avatarUrl(current.accountId, Date.now()));
+            }
+        } catch { this.avatarError.set('Не удалось сохранить аватар. Проверьте формат и размеры изображения.'); }
+        finally { this.avatarBusy.set(false); }
     }
 
-    savePassword(): void {
-        if (!this.passwordStatus || this.passwordForm.invalid) return;
-        this.passwordSaving = true;
-
-        const currentPassword = this.passwordStatus.hasPassword
-            ? (this.passwordForm.get('currentPassword')?.value as string | null)
-            : null;
-        const newPassword = this.passwordForm.get('newPassword')?.value as string;
-
-        this.auth
-            .setPassword(currentPassword, newPassword)
-            .then(status => {
-                this.passwordStatus = status;
-                this.passwordForm.reset();
-                this.applyPasswordValidators();
-                this.toast.success('profile.passwordSuccess');
-            })
-            .catch(err => {
-                console.error('Failed to update password', err);
-                this.toast.error('profile.passwordError');
-            })
-            .finally(() => {
-                this.passwordSaving = false;
-            });
-    }
-
-    private applyPasswordValidators(): void {
-        const current = this.passwordForm.get('currentPassword');
-        if (!current) return;
-        if (this.passwordStatus?.hasPassword) {
-            current.setValidators([Validators.required]);
-        } else {
-            current.clearValidators();
+    async changePassword(): Promise<void> {
+        if (this.passwordForm.invalid || this.passwordBusy()) return;
+        const { currentPassword, newPassword, confirmPassword } = this.passwordForm.getRawValue();
+        if (newPassword !== confirmPassword) {
+            this.passwordError.set('Новые пароли не совпадают.');
+            return;
         }
-        current.updateValueAndValidity();
-    }
-
-    usernameErrorMessage(): string {
-        const control = this.form.get('username');
-        if (control?.hasError('required') || control?.hasError('minlength')) {
-            return 'profile.usernameMinError';
-        }
-        if (control?.hasError('maxlength')) {
-            return 'validation.maxLength50';
-        }
-        return '';
-    }
-
-    bioErrorMessage(): string {
-        const control = this.form.get('bio');
-        if (control?.hasError('maxlength')) {
-            return 'validation.maxLength200';
-        }
-        return '';
-    }
-
-    passwordErrorMessage(controlName: string): string {
-        const control = this.passwordForm.get(controlName);
-        if (control?.hasError('required')) {
-            return 'profile.passwordRequired';
-        }
-        if (control?.hasError('minlength')) {
-            return 'profile.passwordMinError';
-        }
-        return '';
-    }
-
-    triggerAvatarUpload(): void {
-        if (this.uploading) return;
-        this.avatarInput.nativeElement.click();
-    }
-
-    onAvatarSelected(event: Event): void {
-        const input = event.target as HTMLInputElement;
-        if (input.files && input.files.length > 0) {
-            void this.uploadAvatar(input.files[0]);
-            input.value = '';
-        }
-    }
-
-    async uploadAvatar(file: File): Promise<void> {
-        this.uploading = true;
-        this.uploadProgress = 0;
+        this.passwordBusy.set(true);
+        this.passwordError.set(null);
         try {
-            const mediaId = await this.mediaApi.uploadFile(file, 'avatar', progress => {
-                this.uploadProgress = progress;
-            });
-            this.api.updateMe({ avatarMediaId: mediaId }).subscribe({
-                next: async profile => {
-                    this.profile = profile;
-                    await this.resolveAvatarUrl(profile);
-                    this.uploading = false;
-                    this.uploadProgress = 0;
-                    this.toast.success('profile.avatarSuccess');
-                },
-                error: err => {
-                    console.error('Failed to update avatar', err);
-                    this.uploading = false;
-                    this.uploadProgress = 0;
-                    this.toast.error('profile.avatarError');
-                }
-            });
-        } catch (err) {
-            console.error('Failed to upload avatar', err);
-            this.uploading = false;
-            this.uploadProgress = 0;
-            this.toast.error('profile.avatarError');
+            await this.auth.setPassword(currentPassword, newPassword);
+            this.passwordForm.reset();
+        } catch (error) {
+            this.passwordError.set(error instanceof HttpErrorResponse && error.status === 400
+                ? 'Новый пароль должен содержать 12–128 символов и не более 72 байт UTF-8.'
+                : 'Не удалось сменить пароль. Проверьте текущий пароль и соединение.');
         }
-    }
-
-    formatDate(dateString: string | null | undefined): string {
-        if (!dateString) return 'Unknown';
-        const normalizedDate = this.normalizeISODate(dateString);
-        if (!normalizedDate) return 'Unknown';
-        const date = new Date(normalizedDate);
-        if (isNaN(date.getTime())) return 'Unknown';
-        const locale = this.i18n.currentLanguage === 'ru' ? 'ru-RU' : 'en-US';
-        return date.toLocaleDateString(locale, {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric'
-        });
-    }
-
-    private normalizeISODate(isoString?: string | null): string | null {
-        if (!isoString) return null;
-
-        let normalized = isoString.trim();
-
-        normalized = normalized.replace(/(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2}:\d{2})/, '$1T$2');
-
-        normalized = normalized.replace(/\s+([+-]\d{2}:\d{2})$/, '$1');
-        normalized = normalized.replace(/\s+([+-]\d{2})$/, '$1');
-
-        normalized = normalized.replace(/\.(\d{3})\d*/, '.$1');
-
-        if (/[+-]\d{2}$/.test(normalized)) {
-            normalized = normalized.replace(/([+-]\d{2})$/, '$1:00');
-        }
-
-        try {
-            const test = new Date(normalized);
-            if (isNaN(test.getTime())) return null;
-        } catch {
-            return null;
-        }
-
-        return normalized;
-    }
-
-    private passwordMatchValidator(control: AbstractControl): { [key: string]: boolean } | null {
-        const newPassword = control.get('newPassword')?.value;
-        const confirmPassword = control.get('confirmPassword')?.value;
-        if (!newPassword || !confirmPassword) {
-            return null;
-        }
-        return newPassword === confirmPassword ? null : { passwordMismatch: true };
+        finally { this.passwordBusy.set(false); }
     }
 }

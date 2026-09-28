@@ -2,11 +2,6 @@ export interface AppConfig {
     authServerUrl: string;
     identityRedirectUri: string;
     learningApiBaseUrl: string;
-    apiBaseUrl: string;
-    coreApiBaseUrl: string;
-    mediaApiBaseUrl: string;
-    importApiBaseUrl: string;
-    aiApiBaseUrl: string;
     clientId: string;
     buildId: string;
     features: AppFeatures;
@@ -15,9 +10,6 @@ export interface AppConfig {
 export interface AppFeatures {
     federatedAuthEnabled: boolean;
     showEmailVerificationWarning: boolean;
-    aiEnabled: boolean;
-    aiSystemProviderEnabled: boolean;
-    aiSystemProviderName: string;
 }
 
 type AppConfigOverride = Partial<Omit<AppConfig, 'features'>> & {
@@ -41,29 +33,11 @@ const defaultConfig: AppConfig = {
         : (isLocalHost ? 'https://localhost:18081' : window.location.origin),
     identityRedirectUri: `${window.location.origin}/auth/callback`,
     learningApiBaseUrl: '/api',
-    apiBaseUrl: isMnemaProd
-        ? '/api/user'
-        : (isLocalHost ? 'http://localhost:8084/api/user' : '/api/user'),
-    coreApiBaseUrl: isMnemaProd
-        ? '/api/core'
-        : (isLocalHost ? 'http://localhost:8085/api/core' : '/api/core'),
-    mediaApiBaseUrl: isMnemaProd
-        ? '/api/media'
-        : (isLocalHost ? 'http://localhost:8086/api/media' : '/api/media'),
-    importApiBaseUrl: isMnemaProd
-        ? '/api/import'
-        : (isLocalHost ? 'http://localhost:8087/api/import' : '/api/import'),
-    aiApiBaseUrl: isMnemaProd
-        ? '/api/ai'
-        : (isLocalHost ? 'http://localhost:8088/api/ai' : '/api/ai'),
     clientId: 'mnema-web',
     buildId: 'dev',
     features: {
         federatedAuthEnabled: !isLocalSelfHost,
-        showEmailVerificationWarning: !isLocalSelfHost,
-        aiEnabled: isLocalSelfHost,
-        aiSystemProviderEnabled: isLocalSelfHost,
-        aiSystemProviderName: 'ollama'
+        showEmailVerificationWarning: !isLocalSelfHost
     }
 };
 

@@ -46,10 +46,10 @@ The owner decisions are recorded in [owner-decisions-2026-08](../decisions/owner
 
 | Priority | Fact | Consequence |
 |---|---|---|
-| P0 | A global card edit builds a complete next deck snapshot ([CardService.java](../../backend/services/core/src/main/java/app/mnema/core/deck/service/CardService.java#L1054)) | incremental creation of `N` cards produces `N(N+1)/2` public-card rows |
-| P0 | Subscribe/fork eagerly creates a user-card row per source card ([DeckService.java](../../backend/services/core/src/main/java/app/mnema/core/deck/service/DeckService.java#L630)) | subscribers × cards storage before study |
-| P0 | Some reads select latest card by card ID instead of pinned deck revision ([DeckCardViewAdapter.java](../../backend/services/core/src/main/java/app/mnema/core/deck/adapter/DeckCardViewAdapter.java#L103)) | browse/review can violate update semantics |
-| P0 | A stale update session can mutate a published target revision ([CardService.java](../../backend/services/core/src/main/java/app/mnema/core/deck/service/CardService.java#L1512)) | history is not truly immutable |
+| P0 | A global card edit builds a complete next deck snapshot ([CardService.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/deck/service/CardService.java#L1054)) | incremental creation of `N` cards produces `N(N+1)/2` public-card rows |
+| P0 | Subscribe/fork eagerly creates a user-card row per source card ([DeckService.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/deck/service/DeckService.java#L630)) | subscribers × cards storage before study |
+| P0 | Some reads select latest card by card ID instead of pinned deck revision ([DeckCardViewAdapter.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/deck/adapter/DeckCardViewAdapter.java#L103)) | browse/review can violate update semantics |
+| P0 | A stale update session can mutate a published target revision ([CardService.java](https://github.com/MattoYuzuru/Mnema/blob/v1-apache-final/backend/services/core/src/main/java/app/mnema/core/deck/service/CardService.java#L1512)) | history is not truly immutable |
 | P0 | Production serves unhashed JS/CSS with one-year immutable cache ([nginx.conf](../../frontend/nginx.conf#L50)) | returning users can be stuck on an obsolete frontend |
 | P0 | Main delivery can cancel a partial multi-target deployment | clusters/services can run different releases |
 | P0 | Repository production PostgreSQL is one 15 Gi PVC without a proven backup/restore runbook ([postgres.yaml](../../k8s/postgres.yaml#L45)) | storage and recovery boundaries are unsafe |
