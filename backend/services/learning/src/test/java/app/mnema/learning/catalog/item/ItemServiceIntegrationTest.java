@@ -2,6 +2,7 @@ package app.mnema.learning.catalog.item;
 
 import app.mnema.learning.catalog.deck.DeckCommand;
 import app.mnema.learning.catalog.deck.DeckService;
+import app.mnema.learning.media.MediaCatalog;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.platform.concurrency.VersionConflictException;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
@@ -39,12 +40,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class ItemServiceIntegrationTest extends PostgresIntegrationTest {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     private static JsonNode nativeDocument;
+    private static JsonNode richDocument;
 
     @Autowired private ItemService service;
     @Autowired private DeckService decks;
     @Autowired private ItemRepository repository;
     @Autowired private JdbcClient jdbc;
     @Autowired private ImmutableStorage storage;
+    @Autowired private MediaCatalog mediaCatalog;
     @Autowired private PlatformTransactionManager transactions;
 
     @BeforeAll
@@ -52,6 +55,52 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
         Path root = Path.of("").toAbsolutePath();
         while (!Files.exists(root.resolve("contracts/content/native-v1/valid/mixed.json"))) root = root.getParent();
         nativeDocument = JSON.readTree(Files.readString(root.resolve("contracts/content/native-v1/valid/mixed.json")));
+        richDocument = JSON.readTree(Files.readString(root.resolve("contracts/content/native-v1/valid/rich.json")));
+    }
+
+    @Test
+    void publicationPinsOnlySupportedOwnedMediaInTheSameTransaction() {
+        UUID actor = UUID.randomUUID();
+        UUID deck = createDeck(actor);
+        ObjectNode document = richDocument.deepCopy();
+        ArrayNode nodes = (ArrayNode) document.path("root").path("content");
+        for (int index = 0; index < 3; index++) {
+            UUID asset = mediaCatalog.reserve(actor, UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
+            ((ObjectNode) nodes.get(index).path("attrs")).put("assetId", asset.toString());
+        }
+        JsonNode before = decks.read(actor, deck);
+        var created = service.publish(actor, deck, 0, create(UUID.randomUUID(), before, document, null));
+        UUID member = UUID.fromString(created.acknowledgement().path("changes").get(0).path("memberKey").textValue());
+        UUID revision = UUID.fromString(created.acknowledgement().path("changes").get(0).path("itemRevisionId").textValue());
+        assertNative(service.read(actor, deck, member, revision).path("document"), document);
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE deck_id=:deck "
+                        + "AND member_key=:member AND revision_id=:revision")
+                .param("deck", deck).param("member", member).param("revision", revision)
+                .query(Long.class).single()).isEqualTo(3L);
+
+        ObjectNode next = document.deepCopy();
+        ((ObjectNode) next.path("root").path("content").get(0)).put("version", 2);
+        JsonNode head = decks.read(actor, deck);
+        var saved = service.publish(actor, deck, 1,
+                save(UUID.randomUUID(), head, member, revision, next, null));
+        UUID nextRevision = UUID.fromString(saved.acknowledgement().path("changes").get(0)
+                .path("itemRevisionId").textValue());
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE revision_id=:revision")
+                .param("revision", nextRevision).query(Long.class).single()).isEqualTo(2L);
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.content_media_ref WHERE revision_id=:revision")
+                .param("revision", revision).query(Long.class).single()).isEqualTo(3L);
+
+        ObjectNode foreign = document.deepCopy();
+        UUID otherAsset = mediaCatalog.reserve(UUID.randomUUID(), UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
+        ((ObjectNode) foreign.path("root").path("content").get(0).path("attrs"))
+                .put("assetId", otherAsset.toString());
+        JsonNode current = decks.read(actor, deck);
+        assertThatThrownBy(() -> service.publish(actor, deck, 2,
+                save(UUID.randomUUID(), current, member, nextRevision, foreign, null)))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(decks.read(actor, deck).path("rowVersion").textValue()).isEqualTo("2");
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.item_revision WHERE deck_id=:deck")
+                .param("deck", deck).query(Long.class).single()).isEqualTo(2L);
     }
 
     @Test
