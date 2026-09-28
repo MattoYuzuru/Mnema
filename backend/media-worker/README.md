@@ -91,8 +91,10 @@ lease, attempt count and next attempt time. Heartbeats renew the lease. Database
 publication checks the token, lease, asset generation and state. The backend
 streams the frozen S3 object to a private file and checks its exact length and full
 SHA-256 before invoking the worker. Java independently verifies the result's exact
-profile set, output paths, sizes and hashes. Derived objects use content-addressed
-keys and conditional `If-None-Match: *` PUT; an uncertain PUT is reconciled by HEAD
+profile set, output paths, sizes and hashes. Derived object keys include asset ID,
+generation, processing token, profile and content hash, so a late GC delete cannot
+target a later upload with the same SHA-256. Catalog blobs still deduplicate by
+hash and byte length. Conditional `If-None-Match: *` PUT is reconciled by HEAD
 with length, MIME and SHA metadata. One transaction stores source/variant blobs and
 marks the asset READY. The sealed source remains available for retry.
 

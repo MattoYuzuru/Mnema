@@ -6,6 +6,7 @@ import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.support.PostgresIntegrationTest;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -86,11 +87,129 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Autowired private MediaUploadService uploads;
+    @Autowired private MediaCatalog catalog;
     @Autowired private MediaObjectStore objects;
     @Autowired private MediaPlaybackStore playbackStore;
     @Autowired private MediaProcessingRepository processingRepository;
+    @Autowired private MediaGcRepository mediaGcRepository;
     @Autowired private MediaProcessingSettings processingSettings;
     @Autowired private JdbcClient jdbc;
+
+    @Test
+    void gcNeedsTwoScansAndGraceThenFencesHashDedupAcrossPhysicalDelete(@TempDir Path temporary)
+            throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID oldAsset = catalog.reserve(owner, UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
+        UUID blob = UUID.randomUUID();
+        byte[] bytes = new byte[]{31, 32, 33};
+        String key = "derived/" + UUID.randomUUID() + "/0/" + UUID.randomUUID() + "/image_webp_2048_v1/"
+                + sha(bytes);
+        Path file = Files.write(temporary.resolve("variant.webp"), bytes);
+        objects.putVerified(key, file, bytes.length, sha(bytes), "image/webp");
+        jdbc.sql("INSERT INTO app_learning.media_blob(blob_id,sha256,byte_length,mime_type,object_key,verified_at) "
+                        + "VALUES (:blob,:hash,:length,'image/webp',:key,CURRENT_TIMESTAMP)")
+                .param("blob", blob).param("hash", HexFormat.of().parseHex(sha(bytes)))
+                .param("length", bytes.length).param("key", key).update();
+        jdbc.sql("UPDATE app_learning.media_asset SET state='VERIFYING',updated_at=CURRENT_TIMESTAMP "
+                        + "WHERE asset_id=:asset").param("asset", oldAsset).update();
+        assertThat(catalog.ready(oldAsset, 0, blob)).isTrue();
+        jdbc.sql("UPDATE app_learning.media_asset SET owner_hold_until=CURRENT_TIMESTAMP-interval '1 day' "
+                        + "WHERE asset_id=:asset").param("asset", oldAsset).update();
+        catalog.expireUnattached(100);
+        assertThat(assetState(oldAsset)).isEqualTo("DELETED");
+        mediaGcRepository.discover(1000);
+
+        mediaGcRepository.scanKey(key, 0);
+        assertThat(gcState(key)).isEqualTo("FIRST");
+        mediaGcRepository.scanKey(key, 0);
+        assertThat(gcState(key)).isEqualTo("FIRST");
+        jdbc.sql("UPDATE app_learning.media_gc_object SET first_scan_at=CURRENT_TIMESTAMP-interval '2 days' "
+                        + "WHERE object_key=:key").param("key", key).update();
+        mediaGcRepository.scanKey(key, 1);
+        assertThat(gcState(key)).isEqualTo("SECOND");
+
+        var replacement = uploads.start(owner, UUID.randomUUID(), "upload", "image", "image/png", bytes.length);
+        put(replacement.url(), replacement.headers(), bytes);
+        uploads.finalizeUpload(owner, replacement.assetId(), 0, UUID.randomUUID());
+        var processing = processingRepository.claim(replacement.assetId());
+        var reclaimed = mediaGcRepository.claimDeletion(key);
+        assertThat(reclaimed).isNotNull();
+        assertThat(reclaimed.key()).isEqualTo(key);
+        assertThatThrownBy(() -> processingRepository.complete(processing,
+                new MediaProcessingRepository.Blob(sha(bytes), bytes.length, "image/png",
+                        frozenKey(replacement.assetId(), 0)), List.of()))
+                .isInstanceOf(MediaStorageUnavailableException.class);
+
+        objects.delete(key);
+        assertThat(mediaGcRepository.completeDeletion(reclaimed)).isTrue();
+        assertThat(mediaGcRepository.completeDeletion(reclaimed)).isFalse();
+        assertThat(gcState(key)).isEqualTo("DELETED");
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.media_blob WHERE blob_id=:blob")
+                .param("blob", blob).query(Long.class).single()).isZero();
+        assertThat(jdbc.sql("SELECT source_blob_id FROM app_learning.media_asset WHERE asset_id=:asset")
+                .param("asset", oldAsset).query(UUID.class).optional()).isEmpty();
+        assertThat(objects.head(key)).isNull();
+        assertThat(processingRepository.complete(processing,
+                new MediaProcessingRepository.Blob(sha(bytes), bytes.length, "image/png",
+                        frozenKey(replacement.assetId(), 0)), List.of())).isTrue();
+        assertThat(assetState(replacement.assetId())).isEqualTo("READY");
+        assertThat(read(frozenKey(replacement.assetId(), 0))).containsExactly(bytes);
+    }
+
+    @Test
+    void gcPreservesActiveWorkerAndRetrySourceButReclaimsOrphanDerivedAndRejectedSource(@TempDir Path temporary)
+            throws Exception {
+        UUID owner = UUID.randomUUID();
+        byte[] source = new byte[]{41, 42, 43};
+        var started = uploads.start(owner, UUID.randomUUID(), "upload", "image", "image/png", source.length);
+        put(started.url(), started.headers(), source);
+        uploads.finalizeUpload(owner, started.assetId(), 0, UUID.randomUUID());
+        var claim = processingRepository.claim(started.assetId());
+        byte[] variant = new byte[]{51, 52, 53};
+        String orphan = "derived/" + claim.assetId() + "/0/" + claim.token()
+                + "/image_webp_320_v1/" + sha(variant);
+        mediaGcRepository.recordDerivedIntent(claim, orphan);
+        Path file = Files.write(temporary.resolve("orphan.webp"), variant);
+        objects.putVerified(orphan, file, variant.length, sha(variant), "image/webp");
+        mediaGcRepository.scanKey(orphan, 0);
+        assertThat(gcState(orphan)).isEqualTo("TRACKED");
+        assertThat(processingRepository.retryable(claim, "worker_unavailable")).isTrue();
+        String sealed = frozenKey(started.assetId(), 0);
+        mediaGcRepository.discover(1000);
+        mediaGcRepository.scanKey(sealed, 0);
+        assertThat(gcState(sealed)).isEqualTo("TRACKED"); // preserved owner retry
+
+        mediaGcRepository.scanKey(orphan, 0);
+        assertThat(gcState(orphan)).isEqualTo("FIRST");
+        jdbc.sql("UPDATE app_learning.media_gc_object SET first_scan_at=CURRENT_TIMESTAMP-interval '2 days' "
+                        + "WHERE object_key=:key").param("key", orphan).update();
+        mediaGcRepository.scanKey(orphan, 1);
+        assertThat(gcState(orphan)).isEqualTo("SECOND");
+        var derivedDelete = mediaGcRepository.claimDeletion(orphan);
+        assertThat(derivedDelete.key()).isEqualTo(orphan);
+        objects.delete(orphan);
+        assertThat(mediaGcRepository.completeDeletion(derivedDelete)).isTrue();
+        assertThat(objects.head(orphan)).isNull();
+        assertThat(read(sealed)).containsExactly(source);
+
+        jdbc.sql("UPDATE app_learning.media_asset SET state='REJECTED',updated_at=CURRENT_TIMESTAMP "
+                        + "WHERE asset_id=:asset").param("asset", started.assetId()).update();
+        mediaGcRepository.scanKey(sealed, 0);
+        assertThat(gcState(sealed)).isEqualTo("FIRST");
+        jdbc.sql("UPDATE app_learning.media_gc_object SET first_scan_at=CURRENT_TIMESTAMP-interval '2 days' "
+                        + "WHERE object_key=:key").param("key", sealed).update();
+        mediaGcRepository.scanKey(sealed, 1);
+        var sourceDelete = mediaGcRepository.claimDeletion(sealed);
+        assertThat(sourceDelete.key()).isEqualTo(sealed);
+        objects.delete(sealed);
+        assertThat(mediaGcRepository.completeDeletion(sourceDelete)).isTrue();
+        assertThat(objects.head(sealed)).isNull();
+    }
+
+    private String gcState(String key) {
+        return jdbc.sql("SELECT state FROM app_learning.media_gc_object WHERE object_key=:key")
+                .param("key", key).query(String.class).single();
+    }
 
     @Test
     void signedPlaybackGetSupportsBrowserRangeSeekingAndAttachmentDownload() throws Exception {
@@ -137,13 +256,14 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
                 Files.writeString(output.resolve("result.json"), result);
             } catch (Exception failure) { throw new IllegalStateException(failure); }
         };
-        new MediaProcessingService(processingRepository, uploads, objects, fake, processingSettings).process(claim);
+        new MediaProcessingService(processingRepository, uploads, objects, fake, mediaGcRepository,
+                processingSettings).process(claim);
 
         assertThat(assetState(start.assetId())).isEqualTo("READY");
         assertThat(jdbc.sql("SELECT count(*) FROM app_learning.media_variant WHERE asset_id=:asset")
                 .param("asset", start.assetId()).query(Integer.class).single()).isEqualTo(2);
-        String key = "derived/sha256/" + sha(new byte[]{11, 12, 13}).substring(0, 2)
-                + "/" + sha(new byte[]{11, 12, 13});
+        String key = "derived/" + claim.assetId() + "/" + claim.generation() + "/" + claim.token()
+                + "/image_webp_2048_v1/" + sha(new byte[]{11, 12, 13});
         assertThat(read(key)).containsExactly(11, 12, 13);
         assertThat(processingRepository.heartbeat(claim)).isFalse();
     }
@@ -172,7 +292,8 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
         assertThat(read(frozenKey(start.assetId(), 0))).containsExactly(7, 8, 9);
 
         var processing = new MediaProcessingService(processingRepository, uploads, objects,
-                (job, asset, generation, kind, length, digest, maxDuration) -> { }, processingSettings);
+                (job, asset, generation, kind, length, digest, maxDuration) -> { }, mediaGcRepository,
+                processingSettings);
         processing.retryPreserved(owner, start.assetId(), 0);
         assertThat(assetState(start.assetId())).isEqualTo("VERIFYING");
         var retried = processingRepository.claim(start.assetId());
@@ -189,7 +310,7 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
         var rejecting = new MediaProcessingService(processingRepository, uploads, objects,
                 (job, asset, generation, kind, length, digest, maxDuration) -> {
                     throw new MediaProcessingRejectedException("unsupported_image");
-                }, processingSettings);
+                }, mediaGcRepository, processingSettings);
         rejecting.process(processingRepository.claim(invalid.assetId()));
         assertThat(assetState(invalid.assetId())).isEqualTo("REJECTED");
         assertThat(processingRepository.claim(invalid.assetId())).isNull();
@@ -200,7 +321,7 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
         var retrying = new MediaProcessingService(processingRepository, uploads, objects,
                 (job, asset, generation, kind, length, digest, maxDuration) -> {
                     throw new MediaStorageUnavailableException();
-                }, processingSettings);
+                }, mediaGcRepository, processingSettings);
         retrying.process(processingRepository.claim(transientSource.assetId()));
         assertThat(assetState(transientSource.assetId())).isEqualTo("PROCESSING");
         assertThat(processingRepository.claim(transientSource.assetId())).isNull();

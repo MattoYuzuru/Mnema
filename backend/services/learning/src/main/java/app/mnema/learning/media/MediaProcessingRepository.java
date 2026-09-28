@@ -183,10 +183,23 @@ class MediaProcessingRepository {
                         + "ON CONFLICT (sha256,byte_length) DO NOTHING")
                 .param("id", id).param("sha", digest).param("length", value.byteLength())
                 .param("mime", value.mimeType()).param("key", value.objectKey()).update();
-        return jdbc.sql("SELECT blob_id FROM app_learning.media_blob "
+        var existing = jdbc.sql("SELECT blob_id,object_key FROM app_learning.media_blob "
                         + "WHERE sha256=:sha AND byte_length=:length")
                 .param("sha", digest).param("length", value.byteLength())
-                .query(UUID.class).single();
+                .query((row, ignored) -> new ExistingBlob((UUID) row.getObject("blob_id"),
+                        row.getString("object_key"))).single();
+        jdbc.sql("SELECT blob_id FROM app_learning.media_blob WHERE blob_id=:id FOR UPDATE")
+                .param("id", existing.id()).query(UUID.class).single();
+        var state = jdbc.sql("SELECT state FROM app_learning.media_gc_object WHERE object_key=:key FOR UPDATE")
+                .param("key", existing.objectKey()).query(String.class).optional().orElse(null);
+        if ("DELETING".equals(state) || "DELETED".equals(state)) throw new MediaStorageUnavailableException();
+        if ("FIRST".equals(state) || "SECOND".equals(state)) {
+            jdbc.sql("UPDATE app_learning.media_gc_object SET state='TRACKED',first_scan_at=NULL,"
+                            + "first_scan_epoch=NULL,second_scan_at=NULL,next_attempt_at=NULL,"
+                            + "updated_at=CURRENT_TIMESTAMP WHERE object_key=:key")
+                    .param("key", existing.objectKey()).update();
+        }
+        return existing.id();
     }
 
     record Claim(UUID sessionId, UUID assetId, long generation, String kind, long declaredLength,
@@ -196,4 +209,5 @@ class MediaProcessingRepository {
                    Long durationMs) { }
     private record Candidate(UUID sessionId, UUID assetId, long generation, String kind,
                              long length, int attempts) { }
+    private record ExistingBlob(UUID id, String objectKey) { }
 }
