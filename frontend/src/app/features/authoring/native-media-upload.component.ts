@@ -399,6 +399,9 @@ export class NativeMediaUploadComponent {
 
 function formatBytes(bytes: number): string {
     if (bytes < 1024 * 1024) return `${bytes} Б`;
+    if (bytes >= 1024 * 1024 * 1024 && bytes % (1024 * 1024 * 1024) === 0) {
+        return `${bytes / (1024 * 1024 * 1024)} ГиБ`;
+    }
     if (bytes % (1024 * 1024) === 0) return `${bytes / (1024 * 1024)} МиБ`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} МиБ`;
 }
