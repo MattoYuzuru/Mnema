@@ -82,4 +82,38 @@ describe('NativeMediaUploadComponent', () => {
         flushMicrotasks();
         expect(api.finalize).toHaveBeenCalledOnceWith(assetId, 0, jasmine.any(String));
     }));
+
+    it('resumes multipart from server-observed parts without reuploading accepted bytes', fakeAsync(() => {
+        const { fixture, component, api } = setup();
+        const multipart: UploadView = { ...open, method: 'MULTIPART', declaredLength: 6, partSize: 3,
+            partCount: 2, url: null, headers: {}, urlExpiresAt: null };
+        api.intent.and.resolveTo(multipart);
+        api.completedParts.and.resolveTo([1]);
+        api.partUrls.and.resolveTo({ ...multipart, parts: [{ number: 2, length: 3,
+            url: 'https://storage.example/part-2', headers: { 'content-length': '3' },
+            expiresAt: '2099-01-01T00:00:00Z' }] });
+        component.onFiles([new File(['abcdef'], 'clip.mp4', { type: 'video/mp4' })]);
+        flushMicrotasks();
+        expect(api.completedParts).toHaveBeenCalledOnceWith(assetId, 0);
+        expect(api.put).toHaveBeenCalledTimes(1);
+        expect(api.put.calls.mostRecent().args[1].size).toBe(3);
+        expect(api.finalize).toHaveBeenCalled();
+        fixture.destroy();
+    }));
+
+    it('renews an expired single URL before resuming an existing asset', fakeAsync(() => {
+        const { fixture, component, api } = setup();
+        const file = new File(['png'], 'diagram.png', { type: 'image/png' });
+        api.status.and.resolveTo({ ...open, url: null, urlExpiresAt: null });
+        api.renewSingle.and.resolveTo(open);
+        component.entries.set([{ id: 'existing', name: file.name, kind: 'image', file,
+            phase: 'error', assetId, transfer: null, progress: 0, error: 'Соединение прервалось',
+            intentId: crypto.randomUUID(), finalizeId: crypto.randomUUID(), assetState: 'PENDING_UPLOAD' }]);
+        component.retry(component.entries()[0]);
+        flushMicrotasks();
+        expect(api.renewSingle).toHaveBeenCalledOnceWith(assetId, 0);
+        expect(api.put).toHaveBeenCalled();
+        expect(api.intent).not.toHaveBeenCalled();
+        fixture.destroy();
+    }));
 });
