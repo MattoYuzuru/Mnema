@@ -58,6 +58,20 @@ class NativeDocumentReaderTest {
     }
 
     @Test
+    void richRequiredTextUsesSharedJavaWhitespaceProfile() throws Exception {
+        JsonNode vectors = new ContentJsonReader(16_384, 16, 1_000)
+                .read(Files.readAllBytes(contractRoot().resolve("rich-text-vectors.json")));
+        for (JsonNode vector : vectors) {
+            ObjectNode document = (ObjectNode) new ContentJsonReader(1_048_576, 128, 250_000)
+                    .read(Files.readAllBytes(contractRoot().resolve("valid/rich.json")));
+            ((ObjectNode) document.path("root").path("content").get(0).path("attrs"))
+                    .put("alt", vector.path("value").textValue());
+            if (vector.path("valid").booleanValue()) assertThat(read(document).nodeCount()).isEqualTo(6);
+            else invalid(document);
+        }
+    }
+
+    @Test
     void sharedMultilingualEditorFixturePreservesEverySemanticFieldAndIdentity() throws Exception {
         byte[] fixture = Files.readAllBytes(contractRoot().resolve("valid/mixed.json"));
         NativeDocument document = reader.read(fixture);

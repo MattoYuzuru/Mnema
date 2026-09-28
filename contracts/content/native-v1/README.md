@@ -84,6 +84,9 @@ The web renderer uses strict Mermaid security settings and a text alternative.
 Malformed source shows an error while retaining the source for repair. Tables
 render as semantic HTML tables. See [rich.json](valid/rich.json) for a shared
 cross-client fixture.
+"Nonblank" follows Java `String.isBlank()` on both clients; the shared
+[rich text vectors](rich-text-vectors.json) cover Unicode whitespace differences
+from JavaScript `trim()`.
 
 A video poster is a derived variant of the same asset. Synchronized caption
 tracks need a separate versioned sidecar-reference contract; a transcript alone
