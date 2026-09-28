@@ -60,7 +60,7 @@ describe('NativeMediaUploadComponent', () => {
         component.onFiles([new File(['clip'], 'clip.mov', { type: 'video/quicktime' })]);
         flushMicrotasks();
         expect(component.entries()[0].phase).toBe('error');
-        expect(component.entries()[0].error).toContain('2 Б');
+        expect(component.entries()[0].error).toBe('Файл слишком большой. Выберите файл меньшего размера.');
         expect(api.intent).not.toHaveBeenCalled();
         fixture.destroy();
     }));

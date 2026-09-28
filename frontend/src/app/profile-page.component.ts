@@ -43,7 +43,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
                      aria-describedby="avatar-hint"
                      (change)="uploadAvatar($event)" [disabled]="avatarBusy()" />
               <label for="avatar-file" class="file-label">Выбрать изображение</label>
-              <p id="avatar-hint" class="hint">PNG, JPEG или WebP, до 10 МБ и 1024 × 1024 пикселей.</p>
+              <p id="avatar-hint" class="hint">PNG, JPEG или WebP, до 1024 × 1024 пикселей.</p>
               @if (avatarBusy()) { <p role="status">Сохраняем аватар…</p> }
               @if (avatarError()) { <p class="error" role="alert">{{ avatarError() }}</p> }
             </section>
@@ -81,9 +81,9 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
                 <input id="new-password" type="password" formControlName="newPassword" autocomplete="new-password"
                        [attr.aria-describedby]="passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid ? 'password-hint password-error' : 'password-hint'"
                        [attr.aria-invalid]="passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid" />
-                <p id="password-hint" class="hint">От 12 до 128 символов, не более 72 байт UTF-8.</p>
+                <p id="password-hint" class="hint">Не менее 12 символов.</p>
                 @if (passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid) {
-                  <p id="password-error" class="error field-error" role="alert">Новый пароль: минимум 12 символов и максимум 72 байта UTF-8.</p>
+                  <p id="password-error" class="error field-error" role="alert">Новый пароль слишком короткий или длинный.</p>
                 }
                 <label for="confirm-password">Повторите новый пароль</label>
                 <input id="confirm-password" type="password" formControlName="confirmPassword" autocomplete="new-password" />
@@ -125,7 +125,6 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
       input[aria-invalid=true] { border: 2px solid var(--mn-danger); }
       input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
       button { min-block-size: var(--mn-touch-min, 46px); border: 1px solid var(--mn-ink); border-radius: var(--mn-radius, 2px); padding: .65rem 1.25rem; background: var(--mn-ink); color: var(--mn-on-ink); font: 650 1rem/1.4 var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
-      button:hover:not(:disabled) { background: var(--mn-body); }
       button:disabled { opacity: .65; cursor: not-allowed; }
       .hint, .email { color: var(--mn-muted); font-size: .9rem; }
       .hint { margin: .25rem 0 1.25rem; }
@@ -202,8 +201,12 @@ export class ProfilePageComponent implements OnInit {
         input.value = '';
         if (!file || this.avatarBusy()) return;
         this.avatarError.set(null);
-        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024 || !file.size) {
-            this.avatarError.set('Выберите PNG, JPEG или WebP размером до 10 МБ.');
+        if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+            this.avatarError.set('Выберите изображение PNG, JPEG или WebP.');
+            return;
+        }
+        if (file.size > 10 * 1024 * 1024 || !file.size) {
+            this.avatarError.set('Изображение слишком большое или пустое. Выберите другое.');
             return;
         }
         this.avatarBusy.set(true);
@@ -232,7 +235,7 @@ export class ProfilePageComponent implements OnInit {
             this.passwordForm.reset();
         } catch (error) {
             this.passwordError.set(error instanceof HttpErrorResponse && error.status === 400
-                ? 'Новый пароль должен содержать 12–128 символов и не более 72 байт UTF-8.'
+                ? 'Новый пароль слишком короткий или длинный.'
                 : 'Не удалось сменить пароль. Проверьте текущий пароль и соединение.');
         }
         finally { this.passwordBusy.set(false); }

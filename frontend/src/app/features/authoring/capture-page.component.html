@@ -6,8 +6,8 @@
   @if (deck(); as currentDeck) {
     <form class="sheet" [formGroup]="form" (ngSubmit)="capture()">
       <div class="field"><label for="capture-text">Заметка</label><textarea id="capture-text" maxlength="32768" formControlName="text" [readonly]="recovery() === 'retry'" placeholder="Что важно не потерять?" aria-describedby="capture-help capture-error"></textarea>
-        <p class="muted" id="capture-help">До 32 КБ текста; пробелы без текста не сохраняются.</p>
-        @if (form.controls.text.dirty && form.controls.text.invalid) { <p id="capture-error" class="field-error">Введите текст и сократите его до 32 КБ.</p> }
+        <p class="muted" id="capture-help">Пробелы без текста не сохраняются.</p>
+        @if (form.controls.text.dirty && form.controls.text.invalid) { <p id="capture-error" class="field-error">Введите текст или сократите заметку.</p> }
       </div>
       <div class="actions"><button class="button primary" type="submit" [disabled]="busy() || form.invalid || recovery() === 'retry'">{{ busy() ? 'Сохраняем…' : 'Сохранить на потом' }}</button></div>
     </form>

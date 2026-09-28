@@ -23,8 +23,7 @@
     padding: clamp(2rem, 4vw, 4rem) 0 0 clamp(0rem, 2vw, 1.875rem);
 }
 
-.eyebrow,
-.note-tail {
+.eyebrow {
     color: var(--mn-ink);
     font: 500 .6875rem/1.75 var(--mn-font-mono);
     letter-spacing: .085em;
@@ -78,19 +77,6 @@
 
 .button.secondary {
     background: transparent;
-}
-
-.button:hover,
-.button:focus-visible {
-    background: var(--mn-soft);
-    color: var(--mn-ink);
-}
-
-.button.primary:hover,
-.button.primary:focus-visible {
-    background: var(--mn-ink);
-    color: var(--mn-on-ink);
-    text-decoration: underline;
 }
 
 .text-link {
@@ -166,10 +152,6 @@
     font: 500 1.9rem/1.05 var(--mn-font-display);
 }
 
-.note-tail {
-    font-size: .625rem;
-}
-
 .small-note {
     position: absolute;
     z-index: 2;
@@ -227,7 +209,6 @@
 }
 
 .feature-strip a + a { border-inline-start: 1px solid var(--mn-rule); }
-.feature-strip a:hover { background: var(--mn-sheet); }
 .feature-strip strong { display: block; margin-block-end: .35rem; font-weight: 600; text-transform: uppercase; letter-spacing: .045em; }
 .feature-icon { font: 2rem/1 Georgia, serif; }
 

@@ -85,8 +85,8 @@
           [attr.aria-invalid]="submitted() && (validation().titleBlank || validation().titleCodePoints > 200 || validation().titleBytes > 800)"
           aria-describedby="detail-title-help detail-title-error" autocomplete="off"></textarea>
         <div class="field-meta" id="detail-title-help">
-          <span>До 200 символов и 800 байт</span>
-          <span>{{ validation().titleCodePoints }}/200 · {{ validation().titleBytes }}/800 байт</span>
+          <span>До 200 символов</span>
+          <span>{{ validation().titleCodePoints }}/200</span>
         </div>
         @if (submitted() && validation().titleBlank) {
           <p class="field-error" id="detail-title-error">Введите название, состоящее не только из пробелов.</p>
@@ -100,13 +100,9 @@
         <textarea id="detail-description" rows="8" maxlength="4096" formControlName="description" (input)="syncDraft()"
           [readOnly]="mutationLocksDraft(mutation)"
           [attr.aria-invalid]="submitted() && validation().descriptionBytes > 4096"
-          aria-describedby="detail-description-help detail-description-error"></textarea>
-        <div class="field-meta" id="detail-description-help">
-          <span>До 4096 байт</span>
-          <span>{{ validation().descriptionBytes }}/4096 байт</span>
-        </div>
+          [attr.aria-describedby]="submitted() && validation().descriptionBytes > 4096 ? 'detail-description-error' : null"></textarea>
         @if (submitted() && validation().descriptionBytes > 4096) {
-          <p class="field-error" id="detail-description-error">Сократите описание до 4096 байт.</p>
+          <p class="field-error" id="detail-description-error">Сократите описание.</p>
         }
       </div>
 
@@ -114,7 +110,7 @@
         <p class="notice error" role="alert">Текст содержит неподдерживаемую последовательность Unicode.</p>
       }
       @if (submitted() && validation().requestBytes > 8192) {
-        <p class="notice error" role="alert">Название и описание вместе превышают размер команды 8192 байта.</p>
+        <p class="notice error" role="alert">Сократите название или описание.</p>
       }
 
       <div class="form-actions">

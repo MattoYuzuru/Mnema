@@ -87,7 +87,6 @@ h2 { font-size: clamp(1.65rem, 3vw, 2.2rem); font-weight: 500; line-height: 1.08
 }
 
 .button.primary { color: var(--mn-on-ink); background: var(--mn-ink); }
-.button.primary:hover { background: var(--mn-body); }
 .button.secondary { color: var(--mn-ink); background: transparent; }
 .button.quiet { border-color: transparent; color: var(--mn-ink); background: transparent; }
 .button:disabled { cursor: wait; opacity: .68; }
@@ -154,20 +153,9 @@ h2 { font-size: clamp(1.65rem, 3vw, 2.2rem); font-weight: 500; line-height: 1.08
 .empty p:not(.folio) { max-inline-size: 48ch; line-height: 1.6; }
 .status { color: var(--mn-muted); }
 .pager { display: flex; justify-content: center; flex-wrap: wrap; gap: .75rem; padding-block-start: 2rem; }
-.list-toolbar { display: flex; justify-content: flex-end; margin-block-end: .75rem; }
-.text-button {
-    min-block-size: var(--mn-touch-min, 46px);
-    border: 0;
-    padding: 0;
-    color: var(--mn-ink);
-    background: transparent;
-    font: inherit;
-    text-decoration: underline;
-    text-underline-offset: .22em;
-    cursor: pointer;
-}
-
 .metadata-form { display: grid; gap: 1.75rem; border-block-start: 1px solid var(--mn-ink); padding-block-start: 1.5rem; }
+.create-page .page-heading { margin-block-end: clamp(1.5rem, 4vw, 2.5rem); border-block-end: 0; padding-block-end: 0; }
+.create-page .metadata-form { border-block-start: 0; padding-block-start: 0; }
 .field { display: grid; gap: .55rem; }
 
 label { font-size: 1.05rem; font-weight: 700; }
@@ -232,8 +220,7 @@ input[readonly], textarea[readonly] { background: var(--mn-soft); }
 .server-version dt { color: var(--mn-muted); font-size: .8rem; }
 .server-version dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 
-:where(a, button, input, textarea):focus-visible,
-h1:focus-visible {
+:where(a, button, input, textarea):focus-visible {
     outline: 3px solid var(--mn-focus);
     outline-offset: 3px;
 }
@@ -254,5 +241,5 @@ h1:focus-visible {
 
 @media (forced-colors: active) {
     .deck-row:hover, .deck-row:focus-visible, .metadata-form, .notice, .button, .empty { border-color: CanvasText; }
-    :where(a, button, input, textarea):focus-visible, h1:focus-visible { outline-color: Highlight; }
+    :where(a, button, input, textarea):focus-visible { outline-color: Highlight; }
 }

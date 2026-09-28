@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
@@ -48,7 +49,7 @@ public class BrowserSessions {
     public void login(AccountAccess access, HttpServletRequest request, HttpServletResponse response) {
         transactions.executeWithoutResult(s -> {
             accounts.require(access, true);
-            establish(access, "ACCOUNT", "identity.session-expires", 28800, request, response);
+            establish(access, "ACCOUNT", "identity.session-expires", Duration.ofDays(3).toSeconds(), request, response);
         });
     }
 

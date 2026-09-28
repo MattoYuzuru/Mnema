@@ -44,7 +44,7 @@ describe('ProfilePageComponent', () => {
         Object.defineProperty(input, 'files', { value: [file] });
         await component.uploadAvatar({ target: input } as unknown as Event);
         expect(api.uploadAvatar).not.toHaveBeenCalled();
-        expect(component.avatarError()).toContain('10 МБ');
+        expect(component.avatarError()).toBe('Изображение слишком большое или пустое. Выберите другое.');
     });
 
     it('requires password confirmation before contacting Identity', async () => {
@@ -77,7 +77,7 @@ describe('ProfilePageComponent', () => {
         expect(passwordButton.disabled).toBeTrue();
         expect(newPassword.getAttribute('aria-invalid')).toBe('true');
         expect(newPassword.getAttribute('aria-describedby')).toBe('password-hint password-error');
-        expect(root.querySelector('.password-sheet .error')?.textContent).toContain('72 байта');
+        expect(root.querySelector('.password-sheet .error')?.textContent).toContain('слишком короткий или длинный');
     });
 
     it('associates an invalid profile username with its field guidance', async () => {

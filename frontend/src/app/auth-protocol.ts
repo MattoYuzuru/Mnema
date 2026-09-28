@@ -2,6 +2,7 @@
 export const AUTH_SCOPES = 'openid profile account.read account.write learning.read learning.write';
 export const AUTH_STORAGE_KEY = 'mnema.identity.access';
 export const PKCE_STORAGE_KEY = 'mnema.identity.pkce';
+const MAX_ACCESS_SECONDS = 3 * 24 * 60 * 60;
 
 export interface IdentityProfile {
     accountId: string;
@@ -79,7 +80,7 @@ export function validAccessToken(value: unknown): value is string {
 export function parseToken(value: unknown, now: number, issuer: string, clientId: string): StoredAccess {
     const t = objectValue(value);
     if (!validAccessToken(t['access_token']) || typeof t['token_type'] !== 'string' || t['token_type'].toLowerCase() !== 'bearer' ||
-        !Number.isInteger(t['expires_in']) || Number(t['expires_in']) < 1 || Number(t['expires_in']) > 300 ||
+        !Number.isInteger(t['expires_in']) || Number(t['expires_in']) < 1 || Number(t['expires_in']) > MAX_ACCESS_SECONDS ||
         !boundedText(t['scope'], 512) || !AUTH_SCOPES.split(' ').every(scope => (t['scope'] as string).split(' ').includes(scope))) {
         throw new AuthFailure('protocol');
     }
@@ -91,7 +92,7 @@ export function parseStoredAccess(raw: string, now: number, issuer: string, clie
     if (raw.length > 18000) throw new AuthFailure('protocol');
     const t = objectValue(JSON.parse(raw));
     if (!validAccessToken(t['token']) || !Number.isSafeInteger(t['expiresAt']) || Number(t['expiresAt']) <= now ||
-        Number(t['expiresAt']) > now + 300000 || t['issuer'] !== issuer || t['clientId'] !== clientId) throw new AuthFailure('protocol');
+        Number(t['expiresAt']) > now + MAX_ACCESS_SECONDS * 1000 || t['issuer'] !== issuer || t['clientId'] !== clientId) throw new AuthFailure('protocol');
     return { token: t['token'], expiresAt: Number(t['expiresAt']), issuer, clientId };
 }
 

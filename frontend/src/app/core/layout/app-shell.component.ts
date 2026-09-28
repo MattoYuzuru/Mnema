@@ -6,6 +6,7 @@ import { AuthService } from '../../auth.service';
 
 @Component({
     selector: 'app-shell',
+    host: { '(pointerover)': 'setWaveOrigin($event)' },
     imports: [RouterLink, RouterLinkActive, RouterOutlet],
     templateUrl: './app-shell.component.html',
     styleUrl: './app-shell.component.css',
@@ -35,5 +36,16 @@ export class AppShellComponent {
             const heading = document.querySelector<HTMLElement>('#main-content h1');
             heading?.focus();
         });
+    }
+
+    setWaveOrigin(event: PointerEvent): void {
+        if (!(event.target instanceof Element)) return;
+        const target = event.target.closest<HTMLElement>(
+            '.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a'
+        );
+        if (!target || (event.relatedTarget instanceof Node && target.contains(event.relatedTarget))) return;
+        const bounds = target.getBoundingClientRect();
+        target.style.setProperty('--mn-wave-x', `${event.clientX - bounds.left}px`);
+        target.style.setProperty('--mn-wave-y', `${event.clientY - bounds.top}px`);
     }
 }

@@ -72,7 +72,7 @@ public class AuthorizationConfiguration {
                 .scope("learning.read").scope("learning.write")
                 .clientSettings(
                         ClientSettings.builder().requireProofKey(true).requireAuthorizationConsent(false).build())
-                .tokenSettings(TokenSettings.builder().accessTokenTimeToLive(Duration.ofMinutes(5))
+                .tokenSettings(TokenSettings.builder().accessTokenTimeToLive(Duration.ofDays(3))
                         .authorizationCodeTimeToLive(Duration.ofMinutes(2)).build()).build();
         repo.save(client);
         return repo;
