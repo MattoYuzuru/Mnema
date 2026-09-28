@@ -66,8 +66,9 @@
         @if (presentation.prompt.kind === 'AUDIO_ASSET') {
           <section class="audio-cue" aria-label="Аудиозапись для задания">
             <p class="eyebrow">Слушайте</p><h3>{{ presentation.prompt.title }}</h3>
-            @if (audioUrls()[presentation.prompt.assetId]; as url) {
-              <audio controls preload="none" [src]="url">Ваш браузер не поддерживает воспроизведение аудио.</audio>
+            @if (audioUrls()[presentation.prompt.assetId]; as source) {
+              <app-native-media-player kind="audio" [title]="presentation.prompt.title" [source]="source.url"
+                (sourceFailed)="retryAudio(presentation.prompt.assetId)" />
             } @else { <p class="hint" role="status">Запись пока недоступна. Проверка ответа будет доступна после загрузки.</p> }
             @if (presentation.prompt.transcriptRevealed) {
               <p class="transcript"><strong>Транскрипт:</strong> {{ presentation.prompt.transcript }}</p>
@@ -144,8 +145,9 @@
                 @for (cue of presentation.prompt.cues; track cue.cueId; let index = $index) {
                   <div class="match-row">
                     <div class="audio-cue"><p class="eyebrow">Запись {{ index + 1 }}</p><h3>{{ cue.title }}</h3>
-                      @if (audioUrls()[cue.assetId]; as url) {
-                        <audio controls preload="none" [src]="url">Аудио недоступно в этом браузере.</audio>
+                      @if (audioUrls()[cue.assetId]; as source) {
+                        <app-native-media-player kind="audio" [title]="cue.title" [source]="source.url"
+                          (sourceFailed)="retryAudio(cue.assetId)" />
                       } @else { <p class="hint" role="status">Запись пока недоступна.</p> }
                       @if (presentation.prompt.transcriptRevealed && cue.transcript) {
                         <p class="transcript"><strong>Транскрипт:</strong> {{ cue.transcript }}</p>

@@ -4,6 +4,8 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
 import { timer } from 'rxjs';
 
+import { SignedMediaSource } from '../../content/rendering/media-playback.api';
+import { NativeMediaPlayerComponent } from '../../content/rendering/native-media-player.component';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { StudyApiService } from './study-api.service';
@@ -29,7 +31,7 @@ type Phase = 'setup' | 'loading' | 'preparing' | 'answering' | 'revealed' | 'sub
 
 @Component({
     selector: 'app-study-session-page',
-    imports: [RouterLink],
+    imports: [RouterLink, NativeMediaPlayerComponent],
     templateUrl: './study-session-page.component.html',
     styleUrl: './study-session-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -41,7 +43,7 @@ export class StudySessionPageComponent {
     readonly typedAnswer = signal('');
     readonly selectedOptionId = signal<string | null>(null);
     readonly matchSelections = signal<Readonly<Partial<Record<string, string>>>>({});
-    readonly audioUrls = signal<Readonly<Record<string, string>>>({});
+    readonly audioUrls = signal<Readonly<Record<string, SignedMediaSource>>>({});
     readonly transcriptLoading = signal(false);
     readonly clozeHintUsed = signal(false);
     readonly feedback = signal<AttemptOutcome | null>(null);
@@ -76,8 +78,22 @@ export class StudySessionPageComponent {
     readonly deckId: string;
     private presentedAt = 0;
     private pollCount = 0;
+    private audioTimer: ReturnType<typeof setTimeout> | null = null;
+    private audioEpoch = 0;
 
     constructor() {
+        const recheckAudio = () => {
+            if (document.visibilityState === 'visible' && navigator.onLine) this.refreshAudio();
+        };
+        document.addEventListener('visibilitychange', recheckAudio);
+        window.addEventListener('focus', recheckAudio);
+        window.addEventListener('online', recheckAudio);
+        this.destroyRef.onDestroy(() => {
+            document.removeEventListener('visibilitychange', recheckAudio);
+            window.removeEventListener('focus', recheckAudio);
+            window.removeEventListener('online', recheckAudio);
+            this.clearAudioTimer();
+        });
         const deckId = this.route.snapshot.paramMap.get('deckId');
         if (deckId === null) throw new Error('Study route requires deckId.');
         this.deckId = deckId.toLowerCase();
@@ -390,18 +406,57 @@ export class StudySessionPageComponent {
     }
 
     private resolveAudio(presentation: StudyPresentation | null): void {
+        this.audioEpoch += 1;
+        this.clearAudioTimer();
         this.audioUrls.set({});
-        if (presentation === null) return;
+        if (presentation !== null) this.refreshAudio();
+    }
+
+    retryAudio(assetId: string): void {
+        if (!this.audioUrls()[assetId]) return;
+        this.audioUrls.update(values => Object.fromEntries(Object.entries(values).filter(([id]) => id !== assetId)));
+        this.refreshAudio();
+    }
+
+    private refreshAudio(): void {
+        const presentation = this.current();
+        if (presentation === null || document.visibilityState !== 'visible' || !navigator.onLine) return;
+        const epoch = this.audioEpoch;
+        this.clearAudioTimer();
         for (const assetId of this.audioAssetIds(presentation)) {
             this.playback.resolve(assetId).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
-                next: url => {
-                    if (url !== null && this.current()?.presentationId === presentation.presentationId) {
-                        this.audioUrls.update(values => ({ ...values, [assetId]: url }));
-                    }
+                next: source => {
+                    if (epoch !== this.audioEpoch || this.current()?.presentationId !== presentation.presentationId) return;
+                    this.audioUrls.update(values => source === null
+                        ? Object.fromEntries(Object.entries(values).filter(([id]) => id !== assetId))
+                        : { ...values, [assetId]: source });
+                    this.scheduleAudioRefresh();
                 },
-                error: () => { /* The player keeps an accessible unavailable state. */ }
+                error: () => {
+                    if (epoch !== this.audioEpoch) return;
+                    this.audioUrls.update(values => Object.fromEntries(Object.entries(values).filter(([id]) => id !== assetId)));
+                    this.scheduleAudioRefresh();
+                }
             });
         }
+    }
+
+    private scheduleAudioRefresh(): void {
+        this.clearAudioTimer();
+        const presentation = this.current();
+        if (presentation === null || document.visibilityState !== 'visible' || !navigator.onLine) return;
+        const ids = this.audioAssetIds(presentation);
+        if (ids.length === 0) return;
+        const missing = ids.some(id => !this.audioUrls()[id]);
+        const expiry = ids.map(id => Date.parse(this.audioUrls()[id]?.expiresAt ?? '') - Date.now() - 60_000)
+            .filter(Number.isFinite);
+        const delay = missing ? 15_000 : Math.max(1_000, Math.min(15 * 60_000, ...expiry));
+        this.audioTimer = setTimeout(() => { this.audioTimer = null; this.refreshAudio(); }, delay);
+    }
+
+    private clearAudioTimer(): void {
+        if (this.audioTimer) clearTimeout(this.audioTimer);
+        this.audioTimer = null;
     }
 
     private submit(response: StudyResponse, hintsUsed: readonly string[]): void {

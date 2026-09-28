@@ -10,7 +10,7 @@ import { StudyApiService } from './study-api.service';
 import { AttemptCommand, AttemptOutcome, ReadyStudySession, StudyPresentation } from './study.models';
 import { StudyRecoveryService } from './study-recovery.service';
 import { StudySessionPageComponent } from './study-session-page.component';
-import { MEDIA_PLAYBACK_RESOLVER } from './media-playback-resolver';
+import { MEDIA_PLAYBACK_RESOLVER, MediaPlaybackResolver } from './media-playback-resolver';
 
 describe('StudySessionPageComponent', () => {
     const id = (suffix: string) => `00000000-0000-4000-8000-${suffix.padStart(12, '0')}`;
@@ -19,6 +19,7 @@ describe('StudySessionPageComponent', () => {
     const presentationId = id('3');
     let api: jasmine.SpyObj<StudyApiService>;
     let recovery: jasmine.SpyObj<StudyRecoveryService>;
+    let playback: jasmine.SpyObj<MediaPlaybackResolver>;
     let fixture: ComponentFixture<StudySessionPageComponent>;
     let now = 1000;
 
@@ -31,12 +32,15 @@ describe('StudySessionPageComponent', () => {
         api.replaySources.and.returnValue(of({ asOf: '2026-09-20T10:00:00Z', localStudyDate: '2026-09-20', items: [] }));
         recovery = jasmine.createSpyObj<StudyRecoveryService>('StudyRecoveryService', ['restore', 'save', 'clear', 'now']);
         recovery.restore.and.returnValue(null); recovery.now.and.callFake(() => now);
+        playback = jasmine.createSpyObj<MediaPlaybackResolver>('MediaPlaybackResolver', ['resolve']);
+        playback.resolve.and.callFake(assetId => of({ url: `/media/${assetId}`,
+            expiresAt: '2999-01-01T00:00:00Z', mimeType: 'audio/mp4' }));
         const router = jasmine.createSpyObj<Router>('Router', ['navigate']); router.navigate.and.resolveTo(true);
         TestBed.configureTestingModule({ providers: [
             { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ deckId: deck.deckId }) } } },
             { provide: Router, useValue: router }, { provide: OwnDecksApiService, useValue: decks },
             { provide: StudyApiService, useValue: api }, { provide: StudyRecoveryService, useValue: recovery },
-            { provide: MEDIA_PLAYBACK_RESOLVER, useValue: { resolve: (assetId: string) => of(`/media/${assetId}`) } }
+            { provide: MEDIA_PLAYBACK_RESOLVER, useValue: playback }
         ] });
     });
 
@@ -150,6 +154,27 @@ describe('StudySessionPageComponent', () => {
         expect(root.textContent).toContain('memory');
         fixture.componentInstance.setTypedAnswer('memory'); fixture.componentInstance.submitTyped();
         expect(api.submit.calls.mostRecent().args[2].response).toEqual({ kind: 'TEXT', text: 'memory' });
+    });
+
+    it('uses the shared Mnema player and renews a failed Study source', () => {
+        const base = session('TYPED');
+        const assetId = id('40');
+        const cue = { ...base.presentations[0], type: 'LISTEN_TYPE' as const, reference: null,
+            bindings: [], prompt: { kind: 'AUDIO_ASSET' as const, assetId, title: 'Короткая запись',
+                instruction: 'Напишите услышанное', transcriptAvailable: false, transcriptRevealed: false } };
+        api.start.and.returnValue(of({ value: { ...base, presentations: [cue] }, replayed: false }));
+        playback.resolve.and.returnValues(
+            of({ url: '/signed/first', expiresAt: '2999-01-01T00:00:00Z', mimeType: 'audio/mp4' }),
+            of({ url: '/signed/renewed', expiresAt: '2999-01-01T00:00:00Z', mimeType: 'audio/mp4' })
+        );
+
+        createStarted();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('app-native-media-player button[aria-label="Воспроизвести"]')).not.toBeNull();
+        expect(root.querySelector('audio')?.getAttribute('src')).toBe('/signed/first');
+        fixture.componentInstance.retryAudio(assetId); fixture.detectChanges();
+        expect(root.querySelector('audio')?.getAttribute('src')).toBe('/signed/renewed');
+        expect(playback.resolve).toHaveBeenCalledTimes(2);
     });
 
     it('submits the complete audio-text map as one attempt', () => {
