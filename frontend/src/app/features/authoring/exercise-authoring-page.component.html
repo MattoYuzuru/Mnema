@@ -55,6 +55,8 @@
                   <input [id]="'match-asset-' + index" type="text" [value]="row.assetId"
                          [attr.aria-invalid]="fieldErrors()['audio'] ? 'true' : null"
                          (input)="setMatchRow(index, 'assetId', $any($event.target).value)" />
+                  <button class="button" type="button" [attr.aria-pressed]="audioTargetIndex() === index"
+                          (click)="selectAudioTarget(index)">Выбрать файл для записи {{ index + 1 }}</button>
                   <label [for]="'match-title-' + index">Название записи</label>
                   <input [id]="'match-title-' + index" type="text" [value]="row.title"
                          (input)="setMatchRow(index, 'title', $any($event.target).value)" />
@@ -87,6 +89,12 @@
               <textarea id="audio-transcript" rows="3" [value]="audioTranscript()"
                         (input)="setAudio('transcript', $any($event.target).value)"></textarea>
             }
+            <div class="exercise-audio-upload">
+              <p class="hint">{{ type() === 'AUDIO_TEXT_MATCH'
+                ? 'Выбрана запись ' + (audioTargetIndex() + 1) + '. После загрузки нажмите «Вставить» в очереди.'
+                : 'Загрузите аудиофайл или запишите голос, затем нажмите «Вставить» в очереди.' }}</p>
+              <app-native-media-upload [document]="currentItem.document" (chooseAsset)="chooseUploadedAudio($event)" />
+            </div>
             @if (fieldErrors()['audio']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
             @if (fieldErrors()['options']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
           } @else {

@@ -40,7 +40,7 @@ export class StudySessionPageComponent {
     readonly phase = signal<Phase>('loading');
     readonly typedAnswer = signal('');
     readonly selectedOptionId = signal<string | null>(null);
-    readonly matchSelections = signal<Readonly<Record<string, string>>>({});
+    readonly matchSelections = signal<Readonly<Partial<Record<string, string>>>>({});
     readonly audioUrls = signal<Readonly<Record<string, string>>>({});
     readonly transcriptLoading = signal(false);
     readonly clozeHintUsed = signal(false);

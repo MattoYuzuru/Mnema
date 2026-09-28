@@ -16,6 +16,8 @@ import {
 } from './exercise.models';
 import { ItemApiService } from './item-api.service';
 import { ItemDetail } from './authoring.models';
+import { NativeMediaUploadComponent } from './native-media-upload.component';
+import { NativeMediaKind } from './native-media-upload.api';
 
 type Phase = 'loading' | 'ready' | 'saving' | 'saved' | 'conflict' | 'rejected' | 'error';
 type ObjectiveMode = 'create' | 'reuse' | 'revise';
@@ -37,7 +39,7 @@ interface MatchRow {
 
 @Component({
     selector: 'app-exercise-authoring-page',
-    imports: [RouterLink, NativeMediaSurfaceComponent],
+    imports: [RouterLink, NativeMediaSurfaceComponent, NativeMediaUploadComponent],
     templateUrl: './exercise-authoring-page.component.html',
     styleUrl: './exercise-authoring-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -65,6 +67,7 @@ export class ExerciseAuthoringPageComponent {
     readonly audioInstruction = signal('');
     readonly audioTranscript = signal('');
     readonly matchRows = signal<readonly MatchRow[]>([newMatchRow(), newMatchRow()]);
+    readonly audioTargetIndex = signal(0);
     readonly objectiveMode = signal<ObjectiveMode>('create');
     readonly selectedObjectiveId = signal<string | null>(null);
 
@@ -170,6 +173,22 @@ export class ExerciseAuthoringPageComponent {
     setMatchRow(index: number, field: 'assetId' | 'title' | 'transcript' | 'optionNodeId', value: string): void {
         this.matchRows.update(rows => rows.map((row, position) => position === index ? { ...row, [field]: value } : row));
         this.changed();
+    }
+    selectAudioTarget(index: number): void { this.audioTargetIndex.set(index); }
+    chooseUploadedAudio(selection: { kind: NativeMediaKind; assetId: string }): void {
+        if (selection.kind !== 'audio') {
+            this.message.set('Для аудирования выберите аудиофайл или запись с микрофона.');
+            return;
+        }
+        if (this.type() === 'AUDIO_TEXT_MATCH') {
+            const index = Math.min(this.audioTargetIndex(), this.matchRows().length - 1);
+            this.setMatchRow(index, 'assetId', selection.assetId);
+            if (!this.matchRows()[index].title.trim()) this.setMatchRow(index, 'title', `Запись ${index + 1}`);
+        } else {
+            this.setAudio('assetId', selection.assetId);
+            if (!this.audioTitle().trim()) this.setAudio('title', 'Аудиозапись');
+        }
+        this.message.set('Аудио привязано к упражнению. Сохраните редакцию, чтобы закрепить связь.');
     }
     addMatchRow(): void {
         if (this.matchRows().length < 6) { this.matchRows.update(rows => [...rows, newMatchRow()]); this.changed(); }

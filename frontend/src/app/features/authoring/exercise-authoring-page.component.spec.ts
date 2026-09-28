@@ -137,6 +137,18 @@ describe('ExerciseAuthoringPageComponent', () => {
         ]);
     });
 
+    it('routes the shared upload queue to the selected audio cue', () => {
+        configure();
+        const component = TestBed.runInInjectionContext(() => new ExerciseAuthoringPageComponent());
+        component.setType('AUDIO_TEXT_MATCH');
+        component.selectAudioTarget(1);
+        component.chooseUploadedAudio({ kind: 'audio', assetId: id('42') });
+        expect(component.matchRows()[1].assetId).toBe(id('42'));
+        expect(component.matchRows()[0].assetId).toBe('');
+        component.chooseUploadedAudio({ kind: 'image', assetId: id('43') });
+        expect(component.matchRows()[1].assetId).toBe(id('42'));
+    });
+
     it('renders labelled controls without leaking IDs and reflows at accepted viewport and text sizes', async () => {
         configure();
         const fixture = TestBed.createComponent(ExerciseAuthoringPageComponent);
