@@ -19,10 +19,12 @@ import java.util.UUID;
 class AuthoringRepository {
     private final JdbcClient jdbc;
     private final ObjectMapper json;
+    private final AuthoringSettings settings;
 
-    AuthoringRepository(JdbcClient jdbc, ObjectMapper json) {
+    AuthoringRepository(JdbcClient jdbc, ObjectMapper json, AuthoringSettings settings) {
         this.jdbc = jdbc;
         this.json = json;
+        this.settings = settings;
     }
 
     Instant now() {
@@ -83,20 +85,22 @@ class AuthoringRepository {
                 INSERT INTO app_learning.editing_draft(draft_id,owner_id,deck_id,member_key,base_revision_id,
                     row_version,document,created_at,acknowledged_at,expires_at)
                 VALUES (:id,:actor,:deck,:member,:base,0,CAST(:document AS jsonb),:time,:time,
-                    CAST(:time AS timestamptz) + interval '30 days')
+                    :expires)
                 """).param("id", id).param("actor", actor).param("deck", command.deckId())
                 .param("member", command.memberKey(), java.sql.Types.OTHER)
                 .param("base", command.baseRevisionId(), java.sql.Types.OTHER)
-                .param("document", write(command.document().toJson())).param("time", Timestamp.from(time)).update();
+                .param("document", write(command.document().toJson())).param("time", Timestamp.from(time))
+                .param("expires", Timestamp.from(time.plus(settings.draftRecoveryWindow()))).update();
     }
 
     int updateDraft(UUID actor, UUID id, long expected, JsonNode document, Instant time) {
         return jdbc.sql("""
                 UPDATE app_learning.editing_draft SET row_version=row_version+1,document=CAST(:document AS jsonb),
-                    acknowledged_at=:time,expires_at=CAST(:time AS timestamptz) + interval '30 days'
+                    acknowledged_at=:time,expires_at=:expires
                  WHERE owner_id=:actor AND draft_id=:id AND row_version=:expected
                    AND expires_at>statement_timestamp()
-                """).param("document", write(document)).param("time", Timestamp.from(time)).param("actor", actor)
+                """).param("document", write(document)).param("time", Timestamp.from(time))
+                .param("expires", Timestamp.from(time.plus(settings.draftRecoveryWindow()))).param("actor", actor)
                 .param("id", id).param("expected", expected).update();
     }
 

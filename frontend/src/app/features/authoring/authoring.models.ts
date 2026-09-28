@@ -3,6 +3,8 @@ import { isCanonicalCommandId, isCanonicalEntityId, isCanonicalVersion } from '.
 
 export const ITEM_PAGE_SIZE = 20;
 export const AUTHORING_PAGE_SIZE = 20;
+/** Maximum validated backend draft count; a partial recovery list is a protocol error. */
+export const AUTHORING_MAX_DRAFT_SCAN = 1000;
 
 export interface ItemRecordSummary {
     readonly memberKey: string;

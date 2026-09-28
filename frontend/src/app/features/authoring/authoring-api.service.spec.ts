@@ -48,6 +48,19 @@ describe('AuthoringApiService', () => {
         expect((await detail).document).toEqual(draft.document);
     });
 
+    it('collects draft pages beyond the old ten-page ceiling', async () => {
+        const result = firstValueFrom(api.listAllDrafts());
+        const { document: _document, ...summary } = draft;
+        for (let page = 0; page < 11; page++) {
+            const cursor = page === 0 ? '' : `&cursor=page-${page}`;
+            http.expectOne(`/api/editing-drafts?limit=20${cursor}`).flush({
+                items: [{ ...summary, draftId: id(String(page + 100)) }],
+                nextCursor: page === 10 ? null : `page-${page + 1}`
+            }, { headers });
+        }
+        expect((await result).items.length).toBe(11);
+    });
+
     it('sends exact draft CAS and accepts a replay only without ETag', async () => {
         const result = firstValueFrom(api.updateDraft(draftId, '2', draft.document, commandId));
         const request = http.expectOne(`/api/editing-drafts/${draftId}`);
