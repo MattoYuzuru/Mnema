@@ -87,10 +87,14 @@ async function openTab() {
 try {
   require(process.versions.node.split('.')[0] === '22', 'Node22 is required');
   cdp = await openTab();
-  const allowed = new Set([config.frontend, config.identity]);
+  const allowed = new Set([config.frontend, config.identity, ...(config.media ? [config.mediaOrigin] : [])]);
   let externalRequests = 0, tokenExchanges = 0, registrationStatus = 0, loginStatus = 0, logoutStatus = 0;
   let browserErrors = 0, callback = null, networkRequests = 0, identityRequests = 0, profileReads = 0;
+  let primaryDeckListRequests = 0;
   const authoringResponses = [];
+  const mediaResponses = [], mediaFailures = [], mediaApiResponses = [];
+  const mediaRequestIds = new Set();
+  let browseMediaState = null;
   let tamperNextCallback = false;
   const bearerTokens = [], idTokens = [], exchanges = [];
   const challenges = new Set();
@@ -100,7 +104,7 @@ try {
   let actorAfterLogout = null, otherAfterLogout = null;
   diagnostics = () => ({ networkRequests, identityRequests, tokenExchanges, browserErrors, externalRequests,
     asynchronousFailure, eventFailed: tabs.some(tab => tab.eventFailed), actorAfterLogout, otherAfterLogout,
-    authoringResponses });
+    authoringResponses, mediaResponses, mediaFailures, mediaApiResponses, browseMediaState });
   const run = promise => {
     asyncWork.add(promise);
     promise.catch(() => { asynchronousFailure = true; }).finally(() => asyncWork.delete(promise));
@@ -115,7 +119,8 @@ try {
       const url = new URL(event.request.url);
       networkRequests++;
       if (url.origin === config.identity) identityRequests++;
-      if (networkRequests > 500 || identityRequests > 150) asynchronousFailure = true;
+      if (networkRequests > (config.media ? 750 : config.authoring ? 600 : 500)
+          || identityRequests > 150) asynchronousFailure = true;
       if (!allowed.has(url.origin) || asynchronousFailure) {
         externalRequests++;
         run(tab.call('Fetch.failRequest', { requestId: event.requestId, errorReason: 'BlockedByClient' }));
@@ -130,6 +135,9 @@ try {
     });
     tab.on('Network.requestWillBeSent', event => {
       const url = new URL(event.request.url);
+      if (tab === cdp && url.origin === config.frontend && url.pathname === '/api/decks'
+          && event.request.method === 'GET') primaryDeckListRequests++;
+      if (config.media && url.origin === config.mediaOrigin) mediaRequestIds.add(event.requestId);
       if (url.origin === config.identity && url.pathname === '/oauth2/authorize') {
         require(url.searchParams.get('redirect_uri') === config.frontend + '/auth/callback', 'exact callback mismatch');
         require(url.searchParams.get('code_challenge_method') === 'S256', 'PKCE S256 absent');
@@ -145,6 +153,16 @@ try {
     });
     tab.on('Network.responseReceived', event => {
       const url = new URL(event.response.url);
+      if (config.media && url.origin === config.mediaOrigin) {
+        mediaResponses.push({ status: event.response.status });
+      }
+      if (config.media && url.origin === config.frontend && url.pathname.startsWith('/api/media-assets')) {
+        const action = url.pathname.endsWith('/upload-policy') ? 'policy'
+          : url.pathname.endsWith('/upload-intents') ? 'intent'
+            : url.pathname.endsWith('/upload/finalize') ? 'finalize'
+              : url.pathname.endsWith('/upload') ? 'status' : 'playback';
+        mediaApiResponses.push({ action, status: event.response.status });
+      }
       if (config.authoring && url.origin === config.frontend && url.pathname.startsWith('/api/')) {
         const resource = url.pathname.startsWith('/api/capture-notes') ? 'capture'
           : url.pathname.startsWith('/api/editing-drafts') ? 'draft'
@@ -156,6 +174,9 @@ try {
       if (url.pathname === '/api/accounts/login') loginStatus = event.response.status;
       if (url.pathname === '/api/accounts/logout') logoutStatus = event.response.status;
       if (url.pathname === '/api/accounts/me' && event.response.status === 200) profileReads++;
+    });
+    tab.on('Network.loadingFailed', event => {
+      if (mediaRequestIds.has(event.requestId)) mediaFailures.push(event.errorText);
     });
     tab.on('Network.loadingFinished', event => {
       if (!tokenRequests.delete(event.requestId)) return;
@@ -178,8 +199,8 @@ try {
     await tab.call('Emulation.setDeviceMetricsOverride', { width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
   }
   await initialize(cdp);
-  async function until(predicate, label) {
-    const deadline = Date.now() + 18000;
+  async function until(predicate, label, timeoutMs = 18000) {
+    const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       require(!asynchronousFailure && !tabs.some(tab => tab.eventFailed), 'CDP event processing failed');
       try { if (await predicate()) return; } catch { /* A navigation can replace the execution context. */ }
@@ -235,6 +256,13 @@ try {
   }
   async function saveScreenshot(name, tab = cdp) {
     const capture = await tab.call('Page.captureScreenshot', { format: 'png', fromSurface: true });
+    await writeFile(join(config.output, name), Buffer.from(capture.data, 'base64'));
+  }
+  async function saveFullScreenshot(name, tab = cdp) {
+    const layout = await tab.call('Page.getLayoutMetrics');
+    const { width, height } = layout.cssContentSize;
+    const capture = await tab.call('Page.captureScreenshot', { format: 'png', fromSurface: true,
+      captureBeyondViewport: true, clip: { x: 0, y: 0, width, height, scale: 1 } });
     await writeFile(join(config.output, name), Buffer.from(capture.data, 'base64'));
   }
   const sanitizedLocation = (tab = cdp) => tab.evaluate('location.pathname');
@@ -346,6 +374,56 @@ try {
   }`), 'conflict resolution did not persist the chosen local draft');
   record('real_own_deck_412_conflict_resolution', { exactLocalDraftPreserved: true, explicitReapply: true });
 
+  step = 'own_deck_cross_tab_refresh';
+  await navigate('/decks');
+  await until(() => exists('#own-decks-title'), 'primary library absent before cross-tab update');
+  const remoteDeckTitle = 'Новая колода из второй вкладки';
+  await navigate('/decks/new', conflictTab);
+  await fill('#create-title', remoteDeckTitle, conflictTab);
+  await submit(conflictTab);
+  await until(async () => /^\/decks\/[0-9a-f-]{36}$/.test(await sanitizedLocation(conflictTab)),
+    'second tab did not create a deck');
+  const visibilityBeforeFocus = await cdp.evaluate('document.visibilityState');
+  require(visibilityBeforeFocus === 'hidden', 'primary tab did not become hidden');
+  const hiddenDeckRequests = primaryDeckListRequests;
+  if (!config.media) {
+    await sleep(47_000);
+    require(primaryDeckListRequests === hiddenDeckRequests, 'hidden library performed periodic deck reads');
+  }
+  const requestsBeforeFocus = networkRequests;
+  await cdp.call('Page.bringToFront');
+  await until(() => bodyIncludes(remoteDeckTitle), 'primary library did not refresh after focus');
+  require((await sanitizedLocation()) === '/decks', 'cross-tab refresh navigated the primary tab');
+  record('real_own_deck_cross_tab_refresh', {
+    visibilityBeforeFocus, requestsAfterFocus: networkRequests - requestsBeforeFocus,
+    hiddenSecondsWithoutDeckReads: config.media ? 0 : 47,
+    primaryRoutePreserved: true, manualReload: false
+  });
+
+  if (!config.media) {
+    step = 'own_deck_visible_polling';
+    const timerDeckTitle = 'Новая колода по таймеру';
+    const createByOtherTab = await conflictTab.callFunction(`async function(base, token, title) {
+      const response = await fetch(base + '/api/decks', {
+        method: 'POST', credentials: 'omit',
+        headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commandId: crypto.randomUUID(), metadata: { title, description: '' } })
+      });
+      return response.status;
+    }`, [config.frontend, firstBearer, timerDeckTitle]);
+    require(createByOtherTab === 201, 'second tab did not publish the timer deck');
+    const visibleDeckRequests = primaryDeckListRequests;
+    const pollStarted = Date.now();
+    await until(() => bodyIncludes(timerDeckTitle), 'visible library did not update on its bounded timer', 53_000);
+    require(primaryDeckListRequests > visibleDeckRequests, 'visible update had no list request');
+    record('real_own_deck_visible_polling', {
+      elapsedMs: Date.now() - pollStarted, listRequests: primaryDeckListRequests - visibleDeckRequests,
+      manualReload: false
+    });
+  }
+  await navigate(deckPath);
+  await until(() => exists('#detail-title'), 'deck detail absent after cross-tab refresh');
+
   step = 'own_deck_responsive_evidence';
   require(await cdp.callFunction(`function() {
     const input = document.querySelector('#detail-title');
@@ -427,6 +505,7 @@ try {
   // while account A's tab still holds its own independently validated bearer/profile.
   const second = await openTab();
   await initialize(second);
+  await second.call('Page.bringToFront');
   const beforeSecond = tokenExchanges;
   await navigate('/register', second);
   await fill('#email', 'second_' + config.email, second);
@@ -445,6 +524,7 @@ try {
     const authoringStarted = Date.now();
     const requestsBeforeAuthoring = networkRequests;
     const deckTitle = 'Северный архив';
+    let uploadedAudioAssetId = null;
     const capturedText = 'سلام · 日本語 · <img src=x onerror="globalThis.__mnemaXss=true">';
     const editedText = 'Долговечный материал — עברית, русский и 日本語';
     await navigate('/decks/new', second);
@@ -500,6 +580,97 @@ try {
     await second.call('Emulation.setDeviceMetricsOverride',
       { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
 
+    step = 'authoring_rich_diagram_and_youtube';
+    require(await click('.rich-tools summary', second), 'rich content controls absent');
+    require(await clickText('.rich-kind-picker button', 'Схема', second), 'Mermaid editor action absent');
+    await fill('.rich-fields input[type="text"]', 'Схема API', second);
+    await fill('.rich-fields textarea[rows="3"]', 'Клиент обращается к API', second);
+    await fill('.rich-fields textarea[rows="6"]', 'flowchart LR\nA[Клиент] --> B[API]', second);
+    require(await click('.rich-apply', second), 'Mermaid insertion action absent');
+    require(await clickText('.rich-kind-picker button', 'YouTube', second), 'YouTube editor action absent');
+    await fill('.rich-fields input[type="url"]', 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', second);
+    await fill('.rich-fields input[type="text"]', 'Видео о сервисе', second);
+    await fill('.rich-fields textarea[rows="3"]', 'Текстовое пояснение к видео', second);
+    require(await click('.rich-apply', second), 'YouTube insertion action absent');
+    await sleep(1200); // Let the acknowledged draft persist both rich nodes before publish.
+
+    if (config.media) {
+      step = 'browser_media_upload';
+      await until(() => exists('app-native-media-upload .media-drop', second), 'media upload surface absent');
+      require(await second.callFunction(`async function() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 96; canvas.height = 72;
+        const drawing = canvas.getContext('2d');
+        drawing.fillStyle = '#eee8dc'; drawing.fillRect(0, 0, 96, 72);
+        drawing.fillStyle = '#281378'; drawing.fillRect(12, 18, 72, 36);
+        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+        if (!blob) return false;
+        const transfer = new DataTransfer();
+        transfer.items.add(new File([blob], 'browser-diagram.png', { type: 'image/png' }));
+        const drop = document.querySelector('app-native-media-upload .media-drop');
+        if (!(drop instanceof HTMLElement)) return false;
+        drop.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+        return true;
+      }`), 'browser could not drop a PNG into the upload surface');
+      await until(() => second.callFunction(`function() {
+        return [...document.querySelectorAll('.media-row')].some(row =>
+          row.textContent.includes('browser-diagram.png')
+          && [...row.querySelectorAll('button')].some(button => button.textContent.trim() === 'Вставить'));
+      }`), 'media intent did not become insertable');
+      await until(() => second.callFunction(`function() {
+        const row = [...document.querySelectorAll('.media-row')]
+          .find(item => item.textContent.includes('browser-diagram.png'));
+        return row?.querySelector('.media-status')?.textContent?.includes('Готов к просмотру');
+      }`), 'uploaded PNG did not become READY in the editor', 30_000);
+      require(await clickText('.media-row button', 'Вставить', second), 'media insert action absent');
+      require(await second.callFunction(`function() {
+        return /^[0-9a-f-]{36}$/i.test(document.querySelector('.rich-fields input[autocomplete="off"]')?.value ?? '');
+      }`), 'media insert did not preserve the server asset ID');
+      await fill('.rich-fields input[type="text"]:not([autocomplete])', 'Загруженная схема API', second);
+      require(await click('.rich-apply', second), 'image node insertion action absent');
+      await until(() => exists('.ProseMirror [data-native-kind="image"]', second),
+        'uploaded image did not enter the editor document');
+      for (const clip of [
+        { kind: 'audio', name: 'browser-audio.mp3', mime: 'audio/mpeg', title: 'Звуковое объяснение' },
+        { kind: 'video', name: 'browser-video.mp4', mime: 'video/mp4', title: 'Видеопример' }
+      ]) {
+        require(await second.callFunction(`function(encoded, name, mime) {
+          const bytes = Uint8Array.from(atob(encoded), value => value.charCodeAt(0));
+          const transfer = new DataTransfer();
+          transfer.items.add(new File([bytes], name, { type: mime }));
+          const drop = document.querySelector('app-native-media-upload .media-drop');
+          if (!(drop instanceof HTMLElement)) return false;
+          drop.dispatchEvent(new DragEvent('drop', { bubbles: true, cancelable: true, dataTransfer: transfer }));
+          return true;
+        }`, [config.mediaClips[clip.kind], clip.name, clip.mime]), 'browser media drop failed');
+        await until(() => second.callFunction(`function(name) {
+          const row = [...document.querySelectorAll('.media-row')]
+            .find(item => item.textContent.includes(name));
+          return row?.querySelector('.media-status')?.textContent?.includes('Готов к просмотру');
+        }`, [clip.name]), `${clip.kind} did not become READY in the editor`, 30_000);
+        require(await second.callFunction(`function(name) {
+          const row = [...document.querySelectorAll('.media-row')]
+            .find(item => item.textContent.includes(name));
+          const insert = [...(row?.querySelectorAll('button') ?? [])]
+            .find(button => button.textContent.trim() === 'Вставить');
+          if (!(insert instanceof HTMLButtonElement)) return false;
+          insert.click(); return true;
+        }`, [clip.name]), `${clip.kind} insert action absent`);
+        if (clip.kind === 'audio') {
+          uploadedAudioAssetId = await second.callFunction(`function() {
+            return document.querySelector('.rich-fields input[autocomplete="off"]')?.value ?? null;
+          }`);
+          require(/^[0-9a-f-]{36}$/i.test(uploadedAudioAssetId ?? ''), 'audio asset ID was not exposed');
+        }
+        await fill('.rich-fields input[type="text"]:not([autocomplete])', clip.title, second);
+        await fill('.rich-fields textarea[rows="3"]', 'Текстовая версия записи', second);
+        require(await click('.rich-apply', second), `${clip.kind} node insertion action absent`);
+        await until(() => exists(`.ProseMirror [data-native-kind="${clip.kind}"]`, second),
+          `${clip.kind} did not enter the editor document`);
+      }
+      await sleep(1200);
+    }
+
     step = 'authoring_publish_browse';
     require(await clickText('button', 'Опубликовать', second), 'publication unavailable');
     await until(async () => /^\/decks\/[0-9a-f-]{36}\/materials\/[0-9a-f-]{36}$/.test(
@@ -509,6 +680,36 @@ try {
     require(await second.callFunction(`function() {
       return !globalThis.__mnemaXss && !document.querySelector('img[src="x"]');
     }`), 'published content executed as markup');
+    await until(() => second.callFunction(`function() {
+      const image = document.querySelector('app-native-mermaid img');
+      return image instanceof HTMLImageElement && image.complete && image.naturalWidth > 0;
+    }`), 'published Mermaid diagram did not render');
+    require(await second.callFunction(`function() {
+      const video = document.querySelector('app-native-youtube');
+      return video instanceof HTMLElement && !video.querySelector('iframe')
+        && video.querySelector('a[href="https://www.youtube.com/watch?v=dQw4w9WgXcQ"]') !== null
+        && video.querySelector('button')?.textContent?.trim() === 'Показать видео';
+    }`), 'YouTube consent or external fallback was absent');
+    if (config.media) {
+      await until(async () => {
+        browseMediaState = await second.callFunction(`function() {
+        const picture = document.querySelector('app-native-media-image img');
+        const renderer = document.querySelector('app-native-document-renderer');
+        return { visible: document.visibilityState, surface: Boolean(document.querySelector('app-native-media-surface')),
+          renderer: Boolean(renderer), imageNode: Boolean(document.querySelector('app-native-media-image')),
+          pending: document.querySelector('.native-media-pending')?.textContent?.trim() ?? null,
+          loaded: picture instanceof HTMLImageElement && picture.complete && picture.naturalWidth > 0 };
+        }`);
+        return browseMediaState.loaded;
+      }, 'published PNG was not processed and shown without reload', 30_000);
+      await until(() => second.callFunction(`function() {
+        const audio = document.querySelector('app-native-media-player audio');
+        const video = document.querySelector('app-native-media-player video');
+        return audio instanceof HTMLAudioElement && audio.readyState >= 1
+          && video instanceof HTMLVideoElement && video.readyState >= 1;
+      }`), 'processed audio/video did not reach the shared browser players', 30_000);
+      await saveFullScreenshot('authoring-browse-media-1440.png', second);
+    }
     await saveScreenshot('authoring-browse-1440.png', second);
     await navigate(deckPath + '/materials', second);
     await until(() => bodyIncludes('1 материалов', second), 'Browse list did not expose the published item');
@@ -531,11 +732,36 @@ try {
       durationMs: Date.now() - authoringStarted,
       captureSourcePreserved: true,
       acknowledgedDraftRestored: true,
-      unsafeMarkupExecuted: false
+      unsafeMarkupExecuted: false, mermaidRendered: true, youtubeConsentBeforeEmbed: true,
+      browserPngProcessed: Boolean(config.media), browserAudioVideoProcessed: Boolean(config.media)
     });
 
     step = 'study_browser_provision';
-    const studyFixture = await second.callFunction(`async function(base, authorization, deckPath, materialPath) {
+    let studyFixture = { ready: false };
+    if (config.media) {
+      require(uploadedAudioAssetId !== null, 'listening exercise has no uploaded audio');
+      await navigate(materialPath + '/exercises/new', second);
+      await until(() => exists('input[name="type"][value="LISTEN_TYPE"]', second),
+        'listening authoring page did not load');
+      require(await click('input[name="type"][value="LISTEN_TYPE"]', second),
+        'listening type could not be selected');
+      await fill('#audio-instruction', 'Прослушайте запись и напишите ответ', second);
+      await fill('#audio-asset', uploadedAudioAssetId, second);
+      await fill('#audio-title', 'Звуковое объяснение', second);
+      require(await second.callFunction(`function() {
+        const select = document.querySelector('#answer-node');
+        const choice = [...(select?.options ?? [])].find(option => option.textContent.includes('Долговечный материал'));
+        if (!(select instanceof HTMLSelectElement) || !choice) return false;
+        select.value = choice.value;
+        select.dispatchEvent(new Event('change', { bubbles: true }));
+        return true;
+      }`), 'listening answer node unavailable');
+      require(await clickText('button', 'Создать упражнение', second),
+        'listening exercise save action absent');
+      await until(async () => /^\/decks\/[0-9a-f-]{36}\/exercises\/[0-9a-f-]{36}\/edit/.test(
+        await sanitizedLocation(second)), 'listening exercise was not saved through authoring UI');
+      studyFixture = { ready: true };
+    } else studyFixture = await second.callFunction(`async function(base, authorization, deckPath, materialPath) {
       const headers = { Authorization: authorization };
       const deck = await fetch(base + '/api' + deckPath, { credentials: 'omit', headers });
       const memberKey = materialPath.split('/').at(-1);
@@ -578,6 +804,14 @@ try {
     await until(async () => await exists('#typed-answer', second) || await exists('.completion', second)
       || await exists('.notice.error', second), 'keyboard did not change Study state');
     require(await exists('#typed-answer', second), 'keyboard Study start reached empty or error state');
+    if (config.media) {
+      await until(() => second.callFunction(`function() {
+        const player = document.querySelector('.study-card app-native-media-player audio');
+        return player instanceof HTMLAudioElement && player.readyState >= 1;
+      }`), 'listening Study did not load its audio in the shared player');
+      require(await bodyIncludes('Прослушайте запись и напишите ответ', second),
+        'Study did not present the authored listening instruction');
+    }
     await until(() => second.callFunction(`function() {
       return document.activeElement?.id === 'typed-answer';
     }`), 'Study answer did not receive focus');
@@ -599,7 +833,7 @@ try {
     }
     await second.call('Emulation.setDeviceMetricsOverride',
       { width: 1440, height: 900, deviceScaleFactor: 1, mobile: false });
-    await fill('#typed-answer', 'memory', second);
+    await fill('#typed-answer', config.media ? editedText : 'memory', second);
     require(await clickText('button', 'Проверить ответ', second), 'Study submit action absent');
     await until(() => exists('#feedback-title', second), 'Study feedback did not arrive from the real API');
     require(await second.callFunction(`function() {
@@ -607,7 +841,8 @@ try {
         && document.body.innerText.includes('Следующее повторение назначено сервером.');
     }`), 'Study feedback focus or canonical transition missing');
     await saveScreenshot('study-feedback-1440.png', second);
-    record('real_https_study_browser', { scheduled: 'TYPED', keyboardStart: true,
+    record('real_https_study_browser', { scheduled: config.media ? 'LISTEN_TYPE' : 'TYPED',
+      authoredAudioLoaded: Boolean(config.media), keyboardStart: true,
       feedbackFocus: true, widths: [1440, 390, 320], deviceScaleFactor: 2,
       reducedMotion: true, noHorizontalOverflow: true, primaryActionMinimumPx: 44 });
   }

@@ -7,6 +7,7 @@ import app.mnema.learning.support.PostgresIntegrationTest;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -94,6 +95,64 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
     @Autowired private MediaGcRepository mediaGcRepository;
     @Autowired private MediaProcessingSettings processingSettings;
     @Autowired private JdbcClient jdbc;
+
+    /** Local-only proof that the real Docker worker publishes verified variants through MinIO. */
+    @Test
+    @EnabledIfEnvironmentVariable(named = "MNEMA_MEDIA_DOCKER_SMOKE", matches = "1")
+    void realImageAudioAndVideoPassUploadWorkerAndSignedPlayback(@TempDir Path temporary) throws Exception {
+        Path image = temporary.resolve("diagram.png");
+        Path audio = temporary.resolve("narration.mp3");
+        Path video = temporary.resolve("clip.mp4");
+        generate("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                "testsrc2=s=96x72:d=0.2", "-frames:v", "1", image.toString());
+        generate("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                "sine=frequency=440:duration=2", "-c:a", "libmp3lame", audio.toString());
+        generate("ffmpeg", "-v", "error", "-y", "-f", "lavfi", "-i",
+                "testsrc2=s=160x90:r=12:d=2", "-f", "lavfi", "-i",
+                "sine=frequency=440:duration=2", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                "-c:a", "aac", "-shortest", video.toString());
+
+        Path sharedRoot = Path.of(System.getProperty("user.home"), ".mnema", "media-processing");
+        var settings = new MediaProcessingSettings(true, sharedRoot.toString(), "docker",
+                "mnema-media-worker:local", Duration.ofMinutes(30), Duration.ofMinutes(2),
+                Duration.ofSeconds(30), Duration.ofMinutes(1), Duration.ofMinutes(30), 5, 2,
+                Duration.ofHours(1), Duration.ofMinutes(5));
+        var processing = new MediaProcessingService(processingRepository, uploads, objects,
+                new DockerMediaWorkerGateway(settings), mediaGcRepository, settings);
+        for (var source : List.of(new LocalMedia(image, "image", "image/png"),
+                new LocalMedia(audio, "audio", "audio/mpeg"),
+                new LocalMedia(video, "video", "video/mp4"))) {
+            byte[] bytes = Files.readAllBytes(source.path());
+            UUID owner = UUID.randomUUID();
+            var started = uploads.start(owner, UUID.randomUUID(), "upload", source.kind(), source.mime(), bytes.length);
+            put(started.url(), started.headers(), bytes);
+            uploads.finalizeUpload(owner, started.assetId(), 0, UUID.randomUUID());
+            var claim = processingRepository.claim(started.assetId());
+            assertThat(claim).isNotNull();
+            processing.process(claim);
+            assertThat(assetState(started.assetId())).as(source.kind()).isEqualTo("READY");
+            List<String> keys = jdbc.sql("SELECT b.object_key FROM app_learning.media_variant v "
+                            + "JOIN app_learning.media_blob b ON b.blob_id=v.blob_id "
+                            + "WHERE v.asset_id=:asset ORDER BY v.profile")
+                    .param("asset", started.assetId()).query(String.class).list();
+            assertThat(keys).as(source.kind()).isNotEmpty();
+            for (String key : keys) {
+                var head = objects.head(key);
+                assertThat(head).as(key).isNotNull();
+                var response = HTTP.send(HttpRequest.newBuilder(URI.create(playbackStore.read(key, false).url()))
+                        .GET().build(), HttpResponse.BodyHandlers.ofByteArray());
+                assertThat(response.statusCode()).as(key).isEqualTo(200);
+                assertThat(response.body().length).as(key).isEqualTo(head.size());
+            }
+        }
+    }
+
+    private record LocalMedia(Path path, String kind, String mime) { }
+
+    private static void generate(String... command) throws Exception {
+        var process = new ProcessBuilder(command).inheritIO().start();
+        assertThat(process.waitFor()).isZero();
+    }
 
     @Test
     void gcNeedsTwoScansAndGraceThenFencesHashDedupAcrossPhysicalDelete(@TempDir Path temporary)
