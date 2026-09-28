@@ -4,7 +4,7 @@ artifact:
   type: navigator
   title: "Mnema documentation"
   status: current
-  updated_at: "2026-09-24"
+  updated_at: "2026-09-28"
   owners: ["project-owner"]
   evidence_revision: "d7fd1b1d509a0ab598976f87af88101bfc3945ac"
 ---
@@ -31,6 +31,8 @@ artifact:
 6. **Study:** [acceptance evidence Epic #75](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md),
    [принятый refinement](./engineering/epic-75-refinement.md) и исполняемый
    [`contracts/study`](../contracts/study/README.md).
+7. **Media:** [refinement Epic #76](./engineering/epic-76-refinement.md) — принятый
+   scope, архитектурные границы и задачи; production media ещё не реализовано.
 
 ## Product
 
@@ -76,6 +78,7 @@ artifact:
 | current | [Documentation/evidence index](./engineering/evidence/README.md) | Короткий вход в большие evidence-наборы. |
 | historical | [Epic #74 refinement](./engineering/epic-74-refinement.md) | Выполненный план #74; не backlog #75. |
 | accepted | [Epic #75 refinement](./engineering/epic-75-refinement.md) | Принятые решения и реализованные delivery slices. |
+| accepted | [Epic #76 refinement](./engineering/epic-76-refinement.md) | Медиа, rich content, аудирование, UI и проверяемые delivery slices. |
 | historical | [Epic #74 dependency decisions](./engineering/epic-74-dependency-decisions.md) | Принятые зависимости и rationale. |
 | historical | [Epic #74 hardware handoff](./engineering/epic-74-hardware-handoff.md) | Machine/session handoff завершённого этапа. |
 | historical | [Epic #74 execution prompt](./engineering/prompts/epic-74-end-to-end.md) | Исходное поручение; не текущая инструкция. |
