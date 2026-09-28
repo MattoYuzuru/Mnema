@@ -107,11 +107,22 @@ CREATE TRIGGER media_blob_guard BEFORE UPDATE ON app_learning.media_blob
     FOR EACH ROW EXECUTE FUNCTION app_learning.media_blob_guard();
 
 CREATE FUNCTION app_learning.media_variant_guard() RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE current_generation BIGINT;
+DECLARE current_state TEXT;
 BEGIN
-    RAISE EXCEPTION 'Immutable media variant' USING ERRCODE = '23514';
+    IF TG_OP = 'UPDATE' THEN
+        RAISE EXCEPTION 'Immutable media variant' USING ERRCODE = '23514';
+    END IF;
+    SELECT generation, state INTO current_generation, current_state
+      FROM app_learning.media_asset WHERE asset_id = NEW.asset_id FOR UPDATE;
+    IF current_generation IS DISTINCT FROM NEW.asset_generation
+       OR current_state NOT IN ('VERIFYING', 'PROCESSING', 'READY') THEN
+        RAISE EXCEPTION 'Stale media variant generation' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
 END;
 $$;
-CREATE TRIGGER media_variant_guard BEFORE UPDATE ON app_learning.media_variant
+CREATE TRIGGER media_variant_guard BEFORE INSERT OR UPDATE ON app_learning.media_variant
     FOR EACH ROW EXECUTE FUNCTION app_learning.media_variant_guard();
 
 CREATE FUNCTION app_learning.content_media_ref_guard() RETURNS TRIGGER LANGUAGE plpgsql AS $$

@@ -73,6 +73,11 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
                 .param("variant", largerVariant).param("asset", asset).param("blob", blob).update();
         assertThat(catalog.resolve(owner, asset, variant).blobId()).isEqualTo(blob);
         assertThat(catalog.resolve(owner, asset, largerVariant).blobId()).isEqualTo(blob);
+        assertThatThrownBy(() -> jdbc.sql("INSERT INTO app_learning.media_variant "
+                        + "(variant_id,asset_id,asset_generation,purpose,profile,blob_id,created_at) "
+                        + "VALUES (:variant,:asset,1,'thumbnail','image_2048_webp',:blob,CURRENT_TIMESTAMP)")
+                .param("variant", UUID.randomUUID()).param("asset", asset).param("blob", blob).update())
+                .isInstanceOf(DataIntegrityViolationException.class);
         assertThatThrownBy(() -> catalog.resolve(stranger, asset, variant))
                 .isInstanceOf(ResourceNotFoundException.class);
         assertThatThrownBy(() -> jdbc.sql("UPDATE app_learning.media_variant SET purpose='poster' "
