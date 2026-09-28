@@ -4,7 +4,7 @@ artifact:
   type: design-direction-and-prototype
   status: accepted
   created_at: "2026-09-06"
-  updated_at: "2026-09-06"
+  updated_at: "2026-09-28"
 ---
 
 # Mnema: бумага, память и собственный способ учиться
@@ -22,6 +22,16 @@ artifact:
 Этот документ определяет их представление в UI. Рабочий
 [интерактивный прототип](../../design/prototype/README.md) создан отдельно от текущего
 Angular приложения. Исходный архив Downloads прочитан и сохранён без изменений.
+Действующие правила реализации и проверки UI собраны в
+[бренд-контракте](./mnema-brand-and-ui-contract.md).
+
+**Статус переноса на 2026-09-28:** Angular-главная и рабочие маршруты адаптированы
+к выбранной идентике; гравюра и локальный шрифт включены в production frontend.
+Детальные сценарии и компоненты ниже остаются design handoff: они не заменяют
+проверку фактической реализации и не обещают функции из интерактивного макета. Отдельный
+[Angular paper-shell spike](../engineering/evidence/epic-74/editor/paper-shell-prototype/angular/paper-landing.component.html)
+сохранён как evidence и не подключён к маршруту. Фактические маршруты и компоненты
+проверяйте по [repository guide](../engineering/repository-guide.md) и исходному коду.
 
 ## Принятые решения и предлагаемые детали
 

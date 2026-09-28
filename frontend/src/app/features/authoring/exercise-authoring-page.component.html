@@ -6,11 +6,11 @@
     <div>
       <p class="eyebrow">{{ exercise() ? 'Настройка упражнения' : 'Новое упражнение' }}</p>
       <h1 id="exercise-title" tabindex="-1">Проверка знания</h1>
-      <p class="lede">Выберите конкретные фрагменты материала. Направление знания и проверяемый ответ задаются явно.</p>
+      <p class="lede">Выберите, что показать ученику и какой ответ ожидать. Один материал может стать основой для разных упражнений.</p>
     </div>
   </header>
 
-  @if (phase() === 'loading') { <p role="status">Загружаем актуальные проекции…</p> }
+  @if (phase() === 'loading') { <p class="notice" role="status">Загружаем фрагменты материала…</p> }
   @if (message(); as currentMessage) {
     <section class="notice" [class.error]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected'"
              [attr.role]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected' ? 'alert' : 'status'">
@@ -99,8 +99,8 @@
             @if (fieldErrors()['options']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
           } @else {
           <div class="segmented" role="group" aria-label="Источник вопроса">
-            <button type="button" [class.active]="promptMode() === 'node'" (click)="setPromptMode('node')">Фрагмент материала</button>
-            <button type="button" [class.active]="promptMode() === 'custom'" (click)="setPromptMode('custom')">Короткий текст</button>
+            <button type="button" [class.active]="promptMode() === 'node'" [attr.aria-pressed]="promptMode() === 'node'" (click)="setPromptMode('node')">Фрагмент материала</button>
+            <button type="button" [class.active]="promptMode() === 'custom'" [attr.aria-pressed]="promptMode() === 'custom'" (click)="setPromptMode('custom')">Короткий текст</button>
           </div>
           @if (promptMode() === 'node') {
             <label for="prompt-node">Фрагмент вопроса</label>

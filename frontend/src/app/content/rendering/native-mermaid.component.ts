@@ -20,16 +20,16 @@ import { ChangeDetectionStrategy, Component, OnDestroy, effect, input, signal } 
     `,
     styles: [`
       :host { display: block; min-inline-size: 0; margin-block: 1.5rem; }
-      .diagram { min-inline-size: 0; margin: 0; border: 1px solid var(--line, #c9c0ce); background: #fbf8ef; }
+      .diagram { min-inline-size: 0; margin: 0; border: 1px solid var(--mn-rule); border-block-start: 2px solid var(--mn-ink); background: var(--mn-sheet); }
       .diagram-image { display: grid; place-items: center; min-block-size: 8rem; padding: clamp(.75rem, 3vw, 1.5rem); }
       img { display: block; max-inline-size: 100%; block-size: auto; }
-      figcaption { border-block-start: 1px solid var(--line, #c9c0ce); padding: .75rem 1rem; }
-      figcaption strong { color: var(--ink, #281378); }
+      figcaption { border-block-start: 1px solid var(--mn-rule); padding: .75rem 1rem; }
+      figcaption strong { color: var(--mn-ink); }
       figcaption p { margin: .35rem 0 0; }
-      details { border-block-start: 1px solid var(--line, #c9c0ce); padding: .5rem 1rem; }
-      summary { min-block-size: 2.75rem; color: var(--ink, #281378); cursor: pointer; }
+      details { border-block-start: 1px solid var(--mn-rule); padding: .5rem 1rem; }
+      summary { min-block-size: var(--mn-touch-min, 2.75rem); color: var(--mn-ink); cursor: pointer; }
       pre { max-inline-size: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-      :where(summary):focus-visible { outline: 3px solid var(--ink, #281378); outline-offset: 3px; }
+      :where(summary):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
       @media (forced-colors: active) { .diagram, figcaption, details { border-color: CanvasText; } }
     `],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -61,12 +61,15 @@ export class NativeMermaidComponent implements OnDestroy {
         this.failed.set(false);
         try {
             const { default: mermaid } = await import('mermaid');
+            // SVG is rendered as an isolated image, so resolve theme tokens before rendering it.
+            const theme = getComputedStyle(document.documentElement);
+            const token = (name: string): string => theme.getPropertyValue(name).trim();
             mermaid.initialize({
                 startOnLoad: false, securityLevel: 'strict', suppressErrorRendering: true,
                 maxTextSize: 16_384, maxEdges: 200, theme: 'base',
-                themeVariables: { background: '#fbf8ef', primaryColor: '#e8e1ed',
-                    primaryTextColor: '#281378', primaryBorderColor: '#281378', lineColor: '#281378',
-                    fontFamily: 'system-ui, sans-serif' },
+                themeVariables: { background: token('--mn-sheet'), primaryColor: token('--mn-soft'),
+                    primaryTextColor: token('--mn-ink'), primaryBorderColor: token('--mn-ink'),
+                    lineColor: token('--mn-ink'), fontFamily: token('--mn-font-body') },
                 flowchart: { htmlLabels: false }
             });
             const { svg } = await mermaid.render(`mnema-diagram-${crypto.randomUUID()}`, source);

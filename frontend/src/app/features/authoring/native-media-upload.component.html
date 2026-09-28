@@ -23,7 +23,7 @@
       <div class="media-actions"><button class="media-button primary" type="button" (click)="useRecording()">Загрузить запись</button><button class="media-button" type="button" (click)="discardRecording()">Перезаписать</button></div>
     </div>
   }
-  <input #replacePicker class="visually-hidden" type="file" [accept]="fileAccept"
+  <input #replacePicker class="visually-hidden" type="file" tabindex="-1" [accept]="fileAccept"
          (change)="onFiles($any($event.target).files); $any($event.target).value = ''" />
   @if (entries().length > 0) {
     <ol class="media-queue" aria-label="Очередь медиафайлов">

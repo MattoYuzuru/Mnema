@@ -1,28 +1,24 @@
 :host {
-    --paper: #f4f0e5;
-    --sheet: #fbf8ef;
-    --ink: #281378;
-    --body: #342e44;
-    --muted: #625c70;
-    --line: #c9c0ce;
-    --soft: #e8e1ed;
     display: block;
     min-block-size: 100dvh;
-    color: var(--body);
-    background: var(--paper);
-    font-family: system-ui, sans-serif;
+    background: var(--mn-paper);
+    color: var(--mn-body);
 }
-
-* { box-sizing: border-box; }
 
 .skip-link {
     position: fixed;
-    z-index: 20;
-    inset: 0 auto auto 1rem;
-    padding: .75rem 1rem;
-    color: #fff;
-    background: var(--ink);
-    transform: translateY(-110%);
+    z-index: 50;
+    inset: 1rem auto auto 1rem;
+    min-block-size: var(--mn-touch-min);
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid var(--mn-ink);
+    padding: .5rem 1rem;
+    background: var(--mn-sheet);
+    color: var(--mn-ink);
+    max-inline-size: calc(100vw - 2rem);
+    overflow-wrap: anywhere;
+    transform: translateY(calc(-100% - 2rem));
 }
 
 .skip-link:focus { transform: translateY(0); }
@@ -35,37 +31,37 @@
 
 .masthead,
 .footer {
-    display: flex;
-    align-items: center;
-    gap: 1.25rem;
-    padding: .85rem clamp(1rem, 4vw, 4rem);
-    border-color: var(--line);
-    background: var(--sheet);
+    inline-size: min(var(--mn-page-width), calc(100% - 2 * var(--mn-page-gutter)));
+    margin-inline: auto;
 }
 
 .masthead {
-    border-block-end: 1px solid var(--line);
+    display: grid;
+    grid-template-columns: minmax(11rem, 1fr) auto minmax(11rem, 1fr);
+    align-items: center;
+    gap: 1.5rem;
+    min-block-size: 6.25rem;
+    color: var(--mn-ink);
 }
 
 .brand {
     display: inline-flex;
     align-items: center;
-    gap: .55rem;
-    color: var(--ink);
-    font-family: Georgia, 'Times New Roman', serif;
-    font-size: 1.15rem;
-    font-weight: 700;
-    letter-spacing: .04em;
+    justify-self: start;
+    gap: .75rem;
+    min-block-size: var(--mn-touch-min);
+    color: var(--mn-ink);
+    font: 500 2.45rem/1 var(--mn-font-display);
+    letter-spacing: -.035em;
     text-decoration: none;
+    white-space: nowrap;
 }
 
 .brand-mark {
-    display: grid;
+    display: block;
     inline-size: 2rem;
     block-size: 2rem;
-    place-items: center;
-    border: 1px solid var(--ink);
-    color: var(--ink);
+    flex: none;
 }
 
 .primary-nav,
@@ -73,93 +69,115 @@
 .footer nav {
     display: flex;
     align-items: center;
-    gap: .4rem 1rem;
+    gap: clamp(.75rem, 2.5vw, 2.25rem);
 }
 
-.primary-nav { flex: 1; }
-
-.primary-nav a,
-.footer a,
-.quiet-action {
-    color: var(--ink);
-    text-underline-offset: .22em;
-}
+.primary-nav { justify-content: center; }
 
 .primary-nav a {
-    min-block-size: 2.75rem;
     display: inline-flex;
     align-items: center;
+    min-block-size: var(--mn-touch-min);
+    color: var(--mn-ink);
+    font: 500 .72rem/1.4 var(--mn-font-mono);
+    letter-spacing: .045em;
     text-decoration: none;
+    white-space: nowrap;
 }
 
 .primary-nav a:hover,
 .primary-nav a.active {
     text-decoration: underline;
-    text-decoration-thickness: 2px;
+    text-underline-offset: .35em;
 }
+
+.session { justify-content: flex-end; min-inline-size: 0; }
 
 .identity,
 .session-note {
-    max-inline-size: 15rem;
+    max-inline-size: 12rem;
+    color: var(--mn-muted);
+    font-size: .75rem;
     overflow-wrap: anywhere;
-    color: var(--muted);
-    font-size: .875rem;
 }
 
 .quiet-action {
-    min-block-size: 2.75rem;
     display: inline-flex;
     align-items: center;
-    border: 0;
-    padding: 0;
+    justify-content: center;
+    min-block-size: var(--mn-touch-min);
+    border: 1px solid var(--mn-ink);
+    border-radius: var(--mn-radius);
+    padding: .55rem .95rem;
     background: transparent;
-    font: inherit;
+    color: var(--mn-ink);
+    font: 600 .72rem/1.25 var(--mn-font-mono);
+    letter-spacing: .04em;
+    text-decoration: none;
     cursor: pointer;
+    white-space: nowrap;
 }
 
+.quiet-action:hover { background: var(--mn-soft); }
+
 main {
-    inline-size: 100%;
     min-inline-size: 0;
+    inline-size: 100%;
 }
 
 .footer {
+    display: flex;
+    align-items: center;
     justify-content: space-between;
     flex-wrap: wrap;
-    border-block-start: 1px solid var(--line);
-    color: var(--muted);
-    font-size: .875rem;
+    gap: .75rem 2rem;
+    border-block-start: 1px solid var(--mn-rule);
+    padding-block: 1.6rem 2rem;
+    color: var(--mn-muted);
+    font: .6875rem/1.7 var(--mn-font-mono);
+    letter-spacing: .03em;
 }
+
+.footer a { color: var(--mn-ink); }
+.footer nav { flex-wrap: wrap; min-inline-size: 0; }
 
 :where(a, button):focus-visible,
 main:focus-visible {
-    outline: 3px solid var(--ink);
+    outline: 3px solid var(--mn-focus);
     outline-offset: 3px;
 }
 
-@media (max-width: 44rem) {
-    .masthead {
-        position: static;
-        flex-wrap: wrap;
-        gap: .25rem 1rem;
-    }
-
-    .primary-nav {
-        order: 3;
-        flex-basis: 100%;
-        flex-wrap: wrap;
-    }
-
-    .primary-nav a { white-space: nowrap; }
-
-    .session { margin-inline-start: auto; }
+@media (max-width: 62.5rem) {
+    .masthead { grid-template-columns: auto 1fr auto; gap: 1rem; }
+    .brand { font-size: 2.1rem; }
+    .primary-nav { gap: 1rem; }
     .identity { display: none; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-    *,
-    *::before,
-    *::after {
-        scroll-behavior: auto !important;
-        transition-duration: .01ms !important;
+@media (max-width: 43.75rem) {
+    .masthead {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: space-between;
+        gap: .25rem 1rem;
+        padding-block: 1rem .75rem;
     }
+
+    .brand { font-size: 2rem; }
+    .brand-mark { inline-size: 1.7rem; block-size: 1.7rem; }
+    .primary-nav {
+        order: 3;
+        flex: 1 1 100%;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: .25rem .75rem;
+    }
+    .primary-nav a { font-size: .65rem; }
+    .session { margin-inline-start: auto; }
+    .quiet-action { padding-inline: .65rem; }
+}
+
+@media (max-width: 21rem) {
+    .brand { font-size: 1.75rem; }
+    .primary-nav { justify-content: flex-start; }
 }

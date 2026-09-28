@@ -51,6 +51,8 @@ Mnema/
 │       ├── identity-account/            current account/OAuth/OIDC runtime
 │       └── learning/                    current content/authoring/Study/media runtime
 ├── frontend/src/app/
+│   ├── app.routes.ts                    current route source of truth
+│   ├── home-page.component.ts           current public landing
 │   ├── content/                         native document/editor/renderer
 │   ├── features/authoring/              Capture, Draft, editor and Browse
 │   ├── features/own-decks/              canonical private Deck UI
@@ -109,8 +111,16 @@ all four P0 mechanics; the inspector uses current node projections, strict
 exercise envelopes and recoverable conflict/retry state without loading Study.
 Old `my-study`, public-deck, template, review/import/media/AI services and routes
 were removed in #146; account profile uses native Identity API.
-The accepted visual direction is
-[paper/antiquity/indigo](../frontend/design-and-experience-2026-09.md).
+For frontend changes, use the current
+[brand and UI contract](../frontend/mnema-brand-and-ui-contract.md). Its visual
+source is the accepted
+[paper/antiquity/indigo direction](../frontend/design-and-experience-2026-09.md).
+The canonical public landing now uses the Mnemosyne engraving and editorial
+section layout. Its Angular route, responsive CSS and local production assets
+are under `frontend/src/app` and `frontend/src/assets/brand`; the historical
+[Angular paper-shell spike](./evidence/epic-74/editor/paper-shell-prototype/angular/paper-landing.component.html)
+remains design evidence, not runtime code. Theme values are centralized in
+`frontend/src/theme/tokens.css`.
 
 The canonical `/decks/:deckId/study` route is lazy and deck-scoped. It currently
 implements all four scheduled P0 presentations (`SELF_CHECK`, `TYPED`, one-blank
@@ -221,13 +231,14 @@ infrastructure issue.
 - Preserve keyboard, screen-reader, touch and non-drag alternatives from the accepted
   exercise catalog/a11y boundary.
 
-### Epic #76: media lifecycle
+### Native media changes
 
 - The removed v1 `media` module and S3 rows/URLs are historical evidence only.
-- New logical authorized references must integrate with native content capabilities
-  without granting access by hash/object key.
-- Lifecycle, finalize races, variants, tombstones, GC and offline manifests require
-  separate refinement and object-protocol evidence.
+- Extend the implemented Learning media lifecycle through its current guide,
+  migrations V10–V15 and [accepted #76 contract](./epic-76-refinement.md).
+- Keep logical references authorized through native content capabilities; a hash
+  or object key alone grants no access. Recheck finalize races, variants,
+  tombstones, GC and offline manifests with object-protocol evidence when changed.
 
 ### Legacy removal
 
