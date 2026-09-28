@@ -27,6 +27,8 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
@@ -36,6 +38,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -83,6 +88,8 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
     @Autowired private MediaUploadService uploads;
     @Autowired private MediaObjectStore objects;
     @Autowired private MediaPlaybackStore playbackStore;
+    @Autowired private MediaProcessingRepository processingRepository;
+    @Autowired private MediaProcessingSettings processingSettings;
     @Autowired private JdbcClient jdbc;
 
     @Test
@@ -101,6 +108,117 @@ class MediaUploadIntegrationTest extends PostgresIntegrationTest {
                 HttpResponse.BodyHandlers.discarding());
         assertThat(attachment.statusCode()).isEqualTo(200);
         assertThat(attachment.headers().firstValue("Content-Disposition")).hasValue("attachment");
+    }
+
+    @Test
+    void sealedSourcePublishesOnlyAfterVerifiedDerivedObjectsAndCurrentLease() throws Exception {
+        UUID owner = UUID.randomUUID();
+        byte[] source = new byte[]{1, 2, 3};
+        var start = uploads.start(owner, UUID.randomUUID(), "upload", "image", "image/png", source.length);
+        put(start.url(), start.headers(), source);
+        uploads.finalizeUpload(owner, start.assetId(), 0, UUID.randomUUID());
+        var claim = processingRepository.claim(start.assetId());
+        assertThat(claim).isNotNull();
+        assertThat(claim.assetId()).isEqualTo(start.assetId());
+        MediaWorkerGateway fake = (job, asset, generation, kind, length, sha, duration) -> {
+            try {
+                assertThat(Files.readAllBytes(job.resolve("source"))).containsExactly(source);
+                Path output = Files.createDirectory(job.resolve("output"));
+                byte[] playback = new byte[]{11, 12, 13};
+                byte[] thumbnail = new byte[]{21, 22, 23};
+                Files.write(output.resolve("image_webp_2048_v1.webp"), playback);
+                Files.write(output.resolve("image_webp_320_v1.webp"), thumbnail);
+                String sourceInfo = "{\"sha256\":\"" + sha + "\",\"byteLength\":3,"
+                        + "\"mimeType\":\"image/png\",\"durationMs\":null,\"width\":8,\"height\":8}";
+                String result = "{\"formatVersion\":1,\"assetId\":\"" + asset
+                        + "\",\"generation\":" + generation + ",\"kind\":\"image\",\"source\":" + sourceInfo
+                        + ",\"variants\":[" + fakeVariant("playback", "image_webp_2048_v1", playback)
+                        + "," + fakeVariant("thumbnail", "image_webp_320_v1", thumbnail) + "]}";
+                Files.writeString(output.resolve("result.json"), result);
+            } catch (Exception failure) { throw new IllegalStateException(failure); }
+        };
+        new MediaProcessingService(processingRepository, uploads, objects, fake, processingSettings).process(claim);
+
+        assertThat(assetState(start.assetId())).isEqualTo("READY");
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.media_variant WHERE asset_id=:asset")
+                .param("asset", start.assetId()).query(Integer.class).single()).isEqualTo(2);
+        String key = "derived/sha256/" + sha(new byte[]{11, 12, 13}).substring(0, 2)
+                + "/" + sha(new byte[]{11, 12, 13});
+        assertThat(read(key)).containsExactly(11, 12, 13);
+        assertThat(processingRepository.heartbeat(claim)).isFalse();
+    }
+
+    @Test
+    void expiredProcessingTokenCannotPublishAndPreservedBytesCanBeRequeued() throws Exception {
+        UUID owner = UUID.randomUUID();
+        var start = uploads.start(owner, UUID.randomUUID(), "upload", "image", "image/png", 3);
+        put(start.url(), start.headers(), new byte[]{7, 8, 9});
+        uploads.finalizeUpload(owner, start.assetId(), 0, UUID.randomUUID());
+        var stale = processingRepository.claim(start.assetId());
+        jdbc.sql("UPDATE app_learning.media_upload_session SET lease_until=CURRENT_TIMESTAMP-interval '1 second' "
+                        + "WHERE session_id=:session")
+                .param("session", stale.sessionId()).update();
+        assertThat(processingRepository.complete(stale,
+                new MediaProcessingRepository.Blob(sha(new byte[]{7, 8, 9}), 3, "image/png", frozenKey(start.assetId(), 0)),
+                List.of())).isFalse();
+        var current = processingRepository.claim(start.assetId());
+        assertThat(current.token()).isNotEqualTo(stale.token());
+        assertThat(processingRepository.rejected(stale, "stale_worker")).isFalse();
+        jdbc.sql("UPDATE app_learning.media_upload_session SET processing_attempts=:maximum,"
+                        + "lease_until=CURRENT_TIMESTAMP-interval '1 second' WHERE session_id=:session")
+                .param("maximum", processingSettings.maxAttempts).param("session", current.sessionId()).update();
+        assertThat(processingRepository.claim(start.assetId())).isNull();
+        assertThat(assetState(start.assetId())).isEqualTo("FAILED_RETRYABLE");
+        assertThat(read(frozenKey(start.assetId(), 0))).containsExactly(7, 8, 9);
+
+        var processing = new MediaProcessingService(processingRepository, uploads, objects,
+                (job, asset, generation, kind, length, digest, maxDuration) -> { }, processingSettings);
+        processing.retryPreserved(owner, start.assetId(), 0);
+        assertThat(assetState(start.assetId())).isEqualTo("VERIFYING");
+        var retried = processingRepository.claim(start.assetId());
+        assertThat(retried.attempt()).isEqualTo(1);
+        assertThat(retried.token()).isNotEqualTo(current.token());
+    }
+
+    @Test
+    void invalidMediaIsRejectedAndTransientWorkerFailureIsScheduledForRetry() throws Exception {
+        UUID owner = UUID.randomUUID();
+        var invalid = uploads.start(owner, UUID.randomUUID(), "upload", "image", "image/png", 3);
+        put(invalid.url(), invalid.headers(), new byte[]{1, 1, 1});
+        uploads.finalizeUpload(owner, invalid.assetId(), 0, UUID.randomUUID());
+        var rejecting = new MediaProcessingService(processingRepository, uploads, objects,
+                (job, asset, generation, kind, length, digest, maxDuration) -> {
+                    throw new MediaProcessingRejectedException("unsupported_image");
+                }, processingSettings);
+        rejecting.process(processingRepository.claim(invalid.assetId()));
+        assertThat(assetState(invalid.assetId())).isEqualTo("REJECTED");
+        assertThat(processingRepository.claim(invalid.assetId())).isNull();
+
+        var transientSource = uploads.start(owner, UUID.randomUUID(), "upload", "image", "image/png", 3);
+        put(transientSource.url(), transientSource.headers(), new byte[]{2, 2, 2});
+        uploads.finalizeUpload(owner, transientSource.assetId(), 0, UUID.randomUUID());
+        var retrying = new MediaProcessingService(processingRepository, uploads, objects,
+                (job, asset, generation, kind, length, digest, maxDuration) -> {
+                    throw new MediaStorageUnavailableException();
+                }, processingSettings);
+        retrying.process(processingRepository.claim(transientSource.assetId()));
+        assertThat(assetState(transientSource.assetId())).isEqualTo("PROCESSING");
+        assertThat(processingRepository.claim(transientSource.assetId())).isNull();
+        assertThat(jdbc.sql("SELECT processing_next_attempt_at>CURRENT_TIMESTAMP "
+                        + "FROM app_learning.media_upload_session WHERE asset_id=:asset")
+                .param("asset", transientSource.assetId()).query(Boolean.class).single()).isTrue();
+    }
+
+    private static String fakeVariant(String purpose, String profile, byte[] bytes) {
+        return "{\"purpose\":\"" + purpose + "\",\"profile\":\"" + profile
+                + "\",\"path\":\"" + profile + ".webp\",\"sha256\":\"" + sha(bytes)
+                + "\",\"byteLength\":" + bytes.length + ",\"mimeType\":\"image/webp\","
+                + "\"durationMs\":null,\"width\":8,\"height\":8}";
+    }
+
+    private static String sha(byte[] bytes) {
+        try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); }
+        catch (NoSuchAlgorithmException impossible) { throw new IllegalStateException(impossible); }
     }
 
     @Test
