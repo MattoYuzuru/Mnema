@@ -19,7 +19,7 @@
   </div>
   @if (message(); as notice) { <p class="media-notice" role="alert">{{ notice }}</p> }
   @if (recordPreview(); as preview) {
-    <div class="record-preview"><strong>Прослушайте запись</strong><audio [src]="preview" controls preload="metadata"></audio>
+    <div class="record-preview"><strong>Прослушайте запись</strong><app-native-media-player kind="audio" title="Предпросмотр записи" [source]="preview" />
       <div class="media-actions"><button class="media-button primary" type="button" (click)="useRecording()">Загрузить запись</button><button class="media-button" type="button" (click)="discardRecording()">Перезаписать</button></div>
     </div>
   }

@@ -120,8 +120,11 @@ inside the built image. For a bounded local run, supply `--network none --read-o
 clip and a synthetic five-minute 720p AV duration boundary. On the local arm64
 2-CPU/3-GiB container they processed in 1.6 and 5.7–6.1 seconds respectively; these
 low-motion synthetic inputs do **not** establish processing SLA for phone-recorded
-five-minute 4K HDR/30–60 fps footage. A real phone fixture should be retained
-privately and run through this same bounded container before promising an SLA.
+five-minute 4K HDR/30–60 fps footage. A public iPhone 6 MOV fixture was also
+verified under the same container limits; see
+[`phone-worker.md`](../../docs/engineering/evidence/epic-76/phone-worker.md).
+That fixture was stream-copied to approximately five minutes and does not prove
+latency for an uninterrupted five-minute camera recording or for 4K HDR.
 
 ## Profiles
 
