@@ -78,7 +78,9 @@ The Java reconciler is disabled until `learning.media.processing.enabled=true`. 
 the local image above, configure the same `learning.media.upload.*` S3 credentials
 used for uploads, and set `learning.media.processing.work-root` to a private host
 directory shared with Docker (default `~/.mnema/media-processing`). The service
-runs at most one local job at a time. The container sees only a read-only source
+runs at most two local jobs at a time by default (`max-parallel`). It drains queued
+jobs without an extra scan delay and prefers images and audio over video. The
+container sees only a read-only source
 and manifest plus a writable output directory; it has no object-store credentials
 or network. The runner watches job disk usage and kills work above 7 GiB. Use an
 operator-enforced filesystem quota and an immutable image digest for any external
@@ -99,7 +101,7 @@ After five transient attempts, the asset is `FAILED_RETRYABLE`. Its owner can ca
 requeue the same bytes. `REJECTED` is terminal for invalid media and requires a new
 upload. Processing settings include `worker-timeout` (30 minutes), `lease` (2
 minutes), `heartbeat` (30 seconds), `retry-base` (1 minute), `retry-maximum` (30
-minutes), `max-attempts` (5), `max-audio-duration` (1 hour), `max-video-duration`
+minutes), `max-attempts` (5), `max-parallel` (2), `max-audio-duration` (1 hour), `max-video-duration`
 (5 minutes), and a 15-second scan interval. Upload byte ceilings live separately
 under `learning.media.upload.*`; codec and frame ceilings are fixed worker policy.
 

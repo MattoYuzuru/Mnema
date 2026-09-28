@@ -36,7 +36,8 @@ class MediaProcessingRepository {
                         + (onlyAsset == null ? "" : "AND s.asset_id=:onlyAsset ")
                         + "AND (s.lease_until IS NULL OR s.lease_until<CURRENT_TIMESTAMP) "
                         + "AND (s.processing_next_attempt_at IS NULL OR s.processing_next_attempt_at<=CURRENT_TIMESTAMP) "
-                        + "ORDER BY s.updated_at,s.session_id LIMIT 1 FOR UPDATE OF s,a SKIP LOCKED");
+                        + "ORDER BY CASE s.kind WHEN 'image' THEN 0 WHEN 'audio' THEN 1 ELSE 2 END,"
+                        + "s.updated_at,s.session_id LIMIT 1 FOR UPDATE OF s,a SKIP LOCKED");
         if (onlyAsset != null) statement = statement.param("onlyAsset", onlyAsset);
         var candidate = statement.query((row, ignored) -> new Candidate((UUID) row.getObject("session_id"),
                         (UUID) row.getObject("asset_id"), row.getLong("generation"),

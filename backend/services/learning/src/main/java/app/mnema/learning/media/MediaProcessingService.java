@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /** Reconciles sealed generations to ready media without holding a database transaction over I/O. */
 @Service
@@ -25,7 +26,7 @@ final class MediaProcessingService {
     private final MediaObjectStore objects;
     private final MediaWorkerGateway worker;
     private final MediaProcessingSettings settings;
-    private final AtomicBoolean running = new AtomicBoolean();
+    private final AtomicInteger active = new AtomicInteger();
 
     MediaProcessingService(MediaProcessingRepository repository, MediaUploadService uploads,
                            MediaObjectStore objects, MediaWorkerGateway worker, MediaProcessingSettings settings) {
@@ -39,17 +40,22 @@ final class MediaProcessingService {
     @Scheduled(initialDelayString = "${learning.media.processing.initial-delay:PT30S}",
             fixedDelayString = "${learning.media.processing.scan-interval:PT15S}")
     void scan() {
-        if (!settings.enabled || !running.compareAndSet(false, true)) return;
-        Thread.startVirtualThread(() -> {
-            try {
-                MediaProcessingRepository.Claim claim = repository.claim();
-                if (claim != null) process(claim);
-            } catch (RuntimeException failure) {
-                log.warn("media_processing_scan_deferred error_type={}", failure.getClass().getSimpleName());
-            } finally {
-                running.set(false);
-            }
-        });
+        if (!settings.enabled) return;
+        while (true) {
+            int current = active.get();
+            if (current >= settings.maxParallel) return;
+            if (!active.compareAndSet(current, current + 1)) continue;
+            Thread.startVirtualThread(() -> {
+                try {
+                    MediaProcessingRepository.Claim claim;
+                    while ((claim = repository.claim()) != null) process(claim);
+                } catch (RuntimeException failure) {
+                    log.warn("media_processing_scan_deferred error_type={}", failure.getClass().getSimpleName());
+                } finally {
+                    active.decrementAndGet();
+                }
+            });
+        }
     }
 
     /** Explicit owner action after retries are exhausted, reusing the sealed original. */

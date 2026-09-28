@@ -34,7 +34,7 @@ class DockerMediaWorkerGatewaySmokeTest {
             }
             var settings = new MediaProcessingSettings(true, root.toString(), "docker",
                     "mnema-media-worker:local", Duration.ofMinutes(30), Duration.ofMinutes(2),
-                    Duration.ofSeconds(30), Duration.ofMinutes(1), Duration.ofMinutes(30), 5,
+                    Duration.ofSeconds(30), Duration.ofMinutes(1), Duration.ofMinutes(30), 5, 2,
                     Duration.ofHours(1), Duration.ofMinutes(5));
             UUID asset = UUID.randomUUID();
             new DockerMediaWorkerGateway(settings).run(job, asset, 0, "image", Files.size(source), sha, 0);

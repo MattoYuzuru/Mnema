@@ -22,6 +22,7 @@ final class MediaProcessingSettings {
     final Duration retryBase;
     final Duration retryMaximum;
     final int maxAttempts;
+    final int maxParallel;
     final long maxAudioDurationMs;
     final long maxVideoDurationMs;
 
@@ -36,6 +37,7 @@ final class MediaProcessingSettings {
             @Value("${learning.media.processing.retry-base:PT1M}") Duration retryBase,
             @Value("${learning.media.processing.retry-maximum:PT30M}") Duration retryMaximum,
             @Value("${learning.media.processing.max-attempts:5}") int maxAttempts,
+            @Value("${learning.media.processing.max-parallel:2}") int maxParallel,
             @Value("${learning.media.processing.max-audio-duration:PT1H}") Duration maxAudioDuration,
             @Value("${learning.media.processing.max-video-duration:PT5M}") Duration maxVideoDuration) {
         Path root = Path.of(workRoot.isBlank()
@@ -49,7 +51,7 @@ final class MediaProcessingSettings {
                 || heartbeat.multipliedBy(2).compareTo(lease) >= 0
                 || retryBase.compareTo(Duration.ofSeconds(10)) < 0
                 || retryMaximum.compareTo(retryBase) < 0 || retryMaximum.compareTo(Duration.ofHours(2)) > 0
-                || maxAttempts < 1 || maxAttempts > 10
+                || maxAttempts < 1 || maxAttempts > 10 || maxParallel < 1 || maxParallel > 4
                 || maxAudioDuration.isNegative() || maxAudioDuration.isZero()
                 || maxAudioDuration.compareTo(Duration.ofHours(1)) > 0
                 || maxVideoDuration.isNegative() || maxVideoDuration.isZero()
@@ -66,6 +68,7 @@ final class MediaProcessingSettings {
         this.retryBase = retryBase;
         this.retryMaximum = retryMaximum;
         this.maxAttempts = maxAttempts;
+        this.maxParallel = maxParallel;
         this.maxAudioDurationMs = maxAudioDuration.toMillis();
         this.maxVideoDurationMs = maxVideoDuration.toMillis();
     }
