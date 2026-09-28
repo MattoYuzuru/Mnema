@@ -153,7 +153,7 @@
                         <p class="transcript"><strong>Транскрипт:</strong> {{ cue.transcript }}</p>
                       }
                     </div>
-                    <label [for]="'match-' + cue.cueId">Соответствующий текст</label>
+                    <label [for]="'match-' + cue.cueId">Соответствующий текст для записи {{ index + 1 }} — {{ cue.title }}</label>
                     <select [id]="'match-' + cue.cueId" [value]="matchSelections()[cue.cueId] ?? ''"
                             [attr.data-answer-control]="index === 0 ? '' : null"
                             (change)="selectMatch(cue.cueId, $any($event.target).value)">

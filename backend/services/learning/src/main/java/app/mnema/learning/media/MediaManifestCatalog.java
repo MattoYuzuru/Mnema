@@ -142,6 +142,9 @@ public class MediaManifestCatalog {
                 .param("version", version).param("digest", digest).param("etag", etag)
                 .param("document", body).param("created", Timestamp.from(now))
                 .param("expires", Timestamp.from(expires)).update();
+        for (UUID asset : byAsset.keySet()) jdbc.sql("INSERT INTO app_learning.media_manifest_asset_ref"
+                        + "(manifest_id,asset_id) VALUES (:manifest,:asset)")
+                .param("manifest", id).param("asset", asset).update();
         for (UUID blob : heldBlobs) jdbc.sql("INSERT INTO app_learning.media_manifest_blob_ref(manifest_id,blob_id) "
                         + "VALUES (:manifest,:blob)")
                 .param("manifest", id).param("blob", blob).update();

@@ -3,7 +3,8 @@
 On 2026-09-28, `scripts/browser-identity/run.py --authoring --media` ran the
 checked-in Angular app, Identity and Learning services, PostgreSQL, pinned
 MinIO, isolated Docker media worker and Chrome 154 over real local HTTPS.
-`media-browser.json` is the sanitized browser result; the fixture generated
+`media-browser.json` and `catalog-browser.json` are the sanitized browser
+results for the media and visible-timer runs; the media fixture generated
 synthetic PNG, MP3 and MP4 bytes. No user file, credential, object key or
 temporary signed URL is included in this directory.
 

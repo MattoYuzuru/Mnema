@@ -158,7 +158,11 @@ public class MediaCatalog {
                     + "(SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
                     + "(SELECT 1 FROM app_learning.exercise_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
                     + "(SELECT 1 FROM app_learning.draft_media_ref r JOIN app_learning.editing_draft d "
-                    + "ON d.draft_id=r.draft_id WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP))"
+                    + "ON d.draft_id=r.draft_id WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP) "
+                    + "OR EXISTS (SELECT 1 FROM app_learning.media_manifest_asset_ref r "
+                    + "JOIN app_learning.media_manifest m ON m.manifest_id=r.manifest_id "
+                    + "WHERE r.asset_id=a.asset_id AND m.owner_id=a.owner_id "
+                    + "AND m.expires_at>CURRENT_TIMESTAMP))"
                 : "SELECT b.blob_id,b.object_key,b.byte_length,b.mime_type FROM app_learning.media_asset a "
                     + "JOIN app_learning.media_variant v ON v.asset_id=a.asset_id "
                     + "AND v.asset_generation=a.generation AND v.variant_id=:variant "
@@ -168,7 +172,11 @@ public class MediaCatalog {
                     + "(SELECT 1 FROM app_learning.content_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
                     + "(SELECT 1 FROM app_learning.exercise_media_ref r WHERE r.asset_id=a.asset_id) OR EXISTS "
                     + "(SELECT 1 FROM app_learning.draft_media_ref r JOIN app_learning.editing_draft d "
-                    + "ON d.draft_id=r.draft_id WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP))";
+                    + "ON d.draft_id=r.draft_id WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP) "
+                    + "OR EXISTS (SELECT 1 FROM app_learning.media_manifest_asset_ref r "
+                    + "JOIN app_learning.media_manifest m ON m.manifest_id=r.manifest_id "
+                    + "WHERE r.asset_id=a.asset_id AND m.owner_id=a.owner_id "
+                    + "AND m.expires_at>CURRENT_TIMESTAMP))";
         var query = jdbc.sql(sql).param("asset", asset).param("owner", actor);
         if (variant != null) query = query.param("variant", variant);
         return query.query((row, ignored) -> new BlobLocation((UUID) row.getObject("blob_id"),
@@ -214,6 +222,10 @@ public class MediaCatalog {
                         + "AND NOT EXISTS (SELECT 1 FROM app_learning.draft_media_ref r "
                         + "JOIN app_learning.editing_draft d ON d.draft_id=r.draft_id "
                         + "WHERE r.asset_id=a.asset_id AND d.expires_at>CURRENT_TIMESTAMP) "
+                        + "AND NOT EXISTS (SELECT 1 FROM app_learning.media_manifest_asset_ref r "
+                        + "JOIN app_learning.media_manifest m ON m.manifest_id=r.manifest_id "
+                        + "WHERE r.asset_id=a.asset_id AND m.owner_id=a.owner_id "
+                        + "AND m.expires_at>CURRENT_TIMESTAMP) "
                         + "ORDER BY a.owner_hold_until,a.asset_id LIMIT :limit FOR UPDATE OF a SKIP LOCKED")
                 .param("limit", limit).query(UUID.class).list();
         for (UUID candidate : candidates) {

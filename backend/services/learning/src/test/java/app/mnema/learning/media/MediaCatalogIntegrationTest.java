@@ -246,6 +246,37 @@ class MediaCatalogIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void liveOfflineManifestKeepsFormerContentAssetDownloadableAfterOwnerHoldEnds() throws Exception {
+        UUID owner = UUID.randomUUID();
+        UUID deck = deck(owner);
+        UUID revision = publish(owner, deck);
+        UUID member = jdbc.sql("SELECT member_key FROM app_learning.item_revision WHERE deck_id=:deck")
+                .param("deck", deck).query(UUID.class).single();
+        UUID asset = reserve(owner);
+        UUID blob = verifiedBlob();
+        processing(asset);
+        UUID variant = UUID.randomUUID();
+        jdbc.sql("INSERT INTO app_learning.media_variant(variant_id,asset_id,asset_generation,purpose,profile,blob_id,"
+                        + "created_at) VALUES (:variant,:asset,0,'playback','image_webp_2048_v1',:blob,CURRENT_TIMESTAMP)")
+                .param("variant", variant).param("asset", asset).param("blob", blob).update();
+        assertThat(catalog.ready(asset, 0, blob)).isTrue();
+        attach(owner, deck, member, revision,
+                List.of(new MediaCatalog.Reference(UUID.randomUUID(), asset)));
+        var snapshot = manifests.current(owner, deck);
+        assertThat(snapshot.body()).contains(asset.toString(), variant.toString());
+        jdbc.sql("DELETE FROM app_learning.content_media_ref WHERE asset_id=:asset")
+                .param("asset", asset).update();
+        jdbc.sql("UPDATE app_learning.media_asset SET owner_hold_until=CURRENT_TIMESTAMP-interval '1 day' "
+                        + "WHERE asset_id=:asset").param("asset", asset).update();
+        assertThat(catalog.expireUnattached(10)).isZero();
+        assertThat(catalog.resolve(owner, asset, null).blobId()).isEqualTo(blob);
+        assertThat(catalog.resolve(owner, asset, variant).blobId()).isEqualTo(blob);
+        assertThatThrownBy(() -> catalog.resolve(UUID.randomUUID(), asset, variant))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(manifests.read(owner, deck, snapshot.id()).body()).isEqualTo(snapshot.body());
+    }
+
+    @Test
     void ownerAndRevisionReferencesAuthorizeSharedBlobWithoutMakingItsHashPublic() throws Exception {
         UUID owner = UUID.randomUUID();
         UUID stranger = UUID.randomUUID();

@@ -31,8 +31,10 @@ Snapshot retention defaults to 90 days (`learning.media.manifest.retention`,
 allowed 1–365 days). `max-references` defaults to 50,000, `max-assets` to
 10,000, and `max-document-bytes` to 8 MiB under the same
 `learning.media.manifest` prefix; startup rejects values above the documented
-bounds. Each active snapshot holds its verified blobs
-against GC. Expired snapshots return 404; GC can release their blob holds, then
+bounds. Each active snapshot holds its verified blobs against GC and its logical
+asset routes against unattended tombstoning, even after a content reference
+and the seven-day owner hold end. Expired snapshots return 404; GC can release
+their blob holds, then
 delete unreachable bytes under its two-scan grace and fencing rules. Clients
 must refresh the manifest before its expiry and must not assume old signed URLs
 remain valid. No production bucket or deployment is involved.

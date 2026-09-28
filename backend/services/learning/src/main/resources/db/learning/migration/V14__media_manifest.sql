@@ -29,6 +29,15 @@ CREATE TABLE app_learning.media_manifest_blob_ref (
 );
 CREATE INDEX media_manifest_blob_hold ON app_learning.media_manifest_blob_ref(blob_id);
 
+-- Preserve the logical route to bytes for as long as an immutable snapshot can be installed.
+-- Blob pins alone keep S3 bytes alive but cannot authorize a former asset after its owner hold.
+CREATE TABLE app_learning.media_manifest_asset_ref (
+    manifest_id UUID NOT NULL REFERENCES app_learning.media_manifest(manifest_id),
+    asset_id UUID NOT NULL REFERENCES app_learning.media_asset(asset_id),
+    PRIMARY KEY (manifest_id, asset_id)
+);
+CREATE INDEX media_manifest_asset_hold ON app_learning.media_manifest_asset_ref(asset_id);
+
 CREATE FUNCTION app_learning.media_manifest_immutable_guard() RETURNS TRIGGER LANGUAGE plpgsql AS $$
 BEGIN
     RAISE EXCEPTION 'Immutable media manifest' USING ERRCODE = '23514';
