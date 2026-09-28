@@ -37,9 +37,9 @@ dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-validation")
 
 	// PDF parsing
-	implementation("org.apache.pdfbox:pdfbox:3.0.2")
+	implementation("org.apache.pdfbox:pdfbox:3.0.8")
 	implementation("org.apache.poi:poi-ooxml:5.5.1")
-	implementation("net.sourceforge.tess4j:tess4j:5.18.0")
+	implementation("net.sourceforge.tess4j:tess4j:5.20.0")
 
 	// Cache + Redis
 	implementation("org.springframework.boot:spring-boot-starter-cache")
