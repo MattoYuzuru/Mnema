@@ -1,9 +1,15 @@
 import { ChangeDetectionStrategy, Component, OnInit, inject, signal } from '@angular/core';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { HttpErrorResponse } from '@angular/common/http';
+import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { firstValueFrom } from 'rxjs';
 import { AccountProfile, AccountProfileApi } from './account-profile.api';
 import { AuthService } from './auth.service';
+import { appConfig } from './app.config';
+
+function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | null {
+    return new TextEncoder().encode(String(control.value ?? '')).length > 72 ? { passwordBytes: true } : null;
+}
 
 @Component({
     selector: 'app-profile-page',
@@ -20,6 +26,9 @@ import { AuthService } from './auth.service';
         @if (loading()) {
           <p role="status">Загружаем профиль…</p>
         } @else if (profile(); as account) {
+          @if (showEmailWarning && !account.emailVerified) {
+            <p class="notice" role="status">Почта ещё не подтверждена. Проверьте письмо для подтверждения, чтобы сохранить доступ к аккаунту.</p>
+          }
           <div class="profile-grid">
             <section class="sheet" aria-labelledby="avatar-heading">
               <h2 id="avatar-heading">Аватар</h2>
@@ -65,6 +74,12 @@ import { AuthService } from './auth.service';
                 <input id="current-password" type="password" formControlName="currentPassword" autocomplete="current-password" />
                 <label for="new-password">Новый пароль</label>
                 <input id="new-password" type="password" formControlName="newPassword" autocomplete="new-password" />
+                <p class="hint">От 12 до 128 символов, не более 72 байт UTF-8.</p>
+                @if (passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid) {
+                  <p class="error" role="alert">Новый пароль: минимум 12 символов и максимум 72 байта UTF-8.</p>
+                }
+                <label for="confirm-password">Повторите новый пароль</label>
+                <input id="confirm-password" type="password" formControlName="confirmPassword" autocomplete="new-password" />
                 @if (passwordError()) { <p class="error" role="alert">{{ passwordError() }}</p> }
                 <button type="submit" [disabled]="passwordForm.invalid || passwordBusy()">Сменить пароль</button>
               </form>
@@ -107,6 +122,8 @@ import { AuthService } from './auth.service';
       .email { margin: -.6rem 0 1.5rem; }
       .error { color: #9b1b30; }
       .success { color: #236149; }
+      .notice { padding: 1rem 1.25rem; margin: 0 0 1.5rem; border-inline-start: 4px solid #b68428;
+        background: #fff4d9; color: #4f3b1a; }
       @media (max-width: 45rem) { .profile-grid { grid-template-columns: 1fr; } }
     `],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -115,6 +132,7 @@ export class ProfilePageComponent implements OnInit {
     private readonly api = inject(AccountProfileApi);
     private readonly auth = inject(AuthService);
     private readonly fb = inject(FormBuilder);
+    readonly showEmailWarning = appConfig.features.showEmailVerificationWarning;
     readonly profile = signal<AccountProfile | null>(null);
     readonly avatarUrl = signal<string | null>(null);
     readonly loading = signal(true);
@@ -133,7 +151,8 @@ export class ProfilePageComponent implements OnInit {
     });
     readonly passwordForm = this.fb.nonNullable.group({
         currentPassword: ['', Validators.required],
-        newPassword: ['', [Validators.required, Validators.maxLength(128)]]
+        newPassword: ['', [Validators.required, Validators.minLength(12), Validators.maxLength(128), passwordByteLimit]],
+        confirmPassword: ['', Validators.required]
     });
 
     ngOnInit(): void { void this.load(); }
@@ -189,13 +208,21 @@ export class ProfilePageComponent implements OnInit {
 
     async changePassword(): Promise<void> {
         if (this.passwordForm.invalid || this.passwordBusy()) return;
+        const { currentPassword, newPassword, confirmPassword } = this.passwordForm.getRawValue();
+        if (newPassword !== confirmPassword) {
+            this.passwordError.set('Новые пароли не совпадают.');
+            return;
+        }
         this.passwordBusy.set(true);
         this.passwordError.set(null);
         try {
-            const { currentPassword, newPassword } = this.passwordForm.getRawValue();
             await this.auth.setPassword(currentPassword, newPassword);
             this.passwordForm.reset();
-        } catch { this.passwordError.set('Не удалось сменить пароль. Проверьте текущий пароль.'); }
+        } catch (error) {
+            this.passwordError.set(error instanceof HttpErrorResponse && error.status === 400
+                ? 'Новый пароль должен содержать 12–128 символов и не более 72 байт UTF-8.'
+                : 'Не удалось сменить пароль. Проверьте текущий пароль и соединение.');
+        }
         finally { this.passwordBusy.set(false); }
     }
 }

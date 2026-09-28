@@ -5,14 +5,14 @@ artifact:
   title: "Mnema repository guide"
   status: current
   created_at: "2026-08-15"
-  updated_at: "2026-09-24"
+  updated_at: "2026-09-28"
   owners: ["project-owner"]
-  evidence_revision: "d7fd1b1d509a0ab598976f87af88101bfc3945ac"
+  evidence_revision: "1879d9ae0cadde67bf8a0ccc74fbccb53f2acee5"
 ---
 
 # Repository guide
 
-This guide describes the checkout after Epics #74/#75. Root [`AGENTS.md`](../../AGENTS.md)
+This guide describes the checkout after Epics #74–#76. Root [`AGENTS.md`](../../AGENTS.md)
 is normative; [docs/README.md](../README.md) owns documentation status/navigation.
 
 ## First read
@@ -85,7 +85,7 @@ Identity `/userinfo`; it never reads Identity tables.
 
 ### Learning
 
-Read [its guide](../../backend/services/learning/guide.md). Fresh migrations V1–V9
+Read [its guide](../../backend/services/learning/guide.md). Fresh migrations V1–V15
 own platform/storage, private Deck, deck-local LearningItem, EditingDraft,
 CaptureNote, immutable objective/exercise authoring and bounded Study session
 snapshots. API paths are canonical

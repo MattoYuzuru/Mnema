@@ -4,9 +4,9 @@ artifact:
   type: architecture-overview
   title: "Mnema current system overview"
   status: current
-  updated_at: "2026-09-24"
+  updated_at: "2026-09-28"
   owners: ["project-owner"]
-  evidence_revision: "d7fd1b1d509a0ab598976f87af88101bfc3945ac"
+  evidence_revision: "1879d9ae0cadde67bf8a0ccc74fbccb53f2acee5"
 ---
 
 # Mnema: текущий обзор системы
@@ -18,7 +18,8 @@ snapshots, deterministic attempts, baseline scheduler state и production exerci
 inspector. Канонический Study runner уже проводит все четыре scheduled P0-механики:
 self-check, typed, single-blank cloze и single choice, показывает progress и даёт
 replay/practice и явные session budgets. Persistent local HTTPS runtime также
-реализован. Media lifecycle относится к #76.
+реализован. Epic #76 добавил native media lifecycle, playback, аудирование,
+offline manifest и безопасный GC в Learning.
 
 ## Shipping и local replacement boundary
 
@@ -60,6 +61,8 @@ Identity и Learning — отдельные deployables без Gradle dependency
 - due-first scheduled selection, replay выбранной завершённой сессии текущего
   локального дня и practice по уже введённым objective с явным opt-in новых;
 - единый scheduled scheduler с server-pinned quick 10/2 и standard 20/5 budgets;
+- owner-scoped media assets, upload/finalize, worker processing, playback и
+  три механики аудирования; offline manifest и объектный GC;
 - cursor-bounded material progress без фиктивного mastery percentage, exact restart
   нового learning epoch и bounded retention raw/compact attempt payloads;
 - UUID, canonical JSON, command receipts, RFC 9457 Problem Details, row-version CAS;
