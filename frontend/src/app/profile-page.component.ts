@@ -74,8 +74,9 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
                 <label for="current-password">Текущий пароль</label>
                 <input id="current-password" type="password" formControlName="currentPassword" autocomplete="current-password" />
                 <label for="new-password">Новый пароль</label>
-                <input id="new-password" type="password" formControlName="newPassword" autocomplete="new-password" />
-                <p class="hint">От 12 до 128 символов, не более 72 байт UTF-8.</p>
+                <input id="new-password" type="password" formControlName="newPassword" autocomplete="new-password"
+                       aria-describedby="password-hint" [attr.aria-invalid]="passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid" />
+                <p id="password-hint" class="hint">От 12 до 128 символов, не более 72 байт UTF-8.</p>
                 @if (passwordForm.controls.newPassword.touched && passwordForm.controls.newPassword.invalid) {
                   <p class="error" role="alert">Новый пароль: минимум 12 символов и максимум 72 байта UTF-8.</p>
                 }

@@ -67,12 +67,15 @@ describe('ProfilePageComponent', () => {
         expect(root.querySelector('.notice')?.textContent).toContain('Почта ещё не подтверждена');
         const passwordButton = root.querySelector<HTMLButtonElement>('.password-sheet button[type=submit]')!;
         expect(passwordButton.disabled).toBeTrue();
+        const newPassword = root.querySelector<HTMLInputElement>('#new-password')!;
+        expect(newPassword.getAttribute('aria-describedby')).toBe('password-hint');
 
         fixture.componentInstance.passwordForm.setValue({ currentPassword: 'current-secret',
             newPassword: 'é'.repeat(40), confirmPassword: 'é'.repeat(40) });
         fixture.componentInstance.passwordForm.controls.newPassword.markAsTouched();
         fixture.detectChanges();
         expect(passwordButton.disabled).toBeTrue();
+        expect(newPassword.getAttribute('aria-invalid')).toBe('true');
         expect(root.querySelector('.password-sheet .error')?.textContent).toContain('72 байта');
     });
 });
