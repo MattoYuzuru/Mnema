@@ -91,17 +91,14 @@ completion/expiry/error и account-bound recovery точной pending attempt �
 Перед scheduled start пользователь выбирает короткую или стандартную границу, видит
 её во время сессии и не получает ложной гарантии длительности по часам.
 
-В исходниках всё ещё есть legacy components/services для public decks, old review,
-templates, import, media и AI. Их наличие не делает поведение текущим и не разрешает
-переиспользовать old card/template/scheduler boundaries в #75. Runtime-wide removal
-остаётся задачей #146.
+Legacy public-deck, template, old review, import, media и AI Angular routes и
+клиенты удалены в #146. Профиль использует native Identity & Account API.
 
-## Legacy build boundary
+## Историческая граница
 
-Gradle graph всё ещё содержит `core`, `media`, `import` и `ai`, чтобы полный gate
-проверял не удалённый пока код. Старые `auth` и `user` modules уже заменены единым
-Identity & Account. Legacy migrations и service docs сохраняются как evidence до
-#146/#147; они не запускаются Learning и не являются rollback architecture.
+Gradle graph содержит только `identity-account` и `learning`; legacy migration
+chains и сервисные исходники отсутствуют в текущем checkout. Исторический код
+доступен через тег `v1-apache-final` и Git history, а service docs помечены legacy.
 
 ## Проверка
 
@@ -125,8 +122,6 @@ Acceptance #74: [integrated main evidence](./engineering/evidence/epic-74/verifi
 
 ## Следующие этапы
 
-1. #76 — отдельный greenfield media lifecycle.
-2. #146 — удаление оставшегося legacy runtime/build wiring после #74–#76.
-3. #147 — отдельный production cutover/purge gate; сейчас не разрешён и не готов.
+1. #147 — отдельный production cutover/purge gate; сейчас не разрешён и не готов.
 
 Интеграционная проверка #75 и её пределы: [acceptance evidence](./engineering/evidence/epic-75/verification/integrated-main-2026-09-24.md).

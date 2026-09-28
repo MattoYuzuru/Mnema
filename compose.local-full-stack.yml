@@ -87,8 +87,6 @@ services:
       MNEMA_BUILD_ID: ${MNEMA_LOCAL_BUILD_ID:?Local launcher did not provide a build id}
       MNEMA_FEATURE_FEDERATED_AUTH_ENABLED: "false"
       MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING: "false"
-      MNEMA_FEATURE_AI_ENABLED: "false"
-      MNEMA_FEATURE_AI_SYSTEM_PROVIDER_ENABLED: "false"
     depends_on:
       identity-account: {condition: service_started}
       learning: {condition: service_started}

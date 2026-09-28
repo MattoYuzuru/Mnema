@@ -187,7 +187,7 @@ def verify_hosted(args: argparse.Namespace) -> None:
         ("/", 200, "public, max-age=0, must-revalidate"),
         ("/login", 200, "public, max-age=0, must-revalidate"),
         ("/app-config.js", 200, "no-store"),
-        ("/api/ai", 503, "no-store"),
+        ("/api/ai", 404, "no-store"),
         ("/missing-browser-security-contract.js", 404, None),
     ]
 

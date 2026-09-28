@@ -2,9 +2,7 @@
 set -eu
 
 OUT="${MNEMA_APP_CONFIG_OUT:-/usr/share/nginx/html/app-config.js}"
-AI_ROUTE="${MNEMA_AI_ROUTE_OUT:-/etc/nginx/conf.d/ai-route.inc}"
 SECURITY_HEADERS="${MNEMA_SECURITY_HEADERS_OUT:-/etc/nginx/conf.d/security-headers.inc}"
-AI_ENABLED="${MNEMA_FEATURE_AI_ENABLED:-false}"
 APP_ENV="${MNEMA_APP_ENV:-development}"
 PUBLIC_ORIGIN="${MNEMA_PUBLIC_ORIGIN:-}"
 AUTH_ORIGIN="${MNEMA_AUTH_SERVER_URL:-}"
@@ -121,29 +119,9 @@ if [ "$APP_ENV" != development ]; then
 fi
 append_string_override "identityRedirectUri" "$IDENTITY_REDIRECT"
 append_string_override "learningApiBaseUrl" "$LEARNING_BASE"
-append_string_override "apiBaseUrl" "${MNEMA_API_BASE_URL:-}"
-append_string_override "coreApiBaseUrl" "${MNEMA_CORE_API_BASE_URL:-}"
-append_string_override "mediaApiBaseUrl" "${MNEMA_MEDIA_API_BASE_URL:-}"
-append_string_override "importApiBaseUrl" "${MNEMA_IMPORT_API_BASE_URL:-}"
-append_string_override "aiApiBaseUrl" "${MNEMA_AI_API_BASE_URL:-}"
 append_string_override "clientId" "${MNEMA_CLIENT_ID:-}"
 append_string_override "buildId" "${MNEMA_BUILD_ID:-dev}"
-append_string_override "features.aiSystemProviderName" "${MNEMA_FEATURE_AI_SYSTEM_PROVIDER_NAME:-}"
 append_bool_override "federatedAuthEnabled" "${MNEMA_FEATURE_FEDERATED_AUTH_ENABLED:-}"
 append_bool_override "showEmailVerificationWarning" "${MNEMA_FEATURE_SHOW_EMAIL_VERIFICATION_WARNING:-}"
-append_bool_override "aiEnabled" "$AI_ENABLED"
-append_bool_override "aiSystemProviderEnabled" "${MNEMA_FEATURE_AI_SYSTEM_PROVIDER_ENABLED:-}"
 
 write_security_headers
-
-if [ "$AI_ENABLED" = "true" ]; then
-  : > "$AI_ROUTE"
-else
-  printf '%s\n' \
-    'location ^~ /api/ai {' \
-    '  default_type application/problem+json;' \
-    '  add_header Cache-Control "no-store" always;' \
-    '  add_header Retry-After "86400" always;' \
-    '  return 503 '\''{"type":"about:blank","title":"AI temporarily unavailable","status":503,"code":"AI_TEMPORARILY_UNAVAILABLE"}'\'';' \
-    '}' > "$AI_ROUTE"
-fi

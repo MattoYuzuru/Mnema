@@ -71,13 +71,11 @@ generate() {
   mkdir -p "$mode_root/html"
   cp -R "$FRONTEND_DIST/." "$mode_root/html/"
   MNEMA_APP_CONFIG_OUT="$mode_root/html/app-config.js" \
-  MNEMA_AI_ROUTE_OUT="$mode_root/ai-route.inc" \
   MNEMA_SECURITY_HEADERS_OUT="$mode_root/security-headers.inc" \
   MNEMA_APP_ENV="$mode" \
   MNEMA_PUBLIC_ORIGIN="https://app.example.test" \
   MNEMA_AUTH_SERVER_URL="https://auth.example.test" \
   MNEMA_STORAGE_ORIGIN="https://storage.example.test" \
-  MNEMA_FEATURE_AI_ENABLED=false \
     "$GENERATOR"
   python3 "$VERIFIER" config \
     --headers "$mode_root/security-headers.inc" \
@@ -107,7 +105,6 @@ fi
 invalid_headers="$TEST_ROOT/invalid-security-headers.inc"
 printf '%s\n' sentinel > "$invalid_headers"
 if MNEMA_APP_CONFIG_OUT="$TEST_ROOT/invalid-app-config.js" \
-  MNEMA_AI_ROUTE_OUT="$TEST_ROOT/invalid-ai-route.inc" \
   MNEMA_SECURITY_HEADERS_OUT="$invalid_headers" \
   MNEMA_APP_ENV=prod \
   MNEMA_PUBLIC_ORIGIN=https://app.example.test \
@@ -120,7 +117,6 @@ fi
 test "$(cat "$invalid_headers")" = sentinel
 
 if MNEMA_APP_CONFIG_OUT="$TEST_ROOT/invalid-mode-app-config.js" \
-  MNEMA_AI_ROUTE_OUT="$TEST_ROOT/invalid-mode-ai-route.inc" \
   MNEMA_SECURITY_HEADERS_OUT="$TEST_ROOT/invalid-mode-security-headers.inc" \
   MNEMA_APP_ENV=preview \
     "$GENERATOR" >/dev/null 2>&1; then
@@ -135,7 +131,6 @@ run_container_contract() {
     --publish 127.0.0.1::80 \
     --volume "$REPO_ROOT/frontend/nginx.conf:/etc/nginx/conf.d/default.conf:ro" \
     --volume "$mode_root/security-headers.inc:/etc/nginx/conf.d/security-headers.inc:ro" \
-    --volume "$mode_root/ai-route.inc:/etc/nginx/conf.d/ai-route.inc:ro" \
     --volume "$mode_root/html:/usr/share/nginx/html:ro" \
     "$NGINX_IMAGE"); then
     echo "Could not start nginx contract container for $mode" >&2
