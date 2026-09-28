@@ -126,12 +126,12 @@ public class MediaManifestCatalog {
                 && MessageDigest.isEqual(digest, latest.contentSha256())) return latest;
         UUID id = UUID.randomUUID();
         long version = latest == null ? 1 : latest.version() + 1;
-        String etag = "\"" + HexFormat.of().formatHex(digest) + "\"";
         ObjectNode document = mapper.createObjectNode();
         document.put("manifestId", id.toString());
         document.put("version", version);
         document.setAll(content);
         String body = new String(json(document), StandardCharsets.UTF_8);
+        String etag = "\"" + HexFormat.of().formatHex(sha256(body.getBytes(StandardCharsets.UTF_8))) + "\"";
         if (body.getBytes(StandardCharsets.UTF_8).length > settings.maxDocumentBytes()) throw new InvalidRequestException();
         Instant now = Instant.now();
         Instant expires = now.plus(settings.retention());
