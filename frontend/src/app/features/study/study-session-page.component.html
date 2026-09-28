@@ -197,6 +197,9 @@
       <article class="study-card feedback-card" [class.correct]="outcome.feedback.result === 'CORRECT'">
         <p class="eyebrow">Ответ подтверждён сервером</p>
         <h2 id="feedback-title" tabindex="-1">{{ feedbackTitle(outcome) }}</h2>
+        @if (outcome.feedback.reasonCodes.includes('MEDIA_NOT_READY')) {
+          <p class="notice" role="status">Запись стала недоступна. Ответ не оценён и не изменил расписание; попробуйте упражнение позже.</p>
+        }
         @if (presentation.type === 'TYPED' || presentation.type === 'CLOZE_SINGLE' || presentation.type === 'LISTEN_TYPE') {
           <dl class="comparison">
             <div><dt>Ваш ответ</dt><dd>{{ typedAnswer() || 'Пустой ответ' }}</dd></div>

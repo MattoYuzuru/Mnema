@@ -250,6 +250,20 @@
       },
       "additionalProperties": false
     },
+    "listeningDocument": {
+      "type": "object",
+      "required": ["createChoice", "createMatch", "createType", "pending", "revealCommand", "revealResponse", "matchResponse"],
+      "properties": {
+        "createChoice": {"$ref": "#/$defs/authoringDocument/properties/createTyped"},
+        "createMatch": {"$ref": "#/$defs/authoringDocument/properties/createTyped"},
+        "createType": {"$ref": "#/$defs/authoringDocument/properties/createTyped"},
+        "pending": {"$ref": "#/$defs/sessionDocument/properties/active"},
+        "revealCommand": {"$ref": "#/$defs/transcriptRevealCommand"},
+        "revealResponse": {"$ref": "#/$defs/transcriptRevealResponse"},
+        "matchResponse": {"$ref": "#/$defs/submitResponse"}
+      },
+      "additionalProperties": false
+    },
     "startCommand": {
       "oneOf": [
         {

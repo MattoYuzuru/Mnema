@@ -50,6 +50,10 @@ uses an `AUDIO_MATCH` prompt with 2..6 unique cue/assets and v2 answer contract
 `{schemaVersion:2,pairs:[{cueId,optionId}]}`. The correct pair map stays in the
 private objective revision, never in a pending presentation. Matching requires
 2..6 distinct text options and one assessed focal binding among them.
+The exercise editor reuses the native media upload/recording queue and binds the
+chosen logical asset to the selected cue. The Study client resolves playable
+sources through the typed `MEDIA_PLAYBACK_RESOLVER` integration point owned by
+#239; it does not construct object-storage URLs from asset IDs.
 
 ## Session resources
 

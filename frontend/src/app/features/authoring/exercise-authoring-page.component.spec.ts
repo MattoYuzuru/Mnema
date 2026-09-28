@@ -149,6 +149,17 @@ describe('ExerciseAuthoringPageComponent', () => {
         expect(component.matchRows()[1].assetId).toBe(id('42'));
     });
 
+    it('keeps audio authoring and recording controls usable on a narrow viewport', () => {
+        configure();
+        const fixture = TestBed.createComponent(ExerciseAuthoringPageComponent);
+        const host = fixture.nativeElement as HTMLElement;
+        host.style.display = 'block'; host.style.width = '320px';
+        fixture.componentInstance.setType('LISTEN_TYPE'); fixture.detectChanges();
+        expect(host.querySelector('label[for="audio-asset"]')).not.toBeNull();
+        expect(host.querySelector('app-native-media-upload')).not.toBeNull();
+        expect(host.scrollWidth).toBeLessThanOrEqual(321);
+    });
+
     it('renders labelled controls without leaking IDs and reflows at accepted viewport and text sizes', async () => {
         configure();
         const fixture = TestBed.createComponent(ExerciseAuthoringPageComponent);

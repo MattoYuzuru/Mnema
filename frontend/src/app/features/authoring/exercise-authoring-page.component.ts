@@ -147,7 +147,13 @@ export class ExerciseAuthoringPageComponent {
             });
     }
 
-    setType(value: ExerciseType): void { this.type.set(value); this.changed(); }
+    setType(value: ExerciseType): void {
+        if (value === 'AUDIO_TEXT_MATCH' && this.type() !== value) {
+            this.objectiveMode.set('create');
+            this.selectedObjectiveId.set(null);
+        }
+        this.type.set(value); this.changed();
+    }
     setEnabled(value: boolean): void { this.enabled.set(value); this.changed(); }
     setPromptMode(value: PromptMode): void { this.promptMode.set(value); this.changed(); }
     setPromptNode(value: string): void { this.promptNodeId.set(value); this.changed(); }
@@ -157,6 +163,9 @@ export class ExerciseAuthoringPageComponent {
         this.answerNodeId.set(value);
         if (this.type() === 'SINGLE_CHOICE' || this.type() === 'LISTEN_CHOICE') {
             this.optionNodeIds.update(options => [...new Set(options.filter(id => id !== previous).concat(value))]);
+        } else if (this.type() === 'AUDIO_TEXT_MATCH' && this.matchRows()[0].optionNodeId === '') {
+            this.matchRows.update(rows => rows.map((row, index) => index === 0
+                ? { ...row, optionNodeId: value } : row));
         }
         const projection = this.projection(value);
         if (projection !== null && this.objectiveMode() !== 'reuse') this.aliasesText.set(projection.text);
@@ -364,8 +373,10 @@ export class ExerciseAuthoringPageComponent {
         else if ([...answer.text].length > 80) errors['answer'] = 'Ответ слишком длинный; выберите более короткий фрагмент.';
         const aliases = this.aliases();
         if (this.type() !== 'AUDIO_TEXT_MATCH' && this.objectiveMode() !== 'reuse' && aliases.length === 0) errors['aliases'] = 'Добавьте хотя бы один допустимый ответ.';
-        if (aliases.length > 20) errors['aliases'] = 'Допустимо не более 20 вариантов ответа.';
-        if (aliases.some(value => new TextEncoder().encode(value).length > 512)) errors['aliases'] = 'Один из ответов слишком длинный.';
+        if (this.type() !== 'AUDIO_TEXT_MATCH' && aliases.length > 20) errors['aliases'] = 'Допустимо не более 20 вариантов ответа.';
+        if (this.type() !== 'AUDIO_TEXT_MATCH' && aliases.some(value => new TextEncoder().encode(value).length > 512)) {
+            errors['aliases'] = 'Один из ответов слишком длинный.';
+        }
         if (this.type() !== 'AUDIO_TEXT_MATCH' && answer !== null && this.objectiveMode() !== 'reuse'
             && !aliases.some(value => normalized(value) === normalized(answer.text))) {
             errors['aliases'] = 'Допустимые ответы должны включать текст выбранного правильного фрагмента.';
