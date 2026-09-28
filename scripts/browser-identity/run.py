@@ -243,6 +243,13 @@ class Fixture(BASE.Fixture):
                             "MNEMA_IDENTITY_SIGNING_JWK_SET_FILE": str(self.tmp / "signing.json"),
                             "MNEMA_IDENTITY_SIGNING_ACTIVE_KID": "blackbox", "APP_ENV": "local-browser-fixture"})
         arguments = ["java", "-Xms64m", "-Xmx384m", "-jar", str(jar), "--server.address=127.0.0.1"]
+        if module == "identity-account" and self.args.media:
+            environment.update({"MNEMA_AVATAR_ENDPOINT": self.media_origin,
+                                "MNEMA_AVATAR_REGION": "us-east-1",
+                                "MNEMA_AVATAR_BUCKET": "mnema-browser-media",
+                                "MNEMA_AVATAR_ACCESS_KEY": "mnema-browser-access",
+                                "MNEMA_AVATAR_SECRET_KEY": "mnema-browser-secret-key"})
+            arguments += ["--identity.avatar.allow-loopback-http=true"]
         if module == "learning":
             if self.args.media:
                 environment.update({"LEARNING_MEDIA_UPLOAD_ENDPOINT": self.media_origin,

@@ -39,10 +39,11 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
                   <span aria-hidden="true">{{ (account.displayName || account.profileUsername || account.email).charAt(0).toUpperCase() }}</span>
                 }
               </div>
-              <label for="avatar-file" class="file-label">Выбрать изображение</label>
-              <input id="avatar-file" type="file" accept="image/png,image/jpeg,image/webp"
+              <input id="avatar-file" class="file-input" type="file" accept="image/png,image/jpeg,image/webp"
+                     aria-describedby="avatar-hint"
                      (change)="uploadAvatar($event)" [disabled]="avatarBusy()" />
-              <p class="hint">PNG, JPEG или WebP, до 10 МБ и 1024 × 1024 пикселей.</p>
+              <label for="avatar-file" class="file-label">Выбрать изображение</label>
+              <p id="avatar-hint" class="hint">PNG, JPEG или WebP, до 10 МБ и 1024 × 1024 пикселей.</p>
               @if (avatarBusy()) { <p role="status">Сохраняем аватар…</p> }
               @if (avatarError()) { <p class="error" role="alert">{{ avatarError() }}</p> }
             </section>
@@ -101,15 +102,22 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
       h1 { margin: .35rem 0 .75rem; font-size: clamp(2.4rem, 6vw, 4rem); }
       h2 { margin: 0 0 1.5rem; font-size: 1.55rem; }
       .profile-grid { display: grid; grid-template-columns: minmax(15rem, .75fr) minmax(0, 1.5fr); gap: 1rem; align-items: start; }
-      .sheet { padding: clamp(1.25rem, 3vw, 2rem); border: 1px solid #c9c0ce; background: #fbf8ef; }
+      .sheet { min-width: 0; padding: clamp(1.25rem, 3vw, 2rem); border: 1px solid #c9c0ce; background: #fbf8ef; }
       .password-sheet { margin-top: 1rem; max-width: 40rem; }
       .avatar-preview { display: grid; place-items: center; width: 7rem; height: 7rem; margin-bottom: 1.25rem;
         border: 1px solid #c9c0ce; border-radius: 50%; overflow: hidden; background: #e8e1ed; color: #281378;
         font: 3rem Georgia, serif; }
       .avatar-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
-      .file-label, label:not(.file-label) { display: block; margin-bottom: .4rem; font-weight: 650; }
-      input[type=file] { max-width: 100%; }
-      input:not([type=file]), textarea { width: 100%; min-height: 2.75rem; padding: .65rem .75rem; margin-bottom: 1rem;
+      label:not(.file-label) { display: block; margin-bottom: .4rem; font-weight: 650; }
+      .file-input { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px;
+        overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+      .file-label { display: inline-flex; align-items: center; min-height: 2.75rem; margin-bottom: .4rem;
+        padding: .65rem 1rem; border: 1px solid #281378; border-radius: .25rem;
+        color: #281378; background: #fffdf8; font-weight: 650; cursor: pointer; }
+      .file-label:hover { background: #e8e1ed; }
+      .file-input:focus-visible + .file-label { outline: 3px solid #6c55b8; outline-offset: 3px; }
+      .file-input:disabled + .file-label { opacity: .55; cursor: wait; }
+      input:not([type=file]), textarea { box-sizing: border-box; width: 100%; min-height: 2.75rem; padding: .65rem .75rem; margin-bottom: 1rem;
         border: 1px solid #9788aa; border-radius: .3rem; background: #fffdf8; color: #342e44; font: inherit; }
       textarea { resize: vertical; }
       input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 3px solid #6c55b8; outline-offset: 3px; }
@@ -124,7 +132,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
       .success { color: #236149; }
       .notice { padding: 1rem 1.25rem; margin: 0 0 1.5rem; border-inline-start: 4px solid #b68428;
         background: #fff4d9; color: #4f3b1a; }
-      @media (max-width: 45rem) { .profile-grid { grid-template-columns: 1fr; } }
+      @media (max-width: 45rem) { .profile-grid { grid-template-columns: minmax(0, 1fr); } }
     `],
     changeDetection: ChangeDetectionStrategy.OnPush
 })

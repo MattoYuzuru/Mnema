@@ -301,6 +301,60 @@ try {
   require(!(await sanitizedLocation()).startsWith('/auth/callback'), 'callback not cleaned');
   const firstBearer = bearerTokens.at(-1), originalCallback = callback;
   record('login_pkce_callback', { loginStatus, secureContext: true, secureHttpOnlyLaxCookie: true });
+  step = 'native_profile_edit';
+  await navigate('/profile');
+  await until(() => exists('#profile-bio'), 'native account profile did not load');
+  await fill('#display-name', 'Mnema browser fixture');
+  await fill('#profile-bio', 'Профиль нового Identity API');
+  require(await click('form button[type=submit]'), 'profile save action absent');
+  await until(() => exists('.success'), 'bearer profile update did not complete');
+  await cdp.call('Page.reload', { ignoreCache: true });
+  await until(async () => await cdp.callFunction(`function() {
+    return document.querySelector('#profile-bio')?.value === 'Профиль нового Identity API';
+  }`), 'native profile edit did not persist across reload');
+  record('native_profile_edit', { persisted: true });
+  if (config.media) {
+    step = 'native_profile_avatar';
+    require(await cdp.callFunction(`async function() {
+    const input = document.querySelector('#avatar-file');
+    if (!(input instanceof HTMLInputElement)) return false;
+    const canvas = document.createElement('canvas');
+    canvas.width = 8; canvas.height = 8;
+    const context = canvas.getContext('2d');
+    if (!context) return false;
+    context.fillStyle = '#433489';
+    context.fillRect(0, 0, 8, 8);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    if (!blob) return false;
+    const files = new DataTransfer();
+    files.items.add(new File([blob], 'fixture-avatar.png', { type: 'image/png' }));
+    input.files = files.files;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+    }`), 'browser could not select a PNG avatar');
+    await until(() => cdp.callFunction(`function() {
+    const image = document.querySelector('.avatar-preview img');
+    return image instanceof HTMLImageElement && image.complete && image.naturalWidth === 8;
+    }`), 'native avatar upload did not render');
+    await cdp.call('Page.reload', { ignoreCache: true });
+    await until(() => cdp.callFunction(`function() {
+    const image = document.querySelector('.avatar-preview img');
+    return image instanceof HTMLImageElement && image.complete && image.naturalWidth === 8;
+    }`), 'native avatar did not survive reload');
+    record('native_profile_avatar', { persisted: true });
+  }
+  await saveScreenshot('native-profile-desktop.png');
+  for (const width of [390, 320]) {
+    await cdp.call('Emulation.setDeviceMetricsOverride', {
+      width, height: 900, deviceScaleFactor: width === 320 ? 2 : 1, mobile: false });
+    require(await cdp.callFunction(`function() {
+      return document.documentElement.scrollWidth <= window.innerWidth;
+    }`), 'profile has horizontal overflow on a narrow viewport');
+    await saveScreenshot(`native-profile-${width}.png`);
+  }
+  await cdp.call('Emulation.setDeviceMetricsOverride', {
+    width: 1280, height: 900, deviceScaleFactor: 1, mobile: false });
+  record('native_profile_responsive', { widths: [390, 320] });
   step = 'own_deck_authoring';
   const originalTitle = 'Русский материал — 漢字';
   const savedTitle = 'Русский материал — версия 2';
@@ -893,7 +947,7 @@ try {
   await until(() => exists(config.errorSelector), 'replayed callback not rejected');
   require(!(await authenticated()) && exchanges.length === beforeReplay, 'replayed callback attempted exchange');
   record('replayed_callback_rejected');
-  // Only an empty login form is exported; account/profile/callback screens remain private.
+  // Only synthetic profile views and an empty login form are exported; callback state remains private.
   await navigate('/login'); await until(() => exists('#login-name'), 'final login route absent');
   await fill('#login-name', ''); await fill('#password', '');
   require(!(await authenticated()) && await cdp.callFunction(`function(values) {

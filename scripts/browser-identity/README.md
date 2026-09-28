@@ -69,6 +69,10 @@ Two synthetic accounts and two same-profile browser tabs exercise:
 - Replaying a consumed callback is rejected client-side without another token exchange.
 - A fresh account sees the own-deck empty state, creates Unicode/RTL metadata through the
   real API, lands on the canonical detail route, reloads it and saves another revision.
+- The same account edits its native Identity profile with a bearer token and reloads
+  to prove persistence. In `--media` mode it also uploads an 8×8 PNG avatar through
+  the profile UI and reloads to prove the public avatar renders. Desktop, 390px and
+  320px captures check the profile layout for horizontal overflow.
 - Two separately authenticated same-account tabs start from the same deck revision. The
   stale tab receives a real `412`, keeps its exact draft read-only, and publishes it only
   after the user explicitly chooses to reapply over the refreshed server version.
@@ -105,7 +109,7 @@ owned resource identifiers for manual recovery. Never kill unrelated resources.
 Private TLS key, signing JWK, Chrome cookies/profile, token/callback data and child logs are
 never exported and are removed by default. The separate 0700 evidence directory contains
 sanitized scenario/count results, artifact SHA-256 fingerprints, the empty login-form
-screenshot and synthetic own-deck responsive captures. It intentionally remains for reviewer inspection. Failure
+screenshot and synthetic profile/own-deck responsive captures. It intentionally remains for reviewer inspection. Failure
 evidence contains only controlled failure/scenario labels and counts, not response bodies,
 console logs, URLs, credentials or stack traces. `--control-file` is a private optional
 cancellation-test synchronization file; do not publish it.
