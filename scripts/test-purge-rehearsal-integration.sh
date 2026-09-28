@@ -11,8 +11,9 @@ MINIO_CONTAINER="mnema-purge-minio-$SUFFIX"
 NETWORK="mnema-purge-$SUFFIX"
 POSTGRES_IMAGE='postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777'
 REDIS_IMAGE='redis:7.4.11-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf'
-# Official vendor registry, same immutable fixture bytes; Docker Hub denies fresh pulls.
-MINIO_IMAGE='quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e'
+# Test-only mirror of the 2025-04-22 MinIO release. The official Quay fixture
+# digest was withdrawn; pin this public archive by digest to keep CI reproducible.
+MINIO_IMAGE='ghcr.io/l33tlamer/minio-backup@sha256:a1ea29fa28355559ef137d71fc570e508a214ec84ff8083e39bc5428980b015e'
 
 cleanup() {
   docker rm -f "$POSTGRES_CONTAINER" "$REDIS_CONTAINER" "$MINIO_CONTAINER" >/dev/null 2>&1 || true
