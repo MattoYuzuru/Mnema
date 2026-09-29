@@ -99,16 +99,16 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
     styles: [`
       :host { display: block; min-inline-size: 0; color: var(--mn-body); }
       * { box-sizing: border-box; }
-      .profile-page { inline-size: min(100%, 58rem); margin-inline: auto; padding: clamp(1.5rem, 5vw, 4rem) clamp(1.125rem, 5vw, 3rem); }
+      .profile-page { inline-size: min(100%, 58rem); margin-inline: auto; padding: clamp(1.5rem, 3vw, 2.5rem) clamp(1.125rem, 5vw, 3rem); }
       .back-link { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 46px); color: var(--mn-ink); text-underline-offset: .22em; }
-      header { max-inline-size: 45rem; padding-block: clamp(1.75rem, 5vw, 3rem); }
+      header { max-inline-size: 45rem; padding-block: clamp(1.25rem, 3vw, 2rem); }
       .eyebrow { margin: 0 0 .45rem; color: var(--mn-ink); font: 700 .75rem/1.4 var(--mn-font-mono, ui-monospace, monospace); letter-spacing: .12em; text-transform: uppercase; }
       h1, h2 { color: var(--mn-ink); font-family: var(--mn-font-display, Georgia, serif); font-weight: 500; overflow-wrap: anywhere; }
       h1 { margin: .35rem 0 .75rem; font-size: clamp(2.7rem, 7vw, 5rem); line-height: .98; }
       h2 { margin: 0 0 1.5rem; font-size: clamp(1.8rem, 3vw, 2.25rem); line-height: 1.05; }
       header > p:last-child { max-inline-size: 52ch; color: var(--mn-muted); }
       .profile-layout { display: grid; gap: clamp(1.5rem, 4vw, 3rem); }
-      .profile-intro { display: grid; grid-template-columns: 7rem minmax(0, 1fr); align-items: center; gap: clamp(1.25rem, 4vw, 2.5rem); margin-block-end: 2rem; }
+      .profile-intro { display: grid; grid-template-columns: 7rem minmax(0, 1fr); align-items: center; gap: clamp(1.25rem, 4vw, 2.5rem); margin-block-end: 1.5rem; }
       .sheet { min-inline-size: 0; border-block-start: 1px solid var(--mn-ink); border-block-end: 1px solid var(--mn-rule); padding: clamp(1.25rem, 3vw, 2rem); background: var(--mn-sheet); }
       .password-sheet { margin-block-start: 0; }
       .avatar-action { position: relative; display: block; inline-size: 7rem; block-size: 7rem; border-radius: 50%; cursor: pointer; overflow: hidden; }

@@ -30,7 +30,7 @@
   @if (entries().length > 0) {
     <ol class="media-queue" aria-label="Очередь медиафайлов">
       @for (entry of entries(); track entry.id) {
-        <li class="media-row">
+        <li class="media-row" [attr.data-asset-id]="entry.assetId">
           <span class="media-type" aria-hidden="true">{{ entry.kind === 'image' ? '▧' : entry.kind === 'audio' ? '♫' : '▶' }}</span>
           <div class="media-row-main"><strong>{{ entry.name }}</strong>
             <span class="media-status" [attr.role]="entry.phase === 'error' ? 'alert' : 'status'">
