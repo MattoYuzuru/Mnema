@@ -43,7 +43,7 @@ export interface StudyBinding {
     readonly itemRevisionId: string;
     readonly ordinal: number;
     readonly nodeIds: readonly string[];
-    readonly display: { readonly kind: string };
+    readonly display: { readonly kind: 'NODE_TEXT' } | { readonly kind: 'CUSTOM_TEXT'; readonly text: string };
 }
 
 export interface PreparingStudySession {

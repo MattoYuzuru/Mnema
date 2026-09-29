@@ -34,6 +34,34 @@ describe('StudyApiService', () => {
         expect((await result).value.status).toBe('ACTIVE');
     });
 
+    it('accepts a cloze session whose assessed binding uses server-issued custom text', async () => {
+        const value = active('CLOZE_SINGLE');
+        const presentation = value.presentations[0];
+        const custom = { ...value, presentations: [{ ...presentation, bindings: [
+            { ...presentation.bindings[0], nodeIds: [], display: { kind: 'CUSTOM_TEXT', text: 'Париж' } }
+        ], prompt: { kind: 'TEXT', text: 'Столица Франции — _____.',
+            blank: { mode: 'FIXED', length: 6 } } }] };
+        const result = firstValueFrom(api.start(deckId, commandId));
+        http.expectOne(`/api/decks/${deckId}/study-sessions`).flush(custom, { status: 201, statusText: 'Created',
+            headers: { ...privateHeaders, Location: `/api/decks/${deckId}/study-sessions/${sessionId}` } });
+        const session = (await result).value;
+        if (session.status === 'PREPARING') fail('Expected an active session.');
+        else expect(session.presentations[0].bindings[0].display).toEqual({ kind: 'CUSTOM_TEXT', text: 'Париж' });
+
+        const resumed = firstValueFrom(api.read(deckId, sessionId));
+        http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}`).flush(custom,
+            { headers: privateHeaders });
+        expect((await resumed).status).toBe('ACTIVE');
+
+        const malformed = { ...custom, presentations: [{ ...custom.presentations[0], bindings: [
+            { ...custom.presentations[0].bindings[0], display: { kind: 'CUSTOM_TEXT' } }
+        ] }] };
+        const rejected = firstValueFrom(api.read(deckId, sessionId));
+        http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}`).flush(malformed,
+            { headers: privateHeaders });
+        await expectAsync(rejected).toBeRejectedWithError(StudyProtocolError);
+    });
+
     it('maps the quick preset to one bounded scheduler budget', () => {
         api.start(deckId, commandId, { mode: 'SCHEDULED', preset: 'QUICK' }).subscribe();
         const request = http.expectOne(`/api/decks/${deckId}/study-sessions`);
@@ -201,7 +229,7 @@ describe('StudyApiService', () => {
 
     function active(type: 'TYPED' | 'SELF_CHECK' | 'CLOZE_SINGLE' | 'SINGLE_CHOICE'): ReadyStudySession {
         const assessed = { bindingId: id('11'), role: 'ASSESSED' as const, memberKey: id('12'),
-            itemRevisionId: id('13'), ordinal: 0, nodeIds: [id('14')], display: { kind: 'NODE_TEXT' } };
+            itemRevisionId: id('13'), ordinal: 0, nodeIds: [id('14')], display: { kind: 'NODE_TEXT' as const } };
         const options = type === 'SINGLE_CHOICE'
             ? [{ optionId: id('15'), text: 'memory' }, { optionId: id('16'), text: 'forgetting' }] : [];
         const bindings = type === 'SINGLE_CHOICE' ? [assessed,

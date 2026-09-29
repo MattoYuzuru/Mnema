@@ -30,6 +30,15 @@ describe('Study shared contract', () => {
         ];
         fixtures.forEach(([fixture, definition]) => validate(fixture, asObject(definitions[definition]), root));
 
+        const customDisplay = clone(session);
+        const presentations = asObject(customDisplay['active'])['presentations'] as unknown[];
+        const bindings = asObject(presentations[0])['bindings'] as unknown[];
+        asObject(bindings[0])['display'] = { kind: 'CUSTOM_TEXT', text: 'Париж' };
+        validate(customDisplay, asObject(definitions['sessionDocument']), root);
+        asObject(bindings[0])['display'] = { kind: 'CUSTOM_TEXT' };
+        expect(() => validate(customDisplay, asObject(definitions['sessionDocument']), root))
+            .toThrowError(/must match exactly one schema/);
+
         const unknown = clone(authoring);
         unknown['clientAuthority'] = true;
         expect(() => validate(unknown, asObject(definitions['authoringDocument']), root))

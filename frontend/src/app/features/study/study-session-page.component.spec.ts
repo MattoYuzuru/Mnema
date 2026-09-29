@@ -293,7 +293,7 @@ describe('StudySessionPageComponent', () => {
 
     function presentation(type: StudyPresentation['type']): StudyPresentation {
         const assessed = { bindingId: id('7'), role: 'ASSESSED' as const, memberKey: id('8'),
-            itemRevisionId: id('9'), ordinal: 0, nodeIds: [id('10')], display: { kind: 'NODE_TEXT' } };
+            itemRevisionId: id('9'), ordinal: 0, nodeIds: [id('10')], display: { kind: 'NODE_TEXT' as const } };
         const options = type === 'SINGLE_CHOICE'
             ? [{ optionId: id('15'), text: 'memory' }, { optionId: id('16'), text: 'forgetting' }] : [];
         const bindings = type === 'SINGLE_CHOICE' ? [assessed,
