@@ -83,6 +83,28 @@ describe('ExerciseAuthoringPageComponent', () => {
         expect(router.navigate).toHaveBeenCalled();
     });
 
+    it('offers each text fragment once and saves a custom answer with synonyms', () => {
+        const { api } = configure();
+        api.create.and.returnValue(of({ acknowledgement: { commandId: id('30'), deckId: deck.deckId,
+            deckRevisionId: id('31'), deckVersion: '4', objectiveId: id('32'), objectiveKey: id('33'),
+            objectiveRevisionId: id('34'), exerciseId: id('35'), exerciseRevisionId: id('36'), enabled: true },
+            replayed: false }));
+        const component = TestBed.runInInjectionContext(() => new ExerciseAuthoringPageComponent());
+        expect(component.projections().map(projection => projection.text))
+            .toEqual(['What is memory?', 'Memory', 'Attention']);
+        component.setPromptNode(id('11'));
+        component.setAnswerMode('custom');
+        component.setAliases('Long-term memory\nDurable memory');
+        component.save();
+        const args = api.create.calls.mostRecent().args;
+        expect(args[3]['answerContract']).toEqual({ schemaVersion: 1,
+            normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'],
+            accepted: ['Long-term memory', 'Durable memory'] });
+        expect((args[4]['bindings'] as Record<string, unknown>[])[0]).toEqual(jasmine.objectContaining({
+            nodeIds: [], display: { kind: 'CUSTOM_TEXT', text: 'Long-term memory' }
+        }));
+    });
+
     it('preserves input and exact command across an unknown-outcome retry', () => {
         const { api } = configure();
         api.create.and.returnValues(throwError(() => new HttpErrorResponse({ status: 0 })), of({
@@ -155,7 +177,8 @@ describe('ExerciseAuthoringPageComponent', () => {
         const host = fixture.nativeElement as HTMLElement;
         host.style.display = 'block'; host.style.width = '320px';
         fixture.componentInstance.setType('LISTEN_TYPE'); fixture.detectChanges();
-        expect(host.querySelector('label[for="audio-asset"]')).not.toBeNull();
+        expect(host.textContent).toContain('Выберите аудиофайл ниже');
+        expect(host.querySelector('input#audio-asset')).toBeNull();
         expect(host.querySelector('app-native-media-upload')).not.toBeNull();
         expect(host.scrollWidth).toBeLessThanOrEqual(321);
     });

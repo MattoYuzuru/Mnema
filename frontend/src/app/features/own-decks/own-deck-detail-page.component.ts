@@ -5,6 +5,7 @@ import { ActivatedRoute, RouterLink } from '@angular/router';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 
 import { DeckMetadata, OwnDeck, validateDeckMetadata } from './own-deck.models';
+import { DeckDescriptionComponent } from './deck-description.component';
 import { DeckRecoveryContext, OwnDeckRecoveryService } from './own-deck-recovery.service';
 import {
     OwnDecksStore,
@@ -17,7 +18,7 @@ import {
 
 @Component({
     selector: 'app-own-deck-detail-page',
-    imports: [DatePipe, ReactiveFormsModule, RouterLink],
+    imports: [DatePipe, ReactiveFormsModule, RouterLink, DeckDescriptionComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-deck-detail-page.component.html',
     styleUrl: './own-decks-page.css',

@@ -181,6 +181,14 @@ public class ExerciseService {
         if (answerVersion != (command.exercise().type().equals("AUDIO_TEXT_MATCH") ? 2 : 1)) {
             throw new InvalidRequestException();
         }
+        if (assessed.display().path("kind").textValue().equals("CUSTOM_TEXT")) {
+            String visibleAnswer = assessed.display().path("text").textValue();
+            boolean accepted = false;
+            for (JsonNode candidate : objective.answerContract().path("accepted")) {
+                if (visibleAnswer.equals(candidate.textValue())) { accepted = true; break; }
+            }
+            if (!accepted) throw new InvalidRequestException();
+        }
 
         UUID exerciseRevision = UUID.randomUUID();
         UUID deckRevision = UUID.randomUUID();

@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, OnDestroy, effect, input, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, ElementRef, OnDestroy, effect, input, signal, viewChild } from '@angular/core';
 
 /** Mermaid output stays inside an image document: user-authored SVG never enters Mnema's DOM. */
 @Component({
@@ -15,8 +15,16 @@ import { ChangeDetectionStrategy, Component, OnDestroy, effect, input, signal } 
           }
         </div>
         <figcaption><strong>{{ title() }}</strong><p>{{ description() }}</p></figcaption>
+        @if (imageUrl()) {
+          <button #zoomButton class="diagram-zoom" type="button" (click)="openDiagram()">Увеличить схему</button>
+        }
         <details><summary>Исходный текст Mermaid</summary><pre><code>{{ source() }}</code></pre></details>
       </figure>
+      <dialog #diagramDialog class="diagram-dialog" [attr.aria-label]="'Схема крупным планом: ' + title()" (close)="returnFocus()">
+        <button class="diagram-close" type="button" autofocus (click)="closeDiagram()">Закрыть схему</button>
+        <div class="diagram-scroll">@if (imageUrl(); as url) { <img [src]="url" [alt]="title()" /> }</div>
+        <p>{{ description() }}</p>
+      </dialog>
     `,
     styles: [`
       :host { display: block; min-inline-size: 0; margin-block: 1.5rem; }
@@ -27,9 +35,16 @@ import { ChangeDetectionStrategy, Component, OnDestroy, effect, input, signal } 
       figcaption strong { color: var(--mn-ink); }
       figcaption p { margin: .35rem 0 0; }
       details { border-block-start: 1px solid var(--mn-rule); padding: .5rem 1rem; }
+      .diagram-zoom { min-block-size: var(--mn-touch-min, 2.75rem); margin: .5rem 1rem; border: 1px solid var(--mn-ink); padding: .5rem .8rem; background: var(--mn-sheet); color: var(--mn-ink); font: 600 .9rem var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
+      .diagram-dialog { inline-size: min(94vw, 95rem); max-inline-size: none; max-block-size: 90vh; border: 1px solid var(--mn-ink); padding: 1rem; background: var(--mn-sheet); color: var(--mn-body); }
+      .diagram-dialog::backdrop { background: rgb(30 20 50 / 70%); }
+      .diagram-close { min-block-size: var(--mn-touch-min, 2.75rem); margin-block-end: .75rem; border: 1px solid var(--mn-ink); padding: .5rem .8rem; background: var(--mn-ink); color: var(--mn-on-ink); font: 600 .9rem var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
+      .diagram-scroll { max-inline-size: 100%; max-block-size: 68vh; overflow: auto; }
+      .diagram-scroll img { inline-size: max(100%, 70rem); max-inline-size: none; }
+      .diagram-dialog p { margin: .75rem 0 0; }
       summary { min-block-size: var(--mn-touch-min, 2.75rem); color: var(--mn-ink); cursor: pointer; }
       pre { max-inline-size: 100%; overflow-x: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-      :where(summary):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
+      :where(summary, button):focus-visible { outline: 3px solid var(--mn-focus, var(--mn-ink)); outline-offset: 3px; }
       @media (forced-colors: active) { .diagram, figcaption, details { border-color: CanvasText; } }
     `],
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -40,6 +55,8 @@ export class NativeMermaidComponent implements OnDestroy {
     readonly description = input.required<string>();
     readonly imageUrl = signal<string | null>(null);
     readonly failed = signal(false);
+    private readonly dialog = viewChild<ElementRef<HTMLDialogElement>>('diagramDialog');
+    private readonly zoomButton = viewChild<ElementRef<HTMLButtonElement>>('zoomButton');
 
     private currentUrl: string | null = null;
     private generation = 0;
@@ -54,6 +71,17 @@ export class NativeMermaidComponent implements OnDestroy {
         this.generation += 1;
         this.releaseUrl();
     }
+
+    openDiagram(): void {
+        if (this.imageUrl() !== null) this.dialog()?.nativeElement.showModal();
+    }
+
+    closeDiagram(): void {
+        this.dialog()?.nativeElement.close();
+        this.returnFocus();
+    }
+
+    returnFocus(): void { this.zoomButton()?.nativeElement.focus(); }
 
     private async render(source: string, generation: number): Promise<void> {
         this.releaseUrl();

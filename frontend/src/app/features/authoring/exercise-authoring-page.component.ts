@@ -6,6 +6,7 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
 
 import { NativeMediaSurfaceComponent } from '../../content/rendering/native-media-surface.component';
+import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { newCommandId } from './authoring.models';
@@ -22,6 +23,7 @@ import { NativeMediaKind } from './native-media-upload.api';
 type Phase = 'loading' | 'ready' | 'saving' | 'saved' | 'conflict' | 'rejected' | 'error';
 type ObjectiveMode = 'create' | 'reuse' | 'revise';
 type PromptMode = 'node' | 'custom';
+type AnswerMode = 'node' | 'custom';
 
 interface PendingWrite {
     readonly commandId: string;
@@ -39,7 +41,7 @@ interface MatchRow {
 
 @Component({
     selector: 'app-exercise-authoring-page',
-    imports: [RouterLink, NativeMediaSurfaceComponent, NativeMediaUploadComponent],
+    imports: [RouterLink, NativeMediaSurfaceComponent, NativeMediaUploadComponent, MnemaSelectComponent],
     templateUrl: './exercise-authoring-page.component.html',
     styleUrl: './exercise-authoring-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -57,6 +59,7 @@ export class ExerciseAuthoringPageComponent {
     readonly type = signal<ExerciseType>('TYPED');
     readonly enabled = signal(true);
     readonly promptMode = signal<PromptMode>('node');
+    readonly answerMode = signal<AnswerMode>('node');
     readonly promptNodeId = signal<string | null>(null);
     readonly customPrompt = signal('');
     readonly answerNodeId = signal<string | null>(null);
@@ -72,13 +75,23 @@ export class ExerciseAuthoringPageComponent {
     readonly selectedObjectiveId = signal<string | null>(null);
 
     readonly projections = computed(() => this.item() === null ? [] : textProjections(this.item()!.document));
+    readonly projectionOptions = computed<readonly MnemaSelectOption[]>(() => [
+        { value: '', label: 'Выберите фрагмент' },
+        ...this.projections().map(projection => ({ value: projection.nodeId, label: projection.label }))
+    ]);
     readonly objectives = computed(() => uniqueObjectives(this.page()?.exercises.map(value => value.objective) ?? []));
+    readonly objectiveOptions = computed<readonly MnemaSelectOption[]>(() => [
+        { value: '', label: 'Выберите цель' },
+        ...this.objectives().map(objective => ({ value: objective.objectiveId, label: this.objectiveName(objective) }))
+    ]);
     readonly selectedObjective = computed(() => this.objectives()
         .find(value => value.objectiveId === this.selectedObjectiveId()) ?? null);
     readonly previewPrompt = computed(() => this.isListening() ? this.audioInstruction().trim() || 'Прослушайте запись'
         : this.promptMode() === 'custom'
         ? this.customPrompt().trim() : this.projection(this.promptNodeId())?.text ?? 'Выберите фрагмент вопроса');
-    readonly previewAnswer = computed(() => this.projection(this.answerNodeId())?.text ?? 'Выберите проверяемый ответ');
+    readonly previewAnswer = computed(() => this.answerMode() === 'custom'
+        ? this.aliases()[0] ?? 'Введите свой ответ'
+        : this.projection(this.answerNodeId())?.text ?? 'Выберите проверяемый ответ');
     readonly staleProjection = computed(() => {
         const detail = this.exercise();
         const item = this.item();
@@ -152,10 +165,27 @@ export class ExerciseAuthoringPageComponent {
             this.objectiveMode.set('create');
             this.selectedObjectiveId.set(null);
         }
+        if (value === 'SINGLE_CHOICE' || value === 'LISTEN_CHOICE' || value === 'AUDIO_TEXT_MATCH') {
+            this.answerMode.set('node');
+        }
         this.type.set(value); this.changed();
     }
     setEnabled(value: boolean): void { this.enabled.set(value); this.changed(); }
-    setPromptMode(value: PromptMode): void { this.promptMode.set(value); this.changed(); }
+    setPromptMode(value: PromptMode, event?: MouseEvent): void {
+        this.waveOrigin(event); this.promptMode.set(value); this.changed();
+    }
+    setAnswerMode(value: AnswerMode, event?: MouseEvent): void {
+        this.waveOrigin(event);
+        if (value !== this.answerMode()) {
+            const answer = this.selectedObjective()?.answerContract;
+            this.aliasesText.set(value === 'node' ? this.projection(this.answerNodeId())?.text ?? ''
+                : this.objectiveMode() === 'reuse' && answer?.schemaVersion === 1
+                ? answer.accepted.join('\n')
+                : '');
+            this.answerMode.set(value);
+        }
+        this.changed();
+    }
     setPromptNode(value: string): void { this.promptNodeId.set(value); this.changed(); }
     setCustomPrompt(value: string): void { this.customPrompt.set(value); this.changed(); }
     setAnswerNode(value: string): void {
@@ -172,6 +202,10 @@ export class ExerciseAuthoringPageComponent {
         this.changed();
     }
     setAliases(value: string): void { this.aliasesText.set(value); this.changed(); }
+    supportsCustomAnswer(): boolean {
+        return this.type() === 'SELF_CHECK' || this.type() === 'TYPED'
+            || this.type() === 'CLOZE_SINGLE' || this.type() === 'LISTEN_TYPE';
+    }
     isListening(): boolean { return this.type() === 'LISTEN_CHOICE' || this.type() === 'LISTEN_TYPE'
         || this.type() === 'AUDIO_TEXT_MATCH'; }
     setAudio(field: 'assetId' | 'title' | 'instruction' | 'transcript', value: string): void {
@@ -197,7 +231,7 @@ export class ExerciseAuthoringPageComponent {
             this.setAudio('assetId', selection.assetId);
             if (!this.audioTitle().trim()) this.setAudio('title', 'Аудиозапись');
         }
-        this.message.set('Аудио привязано к упражнению. Сохраните редакцию, чтобы закрепить связь.');
+        this.message.set('Аудиозапись выбрана. Сохраните упражнение, чтобы применить изменение.');
     }
     addMatchRow(): void {
         if (this.matchRows().length < 6) { this.matchRows.update(rows => [...rows, newMatchRow()]); this.changed(); }
@@ -278,6 +312,19 @@ export class ExerciseAuthoringPageComponent {
         return names[type];
     }
 
+    exerciseExample(type: ExerciseType): string {
+        const examples: Record<ExerciseType, string> = {
+            SELF_CHECK: 'Вспомните ответ, затем откройте его и оцените себя.',
+            TYPED: 'Напишите ответ своими словами; Mnema сверит его с допустимыми вариантами.',
+            CLOZE_SINGLE: 'Впишите пропущенное слово или короткую фразу.',
+            SINGLE_CHOICE: 'Найдите правильный ответ среди нескольких вариантов.',
+            LISTEN_CHOICE: 'Прослушайте запись и выберите подходящий текст.',
+            AUDIO_TEXT_MATCH: 'Соедините несколько записей с соответствующими текстами.',
+            LISTEN_TYPE: 'Прослушайте запись и напишите ответ.'
+        };
+        return examples[type];
+    }
+
     objectiveName(objective: ExerciseObjective): string {
         return objective.answerContract.schemaVersion === 1 ? objective.answerContract.accepted[0] ?? 'Цель без подписи'
             : 'Соотнесение записей и текста';
@@ -290,7 +337,7 @@ export class ExerciseAuthoringPageComponent {
     private openNew(deck: OwnDeck, item: ItemDetail, page: ExercisePage): void {
         this.deck.set(deck); this.item.set(item); this.page.set(page); this.exercise.set(null);
         this.type.set('TYPED'); this.enabled.set(true); this.promptMode.set('node');
-        this.promptNodeId.set(null); this.customPrompt.set(''); this.answerNodeId.set(null);
+        this.promptNodeId.set(null); this.customPrompt.set(''); this.answerMode.set('node'); this.answerNodeId.set(null);
         this.aliasesText.set(''); this.optionNodeIds.set([]); this.objectiveMode.set('create');
         this.audioAssetId.set(''); this.audioTitle.set(''); this.audioInstruction.set(''); this.audioTranscript.set('');
         this.matchRows.set([newMatchRow(), newMatchRow()]);
@@ -315,6 +362,7 @@ export class ExerciseAuthoringPageComponent {
             this.promptMode.set('node'); this.promptNodeId.set(detail.prompt.nodeId); this.customPrompt.set('');
         }
         const assessed = detail.bindings.find(binding => binding.role === 'ASSESSED');
+        this.answerMode.set(assessed?.display.kind === 'CUSTOM_TEXT' ? 'custom' : 'node');
         this.answerNodeId.set(assessed?.nodeIds[0] ?? null);
         this.optionNodeIds.set(detail.bindings.filter(binding => binding.role === 'OPTION')
             .flatMap(binding => binding.nodeIds));
@@ -324,7 +372,7 @@ export class ExerciseAuthoringPageComponent {
         this.selectedObjectiveId.set(detail.objective.objectiveId);
         this.pending = null; this.dirty.set(false); this.phase.set('ready');
         if (this.route.snapshot.queryParamMap.get('saved') === '1') {
-            this.phase.set('saved'); this.message.set('Упражнение подтверждено сервером.');
+            this.phase.set('saved'); this.message.set('Упражнение сохранено.');
         }
     }
 
@@ -368,11 +416,20 @@ export class ExerciseAuthoringPageComponent {
             else if ([...text].length > 80) errors['prompt'] = 'Сократите вопрос до 80 символов.';
         }
         }
-        const answer = this.projection(this.answerNodeId());
-        if (answer === null) errors['answer'] = 'Выберите актуальный проверяемый фрагмент.';
-        else if ([...answer.text].length > 80) errors['answer'] = 'Ответ слишком длинный; выберите более короткий фрагмент.';
+        const answer = this.answerMode() === 'node' ? this.projection(this.answerNodeId()) : null;
+        if (this.answerMode() === 'custom' && !this.supportsCustomAnswer()) {
+            errors['answer'] = 'Для этого типа упражнения выберите фрагмент материала.';
+        } else if (this.answerMode() === 'node' && answer === null) {
+            errors['answer'] = 'Выберите актуальный проверяемый фрагмент.';
+        } else if (answer !== null && [...answer.text].length > 80) {
+            errors['answer'] = 'Ответ слишком длинный; выберите более короткий фрагмент.';
+        }
         const aliases = this.aliases();
         if (this.type() !== 'AUDIO_TEXT_MATCH' && this.objectiveMode() !== 'reuse' && aliases.length === 0) errors['aliases'] = 'Добавьте хотя бы один допустимый ответ.';
+        if (this.answerMode() === 'custom' && (aliases.length === 0 || [...aliases[0]].length > 80
+            || new TextEncoder().encode(aliases[0]).length > 320)) {
+            errors['aliases'] = 'Первый ответ должен быть коротким: до 80 символов.';
+        }
         if (this.type() !== 'AUDIO_TEXT_MATCH' && aliases.length > 20) errors['aliases'] = 'Допустимо не более 20 вариантов ответа.';
         if (this.type() !== 'AUDIO_TEXT_MATCH' && aliases.some(value => new TextEncoder().encode(value).length > 512)) {
             errors['aliases'] = 'Один из ответов слишком длинный.';
@@ -389,6 +446,10 @@ export class ExerciseAuthoringPageComponent {
             && (existingAnswer.schemaVersion !== 1
                 || !existingAnswer.accepted.some(value => normalized(value) === normalized(answer.text)))) {
             errors['objective'] = 'Этот фрагмент не соответствует сохранённому ответу цели. Обновите цель или создайте отдельную.';
+        }
+        if (this.answerMode() === 'custom' && this.objectiveMode() === 'reuse' && existingAnswer !== undefined
+            && (existingAnswer.schemaVersion !== 1 || !existingAnswer.accepted.includes(aliases[0]))) {
+            errors['objective'] = 'Свой ответ должен совпадать с одним из ответов выбранного знания.';
         }
         if (this.type() === 'SINGLE_CHOICE' || this.type() === 'LISTEN_CHOICE') {
             const options = this.optionNodeIds().map(id => this.projection(id)).filter(value => value !== null);
@@ -443,8 +504,10 @@ export class ExerciseAuthoringPageComponent {
             : { kind: 'NODE_TEXT', memberKey: item.memberKey, itemRevisionId: item.itemRevisionId,
                 nodeId: this.promptNodeId()! };
         const bindings: Record<string, unknown>[] = [{ bindingId: crypto.randomUUID(), role: 'ASSESSED',
-            memberKey: item.memberKey, itemRevisionId: item.itemRevisionId, nodeIds: [this.answerNodeId()!],
-            display: { kind: 'NODE_TEXT' }, ordinal: 0 }];
+            memberKey: item.memberKey, itemRevisionId: item.itemRevisionId,
+            nodeIds: this.answerMode() === 'custom' ? [] : [this.answerNodeId()!],
+            display: this.answerMode() === 'custom' ? { kind: 'CUSTOM_TEXT', text: this.aliases()[0] }
+                : { kind: 'NODE_TEXT' }, ordinal: 0 }];
         const optionNodes = this.type() === 'AUDIO_TEXT_MATCH' ? this.matchRows().map(row => row.optionNodeId)
             : this.optionNodeIds();
         if (this.type() === 'SINGLE_CHOICE' || this.type() === 'LISTEN_CHOICE'
@@ -461,7 +524,7 @@ export class ExerciseAuthoringPageComponent {
 
     private saved(result: ExerciseWriteResult): void {
         this.pending = null; this.dirty.set(false); this.phase.set('saved');
-        this.message.set('Упражнение подтверждено сервером.');
+        this.message.set('Упражнение сохранено.');
         const deck = this.deck();
         if (deck === null) return;
         void this.router.navigate(['/decks', deck.deckId, 'exercises', result.acknowledgement.exerciseId, 'edit'],
@@ -472,7 +535,7 @@ export class ExerciseAuthoringPageComponent {
         const response = error instanceof HttpErrorResponse ? error : null;
         if (response === null || response.status === 0 || response.status >= 500) {
             this.phase.set('error');
-            this.message.set('Сервер не подтвердил результат. Безопасно повторите ту же команду.');
+            this.message.set('Не удалось проверить сохранение. Повторите попытку.');
             return;
         }
         this.pending = null;
@@ -482,7 +545,19 @@ export class ExerciseAuthoringPageComponent {
             return;
         }
         this.phase.set('rejected');
-        this.message.set('Сервер отклонил проекцию. Проверьте актуальность фрагментов и настройки ответа.');
+        this.message.set('Не удалось сохранить упражнение. Проверьте фрагменты материала и настройки ответа.');
+    }
+
+    private waveOrigin(event?: MouseEvent): void {
+        const button = event?.currentTarget;
+        if (!event || !(button instanceof HTMLElement)) return;
+        const bounds = button.getBoundingClientRect();
+        const x = event.detail === 0 ? bounds.width / 2 : event.clientX - bounds.left;
+        const y = event.detail === 0 ? bounds.height / 2 : event.clientY - bounds.top;
+        const radius = Math.hypot(Math.max(x, bounds.width - x), Math.max(y, bounds.height - y));
+        button.style.setProperty('--wave-x', `${x}px`);
+        button.style.setProperty('--wave-y', `${y}px`);
+        button.style.setProperty('--wave-size', `${radius * 2}px`);
     }
 
     private focusFirstError(): void {

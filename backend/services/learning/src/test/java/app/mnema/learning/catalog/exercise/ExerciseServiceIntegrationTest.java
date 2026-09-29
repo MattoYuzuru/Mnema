@@ -196,6 +196,48 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void customAnswerAndSynonymSurvivePublicationAndAssessWithoutMaterialNode() {
+        Fixture fixture = material(UUID.randomUUID());
+        ObjectNode command = body(UUID.randomUUID(), fixture.deckHead(), fixture, "TYPED", "create", null, null);
+        ObjectNode assessed = (ObjectNode) command.withObject("exercise").withArray("bindings").get(0);
+        assessed.putArray("nodeIds");
+        assessed.set("display", JSON.createObjectNode().put("kind", "CUSTOM_TEXT")
+                .put("text", "long-term memory"));
+        command.withObject("objective").withObject("answerContract").putArray("accepted")
+                .add("long-term memory").add("durable memory");
+        var published = service.publish(fixture.actor(), fixture.deck(), null, 1,
+                ExerciseCommand.readCreate(bytes(command)));
+        UUID exercise = UUID.fromString(published.acknowledgement().path("exerciseId").textValue());
+        JsonNode detail = service.read(fixture.actor(), fixture.deck(), exercise, null);
+        assertThat(detail.path("bindings").get(0).path("nodeIds")).isEmpty();
+        assertThat(detail.path("bindings").get(0).path("display").path("text").textValue())
+                .isEqualTo("long-term memory");
+        UUID session = UUID.fromString(studies.start(fixture.actor(), fixture.deck(), "UTC", scheduled())
+                .body().path("sessionId").textValue());
+        JsonNode presentation = studies.read(fixture.actor(), fixture.deck(), session)
+                .path("presentations").get(0);
+        assertThat(presentation.path("reference").textValue()).isEqualTo("long-term memory");
+        ObjectNode attempt = JSON.createObjectNode().put("attemptId", UUID.randomUUID().toString())
+                .put("presentationId", presentation.path("presentationId").textValue())
+                .put("nonce", presentation.path("nonce").textValue())
+                .putNull("confidence").put("durationMs", 100);
+        attempt.putObject("response").put("kind", "TEXT").put("text", "durable memory");
+        attempt.putArray("hintsUsed");
+        JsonNode outcome = attempts.submit(fixture.actor(), fixture.deck(), session,
+                AttemptCommand.read(bytes(attempt))).outcome();
+        assertThat(outcome.path("evidence").path("result").textValue()).isEqualTo("CORRECT");
+
+        ObjectNode reuse = body(UUID.randomUUID(), decks.read(fixture.actor(), fixture.deck()), fixture,
+                "TYPED", "reuse", UUID.fromString(published.acknowledgement().path("objectiveId").textValue()),
+                UUID.fromString(published.acknowledgement().path("objectiveRevisionId").textValue()));
+        ObjectNode unrelated = (ObjectNode) reuse.withObject("exercise").withArray("bindings").get(0);
+        unrelated.putArray("nodeIds");
+        unrelated.set("display", JSON.createObjectNode().put("kind", "CUSTOM_TEXT").put("text", "wrong answer"));
+        assertThatThrownBy(() -> service.publish(fixture.actor(), fixture.deck(), null, 2,
+                ExerciseCommand.readCreate(bytes(reuse)))).isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
     void choiceSupportsPinnedOptionsWhileAclStalePinsAndDeletedNodesFailAtomically() {
         Fixture fixture = material(UUID.randomUUID());
         ObjectNode create = body(UUID.randomUUID(), fixture.deckHead(), fixture, "SINGLE_CHOICE", "create", null, null);

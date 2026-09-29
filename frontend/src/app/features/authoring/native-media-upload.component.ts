@@ -50,6 +50,7 @@ export class NativeMediaUploadComponent {
     readonly entries = signal<readonly QueueEntry[]>([]);
     readonly dropActive = signal(false);
     readonly recording = signal(false);
+    readonly cameraOpen = signal(false);
     readonly recordPreview = signal<string | null>(null);
     readonly message = signal<string | null>(null);
     readonly fileAccept = FILE_ACCEPT;
@@ -57,6 +58,7 @@ export class NativeMediaUploadComponent {
     private readonly api = inject(NativeMediaUploadApi);
     private readonly destroyRef = inject(DestroyRef);
     private readonly replacePicker = viewChild<ElementRef<HTMLInputElement>>('replacePicker');
+    private readonly cameraPreview = viewChild<ElementRef<HTMLVideoElement>>('cameraPreview');
     private activeTransfers = 0;
     private replaceTarget: string | null = null;
     private readonly aborts = new Map<string, AbortController>();
@@ -64,6 +66,7 @@ export class NativeMediaUploadComponent {
     private pollDelay = POLL_INITIAL_MS;
     private recorder: MediaRecorder | null = null;
     private stream: MediaStream | null = null;
+    private cameraStream: MediaStream | null = null;
     private chunks: Blob[] = [];
     private recordedFile: File | null = null;
     private recordingUrl: string | null = null;
@@ -83,6 +86,7 @@ export class NativeMediaUploadComponent {
             // In-flight byte transfers finish after SPA navigation to the published material.
             // A full browser reload still requires reselecting the local file.
             this.stopMediaTracks();
+            this.stopCamera();
             if (this.recordingUrl !== null) URL.revokeObjectURL(this.recordingUrl);
         });
     }
@@ -111,6 +115,50 @@ export class NativeMediaUploadComponent {
         if (!this.disabled()) this.dropActive.set(true);
     }
 
+    async startCamera(): Promise<void> {
+        if (this.disabled() || this.cameraOpen()) return;
+        if (!navigator.mediaDevices?.getUserMedia) {
+            this.message.set('Камера здесь недоступна. Выберите файл с устройства.');
+            return;
+        }
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+            if (this.destroyRef.destroyed) { stream.getTracks().forEach(track => track.stop()); return; }
+            this.cameraStream = stream;
+            const video = this.cameraPreview()?.nativeElement;
+            if (video === undefined) throw new Error('Camera preview is unavailable');
+            video.srcObject = stream;
+            this.cameraOpen.set(true);
+            await video.play();
+            this.message.set(null);
+        } catch {
+            this.stopCamera();
+            this.message.set('Не удалось открыть камеру. Проверьте разрешение или выберите файл.');
+        }
+    }
+
+    async takePhoto(): Promise<void> {
+        const video = this.cameraPreview()?.nativeElement;
+        if (!this.cameraOpen() || video === undefined || video.videoWidth < 1 || video.videoHeight < 1) return;
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d')?.drawImage(video, 0, 0);
+        const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, 'image/jpeg', .9));
+        this.stopCamera();
+        if (blob === null) { this.message.set('Снимок не получился. Попробуйте ещё раз.'); return; }
+        this.enqueue(new File([blob], `Снимок-${Date.now()}.jpg`, { type: 'image/jpeg' }));
+        this.drain();
+    }
+
+    stopCamera(): void {
+        this.cameraStream?.getTracks().forEach(track => track.stop());
+        this.cameraStream = null;
+        const video = this.cameraPreview()?.nativeElement;
+        if (video) video.srcObject = null;
+        this.cameraOpen.set(false);
+    }
+
     choose(entry: QueueEntry): void {
         if (entry.assetId !== null) this.chooseAsset.emit({ kind: entry.kind, assetId: entry.assetId });
     }
@@ -120,7 +168,7 @@ export class NativeMediaUploadComponent {
         this.patch(entry.id, { phase: 'cancelled', error: null });
         if (entry.assetId !== null && entry.transfer !== null) {
             void this.api.cancel(entry.assetId, entry.transfer.generation).catch(() => {
-                this.patch(entry.id, { error: 'Отмена на сервере не подтверждена. Проверьте состояние позже.' });
+                this.patch(entry.id, { error: 'Не удалось подтвердить отмену. Проверьте состояние позже.' });
             });
         }
     }
@@ -419,13 +467,13 @@ function uploadError(error: unknown): string {
     }
     if (error instanceof HttpErrorResponse) {
         if (error.status === 413 || error.status === 429 || error.status === 507) {
-            return 'Хранилище или квота сейчас не позволяют загрузку. Выберите меньший файл или повторите позже.';
+            return 'Сейчас файл загрузить не получится. Выберите меньший или попробуйте позже.';
         }
         if (error.status === 415 || error.status === 422) {
             return 'Этот формат не принят. Выберите другой файл для того же места в материале.';
         }
         if (error.status === 403 || error.status === 409) {
-            return 'Ссылка или попытка загрузки устарела. Повторите отправку файла.';
+            return 'Загрузка прервалась. Повторите отправку файла.';
         }
     }
     return 'Не удалось завершить загрузку. Повторите отправку файла.';

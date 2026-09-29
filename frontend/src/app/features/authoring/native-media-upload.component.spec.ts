@@ -75,6 +75,27 @@ describe('NativeMediaUploadComponent', () => {
         fixture.destroy();
     });
 
+    it('opens the camera stream in the panel and closes its tracks without a file picker', fakeAsync(() => {
+        const { fixture, component } = setup();
+        const stream = new MediaStream();
+        const stop = jasmine.createSpy('stop');
+        spyOn(stream, 'getTracks').and.returnValue([{ stop } as unknown as MediaStreamTrack]);
+        spyOn(navigator.mediaDevices, 'getUserMedia').and.resolveTo(stream);
+        const preview = fixture.nativeElement.querySelector('video') as HTMLVideoElement;
+        spyOn(preview, 'play').and.resolveTo();
+
+        component.startCamera();
+        flushMicrotasks();
+        fixture.detectChanges();
+        expect(component.cameraOpen()).toBeTrue();
+        expect(preview.srcObject).toBe(stream);
+        expect(fixture.nativeElement.querySelector('.camera-preview').hidden).toBeFalse();
+        component.stopCamera();
+        expect(stop).toHaveBeenCalled();
+        expect(preview.srcObject).toBeNull();
+        fixture.destroy();
+    }));
+
     it('recovers an asset reference from a server draft without inventing local file bytes', fakeAsync(() => {
         const { fixture, component, api } = setup();
         const documentValue = createEmptyNativeDocument();

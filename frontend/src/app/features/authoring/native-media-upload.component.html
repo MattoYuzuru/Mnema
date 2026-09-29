@@ -1,5 +1,5 @@
 <section class="media-workbench" aria-labelledby="media-workbench-title">
-  <div class="media-heading"><div><p class="media-kicker">Медиатека материала</p><h3 id="media-workbench-title">Файлы и запись</h3></div><p>Файл можно вставить в материал сразу после начала загрузки. Читатель увидит его, когда проверка завершится.</p></div>
+  <div class="media-heading"><div><p class="media-kicker">Файл для материала</p><h3 id="media-workbench-title">Выберите или запишите</h3></div><p>Добавьте файл здесь, затем выберите его из списка ниже.</p></div>
   <div class="media-drop" [class.is-over]="dropActive()" (dragenter)="onDragOver($event)"
        (dragover)="onDragOver($event)" (dragleave)="dropActive.set(false)" (drop)="onDrop($event)">
     <span class="media-drop-mark" aria-hidden="true">＋</span>
@@ -8,14 +8,16 @@
       <label class="media-button primary">Выбрать файлы
         <input type="file" multiple [accept]="fileAccept" [disabled]="disabled()" (change)="onFiles($any($event.target).files); $any($event.target).value = ''" />
       </label>
-      <label class="media-button">Открыть камеру
-        <input type="file" accept="image/*,video/mp4,video/quicktime,video/webm" capture="environment"
-               [disabled]="disabled()" (change)="onFiles($any($event.target).files); $any($event.target).value = ''" />
-      </label>
+      <button class="media-button" type="button" [disabled]="disabled()" (click)="startCamera()">Открыть камеру</button>
       @if (!recording()) { <button class="media-button" type="button" [disabled]="disabled()" (click)="startRecording()">Записать аудио</button> }
       @else { <button class="media-button stop" type="button" (click)="stopRecording()">Остановить запись</button> }
     </div>
-    <small>JPEG, PNG, WebP, GIF, MP3, M4A, MP4, MOV и WebM. Камера откроется, если устройство это поддерживает.</small>
+    <small>JPEG, PNG, WebP, GIF, MP3, M4A, MP4, MOV и WebM.</small>
+  </div>
+  <div class="camera-preview" [hidden]="!cameraOpen()">
+    <video #cameraPreview autoplay muted playsinline aria-label="Изображение с камеры"></video>
+    <div class="media-actions"><button class="media-button primary" type="button" (click)="takePhoto()">Сделать снимок</button>
+      <button class="media-button" type="button" (click)="stopCamera()">Закрыть камеру</button></div>
   </div>
   @if (message(); as notice) { <p class="media-notice" role="alert">{{ notice }}</p> }
   @if (recordPreview(); as preview) {
@@ -46,7 +48,7 @@
             @if (entry.phase === 'uploading') { <progress [value]="entry.progress" max="100" [attr.aria-label]="'Загрузка ' + entry.name"></progress> }
           </div>
           <div class="media-row-actions">
-            @if (entry.assetId !== null && entry.phase !== 'cancelled') { <button type="button" (click)="choose(entry)">Вставить</button> }
+            @if (entry.assetId !== null && entry.phase !== 'cancelled') { <button type="button" (click)="choose(entry)">Выбрать для материала</button> }
             @if (entry.phase === 'error' || entry.phase === 'needs-file') { <button type="button" (click)="retry(entry)">Повторить</button> }
             @if (entry.phase === 'uploading' || entry.phase === 'selected') { <button type="button" (click)="cancel(entry)">Отменить</button> }
           </div>

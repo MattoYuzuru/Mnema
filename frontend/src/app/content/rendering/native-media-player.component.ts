@@ -1,13 +1,22 @@
 import { ChangeDetectionStrategy, Component, ElementRef, computed, input, output, signal, viewChild } from '@angular/core';
+import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
+
+let nextMediaSpeedId = 0;
 
 /** Shared controls for material and exercise cues; the browser still decodes and seeks the media. */
 @Component({
     selector: 'app-native-media-player',
+    imports: [MnemaSelectComponent],
     templateUrl: './native-media-player.component.html',
     styleUrl: './native-media-player.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class NativeMediaPlayerComponent {
+    readonly speedControlId = `media-speed-${++nextMediaSpeedId}`;
+    readonly speedOptions: readonly MnemaSelectOption[] = [
+        { value: '0.75', label: '0,75×' }, { value: '1', label: '1×' },
+        { value: '1.25', label: '1,25×' }, { value: '1.5', label: '1,5×' }
+    ];
     readonly kind = input.required<'audio' | 'video'>();
     readonly title = input.required<string>();
     readonly source = input.required<string>();

@@ -1,4 +1,4 @@
-<section class="page narrow" aria-labelledby="deck-detail-title">
+<section class="page narrow deck-detail-page" aria-labelledby="deck-detail-title">
   <a class="back-link" routerLink="/decks"><span aria-hidden="true">←</span> Мои колоды</a>
 
   @let detail = store.detailState();
@@ -36,11 +36,11 @@
         <h2 id="conflict-title">Колода уже изменена в другой вкладке</h2>
         <p>Ваш ввод остаётся в форме. Выберите, какую версию продолжить.</p>
         <dl class="server-version">
-          <div><dt>Текущее название на сервере</dt><dd>{{ mutation.latest.metadata.title }}</dd></div>
-          <div><dt>Текущее описание на сервере</dt><dd>{{ mutation.latest.metadata.description || 'Без описания' }}</dd></div>
+          <div><dt>Текущее название</dt><dd>{{ mutation.latest.metadata.title }}</dd></div>
+          <div><dt>Текущее описание</dt><dd>{{ mutation.latest.metadata.description || 'Без описания' }}</dd></div>
         </dl>
         <div class="actions">
-          <button class="button secondary" type="button" (click)="chooseServerVersion()">Использовать версию сервера</button>
+          <button class="button secondary" type="button" (click)="chooseServerVersion()">Оставить текущую версию</button>
           <button class="button primary" type="button" (click)="reapplyConflict()">Применить мой прежний ввод поверх неё</button>
         </div>
       </section>
@@ -64,10 +64,6 @@
           }
         </div>
       </section>
-    }
-
-    @if (mutation.phase === 'completed') {
-      <p class="notice success" role="status">Сервер подтвердил текущую версию колоды.</p>
     }
 
     <nav class="actions" aria-label="Материалы колоды">
@@ -101,6 +97,13 @@
           [readOnly]="mutationLocksDraft(mutation)"
           [attr.aria-invalid]="submitted() && validation().descriptionBytes > 4096"
           [attr.aria-describedby]="submitted() && validation().descriptionBytes > 4096 ? 'detail-description-error' : null"></textarea>
+        <p class="field-hint">Поддерживаются **жирный**, *курсив*, ~~зачёркивание~~ и списки.</p>
+        @if (draft().description.trim()) {
+          <div class="description-preview" aria-label="Предпросмотр описания">
+            <p class="eyebrow">Как будет выглядеть</p>
+            <app-deck-description [text]="draft().description" />
+          </div>
+        }
         @if (submitted() && validation().descriptionBytes > 4096) {
           <p class="field-error" id="detail-description-error">Сократите описание.</p>
         }

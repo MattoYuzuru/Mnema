@@ -32,7 +32,7 @@
             <span class="deck-copy">
               <strong>{{ deck.metadata.title }}</strong>
               @if (deck.metadata.description) {
-                <span class="deck-description">{{ deck.metadata.description }}</span>
+                <app-deck-description class="deck-description" [text]="deck.metadata.description" />
               } @else {
                 <span class="deck-description muted">Без описания</span>
               }

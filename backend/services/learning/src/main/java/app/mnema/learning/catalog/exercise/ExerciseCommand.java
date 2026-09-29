@@ -135,6 +135,10 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
         if (assessed != 1 || (choices ? options < 2 || options > 6 : options != 0)) {
             throw invalid();
         }
+        for (Binding binding : bindings) {
+            if (binding.display().path("kind").textValue().equals("CUSTOM_TEXT")
+                    && (!binding.role().equals("ASSESSED") || choices)) throw invalid();
+        }
         if (choices) validateChoiceTargets(bindings);
         return new Exercise(type, value.path("enabled").booleanValue(), prompt, bindings, evaluator);
     }
@@ -150,6 +154,12 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
         if (answer == null) return;
         if (!type.equals("AUDIO_TEXT_MATCH")) {
             if (answer.path("schemaVersion").intValue() != 1) throw invalid();
+            Binding assessed = exercise.bindings().stream().filter(binding -> binding.role().equals("ASSESSED"))
+                    .findFirst().orElseThrow();
+            if (assessed.display().path("kind").textValue().equals("CUSTOM_TEXT")
+                    && !answer.path("accepted").get(0).textValue().equals(assessed.display().path("text").textValue())) {
+                throw invalid();
+            }
             return;
         }
         if (answer.path("schemaVersion").intValue() != 2) throw invalid();
@@ -248,6 +258,11 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
                 if (nodeIds.stream().distinct().count() != nodeIds.size()) throw invalid();
             }
             ObjectNode display = value.has("display") ? display(value.path("display")) : emptyDisplay();
+            if (display.path("kind").textValue().equals("CUSTOM_TEXT")
+                    ? !role.equals("ASSESSED") || !nodeIds.isEmpty()
+                    : role.equals("ASSESSED") && nodeIds.isEmpty()) {
+                throw invalid();
+            }
             result.add(new Binding(bindingId, role, id(value, "memberKey"), id(value, "itemRevisionId"),
                     List.copyOf(nodeIds), display, ordinal));
         }
@@ -255,8 +270,14 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
     }
 
     private static ObjectNode display(JsonNode value) {
-        fields(value, Set.of("kind"));
-        text(value, "kind", 32);
+        String kind = text(value, "kind", 32);
+        if (kind.equals("CUSTOM_TEXT")) {
+            fields(value, Set.of("kind", "text"));
+            shortText(value.path("text"));
+        } else {
+            fields(value, Set.of("kind"));
+            if (!kind.equals("NODE_TEXT")) throw invalid();
+        }
         return ((ObjectNode) value).deepCopy();
     }
 

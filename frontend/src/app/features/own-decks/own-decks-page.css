@@ -154,6 +154,10 @@ h2 { font-size: clamp(1.65rem, 3vw, 2.2rem); font-weight: 500; line-height: 1.08
 .status { color: var(--mn-muted); }
 .pager { display: flex; justify-content: center; flex-wrap: wrap; gap: .75rem; padding-block-start: 2rem; }
 .metadata-form { display: grid; gap: 1.75rem; border-block-start: 1px solid var(--mn-ink); padding-block-start: 1.5rem; }
+.deck-detail-page .metadata-form { border-block-start: 0; padding-block-start: 2rem; }
+.field-hint { margin: -.25rem 0 0; color: var(--mn-muted); font-size: .85rem; }
+.description-preview { border-inline-start: 2px solid var(--mn-rule); padding: .75rem 1.25rem; background: var(--mn-sheet); }
+.description-preview .eyebrow { margin-block-end: .7rem; }
 .create-page .page-heading { margin-block-end: clamp(1.5rem, 4vw, 2.5rem); border-block-end: 0; padding-block-end: 0; }
 .create-page .metadata-form { border-block-start: 0; padding-block-start: 0; }
 .field { display: grid; gap: .55rem; }

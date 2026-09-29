@@ -60,10 +60,10 @@ export function identityErrorMessage(error: unknown): string {
         }
         @if (error()) { <p class="identity-error" role="alert" tabindex="-1">{{ error() }}</p> }
         @if (auth.logoutUnconfirmed()) {
-          <p class="identity-error" role="status">Локальный доступ удалён, но завершение сессии на сервере не подтверждено.</p>
-          <button class="text-action" type="button" [disabled]="busy()" (click)="logout()">Повторить завершение сессии на сервере</button>
+          <p class="identity-error" role="status">На этом устройстве вы вышли. Повторите выход, чтобы завершить сессию полностью.</p>
+          <button class="text-action" type="button" [disabled]="busy()" (click)="logout()">Повторить выход</button>
         }
-        <p class="identity-status" role="status">{{ busy() ? 'Ожидаем подтверждения сервиса аккаунтов.' : '' }}</p>
+        <p class="identity-status" role="status">{{ busy() ? 'Проверяем данные…' : '' }}</p>
       </section>
     `
 })
@@ -110,7 +110,7 @@ export class LoginPageComponent implements OnDestroy {
         this.busy.set(true);
         this.error.set('');
         try { await this.auth.logout(); }
-        catch { if (!this.destroyed) this.error.set('В этом окне вы вышли, но сервер не подтвердил завершение сессии. Повторите выход, когда соединение восстановится.'); }
+        catch { if (!this.destroyed) this.error.set('На этом устройстве вы вышли. Повторите выход, когда связь восстановится.'); }
         finally { if (!this.destroyed) this.busy.set(false); }
     }
 

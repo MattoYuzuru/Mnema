@@ -1,0 +1,17 @@
+:host { display: block; position: relative; min-inline-size: 0; inline-size: 100%; }
+:host(.is-open) { z-index: 10; }
+.select-trigger { display: flex; align-items: center; justify-content: space-between; gap: .75rem; inline-size: 100%; min-inline-size: 0; min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid var(--mn-field-border); border-radius: var(--mn-radius); padding: .65rem .9rem; background: var(--mn-sheet); color: var(--mn-body); font: inherit; text-align: start; cursor: pointer; }
+.select-trigger:hover { border-color: var(--mn-ink); }
+.select-trigger:focus-visible { outline: 2px solid var(--mn-focus); outline-offset: -2px; }
+.select-trigger[aria-invalid='true'] { border-color: var(--mn-danger); }
+.select-trigger:disabled { cursor: not-allowed; opacity: .6; }
+.selected-text { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chevron { flex: none; inline-size: .55rem; block-size: .55rem; border-inline-end: 1.5px solid currentColor; border-block-end: 1.5px solid currentColor; transform: rotate(45deg) translateY(-.15rem); }
+.options { position: absolute; inset-block-start: calc(100% + .25rem); inset-inline: 0; max-block-size: min(18rem, 45vh); overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--mn-ink); border-radius: var(--mn-radius); padding: .25rem; background: var(--mn-sheet); box-shadow: 0 .75rem 1.5rem rgb(31 19 87 / 15%); }
+.option { padding: .6rem .7rem; border-radius: var(--mn-radius); overflow-wrap: anywhere; cursor: pointer; }
+.option:is(:hover, .is-active) { background: var(--mn-soft); color: var(--mn-ink); }
+.option[aria-disabled='true'] { color: var(--mn-muted); opacity: .55; cursor: not-allowed; }
+:host(.is-compact) { inline-size: auto; }
+:host(.is-compact) .select-trigger { min-inline-size: 5.5rem; padding-inline: .6rem; font-size: .8rem; font-weight: 600; }
+:host(.is-compact) .options { min-inline-size: 6rem; }
+@media (forced-colors: active) { .select-trigger, .options { border-color: CanvasText; } .option:is(:hover, .is-active) { outline: 1px solid Highlight; } }

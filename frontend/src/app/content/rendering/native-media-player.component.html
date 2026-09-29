@@ -20,9 +20,10 @@
     <span class="mnema-player-time" aria-hidden="true">{{ durationText() }}</span>
     <button type="button" class="mnema-player-action" [attr.aria-label]="muted() ? 'Включить звук' : 'Выключить звук'"
       (click)="toggleMute()">{{ muted() ? '◌' : '♪' }}</button>
-    <label class="mnema-player-speed">Скорость <select [value]="speed()" (change)="changeSpeed($any($event.target).value)">
-      <option value="0.75">0,75×</option><option value="1">1×</option><option value="1.25">1,25×</option><option value="1.5">1,5×</option>
-    </select></label>
+    <div class="mnema-player-speed"><label [for]="speedControlId">Скорость</label>
+      <app-mnema-select [controlId]="speedControlId" label="Скорость" [compact]="true"
+        [options]="speedOptions" [value]="speed().toString()" (valueChange)="changeSpeed($event)" />
+    </div>
     @if (kind() === 'video') { <button type="button" class="mnema-player-action" aria-label="На весь экран" (click)="fullscreen()">⛶</button> }
   </div>
   @if (waiting()) { <p class="mnema-player-note" role="status">Загружаем продолжение…</p> }

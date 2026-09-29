@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -6,6 +6,7 @@ import { timer } from 'rxjs';
 
 import { SignedMediaSource } from '../../content/rendering/media-playback.api';
 import { NativeMediaPlayerComponent } from '../../content/rendering/native-media-player.component';
+import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { StudyApiService } from './study-api.service';
@@ -31,12 +32,15 @@ type Phase = 'setup' | 'loading' | 'preparing' | 'answering' | 'revealed' | 'sub
 
 @Component({
     selector: 'app-study-session-page',
-    imports: [RouterLink, NativeMediaPlayerComponent],
+    imports: [RouterLink, NativeMediaPlayerComponent, MnemaSelectComponent],
     templateUrl: './study-session-page.component.html',
     styleUrl: './study-session-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class StudySessionPageComponent {
+    readonly practiceOrderOptions: readonly MnemaSelectOption[] = [
+        { value: 'SEEDED', label: 'Случайно' }, { value: 'WEAKEST_FIRST', label: 'Сначала трудные' }
+    ];
     readonly deck = signal<OwnDeck | null>(null);
     readonly session = signal<ReadyStudySession | null>(null);
     readonly phase = signal<Phase>('loading');
@@ -52,18 +56,28 @@ export class StudySessionPageComponent {
     readonly progress = signal<readonly MaterialProgress[]>([]);
     readonly progressNextCursor = signal<string | null>(null);
     readonly progressUnavailable = signal(false);
+    readonly progressLoading = signal(false);
+    readonly progressMoreError = signal(false);
+    readonly progressSentinel = viewChild<ElementRef<HTMLElement>>('progressSentinel');
     readonly replaySources = signal<readonly ReplaySource[]>([]);
+    readonly replayOptions = computed<readonly MnemaSelectOption[]>(() => this.replaySources().map(source => ({
+        value: source.sessionId,
+        label: `${this.formatDate(source.completedAt)} · ${source.presentationCount} заданий`
+    })));
     readonly selectedReplayId = signal<string | null>(null);
     readonly includeNewPractice = signal(false);
     readonly practiceOrder = signal<PracticeOrder>('SEEDED');
     readonly scheduledPreset = signal<ScheduledStudyPreset>('STANDARD');
     readonly supportLoading = signal(true);
     readonly current = computed(() => this.session()?.presentations[0] ?? null);
+    readonly matchOptions = computed<readonly MnemaSelectOption[]>(() => [
+        { value: '', label: 'Выберите вариант' },
+        ...(this.current()?.options ?? []).map(option => ({ value: option.optionId, label: option.text }))
+    ]);
     readonly position = computed(() => {
         const current = this.current();
         const session = this.session();
-        return current === null || session === null ? null
-            : `${current.ordinal + 1} из максимум ${session.budget.maxPresentations}`;
+        return current === null || session === null ? null : `Задание ${current.ordinal + 1}`;
     });
 
     private readonly route = inject(ActivatedRoute);
@@ -82,6 +96,16 @@ export class StudySessionPageComponent {
     private audioEpoch = 0;
 
     constructor() {
+        effect(onCleanup => {
+            const sentinel = this.progressSentinel()?.nativeElement;
+            const cursor = this.progressNextCursor();
+            if (!sentinel || !cursor || this.progressLoading() || this.progressMoreError()) return;
+            const observer = new IntersectionObserver(entries => {
+                if (entries.some(entry => entry.isIntersecting)) this.loadMoreProgress();
+            }, { rootMargin: '0px 0px 700px 0px' });
+            observer.observe(sentinel);
+            onCleanup(() => observer.disconnect());
+        });
         const recheckAudio = () => {
             if (document.visibilityState === 'visible' && navigator.onLine) this.refreshAudio();
         };
@@ -288,8 +312,10 @@ export class StudySessionPageComponent {
 
     loadMoreProgress(): void {
         const cursor = this.progressNextCursor();
-        if (cursor !== null) this.loadProgress(cursor, true);
+        if (cursor !== null && !this.progressLoading()) this.loadProgress(cursor, true);
     }
+
+    loadMoreProgressRetry(): void { this.loadProgress(); }
 
     progressLabel(state: MaterialProgress['state']): string {
         return ({ NOT_STARTED: 'Не начат', LEARNING: 'В изучении', DUE: 'Пора повторить',
@@ -368,14 +394,14 @@ export class StudySessionPageComponent {
                     && !session.presentations.some(item => item.presentationId === pending.presentationId)) {
                     this.pending.set(null);
                     this.recovery.save({ deckId: this.deckId, sessionId, pending: null });
-                    this.message.set('Сервер уже принял предыдущую попытку. Результат не восстановлен, но прогресс не будет записан повторно.');
+                    this.message.set('Предыдущий ответ уже учтён. Его результат пока недоступен, но прогресс не будет записан повторно.');
                 }
                 this.apply(session, reconciling && this.pending() !== null);
             },
             error: error => {
                 if (this.errorCode(error) === 'SESSION_EXPIRED') {
                     this.phase.set('expired'); this.recovery.clear();
-                } else this.handle(error, 'Не удалось восстановить Study-сессию.');
+                } else this.handle(error, 'Не удалось вернуться к занятию.');
             }
         });
     }
@@ -392,13 +418,13 @@ export class StudySessionPageComponent {
         }
         if (session.presentations.length === 0) {
             this.phase.set('unavailable');
-            this.message.set('Текущая порция завершена, но сервер ещё не выдал продолжение. Попробуйте восстановить сессию.');
+            this.message.set('Пока не удалось продолжить занятие. Попробуйте восстановить его.');
             return;
         }
         this.recovery.save({ deckId: this.deckId, sessionId: session.sessionId, pending: this.pending() });
         if (pendingUnknown) {
             this.phase.set('unknown');
-            this.message.set('Исход предыдущего запроса неизвестен. Повторите ровно ту же попытку или сверьтесь с сервером.');
+            this.message.set('Результат предыдущего ответа пока неизвестен. Повторите отправку того же ответа или проверьте занятие.');
             return;
         }
         this.phase.set('answering');
@@ -488,13 +514,13 @@ export class StudySessionPageComponent {
                 const code = this.errorCode(error);
                 if (error instanceof HttpErrorResponse && error.status === 0) {
                     this.phase.set('unknown');
-                    this.message.set('Связь оборвалась после отправки. Не меняйте ответ: безопасно повторите ту же попытку.');
+                    this.message.set('Связь оборвалась после отправки. Повторите отправку того же ответа.');
                 } else if (code === 'IDEMPOTENCY_CONFLICT') {
                     this.phase.set('conflict');
-                    this.message.set('Эта карточка уже завершена другой попыткой. Сверьтесь с сервером — новый ответ не отправлен.');
+                    this.message.set('На это задание уже ответили. Проверьте занятие: новый ответ не отправлен.');
                 } else if (code === 'SESSION_EXPIRED' || code === 'PRESENTATION_EXPIRED') {
                     this.phase.set('expired'); this.recovery.clear();
-                } else this.handle(error, 'Сервер отклонил попытку. Ответ сохранён в этой вкладке.');
+                } else this.handle(error, 'Не удалось принять ответ. Он остался в этой вкладке.');
             }
         });
     }
@@ -526,16 +552,20 @@ export class StudySessionPageComponent {
     }
 
     private loadProgress(cursor: string | null = null, append = false): void {
-        this.api.progress(this.deckId, 100, cursor).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+        this.progressLoading.set(true);
+        this.progressMoreError.set(false);
+        this.api.progress(this.deckId, 20, cursor).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: page => {
                 this.progress.set(append ? [...this.progress(), ...page.items] : page.items);
                 this.progressNextCursor.set(page.nextCursor);
                 this.progressUnavailable.set(false);
+                this.progressLoading.set(false);
             },
             error: () => {
                 if (!append) this.progress.set([]);
-                this.progressNextCursor.set(null);
-                this.progressUnavailable.set(true);
+                if (append) this.progressMoreError.set(true);
+                else this.progressUnavailable.set(true);
+                this.progressLoading.set(false);
             }
         });
     }

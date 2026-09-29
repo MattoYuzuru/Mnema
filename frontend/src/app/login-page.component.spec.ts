@@ -81,8 +81,8 @@ describe('Identity form behavior', () => {
         const fixture = await page();
         auth.logout.and.callFake(async () => { auth.logoutUnconfirmed.set(true); throw new Error('offline'); });
         await fixture.componentInstance.logout(); fixture.detectChanges();
-        expect(fixture.nativeElement.textContent).toContain('сервер не подтвердил');
-        expect(fixture.nativeElement.textContent).toContain('Повторить завершение');
+        expect(fixture.nativeElement.textContent).toContain('На этом устройстве вы вышли');
+        expect(fixture.nativeElement.textContent).toContain('Повторить выход');
     });
 
     it('keeps all transport diagnostics out of public error copy', () => {

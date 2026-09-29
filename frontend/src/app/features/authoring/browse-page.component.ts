@@ -1,5 +1,5 @@
 import { DatePipe } from '@angular/common';
-import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, effect, inject, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { forkJoin } from 'rxjs';
@@ -24,13 +24,28 @@ export class BrowsePageComponent {
     readonly selectedOrdinal = signal<number | null>(null);
     readonly loading = signal(true);
     readonly failure = signal(false);
+    readonly loadingMore = signal(false);
+    readonly moreError = signal(false);
+    readonly loadSentinel = viewChild<ElementRef<HTMLElement>>('loadSentinel');
 
     private readonly route = inject(ActivatedRoute);
     private readonly decks = inject(OwnDecksApiService);
     private readonly items = inject(ItemApiService);
     private readonly destroyRef = inject(DestroyRef);
 
-    constructor() { this.load(); }
+    constructor() {
+        this.load();
+        effect(onCleanup => {
+            const sentinel = this.loadSentinel()?.nativeElement;
+            const nextCursor = this.page()?.nextCursor;
+            if (!sentinel || !nextCursor || this.loadingMore() || this.moreError()) return;
+            const observer = new IntersectionObserver(entries => {
+                if (entries.some(entry => entry.isIntersecting)) this.loadMore();
+            }, { rootMargin: '0px 0px 800px 0px' });
+            observer.observe(sentinel);
+            onCleanup(() => observer.disconnect());
+        });
+    }
 
     load(): void {
         const deckId = this.route.snapshot.paramMap.get('deckId');
@@ -39,6 +54,7 @@ export class BrowsePageComponent {
         if (deckId === null) { this.failure.set(true); this.loading.set(false); return; }
         this.loading.set(true);
         this.failure.set(false);
+        this.moreError.set(false);
         const content = memberKey === null ? this.items.list(deckId) : this.items.read(deckId, memberKey);
         forkJoin({ deck: this.decks.detail(deckId), content }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: result => {
@@ -54,15 +70,16 @@ export class BrowsePageComponent {
     loadMore(): void {
         const deck = this.deck();
         const current = this.page();
-        if (deck === null || current === null || current.nextCursor === null || this.loading()) return;
-        this.loading.set(true);
+        if (deck === null || current === null || current.nextCursor === null || this.loadingMore()) return;
+        this.loadingMore.set(true);
+        this.moreError.set(false);
         this.items.list(deck.deckId, current.nextCursor).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: next => {
-                if (next.deckRevisionId !== current.deckRevisionId) { this.load(); return; }
+                if (next.deckRevisionId !== current.deckRevisionId) { this.loadingMore.set(false); this.load(); return; }
                 this.page.set({ ...next, items: [...current.items, ...next.items] });
-                this.loading.set(false);
+                this.loadingMore.set(false);
             },
-            error: () => { this.failure.set(true); this.loading.set(false); }
+            error: () => { this.moreError.set(true); this.loadingMore.set(false); }
         });
     }
 }

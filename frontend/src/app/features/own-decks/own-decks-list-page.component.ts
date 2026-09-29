@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, OnInit, inject } from '@angular/core';
 import { DatePipe } from '@angular/common';
 import { RouterLink } from '@angular/router';
+import { DeckDescriptionComponent } from './deck-description.component';
 
 import { deckFailureMessage } from './own-decks.store';
 import { OwnDecksStore } from './own-decks.store';
@@ -9,7 +10,7 @@ const VISIBLE_RECHECK_MS = 10_000;
 
 @Component({
     selector: 'app-own-decks-list-page',
-    imports: [DatePipe, RouterLink],
+    imports: [DatePipe, RouterLink, DeckDescriptionComponent],
     providers: [OwnDecksStore],
     templateUrl: './own-decks-list-page.component.html',
     styleUrl: './own-decks-page.css',

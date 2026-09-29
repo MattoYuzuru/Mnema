@@ -40,6 +40,25 @@ describe('NativeMediaPlayerComponent', () => {
         fixture.destroy();
     });
 
+    it('changes playback speed through the custom dropdown', () => {
+        const fixture = TestBed.createComponent(NativeMediaPlayerComponent);
+        fixture.componentRef.setInput('kind', 'audio');
+        fixture.componentRef.setInput('title', 'Фраза');
+        fixture.componentRef.setInput('source', 'https://storage.example/playback.m4a');
+        fixture.detectChanges();
+
+        const trigger = fixture.nativeElement.querySelector('[role="combobox"]') as HTMLButtonElement;
+        expect(trigger.getAttribute('aria-label')).toContain('Скорость');
+        trigger.click();
+        fixture.detectChanges();
+        (fixture.nativeElement.querySelector('[role="option"]:last-child') as HTMLElement).click();
+        fixture.detectChanges();
+
+        expect(fixture.componentInstance.speed()).toBe(1.5);
+        expect((fixture.nativeElement.querySelector('audio') as HTMLAudioElement).playbackRate).toBe(1.5);
+        fixture.destroy();
+    });
+
     it('clears a signed-source failure once renewed media loads', () => {
         const fixture = TestBed.createComponent(NativeMediaPlayerComponent);
         fixture.componentRef.setInput('kind', 'audio');

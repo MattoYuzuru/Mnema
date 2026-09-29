@@ -54,6 +54,21 @@ describe('ExerciseApiService', () => {
         expect((await detail).prompt.kind).toBe('CUSTOM_TEXT');
     });
 
+    it('reads a custom answer projection and rejects an inconsistent node binding', async () => {
+        const custom = { ...summary, deckId, deckRevisionId, deckVersion: '3',
+            prompt: { kind: 'CUSTOM_TEXT', text: 'Translate' }, evaluatorPolicy: { id: 'deterministic-text', version: '1' },
+            bindings: [{ bindingId: id('10'), role: 'ASSESSED', memberKey, itemRevisionId: id('11'),
+                nodeIds: [], display: { kind: 'CUSTOM_TEXT', text: 'memory' }, ordinal: 0 }] };
+        const detail = firstValueFrom(api.read(deckId, exerciseId));
+        http.expectOne(`/api/decks/${deckId}/exercises/${exerciseId}`).flush(custom, { headers });
+        expect((await detail).bindings[0].display).toEqual({ kind: 'CUSTOM_TEXT', text: 'memory' });
+
+        const malformed = firstValueFrom(api.read(deckId, exerciseId));
+        http.expectOne(`/api/decks/${deckId}/exercises/${exerciseId}`).flush({ ...custom,
+            bindings: [{ ...custom.bindings[0], nodeIds: [id('12')] }] }, { headers });
+        await expectAsync(malformed).toBeRejectedWithError(AuthoringProtocolError);
+    });
+
     it('writes exact preconditions and accepts replay only without ETag', async () => {
         const result = firstValueFrom(api.update(deckId, exerciseId, '3', deckRevisionId, exerciseRevisionId,
             { operation: 'reuse', objectiveId, objectiveRevisionId }, { type: 'TYPED' }, commandId));

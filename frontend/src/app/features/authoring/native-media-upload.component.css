@@ -21,6 +21,9 @@
 .visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; overflow: hidden; clip-path: inset(50%); }
 .media-notice { border-inline-start: 3px solid var(--mn-danger); padding: .7rem 1rem; background: var(--mn-soft); }
 .record-preview { display: grid; gap: .5rem; margin-block: 1rem; padding: 1rem; background: var(--mn-sheet); border: 1px solid var(--mn-rule); }
+.camera-preview { display: grid; justify-items: center; gap: .5rem; margin-block: 1rem; padding: 1rem; border: 1px solid var(--mn-rule); background: var(--mn-sheet); }
+.camera-preview[hidden] { display: none; }
+.camera-preview video { display: block; max-inline-size: 100%; max-block-size: 60vh; background: #181528; }
 .media-queue { margin: 1.5rem 0 0; padding: 0; list-style: none; border-block-start: 1px solid var(--mn-ink); }
 .media-row { display: flex; gap: 1rem; align-items: center; border-block-end: 1px solid var(--mn-rule); padding: .9rem .2rem; }
 .media-type { color: var(--mn-ink); font: 1.5rem var(--mn-font-display, Georgia, serif); }
