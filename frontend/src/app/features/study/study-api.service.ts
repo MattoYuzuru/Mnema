@@ -363,10 +363,16 @@ function parseBinding(value: unknown): StudyBinding {
     const role = object['role'];
     if (role !== 'ASSESSED' && role !== 'CUE' && role !== 'OPTION' && role !== 'CONTEXT') throw protocol('Invalid binding role.');
     if (!Array.isArray(object['nodeIds']) || object['nodeIds'].length > 16) throw protocol('Invalid binding nodes.');
-    const display = exact(object['display'], ['kind']);
+    if (!isRecord(object['display'])) throw protocol('Invalid binding display.');
+    const display = object['display']['kind'] === 'CUSTOM_TEXT'
+        ? exact(object['display'], ['kind', 'text']) : exact(object['display'], ['kind']);
+    if (display['kind'] !== 'NODE_TEXT' && display['kind'] !== 'CUSTOM_TEXT') {
+        throw protocol('Invalid binding display.');
+    }
     return { bindingId: entity(object['bindingId']), role, memberKey: entity(object['memberKey']),
         itemRevisionId: entity(object['itemRevisionId']), ordinal: count(object['ordinal'], 15),
-        nodeIds: object['nodeIds'].map(entity), display: { kind: text(display['kind'], 100) } };
+        nodeIds: object['nodeIds'].map(entity), display: display['kind'] === 'CUSTOM_TEXT'
+            ? { kind: 'CUSTOM_TEXT', text: text(display['text'], 320) } : { kind: 'NODE_TEXT' } };
 }
 
 function parseOutcome(value: unknown): AttemptOutcome {

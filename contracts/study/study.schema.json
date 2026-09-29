@@ -186,7 +186,10 @@
         "memberKey": {"$ref": "#/$defs/identifier"},
         "itemRevisionId": {"$ref": "#/$defs/identifier"},
         "nodeIds": {"type": "array", "items": {"$ref": "#/$defs/identifier"}},
-        "display": {"type": "object", "required": ["kind"], "properties": {"kind": {"type": "string"}}, "additionalProperties": false},
+        "display": {"oneOf": [
+          {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "NODE_TEXT"}}, "additionalProperties": false},
+          {"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "CUSTOM_TEXT"}, "text": {"type": "string"}}, "additionalProperties": false}
+        ]},
         "ordinal": {"type": "integer"}
       },
       "additionalProperties": false
