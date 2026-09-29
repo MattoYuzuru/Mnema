@@ -87,7 +87,7 @@ class StudySessionRepository {
                 SELECT d.deck_id,d.owner_id,d.head_revision_id,d.row_version,r.exercises_root_id,r.exercise_count
                   FROM app_learning.deck d JOIN app_learning.deck_revision r
                     ON r.deck_id=d.deck_id AND r.revision_id=d.head_revision_id
-                 WHERE d.owner_id=:actor AND d.deck_id=:deck
+                 WHERE d.owner_id=:actor AND d.deck_id=:deck AND d.deleted_at IS NULL
                 """).param("actor", actor).param("deck", deck).query(DECK).optional();
     }
 

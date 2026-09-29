@@ -43,6 +43,64 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
     @Autowired private AttemptService attempts;
 
     @Test
+    void removalCompactsCurrentRosterAndPreservesPublishedHistory() {
+        Fixture fixture = material(UUID.randomUUID());
+        UUID[] ids = new UUID[3];
+        UUID[] revisions = new UUID[3];
+        for (int index = 0; index < ids.length; index++) {
+            JsonNode deck = decks.read(fixture.actor(), fixture.deck());
+            var result = service.publish(fixture.actor(), fixture.deck(), null,
+                    Long.parseLong(deck.path("rowVersion").textValue()),
+                    ExerciseCommand.readCreate(bytes(body(UUID.randomUUID(), deck, fixture,
+                            "TYPED", "create", null, null)))).acknowledgement();
+            ids[index] = UUID.fromString(result.path("exerciseId").textValue());
+            revisions[index] = UUID.fromString(result.path("exerciseRevisionId").textValue());
+        }
+        assertThat(service.list(fixture.actor(), fixture.deck(), null, null, null)
+                .path("exercises")).hasSize(3);
+        long version = Long.parseLong(decks.read(fixture.actor(), fixture.deck()).path("rowVersion").textValue());
+        assertThatThrownBy(() -> service.delete(fixture.actor(), fixture.deck(), ids[1], version - 1))
+                .isInstanceOf(VersionConflictException.class);
+        assertThatThrownBy(() -> service.delete(UUID.randomUUID(), fixture.deck(), ids[1], version))
+                .isInstanceOf(ResourceNotFoundException.class);
+        service.delete(fixture.actor(), fixture.deck(), ids[1], version);
+
+        JsonNode current = service.list(fixture.actor(), fixture.deck(), null, null, null);
+        assertThat(current.path("total").intValue()).isEqualTo(2);
+        assertThat(current.path("exercises").get(0).path("exerciseId").textValue()).isEqualTo(ids[0].toString());
+        assertThat(current.path("exercises").get(1).path("exerciseId").textValue()).isEqualTo(ids[2].toString());
+        assertThat(current.path("exercises").get(1).path("ordinal").intValue()).isEqualTo(1);
+        assertThatThrownBy(() -> service.read(fixture.actor(), fixture.deck(), ids[1], null))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(service.read(fixture.actor(), fixture.deck(), ids[1], revisions[1])
+                .path("exerciseRevisionId").textValue()).isEqualTo(revisions[1].toString());
+        assertThatThrownBy(() -> service.delete(fixture.actor(), fixture.deck(), ids[1], version + 1))
+                .isInstanceOf(ResourceNotFoundException.class);
+        assertThat(count("exercise_revision", "deck_id", fixture.deck())).isEqualTo(3);
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.deck_exercise_change "
+                        + "WHERE deck_id=:deck AND revision_id IS NULL")
+                .param("deck", fixture.deck()).query(Long.class).single()).isOne();
+    }
+
+    @Test
+    void clozeAnswerLengthIsResolvedFromPinnedAnswersForStudyPresentation() {
+        Fixture fixture = material(UUID.randomUUID());
+        JsonNode deck = decks.read(fixture.actor(), fixture.deck());
+        ObjectNode command = body(UUID.randomUUID(), deck, fixture, "CLOZE_SINGLE", "create", null, null);
+        command.withObject("objective").withObject("answerContract").withArray("accepted").add("recall");
+        command.withObject("exercise").withObject("prompt").putObject("blank")
+                .put("mode", "ANSWER_LENGTH");
+        service.publish(fixture.actor(), fixture.deck(), null, 1, ExerciseCommand.readCreate(bytes(command)));
+        JsonNode started = studies.start(fixture.actor(), fixture.deck(), "UTC", scheduled()).body();
+        UUID session = UUID.fromString(started.path("sessionId").textValue());
+        JsonNode presentation = studies.read(fixture.actor(), fixture.deck(), session)
+                .path("presentations").get(0);
+        assertThat(presentation.path("prompt").path("blank").path("mode").textValue())
+                .isEqualTo("ANSWER_LENGTH");
+        assertThat(presentation.path("prompt").path("blank").path("length").intValue()).isEqualTo(6);
+    }
+
+    @Test
     void listeningPublicationsPinOwnedAssetsAndRejectForeignCueAtomically() {
         Fixture fixture = material(UUID.randomUUID());
         UUID firstAsset = media.reserve(fixture.actor(), UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);

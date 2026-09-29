@@ -69,7 +69,7 @@ class ExerciseRepository {
                        r.title,r.description,r.members_root_id,r.exercises_root_id,r.member_count,r.exercise_count
                   FROM app_learning.deck d JOIN app_learning.deck_revision r
                     ON r.deck_id=d.deck_id AND r.revision_id=d.head_revision_id
-                 WHERE d.owner_id=:actor AND d.deck_id=:deck
+                 WHERE d.owner_id=:actor AND d.deck_id=:deck AND d.deleted_at IS NULL
                 """).param("actor", actor).param("deck", deck).query(DECK).optional();
     }
 
@@ -81,7 +81,7 @@ class ExerciseRepository {
                   JOIN app_learning.objective_head h ON h.deck_id=o.deck_id AND h.objective_id=o.objective_id
                   JOIN app_learning.objective_revision r ON r.deck_id=h.deck_id AND r.objective_id=h.objective_id
                     AND r.revision_id=h.revision_id
-                 WHERE d.owner_id=:actor AND o.deck_id=:deck AND o.objective_id=:objective
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND o.deck_id=:deck AND o.objective_id=:objective
                 """).param("actor", actor).param("deck", deck).param("objective", objective)
                 .query(OBJECTIVE).optional();
     }
@@ -92,7 +92,7 @@ class ExerciseRepository {
                        r.answer_contract,o.created_at,r.created_at AS updated_at
                   FROM app_learning.deck d JOIN app_learning.memory_objective o ON o.deck_id=d.deck_id
                   JOIN app_learning.objective_revision r ON r.deck_id=o.deck_id AND r.objective_id=o.objective_id
-                 WHERE d.owner_id=:actor AND o.deck_id=:deck AND o.objective_id=:objective AND r.revision_id=:revision
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND o.deck_id=:deck AND o.objective_id=:objective AND r.revision_id=:revision
                 """).param("actor", actor).param("deck", deck).param("objective", objective)
                 .param("revision", revision).query(OBJECTIVE).optional();
     }
@@ -117,7 +117,7 @@ class ExerciseRepository {
                        r.prompt_spec,r.evaluator_policy,r.descriptor_root_id,x.created_at,r.created_at AS updated_at
                   FROM app_learning.deck d JOIN app_learning.exercise_definition x ON x.deck_id=d.deck_id
                   %s
-                 WHERE d.owner_id=:actor AND x.deck_id=:deck AND x.exercise_id=:exercise
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND x.deck_id=:deck AND x.exercise_id=:exercise
                 """.formatted(ordinal, revisionJoin) + (revision == null ? "" : " AND r.revision_id=:revision"))
                 .param("actor", actor).param("deck", deck).param("exercise", exercise);
         if (revision != null) query.param("revision", revision);
@@ -143,7 +143,7 @@ class ExerciseRepository {
                   JOIN app_learning.objective_head head ON head.deck_id=o.deck_id AND head.objective_id=o.objective_id
                   JOIN app_learning.objective_revision objective ON objective.deck_id=head.deck_id
                     AND objective.objective_id=head.objective_id AND objective.revision_id=head.revision_id
-                 WHERE d.owner_id=:actor AND h.deck_id=:deck AND h.ordinal>=:start
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND h.deck_id=:deck AND h.ordinal>=:start
                 """ + memberFilter + """
                  ORDER BY h.ordinal LIMIT :limit
                 """).param("actor", actor).param("deck", deck).param("start", start).param("limit", limit);
@@ -157,7 +157,7 @@ class ExerciseRepository {
                   JOIN app_learning.deck_head_exercise h ON h.deck_id=d.deck_id
                   JOIN app_learning.exercise_content_binding b ON b.deck_id=h.deck_id
                     AND b.exercise_id=h.exercise_id AND b.exercise_revision_id=h.revision_id AND b.role='ASSESSED'
-                 WHERE d.owner_id=:actor AND h.deck_id=:deck AND b.member_key=:member
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND h.deck_id=:deck AND b.member_key=:member
                 """).param("actor", actor).param("deck", deck).param("member", member)
                 .query(Integer.class).single();
     }
@@ -179,7 +179,7 @@ class ExerciseRepository {
                   FROM app_learning.deck d JOIN app_learning.item_revision r ON r.deck_id=d.deck_id
                   JOIN app_learning.deck_head_item h ON h.deck_id=r.deck_id AND h.member_key=r.member_key
                     AND h.revision_id=r.revision_id
-                 WHERE d.owner_id=:actor AND r.deck_id=:deck AND r.member_key=:member AND r.revision_id=:revision
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND r.deck_id=:deck AND r.member_key=:member AND r.revision_id=:revision
                 """).param("actor", actor).param("deck", deck).param("member", member).param("revision", revision)
                 .query((row, ignored) -> new ItemRevision(row.getObject("member_key", UUID.class),
                         row.getObject("revision_id", UUID.class), row.getObject("reuse_scope_id", UUID.class),
@@ -191,7 +191,7 @@ class ExerciseRepository {
     int advance(UUID actor, UUID deck, UUID revision, long expected) {
         return jdbc.sql("""
                 UPDATE app_learning.deck SET head_revision_id=:revision,row_version=row_version+1
-                 WHERE owner_id=:actor AND deck_id=:deck AND row_version=:expected
+                 WHERE owner_id=:actor AND deck_id=:deck AND row_version=:expected AND deleted_at IS NULL
                 """).param("revision", revision).param("actor", actor).param("deck", deck)
                 .param("expected", expected).update();
     }
@@ -308,6 +308,28 @@ class ExerciseRepository {
                  WHERE deck_id=:deck AND exercise_id=:exercise
                 """).param("revision", revision).param("sequence", sequence).param("time", Timestamp.from(time))
                 .param("deck", deck).param("exercise", exercise).update();
+    }
+
+    int deleteExerciseHead(UUID deck, UUID exercise, UUID revision) {
+        return jdbc.sql("DELETE FROM app_learning.deck_head_exercise WHERE deck_id=:deck AND exercise_id=:exercise "
+                        + "AND revision_id=:revision")
+                .param("deck", deck).param("exercise", exercise).param("revision", revision).update();
+    }
+
+    void shiftExerciseOrdinals(UUID deck, int after) {
+        jdbc.sql("UPDATE app_learning.deck_head_exercise SET ordinal=ordinal-1 "
+                        + "WHERE deck_id=:deck AND ordinal>:after")
+                .param("deck", deck).param("after", after).update();
+    }
+
+    void insertRemoval(UUID deck, UUID deckRevision, long deckSequence, UUID exercise,
+                       UUID previous, int ordinal) {
+        jdbc.sql("""
+                INSERT INTO app_learning.deck_exercise_change(deck_id,deck_revision_id,deck_sequence,exercise_id,
+                    previous_revision_id,revision_id,ordinal)
+                VALUES (:deck,:deckRevision,:deckSequence,:exercise,:previous,NULL,:ordinal)
+                """).param("deck", deck).param("deckRevision", deckRevision).param("deckSequence", deckSequence)
+                .param("exercise", exercise).param("previous", previous).param("ordinal", ordinal).update();
     }
 
     void insertChange(UUID deck, UUID deckRevision, long deckSequence, UUID exercise, UUID previous,

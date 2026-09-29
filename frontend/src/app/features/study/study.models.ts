@@ -2,7 +2,8 @@ export type StudyMode = 'SCHEDULED' | 'REPLAY' | 'PRACTICE';
 export type StudyStatus = 'ACTIVE' | 'EMPTY' | 'COMPLETE';
 export type StudyExerciseType = 'SELF_CHECK' | 'TYPED' | 'CLOZE_SINGLE' | 'SINGLE_CHOICE'
     | 'LISTEN_CHOICE' | 'AUDIO_TEXT_MATCH' | 'LISTEN_TYPE';
-export type StudyPrompt = { readonly kind: 'TEXT'; readonly text: string }
+export type StudyPrompt = { readonly kind: 'TEXT'; readonly text: string;
+        readonly blank?: { readonly mode: 'FIXED' | 'ANSWER_LENGTH'; readonly length: number } }
     | { readonly kind: 'AUDIO_ASSET'; readonly assetId: string; readonly title: string;
         readonly instruction: string; readonly transcriptAvailable: boolean; readonly transcriptRevealed: boolean;
         readonly transcript?: string }

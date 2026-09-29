@@ -7,6 +7,7 @@ import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { ItemPage, ItemSummary } from './authoring.models';
 import { BrowsePageComponent } from './browse-page.component';
 import { ItemApiService } from './item-api.service';
+import { AuthoringApiService } from './authoring-api.service';
 
 describe('BrowsePageComponent', () => {
     const deckId = '00000000-0000-4000-8000-000000000001';
@@ -31,6 +32,8 @@ describe('BrowsePageComponent', () => {
         api = jasmine.createSpyObj<ItemApiService>('ItemApiService', ['list', 'read']);
         const decks = jasmine.createSpyObj<OwnDecksApiService>('OwnDecksApiService', ['detail']);
         decks.detail.and.returnValue(of(deck));
+        const authoring = jasmine.createSpyObj<AuthoringApiService>('AuthoringApiService', ['listDeckCaptures']);
+        authoring.listDeckCaptures.and.returnValue(of({ items: [], nextCursor: null, total: 3 }));
         window.IntersectionObserver = class {
             constructor(callback: IntersectionObserverCallback, options?: IntersectionObserverInit) {
                 onIntersection = callback;
@@ -44,6 +47,7 @@ describe('BrowsePageComponent', () => {
             { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ deckId }),
                 queryParamMap: convertToParamMap({}) } } },
             { provide: OwnDecksApiService, useValue: decks },
+            { provide: AuthoringApiService, useValue: authoring },
             { provide: ItemApiService, useValue: api }
         ] });
     });
@@ -57,6 +61,10 @@ describe('BrowsePageComponent', () => {
         fixture.detectChanges();
         expect(api.list.calls.count()).toBe(2);
         expect(fixture.nativeElement.textContent).toContain('Материал 1');
+        expect((fixture.nativeElement as HTMLElement).querySelector('.capture-badge')?.textContent?.trim()).toBe('3');
+        fixture.componentInstance.captureCount.set(1_000);
+        fixture.detectChanges();
+        expect((fixture.nativeElement as HTMLElement).querySelector('.capture-badge')?.textContent?.trim()).toBe('999+');
         expect(fixture.nativeElement.textContent).toContain('Загружаем следующие материалы');
 
         nextPage.next(second);

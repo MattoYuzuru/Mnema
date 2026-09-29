@@ -41,7 +41,7 @@ class ItemRepository {
                        r.title,r.description,r.members_root_id,r.exercises_root_id,r.member_count,r.exercise_count
                   FROM app_learning.deck d JOIN app_learning.deck_revision r
                     ON r.deck_id=d.deck_id AND r.revision_id=d.head_revision_id
-                 WHERE d.owner_id=:actor AND d.deck_id=:deck
+                 WHERE d.owner_id=:actor AND d.deck_id=:deck AND d.deleted_at IS NULL
                 """).param("actor", actor).param("deck", deck).query(DECK).optional();
     }
 
@@ -55,14 +55,14 @@ class ItemRepository {
                   JOIN app_learning.item_revision r ON r.deck_id=p.deck_id AND r.member_key=p.member_key
                     AND r.revision_id=p.revision_id
                   JOIN app_learning.learning_item i ON i.deck_id=p.deck_id AND i.member_key=p.member_key
-                 WHERE d.owner_id=:actor AND p.deck_id=:deck AND p.member_key=:member
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND p.deck_id=:deck AND p.member_key=:member
                 """).param("actor", actor).param("deck", deck).param("member", member).query(ITEM).optional();
     }
 
     boolean itemExists(UUID actor, UUID deck, UUID member) {
         return jdbc.sql("""
                 SELECT EXISTS(SELECT 1 FROM app_learning.learning_item i JOIN app_learning.deck d ON d.deck_id=i.deck_id
-                    WHERE d.owner_id=:actor AND i.deck_id=:deck AND i.member_key=:member)
+                    WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND i.deck_id=:deck AND i.member_key=:member)
                 """).param("actor", actor).param("deck", deck).param("member", member).query(Boolean.class).single();
     }
 
@@ -75,7 +75,7 @@ class ItemRepository {
                   JOIN app_learning.learning_item i ON i.deck_id=r.deck_id AND i.member_key=r.member_key
                   JOIN app_learning.deck_item_change c ON c.deck_id=r.deck_id AND c.member_key=r.member_key
                     AND c.revision_id=r.revision_id
-                 WHERE d.owner_id=:actor AND r.deck_id=:deck AND r.member_key=:member AND r.revision_id=:revision
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND r.deck_id=:deck AND r.member_key=:member AND r.revision_id=:revision
                 """).param("actor", actor).param("deck", deck).param("member", member).param("revision", revision)
                 .query(ITEM).optional();
     }
@@ -91,7 +91,7 @@ class ItemRepository {
                   JOIN app_learning.item_revision r ON r.deck_id=p.deck_id AND r.member_key=p.member_key
                     AND r.revision_id=p.revision_id
                   JOIN app_learning.learning_item i ON i.deck_id=p.deck_id AND i.member_key=p.member_key
-                 WHERE d.owner_id=:actor AND p.deck_id=:deck AND p.member_key IN (:members)
+                 WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND p.deck_id=:deck AND p.member_key IN (:members)
                 """).param("actor", actor).param("deck", deck).param("members", members)
                 .query(ITEM).list();
     }
@@ -101,7 +101,7 @@ class ItemRepository {
     int advance(UUID actor, UUID deck, UUID revision, long expected) {
         return jdbc.sql("""
                 UPDATE app_learning.deck SET head_revision_id=:revision,row_version=row_version+1
-                 WHERE owner_id=:actor AND deck_id=:deck AND row_version=:expected
+                 WHERE owner_id=:actor AND deck_id=:deck AND row_version=:expected AND deleted_at IS NULL
                 """).param("revision", revision).param("actor", actor).param("deck", deck).param("expected", expected).update();
     }
 

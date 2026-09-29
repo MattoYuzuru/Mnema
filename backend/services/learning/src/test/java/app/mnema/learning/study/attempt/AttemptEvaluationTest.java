@@ -33,6 +33,46 @@ class AttemptEvaluationTest {
     }
 
     @Test
+    void strictPreservesDiacriticsAndPunctuationWhileSoftIgnoresThemWithoutTypoTolerance() {
+        ObjectNode strict = answer();
+        strict.withArray("accepted").removeAll().add("co-opération!");
+        ObjectNode soft = strict.deepCopy().put("matchingMode", "SOFT");
+        for (String type : List.of("TYPED", "CLOZE_SINGLE", "LISTEN_TYPE")) {
+            assertThat(AttemptEvaluation.evaluate(type, evaluator, strict, bindings(),
+                    command("  CO-OPÉRATION!  ", List.of(), null)).result())
+                    .isEqualTo(AttemptEvaluation.Result.CORRECT);
+            assertThat(AttemptEvaluation.evaluate(type, evaluator, strict, bindings(),
+                    command("co operation", List.of(), null)).result())
+                    .isEqualTo(AttemptEvaluation.Result.INCORRECT);
+            assertThat(AttemptEvaluation.evaluate(type, evaluator, soft, bindings(),
+                    command("co operation", List.of(), null)).result())
+                    .isEqualTo(AttemptEvaluation.Result.CORRECT);
+            assertThat(AttemptEvaluation.evaluate(type, evaluator, soft, bindings(),
+                    command("cooperation", List.of(), null)).result())
+                    .isEqualTo(AttemptEvaluation.Result.CORRECT);
+            assertThat(AttemptEvaluation.evaluate(type, evaluator, soft, bindings(),
+                    command("cooperatoin", List.of(), null)).result())
+                    .isEqualTo(AttemptEvaluation.Result.INCORRECT);
+        }
+        assertThat(AttemptEvaluation.evaluate("TYPED", evaluator, soft, bindings(),
+                command("cooperation", List.of(), null)).feedback().path("appliedRules").toString())
+                .contains("SOFT_MATCH");
+    }
+
+    @Test
+    void softNeverCreditsResponsesThatNormalizeToEmptyEvenForOldPunctuationOnlyAnswers() {
+        ObjectNode oldAnswer = answer().put("matchingMode", "SOFT");
+        oldAnswer.withArray("accepted").removeAll().add("!!!");
+        assertThat(AttemptEvaluation.evaluate("TYPED", evaluator, oldAnswer, bindings(),
+                command("???", List.of(), null)).result())
+                .isEqualTo(AttemptEvaluation.Result.INCORRECT);
+        ObjectNode normalAnswer = answer().put("matchingMode", "SOFT");
+        assertThat(AttemptEvaluation.evaluate("CLOZE_SINGLE", evaluator, normalAnswer, bindings(),
+                command("!!!", List.of(), null)).result())
+                .isEqualTo(AttemptEvaluation.Result.INCORRECT);
+    }
+
+    @Test
     void cancelAndUnsupportedEvaluatorNeverBecomeIncorrectEvidence() {
         AttemptCommand cancelled = new AttemptCommand(UUID.randomUUID(), UUID.randomUUID(), "1234567890123456",
                 new AttemptCommand.CancelResponse(), List.of(), null, 0, JSON.createObjectNode());

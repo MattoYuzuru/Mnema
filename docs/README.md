@@ -41,6 +41,7 @@ artifact:
 | accepted | [Owner decisions](./decisions/owner-decisions-2026-08.md) | Решения владельца и явно открытые вопросы. |
 | accepted | [Authoring and Study workflows](./product/authoring-and-study-workflows.md) | Product contract для authoring, Capture, exercises и режимов практики; P0 реализован в #74/#75. |
 | accepted | [UX refinement 2026-09-29](./product/ux-improvements-2026-09-29.md) | Приёмочные сценарии текущей доработки редактора, упражнений и основных экранов. |
+| accepted | [Final polish 2026-09-29](./product/final-polish-2026-09-29.md) | Удаление, заметки «На потом», пропуски и режимы проверки текста. |
 | accepted | [Exercise catalog](./product/exercise-catalog-v2.md) | Принятые mechanics, attempt/evidence, reducer и retention boundaries для #75. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
 | proposed | [Launch economics](./product/russia-launch-economics-2026.md) | Коммерческие гипотезы. |

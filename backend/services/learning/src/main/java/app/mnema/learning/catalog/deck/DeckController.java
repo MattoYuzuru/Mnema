@@ -10,6 +10,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -53,6 +54,14 @@ public class DeckController {
         var result = service.save(DeckCommand.entityId(identity.getSubject()), DeckCommand.entityId(deckId),
                 DeckPrecondition.read(request.getHeaders(HttpHeaders.IF_MATCH)), DeckCommand.read(body));
         return write(result, HttpStatus.OK).body(result.acknowledgement());
+    }
+
+    @DeleteMapping("/{deckId}")
+    ResponseEntity<Void> delete(@AuthenticationPrincipal Jwt identity, @PathVariable String deckId,
+                                HttpServletRequest request) {
+        service.delete(DeckCommand.entityId(identity.getSubject()), DeckCommand.entityId(deckId),
+                DeckPrecondition.read(request.getHeaders(HttpHeaders.IF_MATCH)));
+        return ResponseEntity.noContent().headers(privateHeaders()).build();
     }
 
     private static ResponseEntity.BodyBuilder write(DeckService.WriteResult result, HttpStatus status) {

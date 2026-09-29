@@ -92,6 +92,14 @@ public class DeckService {
         });
     }
 
+    /** Tombstones the deck while keeping immutable revisions and attempt references intact. */
+    @Transactional(timeout = 10)
+    public void delete(UUID actor, UUID deck, long expected) {
+        DeckRecord current = own(actor, deck);
+        if (current.rowVersion() != expected) throw new VersionConflictException();
+        cas.updateOne(expected, () -> repository.tombstone(actor, deck, expected));
+    }
+
     private WriteResult execute(UUID actor, DeckCommand command, String type, ObjectNode envelope, Supplier<ObjectNode> action) {
         boolean[] applied = {false};
         JsonNode result = receipts.execute(new CommandIdentity(command.commandId(), actor, "deck.catalog", type), envelope, () -> {

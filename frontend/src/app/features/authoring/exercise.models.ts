@@ -10,6 +10,7 @@ export interface TextAnswerContract {
     readonly schemaVersion: 1;
     readonly normalization: readonly ('UNICODE_NFC' | 'TRIM' | 'CASE_FOLD')[];
     readonly accepted: readonly string[];
+    readonly matchingMode?: 'STRICT' | 'SOFT';
 }
 export interface MatchAnswerContract {
     readonly schemaVersion: 2;
@@ -53,9 +54,11 @@ export interface NodePrompt {
     readonly memberKey: string;
     readonly itemRevisionId: string;
     readonly nodeId: string;
+    readonly blank?: ClozeBlank;
 }
 
-export interface CustomPrompt { readonly kind: 'CUSTOM_TEXT'; readonly text: string; }
+export type ClozeBlank = { readonly mode: 'FIXED'; readonly length: number } | { readonly mode: 'ANSWER_LENGTH' };
+export interface CustomPrompt { readonly kind: 'CUSTOM_TEXT'; readonly text: string; readonly blank?: ClozeBlank; }
 export interface AudioAssetPrompt {
     readonly kind: 'AUDIO_ASSET';
     readonly assetId: string;

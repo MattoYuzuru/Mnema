@@ -91,7 +91,10 @@ capacity evidence.
 ## Content and authoring contract
 
 - `/api/decks` owns private Deck creation, bounded listing/detail and CAS metadata
-  updates with global command receipts.
+  updates with global command receipts. `DELETE /api/decks/{deckId}` requires a
+  strong `If-Match` deck version and returns 204. It tombstones the deck: current
+  deck-scoped API reads return 404, while immutable revisions, study evidence and
+  account-owned media remain for retention/history. Physical purge is separate.
 - `/api/decks/{deckId}/items` owns deck-local logical identity, immutable revisions,
   current/historical reads and atomic publication.
 - `/api/decks/{deckId}/exercises` owns owner-only bounded reads and atomic
@@ -101,6 +104,19 @@ capacity evidence.
   `memberKey` list filter remains cursor-bounded and returns each current
   exercise with its current objective summary so authoring clients can reuse a
   direction without scanning every exercise or exposing identifiers for input.
+  `DELETE /api/decks/{deckId}/exercises/{exerciseId}` requires the strong deck
+  version in `If-Match`, returns 204, removes the current roster entry and
+  compacts ordinals. Historical revisions and completed attempts remain.
+  A stale version yields 412; an unknown/removed or foreign resource yields 404.
+  Text answer contracts may set `matchingMode` to `STRICT` (default) or `SOFT`.
+  Strict uses the stored NFC/trim/case rules. Soft also removes canonical Unicode
+  combining marks, punctuation, Unicode spaces and dashes before exact comparison;
+  this intentionally treats some distinct spellings as equivalent without accepting
+  arbitrary typos. Soft answers that become empty are rejected at authoring and
+  never count as correct during assessment. For `CLOZE_SINGLE`, optional `prompt.blank` is either
+  `{ "mode": "FIXED", "length": 5..20 }` or `{ "mode": "ANSWER_LENGTH" }`.
+  The latter requires all accepted answers to have the same NFC codepoint length;
+  the presentation supplies that length. Neither display mode limits input length.
 - `/api/decks/{deckId}/study-sessions` starts and resumes owner-only
   `SCHEDULED`, `REPLAY` and `PRACTICE` snapshots. Candidate preparation reads at
   most 500 exercise rows per poll, selection scans at most 80 candidates and a
@@ -142,12 +158,16 @@ capacity evidence.
 - `/api/editing-drafts` owns bounded acknowledged server drafts; autosave never
   publishes.
 - `/api/capture-notes` owns durable quick notes and idempotent conversion while
-  retaining source/provenance.
+  retaining source/provenance. `GET /api/capture-notes?deckId=...&limit=...&cursor=...`
+  returns an owner-checked, cursor-bounded page of unarchived, unconverted notes
+  with `total` for the whole deck. `DELETE /api/capture-notes/{noteId}` requires
+  the note's strong `If-Match` version and returns 204. The account-wide list
+  retains its prior response shape, without `total`.
 - Native document v1, immutable block/page storage and counted structural edits
   back both material and exercise membership roots. Exercise writes advance the
   Deck CAS and receipt in the same transaction.
 
-Fresh Learning migrations V1–V9 are the database source of truth. Do not append
+Fresh Learning migrations V1–V17 are the database source of truth. Do not append
 Study tables to legacy `core` migrations or port old review algorithms.
 
 Sources: [Spring Security 6.5 JWT](https://docs.spring.io/spring-security/reference/6.5/servlet/oauth2/resource-server/jwt.html)
@@ -155,4 +175,8 @@ for signature/claims/scope boundaries; the exact 6.5.11 source establishes claim
 conversion behavior; [Java 21 HTTP](https://docs.oracle.com/en/java/javase/21/docs/api/java.net.http/java/net/http/HttpRequest.Builder.html)
 for request deadlines, supplemented by explicit bounded body completion/cancellation;
 [Spring scheduling](https://docs.spring.io/spring-framework/reference/integration/scheduling.html)
-for the enabled fixed-delay retention worker and duration-based configuration.
+for the enabled fixed-delay retention worker and duration-based configuration;
+[Java 21 Normalizer](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/text/Normalizer.html)
+and [Unicode UAX #15](https://www.unicode.org/reports/tr15/) for canonical
+decomposition in soft text matching; [PostgreSQL constraints](https://www.postgresql.org/docs/18/sql-createtable.html)
+for the deferred ordinal uniqueness during transactional roster compaction.

@@ -104,6 +104,21 @@
           }
           }
           @if (fieldErrors()['prompt']; as error) { <p class="field-error" id="prompt-error">{{ error }}</p> }
+          @if (type() === 'CLOZE_SINGLE') {
+            <div class="blank-settings" [attr.aria-describedby]="fieldErrors()['blank'] ? 'blank-error' : null">
+              <p class="setting-title">Длина пропуска</p>
+              <label class="radio-line"><input type="radio" name="blankMode" [checked]="blankMode() === 'FIXED'" (change)="setBlankMode('FIXED')" /> Указать число знаков</label>
+              @if (blankMode() === 'FIXED') {
+                <label for="blank-length">Знаков в пропуске</label>
+                <input id="blank-length" type="number" min="5" max="20" step="1" [value]="fixedBlankLength()"
+                  [attr.aria-invalid]="fieldErrors()['blank'] ? 'true' : null"
+                  (input)="setFixedBlankLength($any($event.target).valueAsNumber)" />
+              }
+              <label class="radio-line"><input type="radio" name="blankMode" [checked]="blankMode() === 'ANSWER_LENGTH'" (change)="setBlankMode('ANSWER_LENGTH')" /> По длине ответа</label>
+              <p class="hint">Длина ответа видна ученику, если все допустимые варианты одной длины.</p>
+              @if (fieldErrors()['blank']; as error) { <p class="field-error" id="blank-error">{{ error }}</p> }
+            </div>
+          }
         </fieldset>
 
         <fieldset [attr.aria-describedby]="fieldErrors()['answer'] ? 'answer-error' : null">
@@ -126,11 +141,35 @@
           }
           @if (fieldErrors()['answer']; as error) { <p class="field-error" id="answer-error">{{ error }}</p> }
           @if (type() !== 'AUDIO_TEXT_MATCH' && (type() !== 'SELF_CHECK' || answerMode() === 'custom')) {
-            <label for="aliases">{{ answerMode() === 'custom' ? 'Свой ответ и допустимые варианты' : 'Допустимые ответы' }} <span class="hint">один вариант на строку</span></label>
-            <textarea id="aliases" rows="4" [value]="aliasesText()" [disabled]="objectiveMode() === 'reuse'"
+            <div class="aliases-heading"><strong>{{ answerMode() === 'custom' ? 'Свой ответ и допустимые варианты' : 'Допустимые ответы' }}</strong><span class="hint">До 20 вариантов</span></div>
+            <div class="alias-list">
+              @for (row of aliasRows(); track row.id; let index = $index) {
+                <div class="alias-row">
+                  <label [for]="'alias-' + row.id">{{ index === 0 ? 'Основной ответ' : 'Допустимый вариант ' + (index + 1) }}</label>
+                  <div class="alias-controls">
+                    <input [id]="'alias-' + row.id" type="text" [value]="row.value" [disabled]="objectiveMode() === 'reuse'"
                       [attr.aria-invalid]="fieldErrors()['aliases'] ? 'true' : null"
-                      (input)="setAliases($any($event.target).value)"></textarea>
+                      (input)="setAlias(index, $any($event.target).value)" />
+                    @if (index > 0 && objectiveMode() !== 'reuse') {
+                      <button class="button alias-remove" type="button" [attr.aria-label]="'Убрать вариант ' + (index + 1)" (click)="removeAlias(index)">−</button>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+            @if (objectiveMode() !== 'reuse') {
+              <button class="button alias-add" type="button" [disabled]="aliasRows().length >= 20" (click)="addAlias()">+ Добавить вариант</button>
+            }
             @if (fieldErrors()['aliases']; as error) { <p class="field-error">{{ error }}</p> }
+          }
+          @if (type() === 'TYPED' || type() === 'CLOZE_SINGLE' || type() === 'LISTEN_TYPE') {
+            <div class="matching-setting" role="group" aria-label="Проверка написанного ответа">
+              <p class="setting-title">Проверка ответа</p>
+              <label class="radio-line"><input type="radio" name="matchingMode" [checked]="matchingMode() === 'STRICT'" (change)="setMatchingMode('STRICT')" /> Строгая</label>
+              <p class="hint">Регистр и пробелы по краям не важны; остальное сверяется точно.</p>
+              <label class="radio-line"><input type="radio" name="matchingMode" [checked]="matchingMode() === 'SOFT'" (change)="setMatchingMode('SOFT')" /> Мягкая</label>
+              <p class="hint">Допускает различия в знаках препинания, диакритике, дефисах и пробелах.</p>
+            </div>
           }
         </fieldset>
 
@@ -142,7 +181,7 @@
             <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'reuse'" (change)="setObjectiveMode('reuse')" /> Проверять уже изучаемое тем же ответом</label>
             <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'revise'" (change)="setObjectiveMode('revise')" /> Изменить ответ уже изучаемого знания</label>
           }
-          @if (objectiveMode() === 'revise') { <p class="hint">Новый ответ появится в следующих занятиях. Прежние попытки и расписание повторений сохранятся.</p> }
+          @if (objectiveMode() === 'revise') { <p class="hint">Обновлённые ответы и правила проверки появятся в следующих занятиях. Прежние попытки и расписание повторений сохранятся.</p> }
           @if (objectiveMode() !== 'create') {
             <label for="objective">Существующая цель</label>
             <app-mnema-select controlId="objective" label="Существующая цель" [options]="objectiveOptions()"
@@ -170,8 +209,12 @@
         <p class="hint enable-hint">Если выключить, уже начатые занятия не изменятся.</p>
         <div class="save-bar">
           <p aria-live="polite">@switch (phase()) { @case ('saving') { Сохраняем… } @case ('saved') { Сохранено } @default { {{ dirty() ? 'Есть несохранённые изменения' : 'Всё сохранено' }} } }</p>
-          <button class="button primary" type="submit" [disabled]="phase() === 'saving'">{{ exercise() ? 'Сохранить редакцию' : 'Создать упражнение' }}</button>
+          <div class="save-actions">
+            @if (exercise()) { <button class="button" type="button" [disabled]="!dirty() || phase() === 'saving'" (click)="resetChanges()">Сбросить</button> }
+            <button class="button primary" type="submit" [disabled]="phase() === 'saving'">{{ exercise() ? 'Сохранить' : 'Создать упражнение' }}</button>
+          </div>
         </div>
+        @if (exercise()) { <div class="delete-bar"><app-hold-to-delete-button label="Удалить упражнение" [disabled]="phase() === 'saving'" (confirmed)="deleteExercise()" /></div> }
       </form>
 
       <aside class="preview-column" aria-label="Предпросмотр упражнения">
@@ -179,7 +222,10 @@
           <p class="eyebrow">Предпросмотр · {{ exerciseName(type()) }}</p>
           <h2>{{ previewPrompt() }}</h2>
           @if (isListening()) { <p class="hint">{{ type() === 'AUDIO_TEXT_MATCH' ? matchRows().length + ' аудиозаписи' : audioTitle() || 'Аудиозапись' }}</p> }
-          @if (type() === 'TYPED' || type() === 'CLOZE_SINGLE' || type() === 'LISTEN_TYPE') { <label>Ответ <input type="text" disabled placeholder="Поле ученика" /></label> }
+          @if (type() === 'CLOZE_SINGLE') {
+            <app-cloze-input controlId="cloze-preview-input" label="Пробный ответ" [blankLength]="previewBlankLength()"
+              [value]="previewClozeAnswer()" (valueChange)="previewClozeAnswer.set($event)" />
+          } @else if (type() === 'TYPED' || type() === 'LISTEN_TYPE') { <label>Ответ <input type="text" disabled placeholder="Поле ученика" /></label> }
           @if (type() === 'SINGLE_CHOICE' || type() === 'LISTEN_CHOICE') {
             <div class="preview-options">@for (nodeId of optionNodeIds(); track nodeId) { <span>{{ projection(nodeId)?.label }}</span> }</div>
           }

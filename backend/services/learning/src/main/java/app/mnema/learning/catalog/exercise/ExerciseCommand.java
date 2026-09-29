@@ -4,6 +4,7 @@ import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.json.ContentJsonReader;
+import app.mnema.learning.platform.text.SoftTextNormalizer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 
@@ -102,20 +103,25 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
             });
             return ((ObjectNode) value).deepCopy();
         }
-        fields(value, Set.of("schemaVersion", "normalization", "accepted"));
+        if (value.has("matchingMode")) fields(value, Set.of("schemaVersion", "normalization", "accepted", "matchingMode"));
+        else fields(value, Set.of("schemaVersion", "normalization", "accepted"));
         if (!value.path("schemaVersion").canConvertToInt() || value.path("schemaVersion").intValue() != 1
                 || !value.path("normalization").isArray() || value.path("normalization").isEmpty()
                 || value.path("normalization").size() > NORMALIZATIONS.size()
                 || !value.path("accepted").isArray() || value.path("accepted").isEmpty()
                 || value.path("accepted").size() > 20) throw invalid();
+        if (value.has("matchingMode") && (!value.path("matchingMode").isTextual()
+                || !Set.of("STRICT", "SOFT").contains(value.path("matchingMode").textValue()))) throw invalid();
         var normalizations = new HashSet<String>();
         value.path("normalization").forEach(entry -> {
             if (!entry.isTextual() || !NORMALIZATIONS.contains(entry.textValue())
                     || !normalizations.add(entry.textValue())) throw invalid();
         });
         var accepted = new HashSet<String>();
+        boolean soft = value.path("matchingMode").asText("STRICT").equals("SOFT");
         value.path("accepted").forEach(entry -> {
-            if (!boundedText(entry, 512) || !accepted.add(entry.textValue())) throw invalid();
+            if (!boundedText(entry, 512) || !accepted.add(entry.textValue())
+                    || (soft && SoftTextNormalizer.normalize(entry.textValue()).isEmpty())) throw invalid();
         });
         return ((ObjectNode) value).deepCopy();
     }
@@ -154,6 +160,7 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
         if (answer == null) return;
         if (!type.equals("AUDIO_TEXT_MATCH")) {
             if (answer.path("schemaVersion").intValue() != 1) throw invalid();
+            validateBlank(exercise.prompt(), answer);
             Binding assessed = exercise.bindings().stream().filter(binding -> binding.role().equals("ASSESSED"))
                     .findFirst().orElseThrow();
             if (assessed.display().path("kind").textValue().equals("CUSTOM_TEXT")
@@ -208,13 +215,40 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
                 if (!ids.add(id(cue, "cueId")) || !assets.add(id(cue, "assetId"))) throw invalid();
             });
         } else if (kind.equals("NODE_TEXT") && !listening) {
-            fields(value, Set.of("kind", "memberKey", "itemRevisionId", "nodeId"));
+            fields(value, type.equals("CLOZE_SINGLE") && value.has("blank")
+                    ? Set.of("kind", "memberKey", "itemRevisionId", "nodeId", "blank")
+                    : Set.of("kind", "memberKey", "itemRevisionId", "nodeId"));
             id(value, "memberKey"); id(value, "itemRevisionId"); id(value, "nodeId");
         } else if (kind.equals("CUSTOM_TEXT") && !listening) {
-            fields(value, Set.of("kind", "text"));
+            fields(value, type.equals("CLOZE_SINGLE") && value.has("blank")
+                    ? Set.of("kind", "text", "blank") : Set.of("kind", "text"));
             shortText(value.path("text"));
         } else throw invalid();
+        if (value.has("blank")) blank(value.path("blank"));
         return ((ObjectNode) value).deepCopy();
+    }
+
+    static void validateBlank(JsonNode prompt, JsonNode answer) {
+        JsonNode blank = prompt.path("blank");
+        if (blank.isMissingNode() || !blank.path("mode").asText().equals("ANSWER_LENGTH")) return;
+        int length = -1;
+        for (JsonNode accepted : answer.path("accepted")) {
+            String canonical = java.text.Normalizer.normalize(accepted.textValue(), java.text.Normalizer.Form.NFC);
+            int current = canonical.codePointCount(0, canonical.length());
+            if (length >= 0 && length != current) throw invalid();
+            length = current;
+        }
+        if (length < 1 || length > 80) throw invalid();
+    }
+
+    private static void blank(JsonNode value) {
+        String mode = text(value, "mode", 16);
+        if (mode.equals("ANSWER_LENGTH")) fields(value, Set.of("mode"));
+        else if (mode.equals("FIXED")) {
+            fields(value, Set.of("mode", "length"));
+            if (!value.path("length").isIntegralNumber() || !value.path("length").canConvertToInt()
+                    || value.path("length").intValue() < 5 || value.path("length").intValue() > 20) throw invalid();
+        } else throw invalid();
     }
 
     private static void audioCue(JsonNode value, boolean matching) {

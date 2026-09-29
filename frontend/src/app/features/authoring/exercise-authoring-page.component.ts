@@ -19,6 +19,8 @@ import { ItemApiService } from './item-api.service';
 import { ItemDetail } from './authoring.models';
 import { NativeMediaUploadComponent } from './native-media-upload.component';
 import { NativeMediaKind } from './native-media-upload.api';
+import { HoldToDeleteButtonComponent } from '../../shared/hold-to-delete-button.component';
+import { ClozeInputComponent } from '../../shared/cloze-input.component';
 
 type Phase = 'loading' | 'ready' | 'saving' | 'saved' | 'conflict' | 'rejected' | 'error';
 type ObjectiveMode = 'create' | 'reuse' | 'revise';
@@ -38,10 +40,12 @@ interface MatchRow {
     readonly transcript: string;
     readonly optionNodeId: string;
 }
+interface AliasRow { readonly id: string; readonly value: string; }
 
 @Component({
     selector: 'app-exercise-authoring-page',
-    imports: [RouterLink, NativeMediaSurfaceComponent, NativeMediaUploadComponent, MnemaSelectComponent],
+    imports: [RouterLink, NativeMediaSurfaceComponent, NativeMediaUploadComponent, MnemaSelectComponent,
+        HoldToDeleteButtonComponent, ClozeInputComponent],
     templateUrl: './exercise-authoring-page.component.html',
     styleUrl: './exercise-authoring-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -63,7 +67,11 @@ export class ExerciseAuthoringPageComponent {
     readonly promptNodeId = signal<string | null>(null);
     readonly customPrompt = signal('');
     readonly answerNodeId = signal<string | null>(null);
-    readonly aliasesText = signal('');
+    readonly aliasRows = signal<readonly AliasRow[]>([newAliasRow('')]);
+    readonly matchingMode = signal<'STRICT' | 'SOFT'>('STRICT');
+    readonly blankMode = signal<'FIXED' | 'ANSWER_LENGTH'>('FIXED');
+    readonly fixedBlankLength = signal(12);
+    readonly previewClozeAnswer = signal('');
     readonly optionNodeIds = signal<readonly string[]>([]);
     readonly audioAssetId = signal('');
     readonly audioTitle = signal('');
@@ -92,6 +100,8 @@ export class ExerciseAuthoringPageComponent {
     readonly previewAnswer = computed(() => this.answerMode() === 'custom'
         ? this.aliases()[0] ?? 'Введите свой ответ'
         : this.projection(this.answerNodeId())?.text ?? 'Выберите проверяемый ответ');
+    readonly previewBlankLength = computed(() => this.blankMode() === 'FIXED' ? this.fixedBlankLength()
+        : Array.from((this.aliases()[0] ?? '').normalize('NFC')).length || 5);
     readonly staleProjection = computed(() => {
         const detail = this.exercise();
         const item = this.item();
@@ -178,10 +188,10 @@ export class ExerciseAuthoringPageComponent {
         this.waveOrigin(event);
         if (value !== this.answerMode()) {
             const answer = this.selectedObjective()?.answerContract;
-            this.aliasesText.set(value === 'node' ? this.projection(this.answerNodeId())?.text ?? ''
+            this.setAliasValues(value === 'node' ? [this.projection(this.answerNodeId())?.text ?? '']
                 : this.objectiveMode() === 'reuse' && answer?.schemaVersion === 1
-                ? answer.accepted.join('\n')
-                : '');
+                ? answer.accepted
+                : ['']);
             this.answerMode.set(value);
         }
         this.changed();
@@ -198,10 +208,29 @@ export class ExerciseAuthoringPageComponent {
                 ? { ...row, optionNodeId: value } : row));
         }
         const projection = this.projection(value);
-        if (projection !== null && this.objectiveMode() !== 'reuse') this.aliasesText.set(projection.text);
+        if (projection !== null && this.objectiveMode() !== 'reuse') this.setAliasValues([projection.text]);
         this.changed();
     }
-    setAliases(value: string): void { this.aliasesText.set(value); this.changed(); }
+    setAliases(value: string): void { this.setAliasValues(value.split(/\r?\n/u)); this.changed(); }
+    setAlias(index: number, value: string): void {
+        this.aliasRows.update(rows => rows.map((row, position) => position === index ? { ...row, value } : row));
+        this.changed();
+    }
+    addAlias(): void {
+        if (this.aliasRows().length >= 20) return;
+        this.aliasRows.update(rows => [...rows, newAliasRow('')]); this.changed();
+    }
+    removeAlias(index: number): void {
+        if (this.aliasRows().length <= 1 || index === 0) return;
+        this.aliasRows.update(rows => rows.filter((_, position) => position !== index)); this.changed();
+    }
+    setMatchingMode(value: 'STRICT' | 'SOFT'): void {
+        this.matchingMode.set(value);
+        if (this.objectiveMode() === 'reuse') this.objectiveMode.set('revise');
+        this.changed();
+    }
+    setBlankMode(value: 'FIXED' | 'ANSWER_LENGTH'): void { this.blankMode.set(value); this.changed(); }
+    setFixedBlankLength(value: number): void { this.fixedBlankLength.set(value); this.changed(); }
     supportsCustomAnswer(): boolean {
         return this.type() === 'SELF_CHECK' || this.type() === 'TYPED'
             || this.type() === 'CLOZE_SINGLE' || this.type() === 'LISTEN_TYPE';
@@ -246,7 +275,7 @@ export class ExerciseAuthoringPageComponent {
         if (value === 'reuse' || value === 'revise') {
             const selected = this.selectedObjective() ?? this.objectives()[0] ?? null;
             this.selectedObjectiveId.set(selected?.objectiveId ?? null);
-            if (selected?.answerContract.schemaVersion === 1) this.aliasesText.set(selected.answerContract.accepted.join('\n'));
+            if (selected?.answerContract.schemaVersion === 1) this.useAnswerContract(selected.answerContract);
         }
         this.changed();
     }
@@ -254,7 +283,7 @@ export class ExerciseAuthoringPageComponent {
     selectObjective(value: string): void {
         this.selectedObjectiveId.set(value);
         const selected = this.objectives().find(objective => objective.objectiveId === value);
-        if (selected?.answerContract.schemaVersion === 1) this.aliasesText.set(selected.answerContract.accepted.join('\n'));
+        if (selected?.answerContract.schemaVersion === 1) this.useAnswerContract(selected.answerContract);
         this.changed();
     }
 
@@ -301,6 +330,30 @@ export class ExerciseAuthoringPageComponent {
         else this.save(true);
     }
 
+    resetChanges(): void {
+        const deck = this.deck(); const item = this.item(); const page = this.page(); const detail = this.exercise();
+        if (!this.dirty() || this.phase() === 'saving' || !deck || !item || !page || !detail) return;
+        this.openExisting(deck, item, page, detail);
+        this.phase.set('ready'); this.message.set('Изменения отменены.'); this.fieldErrors.set({});
+    }
+
+    deleteExercise(): void {
+        const deck = this.deck(); const detail = this.exercise();
+        if (!deck || !detail || this.phase() === 'saving') return;
+        this.phase.set('saving'); this.message.set(null);
+        this.exercises.delete(deck.deckId, detail.exerciseId, deck.rowVersion)
+            .pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: () => { this.dirty.set(false); void this.router.navigate(['/decks', deck.deckId, 'materials', detail.objective.memberKey]); },
+                error: error => {
+                    const response = error instanceof HttpErrorResponse ? error : null;
+                    this.phase.set(response?.status === 409 || response?.status === 412 ? 'conflict' : 'error');
+                    this.message.set(response?.status === 409 || response?.status === 412
+                        ? 'Упражнение изменилось. Загрузите его снова перед удалением.'
+                        : 'Не удалось удалить упражнение. Попробуйте ещё раз.');
+                }
+            });
+    }
+
     canLeave(): boolean {
         return !this.dirty() || window.confirm('Уйти и потерять неподтверждённые настройки упражнения?');
     }
@@ -338,7 +391,9 @@ export class ExerciseAuthoringPageComponent {
         this.deck.set(deck); this.item.set(item); this.page.set(page); this.exercise.set(null);
         this.type.set('TYPED'); this.enabled.set(true); this.promptMode.set('node');
         this.promptNodeId.set(null); this.customPrompt.set(''); this.answerMode.set('node'); this.answerNodeId.set(null);
-        this.aliasesText.set(''); this.optionNodeIds.set([]); this.objectiveMode.set('create');
+        this.setAliasValues(['']); this.matchingMode.set('STRICT'); this.blankMode.set('FIXED'); this.fixedBlankLength.set(12);
+        this.previewClozeAnswer.set('');
+        this.optionNodeIds.set([]); this.objectiveMode.set('create');
         this.audioAssetId.set(''); this.audioTitle.set(''); this.audioInstruction.set(''); this.audioTranscript.set('');
         this.matchRows.set([newMatchRow(), newMatchRow()]);
         this.selectedObjectiveId.set(null); this.pending = null; this.dirty.set(false); this.phase.set('ready');
@@ -347,6 +402,9 @@ export class ExerciseAuthoringPageComponent {
     private openExisting(deck: OwnDeck, item: ItemDetail, page: ExercisePage, detail: ExerciseDetail): void {
         this.deck.set(deck); this.item.set(item); this.page.set(page); this.exercise.set(detail);
         this.type.set(detail.type); this.enabled.set(detail.enabled);
+        this.promptMode.set('node'); this.promptNodeId.set(null); this.customPrompt.set('');
+        this.audioAssetId.set(''); this.audioTitle.set(''); this.audioInstruction.set(''); this.audioTranscript.set('');
+        this.matchRows.set([newMatchRow(), newMatchRow()]); this.audioTargetIndex.set(0);
         if (detail.prompt.kind === 'AUDIO_ASSET') {
             this.audioAssetId.set(detail.prompt.assetId); this.audioTitle.set(detail.prompt.title);
             this.audioInstruction.set(detail.prompt.instruction); this.audioTranscript.set(detail.prompt.transcript);
@@ -361,13 +419,17 @@ export class ExerciseAuthoringPageComponent {
         } else {
             this.promptMode.set('node'); this.promptNodeId.set(detail.prompt.nodeId); this.customPrompt.set('');
         }
+        const blank = detail.prompt.kind === 'CUSTOM_TEXT' || detail.prompt.kind === 'NODE_TEXT' ? detail.prompt.blank : undefined;
+        this.blankMode.set(blank?.mode ?? 'FIXED');
+        this.fixedBlankLength.set(blank?.mode === 'FIXED' ? blank.length : 5);
+        this.previewClozeAnswer.set('');
         const assessed = detail.bindings.find(binding => binding.role === 'ASSESSED');
         this.answerMode.set(assessed?.display.kind === 'CUSTOM_TEXT' ? 'custom' : 'node');
         this.answerNodeId.set(assessed?.nodeIds[0] ?? null);
         this.optionNodeIds.set(detail.bindings.filter(binding => binding.role === 'OPTION')
             .flatMap(binding => binding.nodeIds));
-        this.aliasesText.set(detail.objective.answerContract.schemaVersion === 1
-            ? detail.objective.answerContract.accepted.join('\n') : '');
+        if (detail.objective.answerContract.schemaVersion === 1) this.useAnswerContract(detail.objective.answerContract);
+        else { this.setAliasValues(['']); this.matchingMode.set('STRICT'); }
         this.objectiveMode.set(detail.type === 'AUDIO_TEXT_MATCH' ? 'revise' : 'reuse');
         this.selectedObjectiveId.set(detail.objective.objectiveId);
         this.pending = null; this.dirty.set(false); this.phase.set('ready');
@@ -393,7 +455,7 @@ export class ExerciseAuthoringPageComponent {
                 || new TextEncoder().encode(cue.title).length > 1024
                 || new TextEncoder().encode(cue.transcript).length > 16384)
                 || new Set(cues.map(cue => cue.assetId)).size !== cues.length) {
-                errors['audio'] = 'Укажите разные ID доступных записей, названия и допустимые транскрипты.';
+                errors['audio'] = 'Выберите разные записи и добавьте названия.';
             }
             if (this.type() === 'AUDIO_TEXT_MATCH') {
                 const rows = this.matchRows();
@@ -431,6 +493,22 @@ export class ExerciseAuthoringPageComponent {
             errors['aliases'] = 'Первый ответ должен быть коротким: до 80 символов.';
         }
         if (this.type() !== 'AUDIO_TEXT_MATCH' && aliases.length > 20) errors['aliases'] = 'Допустимо не более 20 вариантов ответа.';
+        if (this.type() !== 'AUDIO_TEXT_MATCH' && this.aliasRows().some(row => !row.value.trim())) {
+            errors['aliases'] = 'Заполните или уберите пустые варианты ответа.';
+        }
+        if (this.type() !== 'AUDIO_TEXT_MATCH' && this.objectiveMode() !== 'reuse'
+            && new Set(this.aliasRows().map(row => row.value.trim())).size !== this.aliasRows().length) {
+            errors['aliases'] = 'Уберите повторяющиеся варианты ответа.';
+        }
+        if (this.type() === 'CLOZE_SINGLE') {
+            if (this.blankMode() === 'FIXED' && (!Number.isInteger(this.fixedBlankLength())
+                || this.fixedBlankLength() < 5 || this.fixedBlankLength() > 20)) {
+                errors['blank'] = 'Укажите от 5 до 20 знаков для пропуска.';
+            }
+            if (this.blankMode() === 'ANSWER_LENGTH' && new Set(aliases.map(value => Array.from(value.normalize('NFC')).length)).size > 1) {
+                errors['blank'] = 'Для пропуска по длине все ответы должны быть одинаковой длины.';
+            }
+        }
         if (this.type() !== 'AUDIO_TEXT_MATCH' && aliases.some(value => new TextEncoder().encode(value).length > 512)) {
             errors['aliases'] = 'Один из ответов слишком длинный.';
         }
@@ -467,7 +545,16 @@ export class ExerciseAuthoringPageComponent {
     }
 
     private aliases(): readonly string[] {
-        return [...new Set(this.aliasesText().split(/\r?\n/u).map(value => value.trim()).filter(Boolean))];
+        return [...new Set(this.aliasRows().map(row => row.value.trim()).filter(Boolean))];
+    }
+
+    private setAliasValues(values: readonly string[]): void {
+        this.aliasRows.set((values.length ? values : ['']).slice(0, 20).map(value => newAliasRow(value)));
+    }
+
+    private useAnswerContract(contract: Extract<AnswerContract, { schemaVersion: 1 }>): void {
+        this.setAliasValues(contract.accepted);
+        this.matchingMode.set(contract.matchingMode ?? 'STRICT');
     }
 
     private answerContract(exercise: Record<string, unknown>): AnswerContract {
@@ -476,7 +563,8 @@ export class ExerciseAuthoringPageComponent {
             return { schemaVersion: 2, pairs: this.matchRows().map((row, index) => ({ cueId: row.cueId,
                 optionId: bindings[index + 1]['bindingId'] as string })) };
         }
-        return { schemaVersion: 1, normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'], accepted: this.aliases() };
+        return { schemaVersion: 1, normalization: ['UNICODE_NFC', 'TRIM', 'CASE_FOLD'],
+            matchingMode: this.matchingMode(), accepted: this.aliases() };
     }
 
     private objectivePayload(exercise: Record<string, unknown>): Record<string, unknown> {
@@ -492,6 +580,8 @@ export class ExerciseAuthoringPageComponent {
     }
 
     private exercisePayload(item: ItemDetail): Record<string, unknown> {
+        const blank = this.type() === 'CLOZE_SINGLE' ? { blank: this.blankMode() === 'FIXED'
+            ? { mode: 'FIXED', length: this.fixedBlankLength() } : { mode: 'ANSWER_LENGTH' } } : {};
         const prompt = this.type() === 'AUDIO_TEXT_MATCH'
             ? { kind: 'AUDIO_MATCH', instruction: this.audioInstruction().trim(), cues: this.matchRows().map(row => ({
                 cueId: row.cueId, assetId: row.assetId.trim(), title: row.title.trim(), transcript: row.transcript
@@ -500,9 +590,9 @@ export class ExerciseAuthoringPageComponent {
                 title: this.audioTitle().trim(), instruction: this.audioInstruction().trim(),
                 transcript: this.audioTranscript() }
             : this.promptMode() === 'custom'
-            ? { kind: 'CUSTOM_TEXT', text: this.customPrompt().trim() }
+            ? { kind: 'CUSTOM_TEXT', text: this.customPrompt().trim(), ...blank }
             : { kind: 'NODE_TEXT', memberKey: item.memberKey, itemRevisionId: item.itemRevisionId,
-                nodeId: this.promptNodeId()! };
+                nodeId: this.promptNodeId()!, ...blank };
         const bindings: Record<string, unknown>[] = [{ bindingId: crypto.randomUUID(), role: 'ASSESSED',
             memberKey: item.memberKey, itemRevisionId: item.itemRevisionId,
             nodeIds: this.answerMode() === 'custom' ? [] : [this.answerNodeId()!],
@@ -570,6 +660,8 @@ export class ExerciseAuthoringPageComponent {
 export function canLeaveExerciseAuthoring(component: ExerciseAuthoringPageComponent): boolean {
     return component.canLeave();
 }
+
+function newAliasRow(value: string): AliasRow { return { id: crypto.randomUUID(), value }; }
 
 function uniqueObjectives(values: readonly ExerciseObjective[]): readonly ExerciseObjective[] {
     const result = new Map<string, ExerciseObjective>();

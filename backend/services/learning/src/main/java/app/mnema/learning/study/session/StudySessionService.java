@@ -286,12 +286,17 @@ public class StudySessionService {
             return ((ObjectNode) spec).deepCopy();
         }
         if (spec.path("kind").textValue().equals("CUSTOM_TEXT")) {
-            return JsonNodeFactory.instance.objectNode().put("kind", "TEXT").put("text", spec.path("text").textValue());
+            ObjectNode prompt = JsonNodeFactory.instance.objectNode()
+                    .put("kind", "TEXT").put("text", spec.path("text").textValue());
+            if (spec.has("blank")) prompt.set("blank", spec.path("blank").deepCopy());
+            return prompt;
         }
         String text = resolveNodeText(deck, UUID.fromString(spec.path("memberKey").textValue()),
                 UUID.fromString(spec.path("itemRevisionId").textValue()),
                 UUID.fromString(spec.path("nodeId").textValue()));
-        return JsonNodeFactory.instance.objectNode().put("kind", "TEXT").put("text", text);
+        ObjectNode prompt = JsonNodeFactory.instance.objectNode().put("kind", "TEXT").put("text", text);
+        if (spec.has("blank")) prompt.set("blank", spec.path("blank").deepCopy());
+        return prompt;
     }
 
     private String resolveBindingText(UUID deck, JsonNode binding) {
@@ -373,8 +378,14 @@ public class StudySessionService {
                 .put("learningEpoch", Long.toString(row.learningEpoch()));
         if (isListening(row.type())) result.putNull("reference");
         else result.put("reference", reference(row.answerContract()));
-        result.set("prompt", isListening(row.type())
-                ? promptForClient(row.prompt(), row.transcriptRevealed()) : row.prompt().deepCopy());
+        ObjectNode prompt = isListening(row.type())
+                ? promptForClient(row.prompt(), row.transcriptRevealed()) : ((ObjectNode) row.prompt()).deepCopy();
+        if (row.type().equals("CLOZE_SINGLE") && prompt.path("blank").path("mode").asText().equals("ANSWER_LENGTH")) {
+            String reference = reference(row.answerContract());
+            String canonical = java.text.Normalizer.normalize(reference, java.text.Normalizer.Form.NFC);
+            ((ObjectNode) prompt.path("blank")).put("length", canonical.codePointCount(0, canonical.length()));
+        }
+        result.set("prompt", prompt);
         result.set("options", row.options().deepCopy());
         // Assessed and option targets are private evaluation authority for listening tasks.
         result.set("bindings", isListening(row.type()) ? JsonNodeFactory.instance.arrayNode()

@@ -295,6 +295,9 @@ function parsePresentation(value: unknown): StudyPresentation {
         || !['LISTEN_CHOICE', 'LISTEN_TYPE', 'AUDIO_TEXT_MATCH'].includes(type) && prompt.kind !== 'TEXT') {
         throw protocol('Exercise prompt/type mismatch.');
     }
+    if (prompt.kind === 'TEXT' && type !== 'CLOZE_SINGLE' && prompt.blank !== undefined) {
+        throw protocol('Unexpected cloze blank.');
+    }
     return {
         presentationId: entity(object['presentationId']), nonce: text(object['nonce'], 100, 16),
         ordinal: count(object['ordinal'], 99), exerciseRevisionId: entity(object['exerciseRevisionId']),
@@ -308,8 +311,19 @@ function parsePresentation(value: unknown): StudyPresentation {
 function parsePrompt(value: unknown): StudyPrompt {
     if (!isRecord(value)) throw protocol('Invalid prompt projection.');
     if (value['kind'] === 'TEXT') {
-        const object = exact(value, ['kind', 'text']);
-        return { kind: 'TEXT', text: text(object['text'], 4096, 0) };
+        const object = exact(value, value['blank'] === undefined ? ['kind', 'text'] : ['kind', 'text', 'blank']);
+        let blank: { readonly mode: 'FIXED' | 'ANSWER_LENGTH'; readonly length: number } | undefined;
+        if (object['blank'] !== undefined) {
+            const raw = exact(object['blank'], ['mode', 'length']);
+            if ((raw['mode'] !== 'FIXED' && raw['mode'] !== 'ANSWER_LENGTH')
+                || !Number.isInteger(raw['length']) || (raw['length'] as number) < 1
+                || (raw['length'] as number) > 80
+                || (raw['mode'] === 'FIXED' && ((raw['length'] as number) < 5 || (raw['length'] as number) > 20))) {
+                throw protocol('Invalid cloze blank projection.');
+            }
+            blank = { mode: raw['mode'], length: raw['length'] as number };
+        }
+        return { kind: 'TEXT', text: text(object['text'], 4096, 0), ...(blank === undefined ? {} : { blank }) };
     }
     const revealed = value['transcriptRevealed'] === true;
     const transcriptAvailable = value['transcriptAvailable'];

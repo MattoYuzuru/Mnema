@@ -18,7 +18,7 @@ class DeckRepository {
                    r.members_root_id, r.exercises_root_id, r.member_count, r.exercise_count
               FROM app_learning.deck d JOIN app_learning.deck_revision r
                 ON r.deck_id = d.deck_id AND r.revision_id = d.head_revision_id
-             WHERE d.owner_id = :actor
+             WHERE d.owner_id = :actor AND d.deleted_at IS NULL
             """;
     private static final RowMapper<DeckRecord> ROW = (row, number) -> new DeckRecord(
             row.getObject("deck_id", UUID.class), row.getObject("head_revision_id", UUID.class),
@@ -71,7 +71,14 @@ class DeckRepository {
     int advance(UUID actor, UUID deck, UUID revision, long expected) {
         return jdbc.sql("""
                 UPDATE app_learning.deck SET head_revision_id = :revision, row_version = row_version + 1
-                WHERE owner_id = :actor AND deck_id = :deck AND row_version = :expected
+                WHERE owner_id = :actor AND deck_id = :deck AND row_version = :expected AND deleted_at IS NULL
                 """).param("revision", revision).param("actor", actor).param("deck", deck).param("expected", expected).update();
+    }
+
+    int tombstone(UUID actor, UUID deck, long expected) {
+        return jdbc.sql("""
+                UPDATE app_learning.deck SET deleted_at=statement_timestamp()
+                 WHERE owner_id=:actor AND deck_id=:deck AND row_version=:expected AND deleted_at IS NULL
+                """).param("actor", actor).param("deck", deck).param("expected", expected).update();
     }
 }

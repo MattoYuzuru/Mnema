@@ -86,6 +86,15 @@ describe('OwnDecksApiService', () => {
         expect(await result).toEqual({ acknowledgement, etag: null, replayed: true, location: null });
     });
 
+    it('deletes a deck only against its current strong version', async () => {
+        const removed = firstValueFrom(api.delete(deck));
+        const request = http.expectOne(`/api/decks/${deck.deckId}`);
+        expect(request.request.method).toBe('DELETE');
+        expect(request.request.headers.get('If-Match')).toBe('"0"');
+        request.flush('', { status: 204, statusText: 'No Content', headers: privateHeaders });
+        await removed;
+    });
+
     it('rejects replay carrying ETag and unexpected response fields', async () => {
         const replay = firstValueFrom(api.create(command));
         http.expectOne('/api/decks').flush(acknowledgement, {

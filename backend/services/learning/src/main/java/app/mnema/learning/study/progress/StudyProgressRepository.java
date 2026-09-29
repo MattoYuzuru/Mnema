@@ -17,7 +17,7 @@ class StudyProgressRepository {
                     boolean due, boolean allOnTrack, Instant lastAssessedAt, Instant nextDue) { }
 
     boolean ownsDeck(UUID actor, UUID deck) {
-        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM app_learning.deck WHERE owner_id=:actor AND deck_id=:deck)")
+        return jdbc.sql("SELECT EXISTS(SELECT 1 FROM app_learning.deck WHERE owner_id=:actor AND deck_id=:deck AND deleted_at IS NULL)")
                 .param("actor", actor).param("deck", deck).query(Boolean.class).single();
     }
 

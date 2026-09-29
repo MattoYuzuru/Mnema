@@ -18,8 +18,9 @@
 .mnema-native-editor .editor-host { position: relative; min-block-size: 24rem; padding: 1.5rem 0; }
 .mnema-native-editor .editor-host.is-empty::before {
     position: absolute;
-    inset-block-start: 6.5rem;
-    inset-inline-start: calc(50% - 1.5rem);
+    inset-block-start: calc(50% - 1.4rem);
+    inset-inline-start: 50%;
+    transform: translate(-50%, -50%);
     color: var(--mn-rule);
     content: '✎';
     font: 4rem/1 Georgia, 'Times New Roman', serif;
@@ -27,11 +28,13 @@
 }
 .mnema-native-editor .editor-host.is-empty::after {
     position: absolute;
-    inset-block-start: 11rem;
-    inset-inline: 0;
+    inset-block-start: calc(50% + 2.05rem);
+    inset-inline-start: 50%;
+    transform: translate(-50%, -50%);
     color: var(--mn-muted);
     content: 'Начните писать';
     text-align: center;
+    white-space: nowrap;
     pointer-events: none;
 }
 .mnema-native-editor .mnema-editor-surface {

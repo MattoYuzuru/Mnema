@@ -20,7 +20,6 @@ textarea { resize: vertical; }
 .button:not(:disabled):hover { text-decoration: underline; text-underline-offset: .2em; }
 .button:disabled { cursor: not-allowed; opacity: .58; }
 form .button, .reveal { justify-self: end; margin-block-start: 1rem; }
-.cloze-blank { margin: 0; color: var(--mn-ink); font: 2rem/1 var(--mn-font-display, Georgia, serif); letter-spacing: .12em; }
 .hint-action { justify-self: start; margin-block-start: 0; }
 .choice-list { display: grid; gap: .75rem; margin-block-start: 1rem; }
 .choice-option { min-inline-size: 0; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: .75rem; border: 1px solid var(--mn-field-border); padding: 1rem; background: var(--mn-sheet); cursor: pointer; overflow-wrap: anywhere; }

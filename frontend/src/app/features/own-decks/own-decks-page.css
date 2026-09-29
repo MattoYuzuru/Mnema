@@ -90,6 +90,26 @@ h2 { font-size: clamp(1.65rem, 3vw, 2.2rem); font-weight: 500; line-height: 1.08
 .button.secondary { color: var(--mn-ink); background: transparent; }
 .button.quiet { border-color: transparent; color: var(--mn-ink); background: transparent; }
 .button:disabled { cursor: wait; opacity: .68; }
+.capture-link { overflow: visible; margin-inline-end: .5rem; }
+.capture-badge {
+    position: absolute;
+    z-index: 1;
+    inset-block-start: -.8rem;
+    inset-inline-end: -.65rem;
+    min-inline-size: 1.6rem;
+    block-size: 1.6rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--mn-ink);
+    border-radius: 999px;
+    padding-inline: .3rem;
+    color: var(--mn-ink);
+    background: var(--mn-paper);
+    font: 700 .75rem/1 var(--mn-font-body, system-ui, sans-serif);
+    white-space: nowrap;
+    pointer-events: none;
+}
 
 .deck-list {
     margin: 0;
@@ -110,8 +130,9 @@ h2 { font-size: clamp(1.65rem, 3vw, 2.2rem); font-weight: 500; line-height: 1.08
     text-decoration: none;
 }
 
+.deck-row { --mn-wave-fill: var(--mn-soft); }
 .deck-row:hover,
-.deck-row:focus-visible { border-inline-start-color: var(--mn-ink); background: var(--mn-sheet); }
+.deck-row:focus-visible { border-inline-start-color: var(--mn-ink); }
 .deck-row:hover strong { text-decoration: underline; text-underline-offset: .2em; }
 
 .deck-copy,
@@ -204,6 +225,9 @@ input[readonly], textarea[readonly] { background: var(--mn-soft); }
 
 .field-error { margin: 0; color: var(--mn-danger); font: .9rem/1.4 var(--mn-font-body, system-ui, sans-serif); }
 .form-actions { padding-block-start: .75rem; border-block-start: 1px solid var(--mn-rule); }
+.destructive-action { display: grid; justify-items: start; gap: .75rem; margin-block-start: 2.5rem; padding-block-start: 1.25rem; border-block-start: 1px solid var(--mn-rule); }
+.destructive-action p { margin: 0; color: var(--mn-muted); }
+.destructive-action .field-error { color: var(--mn-danger); }
 .actions { justify-content: flex-start; }
 
 .notice {

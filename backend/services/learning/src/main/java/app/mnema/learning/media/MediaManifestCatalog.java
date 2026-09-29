@@ -46,7 +46,7 @@ public class MediaManifestCatalog {
         UuidPolicy.requireEntityId(owner, "ownerId");
         UuidPolicy.requireEntityId(deck, "deckId");
         UUID revision = jdbc.sql("SELECT head_revision_id FROM app_learning.deck "
-                        + "WHERE deck_id=:deck AND owner_id=:owner FOR UPDATE")
+                        + "WHERE deck_id=:deck AND owner_id=:owner AND deleted_at IS NULL FOR UPDATE")
                 .param("deck", deck).param("owner", owner).query(UUID.class).optional()
                 .orElseThrow(ResourceNotFoundException::new);
         List<Pin> pins = jdbc.sql("SELECT r.asset_id,'item' AS kind,r.member_key AS subject_id, "
@@ -158,7 +158,9 @@ public class MediaManifestCatalog {
         UuidPolicy.requireEntityId(manifest, "manifestId");
         return jdbc.sql("SELECT manifest_id,version,etag,document_json,expires_at,content_sha256 "
                         + "FROM app_learning.media_manifest WHERE manifest_id=:manifest "
-                        + "AND deck_id=:deck AND owner_id=:owner AND expires_at>CURRENT_TIMESTAMP")
+                        + "AND deck_id=:deck AND owner_id=:owner AND expires_at>CURRENT_TIMESTAMP "
+                        + "AND EXISTS (SELECT 1 FROM app_learning.deck d WHERE d.deck_id=:deck "
+                        + "AND d.owner_id=:owner AND d.deleted_at IS NULL)")
                 .param("manifest", manifest).param("deck", deck).param("owner", owner)
                 .query(MediaManifestCatalog::snapshot).optional().orElseThrow(ResourceNotFoundException::new);
     }

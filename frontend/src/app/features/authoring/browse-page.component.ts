@@ -8,6 +8,7 @@ import { NativeMediaSurfaceComponent } from '../../content/rendering/native-medi
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { ItemApiService } from './item-api.service';
+import { AuthoringApiService } from './authoring-api.service';
 import { ItemDetail, ItemPage } from './authoring.models';
 
 @Component({
@@ -26,11 +27,13 @@ export class BrowsePageComponent {
     readonly failure = signal(false);
     readonly loadingMore = signal(false);
     readonly moreError = signal(false);
+    readonly captureCount = signal<number | null>(null);
     readonly loadSentinel = viewChild<ElementRef<HTMLElement>>('loadSentinel');
 
     private readonly route = inject(ActivatedRoute);
     private readonly decks = inject(OwnDecksApiService);
     private readonly items = inject(ItemApiService);
+    private readonly authoring = inject(AuthoringApiService);
     private readonly destroyRef = inject(DestroyRef);
 
     constructor() {
@@ -55,6 +58,13 @@ export class BrowsePageComponent {
         this.loading.set(true);
         this.failure.set(false);
         this.moreError.set(false);
+        this.captureCount.set(null);
+        if (memberKey === null) {
+            this.authoring.listDeckCaptures(deckId, null, 1).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
+                next: page => this.captureCount.set(page.total),
+                error: () => this.captureCount.set(null)
+            });
+        }
         const content = memberKey === null ? this.items.list(deckId) : this.items.read(deckId, memberKey);
         forkJoin({ deck: this.decks.detail(deckId), content }).pipe(takeUntilDestroyed(this.destroyRef)).subscribe({
             next: result => {

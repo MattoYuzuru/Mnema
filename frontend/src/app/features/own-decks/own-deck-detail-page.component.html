@@ -69,7 +69,7 @@
     <nav class="actions" aria-label="Материалы колоды">
       <a class="button primary" [routerLink]="['/decks', deck.deckId, 'study']">Учить</a>
       <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'materials']">Просмотреть материалы</a>
-      <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'capture']">На потом</a>
+      <a class="button secondary capture-link" [routerLink]="['/decks', deck.deckId, 'capture']" [attr.aria-label]="captureCount() ? 'На потом, заметок: ' + captureCount() : 'На потом'">На потом@if (captureCount(); as count) { <span class="capture-badge" aria-hidden="true">{{ count > 999 ? '999+' : count }}</span> }</a>
       <a class="button secondary" [routerLink]="['/decks', deck.deckId, 'materials', 'new']">Новый материал</a>
     </nav>
 
@@ -124,5 +124,11 @@
         </button>
       </div>
     </form>
+
+    <section class="destructive-action" aria-label="Удаление колоды">
+      <p>Колода больше не нужна? Её материалы и упражнения исчезнут из вашей библиотеки.</p>
+      @if (deleteError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
+      <app-hold-to-delete-button label="Удалить колоду" [disabled]="deleting() || !canDelete(mutation)" (confirmed)="deleteDeck(deck)" />
+    </section>
   }
 </section>

@@ -105,11 +105,17 @@ describe('StudySessionPageComponent', () => {
     });
 
     it('renders one cloze blank and caps the exact attempt after a grapheme hint', () => {
-        api.start.and.returnValue(of({ value: session('CLOZE_SINGLE'), replayed: false }));
+        const value = session('CLOZE_SINGLE');
+        api.start.and.returnValue(of({ value: { ...value, presentations: value.presentations.map(presentation => ({
+            ...presentation, prompt: { kind: 'TEXT' as const, text: 'What remains?',
+                blank: { mode: 'ANSWER_LENGTH' as const, length: 6 } }
+        })) }, replayed: false }));
         api.submit.and.returnValue(of({ value: outcome('CORRECT'), replayed: false }));
         createStarted();
         const root = fixture.nativeElement as HTMLElement;
         expect(root.querySelector('label[for="cloze-answer"]')).not.toBeNull();
+        expect(root.querySelector('app-cloze-input')).not.toBeNull();
+        expect(root.querySelector('.cloze-line')?.getAttribute('style')).toContain('--slot-count: 6');
         expect(root.textContent).not.toContain('memory');
 
         fixture.componentInstance.showClozeHint(); fixture.detectChanges();
