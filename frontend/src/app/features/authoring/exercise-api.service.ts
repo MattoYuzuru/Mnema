@@ -223,13 +223,23 @@ function parsePrompt(value: unknown): ExercisePrompt {
 function parseBinding(value: unknown): ExerciseBinding {
     const object = requireObject(value, ['bindingId', 'role', 'memberKey', 'itemRevisionId', 'ordinal', 'nodeIds', 'display']);
     if (!Array.isArray(object['nodeIds']) || object['nodeIds'].length > 16) throw new AuthoringProtocolError('Invalid binding nodes.');
-    const display = requireObject(object['display'], ['kind']);
-    if (typeof display['kind'] !== 'string') throw new AuthoringProtocolError('Invalid display projection.');
+    const displayValue = object['display'];
+    const kind = displayValue !== null && typeof displayValue === 'object' && !Array.isArray(displayValue)
+        ? (displayValue as Record<string, unknown>)['kind'] : null;
+    const display = kind === 'CUSTOM_TEXT' ? requireObject(displayValue, ['kind', 'text'])
+        : requireObject(displayValue, ['kind']);
+    const role = bindingRole(object['role']);
+    if (kind !== 'NODE_TEXT' && kind !== 'CUSTOM_TEXT') throw new AuthoringProtocolError('Invalid display projection.');
+    if (kind === 'CUSTOM_TEXT' && (typeof display['text'] !== 'string' || display['text'].trim().length === 0
+        || object['nodeIds'].length !== 0 || role !== 'ASSESSED')) throw new AuthoringProtocolError('Invalid custom answer.');
+    if (kind === 'NODE_TEXT' && role === 'ASSESSED' && object['nodeIds'].length === 0) {
+        throw new AuthoringProtocolError('Missing answer fragment.');
+    }
     return {
-        bindingId: requireEntity(object['bindingId']), role: bindingRole(object['role']),
+        bindingId: requireEntity(object['bindingId']), role,
         memberKey: requireEntity(object['memberKey']), itemRevisionId: requireEntity(object['itemRevisionId']),
         ordinal: requireCount(object['ordinal'], 15), nodeIds: object['nodeIds'].map(requireEntity),
-        display: { kind: display['kind'] }
+        display: kind === 'CUSTOM_TEXT' ? { kind, text: display['text'] as string } : { kind }
     };
 }
 

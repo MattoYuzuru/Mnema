@@ -128,7 +128,8 @@ h2 { font-size: clamp(1.6rem, 3vw, 2.25rem); line-height: 1.08; }
 }
 
 .item-row strong { color: var(--mn-ink); font-weight: 600; }
-.item-row time { color: var(--mn-muted); font-size: .875rem; }
+.item-row time { padding-inline-end: .75rem; color: var(--mn-muted); font-size: .875rem; }
+.list-sentinel { min-block-size: 1px; padding-block: .5rem; color: var(--mn-muted); }
 .item-row:hover { background: var(--mn-soft); }
 .item-row:hover strong { text-decoration: underline; text-underline-offset: .2em; }
 .folio { color: var(--mn-ink); font: 2rem/1 var(--mn-font-display, Georgia, serif); }
@@ -138,7 +139,13 @@ h2 { font-size: clamp(1.6rem, 3vw, 2.25rem); line-height: 1.08; }
     grid-template-columns: minmax(0, 1.2fr) minmax(19rem, .8fr);
     gap: clamp(1.5rem, 4vw, 3rem);
     align-items: start;
+    transition: grid-template-columns .32s ease, gap .32s ease;
 }
+
+.editor-layout.is-preview-expanded { grid-template-columns: minmax(0, 0fr) minmax(0, 1fr); gap: 0; }
+.editor-layout.is-preview-expanded .material-editor-panel { visibility: hidden; opacity: 0; block-size: 0; overflow: hidden; border: 0; padding: 0; }
+.editor-layout.is-preview-expanded .preview { grid-column: 2; position: static; }
+.material-editor-panel { transition: opacity .22s ease; }
 
 .sheet {
     min-inline-size: 0;
@@ -149,6 +156,10 @@ h2 { font-size: clamp(1.6rem, 3vw, 2.25rem); line-height: 1.08; }
 
 .sheet > h2 { margin-block: 0 1.25rem; }
 .preview { position: sticky; inset-block-start: 1rem; }
+.preview-heading { display: flex; align-items: start; justify-content: space-between; flex-wrap: wrap; gap: .75rem; margin-block-end: 1.25rem; }
+.preview-heading h2 { margin: 0; }
+.preview-toggle { display: inline-flex; align-items: center; gap: .55rem; flex: none; }
+.preview-toggle svg { inline-size: 1.15em; block-size: 1.15em; flex: none; }
 .editor-mobile-nav,
 .editor-exercises-panel { display: none; }
 
@@ -209,11 +220,14 @@ input[aria-invalid='true'], textarea[aria-invalid='true'] { border-color: var(--
     .page-heading,
     .save-panel { align-items: stretch; flex-direction: column; }
     .editor-layout { grid-template-columns: 1fr; }
+    .editor-layout.is-preview-expanded { grid-template-columns: 1fr; }
+    .editor-layout.is-preview-expanded .preview { grid-column: 1; }
     .editor-mobile-nav { display: flex; flex-wrap: wrap; gap: .5rem; margin-block-end: 1rem; }
     .editor-mobile-nav .button { flex: 1 1 8rem; }
     .editor-mobile-panel { display: none; }
     .editor-mobile-panel.is-active,
     .editor-exercises-panel { display: block; }
+    .editor-layout.is-preview-expanded .preview { display: block; }
     .preview { position: static; }
     .item-row { grid-template-columns: 2.5rem minmax(0, 1fr); }
     .item-row time { grid-column: 2; }

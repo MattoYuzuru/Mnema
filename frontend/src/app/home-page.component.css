@@ -109,9 +109,12 @@
 .art picture img {
     object-fit: cover;
     object-position: center top;
+    user-select: none;
+    -webkit-user-drag: none;
 }
 
 .art-label {
+    user-select: none;
     position: absolute;
     inset: 1.625rem auto auto 1.75rem;
     font: .625rem/1.8 var(--mn-font-mono);
@@ -119,6 +122,7 @@
 }
 
 .art-caption {
+    user-select: none;
     position: absolute;
     inset: auto 1.25rem 1.25rem auto;
     writing-mode: vertical-rl;
@@ -127,6 +131,7 @@
 }
 
 .art-star {
+    user-select: none;
     position: absolute;
     inset: 25% auto auto 5%;
     font: 2.5rem/1 Georgia, serif;
@@ -163,6 +168,7 @@
 }
 
 .constellation {
+    user-select: none;
     position: absolute;
     z-index: -1;
     inset: auto -4rem 5rem auto;
@@ -210,7 +216,7 @@
 
 .feature-strip a + a { border-inline-start: 1px solid var(--mn-rule); }
 .feature-strip strong { display: block; margin-block-end: .35rem; font-weight: 600; text-transform: uppercase; letter-spacing: .045em; }
-.feature-icon { font: 2rem/1 Georgia, serif; }
+.feature-icon { font: 2rem/1 Georgia, serif; user-select: none; }
 
 .landing-section {
     display: grid;
@@ -234,7 +240,7 @@
     background: var(--mn-sheet);
 }
 
-.specimen-star { position: absolute; inset: .75rem 1rem auto auto; color: var(--mn-ink); }
+.specimen-star { position: absolute; inset: .75rem 1rem auto auto; color: var(--mn-ink); user-select: none; }
 .specimen h3 { margin: 1.25rem 0 .75rem; font: 500 clamp(1.9rem, 2.6vw, 2.5rem)/1.05 var(--mn-font-display); }
 .specimen h3 span { font-size: .9em; }
 .specimen p { margin-block-end: 0; font-size: .875rem; }

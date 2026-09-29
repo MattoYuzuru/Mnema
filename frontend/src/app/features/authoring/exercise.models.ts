@@ -78,7 +78,7 @@ export interface ExerciseBinding {
     readonly memberKey: string;
     readonly itemRevisionId: string;
     readonly nodeIds: readonly string[];
-    readonly display: { readonly kind: string };
+    readonly display: { readonly kind: 'NODE_TEXT' } | { readonly kind: 'CUSTOM_TEXT'; readonly text: string };
     readonly ordinal: number;
 }
 
@@ -119,7 +119,7 @@ export function textProjections(document: NativeDocument): readonly ExerciseProj
     const projections: ExerciseProjection[] = [];
     const visit = (node: NativeNode): void => {
         const text = nodeText(node).replace(/\s+/gu, ' ').trim();
-        if (node.type !== 'text' && text.length > 0) {
+        if ((node.type === 'paragraph' || node.type === 'heading' || node.type === 'code_block') && text.length > 0) {
             projections.push({ nodeId: node.id, text, label: text.length <= 80 ? text : `${text.slice(0, 77)}…` });
         }
         node.content.forEach(visit);

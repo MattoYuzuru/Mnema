@@ -93,6 +93,18 @@ describe('ProfilePageComponent', () => {
         expect(input.getAttribute('aria-invalid')).toBe('true');
         expect(input.getAttribute('aria-describedby')).toBe('username-hint username-error');
         expect(root.querySelector('#username-error')?.textContent).toContain('3–50');
-        expect(root.querySelector<HTMLButtonElement>('.profile-grid button[type=submit]')?.disabled).toBeTrue();
+        expect(root.querySelector<HTMLButtonElement>('.profile-layout button[type=submit]')?.disabled).toBeTrue();
+    });
+
+    it('uses the avatar itself as the keyboard accessible file trigger', async () => {
+        const fixture = TestBed.createComponent(ProfilePageComponent);
+        fixture.detectChanges();
+        await fixture.whenStable();
+        fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('.profile-sheet .avatar-action')?.getAttribute('for')).toBe('avatar-file');
+        expect(root.querySelector('.profile-sheet .avatar-action')?.getAttribute('aria-label')).toBe('Изменить аватар');
+        expect(root.querySelector('.profile-sheet .file-input')?.getAttribute('type')).toBe('file');
+        expect(root.querySelector('.file-label')).toBeNull();
     });
 });

@@ -6,7 +6,7 @@
     <div>
       <p class="eyebrow">{{ exercise() ? 'Настройка упражнения' : 'Новое упражнение' }}</p>
       <h1 id="exercise-title" tabindex="-1">Проверка знания</h1>
-      <p class="lede">Выберите, что показать ученику и какой ответ ожидать. Один материал может стать основой для разных упражнений.</p>
+      <p class="lede">Сделайте из одного материала несколько упражнений — так его легче запомнить.</p>
     </div>
   </header>
 
@@ -15,25 +15,26 @@
     <section class="notice" [class.error]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected'"
              [attr.role]="phase() === 'error' || phase() === 'conflict' || phase() === 'rejected' ? 'alert' : 'status'">
       <p>{{ currentMessage }}</p>
-      @if (phase() === 'error') { <button class="button" type="button" (click)="retry()">Повторить безопасно</button> }
+      @if (phase() === 'error') { <button class="button" type="button" (click)="retry()">Повторить попытку</button> }
       @if (phase() === 'conflict') { <button class="button" type="button" (click)="load()">Загрузить свежую основу</button> }
     </section>
   }
   @if (staleProjection()) {
-    <p class="notice warning" role="status">Материал изменился после этой редакции упражнения. Перепроверьте вопрос и ответ: сервер не заменит удалённый фрагмент автоматически.</p>
+    <p class="notice warning" role="status">Материал изменился. Проверьте вопрос и ответ: некоторые фрагменты могли стать недоступны.</p>
   }
 
   @if (item(); as currentItem) {
     <div class="authoring-layout">
       <form class="inspector" (submit)="$event.preventDefault(); save()" novalidate>
         <fieldset>
-          <legend>1. Механика</legend>
+          <legend>1. Тип упражнения</legend>
           <div class="choice-grid">
             @for (candidate of ['SELF_CHECK', 'TYPED', 'CLOZE_SINGLE', 'SINGLE_CHOICE', 'LISTEN_CHOICE', 'AUDIO_TEXT_MATCH', 'LISTEN_TYPE']; track candidate) {
               <label class="choice-card">
                 <input type="radio" name="type" [value]="candidate" [checked]="type() === candidate"
                        (change)="setType($any(candidate))" />
-                <span>{{ exerciseName($any(candidate)) }}</span>
+                <span class="choice-description"><strong>{{ exerciseName($any(candidate)) }}</strong>
+                  <small>{{ exerciseExample($any(candidate)) }}</small></span>
               </label>
             }
           </div>
@@ -47,29 +48,21 @@
                    [attr.aria-invalid]="fieldErrors()['prompt'] ? 'true' : null"
                    (input)="setAudio('instruction', $any($event.target).value)" />
             @if (type() === 'AUDIO_TEXT_MATCH') {
-              <p class="hint">Для каждой записи выберите текст, который ей соответствует. ID берётся из медиатеки.</p>
+              <p class="hint">Для каждой записи выберите текст, который ей соответствует.</p>
               @for (row of matchRows(); track row.cueId; let index = $index) {
                 <div class="audio-cue-row">
                   <h3>Запись {{ index + 1 }}</h3>
-                  <label [for]="'match-asset-' + index">ID аудио</label>
-                  <input [id]="'match-asset-' + index" type="text" [value]="row.assetId"
-                         [attr.aria-invalid]="fieldErrors()['audio'] ? 'true' : null"
-                         (input)="setMatchRow(index, 'assetId', $any($event.target).value)" />
+                  <p class="hint" role="status">{{ row.assetId ? 'Аудиофайл выбран' : 'Выберите аудиофайл ниже' }}</p>
                   <button class="button" type="button" [attr.aria-pressed]="audioTargetIndex() === index"
                           (click)="selectAudioTarget(index)">Выбрать файл для записи {{ index + 1 }}</button>
                   <label [for]="'match-title-' + index">Название записи</label>
                   <input [id]="'match-title-' + index" type="text" [value]="row.title"
                          (input)="setMatchRow(index, 'title', $any($event.target).value)" />
                   <label [for]="'match-option-' + index">Правильный текст</label>
-                  <select [id]="'match-option-' + index" [value]="row.optionNodeId"
-                          [attr.aria-invalid]="fieldErrors()['options'] ? 'true' : null"
-                          (change)="setMatchRow(index, 'optionNodeId', $any($event.target).value)">
-                    <option value="">Выберите фрагмент</option>
-                    @for (projection of projections(); track projection.nodeId) {
-                      <option [value]="projection.nodeId">{{ projection.label }}</option>
-                    }
-                  </select>
-                  <label [for]="'match-transcript-' + index">Транскрипт для явного раскрытия <span class="hint">необязательно</span></label>
+                  <app-mnema-select [controlId]="'match-option-' + index" label="Правильный текст"
+                    [options]="projectionOptions()" [value]="row.optionNodeId" [invalid]="!!fieldErrors()['options']"
+                    (valueChange)="setMatchRow(index, 'optionNodeId', $event)" />
+                  <label [for]="'match-transcript-' + index">Расшифровка записи <span class="hint">необязательно</span></label>
                   <textarea [id]="'match-transcript-' + index" rows="2" [value]="row.transcript"
                             (input)="setMatchRow(index, 'transcript', $any($event.target).value)"></textarea>
                   <button class="button" type="button" [disabled]="matchRows().length <= 2"
@@ -78,37 +71,32 @@
               }
               <button class="button" type="button" [disabled]="matchRows().length >= 6" (click)="addMatchRow()">Добавить запись</button>
             } @else {
-              <label for="audio-asset">ID аудио из медиатеки</label>
-              <input id="audio-asset" type="text" [value]="audioAssetId()"
-                     [attr.aria-invalid]="fieldErrors()['audio'] ? 'true' : null"
-                     (input)="setAudio('assetId', $any($event.target).value)" />
+              <p class="hint" role="status">{{ audioAssetId() ? 'Аудиофайл выбран' : 'Выберите аудиофайл ниже' }}</p>
               <label for="audio-title">Название записи</label>
               <input id="audio-title" type="text" [value]="audioTitle()"
                      (input)="setAudio('title', $any($event.target).value)" />
-              <label for="audio-transcript">Транскрипт для явного раскрытия <span class="hint">необязательно</span></label>
+              <label for="audio-transcript">Расшифровка записи <span class="hint">необязательно</span></label>
               <textarea id="audio-transcript" rows="3" [value]="audioTranscript()"
                         (input)="setAudio('transcript', $any($event.target).value)"></textarea>
             }
             <div class="exercise-audio-upload">
               <p class="hint">{{ type() === 'AUDIO_TEXT_MATCH'
-                ? 'Выбрана запись ' + (audioTargetIndex() + 1) + '. После загрузки нажмите «Вставить» в очереди.'
-                : 'Загрузите аудиофайл или запишите голос, затем нажмите «Вставить» в очереди.' }}</p>
+                ? 'Выбрана запись ' + (audioTargetIndex() + 1) + '. После загрузки выберите её из списка.'
+                : 'Загрузите аудиофайл или запишите голос, затем выберите запись из списка.' }}</p>
               <app-native-media-upload [document]="currentItem.document" (chooseAsset)="chooseUploadedAudio($event)" />
             </div>
             @if (fieldErrors()['audio']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
             @if (fieldErrors()['options']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
           } @else {
           <div class="segmented" role="group" aria-label="Источник вопроса">
-            <button type="button" [class.active]="promptMode() === 'node'" [attr.aria-pressed]="promptMode() === 'node'" (click)="setPromptMode('node')">Фрагмент материала</button>
-            <button type="button" [class.active]="promptMode() === 'custom'" [attr.aria-pressed]="promptMode() === 'custom'" (click)="setPromptMode('custom')">Короткий текст</button>
+            <button type="button" [class.active]="promptMode() === 'node'" [attr.aria-pressed]="promptMode() === 'node'" (click)="setPromptMode('node', $event)"><span>Фрагмент материала</span></button>
+            <button type="button" [class.active]="promptMode() === 'custom'" [attr.aria-pressed]="promptMode() === 'custom'" (click)="setPromptMode('custom', $event)"><span>Произвольный вопрос</span></button>
           </div>
           @if (promptMode() === 'node') {
             <label for="prompt-node">Фрагмент вопроса</label>
-            <select id="prompt-node" [value]="promptNodeId() ?? ''" [attr.aria-invalid]="fieldErrors()['prompt'] ? 'true' : null"
-                    (change)="setPromptNode($any($event.target).value)">
-              <option value="">Выберите фрагмент</option>
-              @for (projection of projections(); track projection.nodeId) { <option [value]="projection.nodeId">{{ projection.label }}</option> }
-            </select>
+            <app-mnema-select controlId="prompt-node" label="Фрагмент вопроса" [options]="projectionOptions()"
+              [value]="promptNodeId() ?? ''" [invalid]="!!fieldErrors()['prompt']"
+              (valueChange)="setPromptNode($event)" />
           } @else {
             <label for="custom-prompt">Текст вопроса <span class="hint">до 80 символов</span></label>
             <textarea id="custom-prompt" rows="3" [value]="customPrompt()" [attr.aria-invalid]="fieldErrors()['prompt'] ? 'true' : null"
@@ -120,15 +108,25 @@
 
         <fieldset [attr.aria-describedby]="fieldErrors()['answer'] ? 'answer-error' : null">
           <legend>3. Проверяемый ответ</legend>
-          <label for="answer-node">Фрагмент ответа</label>
-          <select id="answer-node" [value]="answerNodeId() ?? ''" [attr.aria-invalid]="fieldErrors()['answer'] ? 'true' : null"
-                  (change)="setAnswerNode($any($event.target).value)">
-            <option value="">Выберите фрагмент</option>
-            @for (projection of projections(); track projection.nodeId) { <option [value]="projection.nodeId">{{ projection.label }}</option> }
-          </select>
+          @if (supportsCustomAnswer()) {
+            <div class="segmented" role="group" aria-label="Источник ответа">
+              <button type="button" [class.active]="answerMode() === 'node'" [attr.aria-pressed]="answerMode() === 'node'"
+                      (click)="setAnswerMode('node', $event)"><span>Фрагмент материала</span></button>
+              <button type="button" [class.active]="answerMode() === 'custom'" [attr.aria-pressed]="answerMode() === 'custom'"
+                      (click)="setAnswerMode('custom', $event)"><span>Свой ответ</span></button>
+            </div>
+          }
+          @if (answerMode() === 'node') {
+            <label for="answer-node">Фрагмент ответа</label>
+            <app-mnema-select controlId="answer-node" label="Фрагмент ответа" [options]="projectionOptions()"
+              [value]="answerNodeId() ?? ''" [invalid]="!!fieldErrors()['answer']"
+              (valueChange)="setAnswerNode($event)" />
+          } @else {
+            <p class="hint">Первый вариант показываем как образец. Остальные считаем правильными при проверке ответа.</p>
+          }
           @if (fieldErrors()['answer']; as error) { <p class="field-error" id="answer-error">{{ error }}</p> }
-          @if (type() !== 'SELF_CHECK' && type() !== 'AUDIO_TEXT_MATCH') {
-            <label for="aliases">Допустимые ответы <span class="hint">один вариант на строку</span></label>
+          @if (type() !== 'AUDIO_TEXT_MATCH' && (type() !== 'SELF_CHECK' || answerMode() === 'custom')) {
+            <label for="aliases">{{ answerMode() === 'custom' ? 'Свой ответ и допустимые варианты' : 'Допустимые ответы' }} <span class="hint">один вариант на строку</span></label>
             <textarea id="aliases" rows="4" [value]="aliasesText()" [disabled]="objectiveMode() === 'reuse'"
                       [attr.aria-invalid]="fieldErrors()['aliases'] ? 'true' : null"
                       (input)="setAliases($any($event.target).value)"></textarea>
@@ -138,19 +136,18 @@
 
         <fieldset [attr.aria-describedby]="fieldErrors()['objective'] ? 'objective-error' : null">
           <legend>4. Направление знания</legend>
-          <p class="hint">Обратное направление — отдельная цель. Оно не получает прогресс автоматически.</p>
-          <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'create'" (change)="setObjectiveMode('create')" /> Создать отдельную цель</label>
+          <p class="hint">Выберите, считать ли это новым знанием или ещё одним способом проверить уже изучаемое. Например, перевод слова и перевод обратно можно учить отдельно.</p>
+          <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'create'" (change)="setObjectiveMode('create')" /> Учить как новое знание</label>
           @if (objectives().length > 0 && type() !== 'AUDIO_TEXT_MATCH') {
-            <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'reuse'" (change)="setObjectiveMode('reuse')" /> Использовать существующую цель без изменения ответа</label>
-            <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'revise'" (change)="setObjectiveMode('revise')" /> Обновить ответ существующей цели</label>
+            <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'reuse'" (change)="setObjectiveMode('reuse')" /> Проверять уже изучаемое тем же ответом</label>
+            <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'revise'" (change)="setObjectiveMode('revise')" /> Изменить ответ уже изучаемого знания</label>
           }
+          @if (objectiveMode() === 'revise') { <p class="hint">Новый ответ появится в следующих занятиях. Прежние попытки и расписание повторений сохранятся.</p> }
           @if (objectiveMode() !== 'create') {
             <label for="objective">Существующая цель</label>
-            <select id="objective" [value]="selectedObjectiveId() ?? ''" [attr.aria-invalid]="fieldErrors()['objective'] ? 'true' : null"
-                    (change)="selectObjective($any($event.target).value)">
-              <option value="">Выберите цель</option>
-              @for (objective of objectives(); track objective.objectiveId) { <option [value]="objective.objectiveId">{{ objectiveName(objective) }}</option> }
-            </select>
+            <app-mnema-select controlId="objective" label="Существующая цель" [options]="objectiveOptions()"
+              [value]="selectedObjectiveId() ?? ''" [invalid]="!!fieldErrors()['objective']"
+              (valueChange)="selectObjective($event)" />
           }
           @if (fieldErrors()['objective']; as error) { <p class="field-error" id="objective-error">{{ error }}</p> }
         </fieldset>
@@ -169,9 +166,10 @@
           </fieldset>
         }
 
-        <label class="enable-line"><input type="checkbox" [checked]="enabled()" (change)="setEnabled($any($event.target).checked)" /> Упражнение участвует в новых Study-сессиях</label>
+        <label class="enable-line"><input type="checkbox" [checked]="enabled()" (change)="setEnabled($any($event.target).checked)" /> Добавлять упражнение в новые занятия</label>
+        <p class="hint enable-hint">Если выключить, уже начатые занятия не изменятся.</p>
         <div class="save-bar">
-          <p aria-live="polite">@switch (phase()) { @case ('saving') { Сохраняем… } @case ('saved') { Сохранено } @default { {{ dirty() ? 'Есть неподтверждённые изменения' : 'Настройки подтверждены сервером' }} } }</p>
+          <p aria-live="polite">@switch (phase()) { @case ('saving') { Сохраняем… } @case ('saved') { Сохранено } @default { {{ dirty() ? 'Есть несохранённые изменения' : 'Всё сохранено' }} } }</p>
           <button class="button primary" type="submit" [disabled]="phase() === 'saving'">{{ exercise() ? 'Сохранить редакцию' : 'Создать упражнение' }}</button>
         </div>
       </form>

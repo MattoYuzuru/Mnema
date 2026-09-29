@@ -50,6 +50,8 @@ describe('StudySessionPageComponent', () => {
         createStarted();
         const root = fixture.nativeElement as HTMLElement;
         expect(root.textContent).toContain('What remains?');
+        expect(root.querySelector('.folio')?.textContent).toContain('Задание 1');
+        expect(root.querySelector('.folio')?.textContent).not.toContain('максимум');
         expect(root.textContent).not.toContain('memory');
 
         fixture.componentInstance.setTypedAnswer(' Memory '); now = 4200;
@@ -195,7 +197,7 @@ describe('StudySessionPageComponent', () => {
             'Соответствующий текст для записи 1 — Первая',
             'Соответствующий текст для записи 2 — Вторая'
         ]);
-        expect(labels.every(label => [...root.querySelectorAll<HTMLSelectElement>('.match-row select')]
+        expect(labels.every(label => [...root.querySelectorAll<HTMLButtonElement>('.match-row button[role="combobox"]')]
             .some(select => select.id === label.htmlFor))).toBeTrue();
         fixture.componentInstance.selectMatch(id('40'), id('15'));
         fixture.componentInstance.selectMatch(id('41'), id('16'));
@@ -211,7 +213,7 @@ describe('StudySessionPageComponent', () => {
         createStarted();
         fixture.componentInstance.setTypedAnswer('memory'); fixture.componentInstance.submitTyped(); fixture.detectChanges();
         const first = api.submit.calls.mostRecent().args[2];
-        expect(fixture.nativeElement.textContent).toContain('безопасно повторите ту же попытку');
+        expect(fixture.nativeElement.textContent).toContain('Повторите отправку того же ответа');
 
         api.submit.and.returnValue(of({ value: outcome('CORRECT', first), replayed: true }));
         fixture.componentInstance.retryPending();
@@ -236,7 +238,7 @@ describe('StudySessionPageComponent', () => {
 
         createStarted();
         const root = fixture.nativeElement as HTMLElement;
-        expect(root.textContent).toContain('Без условного процента');
+        expect(root.textContent).toContain('Статус обучения');
         expect(root.textContent).toContain('Пора повторить');
         expect(root.textContent).not.toContain('%');
 
@@ -270,7 +272,7 @@ describe('StudySessionPageComponent', () => {
         fixture = TestBed.createComponent(StudySessionPageComponent); fixture.detectChanges();
         expect(api.start).not.toHaveBeenCalled();
         expect(fixture.nativeElement.textContent).toContain('До 10 заданий');
-        expect(fixture.nativeElement.textContent).toContain('не больше двух новых');
+        expect(fixture.nativeElement.textContent).toContain('если сейчас доступно меньше заданий');
 
         fixture.componentInstance.startScheduled('QUICK');
         expect(api.start.calls.mostRecent().args[2]).toEqual({ mode: 'SCHEDULED', preset: 'QUICK' });

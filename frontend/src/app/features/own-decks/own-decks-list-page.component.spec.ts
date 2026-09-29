@@ -56,7 +56,7 @@ describe('OwnDecksListPageComponent', () => {
         fixture.detectChanges();
 
         expect(fixture.nativeElement.querySelectorAll('.deck-row').length).toBe(1);
-        expect(fixture.nativeElement.textContent).toContain('Ответ сервера не получен');
+        expect(fixture.nativeElement.textContent).toContain('Нет связи');
     });
 
     it('rechecks a visible library on focus and on its bounded timer, then stops on teardown', fakeAsync(() => {

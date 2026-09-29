@@ -124,7 +124,7 @@ export class CapturePageComponent {
                     const memberKey = result.publication.changes[0]?.memberKey;
                     const ordinal = result.publication.changes[0]?.ordinal;
                     if (memberKey === undefined || ordinal === null || ordinal === undefined) {
-                        this.error.set('Сервер вернул неполный результат.');
+                        this.error.set('Не удалось открыть созданный материал. Обновите список и попробуйте снова.');
                         this.recovery.set('reload');
                         this.busy.set(false);
                         return;

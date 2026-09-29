@@ -71,7 +71,7 @@ describe('OwnDeckDetailPageComponent', () => {
         fixture.detectChanges();
 
         const root = fixture.nativeElement as HTMLElement;
-        expect(root.textContent).toContain('Использовать версию сервера');
+        expect(root.textContent).toContain('Оставить текущую версию');
         expect(root.textContent).toContain('Применить мой прежний ввод поверх неё');
         expect(fixture.componentInstance.form.getRawValue()).toEqual({ title: 'Мой ввод', description: 'мой текст' });
         expect(root.querySelector<HTMLTextAreaElement>('#detail-title')?.readOnly).toBeTrue();

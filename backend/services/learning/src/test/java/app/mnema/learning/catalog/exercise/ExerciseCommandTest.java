@@ -4,6 +4,7 @@ import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.concurrency.VersionPreconditionRequiredException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.Test;
 
@@ -110,6 +111,43 @@ class ExerciseCommandTest {
         java.util.Arrays.fill(bytes, (byte) ' ');
         assertThatThrownBy(() -> ExerciseCommand.readCreate(new ByteArrayInputStream(bytes)))
                 .isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void customAssessedTextRequiresAVisibleAcceptedAnswerAndNoNode() {
+        ObjectNode custom = valid("TYPED");
+        ObjectNode assessed = (ObjectNode) custom.withObject("exercise").withArray("bindings").get(0);
+        assessed.putArray("nodeIds");
+        assessed.set("display", JSON.createObjectNode().put("kind", "CUSTOM_TEXT").put("text", "memory"));
+        custom.withObject("objective").withObject("answerContract").withArray("accepted")
+                .add("recollection");
+        assertThat(ExerciseCommand.readCreate(bytes(custom.toString())).exercise().bindings().get(0).display()
+                .path("text").textValue()).isEqualTo("memory");
+
+        ObjectNode mismatch = custom.deepCopy();
+        mismatch.withObject("objective").withObject("answerContract").withArray("accepted").set(0,
+                JSON.getNodeFactory().textNode("different"));
+        assertInvalid(mismatch);
+        ObjectNode withNode = custom.deepCopy();
+        ((ObjectNode) withNode.path("exercise").path("bindings").get(0)).withArray("nodeIds")
+                .add(UUID.randomUUID().toString());
+        assertInvalid(withNode);
+        ObjectNode unknownDisplay = custom.deepCopy();
+        ((ObjectNode) unknownDisplay.path("exercise").path("bindings").get(0)).withObject("display")
+                .put("unexpected", true);
+        assertInvalid(unknownDisplay);
+        ObjectNode choice = valid("SINGLE_CHOICE");
+        choice.withObject("exercise").withObject("evaluatorPolicy").put("id", "deterministic-choice");
+        ArrayNode choices = choice.withObject("exercise").withArray("bindings");
+        JsonNode choiceAssessed = choices.get(0);
+        choices.add(binding("OPTION", 1, UUID.fromString(choiceAssessed.path("memberKey").textValue()),
+                UUID.fromString(choiceAssessed.path("itemRevisionId").textValue()),
+                UUID.fromString(choiceAssessed.path("nodeIds").get(0).textValue())));
+        choices.add(binding("OPTION", 2));
+        assertThat(ExerciseCommand.readCreate(bytes(choice.toString())).exercise().bindings()).hasSize(3);
+        ((ObjectNode) choices.get(0)).putArray("nodeIds");
+        ((ObjectNode) choices.get(0)).set("display", assessed.path("display"));
+        assertInvalid(choice);
     }
 
     static ObjectNode valid(String type) {

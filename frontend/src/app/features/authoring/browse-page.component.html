@@ -7,7 +7,7 @@
     <p class="notice" role="status">Загружаем материалы…</p>
   } @else if (failure()) {
     <h1 id="browse-title" tabindex="-1">Материалы недоступны</h1>
-    <section class="notice error" role="alert"><p>Не удалось получить подтверждённую сервером версию.</p><button class="button" type="button" (click)="load()">Повторить</button></section>
+    <section class="notice error" role="alert"><p>Не удалось загрузить материалы.</p><button class="button" type="button" (click)="load()">Повторить</button></section>
   } @else if (deck(); as currentDeck) {
     @if (item(); as currentItem) {
       <header class="page-heading"><div><p class="eyebrow">{{ selectedOrdinal() === null ? 'Материал' : 'Материал ' + (selectedOrdinal()! + 1) }}</p><h1 id="browse-title" tabindex="-1">{{ currentDeck.metadata.title }}</h1><p class="lede">Опубликованная версия материала</p></div>
@@ -24,7 +24,12 @@
           <li><a class="item-row" [routerLink]="['/decks', currentDeck.deckId, 'materials', entry.memberKey]" [queryParams]="{ ordinal: entry.ordinal }"><span class="folio">{{ entry.ordinal + 1 }}</span><strong>Материал {{ entry.ordinal + 1 }}</strong><time [attr.datetime]="entry.updatedAt">{{ entry.updatedAt | date:'dd.MM.y, HH:mm' }}</time></a></li>
         }
       </ol>
-      @if (currentPage.nextCursor) { <div class="actions"><button class="button" type="button" (click)="loadMore()">Показать ещё</button></div> }
+      @if (currentPage.nextCursor) {
+        <div #loadSentinel class="list-sentinel" aria-live="polite">
+          @if (loadingMore()) { <p role="status">Загружаем следующие материалы…</p> }
+          @if (moreError()) { <p>Не удалось загрузить следующие материалы.</p><button class="button" type="button" (click)="loadMore()">Повторить</button> }
+        </div>
+      }
     }
   }
 </section>

@@ -5,7 +5,7 @@
 
 .native-document,
 .native-message {
-    max-inline-size: 72ch;
+    max-inline-size: 56rem;
     margin-inline: auto;
     padding: clamp(1.25rem, 4vw, 2.75rem);
     border: 1px solid var(--mn-rule);
@@ -145,6 +145,7 @@
 }
 
 .native-divider {
+    position: relative;
     width: min(10rem, 45%);
     height: 0;
     margin: 2rem auto;
@@ -155,9 +156,14 @@
 
 .native-divider::after {
     content: "✦";
-    display: block;
-    width: 2rem;
-    margin: -0.85rem auto 0;
+    position: absolute;
+    inset-block-start: 0;
+    inset-inline-start: 50%;
+    display: grid;
+    place-items: center;
+    inline-size: 2rem;
+    block-size: 2rem;
+    transform: translate(-50%, -50%);
     background: var(--mn-sheet);
     color: var(--mn-ink);
     text-align: center;

@@ -4,7 +4,7 @@ artifact:
   type: navigator
   title: "Mnema documentation"
   status: current
-  updated_at: "2026-09-28"
+  updated_at: "2026-09-29"
   owners: ["project-owner"]
   evidence_revision: "d7fd1b1d509a0ab598976f87af88101bfc3945ac"
 ---
@@ -40,6 +40,7 @@ artifact:
 |---|---|---|
 | accepted | [Owner decisions](./decisions/owner-decisions-2026-08.md) | Решения владельца и явно открытые вопросы. |
 | accepted | [Authoring and Study workflows](./product/authoring-and-study-workflows.md) | Product contract для authoring, Capture, exercises и режимов практики; P0 реализован в #74/#75. |
+| accepted | [UX refinement 2026-09-29](./product/ux-improvements-2026-09-29.md) | Приёмочные сценарии текущей доработки редактора, упражнений и основных экранов. |
 | accepted | [Exercise catalog](./product/exercise-catalog-v2.md) | Принятые mechanics, attempt/evidence, reducer и retention boundaries для #75. |
 | proposed | [Product direction](./product/product-direction-v2.md) | Product hypotheses, roadmap и метрики. |
 | proposed | [Launch economics](./product/russia-launch-economics-2026.md) | Коммерческие гипотезы. |
