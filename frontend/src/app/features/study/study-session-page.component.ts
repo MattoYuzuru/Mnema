@@ -7,6 +7,7 @@ import { timer } from 'rxjs';
 import { SignedMediaSource } from '../../content/rendering/media-playback.api';
 import { NativeMediaPlayerComponent } from '../../content/rendering/native-media-player.component';
 import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
+import { ClozeInputComponent } from '../../shared/cloze-input.component';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { StudyApiService } from './study-api.service';
@@ -32,7 +33,7 @@ type Phase = 'setup' | 'loading' | 'preparing' | 'answering' | 'revealed' | 'sub
 
 @Component({
     selector: 'app-study-session-page',
-    imports: [RouterLink, NativeMediaPlayerComponent, MnemaSelectComponent],
+    imports: [RouterLink, NativeMediaPlayerComponent, MnemaSelectComponent, ClozeInputComponent],
     templateUrl: './study-session-page.component.html',
     styleUrl: './study-session-page.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -70,6 +71,10 @@ export class StudySessionPageComponent {
     readonly scheduledPreset = signal<ScheduledStudyPreset>('STANDARD');
     readonly supportLoading = signal(true);
     readonly current = computed(() => this.session()?.presentations[0] ?? null);
+    readonly clozeBlankLength = computed(() => {
+        const prompt = this.current()?.prompt;
+        return prompt?.kind === 'TEXT' ? prompt.blank?.length ?? 5 : 5;
+    });
     readonly matchOptions = computed<readonly MnemaSelectOption[]>(() => [
         { value: '', label: 'Выберите вариант' },
         ...(this.current()?.options ?? []).map(option => ({ value: option.optionId, label: option.text }))

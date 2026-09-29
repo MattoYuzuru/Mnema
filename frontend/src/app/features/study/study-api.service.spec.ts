@@ -182,6 +182,23 @@ describe('StudyApiService', () => {
         expect((await restartResult).value.objectiveCount).toBe(1);
     });
 
+    it('keeps the server-projected cloze length without exposing an answer contract', async () => {
+        const value = active('CLOZE_SINGLE');
+        const reading = firstValueFrom(api.read(deckId, sessionId));
+        http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}`).flush({
+            ...value, presentations: value.presentations.map(presentation => ({
+                ...presentation, prompt: { kind: 'TEXT', text: 'What remains?',
+                    blank: { mode: 'ANSWER_LENGTH', length: 6 } }
+            }))
+        }, { headers: privateHeaders });
+        const result = await reading;
+        expect(result.status).toBe('ACTIVE');
+        if (result.status !== 'PREPARING') {
+            expect(result.presentations[0].prompt).toEqual({ kind: 'TEXT', text: 'What remains?',
+                blank: { mode: 'ANSWER_LENGTH', length: 6 } });
+        }
+    });
+
     function active(type: 'TYPED' | 'SELF_CHECK' | 'CLOZE_SINGLE' | 'SINGLE_CHOICE'): ReadyStudySession {
         const assessed = { bindingId: id('11'), role: 'ASSESSED' as const, memberKey: id('12'),
             itemRevisionId: id('13'), ordinal: 0, nodeIds: [id('14')], display: { kind: 'NODE_TEXT' } };

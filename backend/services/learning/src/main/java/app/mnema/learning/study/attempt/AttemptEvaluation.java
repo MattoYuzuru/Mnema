@@ -1,6 +1,7 @@
 package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
+import app.mnema.learning.platform.text.SoftTextNormalizer;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
@@ -66,10 +67,14 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
         }
         List<String> rules = new ArrayList<>();
         answer.path("normalization").forEach(rule -> rules.add(rule.textValue()));
+        boolean soft = answer.path("matchingMode").asText("STRICT").equals("SOFT");
         String normalized = normalize(supplied, rules);
+        if (soft) normalized = SoftTextNormalizer.normalize(normalized);
         boolean correct = false;
         for (JsonNode accepted : answer.path("accepted")) {
-            if (normalize(accepted.textValue(), rules).equals(normalized)) { correct = true; break; }
+            String candidate = normalize(accepted.textValue(), rules);
+            if (soft) candidate = SoftTextNormalizer.normalize(candidate);
+            if (!normalized.isEmpty() && candidate.equals(normalized)) { correct = true; break; }
         }
         Result result = correct ? Result.CORRECT : Result.INCORRECT;
         EvidenceClass strength = listening && transcriptRevealed ? EvidenceClass.LOW
@@ -84,6 +89,7 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
         if (listening) applied.add("AUDIO_CUE_V1");
         if (cloze) applied.add("SINGLE_BLANK");
         rules.forEach(applied::add);
+        if (soft) applied.add("SOFT_MATCH");
         return new AttemptEvaluation(Status.ASSESSED, result, strength, reasons, feedback);
     }
 

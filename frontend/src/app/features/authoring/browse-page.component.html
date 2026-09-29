@@ -17,7 +17,7 @@
       @if (selectedOrdinal() === null) { <p class="notice">Чтобы редактировать материал, откройте его из списка колоды.</p> }
       <article class="sheet"><app-native-media-surface [document]="currentItem.document" /></article>
     } @else if (page(); as currentPage) {
-      <header class="page-heading"><div><p class="eyebrow">Просмотр колоды</p><h1 id="browse-title" tabindex="-1">{{ currentDeck.metadata.title }}</h1><p class="lede">{{ currentPage.total }} материалов</p></div><div class="actions"><a class="button" [routerLink]="['/decks', currentDeck.deckId, 'capture']">На потом</a><a class="button primary" [routerLink]="['/decks', currentDeck.deckId, 'materials', 'new']">Новый материал</a></div></header>
+      <header class="page-heading browse-list-heading"><div><p class="eyebrow">Просмотр колоды</p><h1 id="browse-title" tabindex="-1">{{ currentDeck.metadata.title }}</h1><p class="lede">{{ currentPage.total }} материалов</p></div><div class="actions"><a class="button capture-link" [routerLink]="['/decks', currentDeck.deckId, 'capture']" [attr.aria-label]="captureCount() ? 'На потом, заметок: ' + captureCount() : 'На потом'">На потом@if (captureCount(); as count) { <span class="capture-badge" aria-hidden="true">{{ count > 999 ? '999+' : count }}</span> }</a><a class="button primary" [routerLink]="['/decks', currentDeck.deckId, 'materials', 'new']">Новый материал</a></div></header>
       @if (currentPage.items.length === 0) { <section class="notice"><h2>Здесь пока пусто</h2><p>Создайте первый материал или перенесите заметку из «На потом».</p></section> }
       <ol class="item-list">
         @for (entry of currentPage.items; track entry.memberKey) {

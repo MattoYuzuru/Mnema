@@ -1,0 +1,12 @@
+:host { display: grid; gap: .5rem; min-inline-size: 0; }
+label { color: var(--mn-ink); font-weight: 700; }
+.cloze-viewport { max-inline-size: 100%; overflow-x: auto; overflow-y: hidden; padding: .25rem .15rem .45rem; }
+.cloze-line { --slot-step: calc(1ch + .35em); position: relative; min-inline-size: 100%; inline-size: calc(var(--slot-count) * var(--slot-step)); block-size: 3.25rem; color: var(--mn-ink); font: 1.35rem/1.5 var(--mn-font-mono, ui-monospace, monospace); }
+.cloze-track { position: absolute; inset-inline-start: 0; inset-block-end: .3rem; inline-size: calc(var(--slot-count) * var(--slot-step)); block-size: 2px; background: repeating-linear-gradient(to right, var(--mn-ink) 0 1ch, transparent 1ch var(--slot-step)); }
+input { position: absolute; inset: 0; inline-size: 100%; block-size: 100%; min-inline-size: 0; min-block-size: 0; margin: 0; border: 0; border-radius: 0; padding: 0 0 .35rem; background: transparent; color: var(--mn-ink); caret-color: #8e6cc0; font: inherit; letter-spacing: .35em; outline-offset: 3px; }
+input:focus-visible { outline: 2px solid var(--mn-focus); }
+.cloze-current { position: absolute; inset-inline-start: calc(var(--caret-index) * var(--slot-step)); inset-block-end: .3rem; inline-size: 1ch; block-size: 3px; background: #8e6cc0; pointer-events: none; opacity: 0; transition: inset-inline-start .12s ease, opacity .12s ease; }
+.cloze-line:focus-within .cloze-current { opacity: 1; }
+.cloze-hint { margin: 0; color: var(--mn-muted); font-size: .875rem; line-height: 1.45; }
+@media (prefers-reduced-motion: reduce) { .cloze-current { transition: none; } }
+@media (forced-colors: active) { .cloze-current { background: Highlight; } .cloze-track { background: repeating-linear-gradient(to right, CanvasText 0 1ch, transparent 1ch var(--slot-step)); } }

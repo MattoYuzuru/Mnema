@@ -144,13 +144,13 @@ html body h1[tabindex="-1"]:focus-visible {
 }
 
 /* The origin is supplied on pointer entry by the shell; keyboard focus uses the centre. */
-:is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a) {
+:is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a, .item-row, .deck-row) {
     position: relative;
     isolation: isolate;
     overflow: hidden;
 }
 
-:is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a)::before {
+:is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a, .item-row, .deck-row)::before {
     content: '';
     position: absolute;
     z-index: -1;
@@ -162,7 +162,7 @@ html body h1[tabindex="-1"]:focus-visible {
     transition: clip-path .55s cubic-bezier(.19, 1, .22, 1);
 }
 
-:is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a):is(:hover, :focus-visible):not(:disabled)::before {
+:is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a, .item-row, .deck-row):is(:hover, :focus-visible):not(:disabled)::before {
     clip-path: circle(150% at var(--mn-wave-x, 50%) var(--mn-wave-y, 50%));
 }
 

@@ -88,11 +88,8 @@
         @if (presentation.type === 'TYPED' || presentation.type === 'CLOZE_SINGLE' || presentation.type === 'LISTEN_TYPE') {
           <form (submit)="$event.preventDefault(); submitTyped()" novalidate>
             @if (presentation.type === 'CLOZE_SINGLE') {
-              <p class="cloze-blank"><span aria-hidden="true">_____</span><span class="visually-hidden">Один пропуск</span></p>
-              <label for="cloze-answer">Ответ в пропуск</label>
-              <input id="cloze-answer" data-answer-control type="text" autocomplete="off" autocapitalize="off"
-                     [value]="typedAnswer()" [readOnly]="phase() === 'submitting'"
-                     (input)="setTypedAnswer($any($event.target).value)" />
+              <app-cloze-input controlId="cloze-answer" [blankLength]="clozeBlankLength()"
+                [value]="typedAnswer()" [readOnly]="phase() === 'submitting'" (valueChange)="setTypedAnswer($event)" />
               @if (clozeHintUsed()) {
                 <p class="hint" role="status">Подсказка: ответ начинается с «{{ firstGrapheme(presentation.reference ?? '') }}».</p>
               } @else {

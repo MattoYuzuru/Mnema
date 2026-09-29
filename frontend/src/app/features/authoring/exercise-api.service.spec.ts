@@ -101,4 +101,26 @@ describe('ExerciseApiService', () => {
         }, { headers: { ETag: '"3"' } });
         await expectAsync(page).toBeRejectedWithError(AuthoringProtocolError);
     });
+
+    it('accepts cloze blank and soft matching, then deletes with an exact deck precondition', async () => {
+        const reading = firstValueFrom(api.read(deckId, exerciseId));
+        http.expectOne(`/api/decks/${deckId}/exercises/${exerciseId}`).flush({
+            ...summary, deckId, deckRevisionId, deckVersion: '3',
+            objective: { ...objective, answerContract: { ...objective.answerContract, matchingMode: 'SOFT' } },
+            prompt: { kind: 'CUSTOM_TEXT', text: 'Complete', blank: { mode: 'FIXED', length: 8 } },
+            evaluatorPolicy: { id: 'deterministic-text', version: '1' },
+            bindings: [{ bindingId: id('10'), role: 'ASSESSED', memberKey, itemRevisionId: id('11'),
+                nodeIds: [id('12')], display: { kind: 'NODE_TEXT' }, ordinal: 0 }]
+        }, { headers });
+        const detail = await reading;
+        expect(detail.prompt.kind === 'CUSTOM_TEXT' ? detail.prompt.blank : null).toEqual({ mode: 'FIXED', length: 8 });
+        expect(detail.objective.answerContract.schemaVersion === 1 ? detail.objective.answerContract.matchingMode : null).toBe('SOFT');
+
+        const deletion = firstValueFrom(api.delete(deckId, exerciseId, '3'));
+        const request = http.expectOne(`/api/decks/${deckId}/exercises/${exerciseId}`);
+        expect(request.request.method).toBe('DELETE');
+        expect(request.request.headers.get('If-Match')).toBe('"3"');
+        request.flush(null, { status: 204, statusText: 'No Content', headers: { 'Cache-Control': 'private, no-store' } });
+        await expectAsync(deletion).toBeResolved();
+    });
 });

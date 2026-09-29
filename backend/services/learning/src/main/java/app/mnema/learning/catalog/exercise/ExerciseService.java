@@ -124,6 +124,48 @@ public class ExerciseService {
         return result;
     }
 
+    /** Removes only the current exercise roster entry; pinned history and completed attempts remain valid. */
+    public void delete(UUID actor, UUID deckId, UUID exerciseId, long expectedDeckVersion) {
+        ExerciseRepository.DeckHead deck = own(actor, deckId);
+        UuidPolicy.requireEntityId(exerciseId, "exerciseId");
+        ExerciseRepository.ExerciseRow previous = repository.exerciseHead(actor, deckId, exerciseId)
+                .orElseThrow(ResourceNotFoundException::new);
+        if (deck.version() != expectedDeckVersion) throw new VersionConflictException();
+        UUID nextRevision = UUID.randomUUID();
+        List<StagedRoot> pins = new ArrayList<>();
+        try {
+            TreeRoot root = tree(deck.scopeId(), deck.exercisesRootId(), deck.exerciseCount());
+            TreeRoot exercises = stagePage(exercisePages().delete(root, previous.ordinal(), exerciseId),
+                    deck.scopeId(), actor, pins);
+            StagedRoot members = storage.stageBatch(new StageBatch(deck.scopeId(), actor, List.of(),
+                    List.of(deck.membersRootId())), PREPARATION_LEASE).getFirst();
+            pins.add(members);
+            publication.executeWithoutResult(ignored -> {
+                ExerciseRepository.DeckHead current = own(actor, deckId);
+                ExerciseRepository.ExerciseRow currentExercise = repository.exerciseHead(actor, deckId, exerciseId)
+                        .orElseThrow(ResourceNotFoundException::new);
+                if (!sameHead(current, deck) || !currentExercise.revisionId().equals(previous.revisionId())
+                        || currentExercise.ordinal() != previous.ordinal()) throw new VersionConflictException();
+                long sequence = cas.updateOne(expectedDeckVersion,
+                        () -> repository.advance(actor, deckId, nextRevision, expectedDeckVersion));
+                if (repository.deleteExerciseHead(deckId, exerciseId, previous.revisionId()) != 1) {
+                    throw new VersionConflictException();
+                }
+                repository.shiftExerciseOrdinals(deckId, previous.ordinal());
+                Instant now = repository.now();
+                PinOwner owner = new PinOwner("deck.revision", nextRevision, actor);
+                UUID membersPin = storage.retain(members, owner);
+                UUID exercisesPin = storage.retain(findPin(pins, exercises.ref()), owner);
+                repository.insertDeckRevision(deck, nextRevision, UUID.randomUUID(), now, membersPin,
+                        exercises.ref().objectId(), exercisesPin, deck.exerciseCount() - 1);
+                repository.insertRemoval(deckId, nextRevision, sequence, exerciseId, previous.revisionId(),
+                        previous.ordinal());
+            });
+        } finally {
+            cleanup.executeWithoutResult(ignored -> pins.forEach(pin -> storage.release(deck.scopeId(), pin.stagingPinId())));
+        }
+    }
+
     public WriteResult publish(UUID actor, UUID deckId, UUID pathExerciseId, long expectedDeckVersion,
                                ExerciseCommand command) {
         UuidPolicy.requireEntityId(actor, "actor");
@@ -180,6 +222,9 @@ public class ExerciseService {
         int answerVersion = objective.answerContract().path("schemaVersion").intValue();
         if (answerVersion != (command.exercise().type().equals("AUDIO_TEXT_MATCH") ? 2 : 1)) {
             throw new InvalidRequestException();
+        }
+        if (command.exercise().type().equals("CLOZE_SINGLE")) {
+            ExerciseCommand.validateBlank(command.exercise().prompt(), objective.answerContract());
         }
         if (assessed.display().path("kind").textValue().equals("CUSTOM_TEXT")) {
             String visibleAnswer = assessed.display().path("text").textValue();

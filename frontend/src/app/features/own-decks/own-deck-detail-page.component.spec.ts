@@ -1,18 +1,21 @@
 import { signal } from '@angular/core';
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
-import { of } from 'rxjs';
+import { of, throwError } from 'rxjs';
 
 import metadataFixture from '../../../../../contracts/decks/metadata.json';
 import { OwnDeck } from './own-deck.models';
 import { DeckDetailState, DeckMutationState, OwnDecksStore } from './own-decks.store';
 import { OwnDeckDetailPageComponent } from './own-deck-detail-page.component';
 import { OwnDeckRecoveryService } from './own-deck-recovery.service';
+import { AuthoringApiService } from '../authoring/authoring-api.service';
+import { OwnDecksApiService } from './own-decks-api.service';
 
 describe('OwnDeckDetailPageComponent', () => {
     let fixture: ComponentFixture<OwnDeckDetailPageComponent>;
     let store: jasmine.SpyObj<OwnDecksStore>;
     let recovery: jasmine.SpyObj<OwnDeckRecoveryService>;
+    let decksApi: jasmine.SpyObj<OwnDecksApiService>;
     const deck = metadataFixture.detail as unknown as OwnDeck;
     const detail = signal<DeckDetailState>({ phase: 'ready', deckId: deck.deckId, deck, failure: null });
     const mutation = signal<DeckMutationState>({ phase: 'idle' });
@@ -26,6 +29,9 @@ describe('OwnDeckDetailPageComponent', () => {
         ]);
         recovery = jasmine.createSpyObj<OwnDeckRecoveryService>('OwnDeckRecoveryService', ['restore', 'save', 'clear']);
         recovery.restore.and.returnValue(null);
+        const authoring = jasmine.createSpyObj<AuthoringApiService>('AuthoringApiService', ['listDeckCaptures']);
+        authoring.listDeckCaptures.and.returnValue(of({ items: [], nextCursor: null, total: 2 }));
+        decksApi = jasmine.createSpyObj<OwnDecksApiService>('OwnDecksApiService', ['delete']);
         Object.defineProperty(store, 'detailState', { value: detail.asReadonly() });
         Object.defineProperty(store, 'mutationState', { value: mutation.asReadonly() });
         await TestBed.configureTestingModule({
@@ -33,6 +39,8 @@ describe('OwnDeckDetailPageComponent', () => {
             providers: [
                 provideRouter([]),
                 { provide: OwnDeckRecoveryService, useValue: recovery },
+                { provide: AuthoringApiService, useValue: authoring },
+                { provide: OwnDecksApiService, useValue: decksApi },
                 { provide: ActivatedRoute, useValue: { paramMap: of(convertToParamMap({ deckId: deck.deckId })) } }
             ]
         }).overrideComponent(OwnDeckDetailPageComponent, {
@@ -104,5 +112,24 @@ describe('OwnDeckDetailPageComponent', () => {
         expect(study).toBeDefined();
         expect(study?.classList).toContain('primary');
         expect(study?.getAttribute('href')).toBe(`/decks/${deck.deckId}/study`);
+        expect(root.querySelector('.capture-badge')?.textContent?.trim()).toBe('2');
+    });
+
+    it('deletes only the opened deck after the hold control confirms', () => {
+        decksApi.delete.and.returnValue(of(void 0));
+        fixture.componentInstance.deleteDeck(deck);
+
+        expect(decksApi.delete).toHaveBeenCalledOnceWith(deck);
+        expect(recovery.clear).toHaveBeenCalledWith({ operation: 'save', deckId: deck.deckId });
+    });
+
+    it('keeps the deck open when its delete request fails', () => {
+        decksApi.delete.and.returnValue(throwError(() => new Error('offline')));
+        fixture.componentInstance.deleteDeck(deck);
+        fixture.detectChanges();
+
+        expect(fixture.componentInstance.deleting()).toBeFalse();
+        expect(fixture.componentInstance.deleteError()).toContain('Не удалось удалить колоду');
+        expect((fixture.nativeElement as HTMLElement).textContent).toContain(deck.metadata.title);
     });
 });

@@ -2,6 +2,7 @@ package app.mnema.learning.catalog.exercise;
 
 import app.mnema.learning.platform.api.ApiExceptionHandler;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
+import app.mnema.learning.platform.concurrency.VersionConflictException;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.junit.jupiter.api.AfterEach;
@@ -20,9 +21,12 @@ import java.util.UUID;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
@@ -102,5 +106,24 @@ class ExerciseControllerTest {
         when(service.read(actor, deck, exercise, null)).thenThrow(new ResourceNotFoundException());
         mvc.perform(get("/decks/" + deck + "/exercises/" + exercise)).andExpect(status().isNotFound())
                 .andExpect(jsonPath("$.code").value("RESOURCE_NOT_FOUND"));
+    }
+
+    @Test
+    void deleteRequiresDeckVersionAndReturnsPrivateNoContent() throws Exception {
+        mvc.perform(delete("/decks/" + deck + "/exercises/" + exercise))
+                .andExpect(status().isPreconditionRequired());
+        mvc.perform(delete("/decks/" + deck + "/exercises/" + exercise)
+                        .header("If-Match", "W/\"2\""))
+                .andExpect(status().isBadRequest());
+        mvc.perform(delete("/decks/" + deck + "/exercises/" + exercise)
+                        .header("If-Match", "\"2\""))
+                .andExpect(status().isNoContent())
+                .andExpect(header().string("Cache-Control", "private, no-store"));
+        verify(service).delete(actor, deck, exercise, 2L);
+        doThrow(new VersionConflictException()).when(service).delete(actor, deck, exercise, 2L);
+        mvc.perform(delete("/decks/" + deck + "/exercises/" + exercise)
+                        .header("If-Match", "\"2\""))
+                .andExpect(status().isPreconditionFailed())
+                .andExpect(jsonPath("$.code").value("VERSION_CONFLICT"));
     }
 }

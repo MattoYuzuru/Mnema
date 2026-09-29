@@ -150,6 +150,43 @@ class ExerciseCommandTest {
         assertInvalid(choice);
     }
 
+    @Test
+    void validatesMatchingModeAndClozeBlankWithoutChangingLegacyCommands() {
+        ObjectNode typed = valid("TYPED");
+        typed.withObject("objective").withObject("answerContract").put("matchingMode", "SOFT");
+        assertThat(ExerciseCommand.readCreate(bytes(typed.toString())).objective())
+                .isInstanceOf(ExerciseCommand.CreateObjective.class);
+        typed.withObject("objective").withObject("answerContract").put("matchingMode", "FUZZY");
+        assertInvalid(typed);
+        ObjectNode punctuationOnly = valid("TYPED");
+        punctuationOnly.withObject("objective").withObject("answerContract")
+                .put("matchingMode", "SOFT").withArray("accepted").add("!!!");
+        assertInvalid(punctuationOnly);
+        punctuationOnly.withObject("objective").withObject("answerContract")
+                .put("matchingMode", "STRICT");
+        assertThat(ExerciseCommand.readCreate(bytes(punctuationOnly.toString())).objective())
+                .isInstanceOf(ExerciseCommand.CreateObjective.class);
+
+        ObjectNode cloze = valid("CLOZE_SINGLE");
+        cloze.withObject("exercise").withObject("prompt").putObject("blank")
+                .put("mode", "FIXED").put("length", 9);
+        assertThat(ExerciseCommand.readCreate(bytes(cloze.toString())).exercise().prompt()
+                .path("blank").path("length").intValue()).isEqualTo(9);
+        cloze.withObject("exercise").withObject("prompt").withObject("blank").put("length", 4);
+        assertInvalid(cloze);
+
+        ObjectNode actual = valid("CLOZE_SINGLE");
+        actual.withObject("exercise").withObject("prompt").putObject("blank").put("mode", "ANSWER_LENGTH");
+        actual.withObject("objective").withObject("answerContract").withArray("accepted").add("learning");
+        assertInvalid(actual);
+        actual.withObject("objective").withObject("answerContract").withArray("accepted").remove(1);
+        assertThat(ExerciseCommand.readCreate(bytes(actual.toString())).exercise().prompt()
+                .path("blank").path("mode").textValue()).isEqualTo("ANSWER_LENGTH");
+        ObjectNode wrongType = valid("TYPED");
+        wrongType.withObject("exercise").withObject("prompt").putObject("blank").put("mode", "ANSWER_LENGTH");
+        assertInvalid(wrongType);
+    }
+
     static ObjectNode valid(String type) {
         UUID member = UUID.randomUUID(), revision = UUID.randomUUID(), node = UUID.randomUUID();
         ObjectNode root = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())

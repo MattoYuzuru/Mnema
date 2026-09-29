@@ -9,7 +9,7 @@ import {
     requireObject, requireVersion
 } from './authoring.models';
 import {
-    AnswerContract, BindingRole, EXERCISE_PAGE_SIZE, ExerciseAcknowledgement, ExerciseBinding, ExerciseDetail,
+    AnswerContract, BindingRole, ClozeBlank, EXERCISE_PAGE_SIZE, ExerciseAcknowledgement, ExerciseBinding, ExerciseDetail,
     ExerciseObjective, ExercisePage, ExercisePrompt, ExerciseSummary, ExerciseType, ExerciseWriteResult
 } from './exercise.models';
 
@@ -68,6 +68,16 @@ export class ExerciseApiService {
             commandId: requireCommand(commandId), expectedDeckRevisionId: requireEntity(deckRevisionId),
             expectedExerciseRevisionId: requireEntity(exerciseRevisionId), objective, exercise
         }, 200);
+    }
+
+    delete(deckId: string, exerciseId: string, deckVersion: string): Observable<void> {
+        return defer(() => this.http.delete<unknown>(
+            `${this.baseUrl}/decks/${encodeURIComponent(requireEntity(deckId))}/exercises/${encodeURIComponent(requireEntity(exerciseId))}`,
+            { headers: new HttpHeaders({ 'If-Match': expectedEtag(deckVersion) }), observe: 'response' }
+        )).pipe(map(response => {
+            if (response.status !== 204 || response.body !== null) throw new AuthoringProtocolError('Invalid delete response.');
+            requirePrivate(response);
+        }));
     }
 
     private write(method: 'POST' | 'PUT', deckId: string, exerciseId: string | null, deckVersion: string,
@@ -169,27 +179,43 @@ function parseAnswer(value: unknown): AnswerContract {
         }
         return { schemaVersion: 2, pairs };
     }
-    const object = requireObject(value, ['schemaVersion', 'normalization', 'accepted']);
+    const raw = value as Record<string, unknown> | null;
+    const object = requireObject(value, ['schemaVersion', 'normalization', 'accepted',
+        ...(raw !== null && typeof raw === 'object' && 'matchingMode' in raw ? ['matchingMode'] : [])]);
     if (object['schemaVersion'] !== 1 || !Array.isArray(object['normalization'])
         || !Array.isArray(object['accepted']) || object['accepted'].length === 0 || object['accepted'].length > 20) {
         throw new AuthoringProtocolError('Invalid answer contract.');
     }
     const allowed = new Set(['UNICODE_NFC', 'TRIM', 'CASE_FOLD']);
     if (object['normalization'].some(rule => typeof rule !== 'string' || !allowed.has(rule))
-        || object['accepted'].some(answer => typeof answer !== 'string' || answer.trim().length === 0)) {
+        || object['accepted'].some(answer => typeof answer !== 'string' || answer.trim().length === 0)
+        || (object['matchingMode'] !== undefined && object['matchingMode'] !== 'STRICT' && object['matchingMode'] !== 'SOFT')) {
         throw new AuthoringProtocolError('Invalid answer contract values.');
     }
     return { schemaVersion: 1, normalization: object['normalization'] as ('UNICODE_NFC' | 'TRIM' | 'CASE_FOLD')[],
-        accepted: object['accepted'] as string[] };
+        accepted: object['accepted'] as string[], ...(object['matchingMode'] === undefined ? {} : { matchingMode: object['matchingMode'] as 'STRICT' | 'SOFT' }) };
+}
+
+function parseBlank(value: unknown): ClozeBlank | undefined {
+    if (value === undefined) return undefined;
+    const raw = value as Record<string, unknown> | null;
+    const object = requireObject(value, ['mode', ...(raw !== null && typeof raw === 'object' && 'length' in raw ? ['length'] : [])]);
+    if (object['mode'] === 'ANSWER_LENGTH' && object['length'] === undefined) return { mode: 'ANSWER_LENGTH' };
+    if (object['mode'] === 'FIXED' && Number.isInteger(object['length'])
+        && (object['length'] as number) >= 5 && (object['length'] as number) <= 20) {
+        return { mode: 'FIXED', length: object['length'] as number };
+    }
+    throw new AuthoringProtocolError('Invalid cloze blank.');
 }
 
 function parsePrompt(value: unknown): ExercisePrompt {
     if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new AuthoringProtocolError('Invalid prompt.');
     const kind = (value as Record<string, unknown>)['kind'];
     if (kind === 'CUSTOM_TEXT') {
-        const object = requireObject(value, ['kind', 'text']);
+        const raw = value as Record<string, unknown>;
+        const object = requireObject(value, ['kind', 'text', ...('blank' in raw ? ['blank'] : [])]);
         if (typeof object['text'] !== 'string') throw new AuthoringProtocolError('Invalid custom prompt.');
-        return { kind, text: object['text'] };
+        return { kind, text: object['text'], ...(object['blank'] === undefined ? {} : { blank: parseBlank(object['blank']) }) };
     }
     if (kind === 'AUDIO_ASSET') {
         const object = requireObject(value, ['kind', 'assetId', 'title', 'instruction', 'transcript']);
@@ -214,10 +240,12 @@ function parsePrompt(value: unknown): ExercisePrompt {
         });
         return { kind, instruction: object['instruction'], cues };
     }
-    const object = requireObject(value, ['kind', 'memberKey', 'itemRevisionId', 'nodeId']);
+    const raw = value as Record<string, unknown>;
+    const object = requireObject(value, ['kind', 'memberKey', 'itemRevisionId', 'nodeId', ...('blank' in raw ? ['blank'] : [])]);
     if (object['kind'] !== 'NODE_TEXT') throw new AuthoringProtocolError('Unsupported prompt.');
     return { kind: 'NODE_TEXT', memberKey: requireEntity(object['memberKey']),
-        itemRevisionId: requireEntity(object['itemRevisionId']), nodeId: requireEntity(object['nodeId']) };
+        itemRevisionId: requireEntity(object['itemRevisionId']), nodeId: requireEntity(object['nodeId']),
+        ...(object['blank'] === undefined ? {} : { blank: parseBlank(object['blank']) }) };
 }
 
 function parseBinding(value: unknown): ExerciseBinding {
