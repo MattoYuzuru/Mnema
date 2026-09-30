@@ -223,10 +223,10 @@
           <p aria-live="polite">@switch (phase()) { @case ('saving') { Сохраняем… } @case ('saved') { Сохранено } @default { {{ dirty() ? 'Есть несохранённые изменения' : 'Всё сохранено' }} } }</p>
           <div class="save-actions">
             @if (exercise()) { <button class="button" type="button" [disabled]="!dirty() || phase() === 'saving'" (click)="resetChanges()">Сбросить</button> }
+            @if (exercise()) { <app-hold-to-delete-button label="Удалить упражнение" [disabled]="phase() === 'saving'" (confirmed)="deleteExercise()" /> }
             <button class="button primary" type="submit" [disabled]="phase() === 'saving'">{{ exercise() ? 'Сохранить' : 'Создать упражнение' }}</button>
           </div>
         </div>
-        @if (exercise()) { <div class="delete-bar"><app-hold-to-delete-button label="Удалить упражнение" [disabled]="phase() === 'saving'" (confirmed)="deleteExercise()" /></div> }
       </form>
 
       <aside class="preview-column" aria-label="Предпросмотр упражнения">

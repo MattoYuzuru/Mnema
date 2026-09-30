@@ -40,6 +40,9 @@ override current code, accepted contracts or the local-only delivery boundary.
 
 ## Frontend и browser
 
+- [Декорации, удаление и аудиопары](./polish-followup-2026-09-30/README.md)
+  содержит последующую настройку и desktop/mobile evidence.
+
 - [Бумажный интерфейс и упражнения](./paper-polish-2026-09-30/README.md)
   содержит результаты 12 правок, desktop/mobile screenshots и границы проверки.
 

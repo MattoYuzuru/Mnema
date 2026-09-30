@@ -1,10 +1,12 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { ActivatedRoute, convertToParamMap, provideRouter } from '@angular/router';
+import { provideHttpClient, HttpErrorResponse } from '@angular/common/http';
+import { ActivatedRoute, Router, convertToParamMap, provideRouter } from '@angular/router';
 import { Subject, of, throwError } from 'rxjs';
 
 import { OwnDeck } from '../own-decks/own-deck.models';
 import { OwnDecksApiService } from '../own-decks/own-decks-api.service';
-import { ItemPage, ItemSummary } from './authoring.models';
+import { ItemDetail, ItemPage, ItemSummary } from './authoring.models';
+import { createEmptyNativeDocument } from '../../content/editing/native-editor-adapter';
 import { BrowsePageComponent } from './browse-page.component';
 import { ItemApiService } from './item-api.service';
 import { AuthoringApiService } from './authoring-api.service';
@@ -29,7 +31,7 @@ describe('BrowsePageComponent', () => {
     afterEach(() => { window.IntersectionObserver = originalObserver; });
 
     beforeEach(() => {
-        api = jasmine.createSpyObj<ItemApiService>('ItemApiService', ['list', 'read']);
+        api = jasmine.createSpyObj<ItemApiService>('ItemApiService', ['list', 'read', 'delete']);
         const decks = jasmine.createSpyObj<OwnDecksApiService>('OwnDecksApiService', ['detail']);
         decks.detail.and.returnValue(of(deck));
         const authoring = jasmine.createSpyObj<AuthoringApiService>('AuthoringApiService', ['listDeckCaptures']);
@@ -43,13 +45,68 @@ describe('BrowsePageComponent', () => {
             disconnect(): void { /* No browser resource is allocated in this test. */ }
         } as unknown as typeof IntersectionObserver;
         TestBed.configureTestingModule({ providers: [
-            provideRouter([]),
+            provideRouter([]), provideHttpClient(),
             { provide: ActivatedRoute, useValue: { snapshot: { paramMap: convertToParamMap({ deckId }),
                 queryParamMap: convertToParamMap({}) } } },
             { provide: OwnDecksApiService, useValue: decks },
             { provide: AuthoringApiService, useValue: authoring },
             { provide: ItemApiService, useValue: api }
         ] });
+    });
+
+    function openMaterial() {
+        const current = item(1);
+        const detail: ItemDetail = { ...current, deckId, deckRevisionId: revisionId, deckVersion: '1',
+            ordinal: 99_999, document: createEmptyNativeDocument() };
+        TestBed.overrideProvider(ActivatedRoute, { useValue: { snapshot: {
+            paramMap: convertToParamMap({ deckId, memberKey: detail.memberKey }),
+            queryParamMap: convertToParamMap({ ordinal: '999' })
+        } } });
+        api.read.and.returnValue(of(detail));
+        fixture = TestBed.createComponent(BrowsePageComponent);
+        fixture.detectChanges();
+        return { detail, component: fixture.componentInstance };
+    }
+
+    it('resolves a server ordinal and retries uncertain deletion with exactly the same command', () => {
+        const { detail, component } = openMaterial();
+        expect(component.selectedOrdinal()).toBe(99_999);
+        expect(api.list).not.toHaveBeenCalled();
+        const navigate = spyOn(TestBed.inject(Router), 'navigate').and.resolveTo(true);
+        api.delete.and.returnValues(throwError(() => new HttpErrorResponse({ status: 0 })), of({
+            replayed: true, acknowledgement: { commandId: revisionId, deckId, deckRevisionId: revisionId,
+                deckVersion: '2', memberCount: 1, changes: [] }
+        }));
+        component.deleteItem();
+        expect(component.deleteMessage()).toContain('та же команда');
+        component.deleteItem();
+        const command = api.delete.calls.first().args;
+        expect(command.slice(0, 6)).toEqual([deckId, detail.memberKey, '1', revisionId, detail.itemRevisionId, 99_999]);
+        expect(api.delete.calls.mostRecent().args).toEqual(command);
+        expect(navigate).toHaveBeenCalledWith(['/decks', deckId, 'materials']);
+        fixture.destroy();
+    });
+
+    it('blocks repeated deletion after a stale snapshot until it is refreshed', () => {
+        const { component } = openMaterial();
+        api.delete.and.returnValue(throwError(() => new HttpErrorResponse({ status: 412 })));
+        component.deleteItem(); component.deleteItem(); fixture.detectChanges();
+        expect(api.delete).toHaveBeenCalledTimes(1);
+        expect(component.selectedOrdinal()).toBeNull();
+        expect(component.positionError()).toBeTrue();
+        expect(fixture.nativeElement.querySelector('app-hold-to-delete-button button').disabled).toBeTrue();
+        fixture.destroy();
+    });
+
+    it('never trusts a route position when the server position is unavailable', () => {
+        const { detail, component } = openMaterial();
+        api.read.and.returnValue(of({ ...detail, ordinal: null }));
+        component.load(); component.deleteItem();
+        expect(component.positionError()).toBeTrue();
+        expect(component.selectedOrdinal()).toBeNull();
+        expect(api.list).not.toHaveBeenCalled();
+        expect(api.delete).not.toHaveBeenCalled();
+        fixture.destroy();
     });
 
     it('prefetches the next page while preserving the visible first page', () => {

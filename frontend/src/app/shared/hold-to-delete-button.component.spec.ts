@@ -40,6 +40,16 @@ describe('HoldToDeleteButtonComponent', () => {
         expect(component.armed()).toBeFalse(); fixture.destroy();
     });
 
+    it('keeps its geometry unchanged when the longer countdown label appears', () => {
+        const { fixture, button } = setup();
+        const before = button.getBoundingClientRect().toJSON();
+        button.click(); fixture.detectChanges();
+        expect(button.textContent).toContain('Удерживайте 3 с');
+        expect(button.getBoundingClientRect().toJSON()).toEqual(before);
+        expect(fixture.nativeElement.querySelector('.hold-hint')).toBeNull();
+        fixture.destroy();
+    });
+
     it('cancels an early pointer release and supports Escape', fakeAsync(() => {
         const { fixture, component, button } = setup();
         let confirmations = 0;

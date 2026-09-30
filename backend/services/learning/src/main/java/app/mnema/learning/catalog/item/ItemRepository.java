@@ -1,5 +1,6 @@
 package app.mnema.learning.catalog.item;
 
+import app.mnema.learning.catalog.content.pages.CountedPageTypes.Profile;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -12,6 +13,7 @@ import java.util.UUID;
 
 @Repository
 class ItemRepository {
+    private static final Profile MEMBERS = Profile.members(ItemService.MAX_MEMBERS);
     private final JdbcClient jdbc;
 
     ItemRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
@@ -78,6 +80,47 @@ class ItemRepository {
                  WHERE d.owner_id=:actor AND d.deleted_at IS NULL AND r.deck_id=:deck AND r.member_key=:member AND r.revision_id=:revision
                 """).param("actor", actor).param("deck", deck).param("member", member).param("revision", revision)
                 .query(ITEM).optional();
+    }
+
+    /** One rooted membership-page traversal; never follows descriptors/content or historical roots. */
+    Optional<Integer> currentOrdinal(DeckHead deck, ItemRecord item) {
+        return jdbc.sql("""
+                WITH RECURSIVE pages(object_id,tree_height,base,expected_count) AS (
+                    SELECT CAST(:root AS uuid),(root.payload->>'treeHeight')::integer,0::bigint,CAST(:count AS bigint)
+                      FROM app_learning.storage_object root
+                     WHERE root.reuse_scope_id=:scope AND root.object_id=:root AND root.sealed
+                       AND root.kind='page' AND root.encoding_version=1
+                       AND root.payload->>'role'='members' AND root.payload->>'codec'='1'
+                       AND root.dag_rank=:leafRank+(root.payload->>'treeHeight')::integer
+                    UNION ALL
+                    SELECT child.object_id,parent.tree_height-1,parent.base+link.prior_count,link.child_count
+                      FROM pages parent
+                      JOIN app_learning.storage_object page ON page.reuse_scope_id=:scope AND page.object_id=parent.object_id
+                      JOIN LATERAL (
+                          SELECT edge.child_id,edge.logical_key,
+                                 (page.payload->'counts'->edge.ordinal)::bigint AS child_count,
+                                 COALESCE(sum((page.payload->'counts'->edge.ordinal)::bigint) OVER
+                                   (ORDER BY edge.ordinal ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0)::bigint AS prior_count,
+                                 sum((page.payload->'counts'->edge.ordinal)::bigint) OVER () AS total_count
+                            FROM app_learning.storage_edge edge
+                           WHERE edge.reuse_scope_id=:scope AND edge.parent_id=parent.object_id
+                      ) link ON link.logical_key IS NULL AND link.child_count>0 AND link.total_count=parent.expected_count
+                      JOIN app_learning.storage_object child ON child.reuse_scope_id=:scope AND child.object_id=link.child_id
+                       AND child.sealed AND child.kind='page' AND child.encoding_version=1
+                       AND child.payload->>'role'='members' AND child.payload->>'codec'='1'
+                       AND (child.payload->>'treeHeight')::integer=parent.tree_height-1
+                       AND child.dag_rank=:leafRank+parent.tree_height-1
+                     WHERE parent.tree_height>0 AND parent.tree_height<=:maxHeight
+                       AND jsonb_array_length(page.payload->'counts')=page.edge_count
+                )
+                SELECT (page.base+edge.ordinal)::integer FROM pages page
+                  JOIN app_learning.storage_edge edge ON edge.reuse_scope_id=:scope AND edge.parent_id=page.object_id
+                 WHERE page.tree_height=0 AND edge.logical_key=:member AND edge.child_id=:descriptor
+                   AND page.base+edge.ordinal<:count
+                """).param("root", deck.membersRootId()).param("scope", deck.scopeId())
+                .param("count", deck.memberCount()).param("member", item.memberKey()).param("descriptor", item.descriptorRootId())
+                .param("leafRank", MEMBERS.leafRank()).param("maxHeight", MEMBERS.maximumHeight())
+                .query(Integer.class).optional();
     }
 
     List<ItemRecord> heads(UUID actor, UUID deck, List<UUID> members) {

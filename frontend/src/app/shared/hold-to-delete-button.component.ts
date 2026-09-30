@@ -13,9 +13,10 @@ const HOLD_MS = 3_000;
         (pointercancel)="stopHold()" (pointerleave)="stopHold()" (keydown)="onKeyDown($event)"
         (keyup)="onKeyUp($event)" (blur)="cancel()">
         <span class="hold-wave" aria-hidden="true"></span>
+        <span class="label-reserve" aria-hidden="true">{{ label() }}</span>
+        <span class="label-reserve" aria-hidden="true">Удерживайте 3 с</span>
         <span class="hold-label">{{ armed() ? 'Удерживайте ' + remaining() + ' с' : label() }}</span>
       </button>
-      @if (armed()) { <span class="hold-hint" role="status">Удерживайте кнопку или клавишу Enter/Пробел. Esc отменяет.</span> }
     `,
     styleUrl: './hold-to-delete-button.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -53,7 +54,7 @@ export class HoldToDeleteButtonComponent {
 
     onPointerDown(event: PointerEvent): void {
         if (!this.armed()) { this.suppressTrailingClick = false; return; }
-        if (!this.armed() || this.disabled() || event.button !== 0) return;
+        if (this.disabled() || event.button !== 0) return;
         event.preventDefault();
         const button = event.currentTarget as HTMLButtonElement;
         const rect = button.getBoundingClientRect();

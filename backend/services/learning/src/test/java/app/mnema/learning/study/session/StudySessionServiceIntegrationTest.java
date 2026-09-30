@@ -6,6 +6,8 @@ import app.mnema.learning.catalog.exercise.ExerciseCommand;
 import app.mnema.learning.catalog.exercise.ExerciseService;
 import app.mnema.learning.catalog.item.ItemPublicationCommand;
 import app.mnema.learning.catalog.item.ItemService;
+import app.mnema.learning.study.attempt.AttemptCommand;
+import app.mnema.learning.study.attempt.AttemptService;
 import app.mnema.learning.platform.api.ResourceNotFoundException;
 import app.mnema.learning.support.PostgresIntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -36,6 +38,74 @@ class StudySessionServiceIntegrationTest extends PostgresIntegrationTest {
     @Autowired private ExerciseService exercises;
     @Autowired private StudySessionRepository sessions;
     @Autowired private JdbcClient jdbc;
+    @Autowired private AttemptService attempts;
+
+    @Test
+    void materialDeletionExcludesNewIssuanceButKeepsOtherMaterialsAndIssuedSnapshots() {
+        Fixture removed = materialWithExercise();
+        Fixture retained = addMaterialWithExercise(removed.actor(), removed.deck());
+        ObjectNode dependent = exerciseBody(retained, "create", null, null, null);
+        dependent.withObject("exercise").put("type", "SINGLE_CHOICE").set("evaluatorPolicy",
+                JSON.createObjectNode().put("id", "deterministic-choice").put("version", "1"));
+        var bindings = dependent.withObject("exercise").withArray("bindings");
+        ObjectNode correct = bindings.get(0).deepCopy();
+        correct.put("bindingId", UUID.randomUUID().toString()).put("role", "OPTION").put("ordinal", 1);
+        bindings.add(correct);
+        ObjectNode distractor = correct.deepCopy();
+        distractor.put("bindingId", UUID.randomUUID().toString()).put("ordinal", 2)
+                .put("memberKey", removed.member().toString()).put("itemRevisionId", removed.itemRevision().toString());
+        distractor.withArray("nodeIds").set(0, JSON.getNodeFactory().textNode(removed.node().toString()));
+        bindings.add(distractor);
+        exercises.publish(removed.actor(), removed.deck(), null,
+                Long.parseLong(decks.read(removed.actor(), removed.deck()).path("rowVersion").asText()),
+                ExerciseCommand.readCreate(bytes(dependent)));
+        var started = service.start(removed.actor(), removed.deck(), "UTC", scheduled(UUID.randomUUID(), 20));
+        UUID oldSession = UUID.fromString(started.body().path("sessionId").asText());
+        JsonNode old = service.read(removed.actor(), removed.deck(), oldSession);
+        assertThat(old.path("presentations")).hasSize(3);
+        JsonNode issued = null;
+        for (JsonNode presentation : old.path("presentations")) {
+            if (presentation.path("exerciseRevisionId").asText().equals(removed.exerciseRevision().toString())) {
+                issued = presentation;
+            }
+        }
+        assertThat(issued).isNotNull();
+        JsonNode deck = decks.read(removed.actor(), removed.deck());
+        ObjectNode delete = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())
+                .put("expectedDeckRevisionId", deck.path("revisionId").asText());
+        delete.putArray("changes").addObject().put("operation", "delete")
+                .put("memberKey", removed.member().toString()).put("expectedItemRevisionId", removed.itemRevision().toString())
+                .put("expectedOrdinal", 0);
+        items.publish(removed.actor(), removed.deck(), Long.parseLong(deck.path("rowVersion").asText()),
+                ItemPublicationCommand.readBulk(bytes(delete)));
+        assertThat(service.presentations(removed.actor(), removed.deck(), oldSession).path("presentations"))
+                .isEqualTo(old.path("presentations"));
+        for (StudySessionCommand command : new StudySessionCommand[]{scheduled(UUID.randomUUID(), 20), practice(UUID.randomUUID(), true)}) {
+            var fresh = service.start(removed.actor(), removed.deck(), "UTC", command);
+            UUID freshId = UUID.fromString(fresh.body().path("sessionId").asText());
+            JsonNode presentations = service.read(removed.actor(), removed.deck(), freshId).path("presentations");
+            assertThat(presentations).hasSize(1);
+            assertThat(presentations.get(0).path("exerciseRevisionId").asText()).isEqualTo(retained.exerciseRevision().toString());
+        }
+        ObjectNode answer = JSON.createObjectNode().put("attemptId", UUID.randomUUID().toString())
+                .put("presentationId", issued.path("presentationId").asText()).put("nonce", issued.path("nonce").asText())
+                .putNull("confidence").put("durationMs", 100);
+        answer.putArray("hintsUsed"); answer.putObject("response").put("kind", "TEXT").put("text", "memory");
+        assertThat(attempts.submit(removed.actor(), removed.deck(), oldSession, AttemptCommand.read(bytes(answer)))
+                .outcome().path("feedback").path("result").asText()).isEqualTo("CORRECT");
+        assertThat(items.read(removed.actor(), removed.deck(), removed.member(), removed.itemRevision()).path("document").isObject())
+                .isTrue();
+        assertThat(exercises.read(removed.actor(), removed.deck(), removed.exercise(), null).path("exerciseId").asText())
+                .isEqualTo(removed.exercise().toString());
+        jdbc.sql("UPDATE app_learning.study_session SET status='COMPLETE',completed_at=statement_timestamp() "
+                + "WHERE session_id=:session").param("session", oldSession).update();
+        var replayed = service.start(removed.actor(), removed.deck(), "UTC", replay(UUID.randomUUID(), oldSession));
+        JsonNode replayPresentations = replayed.body().path("presentations");
+        assertThat(replayPresentations).hasSize(3);
+        Set<String> revisions = new HashSet<>();
+        replayPresentations.forEach(presentation -> revisions.add(presentation.path("exerciseRevisionId").asText()));
+        assertThat(revisions).contains(removed.exerciseRevision().toString(), retained.exerciseRevision().toString());
+    }
 
     @Test
     void scheduledPreparationPinsPresentationAndExactRetryResumesIt() {

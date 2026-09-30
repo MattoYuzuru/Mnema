@@ -17,10 +17,13 @@ public final class CountedPageTypes {
             if (role == null || !role.matches("[a-z][a-z0-9_]{0,31}") || leafRank < 1 || leafRank > 32 || maxEntries < 1) {
                 throw new IllegalArgumentException("Invalid counted page profile");
             }
-            long minimum = 32;
-            int height = 0;
-            while (minimum <= maxEntries) { height++; minimum *= 16; }
-            if (leafRank + height > 32) throw new IllegalArgumentException("Counted page profile exceeds DAG rank");
+            if (leafRank + maximumHeight(maxEntries) > 32) throw new IllegalArgumentException("Counted page profile exceeds DAG rank");
+        }
+        public int maximumHeight() { return maximumHeight(maxEntries); }
+        private static int maximumHeight(int entries) {
+            long minimum = 32; int height = 0;
+            while (minimum <= entries) { height++; minimum *= 16; }
+            return height;
         }
         public static Profile nativeNodes() { return new Profile("nodes", 4, 10_000, false, true); }
         public static Profile members(int maximum) { return new Profile("members", 10, maximum, true, true); }

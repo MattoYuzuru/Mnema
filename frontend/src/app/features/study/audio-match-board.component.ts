@@ -1,10 +1,40 @@
 import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, effect, inject, input, output, signal, viewChild } from '@angular/core';
+import { seededRandom } from '../../shared/seeded-random';
 import { SignedMediaSource } from '../../content/rendering/media-playback.api';
 import { StudyPresentation, StudyPrompt } from './study.models';
 
 type MatchPrompt = Extract<StudyPrompt, { kind: 'AUDIO_MATCH' }>;
 export interface MatchPair { readonly cueId: string; readonly optionId: string; }
-const REST_BARS = [.3, .6, .85, .5, 1, .65, .9, .55, .3];
+const EQUALIZER = { bars: 9, fftSize: 1024, sampleMs: 50, smoothingMs: 90,
+    frequencySmoothing: .55, minDecibels: -85, maxDecibels: -15 } as const;
+// Logarithmic speech bands: linear Nyquist sampling misses almost all voice detail.
+const SPEECH_BANDS_HZ = [80, 160, 300, 550, 950, 1600, 2600, 4000, 6000, 9000] as const;
+
+export function restingBars(seed: string): readonly number[] {
+    const random = seededRandom(seed);
+    return Array.from({ length: EQUALIZER.bars }, () => .25 + random() * .7);
+}
+
+export function speechLevels(frequencies: Uint8Array, sampleRate: number): readonly number[] {
+    const binHz = sampleRate / (frequencies.length * 2);
+    return SPEECH_BANDS_HZ.slice(0, -1).map((lower, index) => {
+        const start = Math.min(frequencies.length - 1, Math.max(1, Math.floor(lower / binHz)));
+        const end = Math.min(frequencies.length, Math.max(start + 1, Math.ceil(SPEECH_BANDS_HZ[index + 1] / binHz)));
+        let peak = 0; let sum = 0;
+        for (let bin = start; bin < end; bin++) {
+            peak = Math.max(peak, frequencies[bin]); sum += frequencies[bin];
+        }
+        return (.7 * peak + .3 * sum / (end - start)) / 255;
+    });
+}
+
+export function smoothBars(previous: readonly number[], levels: readonly number[], baseline: readonly number[], elapsedMs: number): readonly number[] {
+    const amount = 1 - Math.exp(-Math.min(elapsedMs, EQUALIZER.sampleMs * 2) / EQUALIZER.smoothingMs);
+    return previous.map((value, index) => {
+        const target = .12 + baseline[index] * .12 + levels[index] * .76;
+        return value + (target - value) * amount;
+    });
+}
 
 /** One media element guarantees that selecting a new cue stops the preceding recording. */
 @Component({
@@ -14,6 +44,7 @@ const REST_BARS = [.3, .6, .85, .5, 1, .65, .9, .55, .3];
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class AudioMatchBoardComponent {
+    readonly seed = input.required<string>();
     readonly prompt = input.required<MatchPrompt>();
     readonly options = input.required<StudyPresentation['options']>();
     readonly sources = input.required<Readonly<Record<string, SignedMediaSource>>>();
@@ -24,8 +55,9 @@ export class AudioMatchBoardComponent {
     readonly sourceFailed = output<string>();
     readonly selectedCue = signal<string | null>(null);
     readonly playing = signal(false);
-    readonly restBars = REST_BARS;
-    readonly bars = signal<readonly number[]>(REST_BARS);
+    readonly restBars = computed(() => Object.fromEntries(this.prompt().cues.map(cue =>
+        [cue.cueId, restingBars(this.seed() + ':' + cue.cueId)])));
+    readonly bars = signal<readonly number[]>([]);
     readonly matchedOptions = computed(() => new Set(Object.values(this.matches())));
     readonly audio = viewChild<ElementRef<HTMLAudioElement>>('audio');
     private readonly destroyRef = inject(DestroyRef);
@@ -67,6 +99,7 @@ export class AudioMatchBoardComponent {
         if (!cue || !source || !media) return;
         this.stop();
         this.selectedCue.set(cueId);
+        this.bars.set(this.restBars()[cueId]);
         if (media.src !== source.url) media.src = source.url;
         media.currentTime = 0;
         // Analysis is optional; decoding/playback stays usable if Web Audio is unavailable.
@@ -74,7 +107,10 @@ export class AudioMatchBoardComponent {
             if (!this.context) {
                 this.context = new AudioContext();
                 this.analyser = this.context.createAnalyser();
-                this.analyser.fftSize = 64;
+                this.analyser.fftSize = EQUALIZER.fftSize;
+                this.analyser.minDecibels = EQUALIZER.minDecibels;
+                this.analyser.maxDecibels = EQUALIZER.maxDecibels;
+                this.analyser.smoothingTimeConstant = EQUALIZER.frequencySmoothing;
                 this.frequencies = new Uint8Array(this.analyser.frequencyBinCount);
                 this.context.createMediaElementSource(media).connect(this.analyser);
                 this.analyser.connect(this.context.destination);
@@ -115,17 +151,22 @@ export class AudioMatchBoardComponent {
     private cancelFrame(): void {
         if (this.frame !== null) cancelAnimationFrame(this.frame);
         this.frame = null;
-        this.bars.set(REST_BARS);
+        this.bars.set(this.selectedCue() ? this.restBars()[this.selectedCue()!] : []);
     }
 
     private animate(): void {
         if (this.frame !== null || !this.analyser || !this.frequencies
             || window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-        const draw = () => {
+        let lastSample: number | null = null;
+        const draw = (time: number) => {
             if (!this.playing() || !this.analyser || !this.frequencies) { this.cancelFrame(); return; }
-            this.analyser.getByteFrequencyData(this.frequencies);
-            const data = this.frequencies;
-            this.bars.set(REST_BARS.map((_, index) => .18 + data[Math.floor(index * data.length / REST_BARS.length)] / 255 * .82));
+            const elapsed = lastSample === null ? EQUALIZER.sampleMs : time - lastSample;
+            if (elapsed >= EQUALIZER.sampleMs) {
+                this.analyser.getByteFrequencyData(this.frequencies);
+                const baseline = this.restBars()[this.selectedCue()!];
+                this.bars.set(smoothBars(this.bars(), speechLevels(this.frequencies, this.context!.sampleRate), baseline, elapsed));
+                lastSample = time;
+            }
             this.frame = requestAnimationFrame(draw);
         };
         this.frame = requestAnimationFrame(draw);

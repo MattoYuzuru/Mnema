@@ -18,6 +18,18 @@ import java.util.UUID;
 @Repository
 class StudySessionRepository {
     private static final JsonMapper JSON = JsonMapper.builder().build();
+    // Current membership gates new issuance; immutable bindings and issued presentations remain valid.
+    private static final String CURRENT_MATERIALS = """
+            AND NOT EXISTS (
+                SELECT 1 FROM app_learning.exercise_content_binding binding
+                 WHERE binding.deck_id=selected.deck_id AND binding.exercise_id=selected.exercise_id
+                   AND binding.exercise_revision_id=selected.revision_id
+                   AND NOT EXISTS (
+                       SELECT 1 FROM app_learning.deck_head_item item
+                        WHERE item.deck_id=binding.deck_id AND item.member_key=binding.member_key
+                   )
+            )
+            """;
     private final JdbcClient jdbc;
 
     StudySessionRepository(JdbcClient jdbc) { this.jdbc = jdbc; }
@@ -265,6 +277,7 @@ class StudySessionRepository {
                               ON selected.deck_id=:deck AND selected.exercise_id=choice.exercise_id
                              AND selected.revision_id=choice.exercise_revision_id
                            WHERE choice.generation_id=:generation AND choice.objective_id=state.objective_id
+                             %s
                              AND (selected.exercise_type NOT IN ('LISTEN_CHOICE','AUDIO_TEXT_MATCH','LISTEN_TYPE')
                                   OR app_learning.exercise_audio_ready(:actor,:deck,choice.exercise_id,
                                       choice.exercise_revision_id))
@@ -289,6 +302,7 @@ class StudySessionRepository {
                               ON selected.deck_id=:deck AND selected.exercise_id=choice.exercise_id
                              AND selected.revision_id=choice.exercise_revision_id
                            WHERE choice.generation_id=:generation AND choice.objective_id=state.objective_id
+                             %s
                              AND (selected.exercise_type NOT IN ('LISTEN_CHOICE','AUDIO_TEXT_MATCH','LISTEN_TYPE')
                                   OR app_learning.exercise_audio_ready(:actor,:deck,choice.exercise_id,
                                       choice.exercise_revision_id))
@@ -311,9 +325,10 @@ class StudySessionRepository {
                     JOIN app_learning.exercise_revision selected ON selected.deck_id=:deck
                      AND selected.exercise_id=candidate.exercise_id
                      AND selected.revision_id=candidate.exercise_revision_id
-                    WHERE selected.exercise_type NOT IN ('LISTEN_CHOICE','AUDIO_TEXT_MATCH','LISTEN_TYPE')
+                    WHERE (selected.exercise_type NOT IN ('LISTEN_CHOICE','AUDIO_TEXT_MATCH','LISTEN_TYPE')
                        OR app_learning.exercise_audio_ready(:actor,:deck,candidate.exercise_id,
-                           candidate.exercise_revision_id)
+                           candidate.exercise_revision_id))
+                       %s
                 ), chosen AS (
                     SELECT DISTINCT ON (candidate.objective_id)
                            candidate.candidate_ordinal,candidate.exercise_id,candidate.exercise_revision_id,
@@ -347,7 +362,8 @@ class StudySessionRepository {
                        objective_revision_id,member_key,prompt_spec,evaluator_policy,answer_contract,introduced
                   FROM eligible
                  WHERE (:scheduled=FALSE OR introduced OR novelty_rank<=:newRemaining)
-                """ + eligibility + " ORDER BY " + order + " LIMIT :limit")
+                """.formatted(CURRENT_MATERIALS, CURRENT_MATERIALS, CURRENT_MATERIALS)
+                + eligibility + " ORDER BY " + order + " LIMIT :limit")
                 .param("generation", session.generationId()).param("deck", session.deckId())
                 .param("actor", session.accountId()).param("session", session.sessionId())
                 .param("asOf", Timestamp.from(asOf)).param("start", start).param("limit", limit)

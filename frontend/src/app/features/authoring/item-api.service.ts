@@ -75,7 +75,7 @@ export class ItemApiService {
             document: readNativeDocument(document)
         };
         if (ordinal !== undefined) body['ordinal'] = requireOrdinal(ordinal, true);
-        return this.write('POST', deckId, null, deckVersion, body, 201);
+        return this.write('POST', deckId, '', deckVersion, body, 201);
     }
 
     save(deckId: string, memberKey: string, deckVersion: string, deckRevisionId: string,
@@ -87,14 +87,32 @@ export class ItemApiService {
             document: readNativeDocument(document)
         };
         if (edits.length > 0) body['edits'] = edits;
-        return this.write('PUT', deckId, memberKey, deckVersion, body, 200);
+        return this.write('PUT', deckId, `/${encodeURIComponent(requireEntity(memberKey))}`, deckVersion, body, 200);
     }
 
-    private write(method: 'POST' | 'PUT', deckId: string, memberKey: string | null, deckVersion: string,
+    /** Delete is a versioned publication; retry an uncertain result with the same complete command. */
+    delete(deckId: string, memberKey: string, deckVersion: string, deckRevisionId: string,
+           itemRevisionId: string, expectedOrdinal: number, commandId: string): Observable<ItemWriteResult> {
+        const member = requireEntity(memberKey);
+        const body = {
+            commandId: requireCommand(commandId), expectedDeckRevisionId: requireEntity(deckRevisionId),
+            changes: [{ operation: 'delete', memberKey: member, expectedItemRevisionId: requireEntity(itemRevisionId),
+                expectedOrdinal: requireOrdinal(expectedOrdinal, false) }]
+        };
+        return this.write('POST', deckId, '/publications', deckVersion, body, 200).pipe(map(result => {
+            const changes = result.acknowledgement.changes;
+            if (changes.length !== 1 || changes[0].operation !== 'delete' || changes[0].memberKey !== member
+                || changes[0].itemRevisionId !== null || changes[0].ordinal !== null) {
+                throw new AuthoringProtocolError('Invalid item deletion acknowledgement.');
+            }
+            return result;
+        }));
+    }
+
+    private write(method: 'POST' | 'PUT', deckId: string, suffix: string, deckVersion: string,
                   body: Record<string, unknown>, status: number): Observable<ItemWriteResult> {
         return defer(() => {
             const deck = requireEntity(deckId);
-            const suffix = memberKey === null ? '' : `/${encodeURIComponent(requireEntity(memberKey))}`;
             return this.http.request<unknown>(method, `${this.baseUrl}/decks/${encodeURIComponent(deck)}/items${suffix}`, {
                 body, headers: new HttpHeaders({ 'If-Match': expectedEtag(deckVersion) }), observe: 'response'
             });
@@ -121,8 +139,8 @@ function parseItemDetail(value: unknown, current: boolean): ItemDetail {
         'memberKey', 'itemRevisionId', 'itemVersion', 'ordinal', 'formatVersion', 'createdAt', 'updatedAt',
         'deckId', 'deckRevisionId', 'deckVersion', 'document'
     ]);
-    if (current && object['ordinal'] !== null) {
-        throw new AuthoringProtocolError('Direct current-item reads must not scan canonical order.');
+    if (current && object['ordinal'] === null) {
+        throw new AuthoringProtocolError('Current-item reads require a snapshot-bound ordinal.');
     }
     const ordinal = object['ordinal'] === null ? null : requireOrdinal(object['ordinal'], false);
     const summary = parseRecordSummary(object);

@@ -50,7 +50,7 @@ import java.util.UUID;
 
 @Service
 public class ItemService {
-    private static final int MAX_MEMBERS = 100_000;
+    static final int MAX_MEMBERS = 100_000;
     private static final Duration PREPARATION_LEASE = Duration.ofMinutes(1);
 
     private final ItemRepository repository;
@@ -125,8 +125,12 @@ public class ItemService {
                 : repository.revision(actor, deckId, memberKey, revisionId)).orElseThrow(ResourceNotFoundException::new);
         UUID selectedDeckRevision = revisionId == null ? deck.revisionId() : item.publishedDeckRevisionId();
         long selectedDeckVersion = revisionId == null ? deck.version() : item.publishedDeckVersion();
-        return item.detail(selectedDeckRevision, selectedDeckVersion,
+        Integer ordinal = revisionId == null ? repository.currentOrdinal(deck, item).orElseThrow(VersionConflictException::new)
+                : item.ordinal();
+        ObjectNode result = item.detail(selectedDeckRevision, selectedDeckVersion,
                 decode(item.scopeId(), item.contentRootId()).document());
+        result.put("ordinal", ordinal);
+        return result;
     }
 
     public WriteResult publish(UUID actor, UUID deckId, long expectedDeckVersion, ItemPublicationCommand command) {
