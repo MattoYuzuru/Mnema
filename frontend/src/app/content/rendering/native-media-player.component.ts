@@ -15,7 +15,7 @@ export class NativeMediaPlayerComponent {
     readonly speedControlId = `media-speed-${++nextMediaSpeedId}`;
     readonly speedOptions: readonly MnemaSelectOption[] = [
         { value: '0.75', label: '0,75×' }, { value: '1', label: '1×' },
-        { value: '1.25', label: '1,25×' }, { value: '1.5', label: '1,5×' }
+        { value: '1.25', label: '1,25×' }, { value: '1.5', label: '1,5×' }, { value: '2', label: '2×' }
     ];
     readonly kind = input.required<'audio' | 'video'>();
     readonly title = input.required<string>();
@@ -29,7 +29,7 @@ export class NativeMediaPlayerComponent {
     readonly duration = signal(0);
     readonly error = signal(false);
     readonly speed = signal(1);
-    readonly seekMax = computed(() => Math.max(0, Math.floor(this.duration())));
+    readonly seekMax = computed(() => Math.max(0, this.duration()));
     readonly elapsedText = computed(() => timeLabel(this.position()));
     readonly durationText = computed(() => timeLabel(this.duration()));
     private readonly audio = viewChild<ElementRef<HTMLAudioElement>>('audio');
@@ -60,7 +60,7 @@ export class NativeMediaPlayerComponent {
     changeSpeed(value: string): void {
         const media = this.media();
         const selected = Number(value);
-        if (!media || ![0.75, 1, 1.25, 1.5].includes(selected)) return;
+        if (!media || ![0.75, 1, 1.25, 1.5, 2].includes(selected)) return;
         media.playbackRate = selected;
         this.speed.set(selected);
     }

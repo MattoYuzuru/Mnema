@@ -1,6 +1,7 @@
 package app.mnema.learning.study.attempt;
 
 import app.mnema.learning.platform.api.ResourceNotFoundException;
+import app.mnema.learning.platform.api.InvalidRequestException;
 import app.mnema.learning.platform.id.UuidPolicy;
 import app.mnema.learning.platform.idempotency.IdempotencyConflictException;
 import app.mnema.learning.platform.json.CanonicalJsonHasher;
@@ -8,15 +9,20 @@ import app.mnema.learning.media.MediaCatalog;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.List;
+import java.util.ArrayList;
 
 @Service
 public class AttemptService {
+    private static final Logger LOG = LoggerFactory.getLogger(AttemptService.class);
     private static final Duration RAW_RETENTION = Duration.ofDays(30);
     private static final Duration COMPACT_RECEIPT_RETENTION = Duration.ofHours(24);
     private final AttemptRepository repository;
@@ -28,6 +34,42 @@ public class AttemptService {
         this.repository = repository;
         this.hasher = hasher;
         this.mediaCatalog = mediaCatalog;
+    }
+
+    @Transactional(timeout = 10)
+    public boolean checkPair(UUID actor, UUID deck, UUID session, PairCheckCommand command) {
+        UuidPolicy.requireEntityId(actor, "actor");
+        UuidPolicy.requireEntityId(deck, "deckId");
+        UuidPolicy.requireEntityId(session, "sessionId");
+        if (!repository.ownsDeck(actor, deck)) throw new ResourceNotFoundException();
+        repository.lockSession(actor, deck, session);
+        AttemptRepository.Presentation presentation = repository.presentationForUpdate(actor, deck, session,
+                command.presentationId()).orElseThrow(ResourceNotFoundException::new);
+        if (!presentation.nonce().equals(command.nonce())) throw new ResourceNotFoundException();
+        var previous = repository.pairInteraction(actor, session, command);
+        if (previous.isPresent()) return previous.orElseThrow();
+        if (!presentation.expiresAt().isAfter(repository.now())) throw new PresentationExpiredException();
+        if (repository.terminal(actor, session, command.presentationId()).isPresent()) throw new IdempotencyConflictException();
+        if (!presentation.exerciseType().equals("AUDIO_TEXT_MATCH")
+                || presentation.answerContract().path("schemaVersion").intValue() != 2) {
+            throw new InvalidRequestException();
+        }
+        if (!mediaCatalog.exerciseReady(actor, deck, presentation.exerciseId(), presentation.exerciseRevisionId())) {
+            throw new InvalidRequestException();
+        }
+        UUID expected = null;
+        boolean issuedOption = false;
+        for (JsonNode pair : presentation.answerContract().path("pairs")) {
+            if (pair.path("cueId").asText().equals(command.cueId().toString())) {
+                expected = UUID.fromString(pair.path("optionId").textValue());
+            }
+            if (pair.path("optionId").asText().equals(command.optionId().toString())) issuedOption = true;
+        }
+        if (expected == null || !issuedOption) throw new InvalidRequestException();
+        boolean correct = expected.equals(command.optionId());
+        repository.insertPairInteraction(actor, session, command, correct,
+                presentation.expiresAt().plus(COMPACT_RECEIPT_RETENTION));
+        return correct;
     }
 
     @Transactional(timeout = 10)
@@ -59,6 +101,22 @@ public class AttemptService {
                 : AttemptEvaluation.evaluate(presentation.exerciseType(), presentation.evaluator(),
                         presentation.answerContract(), presentation.bindings(), command,
                         presentation.transcriptRevealed());
+        if (presentation.exerciseType().equals("AUDIO_TEXT_MATCH")
+                && evaluation.result() == AttemptEvaluation.Result.CORRECT
+                && repository.hasPairMistakes(actor, session, command.presentationId())) {
+            ObjectNode feedback = evaluation.feedback().deepCopy().put("result", "PARTIAL");
+            feedback.withArray("appliedRules").add("PAIR_RETRY");
+            List<String> reasons = new ArrayList<>(evaluation.reasonCodes());
+            reasons.add("PAIR_RETRY");
+            evaluation = new AttemptEvaluation(evaluation.status(), AttemptEvaluation.Result.PARTIAL,
+                    AttemptEvaluation.EvidenceClass.LOW, List.copyOf(reasons), feedback);
+        }
+        LOG.debug("Study answer evaluated attemptId={} presentationId={} exerciseRevisionId={} "
+                        + "evaluatorId={} evaluatorVersion={} appliedRules={} reasonCodes={} result={}",
+                command.attemptId(), command.presentationId(), presentation.exerciseRevisionId(),
+                presentation.evaluator().path("id").asText(), presentation.evaluator().path("version").asText(),
+                evaluation.feedback().path("appliedRules"), evaluation.reasonCodes(),
+                evaluation.feedback().path("result").asText());
         if (!presentation.mode().equals("SCHEDULED")) {
             ObjectNode outcome = feedbackOnly(command, presentation, evaluation);
             repository.insertReceipt(command, actor, deck, session, hash, presentation.mode(),

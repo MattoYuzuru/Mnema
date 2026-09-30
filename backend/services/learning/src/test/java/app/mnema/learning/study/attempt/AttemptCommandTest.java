@@ -36,6 +36,18 @@ class AttemptCommandTest {
     }
 
     @Test
+    void sharedMultipleChoiceAndPairCheckFixtureExecutesTheCanonicalCommands() throws Exception {
+        Path root = Path.of("").toAbsolutePath();
+        while (!Files.exists(root.resolve("contracts/study/choice-and-pairs.json"))) root = root.getParent();
+        JsonNode document = JSON.readTree(Files.readString(root.resolve("contracts/study/choice-and-pairs.json")));
+        AttemptCommand command = read(document.path("multipleSubmit"));
+        assertThat(((AttemptCommand.ChoiceResponse) command.response()).optionIds()).hasSize(2);
+        PairCheckCommand pair = PairCheckCommand.read(new ByteArrayInputStream(
+                document.path("pairCheck").toString().getBytes(StandardCharsets.UTF_8)));
+        assertThat(pair.presentationId()).isEqualTo(command.presentationId());
+    }
+
+    @Test
     void rejectsUnknownFieldsDuplicateHintsAndUnboundedDiagnostics() {
         ObjectNode authority = fixture.path("typedSubmit").deepCopy();
         authority.put("mode", "SCHEDULED");
@@ -46,6 +58,19 @@ class AttemptCommandTest {
         ObjectNode duration = fixture.path("typedSubmit").deepCopy();
         duration.put("durationMs", 3_600_001);
         assertThatThrownBy(() -> read(duration)).isInstanceOf(InvalidRequestException.class);
+    }
+
+    @Test
+    void choiceResponseRejectsEmptyDuplicateAndLegacyScalarSelections() {
+        ObjectNode root = fixture.path("choiceSubmit").deepCopy();
+        ObjectNode response = root.withObject("response");
+        response.withArray("optionIds").removeAll();
+        assertThatThrownBy(() -> read(root)).isInstanceOf(InvalidRequestException.class);
+        String id = java.util.UUID.randomUUID().toString();
+        response.withArray("optionIds").add(id).add(id);
+        assertThatThrownBy(() -> read(root)).isInstanceOf(InvalidRequestException.class);
+        response.remove("optionIds"); response.put("optionId", id);
+        assertThatThrownBy(() -> read(root)).isInstanceOf(InvalidRequestException.class);
     }
 
     private static AttemptCommand read(JsonNode value) {

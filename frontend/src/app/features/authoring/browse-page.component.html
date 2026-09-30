@@ -21,7 +21,7 @@
       @if (currentPage.items.length === 0) { <section class="notice"><h2>Здесь пока пусто</h2><p>Создайте первый материал или перенесите заметку из «На потом».</p></section> }
       <ol class="item-list">
         @for (entry of currentPage.items; track entry.memberKey) {
-          <li><a class="item-row" [routerLink]="['/decks', currentDeck.deckId, 'materials', entry.memberKey]" [queryParams]="{ ordinal: entry.ordinal }"><span class="folio">{{ entry.ordinal + 1 }}</span><strong>Материал {{ entry.ordinal + 1 }}</strong><time [attr.datetime]="entry.updatedAt">{{ entry.updatedAt | date:'dd.MM.y, HH:mm' }}</time></a></li>
+          <li><a class="item-row" [routerLink]="['/decks', currentDeck.deckId, 'materials', entry.memberKey]" [queryParams]="{ ordinal: entry.ordinal }"><span class="folio">{{ entry.ordinal + 1 }}</span><strong [title]="entry.title || 'Материал без текста'">{{ entry.title || 'Материал без текста' }}</strong><time [attr.datetime]="entry.updatedAt">{{ entry.updatedAt | date:'dd.MM.y, HH:mm' }}</time></a></li>
         }
       </ol>
       @if (currentPage.nextCursor) {

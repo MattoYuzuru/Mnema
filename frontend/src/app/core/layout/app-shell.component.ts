@@ -1,13 +1,16 @@
-import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+
+import { filter, map } from 'rxjs';
+import { DeckConstellationComponent } from '../../shared/deck-constellation.component';
 
 import { AuthService } from '../../auth.service';
 
 @Component({
     selector: 'app-shell',
     host: { '(pointerover)': 'setWaveOrigin($event)' },
-    imports: [RouterLink, RouterLinkActive, RouterOutlet],
+    imports: [RouterLink, RouterLinkActive, RouterOutlet, DeckConstellationComponent],
     templateUrl: './app-shell.component.html',
     styleUrl: './app-shell.component.css',
     changeDetection: ChangeDetectionStrategy.OnPush
@@ -17,6 +20,16 @@ export class AppShellComponent {
     readonly status = toSignal(this.auth.status$, { initialValue: this.auth.status() });
     readonly user = toSignal(this.auth.user$, { initialValue: this.auth.user() });
     private readonly router = inject(Router);
+
+    private readonly routeUrl = toSignal(this.router.events.pipe(
+        filter(event => event instanceof NavigationEnd), map(event => event.urlAfterRedirects)
+    ), { initialValue: this.router.url });
+    readonly constellationSeed = computed(() => {
+        const path = this.routeUrl().split('?')[0];
+        const deck = /^\/decks\/([0-9a-f-]{36})(?:\/|$)/i.exec(path);
+        if (deck) return deck[1].toLowerCase();
+        return path === '/profile' || path === '/decks/new' ? this.user()?.accountId ?? null : null;
+    });
 
     async logout(): Promise<void> {
         try {

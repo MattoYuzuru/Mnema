@@ -7,3 +7,14 @@ The Mnemosyne image comes from the checked-in [design master](../../../../design
 Brand colors and typography roles are set in [`tokens.css`](../../theme/tokens.css); asset files do not contain translatable UI text.
 
 The sunburst SVG is the shared header/favicon mark. `app-icon-512.png` is its 512 px paper-backed app icon; `../og-image.png` is a 1200×630 social preview built from the same portrait, type and palette. These static graphics encode the current ink/paper colors, so regenerate them when those token values change.
+
+## Provider placeholders (2026-09-30)
+
+Local, inert sign-in placeholders reuse vendor assets, without a remote SDK or request.
+Google's light square SVG is from the [official sign-in asset archive](https://developers.google.com/static/identity/images/signin-assets.zip),
+linked by its [branding guide](https://developers.google.com/identity/branding-guidelines).
+Yandex's small logo is from its [button design guide](https://yandex.ru/dev/id/doc/ru/codes/buttons-design)
+([original SVG](https://doc-binary.s3.yandex.net/src/dev/id/ru/files/small-logo.svg)).
+GitHub's mark is the [official asset](https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png);
+see the [brand guide](https://brand.github.com/foundations/logo). Vendor marks retain their original geometry/colors.
+All three are explicitly unavailable, and do not assert configured OAuth integrations.

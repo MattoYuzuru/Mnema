@@ -99,6 +99,24 @@ describe('ExerciseAuthoringPageComponent', () => {
         expect(router.navigate).toHaveBeenCalled();
     });
 
+    it('authors multiple correct options and collapses back to one radio selection', () => {
+        const { api } = configure();
+        api.create.and.returnValue(of({ acknowledgement: { commandId: id('30'), deckId: deck.deckId,
+            deckRevisionId: id('31'), deckVersion: '4', objectiveId: id('32'), objectiveKey: id('33'),
+            objectiveRevisionId: id('34'), exerciseId: id('35'), exerciseRevisionId: id('36'), enabled: true }, replayed: false }));
+        const component = TestBed.runInInjectionContext(() => new ExerciseAuthoringPageComponent());
+        component.setType('SINGLE_CHOICE'); component.setPromptNode(id('11')); component.setAnswerNode(id('13'));
+        component.toggleOption(id('15'), true); component.setMultipleAnswers(true);
+        component.toggleCorrectOption(id('15'), true); component.save();
+        const args = api.create.calls.mostRecent().args;
+        const contract = args[3]['answerContract'] as Record<string, unknown>;
+        expect(contract['schemaVersion']).toBe(3); expect(contract['selectionMode']).toBe('MULTIPLE');
+        expect(contract['correctOptionIds'] as string[]).toHaveSize(2);
+        expect(contract['accepted']).toEqual(['Memory', 'Attention']);
+        component.setMultipleAnswers(false); expect(component.correctNodeIds()).toEqual([id('13')]);
+        component.toggleOption(id('13'), false); expect(component.correctNodeIds()).toEqual([]);
+    });
+
     it('offers each text fragment once and saves a custom answer with synonyms', () => {
         const { api } = configure();
         api.create.and.returnValue(of({ acknowledgement: { commandId: id('30'), deckId: deck.deckId,

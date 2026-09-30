@@ -1,46 +1,44 @@
 import { Component, ChangeDetectionStrategy } from '@angular/core';
-import { TranslatePipe } from './shared/pipes/translate.pipe';
 
 @Component({
-    imports: [TranslatePipe],
     selector: 'app-privacy-page',
     template: `
-    <div class="legal-page">
-      <h1>{{ 'privacy.title' | translate }}</h1>
-      <p class="last-updated">{{ 'privacy.lastUpdated' | translate }}</p>
+    <div class="legal-page" lang="ru">
+      <h1>Политика конфиденциальности</h1>
+      <p class="last-updated">Последнее обновление: декабрь 2025</p>
 
       <section>
-        <h2>{{ 'privacy.infoCollect' | translate }}</h2>
-        <p>{{ 'privacy.infoCollectText' | translate }}</p>
+        <h2>Собираемая информация</h2>
+        <p>Когда вы используете Mnema, мы собираем информацию, которую вы предоставляете нам напрямую, включая ваш адрес электронной почты, имя пользователя и созданные вами колоды и контент карточек.</p>
       </section>
 
       <section>
-        <h2>{{ 'privacy.infoUse' | translate }}</h2>
-        <p>{{ 'privacy.infoUseText' | translate }}</p>
+        <h2>Как мы используем вашу информацию</h2>
+        <p>Мы используем собранную информацию для предоставления, поддержки и улучшения наших услуг, включая обработку ваших учебных сессий с карточками и отслеживание прогресса обучения.</p>
       </section>
 
       <section>
-        <h2>{{ 'privacy.infoSharing' | translate }}</h2>
-        <p>{{ 'privacy.infoSharingText' | translate }}</p>
+        <h2>Обмен информацией</h2>
+        <p>Мы не продаем и не передаем вашу личную информацию третьим лицам, за исключением случаев, необходимых для предоставления наших услуг или требуемых законом.</p>
       </section>
 
       <section>
-        <h2>{{ 'privacy.dataSecurity' | translate }}</h2>
-        <p>{{ 'privacy.dataSecurityText' | translate }}</p>
+        <h2>Безопасность данных</h2>
+        <p>Мы применяем соответствующие меры безопасности для защиты вашей личной информации от несанкционированного доступа, изменения или уничтожения.</p>
       </section>
 
       <section>
-        <h2>{{ 'privacy.yourRights' | translate }}</h2>
-        <p>{{ 'privacy.yourRightsText' | translate }}</p>
+        <h2>Ваши права</h2>
+        <p>Вы имеете право в любое время получать доступ, обновлять или удалять вашу личную информацию через настройки аккаунта.</p>
       </section>
 
       <section>
-        <h2>{{ 'privacy.contact' | translate }}</h2>
-        <p>{{ 'privacy.contactText' | translate }}</p>
+        <h2>Связаться с нами</h2>
+        <p>Если у вас есть вопросы об этой Политике конфиденциальности, пожалуйста, свяжитесь с нами через наш репозиторий на GitHub.</p>
       </section>
     </div>
   `,
-    changeDetection: ChangeDetectionStrategy.Eager,
+    changeDetection: ChangeDetectionStrategy.OnPush,
     styles: [`
       .legal-page {
         max-width: 56rem;

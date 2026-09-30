@@ -83,6 +83,28 @@ describe('ExerciseApiService', () => {
         expect((await result).replayed).toBeTrue();
     });
 
+    it('reads a multiple-choice contract and rejects duplicate correct option identifiers', async () => {
+        const contract = { schemaVersion: 3, selectionMode: 'MULTIPLE', correctOptionIds: [id('30'), id('31')],
+            accepted: ['memory', 'attention'] } as const;
+        const detail = { ...summary, type: 'SINGLE_CHOICE', deckId, deckRevisionId, deckVersion: '3',
+            objective: { ...objective, answerContract: contract }, prompt: { kind: 'CUSTOM_TEXT', text: 'Choose' },
+            evaluatorPolicy: { id: 'deterministic-choice', version: '1' }, bindings: [
+                { bindingId: id('29'), role: 'ASSESSED', memberKey, itemRevisionId: id('11'), ordinal: 0,
+                    nodeIds: [id('12')], display: { kind: 'NODE_TEXT' } },
+                { bindingId: id('30'), role: 'OPTION', memberKey, itemRevisionId: id('11'), ordinal: 24,
+                    nodeIds: [id('12')], display: { kind: 'NODE_TEXT' } },
+                { bindingId: id('31'), role: 'OPTION', memberKey, itemRevisionId: id('11'), ordinal: 25,
+                    nodeIds: [id('13')], display: { kind: 'NODE_TEXT' } }
+            ] };
+        const reading = firstValueFrom(api.read(deckId, exerciseId));
+        http.expectOne(`/api/decks/${deckId}/exercises/${exerciseId}`).flush(detail, { headers });
+        expect((await reading).objective.answerContract).toEqual(contract);
+        const invalid = firstValueFrom(api.read(deckId, exerciseId));
+        http.expectOne(`/api/decks/${deckId}/exercises/${exerciseId}`).flush({ ...detail,
+            objective: { ...detail.objective, answerContract: { ...contract, correctOptionIds: [id('30'), id('30')] } } }, { headers });
+        await expectAsync(invalid).toBeRejectedWithError(AuthoringProtocolError);
+    });
+
     it('rejects malformed replay acknowledgement headers', async () => {
         const result = firstValueFrom(api.update(deckId, exerciseId, '3', deckRevisionId, exerciseRevisionId,
             { operation: 'reuse', objectiveId, objectiveRevisionId }, { type: 'TYPED' }, commandId));

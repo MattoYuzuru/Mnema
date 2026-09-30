@@ -5,7 +5,7 @@
 .mnema-player-controls { display: flex; flex-wrap: wrap; align-items: center; gap: .65rem; padding: .8rem; }
 .mnema-player-action { display: inline-grid; place-items: center; min-inline-size: var(--mn-touch-min, 2.75rem); min-block-size: var(--mn-touch-min, 2.75rem); border: 1px solid currentColor; border-radius: var(--mn-radius, 2px); background: transparent; color: inherit; font: 600 1.1rem var(--mn-font-body, system-ui, sans-serif); cursor: pointer; }
 .mnema-player-action:hover { background: var(--mn-soft); }
-.mnema-player-controls input[type='range'] { flex: 1 1 9rem; min-inline-size: 5rem; min-block-size: 2.75rem; accent-color: var(--mn-ink); cursor: pointer; }
+.mnema-player-controls input[type='range'] { flex: 1 1 9rem; min-inline-size: 5rem; min-block-size: 2.75rem; padding: 0; border: 0; background: transparent; accent-color: var(--mn-ink); cursor: pointer; }
 .mnema-player-time { font: 600 .83rem var(--mn-font-mono, ui-monospace, monospace); font-variant-numeric: tabular-nums; }
 .mnema-player-speed { display: inline-flex; align-items: center; gap: .4rem; font: 600 .8rem var(--mn-font-body, system-ui, sans-serif); }
 .mnema-player-speed app-mnema-select { color: inherit; }

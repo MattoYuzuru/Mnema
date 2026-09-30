@@ -1,6 +1,7 @@
 package app.mnema.learning.catalog.item;
 
 import app.mnema.learning.catalog.content.NativeDocument;
+import app.mnema.learning.catalog.content.ItemPreviews;
 import app.mnema.learning.catalog.content.NativeMediaReferences;
 import app.mnema.learning.catalog.content.pages.CountedPages;
 import app.mnema.learning.catalog.content.pages.CountedPageTypes.Entry;
@@ -53,6 +54,7 @@ public class ItemService {
     private static final Duration PREPARATION_LEASE = Duration.ofMinutes(1);
 
     private final ItemRepository repository;
+    private final ItemPreviews previews;
     private final CommandReceiptService receipts;
     private final CompareAndSetExecutor cas;
     private final ImmutableStorage storage;
@@ -65,8 +67,9 @@ public class ItemService {
     private final TransactionTemplate cleanupTransaction;
 
     public ItemService(ItemRepository repository, CommandReceiptService receipts, CompareAndSetExecutor cas,
-                       ImmutableStorage storage, MediaCatalog mediaCatalog, PlatformTransactionManager transactions) {
+                       ImmutableStorage storage, MediaCatalog mediaCatalog, PlatformTransactionManager transactions, ItemPreviews previews) {
         this.repository = repository;
+        this.previews = previews;
         this.receipts = receipts;
         this.cas = cas;
         this.storage = storage;
@@ -105,7 +108,8 @@ public class ItemService {
             if (row == null || !row.descriptorRootId().equals(entries.get(index).target().objectId())) {
                 throw new IllegalStateException("Member projection is inconsistent");
             }
-            items.add(row.summary(start + index));
+            items.add(row.summary(start + index).put("title", previews.title(deckId, row.memberKey(),
+                    row.revisionId(), row.scopeId(), row.contentRootId())));
         }
         if (start + entries.size() < deck.memberCount()) {
             result.put("nextCursor", new ItemCursor(deck.revisionId(), start + entries.size()).encode());

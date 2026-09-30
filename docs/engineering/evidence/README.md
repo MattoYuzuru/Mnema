@@ -4,7 +4,7 @@ artifact:
   type: evidence-index
   title: "Engineering evidence index"
   status: current
-  updated_at: "2026-09-24"
+  updated_at: "2026-09-30"
   owners: ["project-owner"]
 ---
 
@@ -39,6 +39,9 @@ override current code, accepted contracts or the local-only delivery boundary.
   [LearningItem API](./epic-74/learning-item-api.md) cover the #75-facing contracts.
 
 ## Frontend и browser
+
+- [Бумажный интерфейс и упражнения](./paper-polish-2026-09-30/README.md)
+  содержит результаты 12 правок, desktop/mobile screenshots и границы проверки.
 
 - [Angular migration](./epic-74/angular-migration.md),
   [editor evidence](./epic-74/editor/README.md) and

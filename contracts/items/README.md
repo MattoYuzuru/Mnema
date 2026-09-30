@@ -70,3 +70,15 @@ changes the native-v1 preservation or opaque-node rule.
 Exact examples are in `publication.json`. The full multilingual/RTL/ruby/future-node
 golden document remains `contracts/content/native-v1/valid/mixed.json` and is used
 by the PostgreSQL round-trip integration test.
+
+## Readable summaries
+
+Browse summaries include required `title`: the first nonempty heading/paragraph
+in native document order, normalized to one line and bounded to 240 Unicode code
+points. Ruby contributes its base text; opaque and media payloads contribute no
+text. An empty string means the material has no readable text. The private,
+rebuildable `item_preview` projection is keyed by Deck/member/exact revision and
+populated lazily after ownership is checked. Both Browse and Study progress use
+this projection; clients never fetch complete documents just to label a list.
+CSS ellipsis fits the available row width while preserving the full accessible
+name. Direct document reads and publication acknowledgements are unchanged.

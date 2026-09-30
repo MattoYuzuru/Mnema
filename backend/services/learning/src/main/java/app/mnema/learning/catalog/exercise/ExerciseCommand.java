@@ -91,6 +91,19 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
     }
 
     private static ObjectNode answer(JsonNode value) {
+        if (value.path("schemaVersion").isIntegralNumber() && value.path("schemaVersion").intValue() == 3) {
+            fields(value, Set.of("schemaVersion", "selectionMode", "correctOptionIds", "accepted"));
+            if (!Set.of("SINGLE", "MULTIPLE").contains(value.path("selectionMode").asText())
+                    || !value.path("correctOptionIds").isArray() || value.path("correctOptionIds").isEmpty()
+                    || !value.path("accepted").isArray()
+                    || value.path("accepted").size() != value.path("correctOptionIds").size()
+                    || (value.path("selectionMode").asText().equals("SINGLE")
+                        && value.path("correctOptionIds").size() != 1)) throw invalid();
+            var ids = new HashSet<UUID>();
+            value.path("correctOptionIds").forEach(option -> { if (!ids.add(idValue(option))) throw invalid(); });
+            value.path("accepted").forEach(entry -> { if (!boundedText(entry, 512)) throw invalid(); });
+            return ((ObjectNode) value).deepCopy();
+        }
         if (value.path("schemaVersion").isIntegralNumber() && value.path("schemaVersion").intValue() == 2) {
             fields(value, Set.of("schemaVersion", "pairs"));
             JsonNode pairs = value.path("pairs");
@@ -138,7 +151,7 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
         long options = bindings.stream().filter(binding -> binding.role().equals("OPTION")).count();
         boolean choices = type.equals("SINGLE_CHOICE") || type.equals("LISTEN_CHOICE")
                 || type.equals("AUDIO_TEXT_MATCH");
-        if (assessed != 1 || (choices ? options < 2 || options > 6 : options != 0)) {
+        if (assessed != 1 || (choices ? options < 2 || (type.equals("AUDIO_TEXT_MATCH") && options > 6) : options != 0)) {
             throw invalid();
         }
         for (Binding binding : bindings) {
@@ -158,6 +171,12 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
             case ReuseObjective ignored -> null;
         };
         if (answer == null) return;
+        if (type.equals("SINGLE_CHOICE") || type.equals("LISTEN_CHOICE")) {
+            if (answer.path("schemaVersion").intValue() == 3) {
+                validateChoiceAnswer(answer, exercise);
+                return;
+            }
+        }
         if (!type.equals("AUDIO_TEXT_MATCH")) {
             if (answer.path("schemaVersion").intValue() != 1) throw invalid();
             validateBlank(exercise.prompt(), answer);
@@ -182,6 +201,26 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
             mappedOptions.add(id(pair, "optionId"));
         });
         if (!cues.equals(mappedCues) || !options.equals(mappedOptions)) throw invalid();
+    }
+
+    static void validateChoiceAnswer(JsonNode answer, Exercise exercise) {
+        var options = new HashSet<String>();
+        exercise.bindings().stream().filter(binding -> binding.role().equals("OPTION"))
+                .forEach(binding -> options.add(binding.bindingId().toString()));
+        for (JsonNode correct : answer.path("correctOptionIds")) {
+            if (!options.contains(correct.textValue())) throw invalid();
+        }
+        Binding assessed = exercise.bindings().stream().filter(binding -> binding.role().equals("ASSESSED"))
+                .findFirst().orElseThrow();
+        boolean assessedCorrect = exercise.bindings().stream().filter(binding -> binding.role().equals("OPTION"))
+                .filter(binding -> Target.of(binding).equals(Target.of(assessed)))
+                .anyMatch(binding -> {
+                    for (JsonNode correct : answer.path("correctOptionIds")) {
+                        if (binding.bindingId().toString().equals(correct.textValue())) return true;
+                    }
+                    return false;
+                });
+        if (!assessedCorrect) throw invalid();
     }
 
     private static void validateChoiceTargets(List<Binding> bindings) {
@@ -271,7 +310,7 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
     }
 
     private static List<Binding> bindings(JsonNode values) {
-        if (!values.isArray() || values.isEmpty() || values.size() > 8) throw invalid();
+        if (!values.isArray() || values.isEmpty()) throw invalid();
         List<Binding> result = new ArrayList<>();
         Set<UUID> ids = new HashSet<>();
         Set<Integer> ordinals = new HashSet<>();
@@ -284,7 +323,7 @@ public record ExerciseCommand(UUID commandId, UUID expectedDeckRevisionId, UUID 
             UUID bindingId = id(value, "bindingId");
             String role = text(value, "role", 16);
             int ordinal = integer(value.path("ordinal"));
-            if (!ROLES.contains(role) || ordinal > 15 || !ids.add(bindingId) || !ordinals.add(ordinal)) throw invalid();
+            if (!ROLES.contains(role) || !ids.add(bindingId) || !ordinals.add(ordinal)) throw invalid();
             List<UUID> nodeIds = new ArrayList<>();
             if (value.has("nodeIds")) {
                 if (!value.path("nodeIds").isArray() || value.path("nodeIds").size() > 16) throw invalid();

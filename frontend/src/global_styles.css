@@ -118,7 +118,7 @@ textarea::placeholder {
 .deck-description-markdown :last-child { margin-block-end: 0; }
 
 ::selection {
-    background: var(--mn-soft);
+    background: var(--mn-selection);
     color: var(--mn-ink);
 }
 
@@ -128,12 +128,12 @@ textarea::placeholder {
 }
 
 /* Component styles also define focus rings; keep every form field on one edge. */
-html body :is(input:not([type='checkbox']):not([type='radio']), textarea) {
+html body :is(input:not([type='checkbox']):not([type='radio']):not(.cloze-field), textarea) {
     outline: 2px solid transparent;
     outline-offset: -2px;
     transition: outline-color .16s ease;
 }
-html body :is(input:not([type='checkbox']):not([type='radio']), textarea):focus-visible {
+html body :is(input:not([type='checkbox']):not([type='radio']):not(.cloze-field), textarea):focus-visible {
     outline: 2px solid var(--mn-focus) !important;
     outline-offset: -2px !important;
 }
@@ -159,7 +159,7 @@ html body h1[tabindex="-1"]:focus-visible {
     background: var(--mn-wave-fill, var(--mn-soft));
     clip-path: circle(0 at var(--mn-wave-x, 50%) var(--mn-wave-y, 50%));
     pointer-events: none;
-    transition: clip-path .55s cubic-bezier(.19, 1, .22, 1);
+    transition: clip-path var(--mn-wave-duration) cubic-bezier(.22, .61, .36, 1);
 }
 
 :is(.button, .quiet-action, .primary-action, .profile-page button, .file-label, .feature-strip a, .item-row, .deck-row):is(:hover, :focus-visible):not(:disabled)::before {
@@ -194,7 +194,7 @@ html body h1[tabindex="-1"]:focus-visible {
         outline-color: Highlight;
     }
 
-    html body :is(input:not([type='checkbox']):not([type='radio']), textarea):focus-visible {
+    html body :is(input:not([type='checkbox']):not([type='radio']):not(.cloze-field), textarea):focus-visible {
         outline-color: Highlight !important;
     }
 
@@ -202,3 +202,8 @@ html body h1[tabindex="-1"]:focus-visible {
         display: none;
     }
 }
+
+:is(.item-row, .deck-row) { --mn-wave-duration: var(--mn-list-wave-duration); }
+/* The ruled caret is the cloze field's focus indicator, including programmatic focus. */
+html body input.cloze-field:focus-visible { outline: none; }
+html body input.cloze-field { outline: none; }

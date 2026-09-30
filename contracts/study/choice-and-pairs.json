@@ -1,0 +1,31 @@
+{
+  "multipleAnswer": {
+    "schemaVersion": 3,
+    "selectionMode": "MULTIPLE",
+    "correctOptionIds": ["dddddddd-dddd-4ddd-8ddd-ddddddddddd1", "dddddddd-dddd-4ddd-8ddd-ddddddddddd2"],
+    "accepted": ["Париж", "Лион"]
+  },
+  "singleAnswer": {
+    "schemaVersion": 3,
+    "selectionMode": "SINGLE",
+    "correctOptionIds": ["dddddddd-dddd-4ddd-8ddd-ddddddddddd1"],
+    "accepted": ["Париж"]
+  },
+  "multipleSubmit": {
+    "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
+    "nonce": "c3R1ZHktbm9uY2UtdjM",
+    "response": {"kind": "CHOICE", "optionIds": ["dddddddd-dddd-4ddd-8ddd-ddddddddddd2", "dddddddd-dddd-4ddd-8ddd-ddddddddddd1"]},
+    "hintsUsed": [],
+    "confidence": null,
+    "durationMs": 3000
+  },
+  "pairCheck": {
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
+    "nonce": "c3R1ZHktbm9uY2UtdjM",
+    "cueId": "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeee1",
+    "optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd1"
+  },
+  "correctPair": {"correct": true},
+  "incorrectPair": {"correct": false}
+}

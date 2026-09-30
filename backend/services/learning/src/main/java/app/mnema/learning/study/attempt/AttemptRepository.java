@@ -39,6 +39,32 @@ class AttemptRepository {
                 .param("actor", actor).param("deck", deck).query(Boolean.class).single();
     }
 
+    Optional<Boolean> pairInteraction(UUID actor, UUID session, PairCheckCommand command) {
+        return jdbc.sql("""
+                SELECT correct FROM app_learning.study_pair_interaction
+                 WHERE account_id=:actor AND session_id=:session AND presentation_id=:presentation
+                   AND cue_id=:cue AND option_id=:option
+                """).param("actor", actor).param("session", session).param("presentation", command.presentationId())
+                .param("cue", command.cueId()).param("option", command.optionId()).query(Boolean.class).optional();
+    }
+
+    void insertPairInteraction(UUID actor, UUID session, PairCheckCommand command, boolean correct, Instant expiresAt) {
+        jdbc.sql("""
+                INSERT INTO app_learning.study_pair_interaction(account_id,session_id,presentation_id,cue_id,option_id,correct,expires_at)
+                VALUES (:actor,:session,:presentation,:cue,:option,:correct,:expires) ON CONFLICT DO NOTHING
+                """).param("actor", actor).param("session", session).param("presentation", command.presentationId())
+                .param("cue", command.cueId()).param("option", command.optionId()).param("correct", correct)
+                .param("expires", Timestamp.from(expiresAt)).update();
+    }
+
+    boolean hasPairMistakes(UUID actor, UUID session, UUID presentation) {
+        return jdbc.sql("""
+                SELECT EXISTS(SELECT 1 FROM app_learning.study_pair_interaction
+                  WHERE account_id=:actor AND session_id=:session AND presentation_id=:presentation AND NOT correct)
+                """).param("actor", actor).param("session", session).param("presentation", presentation)
+                .query(Boolean.class).single();
+    }
+
     void lockAttempt(UUID attempt) {
         long key = attempt.getMostSignificantBits() ^ attempt.getLeastSignificantBits();
         jdbc.sql("SELECT pg_advisory_xact_lock(:key) IS NULL")

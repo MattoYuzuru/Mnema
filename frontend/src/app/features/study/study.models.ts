@@ -31,6 +31,7 @@ export interface StudyPresentation {
     readonly learningEpoch: string;
     readonly reference: string | null;
     readonly prompt: StudyPrompt;
+    readonly selectionMode?: 'SINGLE' | 'MULTIPLE';
     readonly options: readonly { readonly optionId: string; readonly text: string }[];
     readonly bindings: readonly StudyBinding[];
     readonly evaluator: { readonly id: string; readonly version: string };
@@ -82,7 +83,7 @@ export type StudySession = PreparingStudySession | ReadyStudySession;
 export type StudyResponse =
     | { readonly kind: 'TEXT'; readonly text: string }
     | { readonly kind: 'SELF_CHECK'; readonly rating: SelfRating }
-    | { readonly kind: 'CHOICE'; readonly optionId: string }
+    | { readonly kind: 'CHOICE'; readonly optionIds: readonly string[] }
     | { readonly kind: 'MATCH'; readonly pairs: readonly { readonly cueId: string; readonly optionId: string }[] }
     | { readonly kind: 'CANCEL' };
 
@@ -124,6 +125,7 @@ export interface StudyWriteResult<T> { readonly value: T; readonly replayed: boo
 export type MaterialProgressState = 'NOT_STARTED' | 'LEARNING' | 'DUE' | 'ON_TRACK';
 
 export interface MaterialProgress {
+    readonly title: string;
     readonly memberKey: string;
     readonly itemRevisionId: string;
     readonly state: MaterialProgressState;

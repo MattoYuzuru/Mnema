@@ -16,7 +16,13 @@ export interface MatchAnswerContract {
     readonly schemaVersion: 2;
     readonly pairs: readonly { readonly cueId: string; readonly optionId: string }[];
 }
-export type AnswerContract = TextAnswerContract | MatchAnswerContract;
+export interface ChoiceAnswerContract {
+    readonly schemaVersion: 3;
+    readonly selectionMode: 'SINGLE' | 'MULTIPLE';
+    readonly correctOptionIds: readonly string[];
+    readonly accepted: readonly string[];
+}
+export type AnswerContract = TextAnswerContract | MatchAnswerContract | ChoiceAnswerContract;
 
 export interface ExerciseObjective {
     readonly objectiveId: string;

@@ -21,7 +21,7 @@
     "attemptId": "cccccccc-cccc-4ccc-8ccc-ccccccccccc3",
     "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3",
     "nonce": "c3R1ZHktbm9uY2UtdjM",
-    "response": {"kind": "CHOICE", "optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd1"},
+    "response": {"kind": "CHOICE", "optionIds": ["dddddddd-dddd-4ddd-8ddd-ddddddddddd1"]},
     "hintsUsed": [],
     "confidence": "UNSURE",
     "durationMs": 3100

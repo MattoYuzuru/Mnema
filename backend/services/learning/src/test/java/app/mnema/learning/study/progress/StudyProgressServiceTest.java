@@ -2,6 +2,7 @@ package app.mnema.learning.study.progress;
 
 import app.mnema.learning.platform.api.InvalidRequestException;
 import org.junit.jupiter.api.Test;
+import app.mnema.learning.catalog.content.ItemPreviews;
 
 import java.time.Instant;
 import java.util.List;
@@ -15,7 +16,7 @@ import static org.mockito.Mockito.when;
 
 class StudyProgressServiceTest {
     private final StudyProgressRepository repository = mock(StudyProgressRepository.class);
-    private final StudyProgressService service = new StudyProgressService(repository);
+    private final StudyProgressService service = new StudyProgressService(repository, mock(ItemPreviews.class));
     private final UUID actor = UUID.randomUUID();
     private final UUID deck = UUID.randomUUID();
 
@@ -48,7 +49,7 @@ class StudyProgressServiceTest {
     }
 
     private StudyProgressRepository.Material row(UUID member) {
-        return new StudyProgressRepository.Material(member, UUID.randomUUID(), 1, 0, 0,
+        return new StudyProgressRepository.Material(member, UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 1, 0, 0,
                 false, false, null, null);
     }
 }

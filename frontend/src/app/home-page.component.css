@@ -33,7 +33,7 @@
 .hero h1 {
     margin: 1.25rem 0 1.65rem;
     color: var(--mn-ink);
-    font: 400 clamp(4.1rem, 6.7vw, 6.75rem)/.89 var(--mn-font-display);
+    font: 400 clamp(4.1rem, 6.7vw, 6.75rem)/1.02 var(--mn-font-display);
     letter-spacing: -.048em;
     text-transform: uppercase;
 }
@@ -154,7 +154,7 @@
 
 .hero-note p {
     margin: .9rem 0;
-    font: 500 1.9rem/1.05 var(--mn-font-display);
+    font: 500 1.9rem/1.15 var(--mn-font-display);
 }
 
 .small-note {
@@ -229,7 +229,7 @@
 }
 
 .landing-section.reverse { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); }
-.section-copy h2 { margin: .35rem 0 1.5rem; font: 500 clamp(2.5rem, 3.3vw, 3.4rem)/1.04 var(--mn-font-display); }
+.section-copy h2 { margin: .35rem 0 1.5rem; font: 500 clamp(2.5rem, 3.3vw, 3.4rem)/1.15 var(--mn-font-display); }
 .section-copy p:not(.eyebrow) { max-inline-size: 58ch; color: var(--mn-muted); }
 .section-copy .button { margin-block-start: .5rem; }
 
@@ -241,7 +241,7 @@
 }
 
 .specimen-star { position: absolute; inset: .75rem 1rem auto auto; color: var(--mn-ink); user-select: none; }
-.specimen h3 { margin: 1.25rem 0 .75rem; font: 500 clamp(1.9rem, 2.6vw, 2.5rem)/1.05 var(--mn-font-display); }
+.specimen h3 { margin: 1.25rem 0 .75rem; font: 500 clamp(1.9rem, 2.6vw, 2.5rem)/1.15 var(--mn-font-display); }
 .specimen h3 span { font-size: .9em; }
 .specimen p { margin-block-end: 0; font-size: .875rem; }
 .specimen .eyebrow { margin-block-end: 1rem; }
@@ -258,7 +258,7 @@
 }
 
 .final-cta > span { color: var(--mn-ink); }
-.final-cta h2 { margin: .25rem 0 1rem; font: 500 clamp(2.5rem, 4vw, 3.5rem)/1.05 var(--mn-font-display); }
+.final-cta h2 { margin: .25rem 0 1rem; font: 500 clamp(2.5rem, 4vw, 3.5rem)/1.15 var(--mn-font-display); }
 .final-cta p { margin: 0 0 1.5rem; color: var(--mn-muted); }
 
 @media (max-width: 62.5rem) {
@@ -313,3 +313,8 @@
     }
     .hero-note p { font-size: clamp(1.1rem, 7vw, 1.4rem); }
 }
+
+.art-star:nth-of-type(4) { inset: 43% auto auto 9%; font-size: 1.9rem; transform: rotate(12deg); }
+.art-star:nth-of-type(5) { inset: 74% auto auto 7%; font-size: 2.8rem; transform: rotate(-9deg); }
+.art-star:nth-of-type(6) { inset: 19% 8% auto auto; font-size: 2rem; transform: rotate(8deg); }
+.art-star:nth-of-type(7) { inset: 47% 5% auto auto; font-size: 2.6rem; transform: rotate(-13deg); }

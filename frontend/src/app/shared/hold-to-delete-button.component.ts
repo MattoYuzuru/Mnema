@@ -1,10 +1,11 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, effect, inject, input, output, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, effect, inject, input, output, signal } from '@angular/core';
 
 const HOLD_MS = 3_000;
 
 /** A separate activation followed by a continuous hold prevents accidental destructive taps. */
 @Component({
     selector: 'app-hold-to-delete-button',
+    host: { '(document:pointerdown)': 'cancelOutside($event)' },
     template: `
       <button type="button" class="hold-button" [class.holding]="holding()" [disabled]="disabled()" [attr.aria-pressed]="armed()"
         [style.--hold-x.px]="waveX()" [style.--hold-y.px]="waveY()" [style.--hold-size.px]="waveSize()"
@@ -30,6 +31,7 @@ export class HoldToDeleteButtonComponent {
     readonly waveSize = signal(0);
     readonly remaining = signal(3);
 
+    private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly destroyRef = inject(DestroyRef);
     private timer: ReturnType<typeof setInterval> | null = null;
     private startedAt = 0;
@@ -39,6 +41,10 @@ export class HoldToDeleteButtonComponent {
     private readonly disabledEffect = effect(() => { if (this.disabled()) this.cancel(); });
 
     constructor() { this.destroyRef.onDestroy(() => this.clearTimer()); }
+
+    cancelOutside(event: PointerEvent): void {
+        if (this.armed() && event.target instanceof Node && !this.element.nativeElement.contains(event.target)) this.cancel();
+    }
 
     onClick(): void {
         if (this.suppressTrailingClick) { this.suppressTrailingClick = false; return; }

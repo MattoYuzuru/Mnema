@@ -15,7 +15,7 @@ export interface ItemRecordSummary {
     readonly updatedAt: string;
 }
 
-export interface ItemSummary extends ItemRecordSummary { readonly ordinal: number; }
+export interface ItemSummary extends ItemRecordSummary { readonly ordinal: number; readonly title: string; }
 
 export interface ItemPage {
     readonly deckId: string;

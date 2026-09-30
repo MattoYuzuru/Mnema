@@ -1,7 +1,7 @@
 :host {
     display: block;
     min-inline-size: 0;
-    padding: clamp(1.5rem, 5vw, 4rem) clamp(1.125rem, 5vw, 3rem);
+    padding: clamp(1rem, 3vw, 1.5rem) clamp(1.125rem, 5vw, 3rem);
     color: var(--mn-body);
     background: var(--mn-paper);
 }
@@ -12,7 +12,7 @@
     inline-size: min(100%, 43rem);
     margin-inline: auto;
     border-block: 1px solid var(--mn-ink);
-    padding: clamp(1.5rem, 5vw, 2.5rem) clamp(0rem, 5vw, 3.5rem);
+    padding: clamp(1.25rem, 3vw, 1.5rem) clamp(0rem, 5vw, 3.5rem);
     background: var(--mn-sheet);
 }
 
@@ -21,13 +21,13 @@
     display: block;
     inline-size: 1.25rem;
     block-size: 1.25rem;
-    margin-block-end: 1rem;
+    margin-block-end: .75rem;
     background: var(--mn-ink);
     clip-path: polygon(50% 0, 59% 40%, 100% 50%, 59% 60%, 50% 100%, 41% 60%, 0 50%, 41% 40%);
 }
 
 .eyebrow {
-    margin: 0 0 .85rem;
+    margin: 0 0 .5rem;
     color: var(--mn-ink);
     font: 700 .75rem/1.4 var(--mn-font-mono, ui-monospace, monospace);
     letter-spacing: .12em;
@@ -36,17 +36,17 @@
 
 h1 {
     max-inline-size: 18ch;
-    margin: 0 0 1.25rem;
+    margin: 0 0 .75rem;
     color: var(--mn-ink);
-    font: 500 clamp(2.5rem, 5vw, 3.75rem)/.98 var(--mn-font-display, Georgia, serif);
+    font: 500 clamp(2.25rem, 4vw, 2.75rem)/1.12 var(--mn-font-display, Georgia, serif);
     letter-spacing: -.025em;
     overflow-wrap: anywhere;
 }
 
 p { font: 1rem/1.6 var(--mn-font-body, system-ui, sans-serif); overflow-wrap: anywhere; }
-.intro { max-inline-size: 52ch; margin-block-end: 2rem; color: var(--mn-muted); }
+.intro { max-inline-size: 52ch; margin-block-end: 1rem; color: var(--mn-muted); }
 form { display: grid; gap: .55rem; border-block-start: 1px solid var(--mn-rule); padding-block-start: 1.25rem; }
-label { margin-block-start: .65rem; font: 650 1rem/1.5 var(--mn-font-body, system-ui, sans-serif); }
+label { margin-block-start: .35rem; font: 650 1rem/1.5 var(--mn-font-body, system-ui, sans-serif); }
 
 input {
     inline-size: 100%;
@@ -68,7 +68,7 @@ input.ng-invalid.ng-touched { border: 2px solid var(--mn-danger); }
     min-block-size: var(--mn-touch-min, 46px);
     align-items: center;
     justify-content: center;
-    margin-block-start: 1.2rem;
+    margin-block-start: .75rem;
     border: 1px solid var(--mn-ink);
     border-radius: var(--mn-radius, 2px);
     padding: .75rem 1.1rem;
@@ -98,8 +98,9 @@ a { color: var(--mn-ink); text-underline-offset: .22em; }
     cursor: pointer;
 }
 
-.switch-mode { margin-block-start: 1.75rem; border-block-start: 1px solid var(--mn-rule); padding-block-start: 1.25rem; }
+.switch-mode { margin-block-start: 1rem; border-block-start: 1px solid var(--mn-rule); padding-block-start: .75rem; }
 .identity-error { margin-block-start: 1rem; border-inline-start: 3px solid var(--mn-danger); padding: .9rem 1rem; color: var(--mn-danger); background: var(--mn-sheet); }
+.identity-status:empty { display: none; }
 .identity-status { margin-block: 1rem 0; color: var(--mn-muted); font-size: .875rem; }
 :is(a, button, input):focus-visible { outline: 3px solid var(--mn-focus); outline-offset: 3px; }
 
@@ -111,4 +112,17 @@ a { color: var(--mn-ink); text-underline-offset: .22em; }
 @media (forced-colors: active) {
     .identity-sheet, .primary-action, .identity-error { border-color: CanvasText; }
     :is(a, button, input):focus-visible { outline-color: Highlight; }
+}
+
+.provider-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .65rem; border-block: 1px solid var(--mn-rule); padding-block: .75rem; }
+.provider-placeholder { min-inline-size: 0; display: grid; justify-items: center; gap: .3rem; border: 1px solid var(--mn-rule); border-radius: var(--mn-radius); padding: .65rem .25rem; color: var(--mn-ink); background: var(--mn-sheet); font: .9rem/1.4 var(--mn-font-body); }
+.provider-placeholder img { object-fit: contain; width: 32px; height: 32px; }
+.provider-placeholder span { color: var(--mn-muted); font-size: .75rem; }
+.password-divider { margin: 1rem 0 .5rem; color: var(--mn-muted); font-size: .875rem; }
+.identity-sheet:has(.provider-options) form { border-block-start: 0; padding-block-start: 0; }
+
+@media (min-width: 36.01rem) {
+    .provider-placeholder { grid-template-columns: 28px minmax(0, 1fr); text-align: start; column-gap: .6rem; padding: .65rem; }
+    .provider-placeholder img { grid-row: span 2; align-self: center; width: 28px; height: 28px; }
+    .provider-placeholder :is(strong, span) { justify-self: start; }
 }

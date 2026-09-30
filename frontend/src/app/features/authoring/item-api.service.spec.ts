@@ -33,9 +33,9 @@ describe('ItemApiService', () => {
     it('reads bounded summaries and exact native detail through private no-store responses', async () => {
         const page = firstValueFrom(api.list(deckId));
         http.expectOne(`/api/decks/${deckId}/items?limit=20`).flush({
-            deckId, deckRevisionId, deckVersion: '8', total: 5, items: [summary], nextCursor: null
+            deckId, deckRevisionId, deckVersion: '8', total: 5, items: [{ ...summary, title: 'Первый текст материала' }], nextCursor: null
         }, { headers: { ...headers, ETag: '"8"' } });
-        expect((await page).items).toEqual([summary]);
+        expect((await page).items).toEqual([{ ...summary, title: 'Первый текст материала' }]);
 
         const detail = firstValueFrom(api.read(deckId, memberKey));
         http.expectOne(`/api/decks/${deckId}/items/${memberKey}`).flush({

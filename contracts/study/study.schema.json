@@ -12,7 +12,11 @@
        "properties": {"schemaVersion": {"const": 2}, "pairs": {"type": "array", "minItems": 2, "maxItems": 6,
          "items": {"type": "object", "required": ["cueId", "optionId"],
            "properties": {"cueId": {"$ref": "#/$defs/identifier"}, "optionId": {"$ref": "#/$defs/identifier"}},
-           "additionalProperties": false}}}, "additionalProperties": false}
+           "additionalProperties": false}}}, "additionalProperties": false},
+      {"type": "object", "required": ["schemaVersion", "selectionMode", "correctOptionIds", "accepted"],
+       "properties": {"schemaVersion": {"const": 3}, "selectionMode": {"enum": ["SINGLE", "MULTIPLE"]},
+         "correctOptionIds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
+         "accepted": {"type": "array", "minItems": 1, "items": {"type": "string"}}}, "additionalProperties": false}
     ]},
     "studyPrompt": {"oneOf": [
       {"type": "object", "required": ["kind", "text"],
@@ -82,13 +86,27 @@
       "oneOf": [
         {"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string"}}, "additionalProperties": false},
         {"type": "object", "required": ["kind", "rating"], "properties": {"kind": {"const": "SELF_CHECK"}, "rating": {"enum": ["NOT_RECALLED", "HINTED", "PARTIAL", "FULL"]}}, "additionalProperties": false},
-        {"type": "object", "required": ["kind", "optionId"], "properties": {"kind": {"const": "CHOICE"}, "optionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false},
+        {"type": "object", "required": ["kind", "optionIds"], "properties": {"kind": {"const": "CHOICE"}, "optionIds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}}}, "additionalProperties": false},
         {"type": "object", "required": ["kind", "pairs"], "properties": {"kind": {"const": "MATCH"},
           "pairs": {"type": "array", "minItems": 2, "maxItems": 6, "items": {"type": "object",
             "required": ["cueId", "optionId"], "properties": {"cueId": {"$ref": "#/$defs/identifier"},
               "optionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}}}, "additionalProperties": false},
         {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "CANCEL"}}, "additionalProperties": false}
       ]
+    },
+    "pairCheckCommand": {
+      "type": "object", "required": ["presentationId", "nonce", "cueId", "optionId"],
+      "properties": {"presentationId": {"$ref": "#/$defs/identifier"}, "nonce": {"type": "string"},
+        "cueId": {"$ref": "#/$defs/identifier"}, "optionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false
+    },
+    "pairCheckResult": {
+      "type": "object", "required": ["correct"], "properties": {"correct": {"type": "boolean"}}, "additionalProperties": false
+    },
+    "choiceAndPairsDocument": {
+      "type": "object", "required": ["multipleAnswer", "singleAnswer", "multipleSubmit", "pairCheck", "correctPair", "incorrectPair"],
+      "properties": {"multipleAnswer": {"$ref": "#/$defs/answerContract"}, "singleAnswer": {"$ref": "#/$defs/answerContract"},
+        "multipleSubmit": {"$ref": "#/$defs/submitCommand"}, "pairCheck": {"$ref": "#/$defs/pairCheckCommand"},
+        "correctPair": {"$ref": "#/$defs/pairCheckResult"}, "incorrectPair": {"$ref": "#/$defs/pairCheckResult"}}, "additionalProperties": false
     },
     "transcriptRevealCommand": {
       "type": "object", "required": ["nonce"],
@@ -159,9 +177,10 @@
           "type": "array",
           "items": {
             "type": "object",
-            "required": ["memberKey", "itemRevisionId", "state", "objectiveCoverage", "lastAssessedAt", "nextDue"],
+            "required": ["title", "memberKey", "itemRevisionId", "state", "objectiveCoverage", "lastAssessedAt", "nextDue"],
             "properties": {
               "memberKey": {"$ref": "#/$defs/identifier"}, "itemRevisionId": {"$ref": "#/$defs/identifier"},
+              "title": {"type": "string", "maxLength": 240},
               "state": {"enum": ["NOT_STARTED", "LEARNING", "DUE", "ON_TRACK"]},
               "objectiveCoverage": {
                 "type": "object", "required": ["enabled", "introduced", "assessed"],
@@ -329,6 +348,7 @@
                   "learningEpoch": {"type": "string"},
                   "reference": {"type": ["string", "null"]},
                   "prompt": {"$ref": "#/$defs/studyPrompt"},
+                  "selectionMode": {"enum": ["SINGLE", "MULTIPLE"]},
                   "options": {"type": "array"},
                   "bindings": {"type": "array", "items": {"$ref": "#/$defs/binding"}},
                   "evaluator": {"$ref": "#/$defs/evaluator"}

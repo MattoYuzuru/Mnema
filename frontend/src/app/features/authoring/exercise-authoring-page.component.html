@@ -121,6 +121,30 @@
           }
         </fieldset>
 
+        @if (isChoice()) {
+          <fieldset [attr.aria-describedby]="fieldErrors()['options'] ? 'options-error' : null">
+            <legend>3. Варианты ответа</legend>
+            <p class="hint">Добавьте хотя бы два разных фрагмента и отметьте правильные ответы.</p>
+            <label class="enable-line"><input type="checkbox" [checked]="multipleAnswers()"
+              (change)="setMultipleAnswers($any($event.target).checked)" /> Можно выбрать несколько ответов</label>
+            <p class="hint">{{ multipleAnswers() ? 'Ученик увидит флажки. Правильным может быть и один ответ.' : 'Ученик выберет один ответ.' }}</p>
+            <div class="option-list">
+              @for (projection of projections(); track projection.nodeId) {
+                <label><input type="checkbox" [checked]="optionNodeIds().includes(projection.nodeId)"
+                  (change)="toggleOption(projection.nodeId, $any($event.target).checked)" /> {{ projection.label }}</label>
+              }
+            </div>
+            @if (optionNodeIds().length > 0) {
+              <fieldset class="correct-options"><legend>{{ multipleAnswers() ? 'Правильные ответы' : 'Правильный ответ' }}</legend>
+                @for (nodeId of optionNodeIds(); track nodeId) {
+                  <label class="radio-line"><input [type]="multipleAnswers() ? 'checkbox' : 'radio'" name="correctOption"
+                    [checked]="correctNodeIds().includes(nodeId)" (change)="toggleCorrectOption(nodeId, $any($event.target).checked)" /> {{ projection(nodeId)?.label }}</label>
+                }
+              </fieldset>
+            }
+            @if (fieldErrors()['options']; as error) { <p class="field-error" id="options-error">{{ error }}</p> }
+          </fieldset>
+        } @else {
         <fieldset [attr.aria-describedby]="fieldErrors()['answer'] ? 'answer-error' : null">
           <legend>3. Проверяемый ответ</legend>
           @if (supportsCustomAnswer()) {
@@ -173,12 +197,14 @@
           }
         </fieldset>
 
+        }
+
         <fieldset [attr.aria-describedby]="fieldErrors()['objective'] ? 'objective-error' : null">
           <legend>4. Направление знания</legend>
           <p class="hint">Выберите, считать ли это новым знанием или ещё одним способом проверить уже изучаемое. Например, перевод слова и перевод обратно можно учить отдельно.</p>
           <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'create'" (change)="setObjectiveMode('create')" /> Учить как новое знание</label>
           @if (objectives().length > 0 && type() !== 'AUDIO_TEXT_MATCH') {
-            <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'reuse'" (change)="setObjectiveMode('reuse')" /> Проверять уже изучаемое тем же ответом</label>
+            @if (!isChoice()) { <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'reuse'" (change)="setObjectiveMode('reuse')" /> Проверять уже изучаемое тем же ответом</label> }
             <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'revise'" (change)="setObjectiveMode('revise')" /> Изменить ответ уже изучаемого знания</label>
           }
           @if (objectiveMode() === 'revise') { <p class="hint">Обновлённые ответы и правила проверки появятся в следующих занятиях. Прежние попытки и расписание повторений сохранятся.</p> }
@@ -190,20 +216,6 @@
           }
           @if (fieldErrors()['objective']; as error) { <p class="field-error" id="objective-error">{{ error }}</p> }
         </fieldset>
-
-        @if (type() === 'SINGLE_CHOICE' || type() === 'LISTEN_CHOICE') {
-          <fieldset [attr.aria-describedby]="fieldErrors()['options'] ? 'options-error' : null">
-            <legend>5. Варианты ответа</legend>
-            <p class="hint">Выберите 2–6 разных фрагментов, включая правильный.</p>
-            <div class="option-list">
-              @for (projection of projections(); track projection.nodeId) {
-                <label><input type="checkbox" [checked]="optionNodeIds().includes(projection.nodeId)"
-                              (change)="toggleOption(projection.nodeId, $any($event.target).checked)" /> {{ projection.label }}</label>
-              }
-            </div>
-            @if (fieldErrors()['options']; as error) { <p class="field-error" id="options-error">{{ error }}</p> }
-          </fieldset>
-        }
 
         <label class="enable-line"><input type="checkbox" [checked]="enabled()" (change)="setEnabled($any($event.target).checked)" /> Добавлять упражнение в новые занятия</label>
         <p class="hint enable-hint">Если выключить, уже начатые занятия не изменятся.</p>
@@ -227,7 +239,11 @@
               [value]="previewClozeAnswer()" (valueChange)="previewClozeAnswer.set($event)" />
           } @else if (type() === 'TYPED' || type() === 'LISTEN_TYPE') { <label>Ответ <input type="text" disabled placeholder="Поле ученика" /></label> }
           @if (type() === 'SINGLE_CHOICE' || type() === 'LISTEN_CHOICE') {
-            <div class="preview-options">@for (nodeId of optionNodeIds(); track nodeId) { <span>{{ projection(nodeId)?.label }}</span> }</div>
+            <fieldset class="preview-choice"><legend>{{ multipleAnswers() ? 'Выберите варианты ответов' : 'Выберите один ответ' }}</legend>
+              <div class="preview-options">@for (nodeId of optionNodeIds(); track nodeId) {
+                <label class="radio-line"><input [type]="multipleAnswers() ? 'checkbox' : 'radio'" disabled /> {{ projection(nodeId)?.label }}</label>
+              }</div>
+            </fieldset>
           }
           @if (type() === 'AUDIO_TEXT_MATCH') {
             <div class="preview-options">@for (row of matchRows(); track row.cueId) { <span>{{ row.title || 'Запись' }} ↔ {{ projection(row.optionNodeId)?.label || 'Текст' }}</span> }</div>

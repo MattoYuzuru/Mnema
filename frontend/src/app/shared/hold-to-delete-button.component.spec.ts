@@ -33,6 +33,13 @@ describe('HoldToDeleteButtonComponent', () => {
         fixture.destroy();
     }));
 
+    it('disarms when pressing a non-focusable surface outside the control', () => {
+        const { fixture, component, button } = setup();
+        button.click(); expect(component.armed()).toBeTrue();
+        document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        expect(component.armed()).toBeFalse(); fixture.destroy();
+    });
+
     it('cancels an early pointer release and supports Escape', fakeAsync(() => {
         const { fixture, component, button } = setup();
         let confirmations = 0;

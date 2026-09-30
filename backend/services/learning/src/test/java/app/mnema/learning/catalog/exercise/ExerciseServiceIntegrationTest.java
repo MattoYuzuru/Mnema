@@ -13,6 +13,8 @@ import app.mnema.learning.study.session.StudySessionCommand;
 import app.mnema.learning.study.session.StudySessionService;
 import app.mnema.learning.study.attempt.AttemptCommand;
 import app.mnema.learning.study.attempt.AttemptService;
+import app.mnema.learning.study.attempt.PairCheckCommand;
+import app.mnema.learning.study.retention.StudyRetentionService;
 import app.mnema.learning.support.PostgresIntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -41,6 +43,7 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
     @Autowired private MediaCatalog media;
     @Autowired private StudySessionService studies;
     @Autowired private AttemptService attempts;
+    @Autowired private StudyRetentionService retention;
 
     @Test
     void removalCompactsCurrentRosterAndPreservesPublishedHistory() {
@@ -162,6 +165,43 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
             assertThat(row.path("bindings")).isEmpty();
             assertThat(row.path("reference").isNull()).isTrue();
         });
+        JsonNode match = java.util.stream.StreamSupport.stream(study.path("presentations").spliterator(), false)
+                .filter(row -> row.path("type").asText().equals("AUDIO_TEXT_MATCH")).findFirst().orElseThrow();
+        UUID matchId = UUID.fromString(match.path("presentationId").textValue());
+        JsonNode reread = studies.read(fixture.actor(), fixture.deck(), readySession);
+        assertThat(java.util.stream.StreamSupport.stream(reread.path("presentations").spliterator(), false)
+                .filter(row -> row.path("presentationId").asText().equals(matchId.toString()))
+                .findFirst().orElseThrow().path("options")).isEqualTo(match.path("options"));
+        JsonNode answerMap;
+        try {
+            answerMap = JSON.readTree(jdbc.sql("SELECT answer_contract::text FROM app_learning.study_presentation WHERE presentation_id=:id")
+                    .param("id", matchId).query(String.class).single());
+        } catch (java.io.IOException exception) { throw new IllegalStateException(exception); }
+        JsonNode firstPair = answerMap.path("pairs").get(0), secondPair = answerMap.path("pairs").get(1);
+        PairCheckCommand mistake = new PairCheckCommand(matchId, match.path("nonce").asText(),
+                UUID.fromString(firstPair.path("cueId").asText()), UUID.fromString(secondPair.path("optionId").asText()));
+        assertThat(attempts.checkPair(fixture.actor(), fixture.deck(), readySession, mistake)).isFalse();
+        assertThat(attempts.checkPair(fixture.actor(), fixture.deck(), readySession, mistake)).isFalse();
+        assertThat(count("study_pair_interaction", "presentation_id", matchId)).isOne();
+        assertThatThrownBy(() -> attempts.checkPair(UUID.randomUUID(), fixture.deck(), readySession, mistake))
+                .isInstanceOf(ResourceNotFoundException.class);
+        PairCheckCommand correctPair = new PairCheckCommand(matchId, match.path("nonce").asText(),
+                UUID.fromString(firstPair.path("cueId").asText()), UUID.fromString(firstPair.path("optionId").asText()));
+        assertThat(attempts.checkPair(fixture.actor(), fixture.deck(), readySession, correctPair)).isTrue();
+        ObjectNode matchAttempt = JSON.createObjectNode().put("attemptId", UUID.randomUUID().toString())
+                .put("presentationId", matchId.toString()).put("nonce", match.path("nonce").asText())
+                .putNull("confidence").put("durationMs", 100);
+        matchAttempt.putObject("response").put("kind", "MATCH").set("pairs", answerMap.path("pairs"));
+        matchAttempt.putArray("hintsUsed");
+        AttemptCommand submittedMatch = AttemptCommand.read(bytes(matchAttempt));
+        JsonNode matchResult = attempts.submit(fixture.actor(), fixture.deck(), readySession, submittedMatch).outcome();
+        assertThat(matchResult.path("feedback").path("result").asText()).isEqualTo("PARTIAL");
+        assertThat(matchResult.path("evidence").path("reasonCodes").toString()).contains("PAIR_RETRY");
+        assertThat(attempts.submit(fixture.actor(), fixture.deck(), readySession, submittedMatch).replayed()).isTrue();
+        assertThat(attempts.checkPair(fixture.actor(), fixture.deck(), readySession, correctPair)).isTrue();
+        assertThatThrownBy(() -> attempts.checkPair(fixture.actor(), fixture.deck(), readySession,
+                new PairCheckCommand(matchId, "invalid-nonce-0000", mistake.cueId(), mistake.optionId())))
+                .isInstanceOf(ResourceNotFoundException.class);
         JsonNode typed = java.util.stream.StreamSupport.stream(study.path("presentations").spliterator(), false)
                 .filter(row -> row.path("type").asText().equals("LISTEN_TYPE")).findFirst().orElseThrow();
         assertThat(typed.path("reference").isNull()).isTrue();
@@ -188,6 +228,12 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
         assertThat(blocked.path("status").textValue()).isEqualTo("NOT_ASSESSED");
         assertThat(blocked.path("feedback").path("reasonCodes").get(0).textValue()).isEqualTo("MEDIA_NOT_READY");
         assertThat(blocked.path("transition").isNull()).isTrue();
+
+        jdbc.sql("UPDATE app_learning.study_pair_interaction SET expires_at=CURRENT_TIMESTAMP - INTERVAL '1 hour' "
+                        + "WHERE presentation_id=:presentation")
+                .param("presentation", matchId).update();
+        assertThat(retention.purgeBatch().pairInteractions()).isEqualTo(2);
+        assertThat(count("study_pair_interaction", "presentation_id", matchId)).isZero();
 
         UUID foreignAsset = media.reserve(UUID.randomUUID(), UUID.randomUUID(), MediaCatalog.Origin.UPLOAD);
         JsonNode head = decks.read(fixture.actor(), fixture.deck());
@@ -303,12 +349,32 @@ class ExerciseServiceIntegrationTest extends PostgresIntegrationTest {
                 JSON.createObjectNode().put("id", "deterministic-choice").put("version", "1"));
         ArrayNode bindings = create.withObject("exercise").withArray("bindings");
         bindings.add(binding("OPTION", 1, fixture));
-        bindings.add(binding("OPTION", 2, fixture, fixture.distractor()));
+        bindings.add(binding("OPTION", 24, fixture, fixture.distractor()));
+        ObjectNode choiceContract = JSON.createObjectNode().put("schemaVersion", 3).put("selectionMode", "MULTIPLE");
+        choiceContract.putArray("correctOptionIds").add(bindings.get(1).path("bindingId").asText())
+                .add(bindings.get(2).path("bindingId").asText());
+        choiceContract.putArray("accepted").add("memory").add("attention");
+        create.withObject("objective").set("answerContract", choiceContract);
         var published = service.publish(fixture.actor(), fixture.deck(), null, 1,
                 ExerciseCommand.readCreate(bytes(create)));
         assertThat(service.read(fixture.actor(), fixture.deck(),
                 UUID.fromString(published.acknowledgement().path("exerciseId").textValue()), null).path("bindings"))
                 .hasSize(3);
+        UUID choiceSession = UUID.fromString(studies.start(fixture.actor(), fixture.deck(), "UTC", scheduled())
+                .body().path("sessionId").asText());
+        JsonNode study = studies.read(fixture.actor(), fixture.deck(), choiceSession);
+        JsonNode presentation = study.path("presentations").get(0);
+        assertThat(presentation.path("selectionMode").asText()).isEqualTo("MULTIPLE");
+        assertThat(presentation.path("reference").isNull()).isTrue();
+        ObjectNode attempt = JSON.createObjectNode().put("attemptId", UUID.randomUUID().toString())
+                .put("presentationId", presentation.path("presentationId").asText())
+                .put("nonce", presentation.path("nonce").asText()).putNull("confidence").put("durationMs", 100);
+        attempt.putArray("hintsUsed");
+        attempt.putObject("response").put("kind", "CHOICE").putArray("optionIds")
+                .add(bindings.get(2).path("bindingId").asText()).add(bindings.get(1).path("bindingId").asText());
+        assertThat(attempts.submit(fixture.actor(), fixture.deck(), UUID.fromString(study.path("sessionId").asText()),
+                AttemptCommand.read(bytes(attempt))).outcome().path("feedback").path("result").asText())
+                .isEqualTo("CORRECT");
 
         assertThatThrownBy(() -> service.list(UUID.randomUUID(), fixture.deck(), null, null))
                 .isInstanceOf(ResourceNotFoundException.class);
