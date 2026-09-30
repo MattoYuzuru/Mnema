@@ -18,8 +18,8 @@ import java.util.UUID;
 /** Strict attempt envelope; all assessment authority remains in the stored presentation. */
 public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, Response response,
                              List<String> hintsUsed, String confidence, int durationMs, ObjectNode payload) {
-    private static final int MAX_BYTES = 8_192;
-    private static final ContentJsonReader JSON = new ContentJsonReader(MAX_BYTES, 8, 200);
+    private static final int MAX_BYTES = 262_144;
+    private static final ContentJsonReader JSON = new ContentJsonReader(MAX_BYTES, 8, 20_000);
     private static final Set<String> CONFIDENCE = Set.of("KNEW", "UNSURE", "GUESSED");
 
     public AttemptCommand {
@@ -75,8 +75,17 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
                 catch (IllegalArgumentException exception) { throw invalid(); }
             }
             case "CHOICE" -> {
-                fields(value, Set.of("kind", "optionId"));
-                yield new ChoiceResponse(id(value.path("optionId"), false));
+                fields(value, Set.of("kind", "optionIds"));
+                JsonNode options = value.path("optionIds");
+                if (!options.isArray() || options.isEmpty()) throw invalid();
+                List<UUID> ids = new ArrayList<>();
+                Set<UUID> distinct = new HashSet<>();
+                for (JsonNode option : options) {
+                    UUID optionId = id(option, false);
+                    if (!distinct.add(optionId)) throw invalid();
+                    ids.add(optionId);
+                }
+                yield new ChoiceResponse(ids);
             }
             case "MATCH" -> {
                 fields(value, Set.of("kind", "pairs"));
@@ -129,7 +138,9 @@ public record AttemptCommand(UUID attemptId, UUID presentationId, String nonce, 
             CancelResponse { }
     public record TextResponse(String text) implements Response { }
     public record SelfCheckResponse(SelfRating rating) implements Response { }
-    public record ChoiceResponse(UUID optionId) implements Response { }
+    public record ChoiceResponse(List<UUID> optionIds) implements Response {
+        public ChoiceResponse { optionIds = List.copyOf(optionIds); }
+    }
     public record MatchPair(UUID cueId, UUID optionId) { }
     public record MatchResponse(List<MatchPair> pairs) implements Response { }
     public record CancelResponse() implements Response { }

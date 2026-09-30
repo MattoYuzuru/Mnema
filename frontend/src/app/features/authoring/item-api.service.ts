@@ -15,6 +15,7 @@ import {
     ItemDetail,
     ItemPage,
     ItemSummary,
+    ItemRecordSummary,
     ItemWriteResult,
     requireCommand,
     requireCount,
@@ -133,11 +134,14 @@ function parseItemDetail(value: unknown, current: boolean): ItemDetail {
 }
 
 function parseSummary(value: unknown): ItemSummary {
-    const object = requireObject(value, ['memberKey', 'itemRevisionId', 'itemVersion', 'ordinal', 'formatVersion', 'createdAt', 'updatedAt']);
-    return { ...parseRecordSummary(object), ordinal: requireOrdinal(object['ordinal'], false) };
+    const object = requireObject(value, ['memberKey', 'itemRevisionId', 'itemVersion', 'ordinal', 'formatVersion', 'createdAt', 'updatedAt', 'title']);
+    if (typeof object['title'] !== 'string' || Array.from(object['title']).length > 240) {
+        throw new AuthoringProtocolError('Invalid material title.');
+    }
+    return { ...parseRecordSummary(object), ordinal: requireOrdinal(object['ordinal'], false), title: object['title'] as string };
 }
 
-function parseRecordSummary(object: Record<string, unknown>): Omit<ItemSummary, 'ordinal'> {
+function parseRecordSummary(object: Record<string, unknown>): ItemRecordSummary {
     if (object['formatVersion'] !== 1) throw new AuthoringProtocolError('Unsupported item format.');
     return {
         memberKey: requireEntity(object['memberKey']), itemRevisionId: requireEntity(object['itemRevisionId']),

@@ -135,6 +135,7 @@
 }
 
 main {
+    position: relative;
     min-inline-size: 0;
     inline-size: 100%;
 }
@@ -195,3 +196,5 @@ main:focus-visible {
     .brand { font-size: 1.75rem; }
     .primary-nav { justify-content: flex-start; }
 }
+
+main:has(app-deck-constellation) { min-block-size: 48rem; }

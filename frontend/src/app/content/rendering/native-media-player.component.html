@@ -14,12 +14,12 @@
     <button type="button" class="mnema-player-action" [attr.aria-label]="playing() ? 'Пауза' : 'Воспроизвести'"
       (click)="toggle()">{{ playing() ? 'Ⅱ' : '▶' }}</button>
     <span class="mnema-player-time" aria-hidden="true">{{ elapsedText() }}</span>
-    <input type="range" min="0" [max]="seekMax()" step="1" [value]="position()"
+    <input type="range" min="0" [max]="seekMax()" step="any" [value]="position()"
       [disabled]="seekMax() === 0" [attr.aria-label]="'Позиция: ' + title()"
       [attr.aria-valuetext]="elapsedText() + ' из ' + durationText()" (input)="seek($any($event.target).value)" />
     <span class="mnema-player-time" aria-hidden="true">{{ durationText() }}</span>
     <button type="button" class="mnema-player-action" [attr.aria-label]="muted() ? 'Включить звук' : 'Выключить звук'"
-      (click)="toggleMute()">{{ muted() ? '◌' : '♪' }}</button>
+      (click)="toggleMute()"><svg viewBox="0 0 24 24" width="24" height="24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V4l10 3v4L9 8"/><ellipse cx="6" cy="18" rx="3" ry="2" fill="currentColor"/>@if (muted()) { <path d="M3 3l18 18"/> }</svg></button>
     <div class="mnema-player-speed"><label [for]="speedControlId">Скорость</label>
       <app-mnema-select [controlId]="speedControlId" label="Скорость" [compact]="true"
         [options]="speedOptions" [value]="speed().toString()" (valueChange)="changeSpeed($event)" />

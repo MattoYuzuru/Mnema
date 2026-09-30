@@ -73,6 +73,8 @@ export class ExerciseAuthoringPageComponent {
     readonly fixedBlankLength = signal(12);
     readonly previewClozeAnswer = signal('');
     readonly optionNodeIds = signal<readonly string[]>([]);
+    readonly multipleAnswers = signal(false);
+    readonly correctNodeIds = signal<readonly string[]>([]);
     readonly audioAssetId = signal('');
     readonly audioTitle = signal('');
     readonly audioInstruction = signal('');
@@ -83,6 +85,7 @@ export class ExerciseAuthoringPageComponent {
     readonly selectedObjectiveId = signal<string | null>(null);
 
     readonly projections = computed(() => this.item() === null ? [] : textProjections(this.item()!.document));
+    private readonly projectionById = computed(() => new Map(this.projections().map(value => [value.nodeId, value])));
     readonly projectionOptions = computed<readonly MnemaSelectOption[]>(() => [
         { value: '', label: 'Выберите фрагмент' },
         ...this.projections().map(projection => ({ value: projection.nodeId, label: projection.label }))
@@ -97,7 +100,9 @@ export class ExerciseAuthoringPageComponent {
     readonly previewPrompt = computed(() => this.isListening() ? this.audioInstruction().trim() || 'Прослушайте запись'
         : this.promptMode() === 'custom'
         ? this.customPrompt().trim() : this.projection(this.promptNodeId())?.text ?? 'Выберите фрагмент вопроса');
-    readonly previewAnswer = computed(() => this.answerMode() === 'custom'
+    readonly previewAnswer = computed(() => this.isChoice()
+        ? this.correctNodeIds().map(id => this.projection(id)?.text ?? '').filter(Boolean).join(' · ') || 'Отметьте правильные ответы'
+        : this.answerMode() === 'custom'
         ? this.aliases()[0] ?? 'Введите свой ответ'
         : this.projection(this.answerNodeId())?.text ?? 'Выберите проверяемый ответ');
     readonly previewBlankLength = computed(() => this.blankMode() === 'FIXED' ? this.fixedBlankLength()
@@ -178,7 +183,11 @@ export class ExerciseAuthoringPageComponent {
         if (value === 'SINGLE_CHOICE' || value === 'LISTEN_CHOICE' || value === 'AUDIO_TEXT_MATCH') {
             this.answerMode.set('node');
         }
-        this.type.set(value); this.changed();
+        this.type.set(value);
+        if (this.isChoice() && this.objectiveMode() === 'reuse') {
+            this.objectiveMode.set(this.exercise() ? 'revise' : 'create');
+        }
+        this.changed();
     }
     setEnabled(value: boolean): void { this.enabled.set(value); this.changed(); }
     setPromptMode(value: PromptMode, event?: MouseEvent): void {
@@ -203,6 +212,8 @@ export class ExerciseAuthoringPageComponent {
         this.answerNodeId.set(value);
         if (this.type() === 'SINGLE_CHOICE' || this.type() === 'LISTEN_CHOICE') {
             this.optionNodeIds.update(options => [...new Set(options.filter(id => id !== previous).concat(value))]);
+            this.correctNodeIds.set(this.multipleAnswers()
+                ? [...new Set([...this.correctNodeIds().filter(id => id !== previous), value])] : [value]);
         } else if (this.type() === 'AUDIO_TEXT_MATCH' && this.matchRows()[0].optionNodeId === '') {
             this.matchRows.update(rows => rows.map((row, index) => index === 0
                 ? { ...row, optionNodeId: value } : row));
@@ -231,6 +242,20 @@ export class ExerciseAuthoringPageComponent {
     }
     setBlankMode(value: 'FIXED' | 'ANSWER_LENGTH'): void { this.blankMode.set(value); this.changed(); }
     setFixedBlankLength(value: number): void { this.fixedBlankLength.set(value); this.changed(); }
+    isChoice(): boolean { return this.type() === 'SINGLE_CHOICE' || this.type() === 'LISTEN_CHOICE'; }
+    setMultipleAnswers(value: boolean): void {
+        this.multipleAnswers.set(value);
+        if (!value) this.correctNodeIds.set(this.correctNodeIds().slice(0, 1));
+        this.answerNodeId.set(this.correctNodeIds()[0] ?? null);
+        this.changed();
+    }
+    toggleCorrectOption(nodeId: string, checked: boolean): void {
+        this.correctNodeIds.update(values => checked
+            ? this.multipleAnswers() ? [...new Set([...values, nodeId])] : [nodeId]
+            : values.filter(id => id !== nodeId));
+        this.answerNodeId.set(this.correctNodeIds()[0] ?? null);
+        this.changed();
+    }
     supportsCustomAnswer(): boolean {
         return this.type() === 'SELF_CHECK' || this.type() === 'TYPED'
             || this.type() === 'CLOZE_SINGLE' || this.type() === 'LISTEN_TYPE';
@@ -290,6 +315,7 @@ export class ExerciseAuthoringPageComponent {
     toggleOption(nodeId: string, checked: boolean): void {
         this.optionNodeIds.update(values => checked
             ? [...new Set([...values, nodeId])] : values.filter(value => value !== nodeId));
+        if (!checked && this.correctNodeIds().includes(nodeId)) this.toggleCorrectOption(nodeId, false);
         this.changed();
     }
 
@@ -360,7 +386,7 @@ export class ExerciseAuthoringPageComponent {
 
     exerciseName(type: ExerciseType): string {
         const names: Record<ExerciseType, string> = { SELF_CHECK: 'Вспомнить и сверить', TYPED: 'Ввести ответ', CLOZE_SINGLE: 'Заполнить пропуск',
-            SINGLE_CHOICE: 'Выбрать один вариант', LISTEN_CHOICE: 'Аудирование · выбор',
+            SINGLE_CHOICE: 'Выбрать варианты ответа', LISTEN_CHOICE: 'Аудирование · выбор',
             AUDIO_TEXT_MATCH: 'Аудирование · пары', LISTEN_TYPE: 'Аудирование · написать' };
         return names[type];
     }
@@ -379,12 +405,12 @@ export class ExerciseAuthoringPageComponent {
     }
 
     objectiveName(objective: ExerciseObjective): string {
-        return objective.answerContract.schemaVersion === 1 ? objective.answerContract.accepted[0] ?? 'Цель без подписи'
+        return objective.answerContract.schemaVersion !== 2 ? objective.answerContract.accepted[0] ?? 'Цель без подписи'
             : 'Соотнесение записей и текста';
     }
 
     projection(id: string | null): ExerciseProjection | null {
-        return this.projections().find(value => value.nodeId === id) ?? null;
+        return id === null ? null : this.projectionById().get(id) ?? null;
     }
 
     private openNew(deck: OwnDeck, item: ItemDetail, page: ExercisePage): void {
@@ -393,7 +419,7 @@ export class ExerciseAuthoringPageComponent {
         this.promptNodeId.set(null); this.customPrompt.set(''); this.answerMode.set('node'); this.answerNodeId.set(null);
         this.setAliasValues(['']); this.matchingMode.set('STRICT'); this.blankMode.set('FIXED'); this.fixedBlankLength.set(12);
         this.previewClozeAnswer.set('');
-        this.optionNodeIds.set([]); this.objectiveMode.set('create');
+        this.optionNodeIds.set([]); this.correctNodeIds.set([]); this.multipleAnswers.set(false); this.objectiveMode.set('create');
         this.audioAssetId.set(''); this.audioTitle.set(''); this.audioInstruction.set(''); this.audioTranscript.set('');
         this.matchRows.set([newMatchRow(), newMatchRow()]);
         this.selectedObjectiveId.set(null); this.pending = null; this.dirty.set(false); this.phase.set('ready');
@@ -430,7 +456,13 @@ export class ExerciseAuthoringPageComponent {
             .flatMap(binding => binding.nodeIds));
         if (detail.objective.answerContract.schemaVersion === 1) this.useAnswerContract(detail.objective.answerContract);
         else { this.setAliasValues(['']); this.matchingMode.set('STRICT'); }
-        this.objectiveMode.set(detail.type === 'AUDIO_TEXT_MATCH' ? 'revise' : 'reuse');
+        const contract = detail.objective.answerContract;
+        this.multipleAnswers.set(contract.schemaVersion === 3 && contract.selectionMode === 'MULTIPLE');
+        this.correctNodeIds.set(contract.schemaVersion === 3
+            ? detail.bindings.filter(binding => contract.correctOptionIds.includes(binding.bindingId))
+                .flatMap(binding => binding.nodeIds)
+            : this.isChoice() && this.answerNodeId() ? [this.answerNodeId()!] : []);
+        this.objectiveMode.set(detail.type === 'AUDIO_TEXT_MATCH' || this.isChoice() ? 'revise' : 'reuse');
         this.selectedObjectiveId.set(detail.objective.objectiveId);
         this.pending = null; this.dirty.set(false); this.phase.set('ready');
         if (this.route.snapshot.queryParamMap.get('saved') === '1') {
@@ -487,16 +519,16 @@ export class ExerciseAuthoringPageComponent {
             errors['answer'] = 'Ответ слишком длинный; выберите более короткий фрагмент.';
         }
         const aliases = this.aliases();
-        if (this.type() !== 'AUDIO_TEXT_MATCH' && this.objectiveMode() !== 'reuse' && aliases.length === 0) errors['aliases'] = 'Добавьте хотя бы один допустимый ответ.';
+        if (this.type() !== 'AUDIO_TEXT_MATCH' && !this.isChoice() && this.objectiveMode() !== 'reuse' && aliases.length === 0) errors['aliases'] = 'Добавьте хотя бы один допустимый ответ.';
         if (this.answerMode() === 'custom' && (aliases.length === 0 || [...aliases[0]].length > 80
             || new TextEncoder().encode(aliases[0]).length > 320)) {
             errors['aliases'] = 'Первый ответ должен быть коротким: до 80 символов.';
         }
-        if (this.type() !== 'AUDIO_TEXT_MATCH' && aliases.length > 20) errors['aliases'] = 'Допустимо не более 20 вариантов ответа.';
-        if (this.type() !== 'AUDIO_TEXT_MATCH' && this.aliasRows().some(row => !row.value.trim())) {
+        if (this.type() !== 'AUDIO_TEXT_MATCH' && !this.isChoice() && aliases.length > 20) errors['aliases'] = 'Допустимо не более 20 вариантов ответа.';
+        if (this.type() !== 'AUDIO_TEXT_MATCH' && !this.isChoice() && this.aliasRows().some(row => !row.value.trim())) {
             errors['aliases'] = 'Заполните или уберите пустые варианты ответа.';
         }
-        if (this.type() !== 'AUDIO_TEXT_MATCH' && this.objectiveMode() !== 'reuse'
+        if (this.type() !== 'AUDIO_TEXT_MATCH' && !this.isChoice() && this.objectiveMode() !== 'reuse'
             && new Set(this.aliasRows().map(row => row.value.trim())).size !== this.aliasRows().length) {
             errors['aliases'] = 'Уберите повторяющиеся варианты ответа.';
         }
@@ -509,10 +541,10 @@ export class ExerciseAuthoringPageComponent {
                 errors['blank'] = 'Для пропуска по длине все ответы должны быть одинаковой длины.';
             }
         }
-        if (this.type() !== 'AUDIO_TEXT_MATCH' && aliases.some(value => new TextEncoder().encode(value).length > 512)) {
+        if (this.type() !== 'AUDIO_TEXT_MATCH' && !this.isChoice() && aliases.some(value => new TextEncoder().encode(value).length > 512)) {
             errors['aliases'] = 'Один из ответов слишком длинный.';
         }
-        if (this.type() !== 'AUDIO_TEXT_MATCH' && answer !== null && this.objectiveMode() !== 'reuse'
+        if (this.type() !== 'AUDIO_TEXT_MATCH' && !this.isChoice() && answer !== null && this.objectiveMode() !== 'reuse'
             && !aliases.some(value => normalized(value) === normalized(answer.text))) {
             errors['aliases'] = 'Допустимые ответы должны включать текст выбранного правильного фрагмента.';
         }
@@ -531,7 +563,11 @@ export class ExerciseAuthoringPageComponent {
         }
         if (this.type() === 'SINGLE_CHOICE' || this.type() === 'LISTEN_CHOICE') {
             const options = this.optionNodeIds().map(id => this.projection(id)).filter(value => value !== null);
-            if (options.length < 2 || options.length > 6) errors['options'] = 'Выберите от 2 до 6 вариантов.';
+            if (options.length < 2) errors['options'] = 'Выберите хотя бы два варианта.';
+            if (this.correctNodeIds().length === 0 || (!this.multipleAnswers() && this.correctNodeIds().length !== 1)
+                || this.correctNodeIds().some(id => !this.optionNodeIds().includes(id))) {
+                errors['options'] = 'Отметьте правильные ответы среди выбранных вариантов.';
+            }
             if (answer !== null && !options.some(value => value.nodeId === answer.nodeId)) {
                 errors['options'] = 'Правильный ответ должен входить в список вариантов.';
             }
@@ -558,6 +594,14 @@ export class ExerciseAuthoringPageComponent {
     }
 
     private answerContract(exercise: Record<string, unknown>): AnswerContract {
+        if (this.isChoice()) {
+            const bindings = exercise['bindings'] as Record<string, unknown>[];
+            return { schemaVersion: 3, selectionMode: this.multipleAnswers() ? 'MULTIPLE' : 'SINGLE',
+                correctOptionIds: bindings.filter(binding => binding['role'] === 'OPTION'
+                    && this.correctNodeIds().includes((binding['nodeIds'] as string[])[0]))
+                    .map(binding => binding['bindingId'] as string),
+                accepted: this.correctNodeIds().map(id => this.projection(id)!.text) };
+        }
         if (this.type() === 'AUDIO_TEXT_MATCH') {
             const bindings = exercise['bindings'] as Record<string, unknown>[];
             return { schemaVersion: 2, pairs: this.matchRows().map((row, index) => ({ cueId: row.cueId,

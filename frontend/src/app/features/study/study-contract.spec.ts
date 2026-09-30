@@ -1,3 +1,4 @@
+import choiceAndPairs from '../../../../../contracts/study/choice-and-pairs.json';
 import adversarial from '../../../../../contracts/study/adversarial.json';
 import attempts from '../../../../../contracts/study/attempts.json';
 import authoring from '../../../../../contracts/study/authoring.json';
@@ -18,6 +19,7 @@ describe('Study shared contract', () => {
         const definitions = asObject(root['$defs']);
         const fixtures: Array<[unknown, string]> = [
             [authoring, 'authoringDocument'],
+            [choiceAndPairs, 'choiceAndPairsDocument'],
             [session, 'sessionDocument'],
             [attempts, 'attemptsDocument'],
             [reducer, 'reducerDocument'],

@@ -15,7 +15,7 @@ describe('BrowsePageComponent', () => {
     const deck = { deckId, metadata: { title: 'Моя колода', description: '' } } as OwnDeck;
     const item = (ordinal: number): ItemSummary => ({
         memberKey: `00000000-0000-4000-8000-${String(ordinal + 10).padStart(12, '0')}`,
-        itemRevisionId: revisionId, itemVersion: '1', formatVersion: 1, ordinal,
+        title: 'Париж — столица Франции', itemRevisionId: revisionId, itemVersion: '1', formatVersion: 1, ordinal,
         createdAt: '2026-09-29T10:00:00Z', updatedAt: '2026-09-29T10:00:00Z'
     });
     const first: ItemPage = { deckId, deckRevisionId: revisionId, deckVersion: '1', total: 2,
@@ -60,7 +60,7 @@ describe('BrowsePageComponent', () => {
         onIntersection([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
         fixture.detectChanges();
         expect(api.list.calls.count()).toBe(2);
-        expect(fixture.nativeElement.textContent).toContain('Материал 1');
+        expect(fixture.nativeElement.textContent).toContain('Париж — столица Франции');
         expect((fixture.nativeElement as HTMLElement).querySelector('.capture-badge')?.textContent?.trim()).toBe('3');
         fixture.componentInstance.captureCount.set(1_000);
         fixture.detectChanges();

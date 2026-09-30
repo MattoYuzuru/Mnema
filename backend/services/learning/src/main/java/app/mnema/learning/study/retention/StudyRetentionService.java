@@ -14,8 +14,8 @@ public class StudyRetentionService {
     public PurgeResult purgeBatch() {
         var asOf = repository.now();
         return new PurgeResult(repository.purgeRaw(asOf, BATCH_SIZE),
-                repository.expireCompactOutcomes(asOf, BATCH_SIZE));
+                repository.expireCompactOutcomes(asOf, BATCH_SIZE), repository.purgePairInteractions(asOf, BATCH_SIZE));
     }
 
-    public record PurgeResult(int rawResponses, int compactOutcomes) { }
+    public record PurgeResult(int rawResponses, int compactOutcomes, int pairInteractions) { }
 }

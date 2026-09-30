@@ -24,6 +24,9 @@ import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.ArrayDeque;
 import java.util.Base64;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Random;
 import java.util.List;
 import java.util.UUID;
 
@@ -271,6 +274,12 @@ public class StudySessionService {
                         session.configId(), now)
                 : repository.stateEpoch(session.accountId(), session.deckId(), candidate.objectiveId()).orElse(0L);
         UUID presentation = UUID.randomUUID();
+        if (candidate.type().equals("AUDIO_TEXT_MATCH")) {
+            // Persist the shuffled presentation once: replay/read keep its option order stable.
+            var shuffled = new ArrayList<JsonNode>(); options.forEach(shuffled::add);
+            Collections.shuffle(shuffled, new Random(presentation.getLeastSignificantBits()));
+            options.removeAll(); options.addAll(shuffled);
+        }
         repository.insertPresentation(session.accountId(), session.sessionId(), session.deckId(),
                 session.generationId(), candidate, presentation, ordinal, nonce(), epoch, prompt, options, bindings,
                 now, now.plus(SESSION_LIFETIME));
@@ -376,7 +385,10 @@ public class StudySessionService {
                 .put("objectiveId", row.objectiveId().toString())
                 .put("objectiveRevisionId", row.objectiveRevisionId().toString())
                 .put("learningEpoch", Long.toString(row.learningEpoch()));
-        if (isListening(row.type())) result.putNull("reference");
+        if (row.type().equals("SINGLE_CHOICE") || row.type().equals("LISTEN_CHOICE")) {
+            result.put("selectionMode", row.answerContract().path("selectionMode").asText("SINGLE"));
+        }
+        if (isListening(row.type()) || row.type().equals("SINGLE_CHOICE")) result.putNull("reference");
         else result.put("reference", reference(row.answerContract()));
         ObjectNode prompt = isListening(row.type())
                 ? promptForClient(row.prompt(), row.transcriptRevealed()) : ((ObjectNode) row.prompt()).deepCopy();

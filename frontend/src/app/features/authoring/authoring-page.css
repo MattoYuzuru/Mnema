@@ -56,11 +56,11 @@ h1 {
     max-inline-size: 28ch;
     margin: 0;
     font-size: clamp(2.5rem, 6vw, 4.75rem);
-    line-height: .98;
+    line-height: 1.12;
     text-wrap: balance;
 }
 
-h2 { font-size: clamp(1.6rem, 3vw, 2.25rem); line-height: 1.08; }
+h2 { font-size: clamp(1.6rem, 3vw, 2.25rem); line-height: 1.16; }
 
 .lede,
 .muted { max-inline-size: 62ch; color: var(--mn-muted); line-height: 1.6; }
@@ -143,13 +143,13 @@ h2 { font-size: clamp(1.6rem, 3vw, 2.25rem); line-height: 1.08; }
     gap: 1rem;
     align-items: center;
     min-block-size: 5rem;
-    padding: .9rem .25rem;
+    padding: .9rem 1rem;
     color: inherit;
     text-decoration: none;
 }
 
-.item-row strong { color: var(--mn-ink); font-weight: 600; }
-.item-row time { padding-inline-end: .75rem; color: var(--mn-muted); font-size: .875rem; }
+.item-row strong { min-inline-size: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mn-ink); font-weight: 600; }
+.item-row time { color: var(--mn-muted); font-size: .875rem; }
 .list-sentinel { min-block-size: 1px; padding-block: .5rem; color: var(--mn-muted); }
 .item-row { --mn-wave-fill: var(--mn-soft); }
 .item-row:hover strong { text-decoration: underline; text-underline-offset: .2em; }

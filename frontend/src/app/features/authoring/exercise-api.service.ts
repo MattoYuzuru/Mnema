@@ -136,17 +136,23 @@ function parseDetail(value: unknown): ExerciseDetail {
         enabled: object['enabled'], schemaVersion: object['schemaVersion'], createdAt: object['createdAt'],
         updatedAt: object['updatedAt'], objective: object['objective']
     });
-    if (!Array.isArray(object['bindings']) || object['bindings'].length === 0 || object['bindings'].length > 8) {
+    if (!Array.isArray(object['bindings']) || object['bindings'].length === 0) {
         throw new AuthoringProtocolError('Invalid exercise bindings.');
     }
     const evaluator = requireObject(object['evaluatorPolicy'], ['id', 'version']);
     if (typeof evaluator['id'] !== 'string' || evaluator['version'] !== '1') {
         throw new AuthoringProtocolError('Invalid evaluator policy.');
     }
+    const bindings = object['bindings'].map(parseBinding);
+    const answer = summary.objective.answerContract;
+    if (answer.schemaVersion === 3 && (summary.type !== 'SINGLE_CHOICE' && summary.type !== 'LISTEN_CHOICE'
+        || answer.correctOptionIds.some(id => !bindings.some(binding => binding.role === 'OPTION' && binding.bindingId === id)))) {
+        throw new AuthoringProtocolError('Invalid choice target projection.');
+    }
     return {
         ...summary, deckId: requireEntity(object['deckId']), deckRevisionId: requireEntity(object['deckRevisionId']),
         deckVersion: requireVersion(object['deckVersion']), prompt: parsePrompt(object['prompt']),
-        evaluatorPolicy: { id: evaluator['id'], version: '1' }, bindings: object['bindings'].map(parseBinding)
+        evaluatorPolicy: { id: evaluator['id'], version: '1' }, bindings
     };
 }
 
@@ -163,6 +169,23 @@ function parseObjective(value: unknown): ExerciseObjective {
 }
 
 function parseAnswer(value: unknown): AnswerContract {
+    if (value !== null && typeof value === 'object' && !Array.isArray(value)
+        && (value as Record<string, unknown>)['schemaVersion'] === 3) {
+        const object = requireObject(value, ['schemaVersion', 'selectionMode', 'correctOptionIds', 'accepted']);
+        if ((object['selectionMode'] !== 'SINGLE' && object['selectionMode'] !== 'MULTIPLE')
+            || !Array.isArray(object['correctOptionIds']) || object['correctOptionIds'].length === 0
+            || !Array.isArray(object['accepted']) || object['accepted'].length !== object['correctOptionIds'].length
+            || object['accepted'].some(text => typeof text !== 'string' || !text.trim())
+            || (object['selectionMode'] === 'SINGLE' && object['correctOptionIds'].length !== 1)) {
+            throw new AuthoringProtocolError('Invalid choice answer contract.');
+        }
+        const correctOptionIds = object['correctOptionIds'].map(requireEntity);
+        if (new Set(correctOptionIds).size !== correctOptionIds.length) {
+            throw new AuthoringProtocolError('Duplicate correct choice.');
+        }
+        return { schemaVersion: 3, selectionMode: object['selectionMode'], correctOptionIds,
+            accepted: object['accepted'] as string[] };
+    }
     if (value !== null && typeof value === 'object' && !Array.isArray(value)
         && (value as Record<string, unknown>)['schemaVersion'] === 2) {
         const object = requireObject(value, ['schemaVersion', 'pairs']);
@@ -266,7 +289,7 @@ function parseBinding(value: unknown): ExerciseBinding {
     return {
         bindingId: requireEntity(object['bindingId']), role,
         memberKey: requireEntity(object['memberKey']), itemRevisionId: requireEntity(object['itemRevisionId']),
-        ordinal: requireCount(object['ordinal'], 15), nodeIds: object['nodeIds'].map(requireEntity),
+        ordinal: requireCount(object['ordinal'], 2_147_483_647), nodeIds: object['nodeIds'].map(requireEntity),
         display: kind === 'CUSTOM_TEXT' ? { kind, text: display['text'] as string } : { kind }
     };
 }

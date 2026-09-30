@@ -59,6 +59,19 @@ class ItemServiceIntegrationTest extends PostgresIntegrationTest {
     }
 
     @Test
+    void materialListsProjectFirstTextAndReuseTheImmutableRevisionPreview() {
+        UUID actor = UUID.randomUUID(); UUID deck = createDeck(actor);
+        service.publish(actor, deck, 0, create(UUID.randomUUID(), decks.read(actor, deck), nativeDocument, null));
+        var first = service.list(actor, deck, "20", null).path("items").get(0);
+        assertThat(first.path("title").textValue()).isEqualTo("Память, письмо и проверяемые знания");
+        assertThat(first.has("document")).isFalse();
+        assertThat(service.list(actor, deck, "20", null).path("items").get(0).path("title"))
+                .isEqualTo(first.path("title"));
+        assertThat(jdbc.sql("SELECT count(*) FROM app_learning.item_preview WHERE deck_id=:deck")
+                .param("deck", deck).query(Integer.class).single()).isEqualTo(1);
+    }
+
+    @Test
     void publicationPinsOnlySupportedOwnedMediaInTheSameTransaction() {
         UUID actor = UUID.randomUUID();
         UUID deck = createDeck(actor);

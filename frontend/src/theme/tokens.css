@@ -23,6 +23,12 @@
     --mn-danger: #962b31;
     --mn-caution: #8a5700;
     --mn-focus: #281378;
+    --mn-hint: #7651a6;
+    --mn-selection: rgb(142 108 192 / 24%);
+    --mn-wave-duration: .65s;
+    --mn-list-wave-duration: .95s;
+    --mn-workspace-width: 62rem;
+  --mn-decoration-content-width: 68rem;
 
     --mn-font-display: "Mnema Cormorant", Georgia, "Times New Roman", serif;
     --mn-font-body: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;

@@ -117,6 +117,24 @@ describe('StudyApiService', () => {
         await expectAsync(rejected).toBeRejectedWithError(StudyProtocolError);
     });
 
+    it('accepts multiple selection and checks a pair without exposing the answer map', async () => {
+        const session = active('SINGLE_CHOICE');
+        const multiple = { ...session, presentations: [{ ...session.presentations[0], selectionMode: 'MULTIPLE' }] };
+        const read = firstValueFrom(api.read(deckId, sessionId));
+        http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}`).flush(multiple, { headers: privateHeaders });
+        const result = await read;
+        if (result.status !== 'PREPARING') expect(result.presentations[0].selectionMode).toBe('MULTIPLE');
+        const pair = firstValueFrom(api.checkPair(deckId, sessionId, presentationId, 'abcdefghijklmnop', id('30'), id('15')));
+        const request = http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}/pair-checks`);
+        expect(request.request.body).toEqual({ presentationId, nonce: 'abcdefghijklmnop', cueId: id('30'), optionId: id('15') });
+        request.flush({ correct: false }, { headers: privateHeaders });
+        expect(await pair).toEqual({ correct: false });
+        const invalid = firstValueFrom(api.checkPair(deckId, sessionId, presentationId, 'abcdefghijklmnop', id('30'), id('15')));
+        http.expectOne(`/api/decks/${deckId}/study-sessions/${sessionId}/pair-checks`)
+            .flush({ correct: true, correctOptionId: id('15') }, { headers: privateHeaders });
+        await expectAsync(invalid).toBeRejectedWithError(StudyProtocolError);
+    });
+
     it('keeps listening transcripts hidden until the explicit accommodation response', async () => {
         const pending = active('TYPED');
         const presentation = pending.presentations[0];
@@ -190,7 +208,7 @@ describe('StudyApiService', () => {
         const progressResult = firstValueFrom(api.progress(deckId));
         http.expectOne(`/api/decks/${deckId}/study-progress?limit=100`).flush({
             asOf: '2026-09-20T10:00:00Z', items: [{ memberKey: id('20'), itemRevisionId: id('21'),
-                state: 'DUE', objectiveCoverage: { enabled: 2, introduced: 1, assessed: 1 },
+                title: 'Вопрос по истории', state: 'DUE', objectiveCoverage: { enabled: 2, introduced: 1, assessed: 1 },
                 lastAssessedAt: '2026-09-19T10:00:00Z', nextDue: '2026-09-20T09:00:00Z' }], nextCursor: null
         }, { headers: privateHeaders });
         expect((await progressResult).items[0].state).toBe('DUE');

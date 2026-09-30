@@ -396,7 +396,7 @@ class AttemptServiceIntegrationTest extends PostgresIntegrationTest {
                 .put("presentationId", presentation.id().toString()).put("nonce", presentation.nonce());
         ObjectNode response = body.putObject("response").put("kind", kind);
         if (kind.equals("TEXT")) response.put("text", value);
-        if (kind.equals("CHOICE")) response.put("optionId", value);
+        if (kind.equals("CHOICE")) response.putArray("optionIds").add(value);
         body.set("hintsUsed", JSON.valueToTree(hints));
         if (confidence == null) body.putNull("confidence"); else body.put("confidence", confidence);
         body.put("durationMs", 1_000);

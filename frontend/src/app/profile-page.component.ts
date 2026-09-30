@@ -99,7 +99,7 @@ function passwordByteLimit(control: AbstractControl): { passwordBytes: true } | 
     styles: [`
       :host { display: block; min-inline-size: 0; color: var(--mn-body); }
       * { box-sizing: border-box; }
-      .profile-page { inline-size: min(100%, 58rem); margin-inline: auto; padding: clamp(1.5rem, 3vw, 2.5rem) clamp(1.125rem, 5vw, 3rem); }
+      .profile-page { inline-size: min(100%, var(--mn-workspace-width)); margin-inline: auto; padding: clamp(1.5rem, 3vw, 2.5rem) clamp(1.125rem, 5vw, 3rem); }
       .back-link { display: inline-flex; align-items: center; min-block-size: var(--mn-touch-min, 46px); color: var(--mn-ink); text-underline-offset: .22em; }
       header { max-inline-size: 45rem; padding-block: clamp(1.25rem, 3vw, 2rem); }
       .eyebrow { margin: 0 0 .45rem; color: var(--mn-ink); font: 700 .75rem/1.4 var(--mn-font-mono, ui-monospace, monospace); letter-spacing: .12em; text-transform: uppercase; }

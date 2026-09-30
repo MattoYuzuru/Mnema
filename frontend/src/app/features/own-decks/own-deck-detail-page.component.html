@@ -118,17 +118,17 @@
 
       <div class="form-actions">
         <span class="draft-state" aria-live="polite">{{ form.dirty ? 'Есть несохранённые изменения' : 'Нет локальных изменений' }}</span>
-        <button class="button primary" type="submit"
-          [disabled]="!canStartNewMutation(mutation)">
-          {{ mutation.phase === 'pending' ? 'Отправляем…' : 'Сохранить изменения' }}
-        </button>
+        <div class="actions">
+          <app-hold-to-delete-button label="Удалить колоду" [disabled]="deleting() || !canDelete(mutation)" (confirmed)="deleteDeck(deck)" />
+          <button class="button primary" type="submit"
+            [disabled]="!canStartNewMutation(mutation)">
+            {{ mutation.phase === 'pending' ? 'Отправляем…' : 'Сохранить изменения' }}
+          </button>
+        </div>
       </div>
+      @if (deleteError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
     </form>
 
-    <section class="destructive-action" aria-label="Удаление колоды">
-      <p>Колода больше не нужна? Её материалы и упражнения исчезнут из вашей библиотеки.</p>
-      @if (deleteError(); as message) { <p class="field-error" role="alert">{{ message }}</p> }
-      <app-hold-to-delete-button label="Удалить колоду" [disabled]="deleting() || !canDelete(mutation)" (confirmed)="deleteDeck(deck)" />
-    </section>
+
   }
 </section>

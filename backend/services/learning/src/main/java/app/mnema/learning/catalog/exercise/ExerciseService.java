@@ -220,7 +220,11 @@ public class ExerciseService {
         validatePrompt(command.exercise().prompt(), nodes);
         ObjectivePlan objective = prepareObjective(actor, deckId, command.objective(), assessed.memberKey());
         int answerVersion = objective.answerContract().path("schemaVersion").intValue();
-        if (answerVersion != (command.exercise().type().equals("AUDIO_TEXT_MATCH") ? 2 : 1)) {
+        boolean choice = command.exercise().type().equals("SINGLE_CHOICE")
+                || command.exercise().type().equals("LISTEN_CHOICE");
+        if (choice && answerVersion == 3) ExerciseCommand.validateChoiceAnswer(objective.answerContract(), command.exercise());
+        if (!(choice && answerVersion == 3)
+                && answerVersion != (command.exercise().type().equals("AUDIO_TEXT_MATCH") ? 2 : 1)) {
             throw new InvalidRequestException();
         }
         if (command.exercise().type().equals("CLOZE_SINGLE")) {

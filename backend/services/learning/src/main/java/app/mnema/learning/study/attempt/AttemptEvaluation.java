@@ -19,6 +19,8 @@ import java.util.UUID;
 
 record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceClass,
                          List<String> reasonCodes, ObjectNode feedback) {
+    private static final int MAX_REFERENCE_LENGTH = 4_096;
+
     static AttemptEvaluation evaluate(String exerciseType, JsonNode evaluator, JsonNode answer,
                                       JsonNode bindings, AttemptCommand command) {
         return evaluate(exerciseType, evaluator, answer, bindings, command, false);
@@ -49,7 +51,7 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
                 && evaluatorId.equals("deterministic-choice")) {
             if (!(command.response() instanceof AttemptCommand.ChoiceResponse choice)
                     || !command.hintsUsed().isEmpty()) throw new InvalidRequestException();
-            return choice(answer, bindings, choice.optionId(), transcriptRevealed);
+            return choice(answer, bindings, choice.optionIds(), transcriptRevealed);
         }
         if (exerciseType.equals("AUDIO_TEXT_MATCH") && evaluatorId.equals("deterministic-audio-match")) {
             if (!(command.response() instanceof AttemptCommand.MatchResponse match)
@@ -93,24 +95,48 @@ record AttemptEvaluation(Status status, Result result, EvidenceClass evidenceCla
         return new AttemptEvaluation(Status.ASSESSED, result, strength, reasons, feedback);
     }
 
-    private static AttemptEvaluation choice(JsonNode answer, JsonNode bindings, UUID selectedOption,
+    private static AttemptEvaluation choice(JsonNode answer, JsonNode bindings, List<UUID> selectedOptions,
                                             boolean transcriptRevealed) {
+        Set<UUID> issued = new HashSet<>();
+        Set<UUID> expected = new HashSet<>();
         JsonNode assessed = null;
-        JsonNode selected = null;
         for (JsonNode binding : bindings) {
-            if (binding.path("role").textValue().equals("ASSESSED")) assessed = binding;
-            if (binding.path("role").textValue().equals("OPTION")
-                    && binding.path("bindingId").textValue().equals(selectedOption.toString())) selected = binding;
+            if (binding.path("role").asText().equals("ASSESSED")) assessed = binding;
+            if (binding.path("role").asText().equals("OPTION")) {
+                issued.add(UUID.fromString(binding.path("bindingId").textValue()));
+            }
         }
-        if (assessed == null || selected == null) throw new InvalidRequestException();
-        boolean correct = sameTarget(assessed, selected);
-        Result result = correct ? Result.CORRECT : Result.INCORRECT;
+        boolean modern = answer.path("schemaVersion").intValue() == 3;
+        boolean multiple = modern && answer.path("selectionMode").asText().equals("MULTIPLE");
+        if (modern) answer.path("correctOptionIds").forEach(option -> expected.add(UUID.fromString(option.textValue())));
+        else if (assessed != null) {
+            for (JsonNode binding : bindings) {
+                if (binding.path("role").asText().equals("OPTION") && sameTarget(assessed, binding)) {
+                    expected.add(UUID.fromString(binding.path("bindingId").textValue()));
+                }
+            }
+        }
+        Set<UUID> selected = new HashSet<>(selectedOptions);
+        if (expected.isEmpty() || !issued.containsAll(expected)) return unavailable();
+        if (selected.isEmpty() || selected.size() != selectedOptions.size() || !issued.containsAll(selected)
+                || (!multiple && selected.size() != 1)) throw new InvalidRequestException();
+        Result result = selected.equals(expected) ? Result.CORRECT : Result.INCORRECT;
         ObjectNode feedback = JsonNodeFactory.instance.objectNode().put("result", result.name())
-                .put("reference", answer.path("accepted").get(0).textValue());
-        feedback.putArray("appliedRules").add("SERVER_ISSUED_OPTION");
+                .put("reference", modern ? choiceReference(answer)
+                        : answer.path("accepted").get(0).textValue());
+        feedback.putArray("appliedRules").add("SERVER_ISSUED_OPTION").add("EXACT_OPTION_SET");
         return new AttemptEvaluation(Status.ASSESSED, result, EvidenceClass.LOW,
                 transcriptRevealed ? List.of("RECOGNITION", "DETERMINISTIC", "TRANSCRIPT_ACCOMMODATION")
                         : List.of("RECOGNITION", "DETERMINISTIC", "PRODUCTION"), feedback);
+    }
+
+    private static String choiceReference(JsonNode answer) {
+        String reference = java.util.stream.StreamSupport.stream(answer.path("accepted").spliterator(), false)
+                .map(JsonNode::textValue).collect(java.util.stream.Collectors.joining(" · "));
+        if (reference.length() <= MAX_REFERENCE_LENGTH) return reference;
+        int end = MAX_REFERENCE_LENGTH - 1;
+        if (Character.isHighSurrogate(reference.charAt(end - 1))) end--;
+        return reference.substring(0, end) + "…";
     }
 
     private static AttemptEvaluation match(JsonNode answer, JsonNode bindings, List<AttemptCommand.MatchPair> supplied,

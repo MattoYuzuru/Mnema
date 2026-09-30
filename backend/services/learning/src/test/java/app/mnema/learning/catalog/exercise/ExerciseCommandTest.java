@@ -187,6 +187,28 @@ class ExerciseCommandTest {
         assertInvalid(wrongType);
     }
 
+    @Test
+    void choiceSupportsMoreThanSixOptionsAndValidatesExactCorrectSets() {
+        ObjectNode root = valid("SINGLE_CHOICE");
+        root.withObject("exercise").withObject("evaluatorPolicy").put("id", "deterministic-choice");
+        ArrayNode bindings = root.withObject("exercise").withArray("bindings");
+        JsonNode assessed = bindings.get(0);
+        bindings.add(binding("OPTION", 1, UUID.fromString(assessed.path("memberKey").textValue()),
+                UUID.fromString(assessed.path("itemRevisionId").textValue()),
+                UUID.fromString(assessed.path("nodeIds").get(0).textValue())));
+        for (int ordinal = 2; ordinal <= 24; ordinal++) bindings.add(binding("OPTION", ordinal));
+        ObjectNode answer = JSON.createObjectNode().put("schemaVersion", 3).put("selectionMode", "MULTIPLE");
+        answer.putArray("correctOptionIds").add(bindings.get(1).path("bindingId").textValue())
+                .add(bindings.get(20).path("bindingId").textValue());
+        answer.putArray("accepted").add("memory").add("attention");
+        root.withObject("objective").set("answerContract", answer);
+        assertThat(ExerciseCommand.readCreate(bytes(root.toString())).exercise().bindings()).hasSize(25);
+        answer.put("selectionMode", "SINGLE"); assertInvalid(root);
+        answer.put("selectionMode", "MULTIPLE");
+        answer.withArray("correctOptionIds").set(1, JSON.getNodeFactory().textNode(UUID.randomUUID().toString()));
+        assertInvalid(root);
+    }
+
     static ObjectNode valid(String type) {
         UUID member = UUID.randomUUID(), revision = UUID.randomUUID(), node = UUID.randomUUID();
         ObjectNode root = JSON.createObjectNode().put("commandId", UUID.randomUUID().toString())

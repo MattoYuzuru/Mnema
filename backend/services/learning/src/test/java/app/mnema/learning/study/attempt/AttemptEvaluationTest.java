@@ -178,6 +178,32 @@ class AttemptEvaluationTest {
         return JSON.createArrayNode();
     }
 
+    @Test
+    void multipleChoiceGradesAnExactSetIndependentOfOrderAndRejectsForgedOptions() {
+        UUID first = UUID.randomUUID(), second = UUID.randomUUID();
+        var bindings = choiceBindings(first, second);
+        ObjectNode contract = JSON.createObjectNode().put("schemaVersion", 3).put("selectionMode", "MULTIPLE");
+        contract.putArray("correctOptionIds").add(first.toString()).add(second.toString());
+        contract.putArray("accepted").add("one").add("two");
+        ObjectNode policy = JSON.createObjectNode().put("id", "deterministic-choice").put("version", "1");
+        AttemptCommand response = new AttemptCommand(UUID.randomUUID(), UUID.randomUUID(), "1234567890123456",
+                new AttemptCommand.ChoiceResponse(List.of(second, first)), List.of(), null, 100, JSON.createObjectNode());
+        assertThat(AttemptEvaluation.evaluate("SINGLE_CHOICE", policy, contract, bindings, response).result())
+                .isEqualTo(AttemptEvaluation.Result.CORRECT);
+        assertThat(AttemptEvaluation.evaluate("LISTEN_CHOICE", policy, contract, bindings, choiceCommand(first)).result())
+                .isEqualTo(AttemptEvaluation.Result.INCORRECT);
+        assertThatThrownBy(() -> AttemptEvaluation.evaluate("LISTEN_CHOICE", policy, contract, bindings,
+                choiceCommand(UUID.randomUUID()))).isInstanceOf(app.mnema.learning.platform.api.InvalidRequestException.class);
+        contract.put("selectionMode", "SINGLE");
+        assertThatThrownBy(() -> AttemptEvaluation.evaluate("SINGLE_CHOICE", policy, contract, bindings, response))
+                .isInstanceOf(app.mnema.learning.platform.api.InvalidRequestException.class);
+        contract.put("selectionMode", "MULTIPLE");
+        contract.withArray("correctOptionIds").remove(1);
+        contract.withArray("accepted").remove(1);
+        assertThat(AttemptEvaluation.evaluate("LISTEN_CHOICE", policy, contract, bindings, choiceCommand(first)).result())
+                .isEqualTo(AttemptEvaluation.Result.CORRECT);
+    }
+
     private static com.fasterxml.jackson.databind.node.ArrayNode choiceBindings(UUID answerOption, UUID distractor) {
         UUID member = UUID.randomUUID();
         UUID revision = UUID.randomUUID();
@@ -198,7 +224,7 @@ class AttemptEvaluationTest {
 
     private static AttemptCommand choiceCommand(UUID option) {
         return new AttemptCommand(UUID.randomUUID(), UUID.randomUUID(), "1234567890123456",
-                new AttemptCommand.ChoiceResponse(option), List.of(), null, 100, JSON.createObjectNode());
+                new AttemptCommand.ChoiceResponse(List.of(option)), List.of(), null, 100, JSON.createObjectNode());
     }
 
     private static AttemptCommand matchCommand(UUID firstCue, UUID firstOption, UUID secondCue, UUID secondOption) {

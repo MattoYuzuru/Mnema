@@ -54,8 +54,25 @@ describe('NativeMediaPlayerComponent', () => {
         (fixture.nativeElement.querySelector('[role="option"]:last-child') as HTMLElement).click();
         fixture.detectChanges();
 
-        expect(fixture.componentInstance.speed()).toBe(1.5);
-        expect((fixture.nativeElement.querySelector('audio') as HTMLAudioElement).playbackRate).toBe(1.5);
+        expect(fixture.componentInstance.speed()).toBe(2);
+        expect((fixture.nativeElement.querySelector('audio') as HTMLAudioElement).playbackRate).toBe(2);
+        fixture.destroy();
+    });
+
+    it('reaches both timeline endpoints for a short fractional recording', () => {
+        const fixture = TestBed.createComponent(NativeMediaPlayerComponent);
+        fixture.componentRef.setInput('kind', 'audio'); fixture.componentRef.setInput('title', 'Короткая запись');
+        fixture.componentRef.setInput('source', '/audio.mp3'); fixture.detectChanges();
+        const media = fixture.nativeElement.querySelector('audio') as HTMLAudioElement;
+        Object.defineProperty(media, 'duration', { configurable: true, value: 2.73 });
+        media.dispatchEvent(new Event('loadedmetadata')); fixture.detectChanges();
+        const slider = fixture.nativeElement.querySelector('input[type=range]') as HTMLInputElement;
+        expect(slider.max).toBe('2.73'); expect(slider.step).toBe('any');
+        fixture.componentInstance.seek('2.73'); fixture.detectChanges();
+        expect(slider.value).toBe('2.73');
+        fixture.componentInstance.seek('0'); fixture.detectChanges(); expect(slider.value).toBe('0');
+        fixture.componentInstance.toggleMute(); fixture.detectChanges();
+        expect(fixture.nativeElement.querySelector('button[aria-label="Включить звук"] svg')).not.toBeNull();
         fixture.destroy();
     });
 

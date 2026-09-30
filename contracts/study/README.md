@@ -40,12 +40,23 @@ P0 types are `SELF_CHECK`, `TYPED`, `CLOZE_SINGLE` and `SINGLE_CHOICE`. Prompt,
 answer and options are renderer-neutral specs made from stable node selections or
 bounded custom text. The initial compact custom text boundary is 80 grapheme
 clusters; full material remains available through Browse. `SINGLE_CHOICE` requires
-one assessed focal binding and 2..6 distinct options from the same pinned snapshot.
+one assessed focal binding and at least two distinct options from the same pinned snapshot.
+Choice publication uses answer contract v3:
+`{schemaVersion:3,selectionMode:"SINGLE"|"MULTIPLE",correctOptionIds:[...],accepted:[...]}`.
+`accepted` contains feedback text; only the exact set of immutable `correctOptionIds`
+grades the response. Multiple mode can have a single correct option. The count is
+bounded by the platform's 256-KiB publication/attempt payload and 20,000 parser tokens,
+not a six-option UI cap. Ordinals are non-negative integers. Existing immutable v1
+choice definitions default to `SINGLE` and retain target-based assessment. Editing
+publishes a v3 objective revision; choice authoring uses create/revise because option
+identities belong to that exercise revision. A pending presentation exposes only
+`selectionMode`, never the correct option set or reference answer.
 
 Epic #76 adds `LISTEN_CHOICE`, `AUDIO_TEXT_MATCH` and `LISTEN_TYPE` as immutable
 exercise revisions. Audio cues use owner-scoped logical `assetId` references pinned
 in `exercise_media_ref` within the publication transaction. `LISTEN_CHOICE` and
-`LISTEN_TYPE` use an `AUDIO_ASSET` prompt and v1 text answer contract; matching
+`LISTEN_TYPE` use an `AUDIO_ASSET` prompt; listening choice uses the same v3 choice
+contract and listening typing uses the v1 text contract. Matching
 uses an `AUDIO_MATCH` prompt with 2..6 unique cue/assets and v2 answer contract
 `{schemaVersion:2,pairs:[{cueId,optionId}]}`. The correct pair map stays in the
 private objective revision, never in a pending presentation. Matching requires
@@ -54,6 +65,21 @@ The exercise editor reuses the native media upload/recording queue and binds the
 chosen logical asset to the selected cue. The Study client resolves playable
 sources through the typed `MEDIA_PLAYBACK_RESOLVER` integration point owned by
 #239; it does not construct object-storage URLs from asset IDs.
+
+Pair selection feedback uses
+`POST /api/decks/{deckId}/study-sessions/{sessionId}/pair-checks` with
+`{presentationId,nonce,cueId,optionId}` and returns `{correct:boolean}` only.
+Ownership, nonce, pending presentation, expiry and media readiness are server checks.
+Each distinct pair is stored durably and acknowledged idempotently, including a retry
+after terminal submission. A final exact map following any incorrect pair yields
+`PARTIAL` recognition evidence with `PAIR_RETRY`; interactions alone never change
+progress. The existing bounded retention worker removes interactions 24 hours after presentation expiry. DEBUG assessment logs contain
+IDs, evaluator version, applied rules and result, never supplied/reference text.
+
+Rollback is an application rollback before publishing v3 objectives. Once v3
+objectives or pair interactions exist, restore a build that supports these contracts;
+do not drop immutable history or deployed migrations. Existing v1 objectives and
+already-issued sessions remain pinned to their original answer contract.
 
 ## Session resources
 
@@ -129,7 +155,7 @@ Responses use these shapes:
 
 - `TEXT` for `TYPED`/`CLOZE_SINGLE`;
 - `SELF_CHECK` with `NOT_RECALLED`, `HINTED`, `PARTIAL` or `FULL`;
-- `CHOICE` with a server-issued option ID;
+- `CHOICE` with `optionIds`, a non-empty unique array of server-issued option IDs;
 - `MATCH` with an exact one-to-one map of all server-issued cue and option IDs;
 - `CANCEL`, which terminalizes as `NOT_ASSESSED` without a transition.
 
@@ -224,3 +250,6 @@ Exact examples: [authoring.json](authoring.json), [session.json](session.json),
 definition in [study.schema.json](study.schema.json); public wire DTOs reject unknown
 fields at every described level. Adversarial request/effect payloads are descriptive
 test plans rather than wire DTOs, so their inner keys intentionally vary by case.
+
+Material progress includes the required bounded `title` described in the
+[LearningItem summaries contract](../items/README.md#readable-summaries).

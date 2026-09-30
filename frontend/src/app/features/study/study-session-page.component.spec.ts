@@ -27,7 +27,7 @@ describe('StudySessionPageComponent', () => {
         const decks = jasmine.createSpyObj<OwnDecksApiService>('OwnDecksApiService', ['detail']);
         decks.detail.and.returnValue(of(deck));
         api = jasmine.createSpyObj<StudyApiService>('StudyApiService',
-            ['start', 'read', 'refill', 'submit', 'progress', 'replaySources', 'restart', 'revealTranscript']);
+            ['start', 'read', 'refill', 'submit', 'progress', 'replaySources', 'restart', 'revealTranscript', 'checkPair']);
         api.progress.and.returnValue(of({ asOf: '2026-09-20T10:00:00Z', items: [], nextCursor: null }));
         api.replaySources.and.returnValue(of({ asOf: '2026-09-20T10:00:00Z', localStudyDate: '2026-09-20', items: [] }));
         recovery = jasmine.createSpyObj<StudyRecoveryService>('StudyRecoveryService', ['restore', 'save', 'clear', 'now']);
@@ -61,7 +61,8 @@ describe('StudySessionPageComponent', () => {
         expect(command.response).toEqual({ kind: 'TEXT', text: ' Memory ' });
         expect(command.durationMs).toBe(3200);
         expect(root.textContent).toContain('memory');
-        expect(root.textContent).toContain('регистр не учитывается');
+        expect(root.textContent).not.toContain('Как проверялся ответ');
+        expect(root.textContent).not.toContain('регистр не учитывается');
         expect(root.querySelector('#feedback-title')).not.toBeNull();
     });
 
@@ -119,7 +120,8 @@ describe('StudySessionPageComponent', () => {
         expect(root.textContent).not.toContain('memory');
 
         fixture.componentInstance.showClozeHint(); fixture.detectChanges();
-        expect(root.textContent).toContain('начинается с «m»');
+        expect(root.querySelector<HTMLInputElement>('#cloze-answer')?.value).toBe('m');
+        expect(root.querySelector('.hinted')?.textContent).toBe('m');
         fixture.componentInstance.setTypedAnswer('memory');
         fixture.componentInstance.submitTyped();
         const command = api.submit.calls.mostRecent().args[2];
@@ -139,8 +141,26 @@ describe('StudySessionPageComponent', () => {
         fixture.componentInstance.selectOption(radios[0].value);
         fixture.componentInstance.submitChoice();
         expect(api.submit.calls.mostRecent().args[2].response)
-            .toEqual({ kind: 'CHOICE', optionId: radios[0].value });
+            .toEqual({ kind: 'CHOICE', optionIds: [radios[0].value] });
         expect(api.submit.calls.mostRecent().args[2].hintsUsed).toEqual([]);
+    });
+
+    it('uses independent checkboxes for multiple answers and submits the selected set', () => {
+        const value = session('SINGLE_CHOICE');
+        api.start.and.returnValue(of({ value: { ...value, presentations: value.presentations.map(presentation => ({
+            ...presentation, selectionMode: 'MULTIPLE' as const
+        })) }, replayed: false }));
+        api.submit.and.returnValue(of({ value: outcome('CORRECT'), replayed: false }));
+        createStarted();
+        const root = fixture.nativeElement as HTMLElement;
+        const controls = root.querySelectorAll<HTMLInputElement>('input[type="checkbox"]');
+        expect(controls.length).toBe(2);
+        fixture.componentInstance.selectOption(controls[0].value);
+        fixture.componentInstance.selectOption(controls[1].value);
+        fixture.componentInstance.selectOption(controls[0].value);
+        expect(fixture.componentInstance.selectedOptionIds()).toEqual([controls[1].value]);
+        fixture.componentInstance.submitChoice();
+        expect(api.submit.calls.mostRecent().args[2].response).toEqual({ kind: 'CHOICE', optionIds: [controls[1].value] });
     });
 
     it('requires playback and audits transcript disclosure before a listening typed answer', () => {
@@ -197,16 +217,17 @@ describe('StudySessionPageComponent', () => {
         api.submit.and.returnValue(of({ value: outcome('CORRECT'), replayed: false }));
         createStarted();
         const root = fixture.nativeElement as HTMLElement;
-        expect(root.querySelectorAll('audio')).toHaveSize(2);
-        const labels = [...root.querySelectorAll<HTMLLabelElement>('.match-row > label')];
-        expect(labels.map(label => label.textContent?.trim())).toEqual([
-            'Соответствующий текст для записи 1 — Первая',
-            'Соответствующий текст для записи 2 — Вторая'
-        ]);
-        expect(labels.every(label => [...root.querySelectorAll<HTMLButtonElement>('.match-row button[role="combobox"]')]
-            .some(select => select.id === label.htmlFor))).toBeTrue();
-        fixture.componentInstance.selectMatch(id('40'), id('15'));
-        fixture.componentInstance.selectMatch(id('41'), id('16'));
+        expect(root.querySelectorAll('audio')).toHaveSize(1);
+        expect(root.querySelectorAll('.cue-tile')).toHaveSize(2);
+        expect(root.querySelectorAll('.text-tile')).toHaveSize(2);
+        api.checkPair.and.returnValues(of({ correct: false }), of({ correct: true }), of({ correct: true }));
+        fixture.componentInstance.checkMatch({ cueId: id('40'), optionId: id('16') });
+        fixture.detectChanges();
+        expect(fixture.componentInstance.matchSelections()[id('40')]).toBeUndefined();
+        expect(root.textContent).toContain('Эта пара не подходит');
+        fixture.componentInstance.checkMatch({ cueId: id('40'), optionId: id('15') });
+        fixture.componentInstance.checkMatch({ cueId: id('41'), optionId: id('16') });
+        expect(api.checkPair).toHaveBeenCalledTimes(3);
         fixture.componentInstance.submitMatch();
         expect(api.submit.calls.mostRecent().args[2].response).toEqual({ kind: 'MATCH', pairs: [
             { cueId: id('40'), optionId: id('15') }, { cueId: id('41'), optionId: id('16') }
@@ -227,11 +248,34 @@ describe('StudySessionPageComponent', () => {
         expect(recovery.save).toHaveBeenCalledWith({ deckId: deck.deckId, sessionId, pending: first });
     });
 
+    it('clears answer state when starting a fresh session', () => {
+        api.start.and.returnValue(of({ value: session('TYPED'), replayed: false })); createStarted();
+        fixture.componentInstance.setTypedAnswer('old answer');
+        fixture.componentInstance.selectedOptionIds.set([id('15')]);
+        fixture.componentInstance.startScheduled('QUICK'); fixture.detectChanges();
+        expect(fixture.componentInstance.typedAnswer()).toBe('');
+        expect(fixture.componentInstance.selectedOptionIds()).toEqual([]);
+    });
+
+    it('clears old input when reconciliation has already advanced the presentation', () => {
+        const old = session('SINGLE_CHOICE');
+        const pending: AttemptCommand = { attemptId: id('90'), presentationId,
+            nonce: old.presentations[0].nonce, response: { kind: 'CHOICE', optionIds: [id('15')] },
+            hintsUsed: [], confidence: null, durationMs: 1000 };
+        recovery.restore.and.returnValue({ deckId: deck.deckId, sessionId, pending });
+        api.read.and.returnValue(of({ ...old, presentations: [{ ...old.presentations[0], presentationId: id('91') }] }));
+        fixture = TestBed.createComponent(StudySessionPageComponent); fixture.detectChanges();
+        expect(fixture.componentInstance.phase()).toBe('answering');
+        expect(fixture.componentInstance.selectedOptionIds()).toEqual([]);
+        expect(fixture.componentInstance.pending()).toBeNull();
+        expect(fixture.nativeElement.querySelector('button[type="submit"]')?.disabled).not.toBeFalse();
+    });
+
     it('connects completion replay, practice, explainable progress and confirmed restart', () => {
         const terminal: ReadyStudySession = { ...session('TYPED'), status: 'COMPLETE', presentations: [] };
         api.start.and.returnValue(of({ value: terminal, replayed: false }));
         api.progress.and.returnValue(of({ asOf: '2026-09-20T10:00:00Z', nextCursor: null, items: [{
-            memberKey: id('20'), itemRevisionId: id('21'), state: 'DUE',
+            memberKey: id('20'), itemRevisionId: id('21'), title: 'Столица Франции — Париж', state: 'DUE',
             objectiveCoverage: { enabled: 2, introduced: 1, assessed: 1 },
             lastAssessedAt: '2026-09-19T10:00:00Z', nextDue: '2026-09-20T09:00:00Z'
         }] }));
@@ -246,6 +290,8 @@ describe('StudySessionPageComponent', () => {
         const root = fixture.nativeElement as HTMLElement;
         expect(root.textContent).toContain('Статус обучения');
         expect(root.textContent).toContain('Пора повторить');
+        expect(root.querySelector('.material-title')?.textContent).toContain('Столица Франции');
+        expect(root.querySelector('.material-title')?.textContent).not.toContain(id('20'));
         expect(root.textContent).not.toContain('%');
 
         fixture.componentInstance.startReplay();
@@ -278,7 +324,7 @@ describe('StudySessionPageComponent', () => {
         fixture = TestBed.createComponent(StudySessionPageComponent); fixture.detectChanges();
         expect(api.start).not.toHaveBeenCalled();
         expect(fixture.nativeElement.textContent).toContain('До 10 заданий');
-        expect(fixture.nativeElement.textContent).toContain('если сейчас доступно меньше заданий');
+        expect(fixture.nativeElement.textContent).toContain('Не торопитесь');
 
         fixture.componentInstance.startScheduled('QUICK');
         expect(api.start.calls.mostRecent().args[2]).toEqual({ mode: 'SCHEDULED', preset: 'QUICK' });

@@ -35,7 +35,16 @@ export function identityErrorMessage(error: unknown): string {
           <a class="primary-action" routerLink="/decks">Мои колоды →</a>
           <button class="text-action" type="button" data-testid="logout" [disabled]="busy()" (click)="logout()">Выйти из аккаунта</button>
         } @else {
-          <p class="intro">{{ registering ? 'Создайте аккаунт, чтобы собирать и сохранять свои материалы.' : 'Войдите с логином или почтой, указанными при регистрации.' }}</p>
+          <p class="intro">{{ registering ? 'Создайте аккаунт, чтобы собирать и сохранять свои материалы.' : 'Войдите с логином или почтой. Вход через сервисы появится позже.' }}</p>
+          <div class="provider-options" role="group" aria-label="Вход через сервисы — в работе">
+            @for (provider of providers; track provider.name) {
+              <button class="provider-placeholder" type="button" disabled [attr.aria-label]="provider.name + ', вход в работе'">
+                <img [src]="provider.icon" width="32" height="32" alt="" />
+                <strong>{{ provider.name }}</strong><span>В работе</span>
+              </button>
+            }
+          </div>
+          <p class="password-divider">{{ registering ? 'Или зарегистрируйтесь с почтой' : 'Или войдите с логином или почтой' }}</p>
           <form #form="ngForm" (ngSubmit)="submit(form)" novalidate>
             @if (registering) {
               <label for="email">Электронная почта</label>
@@ -68,6 +77,11 @@ export function identityErrorMessage(error: unknown): string {
     `
 })
 export class LoginPageComponent implements OnDestroy {
+    readonly providers = [
+        { name: 'Google', icon: '/assets/brand/providers/google.svg' },
+        { name: 'Яндекс', icon: '/assets/brand/providers/yandex.svg' },
+        { name: 'GitHub', icon: '/assets/brand/providers/github.png' }
+    ] as const;
     readonly auth = inject(AuthService);
     private readonly route = inject(ActivatedRoute);
     private readonly element = inject<ElementRef<HTMLElement>>(ElementRef);

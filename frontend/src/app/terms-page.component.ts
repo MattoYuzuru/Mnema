@@ -1,56 +1,54 @@
 import { Component, ChangeDetectionStrategy } from '@angular/core';
-import { TranslatePipe } from './shared/pipes/translate.pipe';
 
 @Component({
-    imports: [TranslatePipe],
     selector: 'app-terms-page',
     template: `
-    <div class="legal-page">
-      <h1>{{ 'terms.title' | translate }}</h1>
-      <p class="last-updated">{{ 'terms.lastUpdated' | translate }}</p>
+    <div class="legal-page" lang="ru">
+      <h1>Условия использования</h1>
+      <p class="last-updated">Последнее обновление: август 2026</p>
 
       <section>
-        <h2>{{ 'terms.acceptance' | translate }}</h2>
-        <p>{{ 'terms.acceptanceText' | translate }}</p>
+        <h2>Принятие условий</h2>
+        <p>Получая доступ и используя Mnema, вы принимаете и соглашаетесь соблюдать условия и положения настоящего соглашения.</p>
       </section>
 
       <section>
-        <h2>{{ 'terms.useLicense' | translate }}</h2>
-        <p>{{ 'terms.useLicenseText' | translate }}</p>
+        <h2>Доступ к сервису</h2>
+        <p>Настоящие Условия регулируют доступ к размещённому сервису Mnema. Они не передают право собственности и не предоставляют прав на исходный код репозитория: исходный код лицензируется отдельно на условиях, опубликованных в репозитории.</p>
       </section>
 
       <section>
-        <h2>{{ 'terms.userContent' | translate }}</h2>
-        <p>{{ 'terms.userContentText' | translate }}</p>
+        <h2>Пользовательский контент</h2>
+        <p>Вы сохраняете все права на созданный вами контент карточек. Делая колоды публичными, вы предоставляете другим пользователям право форкать и использовать ваш контент для личного обучения.</p>
       </section>
 
       <section>
-        <h2>{{ 'terms.prohibited' | translate }}</h2>
-        <p>{{ 'terms.prohibitedText' | translate }}</p>
+        <h2>Запрещенное использование</h2>
+        <p>Вы не можете использовать Mnema в незаконных целях или для нарушения каких-либо законов. Вы не можете пытаться получить несанкционированный доступ к какой-либо части сервиса.</p>
       </section>
 
       <section>
-        <h2>{{ 'terms.disclaimer' | translate }}</h2>
-        <p>{{ 'terms.disclaimerText' | translate }}</p>
+        <h2>Отказ от ответственности</h2>
+        <p>Mnema предоставляется &quot;как есть&quot; без каких-либо заявлений или гарантий. Мы не гарантируем, что сервис будет бесперебойным или безошибочным.</p>
       </section>
 
       <section>
-        <h2>{{ 'terms.liability' | translate }}</h2>
-        <p>{{ 'terms.liabilityText' | translate }}</p>
+        <h2>Ограничение ответственности</h2>
+        <p>Ни при каких обстоятельствах Mnema не несет ответственности за какие-либо убытки, возникающие в результате использования или невозможности использования сервиса.</p>
       </section>
 
       <section>
-        <h2>{{ 'terms.changes' | translate }}</h2>
-        <p>{{ 'terms.changesText' | translate }}</p>
+        <h2>Изменения условий</h2>
+        <p>Мы оставляем за собой право изменять эти условия в любое время. Продолжение использования сервиса после изменений означает принятие новых условий.</p>
       </section>
 
       <section>
-        <h2>{{ 'terms.contact' | translate }}</h2>
-        <p>{{ 'terms.contactText' | translate }}</p>
+        <h2>Контакты</h2>
+        <p>По вопросам об этих Условиях использования, пожалуйста, свяжитесь с нами через наш репозиторий на GitHub.</p>
       </section>
     </div>
   `,
-    changeDetection: ChangeDetectionStrategy.Eager,
+    changeDetection: ChangeDetectionStrategy.OnPush,
     styles: [`
       .legal-page {
         max-width: 56rem;

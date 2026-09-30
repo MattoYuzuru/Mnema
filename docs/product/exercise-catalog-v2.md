@@ -124,7 +124,7 @@ evidence и transition audit сохраняются до удаления акк
 | E-01 | Recall → reveal → behavioral self-check | 1 item / 1 objective | свободное извлечение до показа | self rubric | `LOW`, later calibrated | P0 |
 | E-02 | Short typed production: термин, дата, translation aliases | 1 / 1 | самостоятельно произвести ответ | deterministic | `HIGH` unhinted | P0 |
 | E-03 | Cloze/code/formula completion | 1 item / 1..N blanks | cued production | deterministic per blank | `MEDIUM–HIGH` | P0 single; P1 multi |
-| E-04 | Single choice; later multiple select, T/F+correction, odd-one-out | focal item + deck options | recognition/discrimination | deterministic | correct choice `LOW`; correction `MEDIUM` | P0 single; P1 rest |
+| E-04 | Single/multiple choice; later T/F+correction, odd-one-out | focal item + deck options | recognition/discrimination | deterministic | correct choice `LOW`; correction `MEDIUM` | P0 single/multiple; P1 rest |
 | E-05 | Multi-value/list recall | 1 item / 1..N elements | полный set/order | deterministic partial | `HIGH` full; `MEDIUM` partial | P1 |
 | E-06 | Matching/categorization | 2..N items from one deck revision | relation/discrimination | deterministic per assessed binding | `MEDIUM` | P1 |
 | E-07 | Ordering/timeline/sentence/code assembly | one segmented item or 2..N items | structure/order/procedure | deterministic partial order | `MEDIUM` for order objective | P1 |
@@ -230,7 +230,7 @@ Multiple select перенесён из P0 в P1: он добавляет partia
 доказывает новый loop сверх single choice.
 
 Реализованный P0 contract использует один native input для single-blank cloze и
-native radio group для single choice. Cloze без подсказки может дать `HIGH`, а
+native radio group для single choice и checkbox group для multiple choice. Cloze без подсказки может дать `HIGH`, а
 явная first-grapheme подсказка ограничивает правильный результат до `MEDIUM`.
 Single choice всегда `LOW`; правильность определяется совпадением server-issued
 `OPTION` target с единственным pinned `ASSESSED` target, поэтому подменённый option

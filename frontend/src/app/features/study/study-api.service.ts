@@ -131,6 +131,21 @@ export class StudyApiService {
         }));
     }
 
+    checkPair(deckId: string, sessionId: string, presentationId: string, nonce: string,
+              cueId: string, optionId: string): Observable<{ readonly correct: boolean }> {
+        return defer(() => this.http.post<unknown>(
+            `${this.baseUrl}/decks/${entity(deckId)}/study-sessions/${entity(sessionId)}/pair-checks`,
+            { presentationId: entity(presentationId), nonce: text(nonce, 100, 16),
+                cueId: entity(cueId), optionId: entity(optionId) }, { observe: 'response' }
+        )).pipe(map(response => {
+            if (response.status !== 200) throw protocol('Unexpected pair check status.');
+            privateResponse(response);
+            const object = exact(response.body, ['correct']);
+            if (typeof object['correct'] !== 'boolean') throw protocol('Invalid pair check result.');
+            return { correct: object['correct'] };
+        }));
+    }
+
     revealTranscript(deckId: string, sessionId: string, presentationId: string, nonce: string): Observable<StudyPrompt> {
         return defer(() => this.http.post<unknown>(
             `${this.baseUrl}/decks/${entity(deckId)}/study-sessions/${entity(sessionId)}`
@@ -173,17 +188,21 @@ function parseProgress(value: unknown): StudyProgressPage {
 
 function parseMaterialProgress(value: unknown): MaterialProgress {
     const object = exact(value, ['memberKey', 'itemRevisionId', 'state', 'objectiveCoverage',
-        'lastAssessedAt', 'nextDue']);
+        'lastAssessedAt', 'nextDue', 'title']);
     const state = object['state'];
     if (state !== 'NOT_STARTED' && state !== 'LEARNING' && state !== 'DUE' && state !== 'ON_TRACK') {
         throw protocol('Invalid material progress state.');
+    }
+    const title = object['title'];
+    if (typeof title !== 'string' || Array.from(title).length > 240) {
+        throw protocol('Invalid material preview.');
     }
     const coverage = exact(object['objectiveCoverage'], ['enabled', 'introduced', 'assessed']);
     const enabled = count(coverage['enabled'], 1_000_000);
     const introduced = count(coverage['introduced'], enabled);
     const assessed = count(coverage['assessed'], introduced);
     const nullableInstant = (item: unknown): string | null => item === null ? null : instant(item);
-    return { memberKey: entity(object['memberKey']), itemRevisionId: entity(object['itemRevisionId']), state,
+    return { title: title as string, memberKey: entity(object['memberKey']), itemRevisionId: entity(object['itemRevisionId']), state,
         objectiveCoverage: { enabled, introduced, assessed },
         lastAssessedAt: nullableInstant(object['lastAssessedAt']), nextDue: nullableInstant(object['nextDue']) };
 }
@@ -264,12 +283,12 @@ function parseSession(value: unknown, expectedDeck: string, expectedSession?: st
 function parsePresentation(value: unknown): StudyPresentation {
     const object = exact(value, [
         'presentationId', 'nonce', 'ordinal', 'exerciseRevisionId', 'type', 'objectiveId', 'objectiveRevisionId',
-        'learningEpoch', 'reference', 'prompt', 'options', 'bindings', 'evaluator'
+        'learningEpoch', 'reference', 'prompt', 'options', 'bindings', 'evaluator',
+        ...(isRecord(value) && 'selectionMode' in value ? ['selectionMode'] : [])
     ]);
     const prompt = parsePrompt(object['prompt']);
     const evaluator = exact(object['evaluator'], ['id', 'version']);
-    if (!Array.isArray(object['options']) || object['options'].length > 6 || !Array.isArray(object['bindings'])
-        || object['bindings'].length > 16) throw protocol('Invalid presentation content.');
+    if (!Array.isArray(object['options']) || !Array.isArray(object['bindings'])) throw protocol('Invalid presentation content.');
     const options = object['options'].map(option => {
         const item = exact(option, ['optionId', 'text']);
         return { optionId: entity(item['optionId']), text: text(item['text'], 1024) };
@@ -283,7 +302,7 @@ function parsePresentation(value: unknown): StudyPresentation {
     const optionBindings = bindings.filter(binding => binding.role === 'OPTION');
     if (type === 'SINGLE_CHOICE' || type === 'LISTEN_CHOICE' || type === 'AUDIO_TEXT_MATCH') {
         const optionIds = new Set(options.map(option => option.optionId));
-        if (options.length < 2 || options.length > 6 || optionIds.size !== options.length
+        if (options.length < 2 || (type === 'AUDIO_TEXT_MATCH' && options.length > 6) || optionIds.size !== options.length
             || (!listening && (optionBindings.length !== options.length
                 || optionBindings.some(binding => !optionIds.has(binding.bindingId))))) {
             throw protocol('Invalid choice options.');
@@ -298,7 +317,11 @@ function parsePresentation(value: unknown): StudyPresentation {
     if (prompt.kind === 'TEXT' && type !== 'CLOZE_SINGLE' && prompt.blank !== undefined) {
         throw protocol('Unexpected cloze blank.');
     }
+    const selectionMode = object['selectionMode'];
+    if (selectionMode !== undefined && (type !== 'SINGLE_CHOICE' && type !== 'LISTEN_CHOICE'
+        || selectionMode !== 'SINGLE' && selectionMode !== 'MULTIPLE')) throw protocol('Invalid choice selection mode.');
     return {
+        ...(selectionMode === undefined ? {} : { selectionMode: selectionMode as 'SINGLE' | 'MULTIPLE' }),
         presentationId: entity(object['presentationId']), nonce: text(object['nonce'], 100, 16),
         ordinal: count(object['ordinal'], 99), exerciseRevisionId: entity(object['exerciseRevisionId']),
         type, objectiveId: entity(object['objectiveId']),
@@ -370,7 +393,7 @@ function parseBinding(value: unknown): StudyBinding {
         throw protocol('Invalid binding display.');
     }
     return { bindingId: entity(object['bindingId']), role, memberKey: entity(object['memberKey']),
-        itemRevisionId: entity(object['itemRevisionId']), ordinal: count(object['ordinal'], 15),
+        itemRevisionId: entity(object['itemRevisionId']), ordinal: count(object['ordinal'], 2_147_483_647),
         nodeIds: object['nodeIds'].map(entity), display: display['kind'] === 'CUSTOM_TEXT'
             ? { kind: 'CUSTOM_TEXT', text: text(display['text'], 320) } : { kind: 'NODE_TEXT' } };
 }
@@ -456,7 +479,12 @@ function validateCommand(command: AttemptCommand): void {
     if (response.kind === 'TEXT') text(response.text, 4096, 0);
     else if (response.kind === 'SELF_CHECK') {
         if (!['NOT_RECALLED', 'HINTED', 'PARTIAL', 'FULL'].includes(response.rating)) throw protocol('Invalid rating.');
-    } else if (response.kind === 'CHOICE') entity(response.optionId);
+    } else if (response.kind === 'CHOICE') {
+        if (!Array.isArray(response.optionIds) || response.optionIds.length === 0
+            || new Set(response.optionIds.map(entity)).size !== response.optionIds.length) {
+            throw protocol('Invalid choice selection.');
+        }
+    }
     else if (response.kind === 'MATCH') {
         if (response.pairs.length < 2 || response.pairs.length > 6
             || new Set(response.pairs.map(pair => entity(pair.cueId))).size !== response.pairs.length

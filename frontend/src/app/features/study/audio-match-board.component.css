@@ -1,0 +1,19 @@
+:host { display: block; min-inline-size: 0; }
+audio { display: none; }
+.match-board { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: clamp(.6rem, 3vw, 1.5rem); }
+.match-column { min-inline-size: 0; display: flex; flex-direction: column; gap: .75rem; }
+.column-label { margin: 0; color: var(--mn-muted); font-size: .85rem; }
+button { min-inline-size: 0; min-block-size: 5rem; display: flex; align-items: center; justify-content: center; gap: .65rem; border: 1px solid var(--mn-ink); border-radius: .35rem; padding: .8rem; background: var(--mn-sheet); color: var(--mn-ink); font: 600 1rem/1.4 var(--mn-font-body); cursor: pointer; overflow-wrap: anywhere; transition: background .3s ease, opacity .3s ease; }
+button:enabled:hover { background: var(--mn-soft); }
+button.selected { outline: 2px solid var(--mn-ink); outline-offset: 2px; }
+button.matched { opacity: .42; cursor: default; }
+button:disabled:not(.matched) { cursor: default; }
+.cue-number { font: .8rem var(--mn-font-mono); }
+.equalizer { display: flex; align-items: center; justify-content: center; gap: .2rem; height: 2.25rem; flex: 1; max-width: 7rem; }
+.equalizer span { flex: 1; max-width: .45rem; height: 100%; border-radius: .16rem; background: var(--mn-hint); }
+.equalizer.playing span { background: var(--mn-ink); }
+.wrong { border-color: var(--mn-danger); animation: pair-shake .28s ease; }
+.match-status, .transcript { color: var(--mn-muted); font-size: .9rem; }
+@keyframes pair-shake { 25%, 75% { transform: translateX(-3px); } 50% { transform: translateX(3px); } }
+@media (prefers-reduced-motion: reduce) { .wrong { animation: none; } button { transition: none; } }
+@media (forced-colors: active) { button.matched { opacity: 1; border-style: dashed; } .equalizer span { background: ButtonText; } }
