@@ -136,7 +136,7 @@
           <form (submit)="$event.preventDefault(); submitMatch()">
             <fieldset [disabled]="phase() === 'submitting'">
               <legend>Сопоставьте аудио и текст</legend>
-              <app-audio-match-board [prompt]="presentation.prompt" [options]="presentation.options"
+              <app-audio-match-board [seed]="presentation.exerciseRevisionId" [prompt]="presentation.prompt" [options]="presentation.options"
                 [sources]="audioUrls()" [matches]="matchSelections()" [busy]="pairChecking() || phase() === 'submitting'"
                 [wrongPair]="wrongPair()" (pairSelected)="checkMatch($event)" (sourceFailed)="retryAudio($event)" />
             </fieldset>

@@ -35,6 +35,12 @@
 }
 
 .page-heading > * { min-inline-size: 0; }
+.material-heading { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+.material-heading .actions { inline-size: max-content; max-inline-size: 100%; }
+@media (max-width: 56rem) {
+    .material-heading { grid-template-columns: 1fr; }
+    .material-heading .actions { inline-size: auto; }
+}
 .browse-list-heading { border-block-end: 0; }
 
 .eyebrow {

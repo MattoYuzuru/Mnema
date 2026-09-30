@@ -40,7 +40,7 @@ P0 types are `SELF_CHECK`, `TYPED`, `CLOZE_SINGLE` and `SINGLE_CHOICE`. Prompt,
 answer and options are renderer-neutral specs made from stable node selections or
 bounded custom text. The initial compact custom text boundary is 80 grapheme
 clusters; full material remains available through Browse. `SINGLE_CHOICE` requires
-one assessed focal binding and at least two distinct options from the same pinned snapshot.
+one assessed focal binding and at least two distinct options from the same pinned Deck snapshot.
 Choice publication uses answer contract v3:
 `{schemaVersion:3,selectionMode:"SINGLE"|"MULTIPLE",correctOptionIds:[...],accepted:[...]}`.
 `accepted` contains feedback text; only the exact set of immutable `correctOptionIds`
@@ -112,6 +112,14 @@ selects introduced objectives by default; `includeNew=true` is explicit. A batch
 contains at most 20 presentations. A READY candidate generation is keyed by the
 pinned exercise root; absent preparation returns `PREPARING`, never an unbounded
 fallback scan. Retry/resume uses an opaque cursor and deterministic seed.
+
+Before issuing a new Scheduled/Practice presentation, every bound material must
+still belong to the current Deck. This membership check applies to newly started
+sessions and refill, even when they reuse a candidate generation. It does not
+require the material's current revision to equal the pinned revision: editing
+content preserves existing versioned exercises. [Material deletion](../items/README.md)
+does not cascade into exercise definitions or history; already issued presentations
+and explicit Replay retain their immutable snapshots.
 
 Listening candidates are eligible only when every pinned asset is READY with a
 verified `audio/*` source. Issued presentations expose asset IDs and titles; the

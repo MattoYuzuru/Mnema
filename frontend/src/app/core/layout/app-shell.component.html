@@ -32,7 +32,7 @@
   </header>
 
   <main id="main-content" tabindex="-1">
-    @if (constellationSeed(); as seed) { <app-deck-constellation [seed]="seed" /> }
+    @if (constellationSeed(); as seed) { <app-deck-constellation [seed]="seed" [layoutKey]="routeUrl()" /> }
     <router-outlet (activate)="focusPageHeading()"></router-outlet>
   </main>
 

@@ -21,7 +21,7 @@ export class AppShellComponent {
     readonly user = toSignal(this.auth.user$, { initialValue: this.auth.user() });
     private readonly router = inject(Router);
 
-    private readonly routeUrl = toSignal(this.router.events.pipe(
+    readonly routeUrl = toSignal(this.router.events.pipe(
         filter(event => event instanceof NavigationEnd), map(event => event.urlAfterRedirects)
     ), { initialValue: this.router.url });
     readonly constellationSeed = computed(() => {

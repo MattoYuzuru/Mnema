@@ -1,9 +1,9 @@
 <audio #audio crossorigin="anonymous" preload="none" (play)="sync()" (pause)="sync()" (ended)="sync()" (error)="fail()"></audio>
 <div class="match-board" role="group" aria-label="Подбор аудиопар" [attr.aria-busy]="busy()">
-  <div class="match-column">
+  <div class="match-column" [style.grid-row]="'1 / span ' + (prompt().cues.length + 1)">
     <p class="column-label">Слушайте</p>
     @for (cue of prompt().cues; track cue.cueId; let index = $index) {
-      <button type="button" class="cue-tile" [class.selected]="selectedCue() === cue.cueId"
+      <div class="match-cell"><button type="button" class="cue-tile" [class.selected]="selectedCue() === cue.cueId"
         [class.matched]="!!matches()[cue.cueId]" [class.wrong]="wrongPair()?.cueId === cue.cueId"
         [attr.aria-pressed]="selectedCue() === cue.cueId" [attr.data-answer-control]="index === 0 ? '' : null"
         [attr.aria-disabled]="busy()"
@@ -12,24 +12,24 @@
         (click)="listen(cue.cueId)">
         <span class="cue-number" aria-hidden="true">{{ index + 1 }}</span>
         <span class="equalizer" [class.playing]="playing() && selectedCue() === cue.cueId" aria-hidden="true">
-          @for (bar of playing() && selectedCue() === cue.cueId ? bars() : restBars; track $index) { <span [style.transform]="'scaleY(' + bar + ')'" ></span> }
+          @for (bar of playing() && selectedCue() === cue.cueId ? bars() : restBars()[cue.cueId]; track $index) { <span [style.transform]="'scaleY(' + bar + ')'" ></span> }
         </span>
         @if (matches()[cue.cueId]) { <span aria-hidden="true">✓</span> }
       </button>
-      @if (prompt().transcriptRevealed && cue.transcript) { <p class="transcript">{{ cue.transcript }}</p> }
+      @if (prompt().transcriptRevealed && cue.transcript) { <p class="transcript">{{ cue.transcript }}</p> }</div>
     }
   </div>
-  <div class="match-column">
+  <div class="match-column" [style.grid-row]="'1 / span ' + (prompt().cues.length + 1)">
     <p class="column-label">Выбирайте текст</p>
     @for (option of options(); track option.optionId) {
-      <button type="button" class="text-tile" [class.matched]="matchedOptions().has(option.optionId)"
+      <div class="match-cell"><button type="button" class="text-tile" [class.matched]="matchedOptions().has(option.optionId)"
         [class.wrong]="wrongPair()?.optionId === option.optionId"
         [attr.aria-disabled]="busy()"
         [disabled]="!selectedCue() || matchedOptions().has(option.optionId)"
         [attr.aria-label]="option.text + (matchedOptions().has(option.optionId) ? ', пара найдена' : '')"
         (click)="choose(option.optionId)">{{ option.text }}
         @if (matchedOptions().has(option.optionId)) { <span aria-hidden="true">✓</span> }
-      </button>
+      </button></div>
     }
   </div>
 </div>
