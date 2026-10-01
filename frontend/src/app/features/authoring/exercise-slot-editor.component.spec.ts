@@ -38,7 +38,7 @@ describe('ExerciseSlotEditorComponent', () => {
         expect(root.querySelector('.hint')?.textContent).toContain('Блоков: 1–8');
         expect(root.querySelector('.hint')?.textContent).toContain('до 4000 знаков');
         const buttons = [...root.querySelectorAll('.add-row button')].map(button => button.textContent?.trim());
-        expect(buttons).toEqual(['+ Текст', '+ Фрагмент материала', '+ Изображение, аудио или видео', '+ YouTube']);
+        expect(buttons).toEqual(['+ Текст', '+ Фрагмент материала', 'Добавить изображение', 'Добавить аудио', 'Добавить видео', 'Записать аудио', '+ YouTube']);
     });
 
     it('edits text verbatim, edits media labels and clears an empty transcript', () => {
@@ -127,11 +127,75 @@ describe('ExerciseSlotEditorComponent', () => {
         const fixture = create([{ kind: 'TEXT', text: 'a' }]);
         const root = fixture.nativeElement as HTMLElement;
         expect(root.querySelector('app-native-media-upload')).toBeNull();
-        root.querySelector<HTMLButtonElement>('.add-row button[aria-expanded]')!.click(); fixture.detectChanges();
+        button(root, 'Добавить аудио').click(); fixture.detectChanges();
         expect(root.querySelector('.media-picker')?.hasAttribute('hidden')).toBeFalse();
         expect(root.querySelector('app-native-media-upload')).not.toBeNull();
         fixture.componentInstance.onAsset({ kind: 'audio', assetId: asset }); fixture.detectChanges();
         expect(root.querySelector('.media-picker')?.hasAttribute('hidden')).toBeTrue();
         expect(fixture.componentInstance.blocks()[1]).toEqual({ kind: 'AUDIO', assetId: asset, title: 'Аудио' });
+    });
+
+    const button = (root: ParentNode, label: string) => [...root.querySelectorAll<HTMLButtonElement>('.add-row button')]
+        .find(candidate => candidate.textContent?.trim() === label)!;
+
+    describe('labelled media actions', () => {
+        it('each action opens the one shared picker filtered to its kind and pressing it again closes it and returns focus', () => {
+            const fixture = create([{ kind: 'TEXT', text: 'a' }]);
+            const root = fixture.nativeElement as HTMLElement;
+            document.body.appendChild(root);
+            const image = button(root, 'Добавить изображение');
+            image.focus(); image.click(); fixture.detectChanges();
+            const instance = () => fixture.debugElement.query(el => el.name === 'app-native-media-upload').componentInstance;
+            expect(instance().kind()).toBe('image');
+            expect(image.getAttribute('aria-expanded')).toBe('true');
+            expect(root.querySelectorAll('app-native-media-upload').length).toBe(1);
+            button(root, 'Добавить видео').click(); fixture.detectChanges();
+            expect(instance().kind()).toBe('video');
+            expect(root.querySelectorAll('app-native-media-upload').length).toBe(1);
+            expect(image.getAttribute('aria-expanded')).toBe('false');
+            const video = button(root, 'Добавить видео');
+            video.focus(); video.click(); fixture.detectChanges();
+            expect(root.querySelector('.media-picker')?.hasAttribute('hidden')).toBeTrue();
+            expect(document.activeElement).toBe(video);
+            root.remove();
+        });
+
+        it('moves focus into the picker when it opens and only shows the recorder for audio', () => {
+            const fixture = create([{ kind: 'TEXT', text: 'a' }]);
+            const root = fixture.nativeElement as HTMLElement;
+            document.body.appendChild(root);
+            button(root, 'Добавить изображение').click(); fixture.detectChanges(); fixture.detectChanges();
+            expect(document.activeElement).toBe(root.querySelector('.media-picker'));
+            expect(root.querySelector('.media-picker')?.textContent).not.toContain('Записать аудио');
+            expect(root.querySelector('.media-picker')?.textContent).toContain('Открыть камеру');
+            button(root, 'Добавить аудио').click(); fixture.detectChanges();
+            expect(root.querySelector('.media-picker')?.textContent).toContain('Записать аудио');
+            expect(root.querySelector('.media-picker')?.textContent).not.toContain('Открыть камеру');
+            root.remove();
+        });
+
+        it('«Записать аудио» opens the picker in recording mode and starts the recorder on that click only', () => {
+            const fixture = create([{ kind: 'TEXT', text: 'a' }]);
+            const root = fixture.nativeElement as HTMLElement;
+            const getUserMedia = spyOn(navigator.mediaDevices, 'getUserMedia').and.rejectWith(new DOMException('no', 'NotAllowedError'));
+            button(root, 'Добавить аудио').click(); fixture.detectChanges(); fixture.detectChanges();
+            expect(getUserMedia).not.toHaveBeenCalled();
+            button(root, 'Записать аудио').click(); fixture.detectChanges(); fixture.detectChanges();
+            expect(getUserMedia).toHaveBeenCalledTimes(1);
+            expect(fixture.componentInstance.pickerKind()).toBe('audio');
+            expect(fixture.componentInstance.recordMode()).toBeTrue();
+        });
+
+        it('respects the slot profile: a COMPACT slot with a media block offers no further media or recording', () => {
+            const compact = create([{ kind: 'TEXT', text: 'a' }, { kind: 'AUDIO', assetId: asset, title: 'x' }], COMPACT_SLOT);
+            const root = compact.nativeElement as HTMLElement;
+            for (const label of ['Добавить изображение', 'Добавить аудио', 'Добавить видео', 'Записать аудио']) {
+                expect(button(root, label).disabled).withContext(label).toBeTrue();
+            }
+            const open = create([{ kind: 'TEXT', text: 'a' }], COMPACT_SLOT);
+            for (const label of ['Добавить изображение', 'Добавить аудио', 'Добавить видео', 'Записать аудио']) {
+                expect(button(open.nativeElement, label).disabled).withContext(label).toBeFalse();
+            }
+        });
     });
 });

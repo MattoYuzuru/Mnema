@@ -101,3 +101,9 @@ function oneLine(text: string): string {
     const collapsed = text.replace(/\s+/gu, ' ').trim();
     return collapsed.length <= 80 ? collapsed : `${collapsed.slice(0, 77)}…`;
 }
+
+/** The publication-shaped specification of a persisted exercise: its envelope and deck pins removed. */
+export function specOf(detail: ExerciseDetail): ExerciseSpec {
+    const { type, schemaVersion, enabled, subject, content, answerKey, evaluatorPolicy } = detail;
+    return { type, schemaVersion, enabled, subject, content, answerKey, evaluatorPolicy } as ExerciseSpec;
+}

@@ -21,19 +21,16 @@
         <p class="eyebrow" [id]="idPrefix() + '-reference'">Эталон</p>
         <app-learner-blocks [blocks]="content.reference" nameSuffix=" в эталоне" />
       </section>
-      @if (canSubmit()) {
-        <fieldset [disabled]="busy()">
-          <legend>Как получилось на самом деле?</legend>
-          <div class="ratings">
-            @for (rating of ratings; track rating; let first = $first) {
-              <button class="button secondary" type="button" [attr.data-first-rating]="first ? '' : null"
-                      (click)="rate(rating)">{{ ratingLabel(rating) }}</button>
-            }
-          </div>
-        </fieldset>
-      } @else {
-        <p class="hint">В предпросмотре оценка не отправляется.</p>
-      }
+      <fieldset [disabled]="busy() || blockedReason() !== null"
+                [attr.aria-describedby]="blockedReason() === null ? null : idPrefix() + '-blocked'">
+        <legend>Как получилось на самом деле?</legend>
+        <div class="ratings">
+          @for (rating of ratings; track rating; let first = $first) {
+            <button class="button secondary" type="button" [attr.data-first-rating]="first ? '' : null"
+                    (click)="rate(rating)">{{ ratingLabel(rating) }}</button>
+          }
+        </div>
+      </fieldset>
     }
   }
 
@@ -48,9 +45,8 @@
         </button>
         <p class="hint" [id]="idPrefix() + '-voice-reason'">{{ voiceReason }}</p>
       </div>
-      @if (canSubmit()) {
-        <button class="button primary" type="submit" data-submit [disabled]="busy()">{{ busy() ? 'Проверяем…' : 'Проверить ответ' }}</button>
-      }
+      <button class="button primary" type="submit" data-submit [disabled]="busy() || blockedReason() !== null"
+              [attr.aria-describedby]="blockedReason() === null ? null : idPrefix() + '-blocked'">{{ busy() ? 'Проверяем…' : 'Проверить ответ' }}</button>
     </form>
   }
 
@@ -59,9 +55,8 @@
       <app-cloze-passage [passage]="content.passage" [values]="clozeValues()" [hints]="hints()"
         [hintPending]="hintPending()" [readOnly]="busy()" [idPrefix]="idPrefix() + '-blank'"
         (valueChange)="setClozeValue($event)" (hintRequested)="hintRequested.emit($event)" />
-      @if (canSubmit()) {
-        <button class="button primary" type="submit" data-submit [disabled]="busy()">{{ busy() ? 'Проверяем…' : 'Проверить ответ' }}</button>
-      }
+      <button class="button primary" type="submit" data-submit [disabled]="busy() || blockedReason() !== null"
+              [attr.aria-describedby]="blockedReason() === null ? null : idPrefix() + '-blocked'">{{ busy() ? 'Проверяем…' : 'Проверить ответ' }}</button>
     </form>
   }
 
@@ -69,10 +64,9 @@
     <form (submit)="$event.preventDefault(); submit()">
       <app-choice-list [options]="content.options" [selectionMode]="content.selectionMode" [selected]="selectedOptionIds()"
         [disabled]="busy()" [idPrefix]="idPrefix() + '-choice'" (selectedChange)="toggleOption($event)" />
-      @if (canSubmit()) {
-        <button class="button primary" type="submit" data-submit [disabled]="busy() || selectedOptionIds().length === 0">
-          {{ busy() ? 'Проверяем…' : 'Подтвердить выбор' }}</button>
-      }
+      <button class="button primary" type="submit" data-submit [disabled]="busy() || blockedReason() !== null || selectedOptionIds().length === 0"
+              [attr.aria-describedby]="blockedReason() === null ? null : idPrefix() + '-blocked'">
+        {{ busy() ? 'Проверяем…' : 'Подтвердить выбор' }}</button>
     </form>
   }
 
@@ -83,10 +77,13 @@
       @if (pairError()) {
         <p class="notice error" role="alert">Не удалось проверить пару. Выберите её ещё раз.</p>
       }
-      @if (canSubmit()) {
-        <button class="button primary" type="submit" data-submit [disabled]="busy() || pairChecking() || !matchComplete()">
-          {{ busy() ? 'Проверяем…' : 'Проверить пары' }}</button>
-      }
+      <button class="button primary" type="submit" data-submit [disabled]="busy() || pairChecking() || blockedReason() !== null || !matchComplete()"
+              [attr.aria-describedby]="blockedReason() === null ? null : idPrefix() + '-blocked'">
+        {{ busy() ? 'Проверяем…' : 'Проверить пары' }}</button>
     </form>
+  }
+
+  @if (blockedReason(); as reason) {
+    <p class="hint blocked" [id]="idPrefix() + '-blocked'" role="status">{{ reason }}</p>
   }
 </div>

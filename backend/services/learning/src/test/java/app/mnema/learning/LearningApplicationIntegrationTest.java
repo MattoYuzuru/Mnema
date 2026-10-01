@@ -136,7 +136,8 @@ class LearningApplicationIntegrationTest extends PostgresIntegrationTest {
     void routeInventoryHasNoVersionOrLegacyAliases() throws Exception {
         assertThat(applicationContext.getBeanNamesForAnnotation(RestController.class))
                 .containsExactlyInAnyOrder("deckController", "itemController", "draftController", "captureController",
-                        "exerciseController", "studySessionController", "attemptController", "pairCheckController", "studyRestartController",
+                        "exerciseController", "exercisePreviewController", "studySessionController", "attemptController",
+                        "pairCheckController", "studyRestartController",
                         "studyProgressController", "mediaUploadController", "mediaPlaybackController",
                         "mediaProcessingController", "mediaManifestController", "capabilityController");
         assertThat(requestMappings.getHandlerMethods().keySet())

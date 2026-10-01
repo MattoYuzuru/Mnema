@@ -109,6 +109,46 @@ class StudyContractFixtureTest {
     }
 
     @Test
+    void thePreviewFixtureValidatesAndItsSchemaRejectsPublicationAuthorityAndUnknownShapes() throws Exception {
+        JsonNode schema = fixture("study.schema.json");
+        JsonNode definition = schema.path("$defs").path("previewDocument");
+        validate(fixture("preview.json"), definition, schema, "$");
+
+        for (java.util.function.Consumer<ObjectNode> corrupt : java.util.List.<java.util.function.Consumer<ObjectNode>>of(
+                root -> root.withObject("submitCloze").withObject("exercise").put("enabled", true),
+                root -> root.withObject("submitCloze").withObject("exercise").putObject("subject"),
+                root -> root.withObject("submitCloze").withObject("exercise").put("schemaVersion", 1),
+                root -> root.withObject("submitCloze").withObject("exercise").put("type", "CLOZE_SINGLE"),
+                root -> root.withObject("submitCloze").withObject("exercise").remove("answerKey"),
+                root -> root.withObject("submitCloze").withObject("exercise").withObject("answerKey").put("kind", "TEXT"),
+                root -> root.withObject("submitCloze").put("attemptId", "cccccccc-cccc-4ccc-8ccc-cccccccccc11"),
+                root -> root.withObject("submitCloze").remove("action"),
+                root -> root.withObject("submitCloze").withObject("action").put("hintsUsed", 1),
+                root -> root.withObject("submitCloze").withObject("action").remove("pairMistakes"),
+                root -> root.withObject("submitCloze").withObject("action").put("transcriptRevealed", "no"),
+                root -> root.withObject("submitCloze").withObject("action").putObject("response").put("kind", "CANCEL"),
+                root -> root.withObject("submitCloze").withObject("action").put("kind", "CANCEL"),
+                root -> root.withObject("submitCloze").withObject("action").withArray("hintedBlankIds")
+                        .add("b1a00000-0000-4000-8000-000000000003"),
+                root -> root.withObject("hint").withObject("action").put("nonce", "1234567890123456"),
+                root -> root.withObject("pairCheck").withObject("action").put("presentationId",
+                        "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb15"),
+                root -> root.withObject("hintResult").put("presentationId", "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb13"),
+                root -> root.withObject("hintResult").remove("firstLetter"),
+                root -> root.withObject("submitClozeResult").putNull("evidence"),
+                root -> root.withObject("submitClozeResult").putNull("transition"),
+                root -> root.withObject("submitClozeResult").withObject("feedback").put("result", "WRONG"),
+                root -> root.withObject("pairCheckResult").put("feedback", "x"),
+                root -> root.put("clientAuthority", true),
+                root -> root.remove("aiSemanticResult"))) {
+            ObjectNode broken = fixture("preview.json").deepCopy();
+            corrupt.accept(broken);
+            assertThatThrownBy(() -> validate(broken, definition, schema, "$"))
+                    .isInstanceOf(IllegalArgumentException.class);
+        }
+    }
+
+    @Test
     void theMechanicsSchemaRejectsLegacyShapesAndClientAuthority() throws Exception {
         JsonNode schema = fixture("study.schema.json");
         JsonNode definition = schema.path("$defs").path("mechanicsDocument");

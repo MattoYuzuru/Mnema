@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, inject, input, model, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, Injector, afterNextRender, computed, inject, input, model, signal, viewChild } from '@angular/core';
 
 import { youtubeVideoId } from '../../content/youtube-video-id';
 import { MnemaSelectComponent, MnemaSelectOption } from '../../core/controls/mnema-select.component';
@@ -13,6 +13,7 @@ const KIND_LABELS: Readonly<Record<AuthoringBlockKind, string>> = {
 };
 const MEDIA_KINDS: Readonly<Record<NativeMediaKind, MediaBlockKind>> = { image: 'IMAGE', audio: 'AUDIO', video: 'VIDEO' };
 const MEDIA = new Set<AuthoringBlockKind>(['IMAGE', 'AUDIO', 'VIDEO']);
+const MEDIA_BLOCKS: Readonly<Record<NativeMediaKind, MediaBlockKind>> = { image: 'IMAGE', audio: 'AUDIO', video: 'VIDEO' };
 
 /**
  * Typed editor of one content slot: an ordered list of text, material, media and YouTube blocks.
@@ -41,7 +42,10 @@ export class ExerciseSlotEditorComponent {
 
     readonly pickerMounted = signal(false);
     readonly pickerOpen = signal(false);
+    /** Which kind of file the one shared picker offers right now. */
+    readonly pickerKind = signal<NativeMediaKind>('image');
     readonly notice = signal<string | null>(null);
+    readonly recordMode = signal(false);
 
     readonly rules = computed(() => SLOT_PROFILES[this.spec().profile]);
     readonly limits = computed(() => {
@@ -57,6 +61,8 @@ export class ExerciseSlotEditorComponent {
     ]);
     readonly canAddYoutube = computed(() => this.rules().kinds.includes('YOUTUBE'));
 
+    private readonly upload = viewChild(NativeMediaUploadComponent);
+    private opener: HTMLElement | null = null;
     private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
     private readonly injector = inject(Injector);
     private readonly destroyRef = inject(DestroyRef);
@@ -71,7 +77,15 @@ export class ExerciseSlotEditorComponent {
         return !blocks.some(block => textual ? block.kind === 'TEXT' || block.kind === 'MATERIAL' : MEDIA.has(block.kind));
     }
 
-    canAddMedia(): boolean { return this.canAdd('IMAGE'); }
+    /** Whether the profile allows this kind and the slot still has room for one more media block. */
+    canAddMedia(kind: NativeMediaKind): boolean {
+        const block = MEDIA_BLOCKS[kind];
+        return this.rules().kinds.includes(block) && this.canAdd(block);
+    }
+
+    pickerShows(kind: NativeMediaKind, record = false): boolean {
+        return this.pickerOpen() && this.pickerKind() === kind && this.recordMode() === record;
+    }
 
     problem(block: AuthoringBlock): string | null {
         return this.showProblems() ? blockProblem(block, this.spec().profile) : null;
@@ -95,10 +109,32 @@ export class ExerciseSlotEditorComponent {
         this.focusBlock(this.blocks().length - 1);
     }
 
-    togglePicker(): void {
+    /**
+     * Opens the shared picker for one kind of file, or closes it when the same button is pressed again. With
+     * `record` the recorder starts right away: that click is the explicit request for the microphone.
+     */
+    openPicker(kind: NativeMediaKind, opener: HTMLElement, record = false): void {
         this.notice.set(null);
+        if (this.pickerShows(kind, record)) { this.closePicker(); return; }
+        this.opener = opener;
+        this.pickerKind.set(kind);
+        this.recordMode.set(record);
         this.pickerMounted.set(true);
-        this.pickerOpen.update(open => !open);
+        this.pickerOpen.set(true);
+        afterNextRender({ write: () => {
+            if (this.destroyRef.destroyed) return;
+            this.host.nativeElement.querySelector<HTMLElement>('.media-picker')?.focus();
+            if (record) void this.upload()?.startRecording();
+        } }, { injector: this.injector });
+    }
+
+    /** Closing returns focus to the button that opened the picker. */
+    closePicker(): void {
+        this.pickerOpen.set(false);
+        this.recordMode.set(false);
+        const opener = this.opener;
+        this.opener = null;
+        if (opener?.isConnected) opener.focus();
     }
 
     /** Called only by this slot's own picker, so a late upload or recording can never land in another slot. */
@@ -116,6 +152,8 @@ export class ExerciseSlotEditorComponent {
         this.blocks.update(values => [...values, block]);
         this.notice.set(null);
         this.pickerOpen.set(false);
+        this.recordMode.set(false);
+        this.opener = null;
         this.focusBlock(this.blocks().length - 1);
     }
 

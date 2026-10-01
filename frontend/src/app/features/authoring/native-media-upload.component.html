@@ -6,18 +6,22 @@
     <strong>Перетащите файлы сюда</strong><span>или выберите их с устройства</span>
     <div class="media-actions">
       <label class="media-button primary">Выбрать файлы
-        <input type="file" multiple [accept]="fileAccept" [disabled]="disabled()" (change)="onFiles($any($event.target).files); $any($event.target).value = ''" />
+        <input type="file" multiple [accept]="fileAccept()" [disabled]="disabled()" (change)="onFiles($any($event.target).files); $any($event.target).value = ''" />
       </label>
-      <button class="media-button" type="button" [disabled]="disabled()" (click)="startCamera()">Открыть камеру</button>
-      @if (recording()) {
-        <button class="media-button stop" type="button" (click)="stopRecording()">Остановить запись</button>
-        <button class="media-button" type="button" (click)="cancelRecording()">Отменить запись</button>
-      } @else if (requesting()) {
-        <button class="media-button" type="button" disabled>Ждём разрешения микрофона…</button>
-        <button class="media-button" type="button" (click)="cancelRecording()">Отменить</button>
-      } @else { <button class="media-button" type="button" [disabled]="disabled()" (click)="startRecording()">Записать аудио</button> }
+      @if (kind() === null || kind() === 'image') {
+        <button class="media-button" type="button" [disabled]="disabled()" (click)="startCamera()">Открыть камеру</button>
+      }
+      @if (kind() === null || kind() === 'audio') {
+        @if (recording()) {
+          <button class="media-button stop" type="button" (click)="stopRecording()">Остановить запись</button>
+          <button class="media-button" type="button" (click)="cancelRecording()">Отменить запись</button>
+        } @else if (requesting()) {
+          <button class="media-button" type="button" disabled>Ждём разрешения микрофона…</button>
+          <button class="media-button" type="button" (click)="cancelRecording()">Отменить</button>
+        } @else { <button class="media-button" type="button" [disabled]="disabled()" (click)="startRecording()">Записать аудио</button> }
+      }
     </div>
-    <small>JPEG, PNG, WebP, GIF, MP3, M4A, MP4, MOV и WebM.</small>
+    <small>{{ formats() }}.</small>
   </div>
   <div class="camera-preview" [hidden]="!cameraOpen()">
     <video #cameraPreview autoplay muted playsinline aria-label="Изображение с камеры"></video>
@@ -31,11 +35,11 @@
       <div class="media-actions"><button class="media-button primary" type="button" (click)="useRecording()">Загрузить запись</button><button class="media-button" type="button" (click)="discardRecording()">Перезаписать</button></div>
     </div>
   }
-  <input #replacePicker class="visually-hidden" type="file" tabindex="-1" [accept]="fileAccept"
+  <input #replacePicker class="visually-hidden" type="file" tabindex="-1" [accept]="fileAccept()"
          (change)="onFiles($any($event.target).files); $any($event.target).value = ''" />
-  @if (entries().length > 0) {
+  @if (shownEntries().length > 0) {
     <ol class="media-queue" aria-label="Очередь медиафайлов">
-      @for (entry of entries(); track entry.id) {
+      @for (entry of shownEntries(); track entry.id) {
         <li class="media-row" [attr.data-asset-id]="entry.assetId">
           <span class="media-type" aria-hidden="true">{{ entry.kind === 'image' ? '▧' : entry.kind === 'audio' ? '♫' : '▶' }}</span>
           <div class="media-row-main"><strong>{{ entry.name }}</strong>

@@ -4,10 +4,10 @@ import { Observable, defer, map } from 'rxjs';
 
 import { appConfig } from '../../app.config';
 import { LearnerContent, MECHANICS, Mechanic, allLearnerBlocks } from '../../content/exercise/exercise-content.models';
-import { ExerciseContentError, parseLearnerBlock, parseLearnerContent } from '../../content/exercise/exercise-content.parse';
+import { parseLearnerContent } from '../../content/exercise/exercise-content.parse';
+import { parseAttemptFeedback } from './attempt-feedback.parse';
 import {
     AttemptCommand,
-    AttemptFeedback,
     AttemptOutcome,
     HintResult,
     MaterialProgress,
@@ -19,13 +19,13 @@ import {
     StudyHint,
     StudyMode,
     StudyPresentation,
-    StudyProtocolError,
     StudySession,
     StudyStartIntent,
     StudyProgressPage,
     StudyWriteResult,
     TranscriptReveal
 } from './study.models';
+import { entity, exact, guard, hintLetter, isRecord, protocol, text, validateResponse } from './study-wire';
 
 @Injectable({ providedIn: 'root' })
 export class StudyApiService {
@@ -161,7 +161,7 @@ export class StudyApiService {
             privateResponse(response);
             const object = exact(response.body, ['presentationId', 'blankId', 'firstLetter']);
             const result = { presentationId: entity(object['presentationId']), blankId: entity(object['blankId']),
-                firstLetter: letter(object['firstLetter']) };
+                firstLetter: hintLetter(object['firstLetter']) };
             if (result.presentationId !== presentationId.toLowerCase() || result.blankId !== blankId.toLowerCase()) {
                 throw protocol('Hint scope mismatch.');
             }
@@ -337,7 +337,7 @@ function parseHints(value: unknown, learner: LearnerContent): readonly StudyHint
         : []);
     const hints = value.map(entry => {
         const hint = exact(entry, ['blankId', 'firstLetter']);
-        return { blankId: entity(hint['blankId']), firstLetter: letter(hint['firstLetter']) };
+        return { blankId: entity(hint['blankId']), firstLetter: hintLetter(hint['firstLetter']) };
     });
     if (new Set(hints.map(hint => hint.blankId)).size !== hints.length || hints.some(hint => !hintable.has(hint.blankId))) {
         throw protocol('Invalid hint scope.');
@@ -363,7 +363,7 @@ function parseOutcome(value: unknown): AttemptOutcome {
     if (status === 'ASSESSED' && parsedMode === 'SCHEDULED' && transition === null) throw protocol('Missing transition.');
     parseEvidence(object['evidence'], status, parsedMode);
     return { attemptId: commandIdValue(object['attemptId']), presentationId: entity(object['presentationId']),
-        mode: parsedMode, status, feedback: parseFeedback(object['feedback']),
+        mode: parsedMode, status, feedback: parseAttemptFeedback(object['feedback']),
         canonicalEffects: practice ? false : parsedMode === 'SCHEDULED', transition };
 }
 
@@ -378,72 +378,6 @@ function parseEvidence(value: unknown, status: AttemptOutcome['status'], parsedM
         || !['HIGH', 'MEDIUM', 'LOW'].includes(String(object['evidenceClass']))
         || !Array.isArray(object['reasonCodes']) || object['reasonCodes'].length > 20
         || object['reasonCodes'].some(item => typeof item !== 'string')) throw protocol('Invalid canonical evidence.');
-}
-
-const RESULTS = ['CORRECT', 'PARTIAL', 'UNSURE', 'INCORRECT'] as const;
-
-function parseFeedback(value: unknown): AttemptFeedback {
-    if (!isRecord(value) || typeof value['result'] !== 'string') throw protocol('Invalid feedback.');
-    const result = value['result'];
-    if (result === 'NOT_ASSESSED' || result === 'UNAVAILABLE') {
-        const object = exact(value, ['result', 'reasonCodes']);
-        return { result, reasonCodes: strings(object['reasonCodes']) };
-    }
-    if (!(RESULTS as readonly string[]).includes(result)) throw protocol('Invalid feedback result.');
-    const verdict = result as (typeof RESULTS)[number];
-    const rules = (object: Record<string, unknown>) => strings(object['appliedRules']);
-    if ('blanks' in value) {
-        const object = exact(value, ['result', 'appliedRules', 'blanks']);
-        if (!Array.isArray(object['blanks']) || object['blanks'].length < 1 || object['blanks'].length > 12) {
-            throw protocol('Invalid blank feedback.');
-        }
-        const blanks = object['blanks'].map(entry => {
-            const blank = exact(entry, ['blankId', 'correct', 'hinted', 'reference']);
-            if (typeof blank['correct'] !== 'boolean' || typeof blank['hinted'] !== 'boolean') throw protocol('Invalid blank result.');
-            return { blankId: entity(blank['blankId']), correct: blank['correct'], hinted: blank['hinted'],
-                reference: text(blank['reference'], 4096, 0) };
-        });
-        if (new Set(blanks.map(blank => blank.blankId)).size !== blanks.length) throw protocol('Duplicate blank feedback.');
-        return { result: verdict, appliedRules: rules(object), blanks };
-    }
-    if ('correctOptionIds' in value) {
-        const object = exact(value, ['result', 'appliedRules', 'correctOptionIds']);
-        if (!Array.isArray(object['correctOptionIds']) || object['correctOptionIds'].length < 1
-            || object['correctOptionIds'].length > 12) throw protocol('Invalid choice feedback.');
-        const correctOptionIds = object['correctOptionIds'].map(entity);
-        if (new Set(correctOptionIds).size !== correctOptionIds.length) throw protocol('Duplicate correct option.');
-        return { result: verdict, appliedRules: rules(object), correctOptionIds };
-    }
-    if ('pairs' in value) {
-        const object = exact(value, ['result', 'appliedRules', 'pairs']);
-        if (!Array.isArray(object['pairs']) || object['pairs'].length < 2 || object['pairs'].length > 6) {
-            throw protocol('Invalid pair feedback.');
-        }
-        const pairs = object['pairs'].map(entry => {
-            const pair = exact(entry, ['leftId', 'selectedRightId', 'correctRightId', 'correct']);
-            if (typeof pair['correct'] !== 'boolean') throw protocol('Invalid pair result.');
-            return { leftId: entity(pair['leftId']), selectedRightId: entity(pair['selectedRightId']),
-                correctRightId: entity(pair['correctRightId']), correct: pair['correct'] };
-        });
-        if (new Set(pairs.map(pair => pair.leftId)).size !== pairs.length) throw protocol('Duplicate pair feedback.');
-        return { result: verdict, appliedRules: rules(object), pairs };
-    }
-    if ('referenceContent' in value) {
-        const object = exact(value, ['result', 'appliedRules', 'reference', 'referenceContent']);
-        if (!Array.isArray(object['referenceContent']) || object['referenceContent'].length > 8) {
-            throw protocol('Invalid reference content.');
-        }
-        return { result: verdict, appliedRules: rules(object), reference: text(object['reference'], 4096, 0),
-            referenceContent: object['referenceContent'].map(block => guard(() => parseLearnerBlock(block, 'REFERENCE', null))) };
-    }
-    return { result: verdict, appliedRules: rules(exact(value, ['result', 'appliedRules'])) };
-}
-
-function strings(value: unknown): readonly string[] {
-    if (!Array.isArray(value) || value.length > 20 || value.some(item => typeof item !== 'string')) {
-        throw protocol('Invalid feedback details.');
-    }
-    return value as string[];
 }
 
 function parseTransition(value: unknown): AttemptOutcome['transition'] {
@@ -461,52 +395,10 @@ function validateCommand(command: AttemptCommand): void {
     if (!Number.isSafeInteger(command.durationMs) || command.durationMs < 0 || command.durationMs > 3_600_000) {
         throw protocol('Invalid attempt command.');
     }
-    const response = command.response;
-    if (response.kind === 'TEXT') { exact(response, ['kind', 'text']); text(response.text, 4096, 0); }
-    else if (response.kind === 'SELF_CHECK') {
-        exact(response, ['kind', 'rating']);
-        if (!['NOT_RECALLED', 'HINTED', 'PARTIAL', 'FULL'].includes(response.rating)) throw protocol('Invalid rating.');
-    } else if (response.kind === 'CLOZE') {
-        exact(response, ['kind', 'blanks']);
-        if (!Array.isArray(response.blanks) || response.blanks.length < 1 || response.blanks.length > 12
-            || new Set(response.blanks.map(blank => entity(blank.blankId))).size !== response.blanks.length) {
-            throw protocol('Invalid cloze response.');
-        }
-        response.blanks.forEach(blank => { exact(blank, ['blankId', 'text']); text(blank.text, 4096, 0); });
-    } else if (response.kind === 'CHOICE') {
-        exact(response, ['kind', 'optionIds']);
-        if (!Array.isArray(response.optionIds) || response.optionIds.length === 0 || response.optionIds.length > 12
-            || new Set(response.optionIds.map(entity)).size !== response.optionIds.length) {
-            throw protocol('Invalid choice selection.');
-        }
-    } else if (response.kind === 'MATCH') {
-        exact(response, ['kind', 'pairs']);
-        if (!Array.isArray(response.pairs) || response.pairs.length < 2 || response.pairs.length > 6
-            || new Set(response.pairs.map(pair => entity(pair.leftId))).size !== response.pairs.length
-            || new Set(response.pairs.map(pair => entity(pair.rightId))).size !== response.pairs.length) {
-            throw protocol('Invalid match response.');
-        }
-        response.pairs.forEach(pair => exact(pair, ['leftId', 'rightId']));
-    } else if (response.kind === 'CANCEL') exact(response, ['kind']);
-    else throw protocol('Invalid response kind.');
+    validateResponse(command.response);
     if (command.confidence !== null && !['KNEW', 'UNSURE', 'GUESSED'].includes(command.confidence)) {
         throw protocol('Invalid confidence.');
     }
-}
-
-/** Content parsers throw their own error type; Study callers only see Study protocol errors. */
-function guard<T>(parse: () => T): T {
-    try {
-        return parse();
-    } catch (error) {
-        if (error instanceof ExerciseContentError) throw protocol(error.message);
-        throw error;
-    }
-}
-
-function letter(value: unknown): string {
-    if (typeof value !== 'string' || value.length < 1 || value.length > 16) throw protocol('Invalid hint letter.');
-    return value;
 }
 
 function privateResponse(response: HttpResponse<unknown>): void {
@@ -520,17 +412,7 @@ function replayHeader(headers: HttpHeaders): boolean {
     return value === 'true';
 }
 
-function exact(value: unknown, keys: readonly string[]): Record<string, unknown> {
-    if (!isRecord(value)) throw protocol('Expected Study object.');
-    const actual = Object.keys(value);
-    if (actual.length !== keys.length || actual.some(key => !keys.includes(key))) throw protocol('Unexpected Study shape.');
-    return value;
-}
-function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value); }
-function protocol(message: string): StudyProtocolError { return new StudyProtocolError(message); }
-function entity(value: unknown): string { if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(value)) throw protocol('Invalid entity ID.'); return value.toLowerCase(); }
 function commandIdValue(value: unknown): string { return entity(value); }
-function text(value: unknown, maximum: number, minimum = 1): string { if (typeof value !== 'string' || value.length < minimum || new TextEncoder().encode(value).length > maximum) throw protocol('Invalid Study text.'); return value; }
 function count(value: unknown, maximum: number): number { if (!Number.isSafeInteger(value) || (value as number) < 0 || (value as number) > maximum) throw protocol('Invalid count.'); return value as number; }
 function unsigned(value: unknown): string { if (typeof value !== 'string' || !/^(0|[1-9]\d{0,19})$/u.test(value)) throw protocol('Invalid unsigned value.'); return value; }
 function instant(value: unknown): string { const result = text(value, 64); if (!/^\d{4}-\d{2}-\d{2}T/u.test(result) || !Number.isFinite(Date.parse(result))) throw protocol('Invalid instant.'); return result; }

@@ -101,6 +101,22 @@ Rollback is a protected PR revert plus recreation of the same disposable local d
 older build cannot read V21 rows.
 Fixtures: [mechanics.json](mechanics.json).
 
+### Author preview evaluation (#267)
+
+`POST /api/exercise-previews` lets the exercise editor play its interactive demo and the author's own draft
+with the **same** evaluator as Study, without a second client-side implementation. It is stateless and
+side-effect free: no exercise, session, attempt, receipt, progress, exposure or media row is read or written;
+`Cache-Control: private, no-store`; authenticated with the authoring write scope; body ≤ 64 KiB. The request is
+`{exercise: {type, schemaVersion: 2, content, answerKey, evaluatorPolicy}, action}` validated with the
+publication rules for type/content/answer key/evaluator (MATERIAL blocks are checked structurally but not
+resolved; media `assetId`s are opaque). Actions: `SUBMIT {response, hintedBlankIds, pairMistakes,
+transcriptRevealed}` → `{feedback}` with Study feedback shapes (no evidence or transition;
+`referenceContent` is `[]` because the editor shows the author's draft itself); `PAIR_CHECK {leftId, rightId}`
+→ `{correct}`; `HINT {blankId}` → `{blankId, firstLetter}`. `ai-semantic` returns `UNAVAILABLE`, never a
+substitute result. `hintedBlankIds` must be distinct blanks with `firstLetterHint: true` (as in Study);
+`CANCEL` is a Study-only terminal response and is rejected; `PAIR_CHECK` is MATCH-only. All validation
+failures, including bodies over the cap, are the opaque `400 INVALID_REQUEST`. Fixtures: [preview.json](preview.json).
+
 ### AI assessment and speech-to-text capabilities
 
 Both are server-owned, disabled-by-default capabilities

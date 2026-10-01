@@ -816,7 +816,7 @@ try {
       require(await second.callFunction(`function() {
         const slot = document.querySelector('#free-response-prompt-text-0')?.closest('app-exercise-slot-editor');
         const add = [...(slot?.querySelectorAll('button[data-add]') ?? [])]
-          .find(button => button.textContent.includes('Изображение, аудио или видео'));
+          .find(button => button.textContent.trim() === 'Добавить аудио');
         if (!(add instanceof HTMLButtonElement)) return false;
         add.click(); return true;
       }`), 'prompt media picker could not be opened');
@@ -846,12 +846,16 @@ try {
       }`), 'exercise audio could not be attached to the prompt');
       await until(() => exists('#free-response-prompt-title-1', second), 'attached audio block absent');
       await fill('#free-response-prompt-title-1', 'Звуковое объяснение', second);
+      require(await clickText('button', 'Продолжить', second), 'continue to the answers step absent');
+      await until(() => exists('#step-answers app-text-answer-editor input[type="text"]', second), 'answers step did not open');
       require(await second.callFunction(`function() {
         const input = document.querySelector('app-text-answer-editor input[type="text"]');
         if (!(input instanceof HTMLInputElement)) return false;
         input.focus(); return document.activeElement === input;
       }`), 'accepted answer field absent');
       await second.call('Input.insertText', { text: editedText });
+      require(await clickText('button', 'Продолжить', second), 'continue to the save step absent');
+      await until(() => exists('#step-finish', second), 'save step did not open');
       require(await clickText('button', 'Создать упражнение', second),
         'exercise save action absent');
       await until(async () => /^\/decks\/[0-9a-f-]{36}\/exercises\/[0-9a-f-]{36}\/edit/.test(

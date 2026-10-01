@@ -62,7 +62,7 @@ export async function runMechanics(ctx) {
   const need = (value, label) => { if (!value) throw new UiFailure(label); };
   const failures = [];
   const findings = [];
-  const wire = { hints: 0, pairChecks: 0, attempts: [] };
+  const wire = { hints: 0, pairChecks: 0, previews: 0, attempts: [] };
   const attemptRequests = new Set();
   const editPaths = {};
   const root = 'form.inspector';
@@ -71,7 +71,8 @@ export async function runMechanics(ctx) {
   tab.on('Network.requestWillBeSent', event => {
     const url = new URL(event.request.url);
     if (event.request.method !== 'POST') return;
-    if (url.pathname.endsWith('/pair-checks')) wire.pairChecks++;
+    if (url.pathname === '/api/exercise-previews') wire.previews++;
+    else if (url.pathname.endsWith('/pair-checks')) wire.pairChecks++;
     if (url.pathname.endsWith('/hints')) wire.hints++;
     if (/\/study-sessions\/[0-9a-f-]{36}\/attempts$/.test(url.pathname)) attemptRequests.add(event.requestId);
   });
@@ -102,10 +103,10 @@ export async function runMechanics(ctx) {
     }, label, timeoutMs);
     if (verdict !== null) throw verdict;
   };
-  const focusEl = async spec => need(await call(`const e = ${pick};
+  const focusEl = async spec => (await scrollSettled(), need(await call(`const e = ${pick};
     if (!(e instanceof HTMLElement) || e.matches(':disabled')) return false;
-    e.scrollIntoView({ block: 'center' }); e.focus(); return document.activeElement === e;`, spec),
-  'target could not take keyboard focus: ' + (spec.label ?? spec.text ?? spec.includes ?? spec.css));
+    e.scrollIntoView({ block: 'center', behavior: 'instant' }); e.focus(); return document.activeElement === e;`, spec),
+  'target could not take keyboard focus: ' + (spec.label ?? spec.text ?? spec.includes ?? spec.css)));
   const press = async (key, code, virtualKeyCode, keyText) => {
     const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode };
     await tab.call('Input.dispatchKeyEvent', keyText === undefined
@@ -121,10 +122,19 @@ export async function runMechanics(ctx) {
     await call(`const e = ${pick}; if ('select' in e) e.select(); return true;`, spec);
     await tab.call('Input.insertText', { text: content });
   };
+  // The app sets `scroll-behavior: smooth` and also scrolls smoothly to a step it just opened. A click aimed at a rect
+  // read while such an animation is still running lands elsewhere, so wait until the page position has been still for
+  // several frames before measuring, then jump instantly (an explicit `behavior` overrides the CSS) and measure again.
+  const scrollSettled = () => tab.callFunction(`function() { return new Promise(resolve => {
+    let last = scrollY, still = 0, frames = 0;
+    const tick = () => { frames++; if (scrollY === last) still++; else { still = 0; last = scrollY; }
+      if (still >= 6 || frames > 180) resolve(still >= 6); else requestAnimationFrame(tick); };
+    requestAnimationFrame(tick); }); }`, []);
   const realClick = async spec => {
+    need(await scrollSettled(), 'the page kept scrolling and never settled before a click');
     const point = await call(`const e = ${pick};
       if (!(e instanceof HTMLElement) || e.matches(':disabled')) return null;
-      e.scrollIntoView({ block: 'center' });
+      e.scrollIntoView({ block: 'center', behavior: 'instant' });
       const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 };`, spec);
     need(point !== null, 'click target absent or disabled: ' + (spec.text ?? spec.label ?? spec.includes ?? spec.css));
     await tab.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y });
@@ -150,7 +160,7 @@ export async function runMechanics(ctx) {
     return { ready: row.querySelector('.media-status')?.textContent?.includes('Готов к просмотру') === true,
       error: row.querySelector('.media-status[role="alert"]')?.textContent.trim() ?? null };`, slot, name);
   async function uploadIntoSlot(slot, name, label, upload) {
-    await realClick({ ...slot, css: 'button[data-add]', includes: 'Изображение, аудио или видео' });
+    await realClick({ ...slot, css: 'button[data-add]', includes: 'Добавить аудио' });
     await waitFor(() => has({ ...slot, css: 'app-native-media-upload .media-drop' }), label + ': picker did not render');
     await upload();
     await waitFor(async () => {
@@ -172,7 +182,7 @@ export async function runMechanics(ctx) {
   slot, config.mediaClips.audio, name).then(done => need(done, 'synthetic audio file could not be dropped on the slot picker'));
   const slotButton = (slot, label) => call(`const b = find({ ...args[0], css: 'button', text: args[1] })[0];
     if (!(b instanceof HTMLButtonElement) || b.disabled) return false;
-    b.scrollIntoView({ block: 'center' }); b.focus(); return document.activeElement === b;`, slot, label);
+    b.scrollIntoView({ block: 'center', behavior: 'instant' }); b.focus(); return document.activeElement === b;`, slot, label);
 
   // ----- editor helpers ----------------------------------------------------------------------------------------------
   async function openEditor(mechanic) {
@@ -182,8 +192,23 @@ export async function runMechanics(ctx) {
     await waitFor(async () => (await exists(radio, tab)) && (await exists(root, tab)), mechanic + ' editor did not load');
     need(await ctx.click(radio, tab), mechanic + ' mechanic could not be selected');
     await waitFor(async () => await checked({ css: radio }) === true, mechanic + ' mechanic not marked');
+    await waitFor(async () => (await has({ css: '#exercise-preview-anchor' })) && (await has({ css: 'section.step' })),
+      mechanic + ' preview and first step did not open after choosing the tile');
   }
-  const setObjective = title => typeInto({ css: '#objective-title' }, title);
+  // The editor opens one step at a time: «Продолжить» validates the step and opens the next one.
+  const advance = async step => {
+    await realClick({ css: '[data-continue]' });
+    await waitFor(() => has({ css: '#step-' + step }), 'step «' + step + '» did not open after «Продолжить»');
+  };
+  const revealFinish = async () => {
+    for (let guard = 0; guard < 4 && await has({ css: '[data-continue]' }); guard++) {
+      await realClick({ css: '[data-continue]' });
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
+    await waitFor(() => has({ css: '#step-finish' }), 'the save step did not open');
+  };
+  const setObjective = async title => {
+    await revealFinish(); await typeInto({ css: '#objective-title' }, title); };
   async function saveNewExercise(label) {
     await realClick({ css: '.save-bar button[type="submit"]', text: 'Создать упражнение' });
     await waitFor(async () => {
@@ -198,7 +223,7 @@ export async function runMechanics(ctx) {
   }
   async function reopen(label) {
     await tab.call('Page.reload', { ignoreCache: true });
-    await waitFor(async () => (await exists(root, tab)) && (await exists('.preview-column', tab))
+    await waitFor(async () => (await exists(root, tab)) && (await exists('#exercise-preview-anchor', tab))
       && !(await bodyIncludes('Загружаем фрагменты материала', tab)), label + ' edit page did not reload');
   }
   async function chooseMaterialFragment(spec, labelStart) {
@@ -240,6 +265,82 @@ export async function runMechanics(ctx) {
   const finding = (id, detail) => { findings.push({ id, detail }); };
 
   // =================================================================================================================
+  // 0. One-page editor: initial state, demo, partial draft, mobile, reduced motion (real browser, real preview endpoint)
+  // =================================================================================================================
+  await scenario('mechanics_editor_flow', async () => {
+    await desktop();
+    await ctx.navigate(ctx.materialPath + '/exercises/new', tab);
+    await waitFor(async () => (await has({ css: 'app-mechanic-picker label.tile' }))
+      && !(await bodyIncludes('Загружаем фрагменты материала', tab)), 'editor did not load');
+    need(!(await has({ css: '#exercise-preview-anchor' })) && !(await has({ css: 'section.step' })),
+      'the initial state must show the type choice alone');
+    need(!(await has({ css: 'aside, .preview-column, .material-card' })), 'a side column or the material block is back');
+    need((await count({ css: 'label.tile' })) === 5, 'five type tiles expected');
+    need(/^К упражнениям · \d+$/.test(await text({ css: '.jump-link' }) ?? ''), 'the anchor to the existing exercises is missing');
+    await ctx.saveFullScreenshot('editor-initial-1440.png', tab);
+
+    // A tile opens the demo and scrolls to it once.
+    await realClick({ css: 'label.tile', includes: 'Выбрать ответ' });
+    await waitFor(() => has({ css: '#exercise-preview-anchor [data-mode="DEMO"] .badge' }), 'the demo did not open after choosing a tile');
+    need((await text({ css: '#exercise-preview-anchor .badge' })) === 'Пример', 'the demo badge is missing');
+    need((await text({ css: '[data-preview-caption]' })).includes('Это пример упражнения'), 'the demo explanation is missing');
+    await waitFor(() => call(`const r = document.querySelector('#exercise-preview-anchor').getBoundingClientRect();
+      return r.top > -2 && r.top < 260;`), 'the page did not scroll to the preview');
+    await ctx.saveFullScreenshot('editor-demo-choice-1440.png', tab);
+
+    // The demo is playable through the preview endpoint only: wrong answer, right answer, completion, restart.
+    const before = { attempts: wire.attempts.length, hints: wire.hints, pairs: wire.pairChecks, previews: wire.previews };
+    const demoOptions = { css: '#exercise-preview-anchor input[type="radio"]' };
+    await activate({ ...demoOptions, index: 0 });
+    await submitKey({ css: '#exercise-preview-anchor button[data-submit]' });
+    await waitFor(() => has({ css: '#preview-result-title' }), 'the demo verdict did not arrive from the preview endpoint', 20_000);
+    need((await text({ css: '#preview-result-title' })) === 'Нужно повторить', 'a wrong demo answer must be reported as wrong');
+    await realClick({ css: '#exercise-preview-anchor button[data-restart]' });
+    await waitFor(() => has({ css: '#exercise-preview-anchor app-learner-exercise' }), 'the demo did not restart');
+    await activate({ ...demoOptions, index: 1 });
+    await submitKey({ css: '#exercise-preview-anchor button[data-submit]' });
+    await waitFor(() => has({ css: '#preview-result-title' }), 'the second demo verdict did not arrive', 20_000);
+    need((await text({ css: '#preview-result-title' })) === 'Верно', 'the correct demo answer must be accepted');
+    need((await text({ css: '#exercise-preview-anchor .result' })).includes('Пример завершён'), 'the completion note is missing');
+    need(wire.previews === before.previews + 2 && wire.attempts.length === before.attempts && wire.hints === before.hints
+      && wire.pairChecks === before.pairs, 'the demo must use only the preview endpoint (no attempt, hint or pair-check request)');
+    await realClick({ css: '#exercise-preview-anchor button[data-restart]' });
+
+    // The first authored input turns the same area into the author's own, still unfinished, task.
+    await typeInto({ css: '#choice-prompt-text-0' }, 'Какой цвет у неба?');
+    await waitFor(() => has({ css: '#exercise-preview-anchor [data-mode="AUTHOR_DRAFT"]' }), 'the preview did not switch to the author draft');
+    const draft = await call(`const root = document.querySelector('#exercise-preview-anchor');
+      return { badge: root.querySelector('.badge')?.textContent.trim(), text: root.textContent,
+        submitDisabled: root.querySelector('button[data-submit]')?.disabled === true, media: root.querySelectorAll('audio, img').length,
+        reason: root.querySelector('.blocked')?.textContent.trim() ?? null };`);
+    need(draft.badge === 'Ваше задание' && draft.text.includes('Какой цвет у неба?') && !draft.text.includes('Звук 1') && draft.media === 0,
+      'the draft preview must show the author\'s content and none of the demo');
+    need(draft.submitDisabled && draft.reason?.includes('Проверить ответ пока нельзя'), 'an unfinished draft must not be checkable');
+    await ctx.saveFullScreenshot('editor-partial-draft-1440.png', tab);
+
+    // Reduced motion: the jump to a chosen tile is instantaneous.
+    await tab.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: 'reduce' }] });
+    await call('window.scrollTo(0, 0); return true;');
+    await realClick({ css: 'label.tile', includes: 'Сопоставить элементы' });
+    await waitFor(() => has({ css: '#exercise-preview-anchor [data-mode]' }), 'the preview of the next tile did not appear');
+    const place = () => call(`return Math.round(document.querySelector('#exercise-preview-anchor').getBoundingClientRect().top);`);
+    await new Promise(resolve => setTimeout(resolve, 120));
+    const first = await place();
+    await new Promise(resolve => setTimeout(resolve, 120));
+    const second = await place();
+    await tab.call('Emulation.setEmulatedMedia', { features: [] });
+    need(first === second && first > -2 && first < 260, `with reduced motion the jump must be complete at once (${first} then ${second})`);
+
+    await phone();
+    const wide = await overflowing();
+    await ctx.saveFullScreenshot('editor-mobile-390.png', tab);
+    await desktop();
+    need(!wide, 'the editor overflows horizontally at 390 px');
+    return { initialStateOnlyTypeChoice: true, demoPlayable: true, previewEndpointOnly: true, draftModeShowsOwnContent: true,
+      submitBlockedWithReason: true, reducedMotionInstantJump: true, noHorizontalOverflow390: true, viewports: ['1440x900', '390x844'] };
+  });
+
+  // =================================================================================================================
   // 1. SELF_CHECK: prompt + reference with a material fragment
   // =================================================================================================================
   const fragmentStart = ctx.materialText.slice(0, 11);
@@ -247,6 +348,7 @@ export async function runMechanics(ctx) {
   authored.SELF_CHECK = await scenario('mechanics_self_check_authoring', async () => {
     await openEditor('SELF_CHECK');
     await typeInto({ css: '#self-check-prompt-text-0' }, SELF_CHECK.prompt);
+    await advance('reference');
     await typeInto({ css: '#self-check-reference-text-0' }, SELF_CHECK.reference);
     await realClick({ css: 'button[data-add]', within: root, slot: 1, includes: 'Фрагмент материала' });
     await chooseMaterialFragment({ css: '#self-check-reference-material-1' }, fragmentStart);
@@ -275,7 +377,7 @@ export async function runMechanics(ctx) {
     need(ctx.freeResponseEditPath, 'base flow did not provide the free-response edit route');
     await desktop();
     await ctx.navigate(ctx.freeResponseEditPath, tab);
-    await waitFor(async () => (await exists(root, tab)) && (await exists('.preview-column', tab))
+    await waitFor(async () => (await exists(root, tab)) && (await exists('#exercise-preview-anchor', tab))
       && !(await bodyIncludes('Загружаем фрагменты материала', tab)), 'free-response edit page did not load');
     const snapshot = await call(`const ai = document.querySelector('#free-response-ai');
       const hint = document.querySelector('#free-response-ai-hint');
@@ -286,8 +388,13 @@ export async function runMechanics(ctx) {
         accepted: document.querySelector('app-text-answer-editor input[type="text"]')?.value,
         aiPresent: ai instanceof HTMLInputElement, aiDisabled: ai?.disabled === true, aiChecked: ai?.checked === true,
         aiRole: ai?.getAttribute('role'), aiDescribedBy: ai?.getAttribute('aria-describedby'),
-        aiReason: hint?.textContent.replace(/\\s+/g, ' ').trim() ?? null };`);
+        aiReason: hint?.textContent.replace(/\\s+/g, ' ').trim() ?? null,
+        previewMode: document.querySelector('app-exercise-preview-host .preview')?.getAttribute('data-mode') ?? null,
+        listBelowForm: (() => { const form = document.querySelector('form.inspector'); const list = document.querySelector('#existing-exercises');
+          return !!form && !!list && (form.compareDocumentPosition(list) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0; })() };`);
     need(snapshot.mechanic, 'FREE_RESPONSE mechanic not restored');
+    need(snapshot.previewMode === 'AUTHOR_READY', 'editing an existing exercise must preview the exercise itself, not a demo: ' + snapshot.previewMode);
+    need(snapshot.listBelowForm, 'the list of existing exercises is not below the builder');
     need(snapshot.prompt === FREE_RESPONSE_PROMPT, 'FREE_RESPONSE prompt not restored');
     need(snapshot.audioTitle === 'Звуковое объяснение', 'FREE_RESPONSE audio prompt block not restored');
     need(snapshot.accepted === ctx.materialText, 'FREE_RESPONSE accepted answer not restored');
@@ -305,6 +412,7 @@ export async function runMechanics(ctx) {
   // =================================================================================================================
   authored.CLOZE = await scenario('mechanics_cloze_authoring', async () => {
     await openEditor('CLOZE');
+    await advance('passage');   // the optional context step is skipped
     await typeInto({ css: '#cloze-text-0' }, CLOZE.text);
     const makeBlank = async index => {
       need(await call(`const area = document.querySelector('#cloze-text-' + args[0]);
@@ -324,7 +432,7 @@ export async function runMechanics(ctx) {
     need(await call(`const section = document.querySelectorAll(args[0] + ' section[data-blank]')[0];
       const input = [...section.querySelectorAll('.check-line')].find(l => l.textContent.includes('Первая буква'))?.querySelector('input');
       if (!(input instanceof HTMLInputElement)) return false;
-      input.scrollIntoView({ block: 'center' }); input.focus(); return document.activeElement === input;`, root),
+      input.scrollIntoView({ block: 'center', behavior: 'instant' }); input.focus(); return document.activeElement === input;`, root),
     'first-letter hint switch could not take focus');
     await keys.Space();
     await waitFor(() => call(`const section = document.querySelectorAll(args[0] + ' section[data-blank]')[0];
@@ -364,6 +472,7 @@ export async function runMechanics(ctx) {
   authored.CHOICE_MULTIPLE = await scenario('mechanics_choice_multiple_authoring', async () => {
     await openEditor('CHOICE');
     await typeInto({ css: '#choice-prompt-text-0' }, MULTIPLE.prompt);
+    await advance('options');
     await fillOptions(MULTIPLE.options);
     await modeSwitch(1);
     await waitFor(async () => (await modeRadios()) === 'false,true', 'MULTIPLE mode not selected');
@@ -403,6 +512,7 @@ export async function runMechanics(ctx) {
   authored.CHOICE_SINGLE = await scenario('mechanics_choice_single_authoring', async () => {
     await openEditor('CHOICE');
     await typeInto({ css: '#choice-prompt-text-0' }, SINGLE.prompt);
+    await advance('options');
     await fillOptions(SINGLE.options);
     await markOption(0);
     await setObjective(SINGLE.objective);
@@ -425,6 +535,7 @@ export async function runMechanics(ctx) {
     reason: 'MATCH authoring did not reach the recording step' };
   authored.MATCH = await scenario('mechanics_match_authoring', async () => {
     await openEditor('MATCH');
+    await advance('pairs');   // the general instruction is optional
     await realClick({ css: root + ' [data-add-pair]' });
     await waitFor(async () => (await count({ css: root + ' section[data-pair]' })) === 3, 'third pair not added');
     for (const [index, entry] of MATCH.pairs.entries()) {
@@ -442,9 +553,8 @@ export async function runMechanics(ctx) {
     // Pair 3, left side: its text plus a recording from the SYNTHETIC microphone (Chrome fake device flags).
     const recordSide = pair(2, 0);
     try {
-      await realClick({ ...recordSide, css: 'button[data-add]', includes: 'Изображение, аудио или видео' });
-      await waitFor(() => slotButton(recordSide, 'Записать аудио'), 'record control absent');
-      await keys.Enter();
+      // «Записать аудио» opens the picker in recording mode and starts the recorder on that click.
+      await realClick({ ...recordSide, css: 'button[data-record]', text: 'Записать аудио' });
       await waitFor(() => slotButton(recordSide, 'Остановить запись'), 'recording did not start with the fake microphone', 15_000);
       await new Promise(resolve => setTimeout(resolve, 1800));
       await keys.Enter();

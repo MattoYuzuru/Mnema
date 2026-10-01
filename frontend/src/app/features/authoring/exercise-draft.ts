@@ -1,7 +1,7 @@
 import {
     AiRubric, AuthoringBlock, ChoiceOption, ClozeBlankKey, ClozeSegment, ClozeSize, COMPACT_SLOT, ExerciseSpec,
     ExerciseSubject, LIMITS, LearnerBlock, LearnerClozeSegment, LearnerContent, MatchingMode, MatchItem, Mechanic, NORMALIZATION_RULES,
-    NormalizationRule, PROMPT_SLOTS, REFERENCE_SLOTS, ResponseInput, SLOT_PROFILES, SelectionMode, SlotSpec, authoringSlots,
+    NormalizationRule, PROMPT_SLOTS, PreviewExercise, REFERENCE_SLOTS, ResponseInput, SLOT_PROFILES, SelectionMode, SlotSpec, authoringSlots,
     codePointLength, isBlank, mediaBlockCount
 } from '../../content/exercise/exercise-content.models';
 import { blockProblem, isEntityId, slotProblem } from '../../content/exercise/exercise-content.parse';
@@ -336,15 +336,88 @@ export function choiceSelectionProblem(draft: ChoiceDraft): string | null {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Local preview: draft -> learner content, with no server involved
+// Pristine drafts and mechanic switching
 // ---------------------------------------------------------------------------------------------
 
-function learnerBlocks(blocks: readonly AuthoringBlock[], context: SlotContext, revealed: boolean): readonly LearnerBlock[] {
+const ID_KEYS: ReadonlySet<string> = new Set(['id', 'optionId', 'itemId', 'pairId', 'blankId']);
+
+/** Draft structure without the random ids that `emptyDrafts` generates on every call. */
+function shape(value: unknown): string {
+    return JSON.stringify(value, (key, entry: unknown) => ID_KEYS.has(key) ? undefined : entry);
+}
+
+/** True while the draft of this mechanic still equals a freshly created one: nothing authored yet. */
+export function isPristine(type: Mechanic, drafts: ExerciseDrafts): boolean {
+    return shape(drafts[type]) === shape(emptyDrafts()[type]);
+}
+
+function filled(blocks: readonly AuthoringBlock[]): boolean {
+    return blocks.some(block => block.kind !== 'TEXT' || !isBlank(block.text));
+}
+
+/**
+ * Names of the authored parts that only this mechanic can show (answers, options and marks, pairs, blanks,
+ * the reference). Empty means switching loses nothing from view; the question itself is carried over.
+ */
+export function mechanicSpecificData(type: Mechanic, drafts: ExerciseDrafts): readonly string[] {
+    const found: string[] = [];
+    switch (type) {
+        case 'SELF_CHECK':
+            if (filled(drafts.SELF_CHECK.reference)) found.push('эталон ответа');
+            break;
+        case 'FREE_RESPONSE':
+            if (drafts.FREE_RESPONSE.answer.rows.some(row => !isBlank(row.value))) found.push('допустимые ответы');
+            if (filled(drafts.FREE_RESPONSE.reference)) found.push('эталон ответа');
+            break;
+        case 'CLOZE':
+            if (drafts.CLOZE.blanks.length > 0 || drafts.CLOZE.texts.some(text => !isBlank(text))) found.push('текст с пропусками и ответы к ним');
+            break;
+        case 'CHOICE':
+            if (drafts.CHOICE.options.some(option => filled(option.blocks)) || drafts.CHOICE.correctIds.length > 0) {
+                found.push('варианты ответа и отметки правильных');
+            }
+            break;
+        case 'MATCH':
+            if (drafts.MATCH.pairs.some(pair => filled(pair.left.blocks) || filled(pair.right.blocks))) found.push('пары');
+            break;
+    }
+    return found;
+}
+
+/** Copies the question into the target mechanic when the target has none yet; never overwrites authored text. */
+export function carryPrompt(drafts: ExerciseDrafts, from: Mechanic, to: Mechanic): ExerciseDrafts {
+    if (from === to || !filled(drafts[from].prompt) || filled(drafts[to].prompt)) return drafts;
+    return { ...drafts, [to]: { ...drafts[to], prompt: drafts[from].prompt } };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Preview: authoring content -> what the learner sees. Evaluation is always the server's.
+// ---------------------------------------------------------------------------------------------
+
+/** Neutral placeholders shown in place of the parts an author has not written yet. */
+export const PREVIEW_PLACEHOLDERS = {
+    prompt: 'Добавьте вопрос',
+    reference: 'Укажите правильный ответ',
+    passage: 'Добавьте текст и сделайте в нём пропуски',
+    firstOption: 'Добавьте вариант',
+    nextOption: 'Добавьте ещё один вариант',
+    item: 'Добавьте элемент пары'
+} as const;
+
+export interface LearnerProjection {
+    /** Resolves MATERIAL blocks; a demo has no material. */
+    readonly context: SlotContext | null;
+    readonly revealed: boolean;
+    /** Show placeholders for unfinished parts instead of dropping them (an incomplete author draft). */
+    readonly placeholders: boolean;
+}
+
+function learnerBlocks(blocks: readonly AuthoringBlock[], context: SlotContext | null, revealed: boolean): readonly LearnerBlock[] {
     return blocks.flatMap((block): LearnerBlock[] => {
         switch (block.kind) {
             case 'TEXT': return isBlank(block.text) ? [] : [{ kind: 'TEXT', text: block.text }];
             case 'MATERIAL': {
-                const text = materialText(block, context);
+                const text = context === null ? null : materialText(block, context);
                 return text === null ? [] : [{ kind: 'TEXT', text }];
             }
             case 'IMAGE': return isEntityId(block.assetId) ? [{ kind: 'IMAGE', assetId: block.assetId, alt: block.alt || 'Изображение' }] : [];
@@ -360,45 +433,61 @@ function learnerBlocks(blocks: readonly AuthoringBlock[], context: SlotContext, 
     });
 }
 
-function compactBlocks(blocks: readonly AuthoringBlock[], context: SlotContext, revealed: boolean): readonly LearnerBlock[] {
-    const result = learnerBlocks(blocks, context, revealed);
-    return result.length > 0 ? result : [{ kind: 'TEXT', text: 'Пустой элемент' }];
+function placeholderText(text: string): readonly LearnerBlock[] { return [{ kind: 'TEXT', text }]; }
+
+function promptBlocks(blocks: readonly AuthoringBlock[], projection: LearnerProjection, required: boolean): readonly LearnerBlock[] {
+    const result = learnerBlocks(blocks, projection.context, projection.revealed);
+    return result.length === 0 && required && projection.placeholders ? placeholderText(PREVIEW_PLACEHOLDERS.prompt) : result;
 }
 
-/** Learner view of the current draft. Incomplete parts are skipped so the preview never blocks editing. */
-export function previewContent(type: Mechanic, drafts: ExerciseDrafts, context: SlotContext, revealed: boolean): LearnerContent {
-    switch (type) {
-        case 'SELF_CHECK': return { type, content: { prompt: learnerBlocks(drafts.SELF_CHECK.prompt, context, revealed),
-            reference: learnerBlocks(drafts.SELF_CHECK.reference, context, revealed) } };
-        case 'FREE_RESPONSE': return { type, content: { prompt: learnerBlocks(drafts.FREE_RESPONSE.prompt, context, revealed),
-            responseInput: drafts.FREE_RESPONSE.responseInput } };
+/**
+ * The learner view of an authoring exercise (a draft built with `buildSpec` or a demo). Incomplete parts are
+ * skipped, or replaced by neutral placeholders in a draft preview, so the preview never blocks editing. It only
+ * mirrors what Study would issue; no key is read and nothing is evaluated here.
+ */
+export function learnerContent(exercise: PreviewExercise, projection: LearnerProjection): LearnerContent {
+    const { context, revealed, placeholders } = projection;
+    switch (exercise.type) {
+        case 'SELF_CHECK': {
+            const reference = learnerBlocks(exercise.content.reference, context, revealed);
+            return { type: exercise.type, content: { prompt: promptBlocks(exercise.content.prompt, projection, true),
+                reference: reference.length === 0 && placeholders ? placeholderText(PREVIEW_PLACEHOLDERS.reference) : reference } };
+        }
+        case 'FREE_RESPONSE': return { type: exercise.type, content: { prompt: promptBlocks(exercise.content.prompt, projection, true),
+            responseInput: exercise.content.responseInput } };
         case 'CLOZE': {
-            const draft = drafts.CLOZE;
-            const passage = clozePassage(draft).map((segment): LearnerClozeSegment => {
+            const passage = exercise.content.passage.map((segment): LearnerClozeSegment => {
                 if (segment.kind === 'TEXT') return segment;
-                const blank = draft.blanks.find(entry => entry.blankId === segment.blankId)!;
-                const first = blank.answer.rows[0]?.value ?? '';
+                const first = exercise.answerKey.blanks.find(entry => entry.blankId === segment.blankId)?.accepted[0] ?? '';
                 const length = segment.size.mode === 'FIXED' ? segment.size.length : Math.max(1, codePointLength(first));
                 return { kind: 'BLANK', blankId: segment.blankId, size: { mode: segment.size.mode, length },
                     firstLetterHint: segment.firstLetterHint };
             });
-            return { type, content: { prompt: learnerBlocks(draft.prompt, context, revealed), passage } };
+            return { type: exercise.type, content: { prompt: promptBlocks(exercise.content.prompt, projection, false),
+                passage: passage.length === 0 && placeholders ? placeholderText(PREVIEW_PLACEHOLDERS.passage) as LearnerClozeSegment[] : passage } };
         }
-        case 'CHOICE': return { type, content: { prompt: learnerBlocks(drafts.CHOICE.prompt, context, revealed),
-            selectionMode: drafts.CHOICE.selectionMode,
-            options: drafts.CHOICE.options.map(option => ({ optionId: option.optionId, blocks: compactBlocks(option.blocks, context, revealed) })) } };
+        case 'CHOICE': {
+            const anyFilled = exercise.content.options.some(option => learnerBlocks(option.blocks, context, revealed).length > 0);
+            const empty = placeholders ? placeholderText(anyFilled ? PREVIEW_PLACEHOLDERS.nextOption : PREVIEW_PLACEHOLDERS.firstOption)
+                : placeholderText('Пустой элемент');
+            return { type: exercise.type, content: { prompt: promptBlocks(exercise.content.prompt, projection, true),
+                selectionMode: exercise.content.selectionMode,
+                options: exercise.content.options.map(option => {
+                    const blocks = learnerBlocks(option.blocks, context, revealed);
+                    return { optionId: option.optionId, blocks: blocks.length > 0 ? blocks : empty };
+                }) } };
+        }
         case 'MATCH': {
-            const pairs = drafts.MATCH.pairs;
-            const left = pairs.map(pair => ({ itemId: pair.left.itemId, blocks: compactBlocks(pair.left.blocks, context, revealed) }));
-            const right = pairs.map(pair => ({ itemId: pair.right.itemId, blocks: compactBlocks(pair.right.blocks, context, revealed) }));
+            const side = (items: readonly MatchItem[]) => items.map(item => {
+                const blocks = learnerBlocks(item.blocks, context, revealed);
+                return { itemId: item.itemId, blocks: blocks.length > 0 ? blocks
+                    : placeholderText(placeholders ? PREVIEW_PLACEHOLDERS.item : 'Пустой элемент') };
+            });
+            const right = side(exercise.content.right);
             // Rotate the right column so the preview does not show every pair aligned.
             const rotated = right.length > 1 ? [...right.slice(1), right[0]] : right;
-            return { type, content: { prompt: learnerBlocks(drafts.MATCH.prompt, context, revealed), left, right: rotated } };
+            return { type: exercise.type, content: { prompt: promptBlocks(exercise.content.prompt, projection, false),
+                left: side(exercise.content.left), right: rotated } };
         }
     }
-}
-
-/** Whether the draft's pair is a correct pairing; used by the local preview pair check. */
-export function isPreviewPair(drafts: ExerciseDrafts, leftId: string, rightId: string): boolean {
-    return drafts.MATCH.pairs.some(pair => pair.left.itemId === leftId && pair.right.itemId === rightId);
 }

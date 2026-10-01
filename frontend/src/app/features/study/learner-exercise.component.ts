@@ -37,8 +37,11 @@ export class LearnerExerciseComponent {
     readonly hintPending = input<string | null>(null);
     readonly transcriptLoading = input(false);
     readonly busy = input(false);
-    /** False in the author preview: nothing can be submitted. */
-    readonly canSubmit = input(true);
+    /**
+     * Why the answer cannot be checked yet (an unfinished author preview). While set, every submit and rating
+     * control is disabled and the reason is shown next to them.
+     */
+    readonly blockedReason = input<string | null>(null);
     readonly pairChecker = input<PairChecker | null>(null);
     readonly idPrefix = input('exercise');
     /** A new key (another presentation, another set of items) discards the input and any pending pair check. */
@@ -114,7 +117,7 @@ export class LearnerExerciseComponent {
     }
 
     rate(rating: SelfRating): void {
-        if (this.busy() || !this.revealed() || !this.canSubmit()) return;
+        if (this.busy() || !this.revealed() || this.blockedReason() !== null) return;
         this.answered.emit({ kind: 'SELF_CHECK', rating });
     }
 
@@ -149,7 +152,7 @@ export class LearnerExerciseComponent {
 
     /** Builds the exact response for the current mechanic and hands it to the host. */
     submit(): void {
-        if (this.busy() || !this.canSubmit()) return;
+        if (this.busy() || this.blockedReason() !== null) return;
         const value = this.exercise();
         switch (value.type) {
             case 'FREE_RESPONSE':

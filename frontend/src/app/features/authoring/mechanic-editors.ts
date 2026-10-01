@@ -1,7 +1,7 @@
 import { ChangeDetectionStrategy, Component, Directive, ElementRef, Injector, afterNextRender, computed, inject, input, model, signal } from '@angular/core';
 
 import {
-    AuthoringBlock, COMPACT_SLOT, LIMITS, PROMPT_SLOTS, REFERENCE_SLOTS, SelectionMode
+    AuthoringBlock, COMPACT_SLOT, LIMITS, REFERENCE_SLOTS, SelectionMode, isBlank
 } from '../../content/exercise/exercise-content.models';
 import { CAPABILITIES_UNAVAILABLE, LearningCapabilities } from './capabilities-api.service';
 import {
@@ -11,36 +11,16 @@ import {
 import { ExerciseSlotEditorComponent } from './exercise-slot-editor.component';
 import { TextAnswerEditorComponent } from './text-answer-editor.component';
 
-/** Inputs shared by every mechanic editor. */
+/**
+ * Inputs shared by every step editor. The question slot of each mechanic is edited by the page itself; these
+ * components own the mechanic-specific step: answers, passage, options or pairs.
+ */
 @Directive()
 abstract class MechanicEditorBase {
     readonly context = input.required<SlotContext>();
     readonly errors = input<DraftErrors>({});
     readonly showProblems = input(false);
     readonly idPrefix = input('editor');
-    readonly promptSpec = PROMPT_SLOTS;
-}
-
-// ---------------------------------------------------------------------------------------------
-
-@Component({
-    selector: 'app-self-check-editor',
-    imports: [ExerciseSlotEditorComponent],
-    template: `
-      <app-exercise-slot-editor label="Условие" [spec]="promptSpec.SELF_CHECK" [blocks]="draft().prompt"
-        (blocksChange)="draft.set({ ...draft(), prompt: $event })" [context]="context()" [idPrefix]="idPrefix() + '-prompt'"
-        [error]="errors()['prompt'] ?? null" [showProblems]="showProblems()" />
-      <app-exercise-slot-editor label="Эталон" [spec]="reference" [blocks]="draft().reference"
-        (blocksChange)="draft.set({ ...draft(), reference: $event })" [context]="context()" [idPrefix]="idPrefix() + '-reference'"
-        [error]="errors()['reference'] ?? null" [showProblems]="showProblems()"
-        hint="Ученик откроет эталон сам и честно оценит себя. Эталон не проверяется автоматически." />
-    `,
-    styles: [':host { display: grid; gap: 1.5rem; min-inline-size: 0; }'],
-    changeDetection: ChangeDetectionStrategy.OnPush
-})
-export class SelfCheckEditorComponent extends MechanicEditorBase {
-    readonly draft = model.required<SelfCheckDraft>();
-    readonly reference = REFERENCE_SLOTS.SELF_CHECK;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -49,13 +29,6 @@ export class SelfCheckEditorComponent extends MechanicEditorBase {
     selector: 'app-free-response-editor',
     imports: [ExerciseSlotEditorComponent, TextAnswerEditorComponent],
     template: `
-      <app-exercise-slot-editor label="Условие" [spec]="promptSpec.FREE_RESPONSE" [blocks]="draft().prompt"
-        (blocksChange)="draft.set({ ...draft(), prompt: $event })" [context]="context()" [idPrefix]="idPrefix() + '-prompt'"
-        [error]="errors()['prompt'] ?? null" [showProblems]="showProblems()" />
-      <app-exercise-slot-editor label="Эталон (необязательно)" [spec]="reference" [blocks]="draft().reference"
-        (blocksChange)="draft.set({ ...draft(), reference: $event })" [context]="context()" [idPrefix]="idPrefix() + '-reference'"
-        [error]="errors()['reference'] ?? null" [showProblems]="showProblems()"
-        hint="Богатый эталон показывается после ответа. Проверка использует только список допустимых ответов ниже." />
       <app-text-answer-editor [answer]="draft().answer" (answerChange)="setAnswer($event)" [idPrefix]="idPrefix() + '-answer'"
         [error]="errors()['accepted'] ?? null" [max]="20" [length]="512" />
       <div class="ai-switch">
@@ -67,8 +40,16 @@ export class SelfCheckEditorComponent extends MechanicEditorBase {
         <p class="hint" [id]="idPrefix() + '-ai-hint'">Проверка объяснений и формулировок по эталону. Пока недоступна.
           {{ aiReason() }}</p>
       </div>
+      <details class="optional" [open]="referenceOpen()">
+        <summary>Эталон после ответа (необязательно)</summary>
+        <app-exercise-slot-editor label="Эталон" [spec]="reference" [blocks]="draft().reference"
+          (blocksChange)="draft.set({ ...draft(), reference: $event })" [context]="context()" [idPrefix]="idPrefix() + '-reference'"
+          [error]="errors()['reference'] ?? null" [showProblems]="showProblems()"
+          hint="Богатый эталон показывается после ответа. Проверка использует только список допустимых ответов выше." />
+      </details>
     `,
     styleUrl: './exercise-fields.css',
+    styles: [':host { display: grid; gap: 1.5rem; min-inline-size: 0; } .optional summary { min-block-size: var(--mn-touch-min, 2.75rem); display: flex; align-items: center; color: var(--mn-ink); font-weight: 650; cursor: pointer; }'],
     changeDetection: ChangeDetectionStrategy.OnPush
 })
 export class FreeResponseEditorComponent extends MechanicEditorBase {
@@ -81,6 +62,9 @@ export class FreeResponseEditorComponent extends MechanicEditorBase {
         return capability.reason === 'PROVIDER_NOT_CONFIGURED' ? 'Сервер включил функцию, но поставщик проверки не подключён.'
             : 'Функция отключена на сервере.';
     });
+    /** Opens by itself for an existing reference or a reference problem, so neither stays hidden. */
+    readonly referenceOpen = computed(() => this.errors()['reference'] !== undefined
+        || this.draft().reference.some(block => block.kind !== 'TEXT' || !isBlank(block.text)));
 
     setAnswer(answer: TextAnswerDraft): void { this.draft.set({ ...this.draft(), answer }); }
 }
@@ -91,13 +75,10 @@ interface Selection { readonly index: number; readonly start: number; readonly e
 
 @Component({
     selector: 'app-cloze-editor',
-    imports: [ExerciseSlotEditorComponent, TextAnswerEditorComponent],
+    imports: [TextAnswerEditorComponent],
     template: `
-      <app-exercise-slot-editor label="Вводные слова (необязательно)" [spec]="promptSpec.CLOZE" [blocks]="draft().prompt"
-        (blocksChange)="draft.set({ ...draft(), prompt: $event })" [context]="context()" [idPrefix]="idPrefix() + '-prompt'"
-        [error]="errors()['prompt'] ?? null" [showProblems]="showProblems()" />
       <fieldset class="passage" [attr.aria-describedby]="errors()['passage'] ? idPrefix() + '-passage-error' : null">
-        <legend>Текст с пропусками</legend>
+        <legend class="visually-hidden">Текст с пропусками</legend>
         <p class="hint">Напишите текст или код. Выделите слово или фрагмент и нажмите «Сделать пропуском»: выделенное станет первым правильным ответом.
           Каждый пропуск получает свой номер и свои ответы, поэтому повторяющиеся слова не мешают друг другу. Переносы строк и отступы сохраняются.
           Пропусков: {{ draft().blanks.length }} из {{ limits.max }}.</p>
@@ -148,7 +129,6 @@ interface Selection { readonly index: number; readonly start: number; readonly e
       :host { display: grid; gap: 1.5rem; min-inline-size: 0; }
       .passage { gap: .9rem; }
       .code-area { font-family: var(--mn-font-mono, ui-monospace, monospace); tab-size: 4; }
-      .visually-hidden { position: absolute; inline-size: 1px; block-size: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
     `],
     changeDetection: ChangeDetectionStrategy.OnPush
 })
@@ -235,11 +215,8 @@ export class ClozeEditorComponent extends MechanicEditorBase {
     selector: 'app-choice-editor',
     imports: [ExerciseSlotEditorComponent],
     template: `
-      <app-exercise-slot-editor label="Условие" [spec]="promptSpec.CHOICE" [blocks]="draft().prompt"
-        (blocksChange)="draft.set({ ...draft(), prompt: $event })" [context]="context()" [idPrefix]="idPrefix() + '-prompt'"
-        [error]="errors()['prompt'] ?? null" [showProblems]="showProblems()" />
       <fieldset class="options" [attr.aria-describedby]="idPrefix() + '-selection-error'">
-        <legend>Варианты ответа</legend>
+        <legend class="visually-hidden">Варианты ответа</legend>
         <div class="row-stack" role="radiogroup" aria-label="Сколько ответов выбирает ученик">
           <label class="radio-line"><input type="radio" [name]="idPrefix() + '-mode'" [checked]="draft().selectionMode === 'SINGLE'"
             (change)="setMode('SINGLE')" /> Один ответ</label>
@@ -329,11 +306,8 @@ export class ChoiceEditorComponent extends MechanicEditorBase {
     selector: 'app-match-editor',
     imports: [ExerciseSlotEditorComponent],
     template: `
-      <app-exercise-slot-editor label="Условие (необязательно)" [spec]="promptSpec.MATCH" [blocks]="draft().prompt"
-        (blocksChange)="draft.set({ ...draft(), prompt: $event })" [context]="context()" [idPrefix]="idPrefix() + '-prompt'"
-        [error]="errors()['prompt'] ?? null" [showProblems]="showProblems()" />
       <fieldset class="pairs">
-        <legend>Пары</legend>
+        <legend class="visually-hidden">Пары</legend>
         <p class="hint">Пар: {{ limits.min }}–{{ limits.max }}. Каждый элемент участвует ровно в одной паре; ученик увидит стороны перемешанными независимо.
           В каждом элементе — текст и/или одно изображение, аудио или видео; аудио можно записать с любой стороны.</p>
         @for (pair of draft().pairs; track pair.pairId; let index = $index; let first = $first; let last = $last) {

@@ -29,7 +29,7 @@ import java.util.UUID;
  * source and the result is persisted, so reads and replays return the same order; the order is deliberately
  * not derivable from any identifier a client holds.
  */
-final class LearnerContent {
+public final class LearnerContent {
     private static final JsonNodeFactory JSON = JsonNodeFactory.instance;
 
     private LearnerContent() { }
@@ -97,7 +97,7 @@ final class LearnerContent {
      * First extended grapheme cluster of the NFC form after leading whitespace: one visible character, even for
      * emoji or combining marks, and never whitespace itself.
      */
-    static String firstLetter(String accepted) {
+    public static String firstLetter(String accepted) {
         String canonical = Normalizer.normalize(accepted, Normalizer.Form.NFC);
         int start = 0;
         while (start < canonical.length()) {
@@ -109,6 +109,23 @@ final class LearnerContent {
         graphemes.setText(canonical);
         int end = graphemes.following(start);
         return canonical.substring(start, end == BreakIterator.DONE ? canonical.length() : end);
+    }
+
+    /**
+     * Blank id to first letter for the blanks whose author enabled a first-letter hint. Reads only the blank ids
+     * and hint flags of {@code content}, so issued learner content and authored content give the same answer.
+     */
+    public static Map<UUID, String> firstLetterHints(JsonNode content, AnswerKey.Cloze key) {
+        Map<UUID, String> keyed = new HashMap<>();
+        key.blanks().forEach(blank -> keyed.put(blank.blankId(), firstLetter(blank.rule().accepted().getFirst())));
+        Map<UUID, String> result = new HashMap<>();
+        for (JsonNode segment : content.path("passage")) {
+            if (segment.path("kind").textValue().equals("BLANK") && segment.path("firstLetterHint").booleanValue()) {
+                UUID blankId = UUID.fromString(segment.path("blankId").textValue());
+                result.put(blankId, keyed.get(blankId));
+            }
+        }
+        return result;
     }
 
     private static void strip(JsonNode node) {

@@ -1,5 +1,5 @@
-import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, effect, inject, input, output,
-    signal, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, ElementRef, computed, effect, inject, input, output,
+    signal, untracked, viewChild } from '@angular/core';
 import { HttpErrorResponse } from '@angular/common/http';
 
 import { NativeDocument, NativeNode } from '../../content/native-document';
@@ -29,6 +29,13 @@ const PART_URL_BATCH = 16;
 /** A recording stops by itself here; the server still verifies the real bytes and size after upload. */
 const MAX_RECORDING_MS = 10 * 60_000;
 const FILE_ACCEPT = '.jpg,.jpeg,.png,.webp,.gif,.mp3,.m4a,.mp4,.mov,.webm';
+const KIND_ACCEPT: Readonly<Record<NativeMediaKind, string>> = {
+    image: '.jpg,.jpeg,.png,.webp,.gif', audio: '.mp3,.m4a,.webm', video: '.mp4,.mov,.webm'
+};
+const KIND_FORMATS: Readonly<Record<NativeMediaKind, string>> = {
+    image: 'JPEG, PNG, WebP или GIF', audio: 'MP3, M4A или WebM', video: 'MP4, MOV или WebM'
+};
+const KIND_NAMES: Readonly<Record<NativeMediaKind, string>> = { image: 'изображение', audio: 'аудио', video: 'видео' };
 
 const MIME_BY_EXTENSION: Readonly<Record<string, { kind: NativeMediaKind; mime: string }>> = {
     jpg: { kind: 'image', mime: 'image/jpeg' }, jpeg: { kind: 'image', mime: 'image/jpeg' },
@@ -50,6 +57,8 @@ export class NativeMediaUploadComponent {
     readonly disabled = input(false);
     /** Label of the per-file button; the exercise editor says «Добавить в упражнение». */
     readonly chooseLabel = input('Выбрать для материала');
+    /** Limits the picker to one kind of media (accepted files, queue, camera and recorder); null shows everything. */
+    readonly kind = input<NativeMediaKind | null>(null);
     readonly chooseAsset = output<{ kind: NativeMediaKind; assetId: string }>();
     readonly entries = signal<readonly QueueEntry[]>([]);
     readonly dropActive = signal(false);
@@ -59,7 +68,10 @@ export class NativeMediaUploadComponent {
     readonly cameraOpen = signal(false);
     readonly recordPreview = signal<string | null>(null);
     readonly message = signal<string | null>(null);
-    readonly fileAccept = FILE_ACCEPT;
+    readonly fileAccept = computed(() => { const kind = this.kind(); return kind === null ? FILE_ACCEPT : KIND_ACCEPT[kind]; });
+    readonly formats = computed(() => { const kind = this.kind(); return kind === null ? 'JPEG, PNG, WebP, GIF, MP3, M4A, MP4, MOV и WebM' : KIND_FORMATS[kind]; });
+    /** Queue rows of the requested kind; every row stays in the queue while the filter changes. */
+    readonly shownEntries = computed(() => { const kind = this.kind(); return kind === null ? this.entries() : this.entries().filter(entry => entry.kind === kind); });
 
     private readonly api = inject(NativeMediaUploadApi);
     private readonly destroyRef = inject(DestroyRef);
@@ -82,6 +94,8 @@ export class NativeMediaUploadComponent {
 
     constructor() {
         effect(() => this.recoverDocumentRefs(this.document()));
+        // The recorder has no controls outside the audio view, so leaving it never strands a live microphone.
+        effect(() => { const kind = this.kind(); if (kind !== null && kind !== 'audio') untracked(() => this.cancelRecording()); });
         const onVisibility = () => {
             if (document.visibilityState === 'visible') { this.pollDelay = POLL_INITIAL_MS; void this.refreshStatuses(); }
             else this.clearPoll();
@@ -277,12 +291,17 @@ export class NativeMediaUploadComponent {
     }
 
     private enqueue(file: File, origin: 'upload' | 'recording' = 'upload'): void {
-        const candidate = classify(file);
+        const classified = classify(file);
+        const wanted = this.kind();
+        const wrongKind = classified !== null && wanted !== null && classified.kind !== wanted;
+        const candidate = wrongKind ? null : classified;
         const id = crypto.randomUUID();
         const entry: QueueEntry = {
-            id, name: file.name, kind: candidate?.kind ?? 'image', file: candidate === null ? null : file,
+            id, name: file.name, kind: wanted ?? candidate?.kind ?? 'image', file: candidate === null ? null : file,
             phase: candidate === null ? 'error' : 'selected', assetId: null, transfer: null, progress: 0,
-            error: candidate === null ? 'Формат файла не поддерживается. Выберите JPEG, PNG, WebP, GIF, MP3, M4A, MP4, MOV или WebM.' : null,
+            error: candidate === null ? (wrongKind
+                ? `Здесь нужно ${KIND_NAMES[wanted]}: ${KIND_FORMATS[wanted]}.`
+                : 'Формат файла не поддерживается. Выберите JPEG, PNG, WebP, GIF, MP3, M4A, MP4, MOV или WebM.') : null,
             intentId: crypto.randomUUID(), finalizeId: crypto.randomUUID(), assetState: null
         };
         this.entries.update(items => [...items, entry]);

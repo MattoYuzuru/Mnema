@@ -46,6 +46,29 @@ describe('NativeMediaUploadComponent', () => {
         fixture.destroy();
     }));
 
+    it('limits files, queue, camera and recorder to the requested kind', () => {
+        const { fixture, component, api } = setup();
+        fixture.componentRef.setInput('kind', 'audio'); fixture.detectChanges();
+        const root = fixture.nativeElement as HTMLElement;
+        expect(root.querySelector('input[type="file"]')?.getAttribute('accept')).toBe('.mp3,.m4a,.webm');
+        expect(root.textContent).toContain('MP3, M4A или WebM');
+        expect(root.textContent).toContain('Записать аудио');
+        expect(root.textContent).not.toContain('Открыть камеру');
+        component.onFiles([new File(['png'], 'diagram.png', { type: 'image/png' })]);
+        fixture.detectChanges();
+        expect(api.intent).not.toHaveBeenCalled();
+        expect(root.querySelector('.media-status')?.textContent).toContain('Здесь нужно аудио');
+        fixture.componentRef.setInput('kind', 'image'); fixture.detectChanges();
+        expect(root.textContent).toContain('Открыть камеру');
+        expect(root.textContent).not.toContain('Записать аудио');
+        expect(root.textContent).not.toContain('Здесь нужно аудио');
+        expect(root.querySelector('input[type="file"]')?.getAttribute('accept')).toBe('.jpg,.jpeg,.png,.webp,.gif');
+        fixture.componentRef.setInput('kind', null); fixture.detectChanges();
+        expect(root.textContent).toContain('Записать аудио');
+        expect(root.textContent).toContain('Открыть камеру');
+        fixture.destroy();
+    });
+
     it('rejects unknown files before reserving storage', () => {
         const { fixture, component, api } = setup();
         component.onFiles([new File(['bad'], 'diagram.svg', { type: 'image/svg+xml' })]);

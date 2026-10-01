@@ -8,6 +8,11 @@
       <h1 id="exercise-title" tabindex="-1">Проверка знания</h1>
       <p class="lede">Сделайте из одного материала несколько упражнений — так его легче запомнить.</p>
     </div>
+    @if (page(); as listed) {
+      @if (listed.total > 0) {
+        <a class="jump-link" href="#existing-exercises" (click)="jumpToList($event)">К упражнениям · {{ listed.total }}</a>
+      }
+    }
   </header>
 
   @if (phase() === 'loading') { <p class="notice" role="status">Загружаем фрагменты материала…</p> }
@@ -17,6 +22,9 @@
       <p>{{ currentMessage }}</p>
       @if (phase() === 'error') { <button class="button" type="button" (click)="retry()">Повторить попытку</button> }
       @if (phase() === 'conflict') { <button class="button" type="button" (click)="load()">Загрузить свежую основу</button> }
+      @if (phase() === 'saved' && deck() && item()) {
+        <a class="button" data-create-another [routerLink]="['/decks', deck()!.deckId, 'materials', item()!.memberKey, 'exercises', 'new']">Создать ещё</a>
+      }
     </section>
   }
   @if (staleProjection()) {
@@ -25,8 +33,7 @@
 
   @if (item(); as currentItem) {
     @if (context(); as slotContext) {
-    <div class="authoring-layout">
-      <form class="inspector" (submit)="$event.preventDefault(); save()" novalidate>
+      <form class="inspector" (submit)="$event.preventDefault(); submit()" novalidate>
         @if (errorSummary().length > 0) {
           <div id="exercise-errors" class="notice error" role="alert" tabindex="-1">
             <p><strong>Проверьте упражнение:</strong></p>
@@ -34,110 +41,125 @@
           </div>
         }
 
-        <fieldset>
-          <legend>1. Как отвечает ученик</legend>
-          <div class="choice-grid" role="radiogroup" aria-label="Механика упражнения">
-            @for (candidate of mechanics; track candidate) {
-              <label class="choice-card">
-                <input type="radio" name="mechanic" [value]="candidate" [checked]="type() === candidate"
-                       (change)="setType(candidate)" />
-                <span class="choice-description"><strong>{{ mechanicName(candidate) }}</strong>
-                  <small>{{ mechanicExample(candidate) }}</small></span>
-              </label>
-            }
-          </div>
-          <p class="hint">Вид условия (текст, картинка, аудио, видео) выбирается внутри упражнения и не меняет механику. Всё, что вы уже ввели для других механик, сохраняется.</p>
-        </fieldset>
+        <app-mechanic-picker [entries]="catalog" [selected]="mechanic()" [pending]="pendingSwitch()?.target ?? null"
+          (chosen)="choose($event)" />
 
-        <div class="content-section">
-          <h2 class="section-title">2. Содержание</h2>
-          @switch (type()) {
-            @case ('SELF_CHECK') {
-              <app-self-check-editor [draft]="drafts().SELF_CHECK" (draftChange)="setSelfCheck($event)" [context]="slotContext"
-                [errors]="fieldErrors()" [showProblems]="showProblems()" idPrefix="self-check" />
-            }
-            @case ('FREE_RESPONSE') {
+        @if (pendingSwitch(); as request) {
+          <div class="notice warning switch-confirm" role="alertdialog" aria-labelledby="switch-title" aria-describedby="switch-text">
+            <p id="switch-title"><strong>Переключиться на «{{ typeTitle(request.target) }}»?</strong></p>
+            <p id="switch-text">В «{{ typeTitle(mechanic()!) }}» вы уже заполнили: {{ request.lost.join(', ') }}. Это останется в черновике того типа и вернётся, если вы переключитесь обратно, но в «{{ typeTitle(request.target) }}» не попадёт и не будет сохранено.</p>
+            <div class="actions">
+              <button class="button primary" type="button" data-confirm-switch (click)="confirmSwitch()">Переключиться</button>
+              <button class="button" type="button" data-cancel-switch (click)="cancelSwitch()">Отмена</button>
+            </div>
+          </div>
+        }
+
+        @if (presentation(); as shown) {
+          <div id="exercise-preview-anchor" class="preview-anchor">
+            <app-exercise-preview-host [presentation]="shown" />
+          </div>
+        }
+
+        @for (step of visibleSteps(); track mechanic() + ':' + step; let index = $index) {
+          <section class="step" [id]="'step-' + step" [attr.aria-labelledby]="'step-' + step + '-title'">
+            <h2 class="step-title" [id]="'step-' + step + '-title'" tabindex="-1">{{ stepNumber(index) }}. {{ titleOf(step) }}</h2>
+
+            @if (isPromptStep(step)) {
+              <app-exercise-slot-editor [label]="promptLabel(step)" [spec]="promptSpec()" [blocks]="drafts()[mechanic()!].prompt"
+                (blocksChange)="setPrompt($event)" [context]="slotContext" [idPrefix]="idPrefix() + '-prompt'"
+                [error]="visibleErrors()['prompt'] ?? null" [showProblems]="showProblems()" [hint]="promptHint()" />
+            } @else if (step === 'reference') {
+              <app-exercise-slot-editor [label]="promptLabel(step)" [spec]="referenceSpec" [blocks]="drafts().SELF_CHECK.reference"
+                (blocksChange)="setReference($event)" [context]="slotContext" [idPrefix]="idPrefix() + '-reference'"
+                [error]="visibleErrors()['reference'] ?? null" [showProblems]="showProblems()"
+                hint="Ученик откроет эталон сам и честно оценит себя. Эталон не проверяется автоматически." />
+            } @else if (step === 'answers') {
               <app-free-response-editor [draft]="drafts().FREE_RESPONSE" (draftChange)="setFreeResponse($event)" [context]="slotContext"
-                [errors]="fieldErrors()" [showProblems]="showProblems()" [capabilities]="capabilities()" idPrefix="free-response" />
-            }
-            @case ('CLOZE') {
+                [errors]="visibleErrors()" [showProblems]="showProblems()" [capabilities]="capabilities()" idPrefix="free-response" />
+            } @else if (step === 'passage') {
               <app-cloze-editor [draft]="drafts().CLOZE" (draftChange)="setCloze($event)" [context]="slotContext"
-                [errors]="fieldErrors()" [showProblems]="showProblems()" idPrefix="cloze" />
-            }
-            @case ('CHOICE') {
+                [errors]="visibleErrors()" [showProblems]="showProblems()" idPrefix="cloze" />
+            } @else if (step === 'options') {
               <app-choice-editor [draft]="drafts().CHOICE" (draftChange)="setChoice($event)" [context]="slotContext"
-                [errors]="fieldErrors()" [showProblems]="showProblems()" idPrefix="choice" />
-            }
-            @case ('MATCH') {
+                [errors]="visibleErrors()" [showProblems]="showProblems()" idPrefix="choice" />
+            } @else if (step === 'pairs') {
               <app-match-editor [draft]="drafts().MATCH" (draftChange)="setMatch($event)" [context]="slotContext"
-                [errors]="fieldErrors()" [showProblems]="showProblems()" idPrefix="match" />
+                [errors]="visibleErrors()" [showProblems]="showProblems()" idPrefix="match" />
+            } @else if (step === 'finish') {
+              @if (fieldErrors()['media']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
+              @if (fieldErrors()['capability']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
+              <fieldset class="objective" [attr.aria-describedby]="fieldErrors()['objective'] || fieldErrors()['objective-title'] ? 'objective-error' : null">
+                <legend>Цель обучения</legend>
+                <p class="hint">Цель — то, что вы хотите уметь. Её прогресс считается по этому упражнению; несколько упражнений могут проверять одну цель.</p>
+                @if (objectives().length > 0) {
+                  <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'create'" (change)="setObjectiveMode('create')" /> Новая цель</label>
+                  <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'reuse'" (change)="setObjectiveMode('reuse')" /> Проверять уже изучаемую цель</label>
+                  <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'revise'" (change)="setObjectiveMode('revise')" /> Изменить название изучаемой цели</label>
+                }
+                @if (objectiveMode() !== 'create') {
+                  <label for="objective">Существующая цель</label>
+                  <app-mnema-select controlId="objective" label="Существующая цель" [options]="objectiveOptions()"
+                    [value]="selectedObjectiveId() ?? ''" [invalid]="!!fieldErrors()['objective']"
+                    (valueChange)="selectObjective($event)" />
+                }
+                @if (objectiveMode() !== 'reuse') {
+                  <label for="objective-title">Название цели <span class="hint">до 160 знаков</span></label>
+                  <input id="objective-title" type="text" autocomplete="off" [value]="effectiveTitle()"
+                         [attr.aria-invalid]="fieldErrors()['objective-title'] ? 'true' : null"
+                         (input)="setObjectiveTitle($any($event.target).value)" />
+                  @if (objectiveMode() === 'revise') { <p class="hint">Новое название появится в следующих занятиях. Прежние попытки и расписание сохранятся.</p> }
+                }
+                @if (fieldErrors()['objective']; as error) { <p class="field-error" id="objective-error">{{ error }}</p> }
+                @if (fieldErrors()['objective-title']; as error) { <p class="field-error" id="objective-error">{{ error }}</p> }
+              </fieldset>
+
+              <div class="enable">
+                <label class="enable-line"><input type="checkbox" [checked]="enabled()" (change)="setEnabled($any($event.target).checked)" /> Добавлять упражнение в новые занятия</label>
+                <p class="hint">Если выключить, уже начатые занятия не изменятся.</p>
+              </div>
+              <div class="save-bar">
+                <p aria-live="polite">@switch (phase()) { @case ('saving') { Сохраняем… } @case ('saved') { Сохранено } @default { {{ dirty() ? 'Есть несохранённые изменения' : 'Всё сохранено' }} } }</p>
+                <div class="save-actions">
+                  @if (exercise()) { <button class="button" type="button" [disabled]="!dirty() || phase() === 'saving'" (click)="resetChanges()">Сбросить</button> }
+                  @if (exercise()) { <app-hold-to-delete-button label="Удалить упражнение" [disabled]="phase() === 'saving'" (confirmed)="deleteExercise()" /> }
+                  <button class="button primary" type="submit" [disabled]="phase() === 'saving'">{{ exercise() ? 'Сохранить' : 'Создать упражнение' }}</button>
+                </div>
+              </div>
             }
-          }
-          @if (fieldErrors()['media']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
-          @if (fieldErrors()['capability']; as error) { <p class="field-error" role="alert">{{ error }}</p> }
-        </div>
 
-        <fieldset [attr.aria-describedby]="fieldErrors()['objective'] || fieldErrors()['objective-title'] ? 'objective-error' : null">
-          <legend>3. Цель обучения</legend>
-          <p class="hint">Цель — то, что вы хотите уметь. Её прогресс считается по этому упражнению; несколько упражнений могут проверять одну цель.</p>
-          <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'create'" (change)="setObjectiveMode('create')" /> Новая цель</label>
-          @if (objectives().length > 0) {
-            <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'reuse'" (change)="setObjectiveMode('reuse')" /> Проверять уже изучаемую цель</label>
-            <label class="radio-line"><input type="radio" name="objectiveMode" [checked]="objectiveMode() === 'revise'" (change)="setObjectiveMode('revise')" /> Изменить название изучаемой цели</label>
-          }
-          @if (objectiveMode() !== 'create') {
-            <label for="objective">Существующая цель</label>
-            <app-mnema-select controlId="objective" label="Существующая цель" [options]="objectiveOptions()"
-              [value]="selectedObjectiveId() ?? ''" [invalid]="!!fieldErrors()['objective']"
-              (valueChange)="selectObjective($event)" />
-          }
-          @if (objectiveMode() !== 'reuse') {
-            <label for="objective-title">Название цели <span class="hint">до 160 знаков</span></label>
-            <input id="objective-title" type="text" autocomplete="off" [value]="effectiveTitle()"
-                   [attr.aria-invalid]="fieldErrors()['objective-title'] ? 'true' : null"
-                   (input)="setObjectiveTitle($any($event.target).value)" />
-            @if (objectiveMode() === 'revise') { <p class="hint">Новое название появится в следующих занятиях. Прежние попытки и расписание сохранятся.</p> }
-          }
-          @if (fieldErrors()['objective']; as error) { <p class="field-error" id="objective-error">{{ error }}</p> }
-          @if (fieldErrors()['objective-title']; as error) { <p class="field-error" id="objective-error">{{ error }}</p> }
-        </fieldset>
-
-        <label class="enable-line"><input type="checkbox" [checked]="enabled()" (change)="setEnabled($any($event.target).checked)" /> Добавлять упражнение в новые занятия</label>
-        <p class="hint enable-hint">Если выключить, уже начатые занятия не изменятся.</p>
-        <div class="save-bar">
-          <p aria-live="polite">@switch (phase()) { @case ('saving') { Сохраняем… } @case ('saved') { Сохранено } @default { {{ dirty() ? 'Есть несохранённые изменения' : 'Всё сохранено' }} } }</p>
-          <div class="save-actions">
-            @if (exercise()) { <button class="button" type="button" [disabled]="!dirty() || phase() === 'saving'" (click)="resetChanges()">Сбросить</button> }
-            @if (exercise()) { <app-hold-to-delete-button label="Удалить упражнение" [disabled]="phase() === 'saving'" (confirmed)="deleteExercise()" /> }
-            <button class="button primary" type="submit" [disabled]="phase() === 'saving'">{{ exercise() ? 'Сохранить' : 'Создать упражнение' }}</button>
-          </div>
-        </div>
+            @if (canContinueFrom(index)) {
+              @for (problem of stepProblems(); track $index) { <p class="field-error step-problem">Чтобы продолжить, исправьте: {{ problem }}</p> }
+              <button class="button primary continue" type="button" data-continue (click)="continueFrom(step)">Продолжить</button>
+            }
+          </section>
+        }
       </form>
-
-      <aside class="preview-column" aria-label="Предпросмотр упражнения">
-        <section class="preview-card">
-          <app-exercise-preview [type]="type()" [drafts]="drafts()" [context]="slotContext" />
-        </section>
-        <section class="material-card" aria-labelledby="material-preview-heading">
-          <h2 id="material-preview-heading">Актуальный материал</h2>
-          <app-native-media-surface [document]="currentItem.document" />
-        </section>
-      </aside>
-    </div>
     }
 
     @if (page(); as currentPage) {
-      <section class="existing" aria-labelledby="existing-title">
-        <div><p class="eyebrow">Этот материал</p><h2 id="existing-title">Упражнения ({{ currentPage.total }})</h2></div>
-        @if (currentPage.exercises.length === 0) { <p class="notice">Пока нет упражнений. Настройте первую явную проверку знания.</p> }
-        <ul>
-          @for (entry of currentPage.exercises; track entry.exerciseId) {
-            <li><div><strong>{{ mechanicName(entry.type) }}</strong><span>{{ entry.objective.title }} · {{ entry.enabled ? 'включено' : 'выключено' }}</span></div>
-              <a class="button" [routerLink]="['/decks', currentPage.deckId, 'exercises', entry.exerciseId, 'edit']">Настроить</a></li>
-          }
-        </ul>
-        @if (currentPage.nextCursor) { <button class="button" type="button" (click)="loadMore()">Показать ещё</button> }
-      </section>
+      @if (currentPage.exercises.length > 0) {
+        <section id="existing-exercises" class="existing" aria-labelledby="existing-title">
+          <h2 id="existing-title" tabindex="-1">Упражнения этого материала · {{ currentPage.total }}</h2>
+          @if (listMessage(); as note) { <p class="notice" role="status">{{ note }}</p> }
+          <ul>
+            @for (entry of currentPage.exercises; track entry.exerciseId) {
+              <li [attr.data-exercise]="entry.exerciseId">
+                <div class="row-main"><strong>{{ typeTitle(entry.type) }}</strong><span>{{ entry.objective.title }}</span></div>
+                @if (entry.exerciseId === exercise()?.exerciseId) {
+                  <span class="row-open">Открыто сейчас</span>
+                } @else {
+                  <label class="row-toggle"><input type="checkbox" [checked]="entry.enabled" [disabled]="listBusy() !== null"
+                    (change)="toggleListed(entry)" /> Включено</label>
+                  <a class="button" [routerLink]="['/decks', currentPage.deckId, 'exercises', entry.exerciseId, 'edit']">Настроить</a>
+                  <app-hold-to-delete-button label="Удалить" [disabled]="listBusy() !== null" (confirmed)="deleteListed(entry)" />
+                }
+              </li>
+            }
+          </ul>
+          @if (currentPage.nextCursor) { <button class="button" type="button" (click)="loadMore()">Показать ещё</button> }
+        </section>
+      }
     }
   }
 </section>
