@@ -13,11 +13,13 @@ Deck/Item contracts.
 - Every P0 `StudyPresentation` has exactly one assessed objective revision. Other
   shown bindings are `CUE`, `OPTION` or `CONTEXT`; they never receive exposure,
   evidence or progress.
-- One stable objective may be evidenced by several exercise kinds. Editing its
-  answer creates an immutable objective revision without resetting `StudyState`.
-- Cross-item assessed objectives and aggregate multi-target credit remain P1.
-  Audio-text matching in #240 is one assessable objective with one atomic pair map
-  and partial feedback; it does not assign separate progress to each pair.
+- One stable objective may be evidenced by several exercises. An objective is stable identity
+  plus a short author title; it never stores option, blank or pair IDs. Exercise-specific
+  answer keys belong to the immutable exercise revision.
+- Cross-item assessed objectives and aggregate multi-target credit remain out of scope. A
+  composite exercise (several blanks, pairs or options, or material from other items shown as
+  context) assesses exactly one objective of its `subject` item and returns per-part feedback;
+  context materials never receive exposure, evidence or progress.
 
 ## Authoring resources
 
@@ -32,54 +34,93 @@ The write command is atomic. `objective.operation=create` allocates a stable
 objective plus its first revision; `reuse` pins an existing exact revision;
 `revise` creates the next objective revision while retaining stable identity and
 Study state. The server generates stable/revision IDs. A command pins the expected
-Deck revision and all referenced item revisions/node IDs, validates one `ASSESSED`
-objective, advances the Deck exercise root and returns the new Deck ETag. Receipt,
+Deck revision, the subject item revision and every referenced material node/media asset,
+validates exactly one assessed objective, advances the Deck exercise root and returns the new Deck ETag. Receipt,
 Deck-head CAS, immutable rows and current projection commit together.
 
-P0 types are `SELF_CHECK`, `TYPED`, `CLOZE_SINGLE` and `SINGLE_CHOICE`. Prompt,
-answer and options are renderer-neutral specs made from stable node selections or
-bounded custom text. The initial compact custom text boundary is 80 grapheme
-clusters; full material remains available through Browse. `SINGLE_CHOICE` requires
-one assessed focal binding and at least two distinct options from the same pinned Deck snapshot.
-Choice publication uses answer contract v3:
-`{schemaVersion:3,selectionMode:"SINGLE"|"MULTIPLE",correctOptionIds:[...],accepted:[...]}`.
-`accepted` contains feedback text; only the exact set of immutable `correctOptionIds`
-grades the response. Multiple mode can have a single correct option. The count is
-bounded by the platform's 256-KiB publication/attempt payload and 20,000 parser tokens,
-not a six-option UI cap. Ordinals are non-negative integers. Existing immutable v1
-choice definitions default to `SINGLE` and retain target-based assessment. Editing
-publishes a v3 objective revision; choice authoring uses create/revise because option
-identities belong to that exercise revision. A pending presentation exposes only
-`selectionMode`, never the correct option set or reference answer.
+### Exercise mechanics (#266)
 
-Epic #76 adds `LISTEN_CHOICE`, `AUDIO_TEXT_MATCH` and `LISTEN_TYPE` as immutable
-exercise revisions. Audio cues use owner-scoped logical `assetId` references pinned
-in `exercise_media_ref` within the publication transaction. `LISTEN_CHOICE` and
-`LISTEN_TYPE` use an `AUDIO_ASSET` prompt; listening choice uses the same v3 choice
-contract and listening typing uses the v1 text contract. Matching
-uses an `AUDIO_MATCH` prompt with 2..6 unique cue/assets and v2 answer contract
-`{schemaVersion:2,pairs:[{cueId,optionId}]}`. The correct pair map stays in the
-private objective revision, never in a pending presentation. Matching requires
-2..6 distinct text options and one assessed focal binding among them.
-The exercise editor reuses the native media upload/recording queue and binds the
-chosen logical asset to the selected cue. The Study client resolves playable
-sources through the typed `MEDIA_PLAYBACK_RESOLVER` integration point owned by
-#239; it does not construct object-storage URLs from asset IDs.
+Five canonical mechanics separate what the learner sees (**content**), what they do
+(**interaction**), how the exercise is checked (**evaluator policy + answer key**) and what is
+assessed (**objective**). Media type is content, never a mechanic: there is no audio-, video- or
+listening-specific exercise type.
 
-Pair selection feedback uses
-`POST /api/decks/{deckId}/study-sessions/{sessionId}/pair-checks` with
-`{presentationId,nonce,cueId,optionId}` and returns `{correct:boolean}` only.
-Ownership, nonce, pending presentation, expiry and media readiness are server checks.
-Each distinct pair is stored durably and acknowledged idempotently, including a retry
-after terminal submission. A final exact map following any incorrect pair yields
-`PARTIAL` recognition evidence with `PAIR_RETRY`; interactions alone never change
-progress. The existing bounded retention worker removes interactions 24 hours after presentation expiry. DEBUG assessment logs contain
-IDs, evaluator version, applied rules and result, never supplied/reference text.
+| Mechanic | Interaction | Answer key (`answerKey.kind`) | Evaluator |
+|---|---|---|---|
+| `SELF_CHECK` | explicit reveal of the reference, then behavioral self-rating | `SELF_REPORT` | `self-check` |
+| `FREE_RESPONSE` | one text answer, whatever the prompt contains | `TEXT`: any one accepted alternative, explicit normalization, `STRICT`/`SOFT` | `deterministic-text` (`ai-semantic` reserved, §AI) |
+| `CLOZE` | one text input per blank in an authored passage | `CLOZE`: accepted answers per `blankId` | `deterministic-cloze` |
+| `CHOICE` | `SINGLE` or `MULTIPLE` selection of authored options | `CHOICE`: exact set of `correctOptionIds` | `deterministic-choice` |
+| `MATCH` | one-to-one pairing of independently shuffled left/right items | `MATCH`: bijection `pairs[{leftId,rightId}]` | `deterministic-match` |
 
-Rollback is an application rollback before publishing v3 objectives. Once v3
-objectives or pair interactions exist, restore a build that supports these contracts;
-do not drop immutable history or deployed migrations. Existing v1 objectives and
-already-issued sessions remain pinned to their original answer contract.
+Publication command: `{commandId, expectedDeckRevisionId, [expectedExerciseRevisionId], objective,
+exercise}` with `exercise = {type, schemaVersion: 2, enabled, subject:{memberKey,itemRevisionId},
+content, answerKey, evaluatorPolicy}`. `schemaVersion` versions the document shape; it is not a
+mechanic selector. Objective operations are `create {title}`, `reuse {objectiveId,
+objectiveRevisionId}` and `revise {objectiveId, expectedObjectiveRevisionId, title}`; the objective
+belongs to `subject.memberKey`. The server derives binding rows (the assessed subject and one
+context binding per referenced material revision); clients never submit binding roles.
+Type, content shape, `answerKey.kind` and evaluator must agree; every DTO rejects unknown fields.
+
+**Content blocks.** `TEXT {text}` keeps newlines verbatim and is never HTML. `MATERIAL
+{memberKey,itemRevisionId,nodeId}` pins a text-bearing node of a LearningItem revision in the same
+Deck and is resolved to text when a presentation is issued, so a later material edit cannot change
+an already published exercise. `IMAGE {assetId,alt}`, `AUDIO|VIDEO {assetId,title,[transcript]}`
+and `YOUTUBE {videoId,title}` reuse the native media/YouTube rules. Media `title` is an author
+label and is never sent to learners. New exercise attachments are owner-scoped logical assets; they
+do not modify the source LearningItem.
+
+| Slot profile | Used by | Kinds | Blocks | Text bound (UTF-16 units) |
+|---|---|---|---|---|
+| PROMPT | `content.prompt` | all six | 1..8 (`CLOZE`, `MATCH`: 0..8) | 4000 per block |
+| REFERENCE | `SELF_CHECK` (1..8), `FREE_RESPONSE` (0..8) `content.reference` | all six | see left | 4000 per block |
+| COMPACT | `CHOICE` options, `MATCH` left/right items | `TEXT`, `MATERIAL`, `IMAGE`, `AUDIO`, `VIDEO` | 1..2: ≤1 text-like and ≤1 media | 300 |
+| Passage | `CLOZE content.passage` | `TEXT` segments and `BLANK` | 2..64 segments, 1..12 blanks | 4000 total |
+
+At most 32 media blocks per exercise. Text is never truncated; limits are validation errors.
+
+**Mechanic rules.** `CHOICE` has 2..12 options with stable `optionId`s in authored order;
+`SINGLE` requires exactly one correct ID and one selected ID, `MULTIPLE` grades the exact selected
+set against one or more correct IDs. `CLOZE` blanks are explicit passage segments with a stable
+`blankId`, `size` (`FIXED` 5..20 or `ANSWER_LENGTH`) and a per-blank `firstLetterHint` flag; the key
+covers exactly the passage blank IDs, so repeated words never match by position. `MATCH` has 2..6
+items per side, globally unique item IDs and an exact bijection key; any COMPACT combination
+(text, recorded audio, image, short video or material on either side) is valid.
+
+**Media lifecycle.** Every IMAGE/AUDIO/VIDEO block in every slot is pinned in
+`exercise_media_ref` with its declared media kind inside the publication transaction, after owner
+validation. A candidate is issued, a pair is checked and an attempt is assessed only while every
+pinned asset is READY with a verified source of the declared kind; otherwise submission returns
+`NOT_ASSESSED` + `MEDIA_NOT_READY` without evidence or transition.
+
+**Fresh schema.** Migration `V21` replaces the earlier mechanic enum and stores answer keys on
+exercise revisions. It refuses to run over existing exercise rows instead of converting or deleting
+them: #266 starts from a fresh local Learning database
+([local runbook](../../docs/deploy/selfhost-local.md)). There are no compatibility readers.
+Rollback is a protected PR revert plus recreation of the same disposable local database; an
+older build cannot read V21 rows.
+Fixtures: [mechanics.json](mechanics.json).
+
+### AI assessment and speech-to-text capabilities
+
+Both are server-owned, disabled-by-default capabilities
+(`learning.features.ai-assessment.enabled`, `learning.features.speech-to-text.enabled`). A
+capability is available only when its flag is true **and** a provider is configured; no provider
+exists, so a mistakenly enabled flag yields `PROVIDER_NOT_CONFIGURED`, never a fake result.
+`GET /api/capabilities` returns `{aiAssessment, speechToText}` as `{available, reason}` with
+`reason ∈ DISABLED | PROVIDER_NOT_CONFIGURED` (null when available) and no provider details.
+
+`FREE_RESPONSE` may declare `evaluatorPolicy {id:"ai-semantic", version:"1", rubric}` with a
+typed rubric (`referenceAnswer`; 1..10 `criteria {criterionId, description, critical}`; exactly
+the levels `COMPLETE`, `PARTIAL`, `INSUFFICIENT` with descriptions) or `content.responseInput =
+TEXT_OR_SPEECH`. While the matching capability is unavailable, publication fails with 409
+`CAPABILITY_UNAVAILABLE` after structural validation; Study skips such candidates, and an issued
+`ai-semantic` presentation evaluates to `UNAVAILABLE` + `EVALUATOR_UNAVAILABLE` with no exact-match
+fallback. A future evaluator maps `COMPLETE→CORRECT`, `PARTIAL→PARTIAL`, `INSUFFICIENT→INCORRECT`,
+provider uncertainty to `UNSURE` and provider failure to `UNAVAILABLE`; it returns evaluation and
+evidence only and never writes `StudyState`. There is no speech-to-text endpoint or response kind.
+Author audio recording is ordinary media upload and does not depend on either flag. The provider
+foundation itself remains issue #77.
 
 ## Session resources
 
@@ -88,7 +129,9 @@ already-issued sessions remain pinned to their original answer contract.
 | Start | `POST /api/decks/{deckId}/study-sessions` | 201 ACTIVE/EMPTY or 202 PREPARING |
 | Read/resume | `GET /api/decks/{deckId}/study-sessions/{sessionId}` | 200 current bounded batch |
 | Refill | `POST /api/decks/{deckId}/study-sessions/{sessionId}/presentations` | 200 next bounded batch |
-| Reveal transcript | `POST /api/decks/{deckId}/study-sessions/{sessionId}/presentations/{presentationId}/transcript` with `{nonce}` | 200 pinned prompt with transcript |
+| Reveal transcripts | `POST /api/decks/{deckId}/study-sessions/{sessionId}/presentations/{presentationId}/transcript` with `{nonce}` | 200 `{presentationId, transcriptRevealed, content}` |
+| Reveal first letter | `POST /api/decks/{deckId}/study-sessions/{sessionId}/presentations/{presentationId}/hints` with `{nonce, blankId}` | 200 `{presentationId, blankId, firstLetter}` |
+| Check one pair | `POST /api/decks/{deckId}/study-sessions/{sessionId}/pair-checks` with `{presentationId, nonce, leftId, rightId}` | 200 `{correct}` |
 | Submit | `POST /api/decks/{deckId}/study-sessions/{sessionId}/attempts` | 200 stored outcome |
 | Today's replay sources | `GET /api/decks/{deckId}/study-sessions/replay-sources` | 200 bounded completed sessions |
 | Restart items | `POST /api/decks/{deckId}/study-restarts` | 200 restart acknowledgement |
@@ -121,14 +164,23 @@ content preserves existing versioned exercises. [Material deletion](../items/REA
 does not cascade into exercise definitions or history; already issued presentations
 and explicit Replay retain their immutable snapshots.
 
-Listening candidates are eligible only when every pinned asset is READY with a
-verified `audio/*` source. Issued presentations expose asset IDs and titles; the
-playback URL is resolved separately under owner authorization. Before submission
-`reference` is `null` and transcript text is absent. The transcript route requires
-the same owner/session/nonce and an unassessed presentation; it records an
-append-only accommodation before returning text. Read/resume then shows the same
-disclosure state. Attempt submission rechecks readiness, returning `NOT_ASSESSED`
-and `MEDIA_NOT_READY` without evidence or transition if a cue is unavailable.
+**Learner presentation.** Each issued presentation carries `{presentationId, nonce, ordinal,
+exerciseRevisionId, type, objectiveId, objectiveRevisionId, learningEpoch, content,
+transcriptRevealed, hints, evaluator}`. `content` is resolved once at issue and replayed verbatim:
+`MATERIAL` becomes `TEXT`, media blocks expose only `assetId` (+ image `alt`) and
+`transcriptAvailable`, `MATCH` sides are shuffled independently and deterministically per
+presentation (never left aligned with their partners), `CLOZE` blanks expose only `blankId`,
+`size {mode,length}` and `firstLetterHint`. No presentation contains an answer key, accepted
+strings, correct option/pair IDs, binding rows, media titles or unrevealed transcripts.
+`SELF_CHECK` carries its reference blocks because revealing them is the interaction; clients keep
+them hidden until the learner's explicit reveal. Playback URLs are resolved separately under owner
+authorization.
+
+The transcript and first-letter routes require the same owner/session/nonce and a pending,
+unexpired presentation; each records an append-only accommodation before returning text, and a
+repeated request returns the same value. The first letter is the first extended grapheme of the
+NFC reference for that one blank and is available only where the author enabled it. Read/resume
+shows the same disclosure state. A pair check is durable and idempotent and never changes progress.
 
 Session mode is immutable. `SCHEDULED` presentations may create current-epoch
 exposure when issued and evidence when submitted. `REPLAY`/`PRACTICE` never write
@@ -161,23 +213,31 @@ transitions. A late presentation from an old learning epoch returns a durable
 
 Responses use these shapes:
 
-- `TEXT` for `TYPED`/`CLOZE_SINGLE`;
-- `SELF_CHECK` with `NOT_RECALLED`, `HINTED`, `PARTIAL` or `FULL`;
-- `CHOICE` with `optionIds`, a non-empty unique array of server-issued option IDs;
-- `MATCH` with an exact one-to-one map of all server-issued cue and option IDs;
+- `TEXT {text}` for `FREE_RESPONSE`;
+- `SELF_CHECK {rating}` with `NOT_RECALLED`, `HINTED`, `PARTIAL` or `FULL`;
+- `CLOZE {blanks:[{blankId,text}]}` covering exactly the issued blank IDs;
+- `CHOICE {optionIds}`, a non-empty unique array of server-issued option IDs (exactly one for `SINGLE`);
+- `MATCH {pairs:[{leftId,rightId}]}`, an exact one-to-one map of all issued left and right IDs;
 - `CANCEL`, which terminalizes as `NOT_ASSESSED` without a transition.
+
+The submit command is `{attemptId, presentationId, nonce, response, confidence, durationMs}`.
+Clients do not claim hints: only server-recorded first-letter and transcript accommodations
+affect evidence.
 
 `confidence` is optional calibration metadata and has no reducer effect in v1.
 `durationMs` is bounded diagnostic metadata and never changes correctness/evidence.
-Self-check is always `LOW`; deterministic unhinted production is `HIGH`; a valid
-hint caps positive typed/cloze evidence at `MEDIUM`; single choice is always `LOW`.
-Unhinted `LISTEN_TYPE` uses deterministic text normalization and `HIGH` evidence.
-Choice and matching use `LOW` recognition evidence; matching returns pair-specific
-feedback and `PARTIAL` for some correct pairs. An explicitly revealed transcript
-caps a correct typed result at `LOW`, with `TRANSCRIPT_ACCOMMODATION` in the
-server-owned evidence reasons. Audio exercise requests reject client hint claims.
-Deterministic incorrect production can be `HIGH`: result describes direction,
-while evidence class describes reliability of the observation.
+| Mechanic | Result | Evidence class | Feedback after submit |
+|---|---|---|---|
+| `SELF_CHECK` | `FULL→CORRECT`, `PARTIAL`/`HINTED→PARTIAL`, `NOT_RECALLED→INCORRECT` | `LOW`, `SELF_REPORT` | rule only |
+| `FREE_RESPONSE` | any accepted alternative → `CORRECT`, else `INCORRECT` | `HIGH`; revealed transcript → `LOW` | `reference`, `referenceContent` |
+| `CLOZE` | all blanks `CORRECT`, some `PARTIAL`, none `INCORRECT` | `HIGH`; any hinted blank caps non-incorrect results at `MEDIUM`; transcript → `LOW` | per-blank `correct`, `hinted`, `reference` |
+| `CHOICE` | exact selected set → `CORRECT`, else `INCORRECT` | `LOW` recognition | `correctOptionIds` |
+| `MATCH` | all pairs `CORRECT`, some `PARTIAL`, none `INCORRECT`; a correct final map after any wrong pair check is `PARTIAL` + `PAIR_RETRY` | `LOW` recognition | per-pair selected/correct IDs |
+
+Soft matching (`SOFT`) is a documented string normalization, not semantic understanding.
+Deterministic incorrect production can be `HIGH`: result describes direction, while
+evidence class describes reliability of the observation. A composite result is one
+observation of the subject objective; it is never copied to context materials.
 
 ## `mnema-baseline-v1`
 

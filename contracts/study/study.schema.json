@@ -4,612 +4,81 @@
   "$defs": {
     "identifier": {"type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[47][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
     "nullableString": {"type": ["string", "null"]},
-    "answerContract": {"oneOf": [
-      {"type": "object", "required": ["schemaVersion", "normalization", "accepted"],
-       "properties": {"schemaVersion": {"const": 1}, "normalization": {"type": "array", "minItems": 1, "items": {"type": "string"}},
-         "accepted": {"type": "array", "minItems": 1, "items": {"type": "string"}}}, "additionalProperties": false},
-      {"type": "object", "required": ["schemaVersion", "pairs"],
-       "properties": {"schemaVersion": {"const": 2}, "pairs": {"type": "array", "minItems": 2, "maxItems": 6,
-         "items": {"type": "object", "required": ["cueId", "optionId"],
-           "properties": {"cueId": {"$ref": "#/$defs/identifier"}, "optionId": {"$ref": "#/$defs/identifier"}},
-           "additionalProperties": false}}}, "additionalProperties": false},
-      {"type": "object", "required": ["schemaVersion", "selectionMode", "correctOptionIds", "accepted"],
-       "properties": {"schemaVersion": {"const": 3}, "selectionMode": {"enum": ["SINGLE", "MULTIPLE"]},
-         "correctOptionIds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}},
-         "accepted": {"type": "array", "minItems": 1, "items": {"type": "string"}}}, "additionalProperties": false}
-    ]},
-    "studyPrompt": {"oneOf": [
-      {"type": "object", "required": ["kind", "text"],
-       "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string"}}, "additionalProperties": false},
-      {"type": "object", "required": ["kind", "assetId", "title", "instruction", "transcriptAvailable", "transcriptRevealed"],
-       "properties": {"kind": {"const": "AUDIO_ASSET"}, "assetId": {"$ref": "#/$defs/identifier"},
-         "title": {"type": "string"}, "instruction": {"type": "string"}, "transcriptAvailable": {"type": "boolean"},
-         "transcriptRevealed": {"type": "boolean"}, "transcript": {"type": "string"}}, "additionalProperties": false},
-      {"type": "object", "required": ["kind", "instruction", "cues", "transcriptAvailable", "transcriptRevealed"],
-       "properties": {"kind": {"const": "AUDIO_MATCH"}, "instruction": {"type": "string"},
-         "transcriptAvailable": {"type": "boolean"}, "transcriptRevealed": {"type": "boolean"},
-         "cues": {"type": "array", "minItems": 2, "maxItems": 6, "items": {"type": "object",
-           "required": ["cueId", "assetId", "title"], "properties": {"cueId": {"$ref": "#/$defs/identifier"},
-             "assetId": {"$ref": "#/$defs/identifier"}, "title": {"type": "string"}, "transcript": {"type": "string"}},
-           "additionalProperties": false}}}, "additionalProperties": false}
-    ]},
-    "authoringPrompt": {"oneOf": [
-      {"type": "object", "required": ["kind", "memberKey", "itemRevisionId", "nodeId"],
-       "properties": {"kind": {"const": "NODE_TEXT"}, "memberKey": {"$ref": "#/$defs/identifier"},
-         "itemRevisionId": {"$ref": "#/$defs/identifier"}, "nodeId": {"$ref": "#/$defs/identifier"}},
-       "additionalProperties": false},
-      {"type": "object", "required": ["kind", "text"],
-       "properties": {"kind": {"const": "CUSTOM_TEXT"}, "text": {"type": "string"}}, "additionalProperties": false},
-      {"type": "object", "required": ["kind", "assetId", "title", "instruction", "transcript"],
-       "properties": {"kind": {"const": "AUDIO_ASSET"}, "assetId": {"$ref": "#/$defs/identifier"},
-         "title": {"type": "string"}, "instruction": {"type": "string"}, "transcript": {"type": "string"}},
-       "additionalProperties": false},
-      {"type": "object", "required": ["kind", "instruction", "cues"],
-       "properties": {"kind": {"const": "AUDIO_MATCH"}, "instruction": {"type": "string"},
-         "cues": {"type": "array", "minItems": 2, "maxItems": 6, "items": {"type": "object",
-           "required": ["cueId", "assetId", "title", "transcript"],
-           "properties": {"cueId": {"$ref": "#/$defs/identifier"}, "assetId": {"$ref": "#/$defs/identifier"},
-             "title": {"type": "string"}, "transcript": {"type": "string"}}, "additionalProperties": false}}},
-       "additionalProperties": false}
-    ]},
-    "evaluator": {
-      "type": "object",
-      "required": ["id", "version"],
-      "properties": {"id": {"type": "string"}, "version": {"type": "string"}},
-      "additionalProperties": false
-    },
-    "budget": {
-      "type": "object",
-      "required": ["maxPresentations"],
-      "properties": {"maxPresentations": {"type": "integer"}},
-      "additionalProperties": false
-    },
-    "scheduledBudget": {
-      "type": "object",
-      "required": ["maxPresentations", "maxNewObjectives"],
-      "properties": {
-        "maxPresentations": {"type": "integer"},
-        "maxNewObjectives": {"type": "integer"}
-      },
-      "additionalProperties": false
-    },
-    "reducerReference": {
-      "type": "object",
-      "required": ["id", "version", "configId", "configHash"],
-      "properties": {
-        "id": {"type": "string"}, "version": {"type": "string"},
-        "configId": {"$ref": "#/$defs/identifier"}, "configHash": {"type": "string"}
-      },
-      "additionalProperties": false
-    },
-    "submitResponse": {
-      "oneOf": [
-        {"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string"}}, "additionalProperties": false},
-        {"type": "object", "required": ["kind", "rating"], "properties": {"kind": {"const": "SELF_CHECK"}, "rating": {"enum": ["NOT_RECALLED", "HINTED", "PARTIAL", "FULL"]}}, "additionalProperties": false},
-        {"type": "object", "required": ["kind", "optionIds"], "properties": {"kind": {"const": "CHOICE"}, "optionIds": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "#/$defs/identifier"}}}, "additionalProperties": false},
-        {"type": "object", "required": ["kind", "pairs"], "properties": {"kind": {"const": "MATCH"},
-          "pairs": {"type": "array", "minItems": 2, "maxItems": 6, "items": {"type": "object",
-            "required": ["cueId", "optionId"], "properties": {"cueId": {"$ref": "#/$defs/identifier"},
-              "optionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}}}, "additionalProperties": false},
-        {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "CANCEL"}}, "additionalProperties": false}
-      ]
-    },
-    "pairCheckCommand": {
-      "type": "object", "required": ["presentationId", "nonce", "cueId", "optionId"],
-      "properties": {"presentationId": {"$ref": "#/$defs/identifier"}, "nonce": {"type": "string"},
-        "cueId": {"$ref": "#/$defs/identifier"}, "optionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false
-    },
-    "pairCheckResult": {
-      "type": "object", "required": ["correct"], "properties": {"correct": {"type": "boolean"}}, "additionalProperties": false
-    },
-    "choiceAndPairsDocument": {
-      "type": "object", "required": ["multipleAnswer", "singleAnswer", "multipleSubmit", "pairCheck", "correctPair", "incorrectPair"],
-      "properties": {"multipleAnswer": {"$ref": "#/$defs/answerContract"}, "singleAnswer": {"$ref": "#/$defs/answerContract"},
-        "multipleSubmit": {"$ref": "#/$defs/submitCommand"}, "pairCheck": {"$ref": "#/$defs/pairCheckCommand"},
-        "correctPair": {"$ref": "#/$defs/pairCheckResult"}, "incorrectPair": {"$ref": "#/$defs/pairCheckResult"}}, "additionalProperties": false
-    },
-    "transcriptRevealCommand": {
-      "type": "object", "required": ["nonce"],
-      "properties": {"nonce": {"type": "string"}}, "additionalProperties": false
-    },
-    "transcriptRevealResponse": {
-      "type": "object", "required": ["presentationId", "prompt"],
-      "properties": {"presentationId": {"$ref": "#/$defs/identifier"},
-        "prompt": {"$ref": "#/$defs/studyPrompt"}}, "additionalProperties": false
-    },
-    "evidence": {
-      "type": "object",
-      "required": ["objectiveId", "objectiveRevisionId", "result", "evidenceClass", "reasonCodes"],
-      "properties": {
-        "objectiveId": {"$ref": "#/$defs/identifier"},
-        "objectiveRevisionId": {"$ref": "#/$defs/identifier"},
-        "result": {"enum": ["CORRECT", "PARTIAL", "INCORRECT", "UNSURE"]},
-        "evidenceClass": {"enum": ["HIGH", "MEDIUM", "LOW"]},
-        "reasonCodes": {"type": "array", "items": {"type": "string"}},
-        "pairResults": {"type": "array", "maxItems": 6, "items": {"type": "object",
-          "required": ["cueId", "selectedOptionId", "correctOptionId", "correct"],
-          "properties": {"cueId": {"$ref": "#/$defs/identifier"},
-            "selectedOptionId": {"$ref": "#/$defs/identifier"},
-            "correctOptionId": {"$ref": "#/$defs/identifier"}, "correct": {"type": "boolean"}},
-          "additionalProperties": false}}
-      },
-      "additionalProperties": false
-    },
-    "feedback": {
-      "type": "object",
-      "required": ["result"],
-      "properties": {
-        "result": {"enum": ["CORRECT", "PARTIAL", "INCORRECT", "UNSURE", "NOT_ASSESSED", "UNAVAILABLE"]},
-        "reference": {"type": "string"},
-        "appliedRules": {"type": "array", "items": {"type": "string"}},
-        "reasonCodes": {"type": "array", "items": {"type": "string"}}
-      },
-      "additionalProperties": false
-    },
-    "transition": {
-      "type": "object",
-      "required": ["learningEpoch", "sequence", "beforeLevel", "afterLevel", "acceptedAt", "nextDue", "reducerId", "reducerVersion", "configId", "configHash"],
-      "properties": {
-        "learningEpoch": {"type": "string"}, "sequence": {"type": "string"},
-        "beforeLevel": {"type": "integer"}, "afterLevel": {"type": "integer"},
-        "acceptedAt": {"type": "string"}, "nextDue": {"type": "string"},
-        "reducerId": {"type": "string"}, "reducerVersion": {"type": "string"},
-        "configId": {"$ref": "#/$defs/identifier"}, "configHash": {"type": "string"}
-      },
-      "additionalProperties": false
-    },
-    "objectiveState": {
-      "type": "object",
-      "required": ["objectiveId", "learningEpoch", "level", "correctStreak", "lapseCount", "lastAssessedAt", "nextDue"],
-      "properties": {
-        "objectiveId": {"$ref": "#/$defs/identifier"}, "learningEpoch": {"type": "string"},
-        "level": {"type": "integer"}, "correctStreak": {"type": "integer"}, "lapseCount": {"type": "integer"},
-        "lastAssessedAt": {"$ref": "#/$defs/nullableString"}, "nextDue": {"$ref": "#/$defs/nullableString"}
-      },
-      "additionalProperties": false
-    },
-    "progressPage": {
-      "type": "object",
-      "required": ["asOf", "items", "nextCursor"],
-      "properties": {
-        "asOf": {"type": "string"},
-        "items": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["title", "memberKey", "itemRevisionId", "state", "objectiveCoverage", "lastAssessedAt", "nextDue"],
-            "properties": {
-              "memberKey": {"$ref": "#/$defs/identifier"}, "itemRevisionId": {"$ref": "#/$defs/identifier"},
-              "title": {"type": "string", "maxLength": 240},
-              "state": {"enum": ["NOT_STARTED", "LEARNING", "DUE", "ON_TRACK"]},
-              "objectiveCoverage": {
-                "type": "object", "required": ["enabled", "introduced", "assessed"],
-                "properties": {"enabled": {"type": "integer"}, "introduced": {"type": "integer"}, "assessed": {"type": "integer"}},
-                "additionalProperties": false
-              },
-              "lastAssessedAt": {"$ref": "#/$defs/nullableString"}, "nextDue": {"$ref": "#/$defs/nullableString"}
-            },
-            "additionalProperties": false
-          }
-        },
-        "nextCursor": {"$ref": "#/$defs/nullableString"}
-      },
-      "additionalProperties": false
-    },
-    "binding": {
-      "type": "object",
-      "required": ["bindingId", "role", "memberKey", "itemRevisionId", "nodeIds", "display", "ordinal"],
-      "properties": {
-        "bindingId": {"$ref": "#/$defs/identifier"},
-        "role": {"enum": ["ASSESSED", "CUE", "OPTION", "CONTEXT"]},
-        "memberKey": {"$ref": "#/$defs/identifier"},
-        "itemRevisionId": {"$ref": "#/$defs/identifier"},
-        "nodeIds": {"type": "array", "items": {"$ref": "#/$defs/identifier"}},
-        "display": {"oneOf": [
-          {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "NODE_TEXT"}}, "additionalProperties": false},
-          {"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "CUSTOM_TEXT"}, "text": {"type": "string"}}, "additionalProperties": false}
-        ]},
-        "ordinal": {"type": "integer"}
-      },
-      "additionalProperties": false
-    },
-    "authoringDocument": {
-      "type": "object",
-      "required": ["createTyped", "acknowledgement", "reuseObjective", "reviseObjective"],
-      "properties": {
-        "createTyped": {
-          "type": "object",
-          "required": ["commandId", "expectedDeckRevisionId", "objective", "exercise"],
-          "properties": {
-            "commandId": {"$ref": "#/$defs/identifier"},
-            "expectedDeckRevisionId": {"$ref": "#/$defs/identifier"},
-            "objective": {
-              "type": "object", "required": ["operation", "answerContract"],
-              "properties": {"operation": {"const": "create"}, "answerContract": {"$ref": "#/$defs/answerContract"}},
-              "additionalProperties": false
-            },
-            "exercise": {
-              "type": "object",
-              "required": ["type", "schemaVersion", "enabled", "prompt", "bindings", "evaluatorPolicy"],
-              "properties": {
-                "type": {"enum": ["SELF_CHECK", "TYPED", "CLOZE_SINGLE", "SINGLE_CHOICE", "LISTEN_CHOICE", "AUDIO_TEXT_MATCH", "LISTEN_TYPE"]},
-                "schemaVersion": {"type": "integer"},
-                "enabled": {"type": "boolean"},
-                "prompt": {"$ref": "#/$defs/authoringPrompt"},
-                "bindings": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/binding"}},
-                "evaluatorPolicy": {"$ref": "#/$defs/evaluator"}
-              },
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
-        },
-        "acknowledgement": {
-          "type": "object",
-          "required": ["commandId", "deckId", "deckRevisionId", "deckVersion", "objectiveId", "objectiveKey", "objectiveRevisionId", "exerciseId", "exerciseRevisionId", "enabled"],
-          "properties": {
-            "commandId": {"$ref": "#/$defs/identifier"}, "deckId": {"$ref": "#/$defs/identifier"},
-            "deckRevisionId": {"$ref": "#/$defs/identifier"}, "deckVersion": {"type": "string"},
-            "objectiveId": {"$ref": "#/$defs/identifier"}, "objectiveKey": {"$ref": "#/$defs/identifier"},
-            "objectiveRevisionId": {"$ref": "#/$defs/identifier"}, "exerciseId": {"$ref": "#/$defs/identifier"},
-            "exerciseRevisionId": {"$ref": "#/$defs/identifier"}, "enabled": {"type": "boolean"}
-          },
-          "additionalProperties": false
-        },
-        "reuseObjective": {
-          "type": "object", "required": ["operation", "objectiveId", "objectiveRevisionId"],
-          "properties": {"operation": {"const": "reuse"}, "objectiveId": {"$ref": "#/$defs/identifier"}, "objectiveRevisionId": {"$ref": "#/$defs/identifier"}},
-          "additionalProperties": false
-        },
-        "reviseObjective": {
-          "type": "object", "required": ["operation", "objectiveId", "expectedObjectiveRevisionId", "answerContract"],
-          "properties": {
-            "operation": {"const": "revise"}, "objectiveId": {"$ref": "#/$defs/identifier"},
-            "expectedObjectiveRevisionId": {"$ref": "#/$defs/identifier"}, "answerContract": {"$ref": "#/$defs/answerContract"}
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    "listeningDocument": {
-      "type": "object",
-      "required": ["createChoice", "createMatch", "createType", "pending", "revealCommand", "revealResponse", "matchResponse"],
-      "properties": {
-        "createChoice": {"$ref": "#/$defs/authoringDocument/properties/createTyped"},
-        "createMatch": {"$ref": "#/$defs/authoringDocument/properties/createTyped"},
-        "createType": {"$ref": "#/$defs/authoringDocument/properties/createTyped"},
-        "pending": {"$ref": "#/$defs/sessionDocument/properties/active"},
-        "revealCommand": {"$ref": "#/$defs/transcriptRevealCommand"},
-        "revealResponse": {"$ref": "#/$defs/transcriptRevealResponse"},
-        "matchResponse": {"$ref": "#/$defs/submitResponse"}
-      },
-      "additionalProperties": false
-    },
-    "startCommand": {
-      "oneOf": [
-        {
-          "type": "object", "required": ["commandId", "mode", "budget"],
-          "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "mode": {"const": "SCHEDULED"}, "budget": {"$ref": "#/$defs/scheduledBudget"}},
-          "additionalProperties": false
-        },
-        {
-          "type": "object", "required": ["commandId", "mode", "sourceSessionId", "budget"],
-          "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "mode": {"const": "REPLAY"}, "sourceSessionId": {"$ref": "#/$defs/identifier"}, "budget": {"$ref": "#/$defs/budget"}},
-          "additionalProperties": false
-        },
-        {
-          "type": "object", "required": ["commandId", "mode", "includeNew", "order", "budget"],
-          "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "mode": {"const": "PRACTICE"}, "includeNew": {"type": "boolean"}, "order": {"enum": ["SEEDED", "WEAKEST_FIRST"]}, "budget": {"$ref": "#/$defs/budget"}},
-          "additionalProperties": false
-        }
-      ]
-    },
-    "sessionDocument": {
-      "type": "object",
-      "required": ["startScheduled", "startReplay", "startPractice", "active", "activeReplay", "activePractice", "preparing"],
-      "properties": {
-        "startScheduled": {"$ref": "#/$defs/startCommand"},
-        "startReplay": {"$ref": "#/$defs/startCommand"},
-        "startPractice": {"$ref": "#/$defs/startCommand"},
-        "active": {
-          "type": "object",
-          "required": ["sessionId", "deckId", "mode", "status", "timezone", "localStudyDate", "deckRevisionId", "exerciseGenerationId", "selectionPolicyVersion", "budget", "issuedCount", "reducer", "seed", "nextCursor", "expiresAt", "presentations"],
-          "properties": {
-            "sessionId": {"$ref": "#/$defs/identifier"},
-            "deckId": {"$ref": "#/$defs/identifier"},
-            "mode": {"enum": ["SCHEDULED", "REPLAY", "PRACTICE"]},
-            "status": {"enum": ["ACTIVE", "EMPTY", "COMPLETE"]},
-            "timezone": {"type": "string"},
-            "localStudyDate": {"type": "string"},
-            "deckRevisionId": {"$ref": "#/$defs/identifier"},
-            "exerciseGenerationId": {"$ref": "#/$defs/identifier"},
-            "selectionPolicyVersion": {"type": "string"},
-            "budget": {"$ref": "#/$defs/scheduledBudget"},
-            "issuedCount": {"type": "integer"},
-            "reducer": {"$ref": "#/$defs/reducerReference"},
-            "seed": {"type": "string"},
-            "nextCursor": {"$ref": "#/$defs/nullableString"},
-            "expiresAt": {"type": "string"},
-            "presentations": {
-              "type": "array",
-              "maxItems": 20,
-              "items": {
-                "type": "object",
-                "required": ["presentationId", "nonce", "ordinal", "exerciseRevisionId", "type", "objectiveId", "objectiveRevisionId", "learningEpoch", "reference", "prompt", "options", "bindings", "evaluator"],
-                "properties": {
-                  "presentationId": {"$ref": "#/$defs/identifier"},
-                  "nonce": {"type": "string"},
-                  "ordinal": {"type": "integer"},
-                  "exerciseRevisionId": {"$ref": "#/$defs/identifier"},
-                  "type": {"enum": ["SELF_CHECK", "TYPED", "CLOZE_SINGLE", "SINGLE_CHOICE", "LISTEN_CHOICE", "AUDIO_TEXT_MATCH", "LISTEN_TYPE"]},
-                  "objectiveId": {"$ref": "#/$defs/identifier"},
-                  "objectiveRevisionId": {"$ref": "#/$defs/identifier"},
-                  "learningEpoch": {"type": "string"},
-                  "reference": {"type": ["string", "null"]},
-                  "prompt": {"$ref": "#/$defs/studyPrompt"},
-                  "selectionMode": {"enum": ["SINGLE", "MULTIPLE"]},
-                  "options": {"type": "array"},
-                  "bindings": {"type": "array", "items": {"$ref": "#/$defs/binding"}},
-                  "evaluator": {"$ref": "#/$defs/evaluator"}
-                },
-                "additionalProperties": false
-              }
-            }
-          },
-          "additionalProperties": false
-        },
-        "activeReplay": {"$ref": "#/$defs/sessionDocument/properties/active"},
-        "activePractice": {"$ref": "#/$defs/sessionDocument/properties/active"},
-        "preparing": {
-          "type": "object",
-          "required": ["sessionId", "mode", "status", "statusUrl"],
-          "properties": {
-            "sessionId": {"$ref": "#/$defs/identifier"},
-            "mode": {"enum": ["SCHEDULED", "REPLAY", "PRACTICE"]},
-            "status": {"const": "PREPARING"},
-            "statusUrl": {"type": "string"}
-          },
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    },
-    "submitCommand": {
-      "type": "object",
-      "required": ["attemptId", "presentationId", "nonce", "response", "hintsUsed", "confidence", "durationMs"],
-      "properties": {
-        "attemptId": {"$ref": "#/$defs/identifier"},
-        "presentationId": {"$ref": "#/$defs/identifier"},
-        "nonce": {"type": "string"},
-        "response": {"$ref": "#/$defs/submitResponse"},
-        "hintsUsed": {"type": "array", "items": {"type": "string"}},
-        "confidence": {"type": ["string", "null"]},
-        "durationMs": {"type": "integer"}
-      },
-      "additionalProperties": false
-    },
-    "attemptOutcome": {
-      "oneOf": [
-        {
-          "type": "object",
-          "required": ["attemptId", "presentationId", "mode", "status", "evidence", "feedback", "transition"],
-          "properties": {
-            "attemptId": {"$ref": "#/$defs/identifier"}, "presentationId": {"$ref": "#/$defs/identifier"},
-            "mode": {"const": "SCHEDULED"}, "status": {"const": "ASSESSED"},
-            "evidence": {"$ref": "#/$defs/evidence"}, "feedback": {"$ref": "#/$defs/feedback"},
-            "transition": {"$ref": "#/$defs/transition"}
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": ["attemptId", "presentationId", "mode", "status", "evidence", "feedback", "transition", "canonicalEffects"],
-          "properties": {
-            "attemptId": {"$ref": "#/$defs/identifier"}, "presentationId": {"$ref": "#/$defs/identifier"},
-            "mode": {"enum": ["REPLAY", "PRACTICE"]}, "status": {"enum": ["ASSESSED", "NOT_ASSESSED", "UNAVAILABLE"]},
-            "evidence": {"type": "null"}, "feedback": {"$ref": "#/$defs/feedback"},
-            "transition": {"type": "null"}, "canonicalEffects": {"const": false}
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": ["attemptId", "presentationId", "mode", "status", "evidence", "feedback", "transition"],
-          "properties": {
-            "attemptId": {"$ref": "#/$defs/identifier"}, "presentationId": {"$ref": "#/$defs/identifier"},
-            "mode": {"const": "SCHEDULED"}, "status": {"enum": ["NOT_ASSESSED", "UNAVAILABLE"]},
-            "evidence": {"type": "null"}, "feedback": {"$ref": "#/$defs/feedback"},
-            "transition": {"type": "null"}
-          },
-          "additionalProperties": false
-        }
-      ]
-    },
-    "attemptsDocument": {
-      "type": "object",
-      "required": ["typedSubmit", "selfCheckSubmit", "choiceSubmit", "cancelSubmit", "scheduledOutcome", "practiceOutcome", "notAssessedOutcome"],
-      "properties": {
-        "typedSubmit": {"$ref": "#/$defs/submitCommand"},
-        "selfCheckSubmit": {"$ref": "#/$defs/submitCommand"},
-        "choiceSubmit": {"$ref": "#/$defs/submitCommand"},
-        "cancelSubmit": {"$ref": "#/$defs/submitCommand"},
-        "scheduledOutcome": {"$ref": "#/$defs/attemptOutcome"},
-        "practiceOutcome": {"$ref": "#/$defs/attemptOutcome"},
-        "notAssessedOutcome": {"$ref": "#/$defs/attemptOutcome"}
-      },
-      "additionalProperties": false
-    },
-    "reducerDocument": {
-      "type": "object",
-      "required": ["reducerId", "reducerVersion", "configId", "intervals", "transitions", "goldenCases"],
-      "properties": {
-        "reducerId": {"const": "mnema-baseline"},
-        "reducerVersion": {"const": "1"},
-        "configId": {"$ref": "#/$defs/identifier"},
-        "intervals": {"type": "array", "minItems": 8, "maxItems": 8, "items": {"type": "string"}},
-        "transitions": {
-          "type": "array", "minItems": 12, "maxItems": 12,
-          "items": {
-            "type": "object",
-            "required": ["result", "evidenceClass", "operation", "levels", "cap", "streak", "lapse"],
-            "properties": {
-              "result": {"enum": ["CORRECT", "PARTIAL", "UNSURE", "INCORRECT"]},
-              "evidenceClass": {"enum": ["HIGH", "MEDIUM", "LOW"]},
-              "operation": {"enum": ["ADD", "SUBTRACT", "SET"]},
-              "levels": {"type": "integer"},
-              "cap": {"type": "integer"},
-              "streak": {"enum": ["INCREMENT", "RESET"]},
-              "lapse": {"enum": ["KEEP", "INCREMENT"]}
-            },
-            "additionalProperties": false
-          }
-        },
-        "goldenCases": {
-          "type": "array", "minItems": 7,
-          "items": {
-            "type": "object",
-            "required": ["name", "beforeLevel", "result", "evidenceClass", "afterLevel", "acceptedAt", "nextDue"],
-            "properties": {
-              "name": {"type": "string"}, "beforeLevel": {"type": "integer"},
-              "result": {"enum": ["CORRECT", "PARTIAL", "UNSURE", "INCORRECT"]},
-              "evidenceClass": {"enum": ["HIGH", "MEDIUM", "LOW"]}, "afterLevel": {"type": "integer"},
-              "acceptedAt": {"type": "string"}, "nextDue": {"type": "string"}
-            },
-            "additionalProperties": false
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "adversarialDocument": {
-      "type": "object",
-      "required": ["cases"],
-      "properties": {
-        "cases": {
-          "type": "array", "minItems": 20,
-          "items": {
-            "type": "object",
-            "required": ["id", "event", "preconditions", "request", "persistedEffect", "response", "recovery"],
-            "properties": {
-              "id": {"type": "string", "pattern": "^A-[0-9]{2}$"},
-              "event": {"type": "string"},
-              "preconditions": {"type": "array", "minItems": 1, "items": {"type": "string"}},
-              "request": {"type": "object"},
-              "persistedEffect": {"type": "object"},
-              "response": {"type": "object"},
-              "recovery": {"type": "string"}
-            },
-            "additionalProperties": false
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "flowsDocument": {
-      "type": "object",
-      "required": ["flows"],
-      "properties": {
-        "flows": {
-          "type": "array", "minItems": 10,
-          "items": {
-            "type": "object",
-            "required": ["id", "preconditions", "event", "requestFixture", "persistedEffect", "responseFixture", "errorOrRecovery"],
-            "properties": {
-              "id": {"type": "string", "pattern": "^F-[A-Z0-9-]+$"},
-              "preconditions": {"type": "array", "minItems": 1, "items": {"type": "string"}},
-              "event": {"type": "string"},
-              "requestFixture": {"type": "string"},
-              "persistedEffect": {"type": "string"},
-              "responseFixture": {"type": "string"},
-              "errorOrRecovery": {"type": "string"}
-            },
-            "additionalProperties": false
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "progressDocument": {
-      "type": "object",
-      "required": ["request", "response", "emptyResponse"],
-      "properties": {
-        "request": {
-          "type": "object", "required": ["deckId", "limit", "cursor"],
-          "properties": {"deckId": {"$ref": "#/$defs/identifier"}, "limit": {"type": "integer"}, "cursor": {"$ref": "#/$defs/nullableString"}},
-          "additionalProperties": false
-        },
-        "response": {"$ref": "#/$defs/progressPage"},
-        "emptyResponse": {"$ref": "#/$defs/progressPage"}
-      },
-      "additionalProperties": false
-    },
-    "replaySourcesPage": {
-      "type": "object",
-      "required": ["asOf", "localStudyDate", "items"],
-      "properties": {
-        "asOf": {"type": "string"},
-        "localStudyDate": {"type": "string"},
-        "items": {
-          "type": "array",
-          "maxItems": 20,
-          "items": {
-            "type": "object",
-            "required": ["sessionId", "completedAt", "presentationCount"],
-            "properties": {
-              "sessionId": {"$ref": "#/$defs/identifier"},
-              "completedAt": {"type": "string"},
-              "presentationCount": {"type": "integer"}
-            },
-            "additionalProperties": false
-          }
-        }
-      },
-      "additionalProperties": false
-    },
-    "replaySourcesDocument": {
-      "type": "object",
-      "required": ["response", "emptyResponse"],
-      "properties": {
-        "response": {"$ref": "#/$defs/replaySourcesPage"},
-        "emptyResponse": {"$ref": "#/$defs/replaySourcesPage"}
-      },
-      "additionalProperties": false
-    },
-    "restartDocument": {
-      "type": "object",
-      "required": ["precondition", "request", "persistedEffect", "response", "recovery"],
-      "properties": {
-        "precondition": {
-          "type": "object", "required": ["ownerAuthorized", "objectiveStates"],
-          "properties": {"ownerAuthorized": {"type": "boolean"}, "objectiveStates": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/objectiveState"}}},
-          "additionalProperties": false
-        },
-        "request": {
-          "type": "object", "required": ["commandId", "memberKeys"],
-          "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "memberKeys": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/identifier"}}},
-          "additionalProperties": false
-        },
-        "persistedEffect": {
-          "type": "object", "required": ["objectiveStates", "historyRowsDeleted", "restartAuditRows"],
-          "properties": {"objectiveStates": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/objectiveState"}}, "historyRowsDeleted": {"type": "integer"}, "restartAuditRows": {"type": "integer"}},
-          "additionalProperties": false
-        },
-        "response": {
-          "type": "object", "required": ["commandId", "restartedAt", "objectiveCount", "learningEpochs"],
-          "properties": {
-            "commandId": {"$ref": "#/$defs/identifier"}, "restartedAt": {"type": "string"}, "objectiveCount": {"type": "integer"},
-            "learningEpochs": {"type": "array", "items": {"type": "object", "required": ["objectiveId", "learningEpoch"], "properties": {"objectiveId": {"$ref": "#/$defs/identifier"}, "learningEpoch": {"type": "string"}}, "additionalProperties": false}}
-          },
-          "additionalProperties": false
-        },
-        "recovery": {
-          "type": "object", "required": ["exactRetry", "oldPresentationSubmit", "foreignMember"],
-          "properties": {"exactRetry": {"type": "string"}, "oldPresentationSubmit": {"type": "string"}, "foreignMember": {"type": "string"}},
-          "additionalProperties": false
-        }
-      },
-      "additionalProperties": false
-    }
+    "promptBlock": {"oneOf": [{"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string", "minLength": 1, "maxLength": 4000}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "memberKey", "itemRevisionId", "nodeId"], "properties": {"kind": {"const": "MATERIAL"}, "memberKey": {"$ref": "#/$defs/identifier"}, "itemRevisionId": {"$ref": "#/$defs/identifier"}, "nodeId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "assetId", "alt"], "properties": {"kind": {"const": "IMAGE"}, "assetId": {"$ref": "#/$defs/identifier"}, "alt": {"type": "string", "minLength": 1, "maxLength": 1024}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "assetId", "title"], "properties": {"kind": {"const": "AUDIO"}, "assetId": {"$ref": "#/$defs/identifier"}, "title": {"type": "string", "minLength": 1, "maxLength": 1024}, "transcript": {"type": "string", "minLength": 1, "maxLength": 16384}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "assetId", "title"], "properties": {"kind": {"const": "VIDEO"}, "assetId": {"$ref": "#/$defs/identifier"}, "title": {"type": "string", "minLength": 1, "maxLength": 1024}, "transcript": {"type": "string", "minLength": 1, "maxLength": 16384}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "videoId", "title"], "properties": {"kind": {"const": "YOUTUBE"}, "videoId": {"type": "string", "pattern": "^[A-Za-z0-9_-]{11}$"}, "title": {"type": "string", "minLength": 1, "maxLength": 1024}}, "additionalProperties": false}]},
+    "compactBlock": {"oneOf": [{"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string", "minLength": 1, "maxLength": 300}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "memberKey", "itemRevisionId", "nodeId"], "properties": {"kind": {"const": "MATERIAL"}, "memberKey": {"$ref": "#/$defs/identifier"}, "itemRevisionId": {"$ref": "#/$defs/identifier"}, "nodeId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "assetId", "alt"], "properties": {"kind": {"const": "IMAGE"}, "assetId": {"$ref": "#/$defs/identifier"}, "alt": {"type": "string", "minLength": 1, "maxLength": 1024}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "assetId", "title"], "properties": {"kind": {"const": "AUDIO"}, "assetId": {"$ref": "#/$defs/identifier"}, "title": {"type": "string", "minLength": 1, "maxLength": 1024}, "transcript": {"type": "string", "minLength": 1, "maxLength": 16384}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "assetId", "title"], "properties": {"kind": {"const": "VIDEO"}, "assetId": {"$ref": "#/$defs/identifier"}, "title": {"type": "string", "minLength": 1, "maxLength": 1024}, "transcript": {"type": "string", "minLength": 1, "maxLength": 16384}}, "additionalProperties": false}]},
+    "compactBlocks": {"type": "array", "items": {"$ref": "#/$defs/compactBlock"}, "minItems": 1, "maxItems": 2},
+    "promptBlocks": {"type": "array", "items": {"$ref": "#/$defs/promptBlock"}, "minItems": 1, "maxItems": 8},
+    "optionalPromptBlocks": {"type": "array", "items": {"$ref": "#/$defs/promptBlock"}, "minItems": 0, "maxItems": 8},
+    "selfCheckContent": {"type": "object", "required": ["prompt", "reference"], "properties": {"prompt": {"$ref": "#/$defs/promptBlocks"}, "reference": {"$ref": "#/$defs/promptBlocks"}}, "additionalProperties": false},
+    "freeResponseContent": {"type": "object", "required": ["prompt", "reference", "responseInput"], "properties": {"prompt": {"$ref": "#/$defs/promptBlocks"}, "reference": {"$ref": "#/$defs/optionalPromptBlocks"}, "responseInput": {"enum": ["TEXT", "TEXT_OR_SPEECH"]}}, "additionalProperties": false},
+    "clozeContent": {"type": "object", "required": ["prompt", "passage"], "properties": {"prompt": {"$ref": "#/$defs/optionalPromptBlocks"}, "passage": {"type": "array", "items": {"oneOf": [{"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string", "minLength": 1, "maxLength": 4000}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "blankId", "size", "firstLetterHint"], "properties": {"kind": {"const": "BLANK"}, "blankId": {"$ref": "#/$defs/identifier"}, "size": {"oneOf": [{"type": "object", "required": ["mode", "length"], "properties": {"mode": {"const": "FIXED"}, "length": {"type": "integer", "minimum": 5, "maximum": 20}}, "additionalProperties": false}, {"type": "object", "required": ["mode"], "properties": {"mode": {"const": "ANSWER_LENGTH"}}, "additionalProperties": false}]}, "firstLetterHint": {"type": "boolean"}}, "additionalProperties": false}]}, "minItems": 2, "maxItems": 64}}, "additionalProperties": false},
+    "choiceContent": {"type": "object", "required": ["prompt", "selectionMode", "options"], "properties": {"prompt": {"$ref": "#/$defs/promptBlocks"}, "selectionMode": {"enum": ["SINGLE", "MULTIPLE"]}, "options": {"type": "array", "items": {"type": "object", "required": ["optionId", "blocks"], "properties": {"optionId": {"$ref": "#/$defs/identifier"}, "blocks": {"$ref": "#/$defs/compactBlocks"}}, "additionalProperties": false}, "minItems": 2, "maxItems": 12}}, "additionalProperties": false},
+    "matchContent": {"type": "object", "required": ["prompt", "left", "right"], "properties": {"prompt": {"$ref": "#/$defs/optionalPromptBlocks"}, "left": {"type": "array", "items": {"type": "object", "required": ["itemId", "blocks"], "properties": {"itemId": {"$ref": "#/$defs/identifier"}, "blocks": {"$ref": "#/$defs/compactBlocks"}}, "additionalProperties": false}, "minItems": 2, "maxItems": 6}, "right": {"type": "array", "items": {"type": "object", "required": ["itemId", "blocks"], "properties": {"itemId": {"$ref": "#/$defs/identifier"}, "blocks": {"$ref": "#/$defs/compactBlocks"}}, "additionalProperties": false}, "minItems": 2, "maxItems": 6}}, "additionalProperties": false},
+    "selfReportKey": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "SELF_REPORT"}}, "additionalProperties": false},
+    "textKey": {"type": "object", "required": ["kind", "accepted", "normalization", "matchingMode"], "properties": {"kind": {"const": "TEXT"}, "accepted": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 512}, "minItems": 1, "maxItems": 20, "uniqueItems": true}, "normalization": {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": {"enum": ["UNICODE_NFC", "TRIM", "CASE_FOLD"]}}, "matchingMode": {"enum": ["STRICT", "SOFT"]}}, "additionalProperties": false},
+    "clozeKey": {"type": "object", "required": ["kind", "blanks"], "properties": {"kind": {"const": "CLOZE"}, "blanks": {"type": "array", "items": {"type": "object", "required": ["blankId", "accepted", "normalization", "matchingMode"], "properties": {"blankId": {"$ref": "#/$defs/identifier"}, "accepted": {"type": "array", "items": {"type": "string", "minLength": 1, "maxLength": 200}, "minItems": 1, "maxItems": 10, "uniqueItems": true}, "normalization": {"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": {"enum": ["UNICODE_NFC", "TRIM", "CASE_FOLD"]}}, "matchingMode": {"enum": ["STRICT", "SOFT"]}}, "additionalProperties": false}, "minItems": 1, "maxItems": 12}}, "additionalProperties": false},
+    "choiceKey": {"type": "object", "required": ["kind", "correctOptionIds"], "properties": {"kind": {"const": "CHOICE"}, "correctOptionIds": {"type": "array", "items": {"$ref": "#/$defs/identifier"}, "minItems": 1, "maxItems": 12, "uniqueItems": true}}, "additionalProperties": false},
+    "matchKey": {"type": "object", "required": ["kind", "pairs"], "properties": {"kind": {"const": "MATCH"}, "pairs": {"type": "array", "items": {"type": "object", "required": ["leftId", "rightId"], "properties": {"leftId": {"$ref": "#/$defs/identifier"}, "rightId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}, "minItems": 2, "maxItems": 6}}, "additionalProperties": false},
+    "answerKey": {"oneOf": [{"$ref": "#/$defs/selfReportKey"}, {"$ref": "#/$defs/textKey"}, {"$ref": "#/$defs/clozeKey"}, {"$ref": "#/$defs/choiceKey"}, {"$ref": "#/$defs/matchKey"}]},
+    "evaluatorIdentity": {"type": "object", "required": ["id", "version"], "properties": {"id": {"type": "string"}, "version": {"type": "string"}}, "additionalProperties": false},
+    "evaluatorPolicy": {"oneOf": [{"type": "object", "required": ["id", "version"], "properties": {"id": {"const": "self-check"}, "version": {"const": "1"}}, "additionalProperties": false}, {"type": "object", "required": ["id", "version"], "properties": {"id": {"const": "deterministic-text"}, "version": {"const": "1"}}, "additionalProperties": false}, {"type": "object", "required": ["id", "version"], "properties": {"id": {"const": "deterministic-cloze"}, "version": {"const": "1"}}, "additionalProperties": false}, {"type": "object", "required": ["id", "version"], "properties": {"id": {"const": "deterministic-choice"}, "version": {"const": "1"}}, "additionalProperties": false}, {"type": "object", "required": ["id", "version"], "properties": {"id": {"const": "deterministic-match"}, "version": {"const": "1"}}, "additionalProperties": false}, {"type": "object", "required": ["id", "version", "rubric"], "properties": {"id": {"const": "ai-semantic"}, "version": {"const": "1"}, "rubric": {"type": "object", "required": ["referenceAnswer", "criteria", "levels"], "properties": {"referenceAnswer": {"type": "string", "minLength": 1, "maxLength": 4000}, "criteria": {"type": "array", "items": {"type": "object", "required": ["criterionId", "description", "critical"], "properties": {"criterionId": {"$ref": "#/$defs/identifier"}, "description": {"type": "string", "minLength": 1, "maxLength": 500}, "critical": {"type": "boolean"}}, "additionalProperties": false}, "minItems": 1, "maxItems": 10}, "levels": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "object", "required": ["level", "description"], "properties": {"level": {"enum": ["COMPLETE", "PARTIAL", "INSUFFICIENT"]}, "description": {"type": "string", "minLength": 1, "maxLength": 500}}, "additionalProperties": false}}}, "additionalProperties": false}}, "additionalProperties": false}]},
+    "selfCheckExercise": {"type": "object", "required": ["type", "schemaVersion", "enabled", "subject", "content", "answerKey", "evaluatorPolicy"], "properties": {"type": {"const": "SELF_CHECK"}, "schemaVersion": {"const": 2}, "enabled": {"type": "boolean"}, "subject": {"type": "object", "required": ["memberKey", "itemRevisionId"], "properties": {"memberKey": {"$ref": "#/$defs/identifier"}, "itemRevisionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}, "content": {"$ref": "#/$defs/selfCheckContent"}, "answerKey": {"$ref": "#/$defs/selfReportKey"}, "evaluatorPolicy": {"type": "object", "required": ["id", "version"], "properties": {"id": {"const": "self-check"}, "version": {"const": "1"}}, "additionalProperties": false}}, "additionalProperties": false},
+    "freeResponseExercise": {"type": "object", "required": ["type", "schemaVersion", "enabled", "subject", "content", "answerKey", "evaluatorPolicy"], "properties": {"type": {"const": "FREE_RESPONSE"}, "schemaVersion": {"const": 2}, "enabled": {"type": "boolean"}, "subject": {"type": "object", "required": ["memberKey", "itemRevisionId"], "properties": {"memberKey": {"$ref": "#/$defs/identifier"}, "itemRevisionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}, "content": {"$ref": "#/$defs/freeResponseContent"}, "answerKey": {"$ref": "#/$defs/textKey"}, "evaluatorPolicy": {"oneOf": [{"type": "object", "required": ["id", "version"], "properties": {"id": {"const": "deterministic-text"}, "version": {"const": "1"}}, "additionalProperties": false}, {"type": "object", "required": ["id", "version", "rubric"], "properties": {"id": {"const": "ai-semantic"}, "version": {"const": "1"}, "rubric": {"type": "object", "required": ["referenceAnswer", "criteria", "levels"], "properties": {"referenceAnswer": {"type": "string", "minLength": 1, "maxLength": 4000}, "criteria": {"type": "array", "items": {"type": "object", "required": ["criterionId", "description", "critical"], "properties": {"criterionId": {"$ref": "#/$defs/identifier"}, "description": {"type": "string", "minLength": 1, "maxLength": 500}, "critical": {"type": "boolean"}}, "additionalProperties": false}, "minItems": 1, "maxItems": 10}, "levels": {"type": "array", "minItems": 3, "maxItems": 3, "items": {"type": "object", "required": ["level", "description"], "properties": {"level": {"enum": ["COMPLETE", "PARTIAL", "INSUFFICIENT"]}, "description": {"type": "string", "minLength": 1, "maxLength": 500}}, "additionalProperties": false}}}, "additionalProperties": false}}, "additionalProperties": false}]}}, "additionalProperties": false},
+    "clozeExercise": {"type": "object", "required": ["type", "schemaVersion", "enabled", "subject", "content", "answerKey", "evaluatorPolicy"], "properties": {"type": {"const": "CLOZE"}, "schemaVersion": {"const": 2}, "enabled": {"type": "boolean"}, "subject": {"type": "object", "required": ["memberKey", "itemRevisionId"], "properties": {"memberKey": {"$ref": "#/$defs/identifier"}, "itemRevisionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}, "content": {"$ref": "#/$defs/clozeContent"}, "answerKey": {"$ref": "#/$defs/clozeKey"}, "evaluatorPolicy": {"type": "object", "required": ["id", "version"], "properties": {"id": {"const": "deterministic-cloze"}, "version": {"const": "1"}}, "additionalProperties": false}}, "additionalProperties": false},
+    "choiceExercise": {"type": "object", "required": ["type", "schemaVersion", "enabled", "subject", "content", "answerKey", "evaluatorPolicy"], "properties": {"type": {"const": "CHOICE"}, "schemaVersion": {"const": 2}, "enabled": {"type": "boolean"}, "subject": {"type": "object", "required": ["memberKey", "itemRevisionId"], "properties": {"memberKey": {"$ref": "#/$defs/identifier"}, "itemRevisionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}, "content": {"$ref": "#/$defs/choiceContent"}, "answerKey": {"$ref": "#/$defs/choiceKey"}, "evaluatorPolicy": {"type": "object", "required": ["id", "version"], "properties": {"id": {"const": "deterministic-choice"}, "version": {"const": "1"}}, "additionalProperties": false}}, "additionalProperties": false},
+    "matchExercise": {"type": "object", "required": ["type", "schemaVersion", "enabled", "subject", "content", "answerKey", "evaluatorPolicy"], "properties": {"type": {"const": "MATCH"}, "schemaVersion": {"const": 2}, "enabled": {"type": "boolean"}, "subject": {"type": "object", "required": ["memberKey", "itemRevisionId"], "properties": {"memberKey": {"$ref": "#/$defs/identifier"}, "itemRevisionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}, "content": {"$ref": "#/$defs/matchContent"}, "answerKey": {"$ref": "#/$defs/matchKey"}, "evaluatorPolicy": {"type": "object", "required": ["id", "version"], "properties": {"id": {"const": "deterministic-match"}, "version": {"const": "1"}}, "additionalProperties": false}}, "additionalProperties": false},
+    "objectiveCommand": {"oneOf": [{"type": "object", "required": ["operation", "title"], "properties": {"operation": {"const": "create"}, "title": {"type": "string", "minLength": 1, "maxLength": 160}}, "additionalProperties": false}, {"type": "object", "required": ["operation", "objectiveId", "objectiveRevisionId"], "properties": {"operation": {"const": "reuse"}, "objectiveId": {"$ref": "#/$defs/identifier"}, "objectiveRevisionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}, {"type": "object", "required": ["operation", "objectiveId", "expectedObjectiveRevisionId", "title"], "properties": {"operation": {"const": "revise"}, "objectiveId": {"$ref": "#/$defs/identifier"}, "expectedObjectiveRevisionId": {"$ref": "#/$defs/identifier"}, "title": {"type": "string", "minLength": 1, "maxLength": 160}}, "additionalProperties": false}]},
+    "publishCommand": {"type": "object", "required": ["commandId", "expectedDeckRevisionId", "objective", "exercise"], "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "expectedDeckRevisionId": {"$ref": "#/$defs/identifier"}, "objective": {"$ref": "#/$defs/objectiveCommand"}, "exercise": {"oneOf": [{"$ref": "#/$defs/selfCheckExercise"}, {"$ref": "#/$defs/freeResponseExercise"}, {"$ref": "#/$defs/clozeExercise"}, {"$ref": "#/$defs/choiceExercise"}, {"$ref": "#/$defs/matchExercise"}]}}, "additionalProperties": false},
+    "objectiveSummary": {"type": "object", "required": ["objectiveId", "objectiveKey", "objectiveRevisionId", "objectiveVersion", "memberKey", "title"], "properties": {"objectiveId": {"$ref": "#/$defs/identifier"}, "objectiveKey": {"$ref": "#/$defs/identifier"}, "objectiveRevisionId": {"$ref": "#/$defs/identifier"}, "objectiveVersion": {"type": "string"}, "memberKey": {"$ref": "#/$defs/identifier"}, "title": {"type": "string", "minLength": 1, "maxLength": 160}}, "additionalProperties": false},
+    "exerciseDetail": {"type": "object", "required": ["exerciseId", "exerciseRevisionId", "exerciseVersion", "ordinal", "type", "enabled", "schemaVersion", "createdAt", "updatedAt", "objective", "deckId", "deckRevisionId", "deckVersion", "subject", "content", "answerKey", "evaluatorPolicy"], "properties": {"exerciseId": {"$ref": "#/$defs/identifier"}, "exerciseRevisionId": {"$ref": "#/$defs/identifier"}, "exerciseVersion": {"type": "string"}, "ordinal": {"type": "integer"}, "type": {"enum": ["SELF_CHECK", "FREE_RESPONSE", "CLOZE", "CHOICE", "MATCH"]}, "enabled": {"type": "boolean"}, "schemaVersion": {"const": 2}, "createdAt": {"type": "string"}, "updatedAt": {"type": "string"}, "objective": {"$ref": "#/$defs/objectiveSummary"}, "deckId": {"$ref": "#/$defs/identifier"}, "deckRevisionId": {"$ref": "#/$defs/identifier"}, "deckVersion": {"type": "string"}, "subject": {"type": "object", "required": ["memberKey", "itemRevisionId"], "properties": {"memberKey": {"$ref": "#/$defs/identifier"}, "itemRevisionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}, "content": {"oneOf": [{"$ref": "#/$defs/selfCheckContent"}, {"$ref": "#/$defs/freeResponseContent"}, {"$ref": "#/$defs/clozeContent"}, {"$ref": "#/$defs/choiceContent"}, {"$ref": "#/$defs/matchContent"}]}, "answerKey": {"$ref": "#/$defs/answerKey"}, "evaluatorPolicy": {"$ref": "#/$defs/evaluatorPolicy"}}, "additionalProperties": false},
+    "acknowledgement": {"type": "object", "required": ["commandId", "deckId", "deckRevisionId", "deckVersion", "objectiveId", "objectiveKey", "objectiveRevisionId", "exerciseId", "exerciseRevisionId", "enabled"], "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "deckId": {"$ref": "#/$defs/identifier"}, "deckRevisionId": {"$ref": "#/$defs/identifier"}, "deckVersion": {"type": "string"}, "objectiveId": {"$ref": "#/$defs/identifier"}, "objectiveKey": {"$ref": "#/$defs/identifier"}, "objectiveRevisionId": {"$ref": "#/$defs/identifier"}, "exerciseId": {"$ref": "#/$defs/identifier"}, "exerciseRevisionId": {"$ref": "#/$defs/identifier"}, "enabled": {"type": "boolean"}}, "additionalProperties": false},
+    "learnerBlock": {"oneOf": [{"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string"}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "assetId", "alt"], "properties": {"kind": {"const": "IMAGE"}, "assetId": {"$ref": "#/$defs/identifier"}, "alt": {"type": "string"}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "assetId", "transcriptAvailable"], "properties": {"kind": {"const": "AUDIO"}, "assetId": {"$ref": "#/$defs/identifier"}, "transcriptAvailable": {"type": "boolean"}, "transcript": {"type": "string"}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "assetId", "transcriptAvailable"], "properties": {"kind": {"const": "VIDEO"}, "assetId": {"$ref": "#/$defs/identifier"}, "transcriptAvailable": {"type": "boolean"}, "transcript": {"type": "string"}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "videoId", "title"], "properties": {"kind": {"const": "YOUTUBE"}, "videoId": {"type": "string"}, "title": {"type": "string"}}, "additionalProperties": false}]},
+    "learnerBlocks": {"type": "array", "items": {"$ref": "#/$defs/learnerBlock"}, "minItems": 0, "maxItems": 8},
+    "learnerPrompt": {"type": "array", "items": {"$ref": "#/$defs/learnerBlock"}, "minItems": 1, "maxItems": 8},
+    "selfCheckLearnerContent": {"type": "object", "required": ["prompt", "reference"], "properties": {"prompt": {"$ref": "#/$defs/learnerPrompt"}, "reference": {"$ref": "#/$defs/learnerPrompt"}}, "additionalProperties": false},
+    "freeResponseLearnerContent": {"type": "object", "required": ["prompt", "responseInput"], "properties": {"prompt": {"$ref": "#/$defs/learnerPrompt"}, "responseInput": {"enum": ["TEXT", "TEXT_OR_SPEECH"]}}, "additionalProperties": false},
+    "clozeLearnerContent": {"type": "object", "required": ["prompt", "passage"], "properties": {"prompt": {"$ref": "#/$defs/learnerBlocks"}, "passage": {"type": "array", "items": {"oneOf": [{"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string"}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "blankId", "size", "firstLetterHint"], "properties": {"kind": {"const": "BLANK"}, "blankId": {"$ref": "#/$defs/identifier"}, "size": {"type": "object", "required": ["mode", "length"], "properties": {"mode": {"enum": ["FIXED", "ANSWER_LENGTH"]}, "length": {"type": "integer", "minimum": 1}}, "additionalProperties": false}, "firstLetterHint": {"type": "boolean"}}, "additionalProperties": false}]}, "minItems": 2, "maxItems": 64}}, "additionalProperties": false},
+    "choiceLearnerContent": {"type": "object", "required": ["prompt", "selectionMode", "options"], "properties": {"prompt": {"$ref": "#/$defs/learnerPrompt"}, "selectionMode": {"enum": ["SINGLE", "MULTIPLE"]}, "options": {"type": "array", "items": {"type": "object", "required": ["optionId", "blocks"], "properties": {"optionId": {"$ref": "#/$defs/identifier"}, "blocks": {"type": "array", "items": {"$ref": "#/$defs/learnerBlock"}, "minItems": 1, "maxItems": 2}}, "additionalProperties": false}, "minItems": 2, "maxItems": 12}}, "additionalProperties": false},
+    "matchLearnerContent": {"type": "object", "required": ["prompt", "left", "right"], "properties": {"prompt": {"$ref": "#/$defs/learnerBlocks"}, "left": {"type": "array", "items": {"type": "object", "required": ["itemId", "blocks"], "properties": {"itemId": {"$ref": "#/$defs/identifier"}, "blocks": {"type": "array", "items": {"$ref": "#/$defs/learnerBlock"}, "minItems": 1, "maxItems": 2}}, "additionalProperties": false}, "minItems": 2, "maxItems": 6}, "right": {"type": "array", "items": {"type": "object", "required": ["itemId", "blocks"], "properties": {"itemId": {"$ref": "#/$defs/identifier"}, "blocks": {"type": "array", "items": {"$ref": "#/$defs/learnerBlock"}, "minItems": 1, "maxItems": 2}}, "additionalProperties": false}, "minItems": 2, "maxItems": 6}}, "additionalProperties": false},
+    "learnerContent": {"oneOf": [{"$ref": "#/$defs/selfCheckLearnerContent"}, {"$ref": "#/$defs/freeResponseLearnerContent"}, {"$ref": "#/$defs/clozeLearnerContent"}, {"$ref": "#/$defs/choiceLearnerContent"}, {"$ref": "#/$defs/matchLearnerContent"}]},
+    "hint": {"type": "object", "required": ["blankId", "firstLetter"], "properties": {"blankId": {"$ref": "#/$defs/identifier"}, "firstLetter": {"type": "string", "minLength": 1}}, "additionalProperties": false},
+    "selfCheckPresentation": {"type": "object", "required": ["presentationId", "nonce", "ordinal", "exerciseRevisionId", "type", "objectiveId", "objectiveRevisionId", "learningEpoch", "content", "transcriptRevealed", "hints", "evaluator"], "properties": {"presentationId": {"$ref": "#/$defs/identifier"}, "nonce": {"type": "string"}, "ordinal": {"type": "integer"}, "exerciseRevisionId": {"$ref": "#/$defs/identifier"}, "type": {"const": "SELF_CHECK"}, "objectiveId": {"$ref": "#/$defs/identifier"}, "objectiveRevisionId": {"$ref": "#/$defs/identifier"}, "learningEpoch": {"type": "string"}, "content": {"$ref": "#/$defs/selfCheckLearnerContent"}, "transcriptRevealed": {"type": "boolean"}, "hints": {"type": "array", "items": {"$ref": "#/$defs/hint"}}, "evaluator": {"type": "object", "required": ["id", "version"], "properties": {"id": {"const": "self-check"}, "version": {"const": "1"}}, "additionalProperties": false}}, "additionalProperties": false},
+    "freeResponsePresentation": {"type": "object", "required": ["presentationId", "nonce", "ordinal", "exerciseRevisionId", "type", "objectiveId", "objectiveRevisionId", "learningEpoch", "content", "transcriptRevealed", "hints", "evaluator"], "properties": {"presentationId": {"$ref": "#/$defs/identifier"}, "nonce": {"type": "string"}, "ordinal": {"type": "integer"}, "exerciseRevisionId": {"$ref": "#/$defs/identifier"}, "type": {"const": "FREE_RESPONSE"}, "objectiveId": {"$ref": "#/$defs/identifier"}, "objectiveRevisionId": {"$ref": "#/$defs/identifier"}, "learningEpoch": {"type": "string"}, "content": {"$ref": "#/$defs/freeResponseLearnerContent"}, "transcriptRevealed": {"type": "boolean"}, "hints": {"type": "array", "items": {"$ref": "#/$defs/hint"}}, "evaluator": {"$ref": "#/$defs/evaluatorIdentity"}}, "additionalProperties": false},
+    "clozePresentation": {"type": "object", "required": ["presentationId", "nonce", "ordinal", "exerciseRevisionId", "type", "objectiveId", "objectiveRevisionId", "learningEpoch", "content", "transcriptRevealed", "hints", "evaluator"], "properties": {"presentationId": {"$ref": "#/$defs/identifier"}, "nonce": {"type": "string"}, "ordinal": {"type": "integer"}, "exerciseRevisionId": {"$ref": "#/$defs/identifier"}, "type": {"const": "CLOZE"}, "objectiveId": {"$ref": "#/$defs/identifier"}, "objectiveRevisionId": {"$ref": "#/$defs/identifier"}, "learningEpoch": {"type": "string"}, "content": {"$ref": "#/$defs/clozeLearnerContent"}, "transcriptRevealed": {"type": "boolean"}, "hints": {"type": "array", "items": {"$ref": "#/$defs/hint"}}, "evaluator": {"type": "object", "required": ["id", "version"], "properties": {"id": {"const": "deterministic-cloze"}, "version": {"const": "1"}}, "additionalProperties": false}}, "additionalProperties": false},
+    "choicePresentation": {"type": "object", "required": ["presentationId", "nonce", "ordinal", "exerciseRevisionId", "type", "objectiveId", "objectiveRevisionId", "learningEpoch", "content", "transcriptRevealed", "hints", "evaluator"], "properties": {"presentationId": {"$ref": "#/$defs/identifier"}, "nonce": {"type": "string"}, "ordinal": {"type": "integer"}, "exerciseRevisionId": {"$ref": "#/$defs/identifier"}, "type": {"const": "CHOICE"}, "objectiveId": {"$ref": "#/$defs/identifier"}, "objectiveRevisionId": {"$ref": "#/$defs/identifier"}, "learningEpoch": {"type": "string"}, "content": {"$ref": "#/$defs/choiceLearnerContent"}, "transcriptRevealed": {"type": "boolean"}, "hints": {"type": "array", "items": {"$ref": "#/$defs/hint"}}, "evaluator": {"type": "object", "required": ["id", "version"], "properties": {"id": {"const": "deterministic-choice"}, "version": {"const": "1"}}, "additionalProperties": false}}, "additionalProperties": false},
+    "matchPresentation": {"type": "object", "required": ["presentationId", "nonce", "ordinal", "exerciseRevisionId", "type", "objectiveId", "objectiveRevisionId", "learningEpoch", "content", "transcriptRevealed", "hints", "evaluator"], "properties": {"presentationId": {"$ref": "#/$defs/identifier"}, "nonce": {"type": "string"}, "ordinal": {"type": "integer"}, "exerciseRevisionId": {"$ref": "#/$defs/identifier"}, "type": {"const": "MATCH"}, "objectiveId": {"$ref": "#/$defs/identifier"}, "objectiveRevisionId": {"$ref": "#/$defs/identifier"}, "learningEpoch": {"type": "string"}, "content": {"$ref": "#/$defs/matchLearnerContent"}, "transcriptRevealed": {"type": "boolean"}, "hints": {"type": "array", "items": {"$ref": "#/$defs/hint"}}, "evaluator": {"type": "object", "required": ["id", "version"], "properties": {"id": {"const": "deterministic-match"}, "version": {"const": "1"}}, "additionalProperties": false}}, "additionalProperties": false},
+    "presentation": {"oneOf": [{"$ref": "#/$defs/selfCheckPresentation"}, {"$ref": "#/$defs/freeResponsePresentation"}, {"$ref": "#/$defs/clozePresentation"}, {"$ref": "#/$defs/choicePresentation"}, {"$ref": "#/$defs/matchPresentation"}]},
+    "transcriptRevealCommand": {"type": "object", "required": ["nonce"], "properties": {"nonce": {"type": "string"}}, "additionalProperties": false},
+    "transcriptRevealResponse": {"type": "object", "required": ["presentationId", "transcriptRevealed", "content"], "properties": {"presentationId": {"$ref": "#/$defs/identifier"}, "transcriptRevealed": {"const": true}, "content": {"$ref": "#/$defs/learnerContent"}}, "additionalProperties": false},
+    "hintCommand": {"type": "object", "required": ["nonce", "blankId"], "properties": {"nonce": {"type": "string"}, "blankId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false},
+    "hintResponse": {"type": "object", "required": ["presentationId", "blankId", "firstLetter"], "properties": {"presentationId": {"$ref": "#/$defs/identifier"}, "blankId": {"$ref": "#/$defs/identifier"}, "firstLetter": {"type": "string", "minLength": 1}}, "additionalProperties": false},
+    "pairCheckCommand": {"type": "object", "required": ["presentationId", "nonce", "leftId", "rightId"], "properties": {"presentationId": {"$ref": "#/$defs/identifier"}, "nonce": {"type": "string"}, "leftId": {"$ref": "#/$defs/identifier"}, "rightId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false},
+    "pairCheckResult": {"type": "object", "required": ["correct"], "properties": {"correct": {"type": "boolean"}}, "additionalProperties": false},
+    "submitResponse": {"oneOf": [{"type": "object", "required": ["kind", "text"], "properties": {"kind": {"const": "TEXT"}, "text": {"type": "string"}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "rating"], "properties": {"kind": {"const": "SELF_CHECK"}, "rating": {"enum": ["NOT_RECALLED", "HINTED", "PARTIAL", "FULL"]}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "blanks"], "properties": {"kind": {"const": "CLOZE"}, "blanks": {"type": "array", "items": {"type": "object", "required": ["blankId", "text"], "properties": {"blankId": {"$ref": "#/$defs/identifier"}, "text": {"type": "string"}}, "additionalProperties": false}, "minItems": 1, "maxItems": 12}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "optionIds"], "properties": {"kind": {"const": "CHOICE"}, "optionIds": {"type": "array", "items": {"$ref": "#/$defs/identifier"}, "minItems": 1, "maxItems": 12, "uniqueItems": true}}, "additionalProperties": false}, {"type": "object", "required": ["kind", "pairs"], "properties": {"kind": {"const": "MATCH"}, "pairs": {"type": "array", "items": {"type": "object", "required": ["leftId", "rightId"], "properties": {"leftId": {"$ref": "#/$defs/identifier"}, "rightId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}, "minItems": 2, "maxItems": 6}}, "additionalProperties": false}, {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "CANCEL"}}, "additionalProperties": false}]},
+    "submitCommand": {"type": "object", "required": ["attemptId", "presentationId", "nonce", "response", "confidence", "durationMs"], "properties": {"attemptId": {"$ref": "#/$defs/identifier"}, "presentationId": {"$ref": "#/$defs/identifier"}, "nonce": {"type": "string"}, "response": {"$ref": "#/$defs/submitResponse"}, "confidence": {"type": ["string", "null"]}, "durationMs": {"type": "integer"}}, "additionalProperties": false},
+    "budget": {"type": "object", "required": ["maxPresentations"], "properties": {"maxPresentations": {"type": "integer"}}, "additionalProperties": false},
+    "scheduledBudget": {"type": "object", "required": ["maxPresentations", "maxNewObjectives"], "properties": {"maxPresentations": {"type": "integer"}, "maxNewObjectives": {"type": "integer"}}, "additionalProperties": false},
+    "reducerReference": {"type": "object", "required": ["id", "version", "configId", "configHash"], "properties": {"id": {"type": "string"}, "version": {"type": "string"}, "configId": {"$ref": "#/$defs/identifier"}, "configHash": {"type": "string"}}, "additionalProperties": false},
+    "evidence": {"type": "object", "required": ["objectiveId", "objectiveRevisionId", "result", "evidenceClass", "reasonCodes"], "properties": {"objectiveId": {"$ref": "#/$defs/identifier"}, "objectiveRevisionId": {"$ref": "#/$defs/identifier"}, "result": {"enum": ["CORRECT", "PARTIAL", "INCORRECT", "UNSURE"]}, "evidenceClass": {"enum": ["HIGH", "MEDIUM", "LOW"]}, "reasonCodes": {"type": "array", "items": {"type": "string"}}}, "additionalProperties": false},
+    "feedback": {"type": "object", "required": ["result"], "properties": {"result": {"enum": ["CORRECT", "PARTIAL", "INCORRECT", "UNSURE", "NOT_ASSESSED", "UNAVAILABLE"]}, "appliedRules": {"type": "array", "items": {"type": "string"}}, "reasonCodes": {"type": "array", "items": {"type": "string"}}, "reference": {"type": "string"}, "referenceContent": {"type": "array", "items": {"$ref": "#/$defs/learnerBlock"}, "minItems": 0, "maxItems": 8}, "blanks": {"type": "array", "items": {"type": "object", "required": ["blankId", "correct", "hinted", "reference"], "properties": {"blankId": {"$ref": "#/$defs/identifier"}, "correct": {"type": "boolean"}, "hinted": {"type": "boolean"}, "reference": {"type": "string"}}, "additionalProperties": false}, "minItems": 1, "maxItems": 12}, "correctOptionIds": {"type": "array", "items": {"$ref": "#/$defs/identifier"}, "minItems": 1, "maxItems": 12}, "pairs": {"type": "array", "items": {"type": "object", "required": ["leftId", "selectedRightId", "correctRightId", "correct"], "properties": {"leftId": {"$ref": "#/$defs/identifier"}, "selectedRightId": {"$ref": "#/$defs/identifier"}, "correctRightId": {"$ref": "#/$defs/identifier"}, "correct": {"type": "boolean"}}, "additionalProperties": false}, "minItems": 2, "maxItems": 6}}, "additionalProperties": false},
+    "transition": {"type": "object", "required": ["learningEpoch", "sequence", "beforeLevel", "afterLevel", "acceptedAt", "nextDue", "reducerId", "reducerVersion", "configId", "configHash"], "properties": {"learningEpoch": {"type": "string"}, "sequence": {"type": "string"}, "beforeLevel": {"type": "integer"}, "afterLevel": {"type": "integer"}, "acceptedAt": {"type": "string"}, "nextDue": {"type": "string"}, "reducerId": {"type": "string"}, "reducerVersion": {"type": "string"}, "configId": {"$ref": "#/$defs/identifier"}, "configHash": {"type": "string"}}, "additionalProperties": false},
+    "objectiveState": {"type": "object", "required": ["objectiveId", "learningEpoch", "level", "correctStreak", "lapseCount", "lastAssessedAt", "nextDue"], "properties": {"objectiveId": {"$ref": "#/$defs/identifier"}, "learningEpoch": {"type": "string"}, "level": {"type": "integer"}, "correctStreak": {"type": "integer"}, "lapseCount": {"type": "integer"}, "lastAssessedAt": {"$ref": "#/$defs/nullableString"}, "nextDue": {"$ref": "#/$defs/nullableString"}}, "additionalProperties": false},
+    "progressPage": {"type": "object", "required": ["asOf", "items", "nextCursor"], "properties": {"asOf": {"type": "string"}, "items": {"type": "array", "items": {"type": "object", "required": ["title", "memberKey", "itemRevisionId", "state", "objectiveCoverage", "lastAssessedAt", "nextDue"], "properties": {"memberKey": {"$ref": "#/$defs/identifier"}, "itemRevisionId": {"$ref": "#/$defs/identifier"}, "title": {"type": "string", "maxLength": 240}, "state": {"enum": ["NOT_STARTED", "LEARNING", "DUE", "ON_TRACK"]}, "objectiveCoverage": {"type": "object", "required": ["enabled", "introduced", "assessed"], "properties": {"enabled": {"type": "integer"}, "introduced": {"type": "integer"}, "assessed": {"type": "integer"}}, "additionalProperties": false}, "lastAssessedAt": {"$ref": "#/$defs/nullableString"}, "nextDue": {"$ref": "#/$defs/nullableString"}}, "additionalProperties": false}}, "nextCursor": {"$ref": "#/$defs/nullableString"}}, "additionalProperties": false},
+    "capabilityStatus": {"oneOf": [{"type": "object", "required": ["available", "reason"], "properties": {"available": {"const": false}, "reason": {"enum": ["DISABLED", "PROVIDER_NOT_CONFIGURED"]}}, "additionalProperties": false}, {"type": "object", "required": ["available", "reason"], "properties": {"available": {"const": true}, "reason": {"type": "null"}}, "additionalProperties": false}]},
+    "capabilities": {"type": "object", "required": ["aiAssessment", "speechToText"], "properties": {"aiAssessment": {"$ref": "#/$defs/capabilityStatus"}, "speechToText": {"$ref": "#/$defs/capabilityStatus"}}, "additionalProperties": false},
+    "capabilityUnavailableProblem": {"type": "object", "required": ["type", "title", "status", "detail", "instance", "code"], "properties": {"type": {"const": "urn:mnema:problem:capability-unavailable"}, "title": {"type": "string"}, "status": {"const": 409}, "detail": {"type": "string"}, "instance": {"type": "string"}, "code": {"const": "CAPABILITY_UNAVAILABLE"}}, "additionalProperties": false},
+    "mechanicsDocument": {"type": "object", "required": ["createSelfCheck", "createFreeResponseAudio", "createCloze", "createChoiceVideoMultiple", "createMatchMixed", "reviseObjective", "reuseObjective", "rejectedAiAssessment", "rejectedSpeechInput", "capabilityUnavailableProblem", "exerciseDetail", "presentations", "transcriptRevealCommand", "transcriptRevealResponse", "hintCommand", "hintResponse", "pairCheck", "pairCheckResult", "submits", "feedback", "evidence", "capabilities", "capabilitiesFlagWithoutProvider"], "properties": {"createSelfCheck": {"$ref": "#/$defs/publishCommand"}, "createFreeResponseAudio": {"$ref": "#/$defs/publishCommand"}, "createCloze": {"$ref": "#/$defs/publishCommand"}, "createChoiceVideoMultiple": {"$ref": "#/$defs/publishCommand"}, "createMatchMixed": {"$ref": "#/$defs/publishCommand"}, "reviseObjective": {"type": "object", "required": ["operation", "objectiveId", "expectedObjectiveRevisionId", "title"], "properties": {"operation": {"const": "revise"}, "objectiveId": {"$ref": "#/$defs/identifier"}, "expectedObjectiveRevisionId": {"$ref": "#/$defs/identifier"}, "title": {"type": "string", "minLength": 1, "maxLength": 160}}, "additionalProperties": false}, "reuseObjective": {"type": "object", "required": ["operation", "objectiveId", "objectiveRevisionId"], "properties": {"operation": {"const": "reuse"}, "objectiveId": {"$ref": "#/$defs/identifier"}, "objectiveRevisionId": {"$ref": "#/$defs/identifier"}}, "additionalProperties": false}, "rejectedAiAssessment": {"$ref": "#/$defs/publishCommand"}, "rejectedSpeechInput": {"$ref": "#/$defs/publishCommand"}, "capabilityUnavailableProblem": {"$ref": "#/$defs/capabilityUnavailableProblem"}, "exerciseDetail": {"$ref": "#/$defs/exerciseDetail"}, "presentations": {"type": "object", "required": ["selfCheck", "freeResponse", "freeResponseTranscriptRevealed", "cloze", "choice", "match"], "properties": {"selfCheck": {"$ref": "#/$defs/selfCheckPresentation"}, "freeResponse": {"$ref": "#/$defs/freeResponsePresentation"}, "freeResponseTranscriptRevealed": {"$ref": "#/$defs/freeResponsePresentation"}, "cloze": {"$ref": "#/$defs/clozePresentation"}, "choice": {"$ref": "#/$defs/choicePresentation"}, "match": {"$ref": "#/$defs/matchPresentation"}}, "additionalProperties": false}, "transcriptRevealCommand": {"$ref": "#/$defs/transcriptRevealCommand"}, "transcriptRevealResponse": {"$ref": "#/$defs/transcriptRevealResponse"}, "hintCommand": {"$ref": "#/$defs/hintCommand"}, "hintResponse": {"$ref": "#/$defs/hintResponse"}, "pairCheck": {"$ref": "#/$defs/pairCheckCommand"}, "pairCheckResult": {"$ref": "#/$defs/pairCheckResult"}, "submits": {"type": "object", "required": ["selfCheck", "freeResponse", "cloze", "choice", "match", "cancel"], "properties": {"selfCheck": {"$ref": "#/$defs/submitCommand"}, "freeResponse": {"$ref": "#/$defs/submitCommand"}, "cloze": {"$ref": "#/$defs/submitCommand"}, "choice": {"$ref": "#/$defs/submitCommand"}, "match": {"$ref": "#/$defs/submitCommand"}, "cancel": {"$ref": "#/$defs/submitCommand"}}, "additionalProperties": false}, "feedback": {"type": "object", "required": ["selfCheck", "freeResponse", "cloze", "choice", "match", "mediaNotReady", "evaluatorUnavailable"], "properties": {"selfCheck": {"$ref": "#/$defs/feedback"}, "freeResponse": {"$ref": "#/$defs/feedback"}, "cloze": {"$ref": "#/$defs/feedback"}, "choice": {"$ref": "#/$defs/feedback"}, "match": {"$ref": "#/$defs/feedback"}, "mediaNotReady": {"$ref": "#/$defs/feedback"}, "evaluatorUnavailable": {"$ref": "#/$defs/feedback"}}, "additionalProperties": false}, "evidence": {"type": "object", "required": ["clozeHinted", "freeResponseTranscript"], "properties": {"clozeHinted": {"$ref": "#/$defs/evidence"}, "freeResponseTranscript": {"$ref": "#/$defs/evidence"}}, "additionalProperties": false}, "capabilities": {"$ref": "#/$defs/capabilities"}, "capabilitiesFlagWithoutProvider": {"$ref": "#/$defs/capabilities"}}, "additionalProperties": false},
+    "authoringDocument": {"type": "object", "required": ["acknowledgement"], "properties": {"acknowledgement": {"$ref": "#/$defs/acknowledgement"}}, "additionalProperties": false},
+    "startCommand": {"oneOf": [{"type": "object", "required": ["commandId", "mode", "budget"], "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "mode": {"const": "SCHEDULED"}, "budget": {"$ref": "#/$defs/scheduledBudget"}}, "additionalProperties": false}, {"type": "object", "required": ["commandId", "mode", "sourceSessionId", "budget"], "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "mode": {"const": "REPLAY"}, "sourceSessionId": {"$ref": "#/$defs/identifier"}, "budget": {"$ref": "#/$defs/budget"}}, "additionalProperties": false}, {"type": "object", "required": ["commandId", "mode", "includeNew", "order", "budget"], "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "mode": {"const": "PRACTICE"}, "includeNew": {"type": "boolean"}, "order": {"enum": ["SEEDED", "WEAKEST_FIRST"]}, "budget": {"$ref": "#/$defs/budget"}}, "additionalProperties": false}]},
+    "sessionDocument": {"type": "object", "required": ["startScheduled", "startReplay", "startPractice", "active", "activeReplay", "activePractice", "preparing"], "properties": {"startScheduled": {"$ref": "#/$defs/startCommand"}, "startReplay": {"$ref": "#/$defs/startCommand"}, "startPractice": {"$ref": "#/$defs/startCommand"}, "active": {"type": "object", "required": ["sessionId", "deckId", "mode", "status", "timezone", "localStudyDate", "deckRevisionId", "exerciseGenerationId", "selectionPolicyVersion", "budget", "issuedCount", "reducer", "seed", "nextCursor", "expiresAt", "presentations"], "properties": {"sessionId": {"$ref": "#/$defs/identifier"}, "deckId": {"$ref": "#/$defs/identifier"}, "mode": {"enum": ["SCHEDULED", "REPLAY", "PRACTICE"]}, "status": {"enum": ["ACTIVE", "EMPTY", "COMPLETE"]}, "timezone": {"type": "string"}, "localStudyDate": {"type": "string"}, "deckRevisionId": {"$ref": "#/$defs/identifier"}, "exerciseGenerationId": {"$ref": "#/$defs/identifier"}, "selectionPolicyVersion": {"type": "string"}, "budget": {"$ref": "#/$defs/scheduledBudget"}, "issuedCount": {"type": "integer"}, "reducer": {"$ref": "#/$defs/reducerReference"}, "seed": {"type": "string"}, "nextCursor": {"$ref": "#/$defs/nullableString"}, "expiresAt": {"type": "string"}, "presentations": {"type": "array", "maxItems": 20, "items": {"$ref": "#/$defs/presentation"}}}, "additionalProperties": false}, "activeReplay": {"$ref": "#/$defs/sessionDocument/properties/active"}, "activePractice": {"$ref": "#/$defs/sessionDocument/properties/active"}, "preparing": {"type": "object", "required": ["sessionId", "mode", "status", "statusUrl"], "properties": {"sessionId": {"$ref": "#/$defs/identifier"}, "mode": {"enum": ["SCHEDULED", "REPLAY", "PRACTICE"]}, "status": {"const": "PREPARING"}, "statusUrl": {"type": "string"}}, "additionalProperties": false}}, "additionalProperties": false},
+    "attemptOutcome": {"oneOf": [{"type": "object", "required": ["attemptId", "presentationId", "mode", "status", "evidence", "feedback", "transition"], "properties": {"attemptId": {"$ref": "#/$defs/identifier"}, "presentationId": {"$ref": "#/$defs/identifier"}, "mode": {"const": "SCHEDULED"}, "status": {"const": "ASSESSED"}, "evidence": {"$ref": "#/$defs/evidence"}, "feedback": {"$ref": "#/$defs/feedback"}, "transition": {"$ref": "#/$defs/transition"}}, "additionalProperties": false}, {"type": "object", "required": ["attemptId", "presentationId", "mode", "status", "evidence", "feedback", "transition", "canonicalEffects"], "properties": {"attemptId": {"$ref": "#/$defs/identifier"}, "presentationId": {"$ref": "#/$defs/identifier"}, "mode": {"enum": ["REPLAY", "PRACTICE"]}, "status": {"enum": ["ASSESSED", "NOT_ASSESSED", "UNAVAILABLE"]}, "evidence": {"type": "null"}, "feedback": {"$ref": "#/$defs/feedback"}, "transition": {"type": "null"}, "canonicalEffects": {"const": false}}, "additionalProperties": false}, {"type": "object", "required": ["attemptId", "presentationId", "mode", "status", "evidence", "feedback", "transition"], "properties": {"attemptId": {"$ref": "#/$defs/identifier"}, "presentationId": {"$ref": "#/$defs/identifier"}, "mode": {"const": "SCHEDULED"}, "status": {"enum": ["NOT_ASSESSED", "UNAVAILABLE"]}, "evidence": {"type": "null"}, "feedback": {"$ref": "#/$defs/feedback"}, "transition": {"type": "null"}}, "additionalProperties": false}]},
+    "attemptsDocument": {"type": "object", "required": ["freeResponseSubmit", "selfCheckSubmit", "choiceSubmit", "cancelSubmit", "scheduledOutcome", "practiceOutcome", "notAssessedOutcome"], "properties": {"freeResponseSubmit": {"$ref": "#/$defs/submitCommand"}, "selfCheckSubmit": {"$ref": "#/$defs/submitCommand"}, "choiceSubmit": {"$ref": "#/$defs/submitCommand"}, "cancelSubmit": {"$ref": "#/$defs/submitCommand"}, "scheduledOutcome": {"$ref": "#/$defs/attemptOutcome"}, "practiceOutcome": {"$ref": "#/$defs/attemptOutcome"}, "notAssessedOutcome": {"$ref": "#/$defs/attemptOutcome"}}, "additionalProperties": false},
+    "reducerDocument": {"type": "object", "required": ["reducerId", "reducerVersion", "configId", "intervals", "transitions", "goldenCases"], "properties": {"reducerId": {"const": "mnema-baseline"}, "reducerVersion": {"const": "1"}, "configId": {"$ref": "#/$defs/identifier"}, "intervals": {"type": "array", "minItems": 8, "maxItems": 8, "items": {"type": "string"}}, "transitions": {"type": "array", "minItems": 12, "maxItems": 12, "items": {"type": "object", "required": ["result", "evidenceClass", "operation", "levels", "cap", "streak", "lapse"], "properties": {"result": {"enum": ["CORRECT", "PARTIAL", "UNSURE", "INCORRECT"]}, "evidenceClass": {"enum": ["HIGH", "MEDIUM", "LOW"]}, "operation": {"enum": ["ADD", "SUBTRACT", "SET"]}, "levels": {"type": "integer"}, "cap": {"type": "integer"}, "streak": {"enum": ["INCREMENT", "RESET"]}, "lapse": {"enum": ["KEEP", "INCREMENT"]}}, "additionalProperties": false}}, "goldenCases": {"type": "array", "minItems": 7, "items": {"type": "object", "required": ["name", "beforeLevel", "result", "evidenceClass", "afterLevel", "acceptedAt", "nextDue"], "properties": {"name": {"type": "string"}, "beforeLevel": {"type": "integer"}, "result": {"enum": ["CORRECT", "PARTIAL", "UNSURE", "INCORRECT"]}, "evidenceClass": {"enum": ["HIGH", "MEDIUM", "LOW"]}, "afterLevel": {"type": "integer"}, "acceptedAt": {"type": "string"}, "nextDue": {"type": "string"}}, "additionalProperties": false}}}, "additionalProperties": false},
+    "adversarialDocument": {"type": "object", "required": ["cases"], "properties": {"cases": {"type": "array", "minItems": 20, "items": {"type": "object", "required": ["id", "event", "preconditions", "request", "persistedEffect", "response", "recovery"], "properties": {"id": {"type": "string", "pattern": "^A-[0-9]{2}$"}, "event": {"type": "string"}, "preconditions": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "request": {"type": "object"}, "persistedEffect": {"type": "object"}, "response": {"type": "object"}, "recovery": {"type": "string"}}, "additionalProperties": false}}}, "additionalProperties": false},
+    "flowsDocument": {"type": "object", "required": ["flows"], "properties": {"flows": {"type": "array", "minItems": 10, "items": {"type": "object", "required": ["id", "preconditions", "event", "requestFixture", "persistedEffect", "responseFixture", "errorOrRecovery"], "properties": {"id": {"type": "string", "pattern": "^F-[A-Z0-9-]+$"}, "preconditions": {"type": "array", "minItems": 1, "items": {"type": "string"}}, "event": {"type": "string"}, "requestFixture": {"type": "string"}, "persistedEffect": {"type": "string"}, "responseFixture": {"type": "string"}, "errorOrRecovery": {"type": "string"}}, "additionalProperties": false}}}, "additionalProperties": false},
+    "progressDocument": {"type": "object", "required": ["request", "response", "emptyResponse"], "properties": {"request": {"type": "object", "required": ["deckId", "limit", "cursor"], "properties": {"deckId": {"$ref": "#/$defs/identifier"}, "limit": {"type": "integer"}, "cursor": {"$ref": "#/$defs/nullableString"}}, "additionalProperties": false}, "response": {"$ref": "#/$defs/progressPage"}, "emptyResponse": {"$ref": "#/$defs/progressPage"}}, "additionalProperties": false},
+    "replaySourcesPage": {"type": "object", "required": ["asOf", "localStudyDate", "items"], "properties": {"asOf": {"type": "string"}, "localStudyDate": {"type": "string"}, "items": {"type": "array", "maxItems": 20, "items": {"type": "object", "required": ["sessionId", "completedAt", "presentationCount"], "properties": {"sessionId": {"$ref": "#/$defs/identifier"}, "completedAt": {"type": "string"}, "presentationCount": {"type": "integer"}}, "additionalProperties": false}}}, "additionalProperties": false},
+    "replaySourcesDocument": {"type": "object", "required": ["response", "emptyResponse"], "properties": {"response": {"$ref": "#/$defs/replaySourcesPage"}, "emptyResponse": {"$ref": "#/$defs/replaySourcesPage"}}, "additionalProperties": false},
+    "restartDocument": {"type": "object", "required": ["precondition", "request", "persistedEffect", "response", "recovery"], "properties": {"precondition": {"type": "object", "required": ["ownerAuthorized", "objectiveStates"], "properties": {"ownerAuthorized": {"type": "boolean"}, "objectiveStates": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/objectiveState"}}}, "additionalProperties": false}, "request": {"type": "object", "required": ["commandId", "memberKeys"], "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "memberKeys": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/identifier"}}}, "additionalProperties": false}, "persistedEffect": {"type": "object", "required": ["objectiveStates", "historyRowsDeleted", "restartAuditRows"], "properties": {"objectiveStates": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/objectiveState"}}, "historyRowsDeleted": {"type": "integer"}, "restartAuditRows": {"type": "integer"}}, "additionalProperties": false}, "response": {"type": "object", "required": ["commandId", "restartedAt", "objectiveCount", "learningEpochs"], "properties": {"commandId": {"$ref": "#/$defs/identifier"}, "restartedAt": {"type": "string"}, "objectiveCount": {"type": "integer"}, "learningEpochs": {"type": "array", "items": {"type": "object", "required": ["objectiveId", "learningEpoch"], "properties": {"objectiveId": {"$ref": "#/$defs/identifier"}, "learningEpoch": {"type": "string"}}, "additionalProperties": false}}}, "additionalProperties": false}, "recovery": {"type": "object", "required": ["exactRetry", "oldPresentationSubmit", "foreignMember"], "properties": {"exactRetry": {"type": "string"}, "oldPresentationSubmit": {"type": "string"}, "foreignMember": {"type": "string"}}, "additionalProperties": false}}, "additionalProperties": false}
   }
 }

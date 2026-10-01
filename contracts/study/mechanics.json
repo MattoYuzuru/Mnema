@@ -1,0 +1,477 @@
+{
+  "createSelfCheck": {
+    "commandId": "018f1d98-5c10-7abc-8abc-012345678911",
+    "expectedDeckRevisionId": "22222222-2222-4222-8222-222222222222",
+    "objective": {"operation": "create", "title": "Строение клетки по схеме"},
+    "exercise": {
+      "type": "SELF_CHECK",
+      "schemaVersion": 2,
+      "enabled": true,
+      "subject": {"memberKey": "44444444-4444-4444-8444-444444444444", "itemRevisionId": "55555555-5555-4555-8555-555555555555"},
+      "content": {
+        "prompt": [
+          {"kind": "IMAGE", "assetId": "aaaaaaaa-0000-4000-8000-000000000003", "alt": "Схема клетки с пронумерованными органеллами"},
+          {"kind": "TEXT", "text": "Назовите органеллы 1–3 и их функции."}
+        ],
+        "reference": [
+          {"kind": "MATERIAL", "memberKey": "44444444-4444-4444-8444-444444444444", "itemRevisionId": "55555555-5555-4555-8555-555555555555", "nodeId": "00000000-0000-4000-8000-000000000003"},
+          {"kind": "AUDIO", "assetId": "aaaaaaaa-0000-4000-8000-000000000004", "title": "Моё объяснение", "transcript": "Ядро хранит ДНК, митохондрии дают энергию, рибосомы собирают белки."}
+        ]
+      },
+      "answerKey": {"kind": "SELF_REPORT"},
+      "evaluatorPolicy": {"id": "self-check", "version": "1"}
+    }
+  },
+  "createFreeResponseAudio": {
+    "commandId": "018f1d98-5c10-7abc-8abc-012345678912",
+    "expectedDeckRevisionId": "22222222-2222-4222-8222-222222222222",
+    "objective": {"operation": "create", "title": "Запись слова на слух"},
+    "exercise": {
+      "type": "FREE_RESPONSE",
+      "schemaVersion": 2,
+      "enabled": true,
+      "subject": {"memberKey": "44444444-4444-4444-8444-444444444444", "itemRevisionId": "55555555-5555-4555-8555-555555555555"},
+      "content": {
+        "prompt": [
+          {"kind": "AUDIO", "assetId": "aaaaaaaa-0000-4000-8000-000000000002", "title": "Слово 12", "transcript": "Erinnerung"},
+          {"kind": "TEXT", "text": "Напишите услышанное слово."}
+        ],
+        "reference": [],
+        "responseInput": "TEXT"
+      },
+      "answerKey": {
+        "kind": "TEXT",
+        "accepted": ["Erinnerung", "die Erinnerung"],
+        "normalization": ["UNICODE_NFC", "TRIM", "CASE_FOLD"],
+        "matchingMode": "STRICT"
+      },
+      "evaluatorPolicy": {"id": "deterministic-text", "version": "1"}
+    }
+  },
+  "createCloze": {
+    "commandId": "018f1d98-5c10-7abc-8abc-012345678913",
+    "expectedDeckRevisionId": "22222222-2222-4222-8222-222222222222",
+    "objective": {"operation": "create", "title": "Сигнатура метода map"},
+    "exercise": {
+      "type": "CLOZE",
+      "schemaVersion": 2,
+      "enabled": true,
+      "subject": {"memberKey": "44444444-4444-4444-8444-444444444444", "itemRevisionId": "55555555-5555-4555-8555-555555555555"},
+      "content": {
+        "prompt": [{"kind": "TEXT", "text": "Заполните пропуски в коде."}],
+        "passage": [
+          {"kind": "TEXT", "text": "list.stream()\n    ."},
+          {"kind": "BLANK", "blankId": "b1a00000-0000-4000-8000-000000000001", "size": {"mode": "ANSWER_LENGTH"}, "firstLetterHint": true},
+          {"kind": "TEXT", "text": "(x -> x * 2)\n    ."},
+          {"kind": "BLANK", "blankId": "b1a00000-0000-4000-8000-000000000002", "size": {"mode": "FIXED", "length": 8}, "firstLetterHint": false},
+          {"kind": "TEXT", "text": "();\n// map и map: одинаковые слова, разные пропуски — "},
+          {"kind": "BLANK", "blankId": "b1a00000-0000-4000-8000-000000000003", "size": {"mode": "FIXED", "length": 5}, "firstLetterHint": true}
+        ]
+      },
+      "answerKey": {
+        "kind": "CLOZE",
+        "blanks": [
+          {"blankId": "b1a00000-0000-4000-8000-000000000001", "accepted": ["map"], "normalization": ["UNICODE_NFC", "TRIM"], "matchingMode": "STRICT"},
+          {"blankId": "b1a00000-0000-4000-8000-000000000002", "accepted": ["toList"], "normalization": ["UNICODE_NFC", "TRIM"], "matchingMode": "STRICT"},
+          {"blankId": "b1a00000-0000-4000-8000-000000000003", "accepted": ["map"], "normalization": ["UNICODE_NFC", "TRIM", "CASE_FOLD"], "matchingMode": "STRICT"}
+        ]
+      },
+      "evaluatorPolicy": {"id": "deterministic-cloze", "version": "1"}
+    }
+  },
+  "createChoiceVideoMultiple": {
+    "commandId": "018f1d98-5c10-7abc-8abc-012345678914",
+    "expectedDeckRevisionId": "22222222-2222-4222-8222-222222222222",
+    "objective": {"operation": "create", "title": "Признаки реакции в опыте"},
+    "exercise": {
+      "type": "CHOICE",
+      "schemaVersion": 2,
+      "enabled": true,
+      "subject": {"memberKey": "44444444-4444-4444-8444-444444444444", "itemRevisionId": "55555555-5555-4555-8555-555555555555"},
+      "content": {
+        "prompt": [
+          {"kind": "VIDEO", "assetId": "aaaaaaaa-0000-4000-8000-000000000001", "title": "Опыт 3"},
+          {"kind": "TEXT", "text": "Какие признаки химической реакции видны в опыте?"}
+        ],
+        "selectionMode": "MULTIPLE",
+        "options": [
+          {"optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd1", "blocks": [{"kind": "TEXT", "text": "Выделение газа"}]},
+          {"optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd2", "blocks": [{"kind": "TEXT", "text": "Изменение цвета"}]},
+          {"optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd3", "blocks": [{"kind": "IMAGE", "assetId": "aaaaaaaa-0000-4000-8000-000000000003", "alt": "Осадок на дне пробирки"}]},
+          {"optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd4", "blocks": [{"kind": "TEXT", "text": "Звук"}, {"kind": "AUDIO", "assetId": "aaaaaaaa-0000-4000-8000-000000000004", "title": "Шипение"}]}
+        ]
+      },
+      "answerKey": {"kind": "CHOICE", "correctOptionIds": ["dddddddd-dddd-4ddd-8ddd-ddddddddddd1", "dddddddd-dddd-4ddd-8ddd-ddddddddddd2"]},
+      "evaluatorPolicy": {"id": "deterministic-choice", "version": "1"}
+    }
+  },
+  "createMatchMixed": {
+    "commandId": "018f1d98-5c10-7abc-8abc-012345678915",
+    "expectedDeckRevisionId": "22222222-2222-4222-8222-222222222222",
+    "objective": {"operation": "create", "title": "Животные: звук, картинка, слово"},
+    "exercise": {
+      "type": "MATCH",
+      "schemaVersion": 2,
+      "enabled": true,
+      "subject": {"memberKey": "44444444-4444-4444-8444-444444444444", "itemRevisionId": "55555555-5555-4555-8555-555555555555"},
+      "content": {
+        "prompt": [{"kind": "TEXT", "text": "Соедините пары."}],
+        "left": [
+          {"itemId": "1e000000-0000-4000-8000-000000000001", "blocks": [{"kind": "TEXT", "text": "der Hund"}]},
+          {"itemId": "1e000000-0000-4000-8000-000000000002", "blocks": [{"kind": "AUDIO", "assetId": "aaaaaaaa-0000-4000-8000-000000000002", "title": "Запись: Katze", "transcript": "die Katze"}]},
+          {"itemId": "1e000000-0000-4000-8000-000000000003", "blocks": [{"kind": "IMAGE", "assetId": "aaaaaaaa-0000-4000-8000-000000000003", "alt": "Рисунок птицы на ветке"}]},
+          {"itemId": "1e000000-0000-4000-8000-000000000004", "blocks": [{"kind": "VIDEO", "assetId": "aaaaaaaa-0000-4000-8000-000000000005", "title": "Короткий ролик: лошадь"}]}
+        ],
+        "right": [
+          {"itemId": "7e000000-0000-4000-8000-000000000001", "blocks": [{"kind": "TEXT", "text": "собака"}]},
+          {"itemId": "7e000000-0000-4000-8000-000000000002", "blocks": [{"kind": "TEXT", "text": "кошка"}]},
+          {"itemId": "7e000000-0000-4000-8000-000000000003", "blocks": [{"kind": "AUDIO", "assetId": "aaaaaaaa-0000-4000-8000-000000000004", "title": "Запись: Vogel"}]},
+          {"itemId": "7e000000-0000-4000-8000-000000000004", "blocks": [{"kind": "MATERIAL", "memberKey": "44444444-4444-4444-8444-444444444444", "itemRevisionId": "55555555-5555-4555-8555-555555555555", "nodeId": "00000000-0000-4000-8000-000000000003"}]}
+        ]
+      },
+      "answerKey": {
+        "kind": "MATCH",
+        "pairs": [
+          {"leftId": "1e000000-0000-4000-8000-000000000001", "rightId": "7e000000-0000-4000-8000-000000000001"},
+          {"leftId": "1e000000-0000-4000-8000-000000000002", "rightId": "7e000000-0000-4000-8000-000000000002"},
+          {"leftId": "1e000000-0000-4000-8000-000000000003", "rightId": "7e000000-0000-4000-8000-000000000003"},
+          {"leftId": "1e000000-0000-4000-8000-000000000004", "rightId": "7e000000-0000-4000-8000-000000000004"}
+        ]
+      },
+      "evaluatorPolicy": {"id": "deterministic-match", "version": "1"}
+    }
+  },
+  "reviseObjective": {"operation": "revise", "objectiveId": "77777777-7777-4777-8777-777777777771", "expectedObjectiveRevisionId": "77777777-7777-4777-8777-777777777773", "title": "Сигнатура и терминальная операция stream"},
+  "reuseObjective": {"operation": "reuse", "objectiveId": "77777777-7777-4777-8777-777777777771", "objectiveRevisionId": "77777777-7777-4777-8777-777777777773"},
+  "rejectedAiAssessment": {
+    "commandId": "018f1d98-5c10-7abc-8abc-012345678916",
+    "expectedDeckRevisionId": "22222222-2222-4222-8222-222222222222",
+    "objective": {"operation": "create", "title": "Объяснение принципа инерции"},
+    "exercise": {
+      "type": "FREE_RESPONSE",
+      "schemaVersion": 2,
+      "enabled": true,
+      "subject": {"memberKey": "44444444-4444-4444-8444-444444444444", "itemRevisionId": "55555555-5555-4555-8555-555555555555"},
+      "content": {"prompt": [{"kind": "TEXT", "text": "Объясните своими словами, что такое инерция."}], "reference": [], "responseInput": "TEXT"},
+      "answerKey": {"kind": "TEXT", "accepted": ["свойство тела сохранять скорость"], "normalization": ["UNICODE_NFC", "TRIM", "CASE_FOLD"], "matchingMode": "SOFT"},
+      "evaluatorPolicy": {
+        "id": "ai-semantic",
+        "version": "1",
+        "rubric": {
+          "referenceAnswer": "Инерция — свойство тела сохранять скорость, пока на него не действуют другие тела.",
+          "criteria": [
+            {"criterionId": "c0000000-0000-4000-8000-000000000001", "description": "Говорит о сохранении скорости или состояния движения", "critical": true},
+            {"criterionId": "c0000000-0000-4000-8000-000000000002", "description": "Упоминает отсутствие внешнего воздействия", "critical": false}
+          ],
+          "levels": [
+            {"level": "COMPLETE", "description": "Все критические и большинство остальных критериев"},
+            {"level": "PARTIAL", "description": "Критические критерии есть, остальные частично"},
+            {"level": "INSUFFICIENT", "description": "Нет хотя бы одного критического критерия"}
+          ]
+        }
+      }
+    }
+  },
+  "rejectedSpeechInput": {
+    "commandId": "018f1d98-5c10-7abc-8abc-012345678917",
+    "expectedDeckRevisionId": "22222222-2222-4222-8222-222222222222",
+    "objective": {"operation": "create", "title": "Произнести и записать фразу"},
+    "exercise": {
+      "type": "FREE_RESPONSE",
+      "schemaVersion": 2,
+      "enabled": true,
+      "subject": {"memberKey": "44444444-4444-4444-8444-444444444444", "itemRevisionId": "55555555-5555-4555-8555-555555555555"},
+      "content": {"prompt": [{"kind": "TEXT", "text": "Ответьте голосом: как дела?"}], "reference": [], "responseInput": "TEXT_OR_SPEECH"},
+      "answerKey": {"kind": "TEXT", "accepted": ["gut"], "normalization": ["UNICODE_NFC", "TRIM", "CASE_FOLD"], "matchingMode": "STRICT"},
+      "evaluatorPolicy": {"id": "deterministic-text", "version": "1"}
+    }
+  },
+  "capabilityUnavailableProblem": {
+    "type": "urn:mnema:problem:capability-unavailable",
+    "title": "Capability unavailable",
+    "status": 409,
+    "detail": "The requested learning capability is not available.",
+    "instance": "/api/decks/11111111-1111-4111-8111-111111111111/exercises",
+    "code": "CAPABILITY_UNAVAILABLE"
+  },
+  "exerciseDetail": {
+    "exerciseId": "88888888-8888-4888-8888-888888888881",
+    "exerciseRevisionId": "88888888-8888-4888-8888-888888888882",
+    "exerciseVersion": "0",
+    "ordinal": 0,
+    "type": "CHOICE",
+    "enabled": true,
+    "schemaVersion": 2,
+    "createdAt": "2026-10-01T09:00:00Z",
+    "updatedAt": "2026-10-01T09:00:00Z",
+    "objective": {
+      "objectiveId": "77777777-7777-4777-8777-777777777771",
+      "objectiveKey": "77777777-7777-4777-8777-777777777772",
+      "objectiveRevisionId": "77777777-7777-4777-8777-777777777773",
+      "objectiveVersion": "0",
+      "memberKey": "44444444-4444-4444-8444-444444444444",
+      "title": "Признаки реакции в опыте"
+    },
+    "deckId": "11111111-1111-4111-8111-111111111111",
+    "deckRevisionId": "33333333-3333-4333-8333-333333333333",
+    "deckVersion": "6",
+    "subject": {"memberKey": "44444444-4444-4444-8444-444444444444", "itemRevisionId": "55555555-5555-4555-8555-555555555555"},
+    "content": {
+      "prompt": [
+        {"kind": "VIDEO", "assetId": "aaaaaaaa-0000-4000-8000-000000000001", "title": "Опыт 3"},
+        {"kind": "TEXT", "text": "Какие признаки химической реакции видны в опыте?"}
+      ],
+      "selectionMode": "MULTIPLE",
+      "options": [
+        {"optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd1", "blocks": [{"kind": "TEXT", "text": "Выделение газа"}]},
+        {"optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd2", "blocks": [{"kind": "TEXT", "text": "Изменение цвета"}]}
+      ]
+    },
+    "answerKey": {"kind": "CHOICE", "correctOptionIds": ["dddddddd-dddd-4ddd-8ddd-ddddddddddd1", "dddddddd-dddd-4ddd-8ddd-ddddddddddd2"]},
+    "evaluatorPolicy": {"id": "deterministic-choice", "version": "1"}
+  },
+  "presentations": {
+    "selfCheck": {
+      "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb11",
+      "nonce": "c3R1ZHktbm9uY2UtMTE",
+      "ordinal": 0,
+      "exerciseRevisionId": "88888888-8888-4888-8888-888888888811",
+      "type": "SELF_CHECK",
+      "objectiveId": "77777777-7777-4777-8777-777777777711",
+      "objectiveRevisionId": "77777777-7777-4777-8777-777777777712",
+      "learningEpoch": "0",
+      "content": {
+        "prompt": [
+          {"kind": "IMAGE", "assetId": "aaaaaaaa-0000-4000-8000-000000000003", "alt": "Схема клетки с пронумерованными органеллами"},
+          {"kind": "TEXT", "text": "Назовите органеллы 1–3 и их функции."}
+        ],
+        "reference": [
+          {"kind": "TEXT", "text": "Ядро, митохондрии и рибосомы."},
+          {"kind": "AUDIO", "assetId": "aaaaaaaa-0000-4000-8000-000000000004", "transcriptAvailable": true}
+        ]
+      },
+      "transcriptRevealed": false,
+      "hints": [],
+      "evaluator": {"id": "self-check", "version": "1"}
+    },
+    "freeResponse": {
+      "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb12",
+      "nonce": "c3R1ZHktbm9uY2UtMTI",
+      "ordinal": 1,
+      "exerciseRevisionId": "88888888-8888-4888-8888-888888888812",
+      "type": "FREE_RESPONSE",
+      "objectiveId": "77777777-7777-4777-8777-777777777721",
+      "objectiveRevisionId": "77777777-7777-4777-8777-777777777722",
+      "learningEpoch": "0",
+      "content": {
+        "prompt": [
+          {"kind": "AUDIO", "assetId": "aaaaaaaa-0000-4000-8000-000000000002", "transcriptAvailable": true},
+          {"kind": "TEXT", "text": "Напишите услышанное слово."}
+        ],
+        "responseInput": "TEXT"
+      },
+      "transcriptRevealed": false,
+      "hints": [],
+      "evaluator": {"id": "deterministic-text", "version": "1"}
+    },
+    "freeResponseTranscriptRevealed": {
+      "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb12",
+      "nonce": "c3R1ZHktbm9uY2UtMTI",
+      "ordinal": 1,
+      "exerciseRevisionId": "88888888-8888-4888-8888-888888888812",
+      "type": "FREE_RESPONSE",
+      "objectiveId": "77777777-7777-4777-8777-777777777721",
+      "objectiveRevisionId": "77777777-7777-4777-8777-777777777722",
+      "learningEpoch": "0",
+      "content": {
+        "prompt": [
+          {"kind": "AUDIO", "assetId": "aaaaaaaa-0000-4000-8000-000000000002", "transcriptAvailable": true, "transcript": "Erinnerung"},
+          {"kind": "TEXT", "text": "Напишите услышанное слово."}
+        ],
+        "responseInput": "TEXT"
+      },
+      "transcriptRevealed": true,
+      "hints": [],
+      "evaluator": {"id": "deterministic-text", "version": "1"}
+    },
+    "cloze": {
+      "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb13",
+      "nonce": "c3R1ZHktbm9uY2UtMTM",
+      "ordinal": 2,
+      "exerciseRevisionId": "88888888-8888-4888-8888-888888888813",
+      "type": "CLOZE",
+      "objectiveId": "77777777-7777-4777-8777-777777777731",
+      "objectiveRevisionId": "77777777-7777-4777-8777-777777777732",
+      "learningEpoch": "0",
+      "content": {
+        "prompt": [{"kind": "TEXT", "text": "Заполните пропуски в коде."}],
+        "passage": [
+          {"kind": "TEXT", "text": "list.stream()\n    ."},
+          {"kind": "BLANK", "blankId": "b1a00000-0000-4000-8000-000000000001", "size": {"mode": "ANSWER_LENGTH", "length": 3}, "firstLetterHint": true},
+          {"kind": "TEXT", "text": "(x -> x * 2)\n    ."},
+          {"kind": "BLANK", "blankId": "b1a00000-0000-4000-8000-000000000002", "size": {"mode": "FIXED", "length": 8}, "firstLetterHint": false},
+          {"kind": "TEXT", "text": "();\n// map и map: одинаковые слова, разные пропуски — "},
+          {"kind": "BLANK", "blankId": "b1a00000-0000-4000-8000-000000000003", "size": {"mode": "FIXED", "length": 5}, "firstLetterHint": true}
+        ]
+      },
+      "transcriptRevealed": false,
+      "hints": [{"blankId": "b1a00000-0000-4000-8000-000000000003", "firstLetter": "m"}],
+      "evaluator": {"id": "deterministic-cloze", "version": "1"}
+    },
+    "choice": {
+      "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb14",
+      "nonce": "c3R1ZHktbm9uY2UtMTQ",
+      "ordinal": 3,
+      "exerciseRevisionId": "88888888-8888-4888-8888-888888888814",
+      "type": "CHOICE",
+      "objectiveId": "77777777-7777-4777-8777-777777777741",
+      "objectiveRevisionId": "77777777-7777-4777-8777-777777777742",
+      "learningEpoch": "0",
+      "content": {
+        "prompt": [
+          {"kind": "VIDEO", "assetId": "aaaaaaaa-0000-4000-8000-000000000001", "transcriptAvailable": false},
+          {"kind": "TEXT", "text": "Какие признаки химической реакции видны в опыте?"}
+        ],
+        "selectionMode": "MULTIPLE",
+        "options": [
+          {"optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd1", "blocks": [{"kind": "TEXT", "text": "Выделение газа"}]},
+          {"optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd2", "blocks": [{"kind": "TEXT", "text": "Изменение цвета"}]},
+          {"optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd3", "blocks": [{"kind": "IMAGE", "assetId": "aaaaaaaa-0000-4000-8000-000000000003", "alt": "Осадок на дне пробирки"}]},
+          {"optionId": "dddddddd-dddd-4ddd-8ddd-ddddddddddd4", "blocks": [{"kind": "TEXT", "text": "Звук"}, {"kind": "AUDIO", "assetId": "aaaaaaaa-0000-4000-8000-000000000004", "transcriptAvailable": false}]}
+        ]
+      },
+      "transcriptRevealed": false,
+      "hints": [],
+      "evaluator": {"id": "deterministic-choice", "version": "1"}
+    },
+    "match": {
+      "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb15",
+      "nonce": "c3R1ZHktbm9uY2UtMTU",
+      "ordinal": 4,
+      "exerciseRevisionId": "88888888-8888-4888-8888-888888888815",
+      "type": "MATCH",
+      "objectiveId": "77777777-7777-4777-8777-777777777751",
+      "objectiveRevisionId": "77777777-7777-4777-8777-777777777752",
+      "learningEpoch": "0",
+      "content": {
+        "prompt": [{"kind": "TEXT", "text": "Соедините пары."}],
+        "left": [
+          {"itemId": "1e000000-0000-4000-8000-000000000003", "blocks": [{"kind": "IMAGE", "assetId": "aaaaaaaa-0000-4000-8000-000000000003", "alt": "Рисунок птицы на ветке"}]},
+          {"itemId": "1e000000-0000-4000-8000-000000000001", "blocks": [{"kind": "TEXT", "text": "der Hund"}]},
+          {"itemId": "1e000000-0000-4000-8000-000000000004", "blocks": [{"kind": "VIDEO", "assetId": "aaaaaaaa-0000-4000-8000-000000000005", "transcriptAvailable": false}]},
+          {"itemId": "1e000000-0000-4000-8000-000000000002", "blocks": [{"kind": "AUDIO", "assetId": "aaaaaaaa-0000-4000-8000-000000000002", "transcriptAvailable": true}]}
+        ],
+        "right": [
+          {"itemId": "7e000000-0000-4000-8000-000000000002", "blocks": [{"kind": "TEXT", "text": "кошка"}]},
+          {"itemId": "7e000000-0000-4000-8000-000000000004", "blocks": [{"kind": "TEXT", "text": "лошадь"}]},
+          {"itemId": "7e000000-0000-4000-8000-000000000001", "blocks": [{"kind": "TEXT", "text": "собака"}]},
+          {"itemId": "7e000000-0000-4000-8000-000000000003", "blocks": [{"kind": "AUDIO", "assetId": "aaaaaaaa-0000-4000-8000-000000000004", "transcriptAvailable": false}]}
+        ]
+      },
+      "transcriptRevealed": false,
+      "hints": [],
+      "evaluator": {"id": "deterministic-match", "version": "1"}
+    }
+  },
+  "transcriptRevealCommand": {"nonce": "c3R1ZHktbm9uY2UtMTI"},
+  "transcriptRevealResponse": {
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb12",
+    "transcriptRevealed": true,
+    "content": {
+      "prompt": [
+        {"kind": "AUDIO", "assetId": "aaaaaaaa-0000-4000-8000-000000000002", "transcriptAvailable": true, "transcript": "Erinnerung"},
+        {"kind": "TEXT", "text": "Напишите услышанное слово."}
+      ],
+      "responseInput": "TEXT"
+    }
+  },
+  "hintCommand": {"nonce": "c3R1ZHktbm9uY2UtMTM", "blankId": "b1a00000-0000-4000-8000-000000000001"},
+  "hintResponse": {"presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb13", "blankId": "b1a00000-0000-4000-8000-000000000001", "firstLetter": "m"},
+  "pairCheck": {
+    "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb15",
+    "nonce": "c3R1ZHktbm9uY2UtMTU",
+    "leftId": "1e000000-0000-4000-8000-000000000001",
+    "rightId": "7e000000-0000-4000-8000-000000000002"
+  },
+  "pairCheckResult": {"correct": false},
+  "submits": {
+    "selfCheck": {"attemptId": "cccccccc-cccc-4ccc-8ccc-cccccccccc11", "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb11", "nonce": "c3R1ZHktbm9uY2UtMTE", "response": {"kind": "SELF_CHECK", "rating": "PARTIAL"}, "confidence": null, "durationMs": 9000},
+    "freeResponse": {"attemptId": "cccccccc-cccc-4ccc-8ccc-cccccccccc12", "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb12", "nonce": "c3R1ZHktbm9uY2UtMTI", "response": {"kind": "TEXT", "text": "erinnerung "}, "confidence": "KNEW", "durationMs": 4200},
+    "cloze": {
+      "attemptId": "cccccccc-cccc-4ccc-8ccc-cccccccccc13", "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb13", "nonce": "c3R1ZHktbm9uY2UtMTM",
+      "response": {"kind": "CLOZE", "blanks": [
+        {"blankId": "b1a00000-0000-4000-8000-000000000001", "text": "map"},
+        {"blankId": "b1a00000-0000-4000-8000-000000000002", "text": "toSet"},
+        {"blankId": "b1a00000-0000-4000-8000-000000000003", "text": "Map"}
+      ]},
+      "confidence": "UNSURE", "durationMs": 15000
+    },
+    "choice": {"attemptId": "cccccccc-cccc-4ccc-8ccc-cccccccccc14", "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb14", "nonce": "c3R1ZHktbm9uY2UtMTQ", "response": {"kind": "CHOICE", "optionIds": ["dddddddd-dddd-4ddd-8ddd-ddddddddddd2", "dddddddd-dddd-4ddd-8ddd-ddddddddddd1"]}, "confidence": null, "durationMs": 7000},
+    "match": {
+      "attemptId": "cccccccc-cccc-4ccc-8ccc-cccccccccc15", "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb15", "nonce": "c3R1ZHktbm9uY2UtMTU",
+      "response": {"kind": "MATCH", "pairs": [
+        {"leftId": "1e000000-0000-4000-8000-000000000001", "rightId": "7e000000-0000-4000-8000-000000000001"},
+        {"leftId": "1e000000-0000-4000-8000-000000000002", "rightId": "7e000000-0000-4000-8000-000000000002"},
+        {"leftId": "1e000000-0000-4000-8000-000000000003", "rightId": "7e000000-0000-4000-8000-000000000003"},
+        {"leftId": "1e000000-0000-4000-8000-000000000004", "rightId": "7e000000-0000-4000-8000-000000000004"}
+      ]},
+      "confidence": null, "durationMs": 21000
+    },
+    "cancel": {"attemptId": "cccccccc-cccc-4ccc-8ccc-cccccccccc16", "presentationId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbb14", "nonce": "c3R1ZHktbm9uY2UtMTQ", "response": {"kind": "CANCEL"}, "confidence": null, "durationMs": 0}
+  },
+  "feedback": {
+    "selfCheck": {"result": "PARTIAL", "appliedRules": ["SELF_REPORT"]},
+    "freeResponse": {
+      "result": "CORRECT",
+      "appliedRules": ["UNICODE_NFC", "TRIM", "CASE_FOLD"],
+      "reference": "Erinnerung",
+      "referenceContent": []
+    },
+    "cloze": {
+      "result": "PARTIAL",
+      "appliedRules": ["PER_BLANK", "UNICODE_NFC", "TRIM", "CASE_FOLD"],
+      "blanks": [
+        {"blankId": "b1a00000-0000-4000-8000-000000000001", "correct": true, "hinted": false, "reference": "map"},
+        {"blankId": "b1a00000-0000-4000-8000-000000000002", "correct": false, "hinted": false, "reference": "toList"},
+        {"blankId": "b1a00000-0000-4000-8000-000000000003", "correct": true, "hinted": true, "reference": "map"}
+      ]
+    },
+    "choice": {"result": "CORRECT", "appliedRules": ["SERVER_ISSUED_OPTION", "EXACT_OPTION_SET"], "correctOptionIds": ["dddddddd-dddd-4ddd-8ddd-ddddddddddd1", "dddddddd-dddd-4ddd-8ddd-ddddddddddd2"]},
+    "match": {
+      "result": "PARTIAL",
+      "appliedRules": ["SERVER_ISSUED_PAIR_MAP", "PAIR_RETRY"],
+      "pairs": [
+        {"leftId": "1e000000-0000-4000-8000-000000000001", "selectedRightId": "7e000000-0000-4000-8000-000000000001", "correctRightId": "7e000000-0000-4000-8000-000000000001", "correct": true},
+        {"leftId": "1e000000-0000-4000-8000-000000000002", "selectedRightId": "7e000000-0000-4000-8000-000000000002", "correctRightId": "7e000000-0000-4000-8000-000000000002", "correct": true},
+        {"leftId": "1e000000-0000-4000-8000-000000000003", "selectedRightId": "7e000000-0000-4000-8000-000000000003", "correctRightId": "7e000000-0000-4000-8000-000000000003", "correct": true},
+        {"leftId": "1e000000-0000-4000-8000-000000000004", "selectedRightId": "7e000000-0000-4000-8000-000000000004", "correctRightId": "7e000000-0000-4000-8000-000000000004", "correct": true}
+      ]
+    },
+    "mediaNotReady": {"result": "NOT_ASSESSED", "reasonCodes": ["MEDIA_NOT_READY"]},
+    "evaluatorUnavailable": {"result": "UNAVAILABLE", "reasonCodes": ["EVALUATOR_UNAVAILABLE"]}
+  },
+  "evidence": {
+    "clozeHinted": {
+      "objectiveId": "77777777-7777-4777-8777-777777777731",
+      "objectiveRevisionId": "77777777-7777-4777-8777-777777777732",
+      "result": "PARTIAL",
+      "evidenceClass": "MEDIUM",
+      "reasonCodes": ["HINTED", "DETERMINISTIC", "PRODUCTION"]
+    },
+    "freeResponseTranscript": {
+      "objectiveId": "77777777-7777-4777-8777-777777777721",
+      "objectiveRevisionId": "77777777-7777-4777-8777-777777777722",
+      "result": "CORRECT",
+      "evidenceClass": "LOW",
+      "reasonCodes": ["TRANSCRIPT_ACCOMMODATION", "DETERMINISTIC", "PRODUCTION"]
+    }
+  },
+  "capabilities": {
+    "aiAssessment": {"available": false, "reason": "DISABLED"},
+    "speechToText": {"available": false, "reason": "DISABLED"}
+  },
+  "capabilitiesFlagWithoutProvider": {
+    "aiAssessment": {"available": false, "reason": "PROVIDER_NOT_CONFIGURED"},
+    "speechToText": {"available": false, "reason": "DISABLED"}
+  }
+}
