@@ -73,13 +73,18 @@ The smoke creates one private random local account, completes real S256 PKCE thr
 the HTTPS issuer, and creates/reloads a Deck and Capture through the frontend's
 same-origin `/api`. Its owner-only credentials remain beside the other local state so
 the second smoke proves restart persistence. It also publishes one retained native
-material and typed exercise, completes a real scheduled attempt and observes material
-progress. The smoke then restarts that material and runs replay plus introduced-only
-practice, requiring both feedback-only modes to report `canonicalEffects: false` and
-leave the restarted progress projection unchanged. Three additional retained fixture
-Decks exercise `SELF_CHECK`, `CLOZE_SINGLE` and `SINGLE_CHOICE` through real scheduled
-API attempts, exact retries and progress reads; the original Deck covers `TYPED`.
-Conservative self-check/choice evidence may leave progress in `LEARNING`. Anonymous
+material and `FREE_RESPONSE` exercise, completes a real scheduled attempt and observes
+material progress. The smoke then restarts that material and runs replay plus
+introduced-only practice, requiring both feedback-only modes to report
+`canonicalEffects: false` and leave the restarted progress projection unchanged. Four
+additional retained fixture Decks exercise `SELF_CHECK`, multi-blank `CLOZE` with a
+server-issued first-letter hint, `MULTIPLE` `CHOICE` and `MATCH` with a durable wrong
+pair check through real scheduled API attempts, exact retries and progress reads; every
+issued presentation is checked for leaked answer keys, bindings, media titles or
+transcripts. The smoke also requires both AI capabilities to report `DISABLED` and
+direct publication of `ai-semantic` or speech-input exercises to fail with
+`CAPABILITY_UNAVAILABLE`. Conservative self-check/choice/matching evidence may leave
+progress in `LEARNING`. Anonymous
 Study start still has to fail closed with `401`.
 
 `stop` retains PostgreSQL, accounts, content, JWK and certificates. A clean data reset
@@ -88,6 +93,11 @@ is destructive and requires the exact opt-in:
 ```bash
 ./scripts/mnema-local-full-stack.sh reset --confirm-delete-local-data
 ```
+
+Issue #266 replaced the exercise mechanics without compatibility readers: Learning
+migration `V21` refuses to start over a database that already contains exercises from an
+earlier build. Run this reset once before the first start of a #266 build (only after
+confirming the local data is disposable).
 
 It deletes only the `mnema-local-v2` containers/volume and the synthetic smoke-account
 state; local certificates and signing JWK remain. Local certificate rotation is

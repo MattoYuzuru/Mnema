@@ -122,13 +122,14 @@ are under `frontend/src/app` and `frontend/src/assets/brand`; the historical
 remains design evidence, not runtime code. Theme values are centralized in
 `frontend/src/theme/tokens.css`.
 
-The canonical `/decks/:deckId/study` route is lazy and deck-scoped. It currently
-implements all four scheduled P0 presentations (`SELF_CHECK`, `TYPED`, one-blank
-`CLOZE_SINGLE` and `SINGLE_CHOICE`), PREPARING polling, strict server-envelope
+The canonical `/decks/:deckId/study` route is lazy and deck-scoped. It implements the five
+#266 mechanics (`SELF_CHECK`, `FREE_RESPONSE`, multi-blank `CLOZE`, single/multiple
+`CHOICE` and mixed-media `MATCH`), PREPARING polling, strict server-envelope
 validation, account-bound 24-hour session recovery and an
-exact-attempt retry after an unknown network outcome. Reference answers remain
-hidden until a production attempt is accepted. Choice option IDs are checked
-against pinned server bindings and never credit distractors. The same route now
+exact-attempt retry after an unknown network outcome. Learner presentations never
+contain answer keys; references arrive only in feedback, and first-letter hints and
+transcripts are server-recorded accommodations. Choice option IDs are checked
+against the pinned exercise answer key and never credit distractors. The same route now
 owns replay from a selected completed session, introduced-only practice by default,
 material progress and explicit restart confirmation; non-scheduled modes state that
 they do not change canonical progress. Before scheduled start, quick 10/2 and

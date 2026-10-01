@@ -317,8 +317,9 @@ field-level explanation. Container-based reflow проверяется в Chromi
 и 1440 px, включая 200% root text, RTL/multilingual input и отсутствие horizontal
 overflow; reduced-motion и forced-colors fallbacks заданы в scoped stylesheet.
 
-Study slice #217 добавляет production lazy route для scheduled `SELF_CHECK` и
-`TYPED`. В typed-механике эталон скрыт до подтверждённого ответа; self-check явно
+Study slice #217 добавил production lazy route для scheduled self-check и текстового
+ответа (с #266 — `FREE_RESPONSE`). В механике текстового ответа эталон скрыт до
+подтверждённого ответа; self-check явно
 разделяет recall и reveal, после чего предлагает четыре подписанные поведенческие
 оценки. Неопределённый сетевой результат сохраняет exact attempt для безопасного
 retry, а account-bound recovery живёт не более 24 часов и не переносит данные между
