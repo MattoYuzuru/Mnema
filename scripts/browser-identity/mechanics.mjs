@@ -103,10 +103,10 @@ export async function runMechanics(ctx) {
     }, label, timeoutMs);
     if (verdict !== null) throw verdict;
   };
-  const focusEl = async spec => need(await call(`const e = ${pick};
+  const focusEl = async spec => (await scrollSettled(), need(await call(`const e = ${pick};
     if (!(e instanceof HTMLElement) || e.matches(':disabled')) return false;
-    e.scrollIntoView({ block: 'center' }); e.focus(); return document.activeElement === e;`, spec),
-  'target could not take keyboard focus: ' + (spec.label ?? spec.text ?? spec.includes ?? spec.css));
+    e.scrollIntoView({ block: 'center', behavior: 'instant' }); e.focus(); return document.activeElement === e;`, spec),
+  'target could not take keyboard focus: ' + (spec.label ?? spec.text ?? spec.includes ?? spec.css)));
   const press = async (key, code, virtualKeyCode, keyText) => {
     const event = { key, code, windowsVirtualKeyCode: virtualKeyCode, nativeVirtualKeyCode: virtualKeyCode };
     await tab.call('Input.dispatchKeyEvent', keyText === undefined
@@ -122,10 +122,19 @@ export async function runMechanics(ctx) {
     await call(`const e = ${pick}; if ('select' in e) e.select(); return true;`, spec);
     await tab.call('Input.insertText', { text: content });
   };
+  // The app sets `scroll-behavior: smooth` and also scrolls smoothly to a step it just opened. A click aimed at a rect
+  // read while such an animation is still running lands elsewhere, so wait until the page position has been still for
+  // several frames before measuring, then jump instantly (an explicit `behavior` overrides the CSS) and measure again.
+  const scrollSettled = () => tab.callFunction(`function() { return new Promise(resolve => {
+    let last = scrollY, still = 0, frames = 0;
+    const tick = () => { frames++; if (scrollY === last) still++; else { still = 0; last = scrollY; }
+      if (still >= 6 || frames > 180) resolve(still >= 6); else requestAnimationFrame(tick); };
+    requestAnimationFrame(tick); }); }`, []);
   const realClick = async spec => {
+    need(await scrollSettled(), 'the page kept scrolling and never settled before a click');
     const point = await call(`const e = ${pick};
       if (!(e instanceof HTMLElement) || e.matches(':disabled')) return null;
-      e.scrollIntoView({ block: 'center' });
+      e.scrollIntoView({ block: 'center', behavior: 'instant' });
       const r = e.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 };`, spec);
     need(point !== null, 'click target absent or disabled: ' + (spec.text ?? spec.label ?? spec.includes ?? spec.css));
     await tab.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x: point.x, y: point.y });
@@ -173,7 +182,7 @@ export async function runMechanics(ctx) {
   slot, config.mediaClips.audio, name).then(done => need(done, 'synthetic audio file could not be dropped on the slot picker'));
   const slotButton = (slot, label) => call(`const b = find({ ...args[0], css: 'button', text: args[1] })[0];
     if (!(b instanceof HTMLButtonElement) || b.disabled) return false;
-    b.scrollIntoView({ block: 'center' }); b.focus(); return document.activeElement === b;`, slot, label);
+    b.scrollIntoView({ block: 'center', behavior: 'instant' }); b.focus(); return document.activeElement === b;`, slot, label);
 
   // ----- editor helpers ----------------------------------------------------------------------------------------------
   async function openEditor(mechanic) {
@@ -198,7 +207,8 @@ export async function runMechanics(ctx) {
     }
     await waitFor(() => has({ css: '#step-finish' }), 'the save step did not open');
   };
-  const setObjective = async title => { await revealFinish(); await typeInto({ css: '#objective-title' }, title); };
+  const setObjective = async title => {
+    await revealFinish(); await typeInto({ css: '#objective-title' }, title); };
   async function saveNewExercise(label) {
     await realClick({ css: '.save-bar button[type="submit"]', text: 'Создать упражнение' });
     await waitFor(async () => {
@@ -422,7 +432,7 @@ export async function runMechanics(ctx) {
     need(await call(`const section = document.querySelectorAll(args[0] + ' section[data-blank]')[0];
       const input = [...section.querySelectorAll('.check-line')].find(l => l.textContent.includes('Первая буква'))?.querySelector('input');
       if (!(input instanceof HTMLInputElement)) return false;
-      input.scrollIntoView({ block: 'center' }); input.focus(); return document.activeElement === input;`, root),
+      input.scrollIntoView({ block: 'center', behavior: 'instant' }); input.focus(); return document.activeElement === input;`, root),
     'first-letter hint switch could not take focus');
     await keys.Space();
     await waitFor(() => call(`const section = document.querySelectorAll(args[0] + ' section[data-blank]')[0];
