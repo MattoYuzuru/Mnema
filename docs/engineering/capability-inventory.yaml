@@ -39,7 +39,7 @@ capabilities:
   - id: browser-identity-authoring
     kind: local-browser-e2e-harness
     location: scripts/browser-identity
-    invoke: "python3 scripts/browser-identity/run.py --authoring --output /tmp/mnema-authoring-evidence"
+    invoke: "python3 scripts/browser-identity/run.py --dist frontend/dist/mnema-frontend --node /opt/homebrew/opt/node@22/bin/node --authoring --media --mechanics"
     effects: [disposable-services, local-https, real-chrome, evidence-output]
     status: configured
 
